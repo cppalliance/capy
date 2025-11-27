@@ -14,5 +14,6 @@
 #include <boost/capy/datastore.hpp>
 #include <boost/capy/polystore.hpp>
 #include <boost/capy/polystore_fwd.hpp>
+#include <boost/capy/small_unique_ptr.hpp>
 
 #endif
