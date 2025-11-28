@@ -96,7 +96,7 @@ start()
             auto v = self_.get_elements();
             while(n_ < v.size())
             {
-                v[n_].stop();
+                v[n_].start();
                 ++n_;
             }
             n_ = 0;
