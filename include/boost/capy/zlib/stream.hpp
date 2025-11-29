@@ -19,7 +19,33 @@ namespace zlib {
 
     This structure maintains the state for compression and
     decompression operations, including input/output buffers,
-    statistics, and internal state.
+    statistics, and internal state. Applications provide input
+    data through next_in/avail_in and receive output through
+    next_out/avail_out. The service updates these fields as
+    data is processed.
+
+    Before use, initialize zalloc, zfree, and opaque. Set them
+    to nullptr to use the default allocator. The state field
+    is managed internally and should not be modified.
+
+    @code
+    // Example: Initialize a stream for compression
+    boost::capy::zlib::stream st = {};
+    st.zalloc = nullptr;  // Use default allocator
+    st.zfree = nullptr;
+    st.opaque = nullptr;
+
+    // Set up input and output buffers
+    st.next_in = input_buffer;
+    st.avail_in = input_size;
+    st.next_out = output_buffer;
+    st.avail_out = output_size;
+
+    // After deflate/inflate operations:
+    // - next_in and next_out are updated to point past processed data
+    // - avail_in and avail_out are decreased by bytes processed
+    // - total_in and total_out track cumulative totals
+    @endcode
 */
 struct stream
 {

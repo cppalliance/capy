@@ -12,6 +12,23 @@
 
     This header includes all Brotli-related functionality including
     encoding, decoding, error handling, and shared dictionary support.
+
+    Brotli is a generic-purpose lossless compression algorithm that compresses
+    data using a combination of a modern variant of the LZ77 algorithm, Huffman
+    coding and 2nd order context modeling, with a compression ratio comparable
+    to the best currently available general-purpose compression methods.
+
+    @code
+    #include <boost/capy/brotli.hpp>
+    #include <boost/capy/datastore.hpp>
+
+    // Create a datastore for services
+    boost::capy::datastore ctx;
+
+    // Install compression and decompression services
+    auto& encoder = boost::capy::brotli::install_encode_service(ctx);
+    auto& decoder = boost::capy::brotli::install_decode_service(ctx);
+    @endcode
 */
 
 #ifndef BOOST_CAPY_BROTLI_HPP

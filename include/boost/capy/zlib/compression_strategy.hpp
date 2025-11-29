@@ -17,7 +17,28 @@ namespace zlib {
 /** Compression strategy constants.
 
     These values tune the compression algorithm for specific
-    types of input data.
+    types of input data. The default strategy works well for
+    most data. Other strategies optimize for specific patterns:
+    filtered for data with small value differences, huffman_only
+    for pre-compressed data, rle for image data with many
+    repeated bytes, and fixed for fastest compression.
+
+    @code
+    // Example: Using different strategies for different data types
+    boost::capy::zlib::stream st = {};
+
+    // For PNG image data (many repeated bytes)
+    deflate_svc.init2(st, 6, boost::capy::zlib::deflated,
+        15, 8, boost::capy::zlib::rle);
+
+    // For small numeric differences (filtered data)
+    deflate_svc.init2(st, 6, boost::capy::zlib::deflated,
+        15, 8, boost::capy::zlib::filtered);
+
+    // For fastest speed with pre-compressed data
+    deflate_svc.init2(st, 1, boost::capy::zlib::deflated,
+        15, 8, boost::capy::zlib::huffman_only);
+    @endcode
 */
 enum compression_strategy
 {

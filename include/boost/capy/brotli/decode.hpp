@@ -64,7 +64,52 @@ using metadata_chunk_func = void (*)(void* opaque, const std::uint8_t* data, std
 /** Provides the Brotli decompression API.
 
     This service interface exposes Brotli decoder functionality
-    through a set of virtual functions.
+    through a set of virtual functions. The decoder can operate
+    in one-shot mode for simple decompression or streaming mode
+    for processing data in chunks.
+
+    @code
+    // Example: Simple one-shot decompression
+    boost::capy::datastore ctx;
+    auto& decoder = boost::capy::brotli::install_decode_service(ctx);
+
+    std::vector<std::uint8_t> compressed_data = get_compressed_data();
+    std::vector<std::uint8_t> output(1024 * 1024); // 1MB buffer
+    std::size_t decoded_size = output.size();
+
+    auto result = decoder.decompress(
+        compressed_data.size(),
+        compressed_data.data(),
+        &decoded_size,
+        output.data());
+
+    if (result == boost::capy::brotli::decoder_result::success)
+    {
+        output.resize(decoded_size);
+        // Use decompressed data
+    }
+    @endcode
+
+    @code
+    // Example: Streaming decompression
+    auto* state = decoder.create_instance(nullptr, nullptr, nullptr);
+
+    std::size_t available_in = compressed_data.size();
+    const std::uint8_t* next_in = compressed_data.data();
+    std::size_t available_out = output.size();
+    std::uint8_t* next_out = output.data();
+    std::size_t total_out = 0;
+
+    auto result = decoder.decompress_stream(
+        state,
+        &available_in,
+        &next_in,
+        &available_out,
+        &next_out,
+        &total_out);
+
+    decoder.destroy_instance(state);
+    @endcode
 */
 struct BOOST_SYMBOL_VISIBLE
     decode_service

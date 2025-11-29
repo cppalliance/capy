@@ -22,7 +22,59 @@ namespace zlib {
 /** Provides the ZLib compression API.
 
     This service interface exposes the ZLib deflate (compression)
-    functionality through a set of virtual functions.
+    functionality through a set of virtual functions. The deflate
+    algorithm compresses data by finding repeated byte sequences
+    and encoding them efficiently using a combination of LZ77 and
+    Huffman coding.
+
+    The windowBits parameter in init2() controls the format:
+    - 8..15: zlib format with specified window size
+    - -8..-15: raw deflate format (no header/trailer)
+    - 16+windowBits: gzip format
+
+    @code
+    // Example: Basic compression
+    boost::capy::datastore ctx;
+    auto& deflate_svc = boost::capy::zlib::install_deflate_service(ctx);
+
+    boost::capy::zlib::stream st = {};
+    std::vector<unsigned char> input_data = get_data();
+    std::vector<unsigned char> output(input_data.size() * 2);
+
+    st.zalloc = nullptr;
+    st.zfree = nullptr;
+    st.opaque = nullptr;
+
+    deflate_svc.init(st, boost::capy::zlib::default_compression);
+
+    st.avail_in = input_data.size();
+    st.next_in = input_data.data();
+    st.avail_out = output.size();
+    st.next_out = output.data();
+
+    deflate_svc.deflate(st, boost::capy::zlib::finish);
+    output.resize(st.total_out);
+
+    deflate_svc.deflate_end(st);
+    @endcode
+
+    @code
+    // Example: Gzip compression with custom window size
+    boost::capy::zlib::stream st = {};
+    st.zalloc = nullptr;
+    st.zfree = nullptr;
+
+    // Use gzip format (16 + 15 for max window)
+    deflate_svc.init2(st,
+        6,                                      // level
+        boost::capy::zlib::deflated,           // method
+        16 + 15,                                // gzip format
+        8,                                      // memLevel
+        boost::capy::zlib::default_strategy);   // strategy
+
+    // Compress data...
+    deflate_svc.deflate_end(st);
+    @endcode
 */
 struct BOOST_SYMBOL_VISIBLE
     deflate_service

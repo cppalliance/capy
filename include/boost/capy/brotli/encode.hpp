@@ -141,7 +141,68 @@ enum constants
 /** Provides the Brotli compression API.
 
     This service interface exposes Brotli encoder functionality
-    through a set of virtual functions.
+    through a set of virtual functions. The encoder can operate
+    in one-shot mode for simple compression or streaming mode
+    for processing data in chunks.
+
+    The quality parameter ranges from 0 to 11 (see min_quality
+    and max_quality constants). Quality 0 offers fastest compression
+    with lower ratio, while quality 11 offers best compression with
+    slower speed. The default quality is 11.
+
+    @code
+    // Example: Simple one-shot compression
+    boost::capy::datastore ctx;
+    auto& encoder = boost::capy::brotli::install_encode_service(ctx);
+
+    std::vector<std::uint8_t> input_data = get_input_data();
+    std::size_t max_size = encoder.max_compressed_size(input_data.size());
+    std::vector<std::uint8_t> output(max_size);
+    std::size_t encoded_size = max_size;
+
+    bool success = encoder.compress(
+        11,  // quality (0-11)
+        22,  // lgwin (window size = 2^22)
+        boost::capy::brotli::encoder_mode::generic,
+        input_data.size(),
+        input_data.data(),
+        &encoded_size,
+        output.data());
+
+    if (success)
+    {
+        output.resize(encoded_size);
+        // Use compressed data
+    }
+    @endcode
+
+    @code
+    // Example: Streaming compression
+    auto* state = encoder.create_instance(nullptr, nullptr, nullptr);
+
+    // Set parameters
+    encoder.set_parameter(state,
+        boost::capy::brotli::encoder_parameter::quality, 6);
+    encoder.set_parameter(state,
+        boost::capy::brotli::encoder_parameter::lgwin, 22);
+
+    std::size_t available_in = input_data.size();
+    const std::uint8_t* next_in = input_data.data();
+    std::size_t available_out = output.size();
+    std::uint8_t* next_out = output.data();
+    std::size_t total_out = 0;
+
+    bool success = encoder.compress_stream(
+        state,
+        boost::capy::brotli::encoder_operation::finish,
+        &available_in,
+        &next_in,
+        &available_out,
+        &next_out,
+        &total_out);
+
+    encoder.destroy_instance(state);
+    @endcode
 */
 struct BOOST_SYMBOL_VISIBLE
     encode_service

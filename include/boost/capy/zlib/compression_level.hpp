@@ -17,7 +17,25 @@ namespace zlib {
 /** Compression level constants.
 
     These values control the trade-off between compression
-    speed and compression ratio.
+    speed and compression ratio. Higher values produce better
+    compression but take more time. Level 0 disables compression
+    entirely, storing data uncompressed. Levels 1-9 provide
+    increasing compression, with 6 being the default compromise
+    between speed and ratio.
+
+    @code
+    boost::capy::zlib::stream st = {};
+    auto& deflate_svc = boost::capy::zlib::install_deflate_service(ctx);
+
+    // Use best speed for time-critical operations
+    deflate_svc.init(st, boost::capy::zlib::best_speed);
+
+    // Use best compression for archival storage
+    deflate_svc.init(st, boost::capy::zlib::best_compression);
+
+    // Use default compression for balanced performance
+    deflate_svc.init(st, boost::capy::zlib::default_compression);
+    @endcode
 */
 enum compression_level
 {

@@ -22,7 +22,61 @@ namespace zlib {
 /** Provides the ZLib decompression API.
 
     This service interface exposes the ZLib inflate (decompression)
-    functionality through a set of virtual functions.
+    functionality through a set of virtual functions. The inflate
+    algorithm reverses the deflate compression, restoring the
+    original uncompressed data.
+
+    The windowBits parameter in init2() controls format detection:
+    - 8..15: zlib format with specified window size
+    - -8..-15: raw deflate format (no header/trailer)
+    - 16+windowBits: gzip format only
+    - 32+windowBits: auto-detect zlib or gzip format
+
+    @code
+    // Example: Basic decompression
+    boost::capy::datastore ctx;
+    auto& inflate_svc = boost::capy::zlib::install_inflate_service(ctx);
+
+    boost::capy::zlib::stream st = {};
+    std::vector<unsigned char> compressed_data = get_compressed();
+    std::vector<unsigned char> output(1024 * 1024); // 1MB buffer
+
+    st.zalloc = nullptr;
+    st.zfree = nullptr;
+    st.opaque = nullptr;
+
+    inflate_svc.init(st);
+
+    st.avail_in = compressed_data.size();
+    st.next_in = compressed_data.data();
+    st.avail_out = output.size();
+    st.next_out = output.data();
+
+    inflate_svc.inflate(st, boost::capy::zlib::finish);
+    output.resize(st.total_out);
+
+    inflate_svc.inflate_end(st);
+    @endcode
+
+    @code
+    // Example: Auto-detect gzip or zlib format
+    boost::capy::zlib::stream st = {};
+    st.zalloc = nullptr;
+    st.zfree = nullptr;
+
+    // Auto-detect format (32 + 15 for max window)
+    inflate_svc.init2(st, 32 + 15);
+
+    st.avail_in = compressed_data.size();
+    st.next_in = compressed_data.data();
+    st.avail_out = output.size();
+    st.next_out = output.data();
+
+    int result = inflate_svc.inflate(st, boost::capy::zlib::no_flush);
+    // Handle result...
+
+    inflate_svc.inflate_end(st);
+    @endcode
 */
 struct BOOST_SYMBOL_VISIBLE
     inflate_service
