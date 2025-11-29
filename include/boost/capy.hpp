@@ -11,6 +11,8 @@
 #define BOOST_CAPY_HPP
 
 #include <boost/capy/application.hpp>
+#include <boost/capy/datastore.hpp>
 #include <boost/capy/polystore.hpp>
+#include <boost/capy/polystore_fwd.hpp>
 
 #endif
