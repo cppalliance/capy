@@ -13,6 +13,10 @@
 namespace boost {
 namespace capy {
 
+/** Forward declaration of polystore class.
+
+    @see polystore
+*/
 class polystore;
 
 } // capy
