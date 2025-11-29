@@ -151,7 +151,10 @@ function(boost_capy_setup_properties target)
 endfunction()
 
 if (BOOST_CAPY_MRDOCS_BUILD)
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/mrdocs.cpp" "#include <boost/capy.hpp>\n")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/mrdocs.cpp"
+        "#include <boost/capy.hpp>\n"
+        "#include <boost/capy/zlib.hpp>\n"
+        "#include <boost/capy/brotli.hpp>\n")
     add_library(boost_capy_mrdocs "${CMAKE_CURRENT_BINARY_DIR}/mrdocs.cpp")
     boost_capy_setup_properties(boost_capy_mrdocs)
     boost_capy_setup_properties(boost_capy_mrdocs PUBLIC BOOST_CAPY_MRDOCS)
