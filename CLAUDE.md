@@ -6,6 +6,9 @@
 - Boost C++ Libraries naming conventions (snake_case)
 - 4-space indentation, no tabs
 - Braces on their own line for classes/functions
+- Symbols in "detail" namespaces are never public
+- public headers in "include/"
+- library cpp files in "src/"
 
 ## Javadoc Documentation
 
