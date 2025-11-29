@@ -14,12 +14,23 @@ namespace boost {
 namespace capy {
 namespace zlib {
 
-/// Compression levels
+/** Compression level constants.
+
+    These values control the trade-off between compression
+    speed and compression ratio.
+*/
 enum compression_level
 {
+    /** Use the default compression level. */
     default_compression = -1,
+
+    /** No compression is performed. */
     no_compression      = 0,
+
+    /** Fastest compression speed with minimal compression. */
     best_speed          = 1,
+
+    /** Best compression ratio with slower speed. */
     best_compression    = 9
 };
 

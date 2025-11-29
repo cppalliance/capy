@@ -21,14 +21,25 @@ namespace brotli {
 /** Opaque structure that holds shared dictionary data. */
 struct shared_dictionary;
 
-/** Input data type for attach. */
+/** Shared dictionary data format.
+
+    These values specify the format of dictionary data
+    being attached to an encoder or decoder.
+*/
 enum class shared_dictionary_type
 {
+    /** Raw dictionary data. */
     raw = 0,
+
+    /** Serialized dictionary format. */
     serialized = 1
 };
 
-/** Provides the Brotli shared_dictionary API */
+/** Provides the Brotli shared dictionary API.
+
+    This service interface exposes Brotli shared dictionary
+    functionality through a set of virtual functions.
+*/
 struct BOOST_SYMBOL_VISIBLE
     shared_dictionary_service
 {
@@ -52,6 +63,10 @@ struct BOOST_SYMBOL_VISIBLE
 #endif
 };
 
+/** Install the shared dictionary service into a polystore.
+    @param ctx The polystore to install the service into.
+    @return A reference to the installed shared dictionary service.
+*/
 BOOST_CAPY_DECL
 shared_dictionary_service&
 install_shared_dictionary_service(polystore& ctx);

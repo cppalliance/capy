@@ -14,13 +14,26 @@ namespace boost {
 namespace capy {
 namespace zlib {
 
-/// Compression strategy
+/** Compression strategy constants.
+
+    These values tune the compression algorithm for specific
+    types of input data.
+*/
 enum compression_strategy
 {
+    /** Use the default compression strategy. */
     default_strategy = 0,
+
+    /** Strategy optimized for data with small values. */
     filtered         = 1,
+
+    /** Force Huffman encoding only (no string match). */
     huffman_only     = 2,
+
+    /** Limit match distances to one (run-length encoding). */
     rle              = 3,
+
+    /** Prevent use of dynamic Huffman codes. */
     fixed            = 4
 };
 

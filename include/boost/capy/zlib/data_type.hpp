@@ -14,12 +14,23 @@ namespace boost {
 namespace capy {
 namespace zlib {
 
-/// Possible values of the data_type field for deflate
+/** Data type constants for the stream data_type field.
+
+    These values represent the best guess about the type
+    of data being compressed or decompressed.
+*/
 enum data_type
 {
+    /** Binary data. */
     binary  = 0,
+
+    /** Text data. */
     text    = 1,
+
+    /** ASCII text data (same as text). */
     ascii   = 1,
+
+    /** Data type is unknown. */
     unknown = 2
 };
 

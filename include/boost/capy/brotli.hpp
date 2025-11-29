@@ -7,6 +7,13 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
+/** @file
+    Brotli compression and decompression library.
+
+    This header includes all Brotli-related functionality including
+    encoding, decoding, error handling, and shared dictionary support.
+*/
+
 #ifndef BOOST_CAPY_BROTLI_HPP
 #define BOOST_CAPY_BROTLI_HPP
 

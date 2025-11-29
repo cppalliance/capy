@@ -14,15 +14,32 @@ namespace boost {
 namespace capy {
 namespace zlib {
 
-/// Flush methods
+/** Flush method constants.
+
+    These values control how and when compressed data is
+    flushed from internal buffers during compression operations.
+*/
 enum flush
 {
+    /** No flushing, allow optimal compression. */
     no_flush      = 0,
+
+    /** Flush to byte boundary (deprecated). */
     partial_flush = 1,
+
+    /** Flush to byte boundary for synchronization. */
     sync_flush    = 2,
+
+    /** Full flush, reset compression state. */
     full_flush    = 3,
+
+    /** Finish compression, emit trailer. */
     finish        = 4,
+
+    /** Flush current block to output. */
     block         = 5,
+
+    /** Flush up to end of previous block. */
     trees         = 6
 };
 

@@ -14,9 +14,13 @@ namespace boost {
 namespace capy {
 namespace zlib {
 
-/// Compression method
+/** Compression method constants.
+
+    Specifies the compression algorithm to use.
+*/
 enum compression_method
 {
+    /** The deflate compression method. */
     deflated = 8
 };
 

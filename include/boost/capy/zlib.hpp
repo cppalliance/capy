@@ -7,6 +7,13 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
+/** @file
+    ZLib compression and decompression library.
+
+    This header includes all ZLib-related functionality including
+    deflate, inflate, error handling, and stream management.
+*/
+
 #ifndef BOOST_CAPY_ZLIB_HPP
 #define BOOST_CAPY_ZLIB_HPP
 

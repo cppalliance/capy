@@ -16,12 +16,26 @@
 namespace boost {
 namespace capy {
 
+/** A polymorphic data container with clear functionality.
+
+    This class extends @ref polystore to provide a container
+    for type-erased objects with an explicit clear operation.
+*/
 class datastore : public polystore
 {
 public:
+    /** Constructor
+
+        Constructs an empty datastore.
+    */
     datastore() = default;
 
-    void clear() noexcept  
+    /** Remove and destroy all stored objects.
+
+        All stored objects are destroyed in the reverse order
+        of construction. The container is left empty.
+    */
+    void clear() noexcept
     {
         polystore::clear();
     }
