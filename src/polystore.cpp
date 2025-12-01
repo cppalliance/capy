@@ -13,8 +13,6 @@
 namespace boost {
 namespace capy {
 
-polystore::any::~any() = default;
-
 polystore::
 ~polystore()
 {
