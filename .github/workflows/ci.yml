@@ -134,11 +134,11 @@ jobs:
             runs-on: "windows-2022"
             b2-toolset: "gcc"
             generator: "MinGW Makefiles"
-            is-latest: false
+            is-latest: true
             is-earliest: true
-            name: "MinGW"
+            name: "MinGW (shared)"
             shared: true
-            build-type: "Release"
+            build-type: "Debug"
             build-cmake: true
 
           - compiler: "mingw"
@@ -148,9 +148,9 @@ jobs:
             runs-on: "windows-2022"
             b2-toolset: "gcc"
             generator: "MinGW Makefiles"
-            is-latest: false
+            is-latest: true
             is-earliest: true
-            name: "MinGW"
+            name: "MinGW (static)"
             shared: false
             build-type: "Release"
             build-cmake: true

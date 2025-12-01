@@ -620,10 +620,10 @@ private:
 
 //------------------------------------------------
 
-struct BOOST_SYMBOL_VISIBLE
+struct BOOST_CAPY_DECL
     polystore::any
 {
-    BOOST_CAPY_DECL virtual ~any();
+    virtual ~any() = default;
     virtual void start() = 0;
     virtual void stop() = 0;
 private:
