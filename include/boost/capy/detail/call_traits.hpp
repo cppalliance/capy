@@ -17,7 +17,38 @@ namespace boost {
 namespace capy {
 namespace detail {
 
+// type_list
+
 template<class... Ts> struct type_list {};
+
+// type_at
+
+template<std::size_t N, class List>
+struct type_at;
+
+template<std::size_t N, class Head, class... Tail>
+struct type_at<N, type_list<Head, Tail...>>
+    : type_at<N - 1, type_list<Tail...>>
+{
+};
+
+template<class Head, class... Tail>
+struct type_at<0, type_list<Head, Tail...>>
+{
+    using type = Head;
+};
+
+// type_list_size
+
+template<class List>
+struct type_list_size;
+
+template<class... Ts>
+struct type_list_size<type_list<Ts...>>
+    : std::integral_constant<std::size_t, sizeof...(Ts)>
+{
+};
+// call_traits
 
 template<class T, class = void>
 struct call_traits : std::false_type
@@ -61,6 +92,8 @@ struct call_traits<F, typename std::enable_if<
     : call_traits<decltype(&F::operator())>
 {
 };
+
+// is_invocable
 
 template<class T, class R, class ArgList, class = void>
 struct is_invocable_impl : std::false_type {};
