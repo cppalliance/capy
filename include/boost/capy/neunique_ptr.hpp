@@ -11,6 +11,7 @@
 #define BOOST_CAPY_NEUNIQUE_PTR_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/assert.hpp>
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -23,6 +24,33 @@ namespace capy {
 namespace detail {
 
 //----------------------------------------------------------
+
+template<class U>
+auto try_delete(U* p, int) noexcept
+    -> decltype(sizeof(U), void())
+{
+    delete p;
+}
+
+template<class U>
+void try_delete(U*, long) noexcept
+{
+    // Incomplete type - should never reach here
+    std::terminate();
+}
+
+template<class U>
+auto try_delete_array(U* p, int) noexcept
+    -> decltype(sizeof(U), void())
+{
+    delete[] p;
+}
+
+template<class U>
+void try_delete_array(U*, long) noexcept
+{
+    std::terminate();
+}
 
 /** Storage wrapper applying empty base optimization.
 
@@ -252,6 +280,12 @@ struct control_block_array final
 
     std::size_t size;
     // Flexible array member follows
+
+    explicit control_block_array(A const& a)
+        : alloc_storage(alloc_type(a))
+        , size(0)
+    {
+    }
 
     alloc_type& get_alloc() noexcept
     {
@@ -489,10 +523,11 @@ public:
         : ptr_(p)
         , cb_(other.cb_)
     {
+        // aliasing requires control block; use allocate_neunique
+        BOOST_ASSERT((other.cb_ != nullptr || other.ptr_ == nullptr));
         other.ptr_ = nullptr;
         other.cb_ = nullptr;
     }
-
     /** Move constructor.
 
         Takes ownership from `other`. After construction,
@@ -550,7 +585,7 @@ public:
         if(cb_)
             cb_->destroy_and_deallocate();
         else if(ptr_)
-            delete ptr_;
+            detail::try_delete(ptr_, 0);
     }
 
     //------------------------------------------------------
@@ -577,7 +612,7 @@ public:
             if(cb_)
                 cb_->destroy_and_deallocate();
             else if(ptr_)
-                delete ptr_;
+                detail::try_delete(ptr_, 0);
             ptr_ = other.ptr_;
             cb_ = other.cb_;
             other.ptr_ = nullptr;
@@ -648,7 +683,7 @@ public:
         if(cb_)
             cb_->destroy_and_deallocate();
         else if(ptr_)
-            delete ptr_;
+            detail::try_delete(ptr_, 0);
         ptr_ = p;
         cb_ = nullptr;
     }
@@ -903,6 +938,8 @@ public:
         : ptr_(p)
         , cb_(other.cb_)
     {
+        // aliasing requires control block; use allocate_neunique
+        BOOST_ASSERT((other.cb_ != nullptr || other.ptr_ == nullptr));
         other.ptr_ = nullptr;
         other.cb_ = nullptr;
     }
@@ -944,7 +981,7 @@ public:
         if(cb_)
             cb_->destroy_and_deallocate();
         else if(ptr_)
-            delete[] ptr_;
+            detail::try_delete_array(ptr_, 0);
     }
 
     //------------------------------------------------------
@@ -971,7 +1008,7 @@ public:
             if(cb_)
                 cb_->destroy_and_deallocate();
             else if(ptr_)
-                delete[] ptr_;
+                detail::try_delete_array(ptr_, 0);
             ptr_ = other.ptr_;
             cb_ = other.cb_;
             other.ptr_ = nullptr;
@@ -1002,6 +1039,22 @@ public:
 
     /** Replace the owned array.
 
+        Releases the currently owned array.
+
+        @post `get() == nullptr`
+    */
+    void reset() noexcept
+    {
+        if(cb_)
+            cb_->destroy_and_deallocate();
+        else if(ptr_)
+            detail::try_delete_array(ptr_, 0);
+        ptr_ = nullptr;
+        cb_ = nullptr;
+    }
+
+    /** Replace the owned array.
+
         Releases the currently owned array and takes
         ownership of `p` using `delete[]`. No control
         block is allocated.
@@ -1013,7 +1066,7 @@ public:
     template<class U, class = typename std::enable_if<
         std::is_same<U, T*>::value ||
         std::is_same<U, std::nullptr_t>::value>::type>
-    void reset(U p = nullptr) noexcept
+    void reset(U p) noexcept
     {
         if(cb_)
             cb_->destroy_and_deallocate();
@@ -1232,9 +1285,7 @@ allocate_neunique(A const& a, std::size_t n)
     auto guard = detail::make_scope_guard(
         [&]{ alloc_traits::deallocate(alloc, cb, units); });
 
-    ::new(static_cast<void*>(cb)) cb_type();
-    cb->get_alloc() = alloc;
-    cb->size = 0;
+    ::new(static_cast<void*>(cb)) cb_type(a);
 
     U* arr = cb->get();
     for(std::size_t i = 0; i < n; ++i)
