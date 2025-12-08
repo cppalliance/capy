@@ -11,43 +11,15 @@
 #define BOOST_CAPY_DETAIL_CALL_TRAITS_HPP
 
 #include <boost/capy/detail/type_traits.hpp>
+#include <boost/mp11/list.hpp>
+#include <boost/mp11/algorithm.hpp>
+
 #include <type_traits>
 
 namespace boost {
 namespace capy {
 namespace detail {
 
-// type_list
-
-template<class... Ts> struct type_list {};
-
-// type_at
-
-template<std::size_t N, class List>
-struct type_at;
-
-template<std::size_t N, class Head, class... Tail>
-struct type_at<N, type_list<Head, Tail...>>
-    : type_at<N - 1, type_list<Tail...>>
-{
-};
-
-template<class Head, class... Tail>
-struct type_at<0, type_list<Head, Tail...>>
-{
-    using type = Head;
-};
-
-// type_list_size
-
-template<class List>
-struct type_list_size;
-
-template<class... Ts>
-struct type_list_size<type_list<Ts...>>
-    : std::integral_constant<std::size_t, sizeof...(Ts)>
-{
-};
 // call_traits
 
 template<class T, class = void>
@@ -59,14 +31,14 @@ template<class R, class... Args>
 struct call_traits<R(*)(Args...)> : std::true_type
 {
     using return_type = R;
-    using arg_types = type_list<Args...>;
+    using arg_types = mp11::mp_list<Args...>;
 };
 
 template<class R, class... Args>
 struct call_traits<R(&)(Args...)> : std::true_type
 {
     using return_type = R;
-    using arg_types = type_list<Args...>;
+    using arg_types = mp11::mp_list<Args...>;
 };
 
 template<class C, class R, class... Args>
@@ -74,7 +46,7 @@ struct call_traits<R(C::*)(Args...)> : std::true_type
 {
     using class_type = C;
     using return_type = R ;
-    using arg_types = type_list<Args...>;
+    using arg_types = mp11::mp_list<Args...>;
 };
 
 template<class C, class R, class... Args>
@@ -82,7 +54,7 @@ struct call_traits<R(C::*)(Args...) const> : std::true_type
 {
     using class_type = C;
     using return_type = R ;
-    using arg_types = type_list<Args...>;
+    using arg_types = mp11::mp_list<Args...>;
 };
 
 template<class F>
@@ -100,7 +72,7 @@ struct is_invocable_impl : std::false_type {};
 
 template<class T, class R, class... Args>
 struct is_invocable_impl<
-    T, R, type_list<Args...>,
+    T, R, mp11::mp_list<Args...>,
     void_t<decltype(std::declval<T>()(
         std::declval<Args>()...))>>
     : std::integral_constant<bool,
@@ -112,7 +84,7 @@ struct is_invocable_impl<
 
 template<class T, class R, class... Args>
 struct is_invocable
-    : is_invocable_impl<T, R, type_list<Args...>>
+    : is_invocable_impl<T, R, mp11::mp_list<Args...>>
 {
 };
 

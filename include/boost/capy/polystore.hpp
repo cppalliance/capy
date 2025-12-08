@@ -708,7 +708,7 @@ template<class T> struct arg<T*>
 template<class F, class... Args>
 auto
 invoke(polystore& ps, F&& f,
-    detail::type_list<Args...> const&) ->
+    mp11::mp_list<Args...> const&) ->
         typename detail::call_traits<typename
             std::decay<F>::type>::return_type
 {
