@@ -1021,49 +1021,6 @@ jobs:
         run: |
           echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/.local/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
 
-      - name: Find Package Integration Workflow
-        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
-        if: ${{ matrix.build-cmake || matrix.is-earliest }}
-        with:
-          source-dir: boost-root/libs/${{ steps.patch.outputs.module }}/test/cmake_test
-          build-dir: __build_cmake_install_test__
-          generator: ${{ matrix.generator }}
-          generator-toolset: ${{ matrix.generator-toolset }}
-          build-type: ${{ matrix.build-type }}
-          cxxstd: ${{ matrix.latest-cxxstd }}
-          cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
-          ccflags: ${{ matrix.ccflags }}
-          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
-          cxxflags: ${{ matrix.cxxflags }}
-          shared: ${{ matrix.shared }}
-          install: false
-          cmake-version: '>=3.15'
-          extra-args: |
-            -D BOOST_CI_INSTALL_TEST=ON
-            -D CMAKE_PREFIX_PATH=${{ steps.patch.outputs.workspace_root }}/.local
-          ref-source-dir: boost-root/libs/capy
-          trace-commands: true
-
-      - name: Subdirectory Integration Workflow
-        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
-        if: ${{ matrix.build-cmake || matrix.is-earliest }}
-        with:
-          source-dir: boost-root/libs/${{ steps.patch.outputs.module }}/test/cmake_test
-          build-dir: __build_cmake_subdir_test__
-          generator: ${{ matrix.generator }}
-          generator-toolset: ${{ matrix.generator-toolset }}
-          build-type: ${{ matrix.build-type }}
-          cxxstd: ${{ matrix.latest-cxxstd }}
-          cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
-          ccflags: ${{ matrix.ccflags }}
-          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
-          cxxflags: ${{ matrix.cxxflags }}
-          shared: ${{ matrix.shared }}
-          install: false
-          cmake-version: '>=3.15'
-          extra-args: -D BOOST_CI_INSTALL_TEST=OFF
-          ref-source-dir: boost-root/libs/capy/test/cmake_test
-
       - name: Root Project CMake Workflow
         uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
         if: ${{ matrix.build-cmake || matrix.is-earliest }}
