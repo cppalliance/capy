@@ -8,27 +8,28 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/application.hpp>
+#include <boost/capy/async_result.hpp>
+
+#ifdef BOOST_CAPY_HAS_CORO
 
 #include "test_suite.hpp"
-
-#include <iostream>
 
 namespace boost {
 namespace capy {
 
-struct application_test
+struct async_result_test
 {
     void
     run()
     {
-        application app;
     }
 };
 
 TEST_SUITE(
-    application_test,
-    "boost.capy.application");
+    async_result_test,
+    "boost.capy.async_result");
 
 } // capy
 } // boost
+
+#endif

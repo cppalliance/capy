@@ -12,6 +12,10 @@
 
 #include <boost/config.hpp>
 
+#if __has_include(<version>)
+# include <version>
+#endif
+
 namespace boost {
 namespace capy {
 
@@ -37,6 +41,14 @@ namespace capy {
 #  endif
 #  include <boost/config/auto_link.hpp>
 # endif
+
+//------------------------------------------------
+
+#if defined(__cpp_lib_coroutine) && __cpp_lib_coroutine >= 201902L
+# define BOOST_CAPY_HAS_CORO 1
+#elif defined(__cpp_impl_coroutine) && __cpp_impl_coroutines >= 201902L
+# define BOOST_CAPY_HAS_CORO 1
+#endif
 
 //------------------------------------------------
 

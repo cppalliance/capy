@@ -1,0 +1,11 @@
+*
+!doc/
+!doc/**
+!example/
+!example/**
+!include/
+!include/**
+!src/
+!src/**
+!test/
+!test/**
