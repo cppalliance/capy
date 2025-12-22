@@ -20,7 +20,10 @@ add_executable(boost_capy_tests ${PFILES})
 target_link_libraries(
     boost_capy_tests PRIVATE
     boost_url_test_suite_with_main
+    Boost::filesystem
     Boost::capy)
+
+target_include_directories(boost_capy_tests PRIVATE . ../../)
 
 if (TARGET Boost::capy_zlib)
     target_link_libraries(boost_capy_tests PRIVATE Boost::capy_zlib)
