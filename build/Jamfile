@@ -39,6 +39,7 @@ alias capy_sources : [ glob-tree-ex ./src : *.cpp ] ;
 lib boost_capy
   : capy_sources
   : requirements
+     <include>../
   : usage-requirements
   ;
 

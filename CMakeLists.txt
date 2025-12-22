@@ -67,7 +67,7 @@ foreach (BOOST_CAPY_DEPENDENCY ${BOOST_CAPY_DEPENDENCIES})
 endforeach ()
 # Conditional dependencies
 if (BOOST_CAPY_BUILD_TESTS)
-    set(BOOST_CAPY_UNIT_TEST_LIBRARIES url)
+    set(BOOST_CAPY_UNIT_TEST_LIBRARIES filesystem url)
 endif ()
 if (BOOST_CAPY_BUILD_EXAMPLES)
     # set(BOOST_CAPY_EXAMPLE_LIBRARIES url)
@@ -140,6 +140,7 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/src PREFIX "src" FILES ${BOOST_CAP
 function(boost_capy_setup_properties target)
     target_compile_features(${target} PUBLIC cxx_constexpr)
     target_include_directories(${target} PUBLIC "${PROJECT_SOURCE_DIR}/include")
+    target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}")
     target_link_libraries(${target} PUBLIC ${BOOST_CAPY_DEPENDENCIES})
     target_compile_definitions(${target} PUBLIC BOOST_CAPY_NO_LIB)
     target_compile_definitions(${target} PRIVATE BOOST_CAPY_SOURCE)
@@ -160,6 +161,8 @@ if (BOOST_CAPY_MRDOCS_BUILD)
     boost_capy_setup_properties(boost_capy_mrdocs PUBLIC BOOST_CAPY_MRDOCS)
     return()
 endif()
+
+# Complete dependency list
 
 add_library(boost_capy include/boost/capy.hpp build/Jamfile ${BOOST_CAPY_HEADERS} ${BOOST_CAPY_SOURCES})
 add_library(Boost::capy ALIAS boost_capy)
