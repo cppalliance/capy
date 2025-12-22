@@ -19,6 +19,7 @@ project
       <source>../../../url/extra/test_suite/test_main.cpp
       <source>../../../url/extra/test_suite/test_suite.cpp
       <include>.
+      <include>../..
       <include>../../../url/extra/test_suite
       <warnings>extra
       <warnings-as-errors>on
@@ -28,4 +29,13 @@ project
 for local f in [ glob-tree-ex . : *.cpp : ]
 {
     run $(f) ;
+}
+
+for local f in [ glob-tree-ex . : file*.cpp ]
+{
+    run $(f)
+        : requirements
+          <library>/boost/filesystem//boost_filesystem
+          <warnings>off <undefined-sanitizer>norecover:<link>static
+        ;
 }
