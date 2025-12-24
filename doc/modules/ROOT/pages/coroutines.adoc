@@ -1,0 +1,343 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Coroutines
+
+== Introduction
+
+Capy provides lightweight coroutine support for C++20, enabling
+asynchronous code that reads like synchronous code. The library
+offers two awaitable types: `task<T>` for lazy coroutine-based
+operations, and `async_result<T>` for bridging callback-based
+APIs into the coroutine world.
+
+This section covers the awaitable types provided by the library,
+demonstrates their usage patterns, and presents practical examples
+showing how to integrate coroutines into your applications.
+
+NOTE: Coroutine features are only available when compiling with
+C++20 or later.
+
+== Awaitables
+
+=== task
+
+xref:reference:boost/capy/task.adoc[`task<T>`] is a lazy coroutine type that produces a value of type `T`.
+The coroutine does not begin execution when created; it remains
+suspended until awaited. This lazy evaluation enables structured
+concurrency where parent coroutines naturally await their children.
+
+A `task` owns its coroutine handle and destroys it automatically.
+Exceptions thrown within the coroutine are captured and rethrown
+when the result is retrieved via `co_await`.
+
+The `task<void>` specialization is used for coroutines that perform
+work but do not produce a value. These coroutines use `co_return;`
+with no argument.
+
+=== async_result
+
+xref:reference:boost/capy/async_result.adoc[`async_result<T>`] bridges traditional callback-based asynchronous
+APIs with coroutines. It wraps a deferred operation—a callable that
+accepts a completion handler, starts an asynchronous operation, and
+invokes the handler with the result.
+
+The key advantage of `async_result` is its type-erased design. The
+implementation details are hidden behind an abstract interface,
+allowing runtime-specific code such as Boost.Asio to be confined
+to source files. Headers that return `async_result` do not need
+to include Asio or other heavyweight dependencies, keeping compile
+times low and interfaces clean.
+
+Use xref:reference:boost/capy/make_async_result.adoc[`make_async_result<T>()`] to create an `async_result` from any
+callable that follows the deferred operation pattern.
+
+The `async_result<void>` specialization is used for operations that
+signal completion without producing a value, such as timers, write
+operations, or connection establishment. The completion handler
+takes no arguments.
+
+== Usage
+
+=== When to use task
+
+Return `task<T>` from a coroutine function—one that uses `co_await`
+or `co_return`. The function body contains coroutine logic and the
+return type tells the compiler to generate the appropriate coroutine
+machinery.
+
+[source,cpp]
+----
+task<int> compute()
+{
+    int a = co_await step_one();
+    int b = co_await step_two(a);
+    co_return a + b;
+}
+----
+
+Use `task` when composing asynchronous operations purely within the
+coroutine world. Tasks can await other tasks, forming a tree of
+dependent operations.
+
+=== When to use async_result
+
+Return `async_result<T>` from a regular (non-coroutine) function that
+wraps an existing callback-based API. The function does not use
+`co_await` or `co_return`; instead it constructs and returns an
+`async_result` using `make_async_result<T>()`.
+
+[source,cpp]
+----
+async_result<std::size_t> async_read(socket& s, buffer& b)
+{
+    return make_async_result<std::size_t>(
+        [&](auto handler) {
+            s.async_read(b, std::move(handler));
+        });
+}
+----
+
+Use `async_result` at the boundary between callback-based code and
+coroutines. It serves as an adapter that lets coroutines `co_await`
+operations implemented with traditional completion handlers.
+
+=== Choosing between them
+
+* Writing new asynchronous logic? Use `task`.
+* Wrapping an existing callback API? Use `async_result`.
+* Composing multiple awaitable operations? Use `task`.
+* Exposing a library function without leaking dependencies? Use
+  `async_result` with the implementation in a source file.
+
+In practice, application code is primarily `task`-based, while
+`async_result` appears at integration points with I/O libraries
+and other callback-driven systems.
+
+== Examples
+
+=== Chaining tasks
+
+This example demonstrates composing multiple tasks into a pipeline.
+Each step awaits the previous one, and the final result propagates
+back to the caller.
+
+[source,cpp]
+----
+#include <boost/capy/task.hpp>
+#include <string>
+
+using boost::capy::task;
+
+task<int> parse_header(std::string const& data)
+{
+    // Extract content length from header
+    auto pos = data.find("Content-Length: ");
+    if (pos == std::string::npos)
+        co_return 0;
+    co_return std::stoi(data.substr(pos + 16));
+}
+
+task<std::string> fetch_data()
+{
+    // Simulated network response
+    co_return std::string("Content-Length: 42\r\n\r\nHello");
+}
+
+task<int> get_content_length()
+{
+    std::string response = co_await fetch_data();
+    int length = co_await parse_header(response);
+    co_return length;
+}
+----
+
+=== Wrapping a callback API
+
+This example shows how to wrap a hypothetical callback-based
+timer into an awaitable. The implementation details stay in
+the source file.
+
+[source,cpp]
+----
+// timer.hpp - public header, no Asio includes
+#ifndef TIMER_HPP
+#define TIMER_HPP
+
+#include <boost/capy/async_result.hpp>
+
+namespace mylib {
+
+// Returns the number of milliseconds actually elapsed
+boost::capy::async_result<int>
+async_wait(int milliseconds);
+
+} // namespace mylib
+
+#endif
+----
+
+[source,cpp]
+----
+// timer.cpp - implementation, Asio details hidden here
+#include "timer.hpp"
+#include <boost/asio.hpp>
+
+namespace mylib {
+
+boost::capy::async_result<int>
+async_wait(int milliseconds)
+{
+    return boost::capy::make_async_result<int>(
+        [milliseconds](auto handler)
+        {
+            // In a real implementation, this would use
+            // a shared io_context and steady_timer
+            auto timer = std::make_shared<boost::asio::steady_timer>(
+                get_io_context(),
+                std::chrono::milliseconds(milliseconds));
+
+            timer->async_wait(
+                [timer, milliseconds, h = std::move(handler)]
+                (boost::system::error_code) mutable
+                {
+                    h(milliseconds);
+                });
+        });
+}
+
+} // namespace mylib
+----
+
+=== Void operations
+
+This example shows `task<void>` and `async_result<void>` for
+operations that complete without producing a value.
+
+[source,cpp]
+----
+#include <boost/capy/task.hpp>
+#include <boost/capy/async_result.hpp>
+
+using boost::capy::task;
+using boost::capy::async_result;
+using boost::capy::make_async_result;
+
+// Wrap a callback-based timer (void result)
+async_result<void> async_sleep(int milliseconds)
+{
+    return make_async_result<void>(
+        [milliseconds](auto on_done)
+        {
+            // In real code, this would start a timer
+            // and call on_done() when it expires
+            start_timer(milliseconds, std::move(on_done));
+        });
+}
+
+// A void task that performs work without returning a value
+task<void> log_with_delay(std::string message)
+{
+    co_await async_sleep(100);
+    std::cout << message << std::endl;
+    co_return;
+}
+
+task<void> run_sequence()
+{
+    co_await log_with_delay("Step 1");
+    co_await log_with_delay("Step 2");
+    co_await log_with_delay("Step 3");
+    co_return;
+}
+----
+
+=== Running a task to completion
+
+Tasks are lazy and require a driver to execute. This example
+shows a simple synchronous driver that runs a task until it
+completes.
+
+[source,cpp]
+----
+#include <boost/capy/task.hpp>
+
+using boost::capy::task;
+
+template<class T>
+T run(task<T> t)
+{
+    bool done = false;
+    t.handle().promise().on_done_ = [&done]{ done = true; };
+    t.handle().resume();
+
+    // In a real application, this would integrate with
+    // an event loop rather than spinning
+    while (!done)
+    {
+        // Process pending I/O events here
+    }
+
+    return t.await_resume();
+}
+
+task<int> compute()
+{
+    co_return 42;
+}
+
+int main()
+{
+    int result = run(compute());
+    return result == 42 ? 0 : 1;
+}
+----
+
+=== Complete request handler
+
+This example combines tasks and async_result to implement a
+request handler that reads a request, processes it, and sends
+a response.
+
+[source,cpp]
+----
+#include <boost/capy/task.hpp>
+#include <boost/capy/async_result.hpp>
+#include <string>
+
+using boost::capy::task;
+using boost::capy::async_result;
+
+// Forward declarations - implementations use async_result
+// to wrap the underlying I/O library
+async_result<std::string> async_read(int fd);
+async_result<std::size_t> async_write(int fd, std::string data);
+
+// Pure coroutine logic using task
+task<std::string> process_request(std::string const& request)
+{
+    // Transform the request into a response
+    co_return "HTTP/1.1 200 OK\r\n\r\nHello, " + request;
+}
+
+task<int> handle_connection(int fd)
+{
+    // Read the incoming request
+    std::string request = co_await async_read(fd);
+
+    // Process it
+    std::string response = co_await process_request(request);
+
+    // Send the response
+    std::size_t bytes_written = co_await async_write(fd, response);
+
+    co_return static_cast<int>(bytes_written);
+}
+----
+

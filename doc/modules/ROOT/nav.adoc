@@ -1,1 +1,2 @@
+* xref:coroutines.adoc[Coroutines]
 * xref:reference:boost/capy.adoc[Reference]

@@ -11,10 +11,12 @@
 #define BOOST_CAPY_HPP
 
 #include <boost/capy/application.hpp>
+#include <boost/capy/async_result.hpp>
 #include <boost/capy/datastore.hpp>
 #include <boost/capy/neunique_ptr.hpp>
 #include <boost/capy/polystore.hpp>
 #include <boost/capy/polystore_fwd.hpp>
 #include <boost/capy/small_unique_ptr.hpp>
+#include <boost/capy/task.hpp>
 
 #endif

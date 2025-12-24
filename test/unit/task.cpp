@@ -4,7 +4,7 @@
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 //
-// Official repository: https://github.com/cppalliance/beast2
+// Official repository: https://github.com/cppalliance/capy
 //
 
 // Test that header file is self-contained.
@@ -12,27 +12,418 @@
 
 #ifdef BOOST_CAPY_HAS_CORO
 
+#include <boost/capy/async_result.hpp>
+
 #include "test_suite.hpp"
+
+#include <stdexcept>
+#include <string>
 
 namespace boost {
 namespace capy {
 
-static
-capy::task<int>
-handler()
+template<class T>
+T run_task(task<T>& t)
 {
-    co_return 42;
+    while (!t.handle().done())
+        t.handle().resume();
+    return t.await_resume();
 }
+
+struct test_exception : std::runtime_error
+{
+    explicit test_exception(const char* msg)
+        : std::runtime_error(msg)
+    {
+    }
+};
 
 struct task_test
 {
+    static task<int>
+    returns_int()
+    {
+        co_return 42;
+    }
+
+    static task<std::string>
+    returns_string()
+    {
+        co_return "hello";
+    }
+
+    void
+    testReturnValue()
+    {
+        // task returning int
+        {
+            auto t = returns_int();
+            BOOST_TEST_EQ(run_task(t), 42);
+        }
+
+        // task returning string
+        {
+            auto t = returns_string();
+            BOOST_TEST_EQ(run_task(t), "hello");
+        }
+    }
+
+    static task<int>
+    throws_exception()
+    {
+        throw test_exception("test error");
+        co_return 0;
+    }
+
+    static task<int>
+    throws_std_exception()
+    {
+        throw std::runtime_error("runtime error");
+        co_return 0;
+    }
+
+    void
+    testException()
+    {
+        // task that throws custom exception
+        {
+            auto t = throws_exception();
+            while (!t.handle().done())
+                t.handle().resume();
+            BOOST_TEST_THROWS(t.await_resume(), test_exception);
+        }
+
+        // task that throws std::runtime_error
+        {
+            auto t = throws_std_exception();
+            while (!t.handle().done())
+                t.handle().resume();
+            BOOST_TEST_THROWS(t.await_resume(), std::runtime_error);
+        }
+    }
+
+    static task<int>
+    inner_task_value()
+    {
+        co_return 100;
+    }
+
+    static task<int>
+    outer_task_awaits_inner()
+    {
+        int v = co_await inner_task_value();
+        co_return v + 1;
+    }
+
+    static task<int>
+    inner_task_throws()
+    {
+        throw test_exception("inner exception");
+        co_return 0;
+    }
+
+    static task<int>
+    outer_task_awaits_throwing_inner()
+    {
+        int v = co_await inner_task_throws();
+        co_return v + 1;
+    }
+
+    static task<int>
+    outer_task_catches_inner_exception()
+    {
+        try
+        {
+            (void)co_await inner_task_throws();
+            co_return -1;
+        }
+        catch (test_exception const&)
+        {
+            co_return 999;
+        }
+    }
+
+    static task<int>
+    chained_tasks()
+    {
+        auto inner = []() -> task<int> {
+            co_return 10;
+        };
+
+        auto middle = [&]() -> task<int> {
+            int v = co_await inner();
+            co_return v * 2;
+        };
+
+        int v = co_await middle();
+        co_return v + 5;
+    }
+
+    void
+    testTaskAwaitsTask()
+    {
+        // outer task awaits inner task with value
+        {
+            auto t = outer_task_awaits_inner();
+            BOOST_TEST_EQ(run_task(t), 101);
+        }
+
+        // outer task awaits inner task that throws
+        {
+            auto t = outer_task_awaits_throwing_inner();
+            while (!t.handle().done())
+                t.handle().resume();
+            BOOST_TEST_THROWS(t.await_resume(), test_exception);
+        }
+
+        // outer task catches exception from inner task
+        {
+            auto t = outer_task_catches_inner_exception();
+            BOOST_TEST_EQ(run_task(t), 999);
+        }
+
+        // chained tasks (3 levels)
+        {
+            auto t = chained_tasks();
+            BOOST_TEST_EQ(run_task(t), 25);
+        }
+    }
+
+    void
+    testMoveOperations()
+    {
+        // move constructor
+        {
+            auto t1 = returns_int();
+            auto h = t1.handle();
+            BOOST_TEST(h);
+
+            task<int> t2(std::move(t1));
+            BOOST_TEST(!t1.handle());
+            BOOST_TEST(t2.handle() == h);
+
+            BOOST_TEST_EQ(run_task(t2), 42);
+        }
+
+        // release()
+        {
+            auto t = returns_int();
+            auto h = t.release();
+            BOOST_TEST(h);
+            BOOST_TEST(!t.handle());
+
+            while (!h.done())
+                h.resume();
+            auto& result = h.promise().result_;
+            BOOST_TEST_EQ(result.index(), 1u);
+            BOOST_TEST_EQ(std::get<1>(result), 42);
+
+            h.destroy();
+        }
+    }
+
+    static async_result<int>
+    async_returns_value()
+    {
+        return make_async_result<int>(
+            [](auto cb) {
+                cb(123);
+            });
+    }
+
+    static async_result<int>
+    async_with_delayed_completion()
+    {
+        return make_async_result<int>(
+            [](auto cb) {
+                cb(456);
+            });
+    }
+
+    static task<int>
+    task_awaits_async_result()
+    {
+        int v = co_await async_returns_value();
+        co_return v + 1;
+    }
+
+    static task<int>
+    task_awaits_multiple_async_results()
+    {
+        int v1 = co_await async_returns_value();
+        int v2 = co_await async_with_delayed_completion();
+        co_return v1 + v2;
+    }
+
+    void
+    testTaskAwaitsAsyncResult()
+    {
+        // task awaits single async_result
+        {
+            auto t = task_awaits_async_result();
+            BOOST_TEST_EQ(run_task(t), 124);
+        }
+
+        // task awaits multiple async_results
+        {
+            auto t = task_awaits_multiple_async_results();
+            BOOST_TEST_EQ(run_task(t), 579);
+        }
+    }
+
+    void
+    testAwaitReady()
+    {
+        auto t = returns_int();
+        BOOST_TEST(!t.await_ready());
+    }
+
+    //----------------------------------------------------------
+    // task<void> tests
+    //----------------------------------------------------------
+
+    static task<void>
+    void_task_basic()
+    {
+        co_return;
+    }
+
+    static task<void>
+    void_task_throws()
+    {
+        throw test_exception("void task exception");
+        co_return;
+    }
+
+    void
+    testVoidTaskBasic()
+    {
+        bool done = false;
+        auto t = void_task_basic();
+        t.handle().promise().on_done_ = [&done]{ done = true; };
+        t.handle().resume();
+        BOOST_TEST(done);
+        t.await_resume(); // should not throw
+    }
+
+    void
+    testVoidTaskException()
+    {
+        auto t = void_task_throws();
+        t.handle().promise().on_done_ = []{ };
+        t.handle().resume();
+        BOOST_TEST_THROWS(t.await_resume(), test_exception);
+    }
+
+    static task<void>
+    void_task_awaits_value()
+    {
+        int v = co_await returns_int();
+        (void)v;
+        co_return;
+    }
+
+    static task<void>
+    void_task_awaits_void()
+    {
+        co_await void_task_basic();
+        co_return;
+    }
+
+    void
+    testVoidTaskAwaits()
+    {
+        // void task awaits value-returning task
+        {
+            bool done = false;
+            auto t = void_task_awaits_value();
+            t.handle().promise().on_done_ = [&done]{ done = true; };
+            t.handle().resume();
+            BOOST_TEST(done);
+        }
+
+        // void task awaits another void task
+        {
+            bool done = false;
+            auto t = void_task_awaits_void();
+            t.handle().promise().on_done_ = [&done]{ done = true; };
+            t.handle().resume();
+            BOOST_TEST(done);
+        }
+    }
+
+    static task<void>
+    void_task_chain_step()
+    {
+        co_return;
+    }
+
+    static task<void>
+    void_task_chain()
+    {
+        co_await void_task_chain_step();
+        co_await void_task_chain_step();
+        co_await void_task_chain_step();
+        co_return;
+    }
+
+    void
+    testVoidTaskChain()
+    {
+        bool done = false;
+        auto t = void_task_chain();
+        t.handle().promise().on_done_ = [&done]{ done = true; };
+        t.handle().resume();
+        BOOST_TEST(done);
+    }
+
+    void
+    testVoidTaskMove()
+    {
+        auto t1 = void_task_basic();
+        auto h = t1.handle();
+        BOOST_TEST(h);
+
+        task<void> t2(std::move(t1));
+        BOOST_TEST(!t1.handle());
+        BOOST_TEST(t2.handle() == h);
+    }
+
+    static task<void>
+    void_task_awaits_async_result()
+    {
+        int v = co_await async_returns_value();
+        (void)v;
+        co_return;
+    }
+
+    void
+    testVoidTaskAwaitsAsyncResult()
+    {
+        bool done = false;
+        auto t = void_task_awaits_async_result();
+        t.handle().promise().on_done_ = [&done]{ done = true; };
+        t.handle().resume();
+        BOOST_TEST(done);
+    }
+
     void
     run()
     {
-        auto t = handler();
-        while (!t.handle().done())
-            t.handle().resume();
-        BOOST_TEST_EQ(t.await_resume(), 42);
+        testReturnValue();
+        testException();
+        testTaskAwaitsTask();
+        testMoveOperations();
+        testTaskAwaitsAsyncResult();
+        testAwaitReady();
+
+        // task<void> tests
+        testVoidTaskBasic();
+        testVoidTaskException();
+        testVoidTaskAwaits();
+        testVoidTaskChain();
+        testVoidTaskMove();
+        testVoidTaskAwaitsAsyncResult();
     }
 };
 
