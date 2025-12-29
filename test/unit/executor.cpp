@@ -78,6 +78,71 @@ struct queued_entry
     void* storage;
 };
 
+/** Value-type executor for testing owning mode.
+
+    This executor can be moved and copied, suitable for
+    use with executor::from().
+*/
+struct value_executor
+{
+    friend struct executor::access;
+
+    // Shared state to track calls across copies
+    struct state
+    {
+        std::atomic<int> alloc_count{0};
+        std::atomic<int> submit_count{0};
+    };
+
+    std::shared_ptr<state> state_;
+
+    value_executor()
+        : state_(std::make_shared<state>())
+    {
+    }
+
+    // Copyable and movable
+    value_executor(value_executor const&) = default;
+    value_executor(value_executor&&) = default;
+    value_executor& operator=(value_executor const&) = default;
+    value_executor& operator=(value_executor&&) = default;
+
+    int alloc_count() const { return state_->alloc_count.load(); }
+    int submit_count() const { return state_->submit_count.load(); }
+
+private:
+    struct header
+    {
+        std::size_t size;
+    };
+
+    void*
+    allocate(std::size_t size, std::size_t /*align*/)
+    {
+        ++state_->alloc_count;
+        std::size_t total = sizeof(header) + size;
+        void* p = std::malloc(total);
+        header* h = new(p) header{total};
+        return h + 1;
+    }
+
+    void
+    deallocate(void* p, std::size_t /*size*/, std::size_t /*align*/)
+    {
+        header* h = static_cast<header*>(p) - 1;
+        std::free(h);
+    }
+
+    void
+    submit(executor::work* w)
+    {
+        ++state_->submit_count;
+        w->invoke();
+        w->~work();
+        deallocate(w, 0, 0);
+    }
+};
+
 //-----------------------------------------------------------------------------
 
 struct execution_test
@@ -372,14 +437,14 @@ struct execution_test
                 ++alloc_count;
                 std::size_t total = sizeof(header) + size;
                 void* p = std::malloc(total);
-                auto* h = new(p) header{total};
+                header* h = new(p) header{total};
                 return h + 1;
             }
 
             void deallocate(void* p, std::size_t, std::size_t)
             {
                 ++dealloc_count;
-                auto* h = static_cast<header*>(p) - 1;
+                header* h = static_cast<header*>(p) - 1;
                 std::free(h);
             }
 
@@ -404,6 +469,145 @@ struct execution_test
         BOOST_TEST_EQ(ctx.dealloc_count, 1);
     }
 
+    //-------------------------------------------------------------------------
+    // Owning mode tests (executor::wrap)
+    //-------------------------------------------------------------------------
+
+    void
+    testWrapBasic()
+    {
+        value_executor ve;
+        executor exec = executor::wrap(ve);
+        BOOST_TEST(static_cast<bool>(exec));
+    }
+
+    void
+    testWrapTemporary()
+    {
+        executor exec = executor::wrap(value_executor{});
+        BOOST_TEST(static_cast<bool>(exec));
+    }
+
+    void
+    testWrapCopyConstruct()
+    {
+        value_executor ve;
+        executor exec1 = executor::wrap(ve);
+        executor exec2(exec1);
+        BOOST_TEST(static_cast<bool>(exec1));
+        BOOST_TEST(static_cast<bool>(exec2));
+    }
+
+    void
+    testWrapMoveConstruct()
+    {
+        value_executor ve;
+        executor exec1 = executor::wrap(ve);
+        executor exec2(std::move(exec1));
+        BOOST_TEST(static_cast<bool>(exec2));
+    }
+
+    void
+    testWrapCopyAssign()
+    {
+        value_executor ve;
+        executor exec1 = executor::wrap(ve);
+        executor exec2;
+        exec2 = exec1;
+        BOOST_TEST(static_cast<bool>(exec1));
+        BOOST_TEST(static_cast<bool>(exec2));
+    }
+
+    void
+    testWrapMoveAssign()
+    {
+        value_executor ve;
+        executor exec1 = executor::wrap(ve);
+        executor exec2;
+        exec2 = std::move(exec1);
+        BOOST_TEST(static_cast<bool>(exec2));
+    }
+
+    void
+    testWrapPostLambda()
+    {
+        bool called = false;
+        value_executor ve;
+        executor exec = executor::wrap(ve);
+        exec.post([&called]{ called = true; });
+        BOOST_TEST(called);
+        BOOST_TEST_EQ(ve.submit_count(), 1);
+    }
+
+    void
+    testWrapPostMultiple()
+    {
+        int count = 0;
+        value_executor ve;
+        executor exec = executor::wrap(ve);
+        exec.post([&count]{ ++count; });
+        exec.post([&count]{ ++count; });
+        exec.post([&count]{ ++count; });
+        BOOST_TEST_EQ(count, 3);
+        BOOST_TEST_EQ(ve.submit_count(), 3);
+    }
+
+    void
+    testWrapSharedOwnership()
+    {
+        // Verify that copies share the same underlying executor
+        int count = 0;
+        value_executor ve;
+        executor exec1 = executor::wrap(ve);
+        executor exec2 = exec1;
+
+        exec1.post([&count]{ ++count; });
+        exec2.post([&count]{ ++count; });
+
+        BOOST_TEST_EQ(count, 2);
+        // Both executors should use the same underlying value_executor
+        BOOST_TEST_EQ(ve.submit_count(), 2);
+    }
+
+    void
+    testWrapLifetime()
+    {
+        // Verify executor remains valid after original goes out of scope
+        executor exec;
+        {
+            value_executor ve;
+            exec = executor::wrap(ve);
+        }
+        // ve is destroyed but exec should still work
+        // (the holder keeps a copy of the value_executor)
+        BOOST_TEST(static_cast<bool>(exec));
+
+        bool called = false;
+        exec.post([&called]{ called = true; });
+        BOOST_TEST(called);
+    }
+
+    void
+    testWrapAsyncPost()
+    {
+        int result = 0;
+        bool handler_called = false;
+
+        value_executor ve;
+        executor exec = executor::wrap(ve);
+        exec.async_post(
+            []{ return 42; },
+            [&](system::result<int, std::exception_ptr> r)
+            {
+                handler_called = true;
+                if(r.has_value())
+                    result = r.value();
+            });
+
+        BOOST_TEST(handler_called);
+        BOOST_TEST_EQ(result, 42);
+    }
+
     void
     run()
     {
@@ -424,6 +628,19 @@ struct execution_test
         testAsyncPostException();
         testFactoryBasic();
         testFactoryRollback();
+
+        // Owning mode tests
+        testWrapBasic();
+        testWrapTemporary();
+        testWrapCopyConstruct();
+        testWrapMoveConstruct();
+        testWrapCopyAssign();
+        testWrapMoveAssign();
+        testWrapPostLambda();
+        testWrapPostMultiple();
+        testWrapSharedOwnership();
+        testWrapLifetime();
+        testWrapAsyncPost();
     }
 };
 

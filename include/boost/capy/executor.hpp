@@ -27,11 +27,15 @@ namespace capy {
 /** A lightweight handle for submitting work to an execution context.
 
     This class provides a value-type interface for submitting
-    work to be executed asynchronously. It uses type-erasure
-    with non-owning reference semantics, making it cheap to copy.
+    work to be executed asynchronously. It supports two modes:
 
-    The caller must ensure that the execution context outlives
-    all executors that reference it.
+    @li **Reference mode**: Non-owning reference to an execution
+        context. The caller must ensure the context outlives all
+        executors that reference it. Created via the constructor.
+
+    @li **Owning mode**: Shared ownership of a value-type executor.
+        The executor is stored internally and its lifetime is
+        managed automatically. Created via the `from()` factory.
 
     @par Thread Safety
     Distinct objects may be accessed concurrently. Shared objects
@@ -39,8 +43,10 @@ namespace capy {
 
     @par Implementing an Execution Context
 
-    An execution context must declare `friend struct executor::access`
-    and provide three private member functions:
+    Both execution contexts (for reference mode) and value-type
+    executors (for owning mode) must declare
+    `friend struct executor::access` and provide three private
+    member functions:
 
     @li `void* allocate(std::size_t size, std::size_t align)` —
         Allocate storage for a work item. May throw.
@@ -55,7 +61,7 @@ namespace capy {
 
     All three functions must be safe to call concurrently.
 
-    @par Example
+    @par Example (Reference Mode)
     @code
     class my_pool
     {
@@ -103,6 +109,39 @@ namespace capy {
             queue_.push(w);
         }
     };
+
+    // Usage: reference mode
+    my_pool pool;
+    executor exec(pool);  // pool must outlive exec
+    @endcode
+
+    @par Example (Owning Mode)
+    @code
+    struct my_strand
+    {
+        friend struct executor::access;
+
+        // ... internal state ...
+
+    private:
+        void* allocate(std::size_t size, std::size_t)
+        {
+            return std::malloc(size);
+        }
+
+        void deallocate(void* p, std::size_t, std::size_t)
+        {
+            std::free(p);
+        }
+
+        void submit(executor::work* w)
+        {
+            // ... queue and serialize work ...
+        }
+    };
+
+    // Usage: owning mode
+    executor exec = executor::from(my_strand{});  // executor owns the strand
     @endcode
 */
 class executor
@@ -112,7 +151,10 @@ class executor
     template<class T>
     struct ops_for;
 
-    ops const* ops_;
+    template<class Exec>
+    struct holder;
+
+    std::shared_ptr<const ops> ops_;
     void* obj_;
 
 public:
@@ -190,13 +232,18 @@ public:
 
     /** Construct an executor referencing an execution context.
 
+        Creates an executor in reference mode. The executor holds
+        a non-owning reference to the context.
+
         The implementation type must provide:
         - `void* allocate(std::size_t size, std::size_t align)`
         - `void deallocate(void* p, std::size_t size, std::size_t align)`
         - `void submit(executor::work* w)`
 
         @param ctx The execution context to reference.
-        The context must outlive this executor.
+        The context must outlive this executor and all copies.
+
+        @see from
     */
     template<
         class T,
@@ -211,10 +258,38 @@ public:
         Default-constructed executors are empty.
     */
     executor() noexcept
-        : ops_(nullptr)
+        : ops_()
         , obj_(nullptr)
     {
     }
+
+    /** Create an executor with shared ownership of a value-type executor.
+
+        Creates an executor in owning mode. The provided executor
+        is moved into shared storage and its lifetime is managed
+        automatically via reference counting.
+
+        The executor type must provide:
+        - `void* allocate(std::size_t size, std::size_t align)`
+        - `void deallocate(void* p, std::size_t size, std::size_t align)`
+        - `void submit(executor::work* w)`
+
+        @param exec The executor to wrap (moved).
+
+        @return An executor that shares ownership of the wrapped executor.
+
+        @par Example
+        @code
+        // Wrap a value-type executor
+        executor exec = executor::wrap(my_strand{});
+
+        // Copies share ownership (reference counted)
+        executor exec2 = exec;  // both reference the same strand
+        @endcode
+    */
+    template<class Exec>
+    static executor
+    wrap(Exec exec);
 
     /** Return true if the executor references an execution context.
     */
@@ -365,12 +440,94 @@ struct executor::ops_for
 template<class T>
 constexpr executor::ops executor::ops_for<T>::table;
 
+//-----------------------------------------------------------------------------
+
+/** Holder for value-type executors in owning mode.
+
+    Stores the executor by value and provides the vtable
+    implementation that forwards to the held executor.
+*/
+template<class Exec>
+struct executor::holder
+{
+    Exec exec;
+
+    explicit
+    holder(Exec e)
+        : exec(std::move(e))
+    {
+    }
+
+    static void*
+    allocate(void* obj, std::size_t size, std::size_t align)
+    {
+        return access::allocate(
+            static_cast<holder*>(obj)->exec, size, align);
+    }
+
+    static void
+    deallocate(void* obj, void* p, std::size_t size, std::size_t align)
+    {
+        access::deallocate(
+            static_cast<holder*>(obj)->exec, p, size, align);
+    }
+
+    static void
+    submit(void* obj, work* w)
+    {
+        access::submit(
+            static_cast<holder*>(obj)->exec, w);
+    }
+
+    static constexpr ops table = {
+        &allocate,
+        &deallocate,
+        &submit
+    };
+};
+
+template<class Exec>
+constexpr executor::ops executor::holder<Exec>::table;
+
+//-----------------------------------------------------------------------------
+
+namespace detail {
+
+// Null deleter for shared_ptr pointing to static storage
+struct null_deleter
+{
+    void operator()(const void*) const noexcept {}
+};
+
+} // detail
+
 template<class T, class>
 executor::
 executor(T& ctx) noexcept
-    : ops_(&ops_for<typename std::decay<T>::type>::table)
+    : ops_(
+        &ops_for<typename std::decay<T>::type>::table,
+        detail::null_deleter())
     , obj_(const_cast<void*>(static_cast<void const*>(std::addressof(ctx))))
 {
+}
+
+template<class Exec>
+executor
+executor::
+wrap(Exec exec)
+{
+    typedef typename std::decay<Exec>::type exec_type;
+    typedef holder<exec_type> holder_type;
+
+    std::shared_ptr<holder_type> h =
+        std::make_shared<holder_type>(std::move(exec));
+
+    executor ex;
+    // Use aliasing constructor: share ownership with h,
+    // but point to the static vtable
+    ex.ops_ = std::shared_ptr<const ops>(h, &holder_type::table);
+    ex.obj_ = h.get();
+    return ex;
 }
 
 //-----------------------------------------------------------------------------
@@ -405,7 +562,7 @@ public:
     */
     explicit
     factory(executor& exec) noexcept
-        : ops_(exec.ops_)
+        : ops_(exec.ops_.get())
         , obj_(exec.obj_)
         , storage_(nullptr)
         , size_(0)
@@ -482,7 +639,7 @@ post(F&& f)
 
     factory fac(*this);
     void* p = fac.allocate(sizeof(callable), alignof(callable));
-    auto* w = ::new(p) callable(std::forward<F>(f));
+    callable* w = ::new(p) callable(std::forward<F>(f));
     fac.commit(w);
 }
 
