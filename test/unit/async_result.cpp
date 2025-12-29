@@ -355,7 +355,7 @@ struct async_result_test
     {
         bool done = false;
         auto t = task_awaits_void_async();
-        t.handle().promise().on_done_ = [&done]{ done = true; };
+        t.handle().promise().on_done = [&done]{ done = true; };
         t.handle().resume();
         BOOST_TEST(done);
     }
@@ -399,7 +399,7 @@ struct async_result_test
     {
         bool done = false;
         auto t = task_awaits_multiple_void();
-        t.handle().promise().on_done_ = [&done]{ done = true; };
+        t.handle().promise().on_done = [&done]{ done = true; };
         t.handle().resume();
         BOOST_TEST(done);
     }

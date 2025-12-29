@@ -14,6 +14,8 @@
 
 #ifdef BOOST_CAPY_HAS_CORO
 
+#include <boost/capy/make_affine.hpp>
+
 #include <coroutine>
 #include <exception>
 #include <functional>
@@ -22,6 +24,9 @@
 
 namespace boost {
 namespace capy {
+
+/// Type-erased dispatcher function signature
+using dispatcher_type = std::function<void(std::function<void()>)>;
 
 /** A lazy coroutine task that produces a value of type T.
 
@@ -64,10 +69,27 @@ public:
     struct promise_type
     {
         /// Storage for the result value or exception
-        std::variant<std::monostate, T, std::exception_ptr> result_{};
+        std::variant<std::monostate, T, std::exception_ptr> result{};
 
         /// Callback invoked when the coroutine completes
-        std::function<void()> on_done_;
+        std::function<void()> on_done;
+
+        /// Dispatcher for executor affinity
+        dispatcher_type dispatcher = [](auto f){ f(); };
+
+        /** Transform awaitables for executor affinity.
+
+            Wraps all co_await expressions with make_affine to ensure
+            the coroutine resumes via the configured dispatcher.
+
+            @param a The awaitable to transform.
+            @return An affinity-wrapped awaitable.
+        */
+        template<typename Awaitable>
+        auto await_transform(Awaitable&& a)
+        {
+            return make_affine(std::forward<Awaitable>(a), dispatcher);
+        }
 
         /** Returns the task object for this coroutine.
 
@@ -99,8 +121,8 @@ public:
                 bool await_ready() noexcept { return false; }
                 void await_suspend(std::coroutine_handle<>) noexcept
                 {
-                    if (p_->on_done_)
-                        p_->on_done_();
+                    if (p_->on_done)
+                        p_->on_done();
                 }
                 void await_resume() noexcept {}
             };
@@ -111,13 +133,13 @@ public:
 
             @param v The value to store as the coroutine result.
         */
-        void return_value(T v) { result_.template emplace<1>(std::move(v)); }
+        void return_value(T v) { result.template emplace<1>(std::move(v)); }
 
         /** Store an unhandled exception.
 
             Captures the current exception for later rethrowing.
         */
-        void unhandled_exception() { result_.template emplace<2>(std::current_exception()); }
+        void unhandled_exception() { result.template emplace<2>(std::current_exception()); }
     };
 
 private:
@@ -164,7 +186,7 @@ public:
     */
     std::coroutine_handle<> await_suspend(std::coroutine_handle<> caller) noexcept
     {
-        h_.promise().on_done_ = [caller]{ caller.resume(); };
+        h_.promise().on_done = [caller]{ caller.resume(); };
         return h_;
     }
 
@@ -177,7 +199,7 @@ public:
     [[nodiscard]]
     T await_resume()
     {
-        auto& r = h_.promise().result_;
+        auto& r = h_.promise().result;
         if (r.index() == 2)
             std::rethrow_exception(std::get<2>(r));
         return std::move(std::get<1>(r));
@@ -247,7 +269,24 @@ public:
         std::exception_ptr exception_{};
 
         /// Callback invoked when the coroutine completes
-        std::function<void()> on_done_;
+        std::function<void()> on_done;
+
+        /// Dispatcher for executor affinity
+        dispatcher_type dispatcher = [](auto f){ f(); };
+
+        /** Transform awaitables for executor affinity.
+
+            Wraps all co_await expressions with make_affine to ensure
+            the coroutine resumes via the configured dispatcher.
+
+            @param a The awaitable to transform.
+            @return An affinity-wrapped awaitable.
+        */
+        template<typename Awaitable>
+        auto await_transform(Awaitable&& a)
+        {
+            return make_affine(std::forward<Awaitable>(a), dispatcher);
+        }
 
         /** Returns the task object for this coroutine.
 
@@ -279,8 +318,8 @@ public:
                 bool await_ready() noexcept { return false; }
                 void await_suspend(std::coroutine_handle<>) noexcept
                 {
-                    if (p_->on_done_)
-                        p_->on_done_();
+                    if (p_->on_done)
+                        p_->on_done();
                 }
                 void await_resume() noexcept {}
             };
@@ -344,7 +383,7 @@ public:
     */
     std::coroutine_handle<> await_suspend(std::coroutine_handle<> caller) noexcept
     {
-        h_.promise().on_done_ = [caller]{ caller.resume(); };
+        h_.promise().on_done = [caller]{ caller.resume(); };
         return h_;
     }
 

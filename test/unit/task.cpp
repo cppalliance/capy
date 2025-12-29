@@ -214,7 +214,7 @@ struct task_test
 
             while (!h.done())
                 h.resume();
-            auto& result = h.promise().result_;
+            auto& result = h.promise().result;
             BOOST_TEST_EQ(result.index(), 1u);
             BOOST_TEST_EQ(std::get<1>(result), 42);
 
@@ -300,7 +300,7 @@ struct task_test
     {
         bool done = false;
         auto t = void_task_basic();
-        t.handle().promise().on_done_ = [&done]{ done = true; };
+        t.handle().promise().on_done = [&done]{ done = true; };
         t.handle().resume();
         BOOST_TEST(done);
         t.await_resume(); // should not throw
@@ -310,7 +310,7 @@ struct task_test
     testVoidTaskException()
     {
         auto t = void_task_throws();
-        t.handle().promise().on_done_ = []{ };
+        t.handle().promise().on_done = []{ };
         t.handle().resume();
         BOOST_TEST_THROWS(t.await_resume(), test_exception);
     }
@@ -337,7 +337,7 @@ struct task_test
         {
             bool done = false;
             auto t = void_task_awaits_value();
-            t.handle().promise().on_done_ = [&done]{ done = true; };
+            t.handle().promise().on_done = [&done]{ done = true; };
             t.handle().resume();
             BOOST_TEST(done);
         }
@@ -346,7 +346,7 @@ struct task_test
         {
             bool done = false;
             auto t = void_task_awaits_void();
-            t.handle().promise().on_done_ = [&done]{ done = true; };
+            t.handle().promise().on_done = [&done]{ done = true; };
             t.handle().resume();
             BOOST_TEST(done);
         }
@@ -372,7 +372,7 @@ struct task_test
     {
         bool done = false;
         auto t = void_task_chain();
-        t.handle().promise().on_done_ = [&done]{ done = true; };
+        t.handle().promise().on_done = [&done]{ done = true; };
         t.handle().resume();
         BOOST_TEST(done);
     }
@@ -402,9 +402,86 @@ struct task_test
     {
         bool done = false;
         auto t = void_task_awaits_async_result();
-        t.handle().promise().on_done_ = [&done]{ done = true; };
+        t.handle().promise().on_done = [&done]{ done = true; };
         t.handle().resume();
         BOOST_TEST(done);
+    }
+
+    //----------------------------------------------------------
+    // dispatcher tests
+    //----------------------------------------------------------
+
+    void
+    testDispatcherDefault()
+    {
+        // task<T> dispatcher defaults to immediate (non-empty)
+        {
+            auto t = returns_int();
+            auto& p = t.handle().promise();
+            BOOST_TEST(static_cast<bool>(p.dispatcher));
+        }
+
+        // task<void> dispatcher defaults to immediate (non-empty)
+        {
+            auto t = void_task_basic();
+            auto& p = t.handle().promise();
+            BOOST_TEST(static_cast<bool>(p.dispatcher));
+        }
+    }
+
+    static task<int>
+    task_with_async_for_dispatcher_test()
+    {
+        int v = co_await async_returns_value();
+        co_return v + 1;
+    }
+
+    void
+    testDispatcherCalledByAwait()
+    {
+        // Verify that dispatcher is called when awaiting
+        int dispatch_call_count = 0;
+
+        auto t = task_with_async_for_dispatcher_test();
+        auto& p = t.handle().promise();
+        p.dispatcher = [&dispatch_call_count](std::function<void()> f) {
+            ++dispatch_call_count;
+            f();
+        };
+
+        BOOST_TEST_EQ(run_task(t), 124);
+        // Dispatcher should have been called via make_affine
+        BOOST_TEST_GE(dispatch_call_count, 1);
+    }
+
+    static task<void>
+    void_task_with_async_for_dispatcher_test()
+    {
+        auto v = co_await async_returns_value();
+        (void)v;
+        co_return;
+    }
+
+    void
+    testVoidTaskDispatcherCalledByAwait()
+    {
+        // Verify that dispatcher is called for void tasks
+        int dispatch_call_count = 0;
+        bool done = false;
+
+        auto t = void_task_with_async_for_dispatcher_test();
+        auto& p = t.handle().promise();
+        p.dispatcher = [&dispatch_call_count](std::function<void()> f) {
+            ++dispatch_call_count;
+            f();
+        };
+
+        p.on_done = [&done]{ done = true; };
+        t.handle().resume();
+
+        BOOST_TEST(done);
+        // Dispatcher should have been called via make_affine
+        BOOST_TEST_GE(dispatch_call_count, 1);
     }
 
     void
@@ -424,6 +501,11 @@ struct task_test
         testVoidTaskChain();
         testVoidTaskMove();
         testVoidTaskAwaitsAsyncResult();
+
+        // dispatcher tests
+        testDispatcherDefault();
+        testDispatcherCalledByAwait();
+        testVoidTaskDispatcherCalledByAwait();
     }
 };
 

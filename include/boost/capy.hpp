@@ -13,6 +13,7 @@
 #include <boost/capy/application.hpp>
 #include <boost/capy/async_result.hpp>
 #include <boost/capy/datastore.hpp>
+#include <boost/capy/make_affine.hpp>
 #include <boost/capy/neunique_ptr.hpp>
 #include <boost/capy/polystore.hpp>
 #include <boost/capy/polystore_fwd.hpp>
