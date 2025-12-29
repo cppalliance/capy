@@ -112,7 +112,7 @@ namespace capy {
 
     // Usage: reference mode
     my_pool pool;
-    executor exec(pool);  // pool must outlive exec
+    executor ex(pool);  // pool must outlive ex
     @endcode
 
     @par Example (Owning Mode)
@@ -141,7 +141,7 @@ namespace capy {
     };
 
     // Usage: owning mode
-    executor exec = executor::from(my_strand{});  // executor owns the strand
+    executor ex = executor::from(my_strand{});  // executor owns the strand
     @endcode
 */
 class executor
@@ -274,22 +274,22 @@ public:
         - `void deallocate(void* p, std::size_t size, std::size_t align)`
         - `void submit(executor::work* w)`
 
-        @param exec The executor to wrap (moved).
+        @param ex The executor to wrap (moved).
 
         @return An executor that shares ownership of the wrapped executor.
 
         @par Example
         @code
         // Wrap a value-type executor
-        executor exec = executor::wrap(my_strand{});
+        executor ex = executor::wrap(my_strand{});
 
         // Copies share ownership (reference counted)
-        executor exec2 = exec;  // both reference the same strand
+        executor exec2 = ex;  // both reference the same strand
         @endcode
     */
     template<class Exec>
     static executor
-    wrap(Exec exec);
+    wrap(Exec ex);
 
     /** Return true if the executor references an execution context.
     */
@@ -450,11 +450,11 @@ constexpr executor::ops executor::ops_for<T>::table;
 template<class Exec>
 struct executor::holder
 {
-    Exec exec;
+    Exec ex;
 
     explicit
     holder(Exec e)
-        : exec(std::move(e))
+        : ex(std::move(e))
     {
     }
 
@@ -462,21 +462,21 @@ struct executor::holder
     allocate(void* obj, std::size_t size, std::size_t align)
     {
         return access::allocate(
-            static_cast<holder*>(obj)->exec, size, align);
+            static_cast<holder*>(obj)->ex, size, align);
     }
 
     static void
     deallocate(void* obj, void* p, std::size_t size, std::size_t align)
     {
         access::deallocate(
-            static_cast<holder*>(obj)->exec, p, size, align);
+            static_cast<holder*>(obj)->ex, p, size, align);
     }
 
     static void
     submit(void* obj, work* w)
     {
         access::submit(
-            static_cast<holder*>(obj)->exec, w);
+            static_cast<holder*>(obj)->ex, w);
     }
 
     static constexpr ops table = {
@@ -514,13 +514,13 @@ executor(T& ctx) noexcept
 template<class Exec>
 executor
 executor::
-wrap(Exec exec)
+wrap(Exec ex0)
 {
     typedef typename std::decay<Exec>::type exec_type;
     typedef holder<exec_type> holder_type;
 
     std::shared_ptr<holder_type> h =
-        std::make_shared<holder_type>(std::move(exec));
+        std::make_shared<holder_type>(std::move(ex0));
 
     executor ex;
     // Use aliasing constructor: share ownership with h,
@@ -558,12 +558,12 @@ class executor::factory
 public:
     /** Construct a factory bound to an executor.
 
-        @param exec The executor to submit work to.
+        @param ex The executor to submit work to.
     */
     explicit
-    factory(executor& exec) noexcept
-        : ops_(exec.ops_.get())
-        , obj_(exec.obj_)
+    factory(executor& ex) noexcept
+        : ops_(ex.ops_.get())
+        , obj_(ex.obj_)
         , storage_(nullptr)
         , size_(0)
         , align_(0)
@@ -722,9 +722,9 @@ async_post(F&& f) ->
     using T = std::invoke_result_t<std::decay_t<F>>;
 
     return make_async_result<T>(
-        [exec = *this, f = std::forward<F>(f)](auto on_done) mutable
+        [ex = *this, f = std::forward<F>(f)](auto on_done) mutable
         {
-            exec.post(
+            ex.post(
                 [f = std::move(f),
                  on_done = std::move(on_done)]() mutable
                 {
@@ -741,9 +741,9 @@ async_post(F&& f) ->
     requires std::is_void_v<std::invoke_result_t<std::decay_t<F>>>
 {
     return make_async_result<void>(
-        [exec = *this, f = std::forward<F>(f)](auto on_done) mutable
+        [ex = *this, f = std::forward<F>(f)](auto on_done) mutable
         {
-            exec.post(
+            ex.post(
                 [f = std::move(f),
                  on_done = std::move(on_done)]() mutable
                 {
