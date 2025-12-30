@@ -20,14 +20,30 @@
 #include <coroutine>
 #include <exception>
 #include <functional>
+#include <type_traits>
 #include <utility>
 #include <variant>
 
 namespace boost {
 namespace capy {
 
-/// Type-erased dispatcher function signature
-using dispatcher_type = std::function<void(std::function<void()>)>;
+// Forward declaration for is_task trait
+template<class T>
+class task;
+
+namespace detail {
+
+template<class T>
+struct is_task_impl : std::false_type {};
+
+template<class T>
+struct is_task_impl<task<T>> : std::true_type {};
+
+template<class T>
+inline constexpr bool is_task_v =
+    is_task_impl<std::decay_t<T>>::value;
+
+} // detail
 
 /** A lazy coroutine task that produces a value of type T.
 
@@ -75,13 +91,15 @@ public:
         /// Callback invoked when the coroutine completes
         std::function<void()> on_done;
 
-        /// Dispatcher for executor affinity
-        dispatcher_type dispatcher = [](auto f){ f(); };
+        /// Executor for affinity (empty = no affinity)
+        executor ex{};
 
         /** Transform awaitables for executor affinity.
 
             Wraps all co_await expressions with make_affine to ensure
-            the coroutine resumes via the configured dispatcher.
+            the coroutine resumes on the configured executor. Also
+            propagates affinity to child tasks that lack explicit
+            affinity.
 
             @param a The awaitable to transform.
             @return An affinity-wrapped awaitable.
@@ -89,7 +107,14 @@ public:
         template<typename Awaitable>
         auto await_transform(Awaitable&& a)
         {
-            return make_affine(std::forward<Awaitable>(a), dispatcher);
+            // Propagate affinity to child tasks without explicit affinity
+            if constexpr (detail::is_task_v<Awaitable>)
+            {
+                auto& child_ex = a.handle().promise().ex;
+                if (!child_ex && ex)
+                    child_ex = ex;
+            }
+            return make_affine(std::forward<Awaitable>(a), ex);
         }
 
         /** Returns the task object for this coroutine.
@@ -228,11 +253,12 @@ public:
 
     /** Bind this task to an executor for affinity.
 
-        Sets the dispatcher so that when this task's internal
+        Sets the executor so that when this task's internal
         co_await expressions complete, the coroutine resumes
-        on the specified executor.
+        on the specified executor. Child tasks without explicit
+        affinity will inherit this executor.
 
-        @param ex The executor to resume on.
+        @param e The executor to resume on.
 
         @return A reference to this task for chaining.
 
@@ -245,20 +271,16 @@ public:
         }
         @endcode
     */
-    task& on(executor ex) &
+    task& on(executor e) &
     {
-        h_.promise().dispatcher = [ex](auto f) mutable {
-            ex.post(std::move(f));
-        };
+        h_.promise().ex = e;
         return *this;
     }
 
     /// @copydoc on(executor)
-    task&& on(executor ex) &&
+    task&& on(executor e) &&
     {
-        h_.promise().dispatcher = [ex](auto f) mutable {
-            ex.post(std::move(f));
-        };
+        h_.promise().ex = e;
         return std::move(*this);
     }
 };
@@ -308,13 +330,15 @@ public:
         /// Callback invoked when the coroutine completes
         std::function<void()> on_done;
 
-        /// Dispatcher for executor affinity
-        dispatcher_type dispatcher = [](auto f){ f(); };
+        /// Executor for affinity (empty = no affinity)
+        executor ex{};
 
         /** Transform awaitables for executor affinity.
 
             Wraps all co_await expressions with make_affine to ensure
-            the coroutine resumes via the configured dispatcher.
+            the coroutine resumes on the configured executor. Also
+            propagates affinity to child tasks that lack explicit
+            affinity.
 
             @param a The awaitable to transform.
             @return An affinity-wrapped awaitable.
@@ -322,7 +346,14 @@ public:
         template<typename Awaitable>
         auto await_transform(Awaitable&& a)
         {
-            return make_affine(std::forward<Awaitable>(a), dispatcher);
+            // Propagate affinity to child tasks without explicit affinity
+            if constexpr (detail::is_task_v<Awaitable>)
+            {
+                auto& child_ex = a.handle().promise().ex;
+                if (!child_ex && ex)
+                    child_ex = ex;
+            }
+            return make_affine(std::forward<Awaitable>(a), ex);
         }
 
         /** Returns the task object for this coroutine.
@@ -456,11 +487,12 @@ public:
 
     /** Bind this task to an executor for affinity.
 
-        Sets the dispatcher so that when this task's internal
+        Sets the executor so that when this task's internal
         co_await expressions complete, the coroutine resumes
-        on the specified executor.
+        on the specified executor. Child tasks without explicit
+        affinity will inherit this executor.
 
-        @param ex The executor to resume on.
+        @param e The executor to resume on.
 
         @return A reference to this task for chaining.
 
@@ -473,20 +505,16 @@ public:
         }
         @endcode
     */
-    task& on(executor ex) &
+    task& on(executor e) &
     {
-        h_.promise().dispatcher = [ex](auto f) mutable {
-            ex.post(std::move(f));
-        };
+        h_.promise().ex = e;
         return *this;
     }
 
     /// @copydoc on(executor)
-    task&& on(executor ex) &&
+    task&& on(executor e) &&
     {
-        h_.promise().dispatcher = [ex](auto f) mutable {
-            ex.post(std::move(f));
-        };
+        h_.promise().ex = e;
         return std::move(*this);
     }
 };

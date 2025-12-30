@@ -453,54 +453,51 @@ struct task_test
     }
 
     //----------------------------------------------------------
-    // dispatcher tests
+    // executor affinity tests
     //----------------------------------------------------------
 
     void
-    testDispatcherDefault()
+    testExecutorDefault()
     {
-        // task<T> dispatcher defaults to immediate (non-empty)
+        // task<T> executor defaults to empty (no affinity)
         {
             auto t = returns_int();
             auto& p = t.handle().promise();
-            BOOST_TEST(static_cast<bool>(p.dispatcher));
+            BOOST_TEST(!p.ex);
         }
 
-        // task<void> dispatcher defaults to immediate (non-empty)
+        // task<void> executor defaults to empty (no affinity)
         {
             auto t = void_task_basic();
             auto& p = t.handle().promise();
-            BOOST_TEST(static_cast<bool>(p.dispatcher));
+            BOOST_TEST(!p.ex);
         }
     }
 
     static task<int>
-    task_with_async_for_dispatcher_test()
+    task_with_async_for_affinity_test()
     {
         int v = co_await async_returns_value();
         co_return v + 1;
     }
 
     void
-    testDispatcherCalledByAwait()
+    testExecutorUsedByAwait()
     {
-        // Verify that dispatcher is called when awaiting
-        int dispatch_call_count = 0;
+        // Verify that executor is used when awaiting
+        sync_executor ctx;
+        executor ex(ctx);
 
-        auto t = task_with_async_for_dispatcher_test();
-        auto& p = t.handle().promise();
-        p.dispatcher = [&dispatch_call_count](std::function<void()> f) {
-            ++dispatch_call_count;
-            f();
-        };
+        auto t = task_with_async_for_affinity_test();
+        t.on(ex);
 
         BOOST_TEST_EQ(run_task(t), 124);
-        // Dispatcher should have been called via make_affine
-        BOOST_TEST_GE(dispatch_call_count, 1);
+        // Work should have been posted through the executor
+        BOOST_TEST_GE(ctx.submit_count.load(), 1);
     }
 
     static task<void>
-    void_task_with_async_for_dispatcher_test()
+    void_task_with_async_for_affinity_test()
     {
         auto v = co_await async_returns_value();
         (void)v;
@@ -508,56 +505,53 @@ struct task_test
     }
 
     void
-    testVoidTaskDispatcherCalledByAwait()
+    testVoidTaskExecutorUsedByAwait()
     {
-        // Verify that dispatcher is called for void tasks
-        int dispatch_call_count = 0;
+        // Verify that executor is used for void tasks
+        sync_executor ctx;
+        executor ex(ctx);
         bool done = false;
 
-        auto t = void_task_with_async_for_dispatcher_test();
-        auto& p = t.handle().promise();
-        p.dispatcher = [&dispatch_call_count](std::function<void()> f) {
-            ++dispatch_call_count;
-            f();
-        };
+        auto t = void_task_with_async_for_affinity_test();
+        t.on(ex);
 
-        p.on_done = [&done]{ done = true; };
+        t.handle().promise().on_done = [&done]{ done = true; };
         t.handle().resume();
 
         BOOST_TEST(done);
-        // Dispatcher should have been called via make_affine
-        BOOST_TEST_GE(dispatch_call_count, 1);
+        // Work should have been posted through the executor
+        BOOST_TEST_GE(ctx.submit_count.load(), 1);
     }
 
     //----------------------------------------------------------
-    // on() executor affinity tests
+    // on() method tests
     //----------------------------------------------------------
 
     void
-    testOnSetsDispatcher()
+    testOnSetsExecutor()
     {
-        // Verify on() sets the dispatcher for task<T>
+        // Verify on() sets the executor for task<T>
         sync_executor ctx;
         executor ex(ctx);
 
-        auto t = task_with_async_for_dispatcher_test();
+        auto t = task_with_async_for_affinity_test();
         t.on(ex);
 
-        // Dispatcher should now be set to post through executor
-        BOOST_TEST(static_cast<bool>(t.handle().promise().dispatcher));
+        // Executor should now be set
+        BOOST_TEST(static_cast<bool>(t.handle().promise().ex));
         BOOST_TEST_EQ(run_task(t), 124);
         // Work should have been posted through the executor
         BOOST_TEST_GE(ctx.submit_count.load(), 1);
     }
 
     void
-    testOnSetsDispatcherVoid()
+    testOnSetsExecutorVoid()
     {
-        // Verify on() sets the dispatcher for task<void>
+        // Verify on() sets the executor for task<void>
         sync_executor ctx;
         executor ex(ctx);
 
-        auto t = void_task_with_async_for_dispatcher_test();
+        auto t = void_task_with_async_for_affinity_test();
         t.on(ex);
 
         bool done = false;
@@ -618,6 +612,122 @@ struct task_test
         BOOST_TEST(&ref == &t);
     }
 
+    //----------------------------------------------------------
+    // Affinity propagation tests (ABC problem)
+    //----------------------------------------------------------
+
+    static task<int>
+    inner_task_c()
+    {
+        co_return co_await async_returns_value();
+    }
+
+    static task<int>
+    middle_task_b()
+    {
+        int v = co_await inner_task_c();
+        co_return v + 1;
+    }
+
+    static task<int>
+    outer_task_a()
+    {
+        int v = co_await middle_task_b();
+        co_return v + 1;
+    }
+
+    void
+    testAffinityPropagation()
+    {
+        // Verify affinity propagates through task chain (ABC problem)
+        // a has affinity, b and c should inherit it
+        sync_executor ctx;
+        executor ex(ctx);
+
+        auto t = outer_task_a();
+        t.on(ex);
+
+        BOOST_TEST_EQ(run_task(t), 125);  // 123 + 1 + 1
+        // All async completions should dispatch through executor
+        BOOST_TEST_GE(ctx.submit_count.load(), 1);
+    }
+
+    static task<void>
+    inner_void_task_c()
+    {
+        co_await async_returns_value();
+        co_return;
+    }
+
+    static task<void>
+    middle_void_task_b()
+    {
+        co_await inner_void_task_c();
+        co_return;
+    }
+
+    static task<void>
+    outer_void_task_a()
+    {
+        co_await middle_void_task_b();
+        co_return;
+    }
+
+    void
+    testAffinityPropagationVoid()
+    {
+        // Verify affinity propagates through void task chain
+        sync_executor ctx;
+        executor ex(ctx);
+
+        auto t = outer_void_task_a();
+        t.on(ex);
+
+        bool done = false;
+        t.handle().promise().on_done = [&done]{ done = true; };
+        t.handle().resume();
+
+        BOOST_TEST(done);
+        BOOST_TEST_GE(ctx.submit_count.load(), 1);
+    }
+
+    void
+    testExplicitAffinityOverridesInheritance()
+    {
+        // Verify explicit affinity via .on() is not overwritten
+        sync_executor ctx1;
+        sync_executor ctx2;
+        executor ex1(ctx1);
+        executor ex2(ctx2);
+
+        // Create a task with explicit affinity
+        auto make_inner = [ex2]() -> task<int> {
+            return inner_task_c().on(ex2);  // explicit affinity to ex2
+        };
+
+        auto outer = [make_inner]() -> task<int> {
+            int v = co_await make_inner();
+            co_return v + 1;
+        };
+
+        auto t = outer();
+        t.on(ex1);  // outer has affinity to ex1
+
+        BOOST_TEST_EQ(run_task(t), 124);
+        // Inner should use ex2, not inherit ex1
+        BOOST_TEST_GE(ctx2.submit_count.load(), 1);
+    }
+
+    void
+    testNoAffinityRunsInline()
+    {
+        // Verify that without affinity, no executor dispatch occurs
+        auto t = outer_task_a();  // no .on() call
+
+        BOOST_TEST_EQ(run_task(t), 125);
+        // Task should complete without any executor
+    }
+
     void
     run()
     {
@@ -636,17 +746,23 @@ struct task_test
         testVoidTaskMove();
         testVoidTaskAwaitsAsyncResult();
 
-        // dispatcher tests
-        testDispatcherDefault();
-        testDispatcherCalledByAwait();
-        testVoidTaskDispatcherCalledByAwait();
+        // executor affinity tests
+        testExecutorDefault();
+        testExecutorUsedByAwait();
+        testVoidTaskExecutorUsedByAwait();
 
-        // on() executor affinity tests
-        testOnSetsDispatcher();
-        testOnSetsDispatcherVoid();
+        // on() method tests
+        testOnSetsExecutor();
+        testOnSetsExecutorVoid();
         testOnFluentSyntax();
         testOnFluentSyntaxVoid();
         testOnLvalueReturnsReference();
+
+        // affinity propagation tests (ABC problem)
+        testAffinityPropagation();
+        testAffinityPropagationVoid();
+        testExplicitAffinityOverridesInheritance();
+        testNoAffinityRunsInline();
     }
 };
 

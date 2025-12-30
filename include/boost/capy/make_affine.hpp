@@ -14,6 +14,8 @@
 
 #ifdef BOOST_CAPY_HAS_CORO
 
+#include <boost/capy/executor.hpp>
+
 #include <coroutine>
 #include <exception>
 #include <optional>
@@ -25,25 +27,25 @@ namespace capy {
 
 namespace detail {
 
-template<typename Dispatcher>
+/** Awaitable that dispatches resumption through an executor.
+
+    If the executor is empty (no affinity), resumes inline.
+    Otherwise posts the resumption to the executor.
+*/
 struct dispatch_awaitable
 {
-    Dispatcher& dispatcher_;
+    mutable executor ex_;
 
     bool
     await_ready() const noexcept
     {
-        return false;
+        return !ex_;  // skip suspend if no affinity
     }
 
     void
     await_suspend(std::coroutine_handle<> h) const
     {
-        dispatcher_(
-            [h]() mutable
-            {
-                h.resume();
-            });
+        ex_.post([h]{ h.resume(); });
     }
 
     void
@@ -267,9 +269,9 @@ public:
 /** Create an affinity trampoline for an awaitable.
 
     This function wraps an awaitable in a trampoline coroutine
-    that ensures resumption occurs via the specified dispatcher.
+    that ensures resumption occurs via the specified executor.
     After the inner awaitable completes, the trampoline dispatches
-    the continuation to the dispatcher before transferring control
+    the continuation to the executor before transferring control
     back to the caller.
 
     When used with `await_transform`, this enables executor affinity
@@ -277,13 +279,16 @@ public:
     resumes on its designated executor regardless of where the
     awaited operation completed.
 
+    If the executor is empty (no affinity), the trampoline resumes
+    the caller inline without any dispatch overhead.
+
     @par Example
     @code
     struct my_task
     {
         struct promise_type
         {
-            Dispatcher* dispatcher_;
+            executor ex;
 
             template<typename Awaitable>
             auto
@@ -291,7 +296,7 @@ public:
             {
                 return make_affine(
                     std::forward<Awaitable>(a),
-                    *dispatcher_);
+                    ex);
             }
 
             // ... other promise_type members
@@ -306,31 +311,18 @@ public:
     compiler's Heap Allocation eLision Optimization (HALO),
     resulting in zero allocation overhead.
 
-    @par Dispatcher
-    The dispatcher is a unary function object that accepts a
-    nullary function object and arranges for it to be invoked.
-    The equivalent signature is:
-    @code
-    struct Dispatcher
-    {
-        template<typename F>
-        void operator()(F&& f);
-    };
-    @endcode
-
     @param awaitable The awaitable to wrap.
-    @param dispatcher A unary function used to dispatch the continuation.
+    @param ex The executor to dispatch resumption through.
+        If empty, resumption occurs inline.
 
     @return An awaitable trampoline that yields the same result
         as the wrapped awaitable.
 */
-template<
-    typename Awaitable,
-    typename Dispatcher>
+template<typename Awaitable>
 auto
 make_affine(
     Awaitable&& awaitable,
-    Dispatcher& dispatcher) ->
+    executor ex) ->
         detail::affinity_trampoline<
             detail::await_result_t<Awaitable>>
 {
@@ -339,12 +331,12 @@ make_affine(
     if constexpr(std::is_void_v<result_t>)
     {
         co_await detail::get_awaitable(std::forward<Awaitable>(awaitable));
-        co_await detail::dispatch_awaitable<Dispatcher>{dispatcher};
+        co_await detail::dispatch_awaitable{ex};
     }
     else
     {
         auto result = co_await detail::get_awaitable(std::forward<Awaitable>(awaitable));
-        co_await detail::dispatch_awaitable<Dispatcher>{dispatcher};
+        co_await detail::dispatch_awaitable{ex};
         co_return result;
     }
 }
