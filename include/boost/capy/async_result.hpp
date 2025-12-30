@@ -155,8 +155,9 @@ class async_result
 {
     std::unique_ptr<detail::async_result_impl_base<T>> impl_;
 
-// Workaround: clang 16 fails to match friend function template declarations
-#if defined(__clang__) && __clang_major__ == 16
+// Workaround: clang fails to match friend function template declarations
+#if defined(__clang__) && (__clang_major__ == 16 || \
+    (defined(__apple_build_version__) && __apple_build_version__ >= 15000000))
 public:
 #endif
     explicit
@@ -164,7 +165,8 @@ public:
         : impl_(std::move(p))
     {
     }
-#if defined(__clang__) && __clang_major__ == 16
+#if defined(__clang__) && (__clang_major__ == 16 || \
+    (defined(__apple_build_version__) && __apple_build_version__ >= 15000000))
 private:
 #endif
 
@@ -247,8 +249,9 @@ class async_result<void>
 {
     std::unique_ptr<detail::async_result_void_impl_base> impl_;
 
-// Workaround: clang 16 fails to match friend function template declarations
-#if defined(__clang__) && __clang_major__ == 16
+// Workaround: clang fails to match friend function template declarations
+#if defined(__clang__) && (__clang_major__ == 16 || \
+    (defined(__apple_build_version__) && __apple_build_version__ >= 15000000))
 public:
 #endif
     explicit
@@ -256,7 +259,8 @@ public:
         : impl_(std::move(p))
     {
     }
-#if defined(__clang__) && __clang_major__ == 16
+#if defined(__clang__) && (__clang_major__ == 16 || \
+    (defined(__apple_build_version__) && __apple_build_version__ >= 15000000))
 private:
 #endif
 

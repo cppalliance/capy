@@ -36,11 +36,18 @@ project boost/capy
 
 alias capy_sources : [ glob-tree-ex ./src : *.cpp ] ;
 
+# Windows CNG library for bcrypt random number generation
+lib bcrypt_sys : : <name>bcrypt ;
+
 lib boost_capy
   : capy_sources
   : requirements
      <include>../
+     <target-os>windows:<library>bcrypt_sys
+     <target-os>darwin:<linkflags>"-framework Security"
   : usage-requirements
+     <target-os>windows:<library>bcrypt_sys
+     <target-os>darwin:<linkflags>"-framework Security"
   ;
 
 # Zlib
