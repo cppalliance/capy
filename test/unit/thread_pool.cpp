@@ -142,7 +142,7 @@ struct thread_pool_test
     }
 
     void
-    testAsyncPost()
+    testSubmit()
     {
         std::atomic<int> result{0};
         std::atomic<bool> handler_called{false};
@@ -150,7 +150,7 @@ struct thread_pool_test
         {
             thread_pool pool(1);
             executor exec = pool.get_executor();
-            exec.async_post(
+            exec.submit(
                 []{ return 42; },
                 [&](system::result<int, std::exception_ptr> r)
                 {
@@ -165,7 +165,7 @@ struct thread_pool_test
     }
 
     void
-    testAsyncPostVoid()
+    testSubmitVoid()
     {
         std::atomic<bool> work_called{false};
         std::atomic<bool> handler_called{false};
@@ -173,7 +173,7 @@ struct thread_pool_test
         {
             thread_pool pool(1);
             executor exec = pool.get_executor();
-            exec.async_post(
+            exec.submit(
                 [&work_called]{ work_called = true; },
                 [&handler_called](system::result<void, std::exception_ptr>)
                 {
@@ -234,8 +234,8 @@ struct thread_pool_test
         testPostMultiple();
         testPostFromMultipleThreads();
         testConcurrentExecution();
-        testAsyncPost();
-        testAsyncPostVoid();
+        testSubmit();
+        testSubmitVoid();
         testMultipleExecutors();
         testDestructorWaitsForWork();
     }

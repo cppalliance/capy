@@ -35,7 +35,7 @@ namespace capy {
 
     @li **Owning mode**: Shared ownership of a value-type executor.
         The executor is stored internally and its lifetime is
-        managed automatically. Created via the `from()` factory.
+        managed automatically. Created via the `wrap()` factory.
 
     @par Thread Safety
     Distinct objects may be accessed concurrently. Shared objects
@@ -330,7 +330,7 @@ public:
     */
     template<class F, class Handler>
     auto
-    async_post(F&& f, Handler&& handler) ->
+    submit(F&& f, Handler&& handler) ->
         typename std::enable_if<! std::is_void<
             typename detail::call_traits<typename
                 std::decay<F>::type>::return_type>::value>::type;
@@ -353,7 +353,7 @@ public:
     */
     template<class F, class Handler>
     auto
-    async_post(F&& f, Handler&& handler) ->
+    submit(F&& f, Handler&& handler) ->
         typename std::enable_if<std::is_void<typename
             detail::call_traits<typename std::decay<F>::type
                 >::return_type>::value>::type;
@@ -371,7 +371,7 @@ public:
     */
     template<class F>
     auto
-    async_post(F&& f) ->
+    submit(F&& f) ->
         async_result<std::invoke_result_t<std::decay_t<F>>>
         requires (!std::is_void_v<std::invoke_result_t<std::decay_t<F>>>);
 
@@ -387,7 +387,7 @@ public:
     */
     template<class F>
     auto
-    async_post(F&& f) ->
+    submit(F&& f) ->
         async_result<void>
         requires std::is_void_v<std::invoke_result_t<std::decay_t<F>>>;
 #endif
@@ -648,7 +648,7 @@ post(F&& f)
 template<class F, class Handler>
 auto
 executor::
-async_post(F&& f, Handler&& handler) ->
+submit(F&& f, Handler&& handler) ->
     typename std::enable_if<! std::is_void<typename
         detail::call_traits<typename std::decay<F>::type
             >::return_type>::value>::type
@@ -681,7 +681,7 @@ async_post(F&& f, Handler&& handler) ->
 template<class F, class Handler>
 auto
 executor::
-async_post(F&& f, Handler&& handler) ->
+submit(F&& f, Handler&& handler) ->
     typename std::enable_if<std::is_void<typename
     detail::call_traits<typename std::decay<F>::type
         >::return_type>::value>::type
@@ -715,7 +715,7 @@ async_post(F&& f, Handler&& handler) ->
 template<class F>
 auto
 executor::
-async_post(F&& f) ->
+submit(F&& f) ->
     async_result<std::invoke_result_t<std::decay_t<F>>>
     requires (!std::is_void_v<std::invoke_result_t<std::decay_t<F>>>)
 {
@@ -736,7 +736,7 @@ async_post(F&& f) ->
 template<class F>
 auto
 executor::
-async_post(F&& f) ->
+submit(F&& f) ->
     async_result<void>
     requires std::is_void_v<std::invoke_result_t<std::decay_t<F>>>
 {

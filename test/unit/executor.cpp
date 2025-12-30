@@ -81,7 +81,7 @@ struct queued_entry
 /** Value-type executor for testing owning mode.
 
     This executor can be moved and copied, suitable for
-    use with executor::from().
+    use with executor::wrap().
 */
 struct value_executor
 {
@@ -335,14 +335,14 @@ struct execution_test
     }
 
     void
-    testAsyncPostNonVoid()
+    testSubmitNonVoid()
     {
         int result = 0;
         bool handler_called = false;
 
         sync_executor ctx;
         executor exec(ctx);
-        exec.async_post(
+        exec.submit(
             []{ return 42; },
             [&](system::result<int, std::exception_ptr> r)
             {
@@ -356,14 +356,14 @@ struct execution_test
     }
 
     void
-    testAsyncPostVoid()
+    testSubmitVoid()
     {
         bool work_called = false;
         bool handler_called = false;
 
         sync_executor ctx;
         executor exec(ctx);
-        exec.async_post(
+        exec.submit(
             [&work_called]{ work_called = true; },
             [&handler_called](system::result<void, std::exception_ptr>)
             {
@@ -375,14 +375,14 @@ struct execution_test
     }
 
     void
-    testAsyncPostException()
+    testSubmitException()
     {
         bool handler_called = false;
         bool got_exception = false;
 
         sync_executor ctx;
         executor exec(ctx);
-        exec.async_post(
+        exec.submit(
             []() -> int { throw std::runtime_error("test"); },
             [&](system::result<int, std::exception_ptr> r)
             {
@@ -588,14 +588,14 @@ struct execution_test
     }
 
     void
-    testWrapAsyncPost()
+    testWrapSubmit()
     {
         int result = 0;
         bool handler_called = false;
 
         value_executor ve;
         executor exec = executor::wrap(ve);
-        exec.async_post(
+        exec.submit(
             []{ return 42; },
             [&](system::result<int, std::exception_ptr> r)
             {
@@ -623,9 +623,9 @@ struct execution_test
         testPostWithMoveOnlyCapture();
         testQueuedExecution();
         testSharedReference();
-        testAsyncPostNonVoid();
-        testAsyncPostVoid();
-        testAsyncPostException();
+        testSubmitNonVoid();
+        testSubmitVoid();
+        testSubmitException();
         testFactoryBasic();
         testFactoryRollback();
 
@@ -640,7 +640,7 @@ struct execution_test
         testWrapPostMultiple();
         testWrapSharedOwnership();
         testWrapLifetime();
-        testWrapAsyncPost();
+        testWrapSubmit();
     }
 };
 
@@ -670,14 +670,14 @@ inline void run_task_exec(task<void>& t)
 struct execution_coro_test
 {
     void
-    testAsyncPostAwaitableNonVoid()
+    testSubmitAwaitableNonVoid()
     {
         sync_executor ctx;
 
         auto run = [&ctx]() -> task<int>
         {
             executor exec(ctx);
-            int result = co_await exec.async_post([]{ return 42; });
+            int result = co_await exec.submit([]{ return 42; });
             co_return result;
         };
 
@@ -686,7 +686,7 @@ struct execution_coro_test
     }
 
     void
-    testAsyncPostAwaitableVoid()
+    testSubmitAwaitableVoid()
     {
         bool executed = false;
         sync_executor ctx;
@@ -694,7 +694,7 @@ struct execution_coro_test
         auto run = [&ctx, &executed]() -> task<void>
         {
             executor exec(ctx);
-            co_await exec.async_post([&executed]{ executed = true; });
+            co_await exec.submit([&executed]{ executed = true; });
             co_return;
         };
 
@@ -704,16 +704,16 @@ struct execution_coro_test
     }
 
     void
-    testAsyncPostAwaitableMultiple()
+    testSubmitAwaitableMultiple()
     {
         sync_executor ctx;
 
         auto run = [&ctx]() -> task<int>
         {
             executor exec(ctx);
-            int a = co_await exec.async_post([]{ return 10; });
-            int b = co_await exec.async_post([]{ return 20; });
-            int c = co_await exec.async_post([]{ return 30; });
+            int a = co_await exec.submit([]{ return 10; });
+            int b = co_await exec.submit([]{ return 20; });
+            int c = co_await exec.submit([]{ return 30; });
             co_return a + b + c;
         };
 
@@ -725,9 +725,9 @@ struct execution_coro_test
     run()
     {
 #if 0
-        testAsyncPostAwaitableNonVoid();
-        testAsyncPostAwaitableVoid();
-        testAsyncPostAwaitableMultiple();
+        testSubmitAwaitableNonVoid();
+        testSubmitAwaitableVoid();
+        testSubmitAwaitableMultiple();
 #endif
     }
 };
