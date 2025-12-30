@@ -14,6 +14,7 @@
 
 #ifdef BOOST_CAPY_HAS_CORO
 
+#include <boost/capy/executor.hpp>
 #include <boost/capy/make_affine.hpp>
 
 #include <coroutine>
@@ -224,6 +225,42 @@ public:
     {
         return std::exchange(h_, {});
     }
+
+    /** Bind this task to an executor for affinity.
+
+        Sets the dispatcher so that when this task's internal
+        co_await expressions complete, the coroutine resumes
+        on the specified executor.
+
+        @param ex The executor to resume on.
+
+        @return A reference to this task for chaining.
+
+        @par Example
+        @code
+        task<void> example(executor pool)
+        {
+            // parse_request resumes on pool after internal co_awaits
+            auto data = co_await parse_request().on(pool);
+        }
+        @endcode
+    */
+    task& on(executor ex) &
+    {
+        h_.promise().dispatcher = [ex](auto f) mutable {
+            ex.post(std::move(f));
+        };
+        return *this;
+    }
+
+    /// @copydoc on(executor)
+    task&& on(executor ex) &&
+    {
+        h_.promise().dispatcher = [ex](auto f) mutable {
+            ex.post(std::move(f));
+        };
+        return std::move(*this);
+    }
 };
 
 //-----------------------------------------------------------------------------
@@ -415,6 +452,42 @@ public:
     std::coroutine_handle<promise_type> release() noexcept
     {
         return std::exchange(h_, {});
+    }
+
+    /** Bind this task to an executor for affinity.
+
+        Sets the dispatcher so that when this task's internal
+        co_await expressions complete, the coroutine resumes
+        on the specified executor.
+
+        @param ex The executor to resume on.
+
+        @return A reference to this task for chaining.
+
+        @par Example
+        @code
+        task<void> example(executor pool)
+        {
+            // do_work resumes on pool after internal co_awaits
+            co_await do_work().on(pool);
+        }
+        @endcode
+    */
+    task& on(executor ex) &
+    {
+        h_.promise().dispatcher = [ex](auto f) mutable {
+            ex.post(std::move(f));
+        };
+        return *this;
+    }
+
+    /// @copydoc on(executor)
+    task&& on(executor ex) &&
+    {
+        h_.promise().dispatcher = [ex](auto f) mutable {
+            ex.post(std::move(f));
+        };
+        return std::move(*this);
     }
 };
 

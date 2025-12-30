@@ -13,14 +13,59 @@
 #ifdef BOOST_CAPY_HAS_CORO
 
 #include <boost/capy/async_result.hpp>
+#include <boost/capy/executor.hpp>
 
 #include "test_suite.hpp"
 
+#include <atomic>
+#include <cstdlib>
 #include <stdexcept>
 #include <string>
 
 namespace boost {
 namespace capy {
+
+/** Simple synchronous executor for testing.
+*/
+struct sync_executor
+{
+    friend struct executor::access;
+
+    std::atomic<int> alloc_count{0};
+    std::atomic<int> submit_count{0};
+
+private:
+    struct header
+    {
+        std::size_t size;
+    };
+
+    void*
+    allocate(std::size_t size, std::size_t /*align*/)
+    {
+        ++alloc_count;
+        std::size_t total = sizeof(header) + size;
+        void* p = std::malloc(total);
+        auto* h = new(p) header{total};
+        return h + 1;
+    }
+
+    void
+    deallocate(void* p, std::size_t /*size*/, std::size_t /*align*/)
+    {
+        auto* h = static_cast<header*>(p) - 1;
+        std::free(h);
+    }
+
+    void
+    submit(executor::work* w)
+    {
+        ++submit_count;
+        w->invoke();
+        w->~work();
+        deallocate(w, 0, 0);
+    }
+};
 
 template<class T>
 T run_task(task<T>& t)
@@ -484,6 +529,95 @@ struct task_test
         BOOST_TEST_GE(dispatch_call_count, 1);
     }
 
+    //----------------------------------------------------------
+    // on() executor affinity tests
+    //----------------------------------------------------------
+
+    void
+    testOnSetsDispatcher()
+    {
+        // Verify on() sets the dispatcher for task<T>
+        sync_executor ctx;
+        executor ex(ctx);
+
+        auto t = task_with_async_for_dispatcher_test();
+        t.on(ex);
+
+        // Dispatcher should now be set to post through executor
+        BOOST_TEST(static_cast<bool>(t.handle().promise().dispatcher));
+        BOOST_TEST_EQ(run_task(t), 124);
+        // Work should have been posted through the executor
+        BOOST_TEST_GE(ctx.submit_count.load(), 1);
+    }
+
+    void
+    testOnSetsDispatcherVoid()
+    {
+        // Verify on() sets the dispatcher for task<void>
+        sync_executor ctx;
+        executor ex(ctx);
+
+        auto t = void_task_with_async_for_dispatcher_test();
+        t.on(ex);
+
+        bool done = false;
+        t.handle().promise().on_done = [&done]{ done = true; };
+        t.handle().resume();
+
+        BOOST_TEST(done);
+        // Work should have been posted through the executor
+        BOOST_TEST_GE(ctx.submit_count.load(), 1);
+    }
+
+    void
+    testOnFluentSyntax()
+    {
+        // Verify fluent syntax works with rvalue
+        sync_executor ctx;
+        executor ex(ctx);
+
+        auto make_task = []() -> task<int> {
+            co_return co_await async_returns_value();
+        };
+
+        auto t = make_task().on(ex);
+        BOOST_TEST_EQ(run_task(t), 123);
+        BOOST_TEST_GE(ctx.submit_count.load(), 1);
+    }
+
+    void
+    testOnFluentSyntaxVoid()
+    {
+        // Verify fluent syntax works with rvalue for void tasks
+        sync_executor ctx;
+        executor ex(ctx);
+
+        auto make_task = []() -> task<void> {
+            co_await async_returns_value();
+            co_return;
+        };
+
+        auto t = make_task().on(ex);
+        bool done = false;
+        t.handle().promise().on_done = [&done]{ done = true; };
+        t.handle().resume();
+
+        BOOST_TEST(done);
+        BOOST_TEST_GE(ctx.submit_count.load(), 1);
+    }
+
+    void
+    testOnLvalueReturnsReference()
+    {
+        // Verify on() returns reference to same task for lvalue
+        sync_executor ctx;
+        executor ex(ctx);
+
+        auto t = returns_int();
+        auto& ref = t.on(ex);
+        BOOST_TEST(&ref == &t);
+    }
+
     void
     run()
     {
@@ -506,6 +640,13 @@ struct task_test
         testDispatcherDefault();
         testDispatcherCalledByAwait();
         testVoidTaskDispatcherCalledByAwait();
+
+        // on() executor affinity tests
+        testOnSetsDispatcher();
+        testOnSetsDispatcherVoid();
+        testOnFluentSyntax();
+        testOnFluentSyntaxVoid();
+        testOnLvalueReturnsReference();
     }
 };
 
