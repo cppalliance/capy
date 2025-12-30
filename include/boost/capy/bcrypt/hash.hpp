@@ -34,6 +34,9 @@ namespace bcrypt {
     @par Exception Safety
     Strong guarantee.
 
+    @par Complexity
+    Constant.
+
     @param rounds Cost factor. Each increment doubles the work.
     Default is 10, which takes approximately 100ms on modern hardware.
 
@@ -61,6 +64,9 @@ gen_salt(
 
     @par Exception Safety
     Strong guarantee.
+
+    @par Complexity
+    O(2^rounds).
 
     @param password The password to hash. Only the first 72 bytes
     are used (bcrypt limitation).
@@ -90,6 +96,9 @@ hash(
     @par Exception Safety
     Strong guarantee.
 
+    @par Complexity
+    O(2^rounds).
+
     @param password The password to hash.
 
     @param salt The salt string (29 characters).
@@ -114,6 +123,9 @@ hash(
     @par Exception Safety
     Strong guarantee.
 
+    @par Complexity
+    O(2^rounds).
+
     @param password The plaintext password to check.
 
     @param hash The hash string to compare against.
@@ -136,6 +148,9 @@ compare(
 
     @par Exception Safety
     Strong guarantee.
+
+    @par Complexity
+    Constant.
 
     @param hash The hash string to parse.
 
