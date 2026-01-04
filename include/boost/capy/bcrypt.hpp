@@ -22,13 +22,13 @@
     #include <boost/capy/bcrypt.hpp>
 
     // Hash a password
-    boost::capy::bcrypt::result r;
-    boost::capy::bcrypt::hash(r, "my_password", 12);
+    capy::bcrypt::result r;
+    capy::bcrypt::hash(r, "my_password", 12);
     
     // Store r.str() in database...
     
     // Verify later
-    boost::system::error_code ec;
+    system::error_code ec;
     bool ok = boost::capy::bcrypt::compare("my_password", stored_hash, ec);
     if (ec)
         handle_malformed_hash();

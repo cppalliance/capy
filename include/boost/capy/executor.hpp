@@ -12,7 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/call_traits.hpp>
-#include <boost/capy/async_result.hpp>
+#include <boost/capy/async_op.hpp>
 #include <boost/system/result.hpp>
 #include <cstddef>
 #include <exception>
@@ -23,6 +23,15 @@
 
 namespace boost {
 namespace capy {
+
+#if 0
+class execution_context
+{
+public:
+private:
+    void post(work* w);
+};
+#endif
 
 /** A lightweight handle for submitting work to an execution context.
 
@@ -309,7 +318,7 @@ public:
     */
     template<class F>
     void
-    post(F&& f);
+    post(F&& f) const;
 
     /** Submit work and invoke a handler on completion.
 
@@ -330,7 +339,7 @@ public:
     */
     template<class F, class Handler>
     auto
-    submit(F&& f, Handler&& handler) ->
+    submit(F&& f, Handler&& handler) const ->
         typename std::enable_if<! std::is_void<
             typename detail::call_traits<typename
                 std::decay<F>::type>::return_type>::value>::type;
@@ -353,16 +362,17 @@ public:
     */
     template<class F, class Handler>
     auto
-    submit(F&& f, Handler&& handler) ->
+    submit(F&& f, Handler&& handler) const ->
         typename std::enable_if<std::is_void<typename
             detail::call_traits<typename std::decay<F>::type
                 >::return_type>::value>::type;
 
 #ifdef BOOST_CAPY_HAS_CORO
+
     /** Submit work and return an awaitable result.
 
         The work function is executed asynchronously. The
-        returned async_result can be awaited in a coroutine
+        returned async_op can be awaited in a coroutine
         to obtain the result.
 
         @param f The work function to execute.
@@ -371,14 +381,14 @@ public:
     */
     template<class F>
     auto
-    submit(F&& f) ->
-        async_result<std::invoke_result_t<std::decay_t<F>>>
+    submit(F&& f) const ->
+        async_op<std::invoke_result_t<std::decay_t<F>>>
         requires (!std::is_void_v<std::invoke_result_t<std::decay_t<F>>>);
 
     /** Submit work and return an awaitable result.
 
         The work function is executed asynchronously. The returned
-        async_result can be awaited in a coroutine to wait
+        async_op can be awaited in a coroutine to wait
         for completion.
 
         @param f The work function to execute.
@@ -387,9 +397,10 @@ public:
     */
     template<class F>
     auto
-    submit(F&& f) ->
-        async_result<void>
+    submit(F&& f) const ->
+        async_op<void>
         requires std::is_void_v<std::invoke_result_t<std::decay_t<F>>>;
+
 #endif
 };
 
@@ -561,7 +572,7 @@ public:
         @param ex The executor to submit work to.
     */
     explicit
-    factory(executor& ex) noexcept
+    factory(executor const& ex) noexcept
         : ops_(ex.ops_.get())
         , obj_(ex.obj_)
         , storage_(nullptr)
@@ -618,7 +629,7 @@ public:
 template<class F>
 void
 executor::
-post(F&& f)
+post(F&& f) const
 {
     struct callable : work
     {
@@ -648,7 +659,7 @@ post(F&& f)
 template<class F, class Handler>
 auto
 executor::
-submit(F&& f, Handler&& handler) ->
+submit(F&& f, Handler&& handler) const ->
     typename std::enable_if<! std::is_void<typename
         detail::call_traits<typename std::decay<F>::type
             >::return_type>::value>::type
@@ -681,7 +692,7 @@ submit(F&& f, Handler&& handler) ->
 template<class F, class Handler>
 auto
 executor::
-submit(F&& f, Handler&& handler) ->
+submit(F&& f, Handler&& handler) const ->
     typename std::enable_if<std::is_void<typename
     detail::call_traits<typename std::decay<F>::type
         >::return_type>::value>::type
@@ -715,13 +726,13 @@ submit(F&& f, Handler&& handler) ->
 template<class F>
 auto
 executor::
-submit(F&& f) ->
-    async_result<std::invoke_result_t<std::decay_t<F>>>
+submit(F&& f) const ->
+    async_op<std::invoke_result_t<std::decay_t<F>>>
     requires (!std::is_void_v<std::invoke_result_t<std::decay_t<F>>>)
 {
     using T = std::invoke_result_t<std::decay_t<F>>;
 
-    return make_async_result<T>(
+    return make_async_op<T>(
         [ex = *this, f = std::forward<F>(f)](auto on_done) mutable
         {
             ex.post(
@@ -736,11 +747,11 @@ submit(F&& f) ->
 template<class F>
 auto
 executor::
-submit(F&& f) ->
-    async_result<void>
+submit(F&& f) const ->
+    async_op<void>
     requires std::is_void_v<std::invoke_result_t<std::decay_t<F>>>
 {
-    return make_async_result<void>(
+    return make_async_op<void>(
         [ex = *this, f = std::forward<F>(f)](auto on_done) mutable
         {
             ex.post(

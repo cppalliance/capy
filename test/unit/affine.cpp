@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/make_affine.hpp>
+#include <boost/capy/affine.hpp>
 
 #ifdef BOOST_CAPY_HAS_CORO
 
@@ -17,7 +17,7 @@
 namespace boost {
 namespace capy {
 
-struct make_affine_test
+struct affine_test
 {
     void
     run()
@@ -26,8 +26,8 @@ struct make_affine_test
 };
 
 TEST_SUITE(
-    make_affine_test,
-    "boost.capy.make_affine");
+    affine_test,
+    "boost.capy.affine");
 
 } // capy
 } // boost

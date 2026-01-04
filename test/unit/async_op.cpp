@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/async_result.hpp>
+#include <boost/capy/async_op.hpp>
 
 #ifdef BOOST_CAPY_HAS_CORO
 
@@ -50,32 +50,32 @@ struct async_test_exception : std::runtime_error
 struct result_with_error
 {
     int value;
-    boost::system::error_code ec;
+    system::error_code ec;
 
     result_with_error() = default;
 
-    result_with_error(int v, boost::system::error_code e = {})
+    result_with_error(int v, system::error_code e = {})
         : value(v)
         , ec(e)
     {
     }
 };
 
-struct async_result_test
+struct async_op_test
 {
-    static async_result<int>
+    static async_op<int>
     async_int_value()
     {
-        return make_async_result<int>(
+        return make_async_op<int>(
             [](auto cb) {
                 cb(42);
             });
     }
 
-    static async_result<std::string>
+    static async_op<std::string>
     async_string_value()
     {
-        return make_async_result<std::string>(
+        return make_async_op<std::string>(
             [](auto cb) {
                 cb("hello async");
             });
@@ -98,35 +98,35 @@ struct async_result_test
     void
     testBasicValue()
     {
-        // async_result returning int
+        // async_op returning int
         {
             auto t = task_awaiting_int();
             BOOST_TEST_EQ(run_task(t), 42);
         }
 
-        // async_result returning string
+        // async_op returning string
         {
             auto t = task_awaiting_string();
             BOOST_TEST_EQ(run_task(t), "hello async");
         }
     }
 
-    static async_result<result_with_error>
+    static async_op<result_with_error>
     async_returns_success()
     {
-        return make_async_result<result_with_error>(
+        return make_async_op<result_with_error>(
             [](auto cb) {
-                cb(100, boost::system::error_code{});
+                cb(100, system::error_code{});
             });
     }
 
-    static async_result<result_with_error>
+    static async_op<result_with_error>
     async_returns_error()
     {
-        return make_async_result<result_with_error>(
+        return make_async_op<result_with_error>(
             [](auto cb) {
-                cb(0, boost::system::errc::make_error_code(
-                    boost::system::errc::invalid_argument));
+                cb(0, system::errc::make_error_code(
+                    system::errc::invalid_argument));
             });
     }
 
@@ -156,7 +156,7 @@ struct async_result_test
     void
     testErrorHandling()
     {
-        // async_result with success
+        // async_op with success
         {
             auto t = task_awaits_success();
             auto r = run_task(t);
@@ -164,13 +164,13 @@ struct async_result_test
             BOOST_TEST(!r.ec);
         }
 
-        // async_result with error
+        // async_op with error
         {
             auto t = task_awaits_error();
             auto r = run_task(t);
             BOOST_TEST_EQ(r.value, 0);
             BOOST_TEST(r.ec);
-            BOOST_TEST_EQ(r.ec, boost::system::errc::invalid_argument);
+            BOOST_TEST_EQ(r.ec, system::errc::invalid_argument);
         }
 
         // task checks error and returns appropriate value
@@ -180,24 +180,24 @@ struct async_result_test
         }
     }
 
-    static async_result<int>
+    static async_op<int>
     async_value_1()
     {
-        return make_async_result<int>(
+        return make_async_op<int>(
             [](auto cb) { cb(10); });
     }
 
-    static async_result<int>
+    static async_op<int>
     async_value_2()
     {
-        return make_async_result<int>(
+        return make_async_op<int>(
             [](auto cb) { cb(20); });
     }
 
-    static async_result<int>
+    static async_op<int>
     async_value_3()
     {
-        return make_async_result<int>(
+        return make_async_op<int>(
             [](auto cb) { cb(30); });
     }
 
@@ -227,14 +227,14 @@ struct async_result_test
     void
     testMoveOperations()
     {
-        // async_result is move constructible
+        // async_op is move constructible
         {
             auto ar1 = async_int_value();
             auto ar2 = std::move(ar1);
             (void)ar2;
         }
 
-        // async_result is move assignable
+        // async_op is move assignable
         {
             auto ar1 = async_int_value();
             auto ar2 = async_string_value();
@@ -243,10 +243,10 @@ struct async_result_test
         }
     }
 
-    static async_result<int>
+    static async_op<int>
     async_with_captured_state(int multiplier)
     {
-        return make_async_result<int>(
+        return make_async_op<int>(
             [multiplier](auto cb) {
                 cb(10 * multiplier);
             });
@@ -282,10 +282,10 @@ struct async_result_test
         }
     };
 
-    static async_result<complex_result>
+    static async_op<complex_result>
     async_complex()
     {
-        return make_async_result<complex_result>(
+        return make_async_op<complex_result>(
             [](auto cb) {
                 cb(1, "test", 3.14);
             });
@@ -330,14 +330,12 @@ struct async_result_test
         BOOST_TEST_EQ(run_task(t), 94);
     }
 
-    //----------------------------------------------------------
-    // async_result<void> tests
-    //----------------------------------------------------------
+    // async_op<void> tests
 
-    static async_result<void>
+    static async_op<void>
     async_void_basic()
     {
-        return make_async_result<void>(
+        return make_async_op<void>(
             [](auto on_done) {
                 on_done();
             });
@@ -353,17 +351,16 @@ struct async_result_test
     void
     testVoidAsyncBasic()
     {
-        bool done = false;
         auto t = task_awaits_void_async();
-        t.handle().promise().on_done = [&done]{ done = true; };
-        t.handle().resume();
-        BOOST_TEST(done);
+        while (!t.handle().done())
+            t.handle().resume();
+        t.await_resume();
     }
 
-    static async_result<void>
+    static async_op<void>
     async_void_step()
     {
-        return make_async_result<void>(
+        return make_async_op<void>(
             [](auto on_done) {
                 on_done();
             });
@@ -397,11 +394,10 @@ struct async_result_test
     void
     testVoidAsyncChain()
     {
-        bool done = false;
         auto t = task_awaits_multiple_void();
-        t.handle().promise().on_done = [&done]{ done = true; };
-        t.handle().resume();
-        BOOST_TEST(done);
+        while (!t.handle().done())
+            t.handle().resume();
+        t.await_resume();
     }
 
     void
@@ -419,10 +415,10 @@ struct async_result_test
         (void)ar2;
     }
 
-    static async_result<void>
+    static async_op<void>
     async_void_deferred()
     {
-        return make_async_result<void>(
+        return make_async_op<void>(
             [](auto on_done) {
                 // Simulate deferred completion
                 on_done();
@@ -455,7 +451,7 @@ struct async_result_test
         testComplexResult();
         testTaskChaining();
 
-        // async_result<void> tests
+        // async_op<void> tests
         testVoidAsyncBasic();
         testVoidAsyncWithValue();
         testVoidAsyncChain();
@@ -466,8 +462,8 @@ struct async_result_test
 };
 
 TEST_SUITE(
-    async_result_test,
-    "boost.capy.async_result");
+    async_op_test,
+    "boost.capy.async_op");
 
 } // capy
 } // boost

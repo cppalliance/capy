@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_ASYNC_RESULT_HPP
-#define BOOST_CAPY_ASYNC_RESULT_HPP
+#ifndef BOOST_CAPY_ASYNC_OP_HPP
+#define BOOST_CAPY_ASYNC_OP_HPP
 
 #include <boost/capy/detail/config.hpp>
 
@@ -23,46 +23,31 @@
 
 namespace boost {
 namespace capy {
-
-/** Concept for a deferred operation that produces a value.
-
-    A deferred operation is a callable that accepts a completion
-    handler. When invoked, it initiates an asynchronous operation
-    and calls the handler with the result when complete.
-
-    @tparam Op The operation type.
-    @tparam T The result type.
-*/
-template<class Op, class T>
-concept deferred_operation = std::invocable<Op, std::function<void(T)>>;
-
-//-----------------------------------------------------------------------------
-
 namespace detail {
 
 template<class T>
-struct async_result_impl_base
+struct async_op_impl_base
 {
-    virtual ~async_result_impl_base() = default;
+    virtual ~async_op_impl_base() = default;
     virtual void start(std::function<void()> on_done) = 0;
     virtual T get_result() = 0;
 };
 
-struct async_result_void_impl_base
+struct async_op_void_impl_base
 {
-    virtual ~async_result_void_impl_base() = default;
+    virtual ~async_op_void_impl_base() = default;
     virtual void start(std::function<void()> on_done) = 0;
     virtual void get_result() = 0;
 };
 
 template<class T, class DeferredOp>
-struct async_result_impl : async_result_impl_base<T>
+struct async_op_impl : async_op_impl_base<T>
 {
     DeferredOp op_;
     std::variant<std::exception_ptr, T> result_{};
 
     explicit
-    async_result_impl(DeferredOp&& op)
+    async_op_impl(DeferredOp&& op)
         : op_(std::forward<DeferredOp>(op))
     {
     }
@@ -88,13 +73,13 @@ struct async_result_impl : async_result_impl_base<T>
 };
 
 template<class DeferredOp>
-struct async_result_void_impl : async_result_void_impl_base
+struct async_op_void_impl : async_op_void_impl_base
 {
     DeferredOp op_;
     std::exception_ptr exception_{};
 
     explicit
-    async_result_void_impl(DeferredOp&& op)
+    async_op_void_impl(DeferredOp&& op)
         : op_(std::forward<DeferredOp>(op))
     {
     }
@@ -131,9 +116,9 @@ struct async_result_void_impl : async_result_void_impl_base
     @par Example
     @code
     // Wrap a callback-based timer
-    async_result<void> async_sleep(std::chrono::milliseconds ms)
+    async_op<void> async_sleep(std::chrono::milliseconds ms)
     {
-        return make_async_result<void>(
+        return make_async_op<void>(
             [ms](auto&& handler) {
                 // Start timer, call handler when done
                 start_timer(ms, std::move(handler));
@@ -148,12 +133,12 @@ struct async_result_void_impl : async_result_void_impl_base
 
     @tparam T The type of value produced by the asynchronous operation.
 
-    @see make_async_result, task
+    @see make_async_op, task
 */
 template<class T>
-class async_result
+class async_op
 {
-    std::unique_ptr<detail::async_result_impl_base<T>> impl_;
+    std::unique_ptr<detail::async_op_impl_base<T>> impl_;
 
 // Workaround: clang fails to match friend function template declarations
 #if defined(__clang__) && (__clang_major__ == 16 || \
@@ -161,7 +146,7 @@ class async_result
 public:
 #endif
     explicit
-    async_result(std::unique_ptr<detail::async_result_impl_base<T>> p)
+    async_op(std::unique_ptr<detail::async_op_impl_base<T>> p)
         : impl_(std::move(p))
     {
     }
@@ -172,8 +157,8 @@ private:
 
     template<class U, class DeferredOp>
         requires (!std::is_void_v<U>)
-    friend async_result<U>
-    make_async_result(DeferredOp&& op);
+    friend async_op<U>
+    make_async_op(DeferredOp&& op);
 
 public:
     /** Return whether the result is ready.
@@ -197,6 +182,22 @@ public:
     await_suspend(std::coroutine_handle<> h)
     {
         impl_->start([h]{ h.resume(); });
+    }
+
+    /** Suspend the caller with scheduler affinity.
+
+        Initiates the asynchronous operation and arranges for
+        the caller to be resumed through the dispatcher when
+        it completes, maintaining scheduler affinity.
+
+        @param h The coroutine handle of the awaiting coroutine.
+        @param dispatcher The dispatcher to resume through.
+    */
+    template<typename Dispatcher>
+    void
+    await_suspend(std::coroutine_handle<> h, Dispatcher& dispatcher)
+    {
+        impl_->start([h, &dispatcher]{ dispatcher(h); });
     }
 
     /** Return the result after completion.
@@ -217,7 +218,7 @@ public:
 
 /** An awaitable wrapper for callback-based operations with no result.
 
-    This specialization of async_result is used for asynchronous
+    This specialization of async_op is used for asynchronous
     operations that signal completion but do not produce a value,
     such as timers, write operations, or connection establishment.
 
@@ -228,9 +229,9 @@ public:
     @par Example
     @code
     // Wrap a callback-based timer
-    async_result<void> async_sleep(std::chrono::milliseconds ms)
+    async_op<void> async_sleep(std::chrono::milliseconds ms)
     {
-        return make_async_result<void>(
+        return make_async_op<void>(
             [ms](auto handler) {
                 start_timer(ms, [h = std::move(handler)]{ h(); });
             });
@@ -242,12 +243,12 @@ public:
     }
     @endcode
 
-    @see async_result, make_async_result
+    @see async_op, make_async_op
 */
 template<>
-class async_result<void>
+class async_op<void>
 {
-    std::unique_ptr<detail::async_result_void_impl_base> impl_;
+    std::unique_ptr<detail::async_op_void_impl_base> impl_;
 
 // Workaround: clang fails to match friend function template declarations
 #if defined(__clang__) && (__clang_major__ == 16 || \
@@ -255,7 +256,7 @@ class async_result<void>
 public:
 #endif
     explicit
-    async_result(std::unique_ptr<detail::async_result_void_impl_base> p)
+    async_op(std::unique_ptr<detail::async_op_void_impl_base> p)
         : impl_(std::move(p))
     {
     }
@@ -266,8 +267,8 @@ private:
 
     template<class U, class DeferredOp>
         requires std::is_void_v<U>
-    friend async_result<void>
-    make_async_result(DeferredOp&& op);
+    friend async_op<void>
+    make_async_op(DeferredOp&& op);
 
 public:
     /** Return whether the result is ready.
@@ -293,6 +294,22 @@ public:
         impl_->start([h]{ h.resume(); });
     }
 
+    /** Suspend the caller with scheduler affinity.
+
+        Initiates the asynchronous operation and arranges for
+        the caller to be resumed through the dispatcher when
+        it completes, maintaining scheduler affinity.
+
+        @param h The coroutine handle of the awaiting coroutine.
+        @param dispatcher The dispatcher to resume through.
+    */
+    template<typename Dispatcher>
+    void
+    await_suspend(std::coroutine_handle<> h, Dispatcher& dispatcher)
+    {
+        impl_->start([h, &dispatcher]{ dispatcher(h); });
+    }
+
     /** Complete the await and check for exceptions.
 
         @throws Any exception that occurred during the operation.
@@ -306,16 +323,16 @@ public:
 
 //-----------------------------------------------------------------------------
 
-/** Return an async_result from a deferred operation.
+/** Return an async_op from a deferred operation.
 
-    This factory function creates an awaitable async_result that
+    This factory function creates an awaitable async_op that
     wraps a callback-based asynchronous operation.
 
     @par Example
     @code
-    async_result<std::string> async_read()
+    async_op<std::string> async_read()
     {
-        return make_async_result<std::string>(
+        return make_async_op<std::string>(
             [](auto handler) {
                 // Simulate async read
                 handler("Hello, World!");
@@ -329,31 +346,31 @@ public:
               it should initiate the asynchronous operation and call the
               handler with the result when complete.
 
-    @return An async_result that can be awaited in a coroutine.
+    @return An async_op that can be awaited in a coroutine.
 
-    @see async_result
+    @see async_op
 */
 template<class T, class DeferredOp>
     requires (!std::is_void_v<T>)
 [[nodiscard]]
-async_result<T>
-make_async_result(DeferredOp&& op)
+async_op<T>
+make_async_op(DeferredOp&& op)
 {
-    using impl_type = detail::async_result_impl<T, std::decay_t<DeferredOp>>;
-    return async_result<T>(
+    using impl_type = detail::async_op_impl<T, std::decay_t<DeferredOp>>;
+    return async_op<T>(
         std::make_unique<impl_type>(std::forward<DeferredOp>(op)));
 }
 
-/** Return an async_result<void> from a deferred operation.
+/** Return an async_op<void> from a deferred operation.
 
     This overload is used for operations that signal completion
     without producing a value.
 
     @par Example
     @code
-    async_result<void> async_wait(int milliseconds)
+    async_op<void> async_wait(int milliseconds)
     {
-        return make_async_result<void>(
+        return make_async_op<void>(
             [milliseconds](auto on_done) {
                 // Start timer, call on_done() when elapsed
                 start_timer(milliseconds, std::move(on_done));
@@ -365,18 +382,18 @@ make_async_result(DeferredOp&& op)
               arguments. When invoked, it should initiate the operation
               and call the handler when complete.
 
-    @return An async_result<void> that can be awaited in a coroutine.
+    @return An async_op<void> that can be awaited in a coroutine.
 
-    @see async_result
+    @see async_op
 */
 template<class T, class DeferredOp>
     requires std::is_void_v<T>
 [[nodiscard]]
-async_result<void>
-make_async_result(DeferredOp&& op)
+async_op<void>
+make_async_op(DeferredOp&& op)
 {
-    using impl_type = detail::async_result_void_impl<std::decay_t<DeferredOp>>;
-    return async_result<void>(
+    using impl_type = detail::async_op_void_impl<std::decay_t<DeferredOp>>;
+    return async_op<void>(
         std::make_unique<impl_type>(std::forward<DeferredOp>(op)));
 }
 

@@ -14,7 +14,7 @@
 Capy provides lightweight coroutine support for C++20, enabling
 asynchronous code that reads like synchronous code. The library
 offers two awaitable types: `task<T>` for lazy coroutine-based
-operations, and `async_result<T>` for bridging callback-based
+operations, and `async_op<T>` for bridging callback-based
 APIs into the coroutine world.
 
 This section covers the awaitable types provided by the library,
@@ -37,28 +37,33 @@ A `task` owns its coroutine handle and destroys it automatically.
 Exceptions thrown within the coroutine are captured and rethrown
 when the result is retrieved via `co_await`.
 
+Tasks support scheduler affinity through the `on()` method, which
+binds the task to an executor. When a task has affinity, all
+internal `co_await` expressions resume on the specified executor,
+ensuring consistent execution context.
+
 The `task<void>` specialization is used for coroutines that perform
 work but do not produce a value. These coroutines use `co_return;`
 with no argument.
 
-=== async_result
+=== async_op
 
-xref:reference:boost/capy/async_result.adoc[`async_result<T>`] bridges traditional callback-based asynchronous
+xref:reference:boost/capy/async_op.adoc[`async_op<T>`] bridges traditional callback-based asynchronous
 APIs with coroutines. It wraps a deferred operation—a callable that
 accepts a completion handler, starts an asynchronous operation, and
 invokes the handler with the result.
 
-The key advantage of `async_result` is its type-erased design. The
+The key advantage of `async_op` is its type-erased design. The
 implementation details are hidden behind an abstract interface,
 allowing runtime-specific code such as Boost.Asio to be confined
-to source files. Headers that return `async_result` do not need
+to source files. Headers that return `async_op` do not need
 to include Asio or other heavyweight dependencies, keeping compile
 times low and interfaces clean.
 
-Use xref:reference:boost/capy/make_async_result.adoc[`make_async_result<T>()`] to create an `async_result` from any
+Use xref:reference:boost/capy/make_async_op.adoc[`make_async_op<T>()`] to create an `async_op` from any
 callable that follows the deferred operation pattern.
 
-The `async_result<void>` specialization is used for operations that
+The `async_op<void>` specialization is used for operations that
 signal completion without producing a value, such as timers, write
 operations, or connection establishment. The completion handler
 takes no arguments.
@@ -86,38 +91,38 @@ Use `task` when composing asynchronous operations purely within the
 coroutine world. Tasks can await other tasks, forming a tree of
 dependent operations.
 
-=== When to use async_result
+=== When to use async_op
 
-Return `async_result<T>` from a regular (non-coroutine) function that
+Return `async_op<T>` from a regular (non-coroutine) function that
 wraps an existing callback-based API. The function does not use
 `co_await` or `co_return`; instead it constructs and returns an
-`async_result` using `make_async_result<T>()`.
+`async_op` using `make_async_op<T>()`.
 
 [source,cpp]
 ----
-async_result<std::size_t> async_read(socket& s, buffer& b)
+async_op<std::size_t> async_read(socket& s, buffer& b)
 {
-    return make_async_result<std::size_t>(
+    return make_async_op<std::size_t>(
         [&](auto handler) {
             s.async_read(b, std::move(handler));
         });
 }
 ----
 
-Use `async_result` at the boundary between callback-based code and
+Use `async_op` at the boundary between callback-based code and
 coroutines. It serves as an adapter that lets coroutines `co_await`
 operations implemented with traditional completion handlers.
 
 === Choosing between them
 
 * Writing new asynchronous logic? Use `task`.
-* Wrapping an existing callback API? Use `async_result`.
+* Wrapping an existing callback API? Use `async_op`.
 * Composing multiple awaitable operations? Use `task`.
 * Exposing a library function without leaking dependencies? Use
-  `async_result` with the implementation in a source file.
+  `async_op` with the implementation in a source file.
 
 In practice, application code is primarily `task`-based, while
-`async_result` appears at integration points with I/O libraries
+`async_op` appears at integration points with I/O libraries
 and other callback-driven systems.
 
 == Examples
@@ -170,12 +175,12 @@ the source file.
 #ifndef TIMER_HPP
 #define TIMER_HPP
 
-#include <boost/capy/async_result.hpp>
+#include <boost/capy/async_op.hpp>
 
 namespace mylib {
 
 // Returns the number of milliseconds actually elapsed
-boost::capy::async_result<int>
+boost::capy::async_op<int>
 async_wait(int milliseconds);
 
 } // namespace mylib
@@ -191,10 +196,10 @@ async_wait(int milliseconds);
 
 namespace mylib {
 
-boost::capy::async_result<int>
+boost::capy::async_op<int>
 async_wait(int milliseconds)
 {
-    return boost::capy::make_async_result<int>(
+    return boost::capy::make_async_op<int>(
         [milliseconds](auto handler)
         {
             // In a real implementation, this would use
@@ -217,22 +222,22 @@ async_wait(int milliseconds)
 
 === Void operations
 
-This example shows `task<void>` and `async_result<void>` for
+This example shows `task<void>` and `async_op<void>` for
 operations that complete without producing a value.
 
 [source,cpp]
 ----
 #include <boost/capy/task.hpp>
-#include <boost/capy/async_result.hpp>
+#include <boost/capy/async_op.hpp>
 
 using boost::capy::task;
-using boost::capy::async_result;
-using boost::capy::make_async_result;
+using boost::capy::async_op;
+using boost::capy::make_async_op;
 
 // Wrap a callback-based timer (void result)
-async_result<void> async_sleep(int milliseconds)
+async_op<void> async_sleep(int milliseconds)
 {
-    return make_async_result<void>(
+    return make_async_op<void>(
         [milliseconds](auto on_done)
         {
             // In real code, this would start a timer
@@ -258,66 +263,63 @@ task<void> run_sequence()
 }
 ----
 
-=== Running a task to completion
+=== Spawning tasks on an executor
 
-Tasks are lazy and require a driver to execute. This example
-shows a simple synchronous driver that runs a task until it
-completes.
+Tasks are lazy and require a driver to execute. The `spawn()` function
+starts a task on an executor and delivers the result to a completion
+handler. This is useful for launching tasks from non-coroutine code
+or integrating tasks into callback-based systems.
 
 [source,cpp]
 ----
 #include <boost/capy/task.hpp>
+#include <boost/capy/executor.hpp>
 
 using boost::capy::task;
-
-template<class T>
-T run(task<T> t)
-{
-    bool done = false;
-    t.handle().promise().on_done_ = [&done]{ done = true; };
-    t.handle().resume();
-
-    // In a real application, this would integrate with
-    // an event loop rather than spinning
-    while (!done)
-    {
-        // Process pending I/O events here
-    }
-
-    return t.await_resume();
-}
+using boost::capy::executor;
+using boost::capy::spawn;
 
 task<int> compute()
 {
     co_return 42;
 }
 
-int main()
+void start_computation(executor ex)
 {
-    int result = run(compute());
-    return result == 42 ? 0 : 1;
+    // Spawn a task on the executor with a completion handler
+    spawn(ex, compute(), [](auto result) {
+        if (result.has_value())
+            std::cout << "Result: " << *result << std::endl;
+        else
+            std::cerr << "Error occurred\n";
+    });
 }
 ----
 
+The `spawn()` function takes an executor, a task, and a completion handler.
+The handler receives `system::result<T, std::exception_ptr>` which holds
+either the task's return value or any exception thrown during execution.
+The task runs to completion on the executor with proper scheduler affinity.
+
 === Complete request handler
 
-This example combines tasks and async_result to implement a
+This example combines tasks and async_op to implement a
 request handler that reads a request, processes it, and sends
 a response.
 
 [source,cpp]
 ----
 #include <boost/capy/task.hpp>
-#include <boost/capy/async_result.hpp>
+#include <boost/capy/async_op.hpp>
 #include <string>
 
 using boost::capy::task;
-using boost::capy::async_result;
+using boost::capy::async_op;
 
-// Forward declarations - implementations use async_result
+// Forward declarations - implementations use async_op
 // to wrap the underlying I/O library
-async_result<std::string> async_read(int fd);
-async_result<std::size_t> async_write(int fd, std::string data);
+async_op<std::string> async_read(int fd);
+async_op<std::size_t> async_write(int fd, std::string data);
 
 // Pure coroutine logic using task
 task<std::string> process_request(std::string const& request)

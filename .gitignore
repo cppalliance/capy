@@ -21,3 +21,7 @@
 /.cache
 /.clangd
 /compile_commands.json
+
+/.cursor/
+/build_clang/
+

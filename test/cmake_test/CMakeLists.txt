@@ -16,8 +16,29 @@ if(BOOST_CI_INSTALL_TEST)
   find_package(Boost CONFIG REQUIRED COMPONENTS capy)
 else()
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-  set(BOOST_INCLUDE_LIBRARIES capy)
-  add_subdirectory(../../../.. boostorg/boost)
+  add_subdirectory(../.. boostorg/capy)
+
+  set(deps
+    # Primary dependencies
+
+    assert
+    config
+    core
+    system
+    throw_exception
+
+    # Secondary dependencies
+
+    compat
+    variant2
+    winapi
+    mp11
+    predef
+  )
+
+  foreach(dep IN LISTS deps)
+    add_subdirectory(../../../${dep} boostorg/${dep} EXCLUDE_FROM_ALL)
+  endforeach()
 endif()
 
 add_executable(main main.cpp)
