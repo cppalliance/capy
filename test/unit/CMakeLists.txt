@@ -7,7 +7,9 @@
 # Official repository: https://github.com/cppalliance/capy
 #
 
-add_subdirectory(../../../url/extra/test_suite test_suite)
+if(NOT TARGET boost_url_test_suite)
+    add_subdirectory(../../../url/extra/test_suite test_suite)
+endif()
 
 file(GLOB_RECURSE PFILES CONFIGURE_DEPENDS *.cpp *.hpp)
 list(APPEND PFILES
