@@ -1,0 +1,261 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Compression
+
+This page documents the Brotli and ZLib compression support in Capy.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== Overview
+
+Capy provides wrappers for two compression libraries:
+
+[cols="1,3"]
+|===
+| Library | Use Case
+
+| **Brotli**
+| High compression ratio, good for web content
+
+| **ZLib**
+| Wide compatibility, DEFLATE/gzip/zlib formats
+|===
+
+Both are accessed through service objects installed in a `datastore`.
+
+== Brotli
+
+Brotli is a modern compression algorithm offering excellent compression ratios,
+especially for text content.
+
+=== Setup
+
+[source,cpp]
+----
+#include <boost/capy/brotli.hpp>
+#include <boost/capy/datastore.hpp>
+
+datastore ctx;
+
+// Install encoder and decoder services
+auto& encoder = brotli::install_encode_service(ctx);
+auto& decoder = brotli::install_decode_service(ctx);
+----
+
+=== Encoding
+
+[source,cpp]
+----
+std::vector<char> input = get_data();
+std::vector<char> output;
+
+// Compress
+brotli::encode_result result = encoder.encode(
+    input.data(), input.size(),
+    output
+);
+
+if (result.ec)
+    handle_error(result.ec);
+----
+
+=== Decoding
+
+[source,cpp]
+----
+std::vector<char> compressed = get_compressed();
+std::vector<char> output;
+
+// Decompress
+brotli::decode_result result = decoder.decode(
+    compressed.data(), compressed.size(),
+    output
+);
+
+if (result.ec)
+    handle_error(result.ec);
+----
+
+=== Shared Dictionaries
+
+Brotli supports shared dictionaries for improved compression of similar content:
+
+[source,cpp]
+----
+brotli::shared_dictionary dict = load_dictionary();
+
+auto& encoder = brotli::install_encode_service(ctx, dict);
+auto& decoder = brotli::install_decode_service(ctx, dict);
+----
+
+== ZLib
+
+ZLib implements the DEFLATE algorithm used in gzip, zlib, and raw formats.
+
+=== Setup
+
+[source,cpp]
+----
+#include <boost/capy/zlib.hpp>
+#include <boost/capy/datastore.hpp>
+
+datastore ctx;
+
+// Install deflate (compress) and inflate (decompress) services
+auto& deflate_svc = zlib::install_deflate_service(ctx);
+auto& inflate_svc = zlib::install_inflate_service(ctx);
+----
+
+=== Compression (Deflate)
+
+[source,cpp]
+----
+std::vector<char> input = get_data();
+std::vector<char> output;
+
+// Compress with default settings
+zlib::deflate_result result = deflate_svc.deflate(
+    input.data(), input.size(),
+    output
+);
+
+if (result.ec)
+    handle_error(result.ec);
+----
+
+=== Decompression (Inflate)
+
+[source,cpp]
+----
+std::vector<char> compressed = get_compressed();
+std::vector<char> output;
+
+// Decompress
+zlib::inflate_result result = inflate_svc.inflate(
+    compressed.data(), compressed.size(),
+    output
+);
+
+if (result.ec)
+    handle_error(result.ec);
+----
+
+=== Compression Options
+
+[source,cpp]
+----
+// Compression level (0-9, higher = better compression, slower)
+zlib::compression_level level = zlib::compression_level::best;
+
+// Compression strategy
+zlib::compression_strategy strategy = zlib::compression_strategy::filtered;
+
+// Flush mode
+zlib::flush flush = zlib::flush::sync_flush;
+----
+
+=== Format Selection
+
+The window bits parameter controls the format:
+
+[cols="1,2"]
+|===
+| Window Bits | Format
+
+| 8-15
+| Raw DEFLATE
+
+| 16-31 (15 + 16)
+| gzip
+
+| 32-47 (15 + 32)
+| Auto-detect gzip or zlib
+|===
+
+== Error Handling
+
+Both libraries use error codes from their respective error categories:
+
+[source,cpp]
+----
+if (result.ec == brotli::error::invalid_input)
+{
+    // Brotli-specific error
+}
+
+if (result.ec == zlib::error::data_error)
+{
+    // ZLib-specific error
+}
+
+// Generic error handling
+if (result.ec)
+{
+    std::cerr << "Compression failed: " << result.ec.message() << "\n";
+}
+----
+
+== Streaming
+
+For large data that doesn't fit in memory, use streaming APIs:
+
+[source,cpp]
+----
+zlib::stream stream;
+
+// Process in chunks
+while (has_more_input())
+{
+    auto chunk = get_next_chunk();
+    auto result = stream.deflate_chunk(
+        chunk.data(), chunk.size(),
+        output_buffer,
+        zlib::flush::no_flush
+    );
+    // Handle partial output...
+}
+
+// Finish the stream
+auto result = stream.deflate_finish(output_buffer);
+----
+
+== When to Use Each
+
+**Use Brotli when:**
+
+* Compression ratio is important
+* Content is text-heavy (HTML, CSS, JS)
+* Decompression speed is acceptable
+
+**Use ZLib when:**
+
+* Compatibility is important (gzip is universal)
+* Fast decompression is needed
+* Memory usage must be minimal
+
+== Summary
+
+[cols="1,1,3"]
+|===
+| Library | Header | Purpose
+
+| Brotli
+| `<boost/capy/brotli.hpp>`
+| High-ratio compression
+
+| ZLib
+| `<boost/capy/zlib.hpp>`
+| DEFLATE/gzip/zlib compression
+|===
+
+== Next Steps
+
+* xref:containers.adoc[Containers] — Service container (`datastore`)
+* xref:../index.adoc[Introduction] — Return to overview

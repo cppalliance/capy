@@ -12,6 +12,8 @@
 A dispatcher is a callable object that accepts a coroutine handle and
 schedules it for resumption.
 
+Requires: C++20
+
 == Synopsis
 
 Defined in header `<boost/capy/affine.hpp>`
@@ -30,19 +32,18 @@ concept dispatcher = requires(D const& d, std::coroutine_handle<P> h) {
 
 == Description
 
-A dispatcher encapsulates the rules for how and where a coroutine
-resumes. When invoked with a coroutine handle, the dispatcher
-schedules the handle for resumption and returns a handle suitable
-for symmetric transfer.
+A dispatcher encapsulates the rules for how and where a coroutine resumes.
+When invoked with a coroutine handle, the dispatcher schedules the handle for
+resumption and returns a handle suitable for symmetric transfer.
 
-Dispatchers must be const-callable, enabling thread-safe concurrent
-dispatch from multiple coroutines. The dispatcher may resume the
-handle inline (by returning the handle itself) or queue it for later
-execution (by returning `std::noop_coroutine()`).
+Dispatchers must be const-callable, enabling thread-safe concurrent dispatch
+from multiple coroutines. The dispatcher may resume the handle inline (by
+returning the handle itself) or queue it for later execution (by returning
+`std::noop_coroutine()`).
 
-Since `coro` (an alias for `std::coroutine_handle<void>`) has
-`operator()` which invokes `resume()`, the handle itself is callable
-and can be dispatched directly.
+Since `coro` (an alias for `std::coroutine_handle<void>`) has `operator()`
+which invokes `resume()`, the handle itself is callable and can be dispatched
+directly.
 
 == Valid Expressions
 
@@ -57,13 +58,18 @@ Given:
 
 | `d(h)`
 | convertible to `coro`
-| Schedules `h` for resumption and returns a handle for symmetric transfer
+| Schedule `h` for resumption and return a handle for symmetric transfer
 |===
 
 == Example
 
 [source,cpp]
 ----
+#include <boost/capy/affine.hpp>
+
+using boost::capy::coro;
+using boost::capy::dispatcher;
+
 struct inline_dispatcher
 {
     coro operator()(coro h) const
@@ -89,6 +95,6 @@ static_assert(dispatcher<queuing_dispatcher>);
 
 == See Also
 
-* xref:concepts/affine_awaitable.adoc[affine_awaitable]
-* xref:concepts/stoppable_awaitable.adoc[stoppable_awaitable]
-* xref:advanced.adoc[Advanced Topics]
+* xref:affine_awaitable.adoc[affine_awaitable] — Awaitable that accepts a dispatcher
+* xref:stoppable_awaitable.adoc[stoppable_awaitable] — Awaitable with cancellation support
+* xref:../coroutines/affinity.adoc[Executor Affinity] — Tutorial on affinity propagation

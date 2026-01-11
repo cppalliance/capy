@@ -13,6 +13,8 @@ An awaitable is stoppable if it participates in the stoppable awaitable
 protocol by accepting both a dispatcher and a stop token in its
 `await_suspend` method.
 
+Requires: C++20
+
 == Synopsis
 
 Defined in header `<boost/capy/affine.hpp>`
@@ -35,16 +37,20 @@ concept stoppable_awaitable =
 
 The stoppable awaitable protocol extends `affine_awaitable` to enable
 automatic stop token propagation through coroutine chains. When a task
-has a stop token, it passes the token to any stoppable awaitables it
-awaits.
+has a stop token, it passes the token to any stoppable awaitables it awaits.
 
 A stoppable awaitable must provide _both_ overloads of `await_suspend`:
 
 * `await_suspend(h, d)` — for callers without stop tokens
 * `await_suspend(h, d, token)` — for callers with stop tokens
 
-The awaitable should use the stop token to support cancellation of
-the underlying operation.
+The awaitable should use the stop token to support cancellation of the
+underlying operation.
+
+== Preconditions
+
+* The dispatcher `d` remains valid until the awaitable resumes the caller
+* The stop token `token` remains valid until the operation completes
 
 == Valid Expressions
 
@@ -61,25 +67,32 @@ Given:
 
 | `a.await_ready()`
 | `bool`
-| Returns `true` if the operation has already completed
+| Return `true` if the operation has already completed
 
 | `a.await_suspend(h, d)`
 | (unspecified)
-| Suspends without cancellation support
+| Suspend without cancellation support
 
 | `a.await_suspend(h, d, token)`
 | (unspecified)
-| Suspends with cancellation support via the stop token
+| Suspend with cancellation support via the stop token
 
 | `a.await_resume()`
 | (unspecified)
-| Returns the operation result or rethrows any exception
+| Return the operation result or rethrow any exception
 |===
 
 == Example
 
 [source,cpp]
 ----
+#include <boost/capy/affine.hpp>
+#include <stop_token>
+
+using boost::capy::coro;
+using boost::capy::stoppable_awaitable;
+using boost::capy::any_dispatcher;
+
 struct stoppable_timer
 {
     std::chrono::milliseconds duration_;
@@ -130,6 +143,6 @@ static_assert(stoppable_awaitable<stoppable_timer, any_dispatcher>);
 
 == See Also
 
-* xref:concepts/dispatcher.adoc[dispatcher]
-* xref:concepts/affine_awaitable.adoc[affine_awaitable]
-* xref:advanced.adoc[Advanced Topics]
+* xref:dispatcher.adoc[dispatcher] — The dispatcher concept
+* xref:affine_awaitable.adoc[affine_awaitable] — Base protocol without cancellation
+* xref:../coroutines/cancellation.adoc[Cancellation] — Tutorial on stop token propagation

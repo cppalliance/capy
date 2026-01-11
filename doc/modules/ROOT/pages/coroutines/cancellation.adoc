@@ -1,0 +1,194 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Cancellation
+
+This page explains how to cancel running coroutines using `std::stop_token`.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== Cooperative Cancellation
+
+Capy supports cooperative cancellation through `std::stop_token`. When a task
+is launched with stop support, the token propagates through the entire call
+chain automatically.
+
+Cooperative means:
+
+* The framework delivers cancellation requests to operations
+* Operations check the token and decide how to respond
+* Nothing is forcibly terminated
+
+== How Stop Tokens Propagate
+
+Stop tokens propagate through `co_await` chains just like affinity. When you
+await a stoppable operation inside a task with a stop token, the token is
+forwarded automatically:
+
+[source,cpp]
+----
+task<void> cancellable_work()
+{
+    // If this task has a stop token, it's automatically
+    // passed to any stoppable awaitables we co_await
+    co_await some_stoppable_operation();
+}
+----
+
+== The Stoppable Awaitable Protocol
+
+Awaitables that support cancellation implement the `stoppable_awaitable`
+concept. Their `await_suspend` receives both a dispatcher and a stop token:
+
+[source,cpp]
+----
+template<typename Dispatcher>
+auto await_suspend(
+    std::coroutine_handle<> h,
+    Dispatcher const& d,
+    std::stop_token token)
+{
+    if (token.stop_requested())
+    {
+        // Already cancelled, resume immediately
+        return d(h);
+    }
+
+    // Start async operation with cancellation support
+    start_async([h, &d, token] {
+        if (token.stop_requested())
+        {
+            // Handle cancellation
+        }
+        d(h);
+    });
+    return std::noop_coroutine();
+}
+----
+
+== Implementing a Stoppable Timer
+
+Here is a complete example of a stoppable timer:
+
+[source,cpp]
+----
+struct stoppable_timer
+{
+    std::chrono::milliseconds duration_;
+    bool cancelled_ = false;
+
+    bool await_ready() const noexcept
+    {
+        return duration_.count() <= 0;
+    }
+
+    // Affine path (no cancellation)
+    template<typename Dispatcher>
+    auto await_suspend(coro h, Dispatcher const& d)
+    {
+        start_timer(duration_, [h, &d] { d(h); });
+        return std::noop_coroutine();
+    }
+
+    // Stoppable path (with cancellation)
+    template<typename Dispatcher>
+    auto await_suspend(
+        coro h,
+        Dispatcher const& d,
+        std::stop_token token)
+    {
+        if (token.stop_requested())
+        {
+            cancelled_ = true;
+            return d(h);  // Resume immediately
+        }
+
+        auto timer_handle = start_timer(duration_, [h, &d] { d(h); });
+
+        // Cancel timer if stop requested
+        std::stop_callback cb(token, [timer_handle] {
+            cancel_timer(timer_handle);
+        });
+
+        return std::noop_coroutine();
+    }
+
+    void await_resume()
+    {
+        if (cancelled_)
+            throw std::runtime_error("operation cancelled");
+    }
+};
+----
+
+Key points:
+
+* Provide _both_ `await_suspend` overloads (with and without token)
+* Check `stop_requested()` before starting work
+* Register a `stop_callback` to cancel the underlying operation
+* Signal cancellation in `await_resume` (typically via exception)
+
+== Checking Cancellation Status
+
+Within a coroutine, you can check if cancellation was requested:
+
+[source,cpp]
+----
+task<void> long_running_work()
+{
+    for (int i = 0; i < 1000; ++i)
+    {
+        // Periodically check for cancellation
+        if (/* stop requested */)
+            co_return;  // Exit gracefully
+
+        co_await process_chunk(i);
+    }
+}
+----
+
+The mechanism for accessing the stop token depends on your task implementation.
+
+== When NOT to Use Cancellation
+
+Use cancellation when:
+
+* Operations may take a long time
+* Users need to abort operations
+* Timeouts are required
+
+Do NOT use cancellation when:
+
+* Operations are very short — the overhead is not worth it
+* Operations cannot be interrupted meaningfully
+* You need guaranteed completion
+
+== Summary
+
+[cols="1,3"]
+|===
+| Concept | Description
+
+| Cooperative
+| Operations check the token and decide how to respond
+
+| Automatic propagation
+| Tokens flow through `co_await` chains
+
+| `stoppable_awaitable`
+| Concept for awaitables that support cancellation
+
+| `stop_callback`
+| Register cleanup when cancellation is requested
+|===
+
+== Next Steps
+
+* xref:../execution/executors.adoc[Executors] — Understand the execution model
+* xref:../concepts/stoppable_awaitable.adoc[stoppable_awaitable] — Reference documentation

@@ -1,0 +1,253 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= File I/O
+
+This page documents the file and path utilities in Capy.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== file
+
+A platform-independent file handle:
+
+[source,cpp]
+----
+file f("data.txt", file_mode::read);
+
+// Read data
+std::vector<char> buf(1024);
+std::size_t n = f.read(buf.data(), buf.size());
+
+// Write data
+f.write(data.data(), data.size());
+
+// Query and seek
+std::uint64_t sz = f.size();
+std::uint64_t pos = f.pos();
+f.seek(100);
+----
+
+=== File Modes
+
+[cols="1,3"]
+|===
+| Mode | Description
+
+| `file_mode::read`
+| Open for reading (must exist)
+
+| `file_mode::write`
+| Create or truncate for writing
+
+| `file_mode::append`
+| Open for appending (create if needed)
+
+| `file_mode::read_write`
+| Open for both reading and writing
+|===
+
+=== Error Handling
+
+Two error handling styles are available:
+
+[source,cpp]
+----
+// Exception style
+try {
+    file f("data.txt", file_mode::read);
+    f.read(buf, n);
+} catch (system_error const& e) {
+    // Handle error
+}
+
+// Error code style
+system::error_code ec;
+f.open("data.txt", file_mode::read, ec);
+if (ec) {
+    // Handle error
+}
+----
+
+=== Platform Notes
+
+The file class uses the native API on each platform:
+
+* **Windows**: Win32 API (`CreateFile`, `ReadFile`, etc.)
+* **POSIX**: POSIX API (`open`, `read`, etc.)
+* **Fallback**: Standard C library (`fopen`, `fread`, etc.)
+
+== path
+
+An owning, mutable path string with UTF-8 encoding:
+
+[source,cpp]
+----
+path p("C:/Users/data.txt");
+
+// Decomposition
+path_view dir = p.parent_path();    // "C:/Users"
+path_view name = p.filename();      // "data.txt"
+path_view stem = p.stem();          // "data"
+path_view ext = p.extension();      // ".txt"
+
+// Modification
+p /= "subdir";                      // Append with separator
+p.replace_extension(".json");
+
+// Native conversion (Windows)
+std::wstring native = p.native_wstring();
+----
+
+=== Internal Format
+
+Paths use forward slashes internally, regardless of platform:
+
+[source,cpp]
+----
+path p("C:\\Users\\data.txt");  // Input with backslashes
+std::cout << p.string();         // "C:/Users/data.txt"
+----
+
+This enables cross-platform serialization. Native format conversion happens
+at API boundaries.
+
+=== Validation
+
+Paths are validated at construction time:
+
+[source,cpp]
+----
+// Throws system_error on invalid path
+path p("\0invalid");  // Embedded null
+
+// Non-throwing alternative
+auto result = try_parse_path(input);
+if (result)
+    use(*result);
+else
+    handle_error(result.error());
+----
+
+=== Decomposition Reference
+
+[cols="1,2,2"]
+|===
+| Method | Example Input | Result
+
+| `root_name()`
+| `"C:/foo/bar"`
+| `"C:"`
+
+| `root_directory()`
+| `"C:/foo/bar"`
+| `"/"`
+
+| `root_path()`
+| `"C:/foo/bar"`
+| `"C:/"`
+
+| `relative_path()`
+| `"C:/foo/bar"`
+| `"foo/bar"`
+
+| `parent_path()`
+| `"C:/foo/bar"`
+| `"C:/foo"`
+
+| `filename()`
+| `"C:/foo/bar.txt"`
+| `"bar.txt"`
+
+| `stem()`
+| `"C:/foo/bar.txt"`
+| `"bar"`
+
+| `extension()`
+| `"C:/foo/bar.txt"`
+| `".txt"`
+|===
+
+== path_view
+
+A non-owning reference to a valid path string:
+
+[source,cpp]
+----
+void process(path_view p)
+{
+    // Decomposition works the same
+    path_view name = p.filename();
+
+    // Convert to owning path if needed
+    path owned(p);
+}
+----
+
+Path views are validated at construction, just like paths. All decomposition
+methods return path_view pointing into the original storage.
+
+== Path Generation
+
+[source,cpp]
+----
+// Normalize: remove "." and "..", collapse separators
+path normal = p.lexically_normal();
+
+// Relative path from base to target
+path rel = target.lexically_relative(base);
+
+// Same as relative, but returns target if not possible
+path prox = target.lexically_proximate(base);
+----
+
+== Iteration
+
+Iterate over path components:
+
+[source,cpp]
+----
+path p("C:/foo/bar");
+for (path_view component : p)
+{
+    // "C:", "/", "foo", "bar"
+}
+
+// Or iterate as string_view
+for (std::string_view segment : p.segments())
+{
+    // Same components as string_view
+}
+----
+
+== Summary
+
+[cols="1,3"]
+|===
+| Class | Purpose
+
+| `file`
+| Platform-independent file handle
+
+| `file_mode`
+| File open mode enumeration
+
+| `path`
+| Owning UTF-8 path string
+
+| `path_view`
+| Non-owning path reference
+
+| `try_parse_path`
+| Non-throwing path parsing
+|===
+
+== Next Steps
+
+* xref:compression.adoc[Compression] — Brotli and ZLib support

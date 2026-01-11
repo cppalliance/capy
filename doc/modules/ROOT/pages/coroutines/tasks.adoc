@@ -1,0 +1,200 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Tasks
+
+This page explains how to write coroutine functions using `task<T>`.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== What is a Task?
+
+A `task<T>` represents an asynchronous operation that will produce a value
+of type `T`. Tasks are _lazy_: they do not begin execution when created.
+A task remains suspended until it is either awaited by another coroutine
+or launched explicitly with `async_run`.
+
+This laziness enables structured composition. When you write:
+
+[source,cpp]
+----
+task<void> parent()
+{
+    co_await child();  // child runs here, not when created
+}
+----
+
+The child coroutine starts exactly when the parent awaits it, making the
+control flow predictable.
+
+== Creating Tasks
+
+Write a coroutine function by using `co_return` or `co_await`:
+
+[source,cpp]
+----
+task<int> compute()
+{
+    co_return 42;
+}
+----
+
+The function `compute()` returns immediately with a suspended coroutine.
+No code inside the function body executes until the task is started.
+
+=== Returning Values
+
+Use `co_return` to produce the task's result:
+
+[source,cpp]
+----
+task<std::string> greet(std::string name)
+{
+    co_return "Hello, " + name + "!";
+}
+----
+
+=== Void Tasks
+
+For operations that perform work without producing a value, use `task<void>`:
+
+[source,cpp]
+----
+task<void> log_message(std::string msg)
+{
+    std::cout << msg << std::endl;
+    co_return;
+}
+----
+
+The explicit `co_return;` statement completes the task. Reaching the end of
+the function body has the same effect.
+
+== Awaiting Tasks
+
+Tasks can await other tasks using `co_await`. The calling coroutine suspends
+until the awaited task completes:
+
+[source,cpp]
+----
+task<int> step_one()
+{
+    co_return 10;
+}
+
+task<int> step_two(int x)
+{
+    co_return x * 2;
+}
+
+task<int> pipeline()
+{
+    int a = co_await step_one();
+    int b = co_await step_two(a);
+    co_return a + b;  // 10 + 20 = 30
+}
+----
+
+Each `co_await` suspends the current coroutine, starts the child task, and
+resumes when the child completes. The child's return value becomes the result
+of the `co_await` expression.
+
+== Exception Handling
+
+Exceptions thrown within a task are captured and stored. When the task is
+awaited, the exception is rethrown in the awaiting coroutine:
+
+[source,cpp]
+----
+task<int> might_fail()
+{
+    throw std::runtime_error("oops");
+    co_return 0;  // never reached
+}
+
+task<void> caller()
+{
+    try {
+        int x = co_await might_fail();
+    } catch (std::exception const& e) {
+        std::cerr << "Caught: " << e.what() << "\n";
+    }
+}
+----
+
+This enables natural exception handling across coroutine boundaries.
+
+== Move-Only Semantics
+
+Tasks are move-only. You cannot copy a task:
+
+[source,cpp]
+----
+task<int> t = compute();
+task<int> t2 = t;             // ERROR: deleted copy constructor
+task<int> t3 = std::move(t);  // OK: move is allowed
+----
+
+This reflects the fact that a coroutine has unique state that cannot be
+duplicated.
+
+== Releasing the Handle
+
+In advanced scenarios, you may need direct access to the coroutine handle.
+The `release()` method transfers ownership:
+
+[source,cpp]
+----
+task<int> t = compute();
+auto handle = t.release();  // t no longer owns the coroutine
+// ... use handle directly ...
+handle.destroy();  // caller is responsible for cleanup
+----
+
+WARNING: After calling `release()`, the task is empty and must not be awaited.
+
+== When NOT to Use Tasks
+
+Tasks are appropriate when:
+
+* The operation may suspend (performs I/O, awaits other tasks)
+* You want structured composition with parent/child relationships
+* You need lazy evaluation
+
+Tasks are NOT appropriate when:
+
+* The operation is purely synchronous — just use a regular function
+* You need parallel execution — tasks are sequential; use parallel composition
+* You need to detach and forget — tasks must be awaited or explicitly launched
+
+== Summary
+
+[cols="1,3"]
+|===
+| Feature | Description
+
+| Lazy execution
+| Tasks do not start until awaited or launched
+
+| Move-only
+| Cannot copy, can move
+
+| Exception propagation
+| Exceptions rethrow at the await point
+
+| Structured
+| Parent awaits child, control flow is predictable
+|===
+
+== Next Steps
+
+Now that you understand tasks, learn how to run them:
+
+* xref:launching.adoc[Launching Tasks] — Start tasks with `async_run`
+* xref:affinity.adoc[Executor Affinity] — Control where tasks execute

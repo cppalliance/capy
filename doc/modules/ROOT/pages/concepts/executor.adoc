@@ -11,6 +11,8 @@
 
 An executor provides mechanisms for scheduling work for execution.
 
+Requires: C++20
+
 == Synopsis
 
 Defined in header `<boost/capy/executor.hpp>`
@@ -38,9 +40,9 @@ concept executor =
 == Description
 
 A type meeting the executor requirements embodies a set of rules for
-determining how submitted coroutines are to be executed. An executor
-is a lightweight, copyable handle to an execution context such as a
-thread pool, I/O context, or strand.
+determining how submitted coroutines are to be executed. An executor is a
+lightweight, copyable handle to an execution context such as a thread pool,
+I/O context, or strand.
 
 The executor provides three scheduling operations:
 
@@ -48,24 +50,32 @@ The executor provides three scheduling operations:
 * **post** — Always queue, never inline. Guaranteed asynchrony.
 * **defer** — Always queue with continuation hint. Enables optimizations.
 
-=== No-Throw Guarantee
+== No-Throw Guarantee
 
-The following operations shall not exit via an exception: constructors,
-comparison operators, copy/move operations, swap, `context()`,
-`on_work_started()`, and `on_work_finished()`.
+The following operations shall not exit via an exception:
 
-=== Thread Safety
+* Constructors
+* Comparison operators
+* Copy/move operations
+* `swap`
+* `context()`
+* `on_work_started()`
+* `on_work_finished()`
+
+== Thread Safety
 
 The executor copy constructor, comparison operators, and other member
-functions shall not introduce data races as a result of concurrent
-calls from different threads.
+functions shall not introduce data races as a result of concurrent calls
+from different threads.
 
-=== Executor Validity
+== Executor Validity
 
 Let `ctx` be the execution context returned by `context()`. An executor
-becomes invalid when the first call to `ctx.shutdown()` returns. The
-effect of calling `dispatch`, `post`, or `defer` on an invalid executor
-is undefined.
+becomes invalid when the first call to `ctx.shutdown()` returns. The effect
+of calling `dispatch`, `post`, or `defer` on an invalid executor is undefined.
+
+The copy constructor, comparison operators, and `context()` remain valid
+until `ctx` is destroyed.
 
 == Valid Expressions
 
@@ -81,15 +91,15 @@ Given:
 
 | `ce.context()`
 | `Context&`
-| Returns a reference to the associated execution context
+| Return a reference to the associated execution context
 
 | `ce.on_work_started()`
 | —
-| Informs the executor that work is beginning. Must not throw.
+| Inform the executor that work is beginning (must not throw)
 
 | `ce.on_work_finished()`
 | —
-| Informs the executor that work has completed. Must not throw.
+| Inform the executor that work has completed (must not throw)
 
 | `ce.dispatch(h)`
 | convertible to `std::coroutine_handle<>`
@@ -108,6 +118,10 @@ Given:
 
 [source,cpp]
 ----
+#include <boost/capy/executor.hpp>
+
+using boost::capy::executor;
+
 class my_executor
 {
     my_context* ctx_;
@@ -149,5 +163,6 @@ static_assert(executor<my_executor>);
 
 == See Also
 
-* xref:concepts/is_execution_context.adoc[is_execution_context]
-* xref:execution.adoc[Execution Model]
+* xref:is_execution_context.adoc[is_execution_context] — Execution context concept
+* xref:dispatcher.adoc[dispatcher] — Simpler scheduling interface
+* xref:../execution/executors.adoc[Executors] — Tutorial on the execution model

@@ -1,6 +1,5 @@
 //
-// Copyright (c) 2023 Vinnie Falco (vinnie.falco@gmail.com)
-// Copyright (c) 2024 Mohammad Nejati
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -10,30 +9,90 @@
 
 = Boost.Capy
 
-Boost.Capy is a portable, low-level C++ library which provides
-facilities for creating and accessing optional services during runtime.
+Boost.Capy is a lightweight C++20 coroutine framework that provides lazy tasks
+with automatic executor affinity propagation.
 
-* Require only C++11
-* Works without exceptions
-* Works without RTTI
-* Fast compilation, few templates
+== What This Library Does
 
-== Embedded
+Capy solves a specific problem: when you `co_await` a child coroutine, where
+does it resume? Without affinity tracking, completions can arrive on arbitrary
+threads, forcing you to add synchronization everywhere.
 
-Boost.Capy works great on embedded devices.
-It is designed to work without exceptions and RTTI if desired.
+Capy provides:
 
-== Tested Compilers
+* **Lazy tasks** that do not start until awaited or explicitly launched
+* **Automatic affinity propagation** through coroutine call chains
+* **Zero-overhead dispatcher protocol** for custom awaitables
+* **Frame allocation recycling** to minimize allocation overhead
 
-Boost.Capy has been tested with the following compilers:
+== What This Library Does Not Do
 
-* clang: 3.8, 4, 5, 6, 7, 8, 9, 10, 11, 12
-* gcc: 4.8, 4.9, 5, 6, 7, 8, 9, 10, 11
-* msvc: 14.1, 14.2, 14.3
+Capy is not a general-purpose I/O framework. It does not include:
 
-== Quality Assurance
+* Event loops or I/O polling (use Asio, io_uring wrappers, etc.)
+* Networking primitives (sockets, HTTP, etc.)
+* The sender/receiver execution model (P2300)
 
-The development infrastructure for the library includes these per-commit analyses:
+Capy integrates with existing I/O frameworks by wrapping their completion
+mechanisms in affine-aware awaitables.
 
-* Coverage reports
-* Compilation and tests on Drone.io and GitHub Actions
+== Design Philosophy
+
+**Lazy by default.** Tasks suspend immediately on creation. This enables
+structured composition where parent coroutines naturally await their children.
+Eager execution is available through `async_run`.
+
+**Affinity through the protocol.** The dispatcher propagates through
+`await_suspend` parameters, not through thread-local storage or global state.
+This makes the data flow explicit and testable.
+
+**Type erasure at boundaries.** Tasks use type-erased dispatchers (`any_dispatcher`)
+internally, paying the indirection cost once rather than templating everything.
+For I/O-bound code, this cost is negligible.
+
+== Requirements
+
+* C++20 compiler with coroutine support
+* Boost (for system::error_code, core::string_view)
+
+=== Tested Compilers
+
+* GCC 11+
+* Clang 14+
+* MSVC 19.29+ (Visual Studio 2019 16.10+)
+
+== Quick Example
+
+[source,cpp]
+----
+#include <boost/capy/task.hpp>
+#include <boost/capy/async_run.hpp>
+#include <iostream>
+
+using boost::capy::task;
+using boost::capy::async_run;
+
+task<int> compute()
+{
+    co_return 42;
+}
+
+task<void> run(auto executor)
+{
+    int result = co_await compute();
+    std::cout << "Result: " << result << "\n";
+}
+
+int main()
+{
+    io_context ioc;
+    async_run(ioc.get_executor())(run(ioc.get_executor()));
+    ioc.run();
+}
+----
+
+== Next Steps
+
+* xref:quick-start.adoc[Quick Start] — Get a working program in 5 minutes
+* xref:coroutines/tasks.adoc[Tasks] — Understand lazy coroutines
+* xref:execution/executors.adoc[Executors] — Learn about the execution model

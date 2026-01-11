@@ -11,6 +11,8 @@
 
 A frame allocator provides memory allocation for coroutine frames.
 
+Requires: C++20
+
 == Synopsis
 
 Defined in header `<boost/capy/frame_allocator.hpp>`
@@ -33,18 +35,18 @@ concept frame_allocator =
 == Description
 
 Frame allocators provide memory for coroutine frames—the compiler-generated
-structures holding local variables, parameters, and suspension state.
-A frame allocator must be a cheaply copyable handle to an underlying
-memory resource (e.g., a pointer to a pool).
+structures holding local variables, parameters, and suspension state. A frame
+allocator must be a cheaply copyable handle to an underlying memory resource
+(e.g., a pointer to a pool).
 
-The library copies the allocator into the first coroutine frame for
-lifetime safety. Subsequent frames in the call tree use the embedded
-allocator for both allocation and deallocation.
+The library copies the allocator into the first coroutine frame for lifetime
+safety. Subsequent frames in the call tree use the embedded allocator for
+both allocation and deallocation.
 
-=== Default Frame Allocator
+== Default Frame Allocator
 
-The library provides `default_frame_allocator` which passes through
-to `::operator new` and `::operator delete`:
+The library provides `default_frame_allocator` which passes through to
+`::operator new` and `::operator delete`:
 
 [source,cpp]
 ----
@@ -62,10 +64,10 @@ struct default_frame_allocator
 };
 ----
 
-=== Recycling Frame Allocator
+== Recycling Frame Allocator
 
 By default, `async_run` uses a recycling frame allocator that caches
-deallocated frames for reuse, eliminating most allocation overhead
+deallocated frames for reuse. This eliminates most allocation overhead
 for typical coroutine patterns.
 
 == Valid Expressions
@@ -82,17 +84,23 @@ Given:
 
 | `a.allocate(n)`
 | `void*`
-| Allocates `n` bytes for a coroutine frame
+| Allocate `n` bytes for a coroutine frame
 
 | `a.deallocate(p, n)`
 | —
-| Deallocates memory previously allocated with `allocate(n)`
+| Deallocate memory previously allocated with `allocate(n)`
 |===
 
 == Example
 
 [source,cpp]
 ----
+#include <boost/capy/frame_allocator.hpp>
+#include <boost/capy/async_run.hpp>
+
+using boost::capy::frame_allocator;
+using boost::capy::async_run;
+
 class pool_frame_allocator
 {
     memory_pool* pool_;
@@ -125,4 +133,5 @@ async_run(ex, alloc)(my_task());
 
 == See Also
 
-* xref:advanced.adoc#_frame_allocation[Frame Allocation]
+* xref:../execution/frame-allocation.adoc[Frame Allocation] — Tutorial on custom allocators
+* xref:../coroutines/launching.adoc[Launching Tasks] — Using allocators with `async_run`

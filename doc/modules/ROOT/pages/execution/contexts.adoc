@@ -1,0 +1,249 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Execution Contexts
+
+This page explains execution contexts, service management, and the thread pool.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== What is an Execution Context?
+
+An execution context is a place where work runs. It provides:
+
+* A registry of services (polymorphic components)
+* An associated executor type
+* Lifecycle management (shutdown, destroy)
+
+The `execution_context` class is the base class for all contexts:
+
+[source,cpp]
+----
+class io_context : public execution_context
+{
+public:
+    using executor_type = /* ... */;
+
+    executor_type get_executor();
+
+    ~io_context()
+    {
+        shutdown();
+        destroy();
+    }
+};
+----
+
+== Service Management
+
+Services are polymorphic components owned by an execution context. Each service
+type can be registered at most once.
+
+=== Creating Services
+
+[source,cpp]
+----
+// Get or create a service
+my_service& svc = ctx.use_service<my_service>();
+
+// Explicitly create with arguments
+my_service& svc = ctx.make_service<my_service>(arg1, arg2);
+
+// Check if a service exists
+if (ctx.has_service<my_service>())
+    // ...
+
+// Find without creating
+my_service* svc = ctx.find_service<my_service>();  // nullptr if not found
+----
+
+=== Implementing Services
+
+Services derive from `execution_context::service`:
+
+[source,cpp]
+----
+struct my_service : execution_context::service
+{
+    explicit my_service(execution_context& ctx)
+    {
+        // Initialize...
+    }
+
+protected:
+    void shutdown() override
+    {
+        // Cancel pending operations
+        // Release resources
+        // Must not block or throw
+    }
+};
+----
+
+The `shutdown()` method is called when the context is destroyed, in reverse
+order of service creation.
+
+=== Key Type Aliasing
+
+Services can specify a `key_type` to enable base-class lookup:
+
+[source,cpp]
+----
+struct file_service : execution_context::service
+{
+protected:
+    void shutdown() override {}
+};
+
+struct posix_file_service : file_service
+{
+    using key_type = file_service;  // Register under base class
+
+    explicit posix_file_service(execution_context& ctx) {}
+};
+
+// Usage:
+ctx.make_service<posix_file_service>();
+file_service* svc = ctx.find_service<file_service>();  // Returns posix_file_service*
+----
+
+== Handler Queue
+
+The `execution_context::queue` class stores completion handlers:
+
+[source,cpp]
+----
+class queue
+{
+public:
+    bool empty() const noexcept;
+    void push(handler* h) noexcept;
+    void push(queue& other) noexcept;  // Splice
+    handler* pop() noexcept;
+};
+----
+
+Handlers implement the ownership contract:
+
+* Call `operator()` for normal invocation (handler cleans itself up)
+* Call `destroy()` to discard without invoking (e.g., during shutdown)
+* Never call both, and never use `delete` directly
+
+== Thread Pool
+
+The `thread_pool` class provides a pool of worker threads:
+
+[source,cpp]
+----
+thread_pool pool(4);  // 4 worker threads
+auto ex = pool.get_executor();
+
+async_run(ex)(my_task());
+
+// ... work runs on pool threads ...
+----
+
+=== Construction
+
+[source,cpp]
+----
+thread_pool();                  // Default: hardware_concurrency threads
+thread_pool(std::size_t n);     // Explicit thread count
+----
+
+=== Destruction
+
+The destructor signals all threads to stop and waits for them to complete.
+Pending work is discarded.
+
+== Lifecycle Pattern
+
+Derived contexts must follow this destruction pattern:
+
+[source,cpp]
+----
+class my_context : public execution_context
+{
+public:
+    ~my_context()
+    {
+        shutdown();  // Notify services, cancel pending work
+        destroy();   // Delete services in reverse order
+        // Now safe to destroy members
+    }
+};
+----
+
+Calling `shutdown()` and `destroy()` from the base class destructor is too
+late—derived class members may already be destroyed.
+
+== The is_execution_context Concept
+
+Types satisfying `is_execution_context` can be used with framework components:
+
+[source,cpp]
+----
+template<class X>
+concept is_execution_context =
+    std::derived_from<X, execution_context> &&
+    requires { typename X::executor_type; } &&
+    executor<typename X::executor_type> &&
+    requires(X& x) {
+        { x.get_executor() } -> std::same_as<typename X::executor_type>;
+    };
+----
+
+== Thread Safety
+
+Service management functions (`use_service`, `make_service`, `find_service`)
+are thread-safe. The `shutdown()` and `destroy()` functions are NOT thread-safe
+and must only be called during destruction.
+
+== When NOT to Use execution_context Directly
+
+Use `execution_context` directly when:
+
+* Building a custom I/O context
+* Implementing a new execution model
+* Managing polymorphic services
+
+Do NOT use `execution_context` directly when:
+
+* You just need to run coroutines — use an existing context like Asio's
+* You need a thread pool — use `thread_pool` directly
+
+== Summary
+
+[cols="1,3"]
+|===
+| Component | Purpose
+
+| `execution_context`
+| Base class providing service registry
+
+| `service`
+| Polymorphic component owned by a context
+
+| `handler`
+| Base class for completion callbacks
+
+| `queue`
+| FIFO queue of handlers
+
+| `thread_pool`
+| Multi-threaded execution context
+
+| `is_execution_context`
+| Concept for valid execution contexts
+|===
+
+== Next Steps
+
+* xref:frame-allocation.adoc[Frame Allocation] — Optimize coroutine memory
+* xref:../concepts/is_execution_context.adoc[is_execution_context] — Reference

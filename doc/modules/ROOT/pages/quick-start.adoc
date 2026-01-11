@@ -1,0 +1,122 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Quick Start
+
+This page gets you from zero to a working coroutine program in five minutes.
+
+NOTE: Capy requires C++20 with coroutine support.
+
+== Minimal Example
+
+Create a file `hello_coro.cpp`:
+
+[source,cpp]
+----
+#include <boost/capy/task.hpp>
+#include <boost/capy/async_run.hpp>
+#include <boost/asio/io_context.hpp>
+#include <iostream>
+
+namespace capy = boost::capy;
+namespace asio = boost::asio;
+
+// A coroutine that returns a value
+capy::task<int> answer()
+{
+    co_return 42;
+}
+
+// A coroutine that awaits another coroutine
+capy::task<void> greet()
+{
+    int n = co_await answer();
+    std::cout << "The answer is " << n << "\n";
+}
+
+int main()
+{
+    asio::io_context ioc;
+
+    // Launch the coroutine on the io_context's executor
+    capy::async_run(ioc.get_executor())(greet());
+
+    // Run until all work completes
+    ioc.run();
+}
+----
+
+== Build and Run
+
+[source,bash]
+----
+# With GCC
+g++ -std=c++20 -o hello_coro hello_coro.cpp -lboost_system -pthread
+
+# Run
+./hello_coro
+----
+
+Expected output:
+
+----
+The answer is 42
+----
+
+== What Just Happened?
+
+1. `answer()` creates a suspended coroutine that will return 42
+2. `greet()` creates a suspended coroutine that will await `answer()`
+3. `async_run(executor)(greet())` starts `greet()` on the io_context's executor
+4. `greet()` runs until it hits `co_await answer()`
+5. `answer()` runs and returns 42
+6. `greet()` resumes with the result and prints it
+7. `greet()` completes, `ioc.run()` returns
+
+The key insight: both coroutines ran on the same executor because affinity
+propagated automatically through the `co_await`.
+
+== Handling Results
+
+To receive a task's result outside a coroutine, provide a completion handler:
+
+[source,cpp]
+----
+capy::async_run(executor)(answer(), [](int result) {
+    std::cout << "Got: " << result << "\n";
+});
+----
+
+== Handling Errors
+
+Exceptions propagate through coroutine chains. To handle them at the top level:
+
+[source,cpp]
+----
+capy::async_run(executor)(might_fail(),
+    [](int result) {
+        std::cout << "Success: " << result << "\n";
+    },
+    [](std::exception_ptr ep) {
+        try {
+            if (ep) std::rethrow_exception(ep);
+        } catch (std::exception const& e) {
+            std::cerr << "Error: " << e.what() << "\n";
+        }
+    }
+);
+----
+
+== Next Steps
+
+Now that you have a working program:
+
+* xref:coroutines/tasks.adoc[Tasks] — Learn how lazy tasks work
+* xref:coroutines/launching.adoc[Launching Tasks] — Understand `async_run` in detail
+* xref:coroutines/affinity.adoc[Executor Affinity] — Control where coroutines execute

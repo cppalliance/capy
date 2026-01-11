@@ -9,8 +9,10 @@
 
 = affine_awaitable
 
-An awaitable is affine if it participates in the affine awaitable
-protocol by accepting a dispatcher in its `await_suspend` method.
+An awaitable is affine if it participates in the affine awaitable protocol
+by accepting a dispatcher in its `await_suspend` method.
+
+Requires: C++20
 
 == Synopsis
 
@@ -32,15 +34,18 @@ concept affine_awaitable =
 
 == Description
 
-The affine awaitable protocol enables zero-overhead scheduler affinity
-without requiring the full sender/receiver protocol. When an awaitable
-is affine, it receives the caller's dispatcher in `await_suspend` and
-uses it to resume the caller on the correct execution context.
+The affine awaitable protocol enables zero-overhead scheduler affinity without
+requiring the full sender/receiver protocol. When an awaitable is affine, it
+receives the caller's dispatcher in `await_suspend` and uses it to resume the
+caller on the correct execution context.
 
-The awaitable must use the dispatcher `d` to resume the caller when
-the operation completes. Typically this looks like `return d(h);` for
-symmetric transfer or calling `d(h)` before returning
-`std::noop_coroutine()`.
+The awaitable must use the dispatcher `d` to resume the caller when the
+operation completes. Typically this looks like `return d(h);` for symmetric
+transfer or calling `d(h)` before returning `std::noop_coroutine()`.
+
+== Preconditions
+
+* The dispatcher `d` remains valid until the awaitable resumes the caller
 
 == Valid Expressions
 
@@ -56,21 +61,27 @@ Given:
 
 | `a.await_ready()`
 | `bool`
-| Returns `true` if the operation has already completed
+| Return `true` if the operation has already completed
 
 | `a.await_suspend(h, d)`
 | (unspecified)
-| Suspends and starts the async operation, using `d` for resumption
+| Suspend and start the async operation, using `d` for resumption
 
 | `a.await_resume()`
 | (unspecified)
-| Returns the operation result or rethrows any exception
+| Return the operation result or rethrow any exception
 |===
 
 == Example
 
 [source,cpp]
 ----
+#include <boost/capy/affine.hpp>
+
+using boost::capy::coro;
+using boost::capy::affine_awaitable;
+using boost::capy::any_dispatcher;
+
 struct my_async_op
 {
     bool await_ready() const noexcept
@@ -102,6 +113,6 @@ static_assert(affine_awaitable<my_async_op, any_dispatcher>);
 
 == See Also
 
-* xref:concepts/dispatcher.adoc[dispatcher]
-* xref:concepts/stoppable_awaitable.adoc[stoppable_awaitable]
-* xref:advanced.adoc[Advanced Topics]
+* xref:dispatcher.adoc[dispatcher] — The dispatcher concept
+* xref:stoppable_awaitable.adoc[stoppable_awaitable] — Extended protocol with cancellation
+* xref:../coroutines/affinity.adoc[Executor Affinity] — Tutorial on affinity propagation

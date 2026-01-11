@@ -9,8 +9,10 @@
 
 = is_execution_context
 
-A type satisfies `is_execution_context` if it derives from
-`execution_context` and provides an associated executor type.
+A type satisfies `is_execution_context` if it derives from `execution_context`
+and provides an associated executor type.
+
+Requires: C++20
 
 == Synopsis
 
@@ -34,28 +36,28 @@ concept is_execution_context =
 
 == Description
 
-An execution context represents a place where function objects are
-executed. It provides:
+An execution context represents a place where function objects are executed.
+It provides:
 
 * A service registry for polymorphic services
 * An associated executor type for scheduling work
 * Lifecycle management (shutdown, destroy)
 
-Derived classes such as `io_context` extend `execution_context` to
-provide execution facilities like event loops and thread pools.
+Derived classes such as `io_context` extend `execution_context` to provide
+execution facilities like event loops and thread pools.
 
-=== Service Management
+== Service Management
 
 Execution contexts own services that provide extensible functionality.
-Services are created on first use via `use_service<T>()` or explicitly
-via `make_service<T>()`. During destruction, services are shut down
-and deleted in reverse order of creation.
+Services are created on first use via `use_service<T>()` or explicitly via
+`make_service<T>()`. During destruction, services are shut down and deleted
+in reverse order of creation.
 
-=== Destructor Requirements
+== Destructor Requirements
 
-The destructor must destroy all unexecuted work that was submitted
-via an executor object associated with the execution context. This
-is a semantic requirement that cannot be verified at compile time.
+The destructor must destroy all unexecuted work that was submitted via an
+executor object associated with the execution context. This is a semantic
+requirement that cannot be verified at compile time.
 
 == Valid Expressions
 
@@ -73,13 +75,18 @@ Given:
 
 | `x.get_executor()`
 | `X::executor_type`
-| Returns an executor for scheduling work on this context
+| Return an executor for scheduling work on this context
 |===
 
 == Example
 
 [source,cpp]
 ----
+#include <boost/capy/execution_context.hpp>
+
+using boost::capy::execution_context;
+using boost::capy::is_execution_context;
+
 class io_context : public execution_context
 {
 public:
@@ -119,5 +126,5 @@ static_assert(is_execution_context<io_context>);
 
 == See Also
 
-* xref:concepts/executor.adoc[executor]
-* xref:execution.adoc[Execution Model]
+* xref:executor.adoc[executor] — The executor concept
+* xref:../execution/contexts.adoc[Execution Contexts] — Tutorial on contexts and services

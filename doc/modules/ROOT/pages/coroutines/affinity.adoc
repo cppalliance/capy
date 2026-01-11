@@ -1,0 +1,234 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Executor Affinity
+
+This page explains where your coroutines execute and how to control execution
+context.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== The Problem Affinity Solves
+
+When an I/O operation completes, the operating system wakes up _some_ thread.
+Without affinity tracking, your coroutine might resume on an arbitrary thread:
+
+----
+Thread 1: task starts → co_await read() → suspends
+Thread 2: (I/O completes) → task resumes here (surprise!)
+----
+
+This forces you to add synchronization everywhere. Affinity solves this by
+ensuring coroutines resume on their designated executor.
+
+== What is Affinity?
+
+Affinity means a coroutine is bound to a specific executor. When a coroutine
+has affinity to executor `ex`, all of its resumptions occur through `ex`.
+
+You establish affinity when launching a task:
+
+[source,cpp]
+----
+async_run(ex)(my_task());  // my_task has affinity to ex
+----
+
+== How Affinity Propagates
+
+Affinity propagates forward through `co_await` chains. When a coroutine with
+affinity awaits a child task, the child inherits the same affinity:
+
+[source,cpp]
+----
+task<void> parent()  // affinity: ex (from async_run)
+{
+    co_await child();  // child inherits ex
+}
+
+task<void> child()  // affinity: ex (inherited)
+{
+    co_await io.async_read();  // I/O captures ex, resumes through it
+}
+----
+
+The mechanism is the _affine awaitable protocol_: each `co_await` passes the
+current dispatcher to the awaited operation, which stores it and uses it for
+resumption.
+
+== Flow Diagrams
+
+To reason about where code executes, use this compact notation:
+
+[cols="1,3"]
+|===
+| Symbol | Meaning
+
+| `c`, `c1`, `c2`
+| Coroutines (lazy tasks)
+
+| `io`
+| I/O operation
+
+| `->`
+| `co_await` leading to a coroutine or I/O
+
+| `!`
+| Coroutine with explicit executor affinity
+
+| `ex`, `ex1`, `ex2`
+| Executors
+|===
+
+=== Simple Chain
+
+----
+!c -> io
+----
+
+Coroutine `c` has affinity to some executor. When the I/O completes, `c`
+resumes through that executor.
+
+=== Nested Coroutines
+
+----
+!c1 -> c2 -> io
+----
+
+* `c1` has explicit affinity to `ex`
+* `c2` inherits affinity from `c1`
+* The I/O captures `ex` and resumes through it
+* When `c2` completes, `c1` resumes via symmetric transfer (same executor)
+
+== Changing Affinity with run_on
+
+Sometimes you need a child coroutine to run on a _different_ executor.
+The `run_on` function changes affinity for a subtree:
+
+[source,cpp]
+----
+#include <boost/capy/run_on.hpp>
+
+task<void> parent()
+{
+    // This task runs on ex1 (inherited)
+
+    // Run child on ex2 instead
+    co_await run_on(ex2, child_task());
+
+    // Back on ex1 after child completes
+}
+----
+
+In flow diagram notation:
+
+----
+!c1 -> c2 -> !c3 -> io
+----
+
+The execution sequence:
+
+1. `c1` launches on `ex1`
+2. `c2` continues on `ex1` (inherited)
+3. `run_on` binds `c3` to `ex2`
+4. I/O captures `ex2`
+5. I/O completes → `c3` resumes through `ex2`
+6. `c3` completes → `c2` resumes through `ex1` (caller's executor)
+
+== Symmetric Transfer
+
+When a child coroutine completes, it must resume its caller. If both share
+the same executor, _symmetric transfer_ provides a direct tail call with
+zero overhead—no executor involvement, no queuing.
+
+The decision logic:
+
+1. **Same executor** → symmetric transfer (direct jump)
+2. **Different executors** → dispatch through caller's executor
+
+Symmetric transfer is automatic. The library detects when caller and callee
+share the same dispatcher (pointer equality) and optimizes accordingly.
+
+== Type-Erased Dispatchers
+
+The `any_dispatcher` class provides type erasure for dispatchers:
+
+[source,cpp]
+----
+#include <boost/capy/affine.hpp>
+
+void store_dispatcher(any_dispatcher d)
+{
+    // Can store any dispatcher type uniformly
+    d(some_handle);  // Invoke through type-erased interface
+}
+----
+
+`task<T>` uses `any_dispatcher` internally, enabling tasks to work with any
+executor type without templating everything.
+
+== Legacy Awaitable Compatibility
+
+Not all awaitables implement the affine protocol. For standard library
+awaitables or third-party types, Capy provides automatic compatibility through
+a trampoline coroutine.
+
+When `await_transform` encounters a non-affine awaitable, it wraps it:
+
+[source,cpp]
+----
+// Inside task's await_transform (simplified):
+if constexpr (affine_awaitable<A, any_dispatcher>)
+    return affine_path(a);  // Zero-overhead
+else
+    return make_affine(a, ex_);  // Trampoline fallback
+----
+
+The trampoline adds one extra coroutine frame but ensures correct affinity.
+Prefer implementing the affine protocol for performance-critical awaitables.
+
+== When NOT to Use run_on
+
+Use `run_on` when:
+
+* You need CPU-bound work on a dedicated thread pool
+* You need I/O on a specific context
+* You're integrating with a library that requires a specific executor
+
+Do NOT use `run_on` when:
+
+* The child task should inherit the parent's executor (just `co_await` directly)
+* You're worried about performance — the context switch cost is already paid
+  by the I/O operation itself
+
+== Summary
+
+[cols="1,3"]
+|===
+| Concept | Description
+
+| Affinity
+| A coroutine is bound to a specific executor
+
+| Propagation
+| Children inherit affinity from parents via `co_await`
+
+| `run_on`
+| Explicitly binds a child to a different executor
+
+| Symmetric transfer
+| Zero-overhead resumption when executor matches
+
+| `any_dispatcher`
+| Type-erased dispatcher for heterogeneous executor support
+|===
+
+== Next Steps
+
+* xref:cancellation.adoc[Cancellation] — Stop token propagation
+* xref:../execution/executors.adoc[Executors] — The execution model in depth
