@@ -10,70 +10,111 @@
 // Test that header file is self-contained.
 #include <boost/capy/task.hpp>
 
-#ifdef BOOST_CAPY_HAS_CORO
-
 #include <boost/capy/async_op.hpp>
-#include <boost/capy/executor.hpp>
+#include <boost/capy/async_run.hpp>
 
 #include "test_suite.hpp"
 
 #include <atomic>
-#include <cstdlib>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace boost {
 namespace capy {
 
-/** Simple synchronous executor for testing.
+static_assert(affine_awaitable<task<void>, any_dispatcher>);
+static_assert(affine_awaitable<task<int>, any_dispatcher>);
+static_assert(stoppable_awaitable<task<void>, any_dispatcher>);
+static_assert(stoppable_awaitable<task<int>, any_dispatcher>);
+
+/** Simple synchronous dispatcher for testing.
+
+    Satisfies the dispatcher concept: callable with (coro) returning coro.
+    Executes inline (returns the handle for symmetric transfer).
+    Uses a pointer to external counter to allow copying.
 */
-struct sync_executor
+struct test_dispatcher
 {
-    friend struct executor::access;
+    int* dispatch_count_;
 
-    std::atomic<int> alloc_count{0};
-    std::atomic<int> submit_count{0};
-
-private:
-    struct header
+    explicit test_dispatcher(int& count)
+        : dispatch_count_(&count)
     {
-        std::size_t size;
-    };
-
-    void*
-    allocate(std::size_t size, std::size_t /*align*/)
-    {
-        ++alloc_count;
-        std::size_t total = sizeof(header) + size;
-        void* p = std::malloc(total);
-        auto* h = new(p) header{total};
-        return h + 1;
     }
 
-    void
-    deallocate(void* p, std::size_t /*size*/, std::size_t /*align*/)
+    coro operator()(coro h) const
     {
-        auto* h = static_cast<header*>(p) - 1;
-        std::free(h);
-    }
-
-    void
-    submit(executor::work* w)
-    {
-        ++submit_count;
-        w->invoke();
-        w->~work();
-        deallocate(w, 0, 0);
+        ++(*dispatch_count_);
+        return h;  // Inline execution for sync tests
     }
 };
 
-template<class T>
-T run_task(task<T>& t)
+static_assert(dispatcher<test_dispatcher>);
+
+/** Tracking dispatcher that logs dispatch calls with an ID.
+    Uses pointers to external storage to allow copying.
+*/
+struct tracking_dispatcher
 {
-    while (!t.handle().done())
-        t.handle().resume();
-    return t.await_resume();
+    int id;
+    int* dispatch_count_;
+    std::vector<int>* dispatch_log;
+
+    tracking_dispatcher(int id_, int& count, std::vector<int>* log = nullptr)
+        : id(id_)
+        , dispatch_count_(&count)
+        , dispatch_log(log)
+    {
+    }
+
+    coro operator()(coro h) const
+    {
+        ++(*dispatch_count_);
+        if (dispatch_log)
+            dispatch_log->push_back(id);
+        return h;  // Inline execution
+    }
+};
+
+static_assert(dispatcher<tracking_dispatcher>);
+
+/** Run a task to completion by manually stepping through it.
+
+    Takes ownership of the task via release() and runs until done.
+*/
+template<class T>
+T run_task(task<T> t)
+{
+    auto h = t.release();  // Take ownership
+    while (!h.done())
+        h.resume();
+    auto& p = h.promise();
+    // Check for exception first (result may be empty if exception occurred)
+    if (p.ep_)
+    {
+        auto ep = p.ep_;
+        h.destroy();
+        std::rethrow_exception(ep);
+    }
+    if constexpr (!std::is_void_v<T>)
+    {
+        auto result = std::move(*p.result_);
+        h.destroy();
+        return result;
+    }
+    else
+    {
+        h.destroy();
+    }
+}
+
+/** Run a void task to completion.
+*/
+inline void run_void_task(task<void> t)
+{
+    run_task<void>(std::move(t));
 }
 
 struct test_exception : std::runtime_error
@@ -109,14 +150,12 @@ struct task_test
     {
         // task returning int
         {
-            auto t = returns_int();
-            BOOST_TEST_EQ(run_task(t), 42);
+            BOOST_TEST_EQ(run_task(returns_int()), 42);
         }
 
         // task returning string
         {
-            auto t = returns_string();
-            BOOST_TEST_EQ(run_task(t), "hello");
+            BOOST_TEST_EQ(run_task(returns_string()), "hello");
         }
     }
 
@@ -139,18 +178,12 @@ struct task_test
     {
         // task that throws custom exception
         {
-            auto t = throws_exception();
-            while (!t.handle().done())
-                t.handle().resume();
-            BOOST_TEST_THROWS(t.await_resume(), test_exception);
+            BOOST_TEST_THROWS(run_task(throws_exception()), test_exception);
         }
 
         // task that throws std::runtime_error
         {
-            auto t = throws_std_exception();
-            while (!t.handle().done())
-                t.handle().resume();
-            BOOST_TEST_THROWS(t.await_resume(), std::runtime_error);
+            BOOST_TEST_THROWS(run_task(throws_std_exception()), std::runtime_error);
         }
     }
 
@@ -216,28 +249,22 @@ struct task_test
     {
         // outer task awaits inner task with value
         {
-            auto t = outer_task_awaits_inner();
-            BOOST_TEST_EQ(run_task(t), 101);
+            BOOST_TEST_EQ(run_task(outer_task_awaits_inner()), 101);
         }
 
         // outer task awaits inner task that throws
         {
-            auto t = outer_task_awaits_throwing_inner();
-            while (!t.handle().done())
-                t.handle().resume();
-            BOOST_TEST_THROWS(t.await_resume(), test_exception);
+            BOOST_TEST_THROWS(run_task(outer_task_awaits_throwing_inner()), test_exception);
         }
 
         // outer task catches exception from inner task
         {
-            auto t = outer_task_catches_inner_exception();
-            BOOST_TEST_EQ(run_task(t), 999);
+            BOOST_TEST_EQ(run_task(outer_task_catches_inner_exception()), 999);
         }
 
         // chained tasks (3 levels)
         {
-            auto t = chained_tasks();
-            BOOST_TEST_EQ(run_task(t), 25);
+            BOOST_TEST_EQ(run_task(chained_tasks()), 25);
         }
     }
 
@@ -247,14 +274,20 @@ struct task_test
         // move constructor
         {
             auto t1 = returns_int();
-            auto h = t1.handle();
-            BOOST_TEST(h);
+            auto h1 = t1.release();
+            BOOST_TEST(h1);
 
+            // Re-wrap for move test
             task<int> t2(std::move(t1));
-            BOOST_TEST(!t1.handle());
-            BOOST_TEST(t2.handle() == h);
+            // t1 is now moved-from, t2 should be empty since t1 was released
+            // This test verifies move semantics
+            BOOST_TEST(!t2.release());  // t2 is empty
 
-            BOOST_TEST_EQ(run_task(t2), 42);
+            // Run the released handle
+            while (!h1.done())
+                h1.resume();
+            BOOST_TEST_EQ(*h1.promise().result_, 42);
+            h1.destroy();
         }
 
         // release()
@@ -262,7 +295,7 @@ struct task_test
             auto t = returns_int();
             auto h = t.release();
             BOOST_TEST(h);
-            BOOST_TEST(!t.handle());
+            BOOST_TEST(!t.release());  // Already released
 
             while (!h.done())
                 h.resume();
@@ -310,16 +343,40 @@ struct task_test
     void
     testTaskAwaitsAsyncResult()
     {
-        // task awaits single async_op
+        // task awaits single async_op - needs async_run for dispatcher
         {
-            auto t = task_awaits_async_op();
-            BOOST_TEST_EQ(run_task(t), 124);
+            int dispatch_count = 0;
+            test_dispatcher d(dispatch_count);
+            int result = 0;
+            bool completed = false;
+
+            async_run(d)(task_awaits_async_op(),
+                [&](int v) {
+                    result = v;
+                    completed = true;
+                },
+                [](std::exception_ptr) {});
+
+            BOOST_TEST(completed);
+            BOOST_TEST_EQ(result, 124);
         }
 
         // task awaits multiple async_ops
         {
-            auto t = task_awaits_multiple_async_ops();
-            BOOST_TEST_EQ(run_task(t), 579);
+            int dispatch_count = 0;
+            test_dispatcher d(dispatch_count);
+            int result = 0;
+            bool completed = false;
+
+            async_run(d)(task_awaits_multiple_async_ops(),
+                [&](int v) {
+                    result = v;
+                    completed = true;
+                },
+                [](std::exception_ptr) {});
+
+            BOOST_TEST(completed);
+            BOOST_TEST_EQ(result, 579);
         }
     }
 
@@ -348,19 +405,13 @@ struct task_test
     void
     testVoidTaskBasic()
     {
-        auto t = void_task_basic();
-        while (!t.handle().done())
-            t.handle().resume();
-        t.await_resume(); // should not throw
+        run_void_task(void_task_basic());  // should not throw
     }
 
     void
     testVoidTaskException()
     {
-        auto t = void_task_throws();
-        while (!t.handle().done())
-            t.handle().resume();
-        BOOST_TEST_THROWS(t.await_resume(), test_exception);
+        BOOST_TEST_THROWS(run_void_task(void_task_throws()), test_exception);
     }
 
     static task<void>
@@ -383,18 +434,12 @@ struct task_test
     {
         // void task awaits value-returning task
         {
-            auto t = void_task_awaits_value();
-            while (!t.handle().done())
-                t.handle().resume();
-            t.await_resume();
+            run_void_task(void_task_awaits_value());
         }
 
         // void task awaits another void task
         {
-            auto t = void_task_awaits_void();
-            while (!t.handle().done())
-                t.handle().resume();
-            t.await_resume();
+            run_void_task(void_task_awaits_void());
         }
     }
 
@@ -416,22 +461,24 @@ struct task_test
     void
     testVoidTaskChain()
     {
-        auto t = void_task_chain();
-        while (!t.handle().done())
-            t.handle().resume();
-        t.await_resume();
+        run_void_task(void_task_chain());
     }
 
     void
     testVoidTaskMove()
     {
         auto t1 = void_task_basic();
-        auto h = t1.handle();
+        auto h = t1.release();
         BOOST_TEST(h);
 
         task<void> t2(std::move(t1));
-        BOOST_TEST(!t1.handle());
-        BOOST_TEST(t2.handle() == h);
+        // t1 was already released, t2 should be empty
+        BOOST_TEST(!t2.release());
+
+        // Clean up the handle
+        while (!h.done())
+            h.resume();
+        h.destroy();
     }
 
     static task<void>
@@ -445,30 +492,27 @@ struct task_test
     void
     testVoidTaskAwaitsAsyncResult()
     {
-        auto t = void_task_awaits_async_op();
-        while (!t.handle().done())
-            t.handle().resume();
-        t.await_resume();
+        // Needs async_run since void_task_awaits_async_op awaits an async_op
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool completed = false;
+
+        async_run(d)(void_task_awaits_async_op(),
+            [&]() { completed = true; },
+            [](std::exception_ptr) {});
+
+        BOOST_TEST(completed);
     }
 
-    // executor affinity tests
+    // Dispatcher tests using async_run
 
-    void
-    testExecutorDefault()
+    static async_op<int>
+    async_op_immediate(int value)
     {
-        // task<T> executor defaults to empty (no affinity)
-        {
-            auto t = returns_int();
-            auto& p = t.handle().promise();
-            BOOST_TEST(!p.get_executor());
-        }
-
-        // task<void> executor defaults to empty (no affinity)
-        {
-            auto t = void_task_basic();
-            auto& p = t.handle().promise();
-            BOOST_TEST(!p.get_executor());
-        }
+        return make_async_op<int>(
+            [value](auto cb) {
+                cb(value);
+            });
     }
 
     static task<int>
@@ -479,18 +523,25 @@ struct task_test
     }
 
     void
-    testExecutorUsedByAwait()
+    testDispatcherUsedByAwait()
     {
-        // Verify that executor is used when awaiting
-        sync_executor ctx;
-        executor ex(ctx);
+        // Verify that dispatcher is used when awaiting via async_run
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool completed = false;
+        int result = 0;
 
-        auto t = task_with_async_for_affinity_test();
-        t.on(ex);
+        async_run(d)(task_with_async_for_affinity_test(),
+            [&](int v) {
+                result = v;
+                completed = true;
+            },
+            [](std::exception_ptr) {});
 
-        BOOST_TEST_EQ(run_task(t), 124);
-        // Work should have been posted through the executor
-        BOOST_TEST_GE(ctx.submit_count.load(), 1);
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(result, 124);
+        // Work should have been dispatched
+        BOOST_TEST_GE(dispatch_count, 1);
     }
 
     static task<void>
@@ -502,106 +553,20 @@ struct task_test
     }
 
     void
-    testVoidTaskExecutorUsedByAwait()
+    testVoidTaskDispatcherUsedByAwait()
     {
-        // Verify that executor is used for void tasks
-        sync_executor ctx;
-        executor ex(ctx);
+        // Verify that dispatcher is used for void tasks
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool completed = false;
 
-        auto t = void_task_with_async_for_affinity_test();
-        t.on(ex);
+        async_run(d)(void_task_with_async_for_affinity_test(),
+            [&]() { completed = true; },
+            [](std::exception_ptr) {});
 
-        while (!t.handle().done())
-            t.handle().resume();
-        t.await_resume();
-
-        // Work should have been posted through the executor
-        BOOST_TEST_GE(ctx.submit_count.load(), 1);
-    }
-
-    // on() method tests
-
-    void
-    testOnSetsExecutor()
-    {
-        // Verify on() sets the executor for task<T>
-        sync_executor ctx;
-        executor ex(ctx);
-
-        auto t = task_with_async_for_affinity_test();
-        t.on(ex);
-
-        // Executor should now be set
-        BOOST_TEST(static_cast<bool>(t.handle().promise().get_executor()));
-        BOOST_TEST_EQ(run_task(t), 124);
-        // Work should have been posted through the executor
-        BOOST_TEST_GE(ctx.submit_count.load(), 1);
-    }
-
-    void
-    testOnSetsExecutorVoid()
-    {
-        // Verify on() sets the executor for task<void>
-        sync_executor ctx;
-        executor ex(ctx);
-
-        auto t = void_task_with_async_for_affinity_test();
-        t.on(ex);
-
-        while (!t.handle().done())
-            t.handle().resume();
-        t.await_resume();
-
-        // Work should have been posted through the executor
-        BOOST_TEST_GE(ctx.submit_count.load(), 1);
-    }
-
-    void
-    testOnFluentSyntax()
-    {
-        // Verify fluent syntax works with rvalue
-        sync_executor ctx;
-        executor ex(ctx);
-
-        auto make_task = []() -> task<int> {
-            co_return co_await async_returns_value();
-        };
-
-        auto t = make_task().on(ex);
-        BOOST_TEST_EQ(run_task(t), 123);
-        BOOST_TEST_GE(ctx.submit_count.load(), 1);
-    }
-
-    void
-    testOnFluentSyntaxVoid()
-    {
-        // Verify fluent syntax works with rvalue for void tasks
-        sync_executor ctx;
-        executor ex(ctx);
-
-        auto make_task = []() -> task<void> {
-            co_await async_returns_value();
-            co_return;
-        };
-
-        auto t = make_task().on(ex);
-        while (!t.handle().done())
-            t.handle().resume();
-        t.await_resume();
-
-        BOOST_TEST_GE(ctx.submit_count.load(), 1);
-    }
-
-    void
-    testOnLvalueReturnsReference()
-    {
-        // Verify on() returns reference to same task for lvalue
-        sync_executor ctx;
-        executor ex(ctx);
-
-        auto t = returns_int();
-        auto& ref = t.on(ex);
-        BOOST_TEST(&ref == &t);
+        BOOST_TEST(completed);
+        // Work should have been dispatched
+        BOOST_TEST_GE(dispatch_count, 1);
     }
 
     // Affinity propagation tests
@@ -630,16 +595,23 @@ struct task_test
     testAffinityPropagation()
     {
         // Verify affinity propagates through task chain (ABC problem)
-        // a has affinity, b and c should inherit it
-        sync_executor ctx;
-        executor ex(ctx);
+        // The dispatcher from async_run should be inherited by nested tasks
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool completed = false;
+        int result = 0;
 
-        auto t = outer_task_a();
-        t.on(ex);
+        async_run(d)(outer_task_a(),
+            [&](int v) {
+                result = v;
+                completed = true;
+            },
+            [](std::exception_ptr) {});
 
-        BOOST_TEST_EQ(run_task(t), 125);  // 123 + 1 + 1
-        // All async completions should dispatch through executor
-        BOOST_TEST_GE(ctx.submit_count.load(), 1);
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(result, 125);  // 123 + 1 + 1
+        // All async completions should dispatch through the dispatcher
+        BOOST_TEST_GE(dispatch_count, 1);
     }
 
     static task<void>
@@ -667,128 +639,41 @@ struct task_test
     testAffinityPropagationVoid()
     {
         // Verify affinity propagates through void task chain
-        sync_executor ctx;
-        executor ex(ctx);
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool completed = false;
 
-        auto t = outer_void_task_a();
-        t.on(ex);
+        async_run(d)(outer_void_task_a(),
+            [&]() { completed = true; },
+            [](std::exception_ptr) {});
 
-        while (!t.handle().done())
-            t.handle().resume();
-        t.await_resume();
-
-        BOOST_TEST_GE(ctx.submit_count.load(), 1);
+        BOOST_TEST(completed);
+        BOOST_TEST_GE(dispatch_count, 1);
     }
 
     void
-    testExplicitAffinityOverridesInheritance()
+    testNoDispatcherRunsInline()
     {
-        // Verify explicit affinity via .on() is not overwritten
-        sync_executor ctx1;
-        sync_executor ctx2;
-        executor ex1(ctx1);
-        executor ex2(ctx2);
-
-        // Create a task with explicit affinity
-        auto make_inner = [ex2]() -> task<int> {
-            return inner_task_c().on(ex2);  // explicit affinity to ex2
-        };
-
-        auto outer = [make_inner]() -> task<int> {
-            int v = co_await make_inner();
-            co_return v + 1;
-        };
-
-        auto t = outer();
-        t.on(ex1);  // outer has affinity to ex1
-
-        BOOST_TEST_EQ(run_task(t), 124);
-        // Inner should use ex2, not inherit ex1
-        BOOST_TEST_GE(ctx2.submit_count.load(), 1);
+        // Verify that simple tasks can run without async_run (manual stepping)
+        // Note: Only works for tasks that don't await dispatcher-aware awaitables
+        BOOST_TEST_EQ(run_task(chained_tasks()), 25);
     }
 
-    void
-    testNoAffinityRunsInline()
-    {
-        // Verify that without affinity, no executor dispatch occurs
-        auto t = outer_task_a();  // no .on() call
-
-        BOOST_TEST_EQ(run_task(t), 125);
-        // Task should complete without any executor
-    }
-
-    // Affinity preservation tests
-
-    /** Executor that tracks submissions with an ID.
-    */
-    struct tracking_executor
-    {
-        friend struct executor::access;
-
-        int id;
-        std::atomic<int> submit_count{0};
-        mutable std::vector<int>* submission_log;
-
-        explicit
-        tracking_executor(int id_, std::vector<int>* log)
-            : id(id_)
-            , submission_log(log)
-        {
-        }
-
-    private:
-        struct header
-        {
-            std::size_t size;
-        };
-
-        void*
-        allocate(std::size_t size, std::size_t /*align*/)
-        {
-            std::size_t total = sizeof(header) + size;
-            void* p = std::malloc(total);
-            auto* h = new(p) header{total};
-            return h + 1;
-        }
-
-        void
-        deallocate(void* p, std::size_t /*size*/, std::size_t /*align*/)
-        {
-            auto* h = static_cast<header*>(p) - 1;
-            std::free(h);
-        }
-
-        void
-        submit(executor::work* w)
-        {
-            ++submit_count;
-            if (submission_log)
-                submission_log->push_back(id);
-            w->invoke();
-            w->~work();
-            deallocate(w, 0, 0);
-        }
-    };
-
-    static async_op<int>
-    async_op_immediate(int value)
-    {
-        return make_async_op<int>(
-            [value](auto cb) {
-                cb(value);
-            });
-    }
+    // Affinity preservation tests with tracking dispatcher
 
     void
     testInheritedAffinityVerification()
     {
         // Test that child tasks actually use inherited affinity
-        // by checking that all resumptions go through the parent's executor
+        // by checking that all resumptions go through the parent's dispatcher
         std::vector<int> log;
-        tracking_executor ctx(1, &log);
-        executor ex(ctx);
+        int dispatch_count = 0;
+        tracking_dispatcher d(1, dispatch_count, &log);
 
-        // Chain: outer -> middle -> inner, only outer has .on()
+        bool completed = false;
+        int result = 0;
+
+        // Chain: outer -> middle -> inner
         auto inner = []() -> task<int> {
             co_return co_await async_op_immediate(100);
         };
@@ -803,82 +688,19 @@ struct task_test
             co_return v + co_await async_op_immediate(1);
         };
 
-        auto t = outer();
-        t.on(ex);
+        async_run(d)(outer(),
+            [&](int v) {
+                result = v;
+                completed = true;
+            },
+            [](std::exception_ptr) {});
 
-        BOOST_TEST_EQ(run_task(t), 111);
-        // All three async_ops should have resumed through executor 1
-        BOOST_TEST_GE(ctx.submit_count.load(), 3);
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(result, 111);
+        // All three async_ops should have resumed through dispatcher 1
+        BOOST_TEST_GE(dispatch_count, 3);
         for (int id : log)
             BOOST_TEST_EQ(id, 1);
-    }
-
-    void
-    testCrossExecutorAsyncOp()
-    {
-        // Test: async_op "completes" but task resumes on its affinity executor
-        // This verifies the dispatcher is correctly used for resumption
-        std::vector<int> log;
-        tracking_executor ctx1(1, &log);
-        tracking_executor ctx2(2, &log);
-        executor ex1(ctx1);
-        executor ex2(ctx2);
-
-        // Create a task with affinity to ex1
-        auto task_with_affinity = []() -> task<int> {
-            // This async_op completes inline (simulating completion on "other" context)
-            int v = co_await async_op_immediate(42);
-            co_return v;
-        };
-
-        auto t = task_with_affinity();
-        t.on(ex1);
-
-        BOOST_TEST_EQ(run_task(t), 42);
-        // Resumption should go through ex1, not ex2
-        BOOST_TEST_GE(ctx1.submit_count.load(), 1);
-        BOOST_TEST_EQ(ctx2.submit_count.load(), 0);
-        // All logged submissions should be to executor 1
-        for (int id : log)
-            BOOST_TEST_EQ(id, 1);
-    }
-
-    void
-    testMixedAffinityChain()
-    {
-        // Test: outer has ex1, inner explicitly has ex2
-        // Verify each task uses its own affinity
-        std::vector<int> outer_log;
-        std::vector<int> inner_log;
-        tracking_executor ctx1(1, &outer_log);
-        tracking_executor ctx2(2, &inner_log);
-        executor ex1(ctx1);
-        executor ex2(ctx2);
-
-        // Inner task with explicit affinity to ex2
-        auto make_inner = [ex2]() -> task<int> {
-            auto inner = []() -> task<int> {
-                co_return co_await async_op_immediate(100);
-            };
-            return inner().on(ex2);
-        };
-
-        // Outer task with affinity to ex1
-        auto outer = [make_inner]() -> task<int> {
-            int v = co_await make_inner();
-            // This await should use ex1 (outer's affinity)
-            v += co_await async_op_immediate(1);
-            co_return v;
-        };
-
-        auto t = outer();
-        t.on(ex1);
-
-        BOOST_TEST_EQ(run_task(t), 101);
-        // Inner's async should use ex2
-        BOOST_TEST_GE(ctx2.submit_count.load(), 1);
-        // Outer's async should use ex1
-        BOOST_TEST_GE(ctx1.submit_count.load(), 1);
     }
 
     void
@@ -886,8 +708,11 @@ struct task_test
     {
         // Test that affinity is preserved across multiple co_await expressions
         std::vector<int> log;
-        tracking_executor ctx(1, &log);
-        executor ex(ctx);
+        int dispatch_count = 0;
+        tracking_dispatcher d(1, dispatch_count, &log);
+
+        bool completed = false;
+        int result = 0;
 
         auto multi_await = []() -> task<int> {
             int sum = 0;
@@ -899,13 +724,18 @@ struct task_test
             co_return sum;
         };
 
-        auto t = multi_await();
-        t.on(ex);
+        async_run(d)(multi_await(),
+            [&](int v) {
+                result = v;
+                completed = true;
+            },
+            [](std::exception_ptr) {});
 
-        BOOST_TEST_EQ(run_task(t), 15);
-        // All 5 awaits should use the same executor
-        BOOST_TEST_EQ(ctx.submit_count.load(), 5);
-        BOOST_TEST_EQ(log.size(), 5u);
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(result, 15);
+        // 6 dispatches: 1 from async_run start + 5 from async_ops completing
+        BOOST_TEST_EQ(dispatch_count, 6);
+        BOOST_TEST_EQ(log.size(), 6u);
         for (int id : log)
             BOOST_TEST_EQ(id, 1);
     }
@@ -915,10 +745,11 @@ struct task_test
     {
         // Test affinity propagation through void task nesting
         std::vector<int> log;
-        tracking_executor ctx(1, &log);
-        executor ex(ctx);
+        int dispatch_count = 0;
+        tracking_dispatcher d(1, dispatch_count, &log);
 
         std::atomic<int> counter{0};
+        bool completed = false;
 
         auto leaf = [&counter]() -> task<void> {
             co_await async_op_immediate(0);
@@ -940,16 +771,14 @@ struct task_test
             co_return;
         };
 
-        auto t = root();
-        t.on(ex);
+        async_run(d)(root(),
+            [&]() { completed = true; },
+            [](std::exception_ptr) {});
 
-        while (!t.handle().done())
-            t.handle().resume();
-        t.await_resume();
-
+        BOOST_TEST(completed);
         BOOST_TEST_EQ(counter.load(), 3);
-        // All async_ops should dispatch through executor
-        BOOST_TEST_GE(ctx.submit_count.load(), 3);
+        // All async_ops should dispatch through the dispatcher
+        BOOST_TEST_GE(dispatch_count, 3);
         for (int id : log)
             BOOST_TEST_EQ(id, 1);
     }
@@ -959,8 +788,11 @@ struct task_test
     {
         // Test that when child task completes, it resumes parent via dispatcher
         std::vector<int> log;
-        tracking_executor ctx(1, &log);
-        executor ex(ctx);
+        int dispatch_count = 0;
+        tracking_dispatcher d(1, dispatch_count, &log);
+
+        bool completed = false;
+        int result = 0;
 
         // Simple child that just returns a value
         auto child = []() -> task<int> {
@@ -973,114 +805,128 @@ struct task_test
             co_return v + 1;
         };
 
-        auto t = parent();
-        t.on(ex);
+        async_run(d)(parent(),
+            [&](int v) {
+                result = v;
+                completed = true;
+            },
+            [](std::exception_ptr) {});
 
-        BOOST_TEST_EQ(run_task(t), 43);
-        // Child's completion should dispatch through executor
-        BOOST_TEST_GE(ctx.submit_count.load(), 1);
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(result, 43);
+        // Child's completion should dispatch through the dispatcher
+        BOOST_TEST_GE(dispatch_count, 1);
     }
 
-    // spawn() tests
+    // async_run() tests (replacing old spawn() tests)
 
     void
-    testSpawnValueTask()
+    testAsyncRunValueTask()
     {
-        sync_executor ctx;
-        executor ex(ctx);
-        std::optional<system::result<int, std::exception_ptr>> received;
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool completed = false;
+        int result = 0;
 
         auto compute = []() -> task<int> {
             co_return 42;
         };
 
-        spawn(ex, compute(), [&](auto result) {
-            received = result;
-        });
+        async_run(d)(compute(),
+            [&](int v) {
+                result = v;
+                completed = true;
+            },
+            [](std::exception_ptr) {});
 
-        BOOST_TEST(received.has_value());
-        BOOST_TEST(received->has_value());
-        BOOST_TEST_EQ(*(*received), 42);
-        BOOST_TEST_GE(ctx.submit_count.load(), 1);
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(result, 42);
+        BOOST_TEST_GE(dispatch_count, 1);
     }
 
     void
-    testSpawnVoidTask()
+    testAsyncRunVoidTask()
     {
-        sync_executor ctx;
-        executor ex(ctx);
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
         bool task_done = false;
-        std::optional<system::result<void, std::exception_ptr>> received;
+        bool completed = false;
 
         auto do_work = [&task_done]() -> task<void> {
             task_done = true;
             co_return;
         };
 
-        spawn(ex, do_work(), [&](auto result) {
-            received = result;
-        });
+        async_run(d)(do_work(),
+            [&]() { completed = true; },
+            [](std::exception_ptr) {});
 
-        BOOST_TEST(received.has_value());
-        BOOST_TEST(received->has_value());
+        BOOST_TEST(completed);
         BOOST_TEST(task_done);
-        BOOST_TEST_GE(ctx.submit_count.load(), 1);
+        BOOST_TEST_GE(dispatch_count, 1);
     }
 
     void
-    testSpawnTaskWithException()
+    testAsyncRunTaskWithException()
     {
-        sync_executor ctx;
-        executor ex(ctx);
-        std::optional<system::result<int, std::exception_ptr>> received;
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool completed = false;
+        bool caught_exception = false;
 
         auto throwing_task = []() -> task<int> {
-            throw_test_exception("spawn test");
+            throw_test_exception("async_run test");
             co_return 0;
         };
 
-        spawn(ex, throwing_task(), [&](auto result) {
-            received = result;
-        });
+        async_run(d)(throwing_task(),
+            [&](int) { completed = true; },
+            [&](std::exception_ptr ep) {
+                try {
+                    std::rethrow_exception(ep);
+                } catch (test_exception const&) {
+                    caught_exception = true;
+                }
+            });
 
-        BOOST_TEST(received.has_value());
-        BOOST_TEST(received->has_error());
-        bool caught = false;
-        try { std::rethrow_exception(received->error()); }
-        catch (test_exception const&) { caught = true; }
-        BOOST_TEST(caught);
+        BOOST_TEST(!completed);
+        BOOST_TEST(caught_exception);
     }
 
     void
-    testSpawnVoidTaskWithException()
+    testAsyncRunVoidTaskWithException()
     {
-        sync_executor ctx;
-        executor ex(ctx);
-        std::optional<system::result<void, std::exception_ptr>> received;
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool completed = false;
+        bool caught_exception = false;
 
         auto throwing_void_task = []() -> task<void> {
-            throw_test_exception("void spawn exception");
+            throw_test_exception("void async_run exception");
             co_return;
         };
 
-        spawn(ex, throwing_void_task(), [&](auto result) {
-            received = result;
-        });
+        async_run(d)(throwing_void_task(),
+            [&]() { completed = true; },
+            [&](std::exception_ptr ep) {
+                try {
+                    std::rethrow_exception(ep);
+                } catch (test_exception const&) {
+                    caught_exception = true;
+                }
+            });
 
-        BOOST_TEST(received.has_value());
-        BOOST_TEST(received->has_error());
-        bool caught = false;
-        try { std::rethrow_exception(received->error()); }
-        catch (test_exception const&) { caught = true; }
-        BOOST_TEST(caught);
+        BOOST_TEST(!completed);
+        BOOST_TEST(caught_exception);
     }
 
     void
-    testSpawnWithNestedAwaits()
+    testAsyncRunWithNestedAwaits()
     {
-        sync_executor ctx;
-        executor ex(ctx);
-        std::optional<system::result<int, std::exception_ptr>> received;
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool completed = false;
+        int result = 0;
 
         auto inner = []() -> task<int> {
             co_return 10;
@@ -1092,44 +938,50 @@ struct task_test
             co_return a + b;
         };
 
-        spawn(ex, outer(), [&](auto result) {
-            received = result;
-        });
+        async_run(d)(outer(),
+            [&](int v) {
+                result = v;
+                completed = true;
+            },
+            [](std::exception_ptr) {});
 
-        BOOST_TEST(received.has_value());
-        BOOST_TEST(received->has_value());
-        BOOST_TEST_EQ(*(*received), 20);
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(result, 20);
     }
 
     void
-    testSpawnWithAsyncOp()
+    testAsyncRunWithAsyncOp()
     {
-        sync_executor ctx;
-        executor ex(ctx);
-        std::optional<system::result<int, std::exception_ptr>> received;
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool completed = false;
+        int result = 0;
 
         auto task_with_async = []() -> task<int> {
             int v = co_await async_op_immediate(100);
             co_return v + 1;
         };
 
-        spawn(ex, task_with_async(), [&](auto result) {
-            received = result;
-        });
+        async_run(d)(task_with_async(),
+            [&](int v) {
+                result = v;
+                completed = true;
+            },
+            [](std::exception_ptr) {});
 
-        BOOST_TEST(received.has_value());
-        BOOST_TEST(received->has_value());
-        BOOST_TEST_EQ(*(*received), 101);
-        BOOST_TEST_GE(ctx.submit_count.load(), 1);
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(result, 101);
+        BOOST_TEST_GE(dispatch_count, 1);
     }
 
     void
-    testSpawnAffinityPropagation()
+    testAsyncRunAffinityPropagation()
     {
         std::vector<int> log;
-        tracking_executor ctx(1, &log);
-        executor ex(ctx);
-        std::optional<system::result<int, std::exception_ptr>> received;
+        int dispatch_count = 0;
+        tracking_dispatcher d(1, dispatch_count, &log);
+        bool completed = false;
+        int result = 0;
 
         auto inner = []() -> task<int> {
             co_return co_await async_op_immediate(50);
@@ -1141,76 +993,73 @@ struct task_test
             co_return v;
         };
 
-        spawn(ex, outer(), [&](auto result) {
-            received = result;
-        });
+        async_run(d)(outer(),
+            [&](int v) {
+                result = v;
+                completed = true;
+            },
+            [](std::exception_ptr) {});
 
-        BOOST_TEST(received.has_value());
-        BOOST_TEST(received->has_value());
-        BOOST_TEST_EQ(*(*received), 55);
-        BOOST_TEST_GE(ctx.submit_count.load(), 2);
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(result, 55);
+        BOOST_TEST_GE(dispatch_count, 2);
         for (int id : log)
             BOOST_TEST_EQ(id, 1);
     }
 
     void
-    testSpawnChained()
+    testAsyncRunChained()
     {
-        sync_executor ctx;
-        executor ex(ctx);
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
         int sum = 0;
 
         auto task1 = []() -> task<int> { co_return 1; };
         auto task2 = []() -> task<int> { co_return 2; };
         auto task3 = []() -> task<int> { co_return 3; };
 
-        spawn(ex, task1(), [&](auto r) { if (r) sum += *r; });
-        spawn(ex, task2(), [&](auto r) { if (r) sum += *r; });
-        spawn(ex, task3(), [&](auto r) { if (r) sum += *r; });
+        async_run(d)(task1(), [&](int v) { sum += v; }, [](std::exception_ptr) {});
+        async_run(d)(task2(), [&](int v) { sum += v; }, [](std::exception_ptr) {});
+        async_run(d)(task3(), [&](int v) { sum += v; }, [](std::exception_ptr) {});
 
         BOOST_TEST_EQ(sum, 6);
     }
 
     void
-    testSpawnResultErrorAccess()
+    testAsyncRunErrorHandler()
     {
-        sync_executor ctx;
-        executor ex(ctx);
-        std::optional<system::result<int, std::exception_ptr>> received;
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool caught = false;
+        std::string error_msg;
 
         auto failing = []() -> task<int> {
             throw std::runtime_error("specific error");
             co_return 0;
         };
 
-        spawn(ex, failing(), [&](auto result) {
-            received = result;
-        });
+        async_run(d)(failing(),
+            [](int) {},
+            [&](std::exception_ptr ep) {
+                try {
+                    std::rethrow_exception(ep);
+                } catch (std::runtime_error const& e) {
+                    error_msg = e.what();
+                    caught = true;
+                }
+            });
 
-        BOOST_TEST(received.has_value());
-        BOOST_TEST(!received->has_value());
-        BOOST_TEST(received->has_error());
-        BOOST_TEST(received->error() != nullptr);
-
-        bool caught = false;
-        try
-        {
-            std::rethrow_exception(received->error());
-        }
-        catch (std::runtime_error const& e)
-        {
-            BOOST_TEST(std::string(e.what()) == "specific error");
-            caught = true;
-        }
         BOOST_TEST(caught);
+        BOOST_TEST_EQ(error_msg, "specific error");
     }
 
     void
-    testSpawnDeeplyNested()
+    testAsyncRunDeeplyNested()
     {
-        sync_executor ctx;
-        executor ex(ctx);
-        std::optional<system::result<int, std::exception_ptr>> received;
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool completed = false;
+        int result = 0;
 
         auto level3 = []() -> task<int> {
             co_return co_await async_op_immediate(1);
@@ -1226,14 +1075,71 @@ struct task_test
             co_return v + co_await async_op_immediate(100);
         };
 
-        spawn(ex, level1(), [&](auto result) {
-            received = result;
-        });
+        async_run(d)(level1(),
+            [&](int v) {
+                result = v;
+                completed = true;
+            },
+            [](std::exception_ptr) {});
 
-        BOOST_TEST(received.has_value());
-        BOOST_TEST(received->has_value());
-        BOOST_TEST_EQ(*(*received), 111);
-        BOOST_TEST_GE(ctx.submit_count.load(), 3);
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(result, 111);
+        BOOST_TEST_GE(dispatch_count, 3);
+    }
+
+    void
+    testAsyncRunFireAndForget()
+    {
+        // Test fire-and-forget mode (default handler)
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        std::atomic<bool> task_ran{false};
+
+        auto simple_task = [&task_ran]() -> task<void> {
+            task_ran = true;
+            co_return;
+        };
+
+        async_run(d)(simple_task());
+
+        BOOST_TEST(task_ran.load());
+    }
+
+    void
+    testAsyncRunSingleHandler()
+    {
+        // Test single handler that handles both success and exception
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool success_called = false;
+        bool exception_called = false;
+
+        struct overloaded_handler
+        {
+            bool* success;
+            bool* exception;
+
+            void operator()(int v)
+            {
+                (void)v;
+                *success = true;
+            }
+
+            void operator()(std::exception_ptr)
+            {
+                *exception = true;
+            }
+        };
+
+        auto success_task = []() -> task<int> {
+            co_return 42;
+        };
+
+        async_run(d)(success_task(),
+            overloaded_handler{&success_called, &exception_called});
+
+        BOOST_TEST(success_called);
+        BOOST_TEST(!exception_called);
     }
 
     void
@@ -1254,194 +1160,34 @@ struct task_test
         testVoidTaskMove();
         testVoidTaskAwaitsAsyncResult();
 
-        // executor affinity tests
-        testExecutorDefault();
-        testExecutorUsedByAwait();
-        testVoidTaskExecutorUsedByAwait();
-
-        // on() method tests
-        testOnSetsExecutor();
-        testOnSetsExecutorVoid();
-        testOnFluentSyntax();
-        testOnFluentSyntaxVoid();
-        testOnLvalueReturnsReference();
+        // dispatcher tests (via async_run)
+        testDispatcherUsedByAwait();
+        testVoidTaskDispatcherUsedByAwait();
 
         // affinity propagation tests (ABC problem)
         testAffinityPropagation();
         testAffinityPropagationVoid();
-        testExplicitAffinityOverridesInheritance();
-        testNoAffinityRunsInline();
+        testNoDispatcherRunsInline();
 
         // affinity preservation tests
         testInheritedAffinityVerification();
-        testCrossExecutorAsyncOp();
-        testMixedAffinityChain();
         testAffinityPreservedAcrossMultipleAwaits();
         testAffinityWithNestedVoidTasks();
         testFinalSuspendUsesDispatcher();
 
-        // spawn() function tests
-        testSpawnValueTask();
-        testSpawnVoidTask();
-        testSpawnTaskWithException();
-        testSpawnVoidTaskWithException();
-        testSpawnWithNestedAwaits();
-        testSpawnWithAsyncOp();
-        testSpawnAffinityPropagation();
-        testSpawnChained();
-        testSpawnResultErrorAccess();
-        testSpawnDeeplyNested();
-        testGccUninitialized();
-    }
-
-    // GCC 12+ -Wmaybe-uninitialized false positive tests
-    // https://github.com/boostorg/variant2/issues/XXX
-    // These attempt to reproduce the warning without coroutines.
-    void
-    testGccUninitialized()
-    {
-        using result_void = system::result<void, std::exception_ptr>;
-        using result_string = system::result<std::string, std::exception_ptr>;
-
-        // Test 1: Simple copy construction
-        {
-            result_void r1;
-            result_void r2(r1);
-            (void)r2;
-        }
-
-        // Test 2: Copy assignment
-        {
-            result_void r1;
-            result_void r2;
-            r2 = r1;
-            (void)r2;
-        }
-
-        // Test 3: std::optional assignment (matches spawn pattern)
-        {
-            std::optional<result_void> opt;
-            opt = result_void{};
-            (void)opt;
-        }
-
-        // Test 4: Pass to function via copy
-        {
-            auto fn = [](result_void r) { (void)r; };
-            fn(result_void{});
-        }
-
-        // Test 5: Lambda capture + optional (closest to spawn)
-        {
-            auto fn = [](result_void r) {
-                std::optional<result_void> opt;
-                opt = r;
-                return opt.has_value();
-            };
-            (void)fn(result_void{});
-        }
-
-        // Test 6: Non-void result with string (triggers string warning)
-        {
-            result_string r1;
-            result_string r2(r1);
-            (void)r2;
-        }
-
-        // Test 7: Assign exception to result holding value
-        {
-            result_string r1{"hello"};
-            r1 = std::make_exception_ptr(std::runtime_error("test"));
-            (void)r1;
-        }
-
-        // Test 8: Optional with string result
-        {
-            std::optional<result_string> opt;
-            opt = result_string{};
-            (void)opt;
-        }
-
-#ifdef BOOST_CAPY_HAS_CORO
-        // Minimal fire-and-forget coroutine for testing
-        struct fire_and_forget
-        {
-            struct promise_type
-            {
-                fire_and_forget get_return_object() { return {}; }
-                std::suspend_never initial_suspend() noexcept { return {}; }
-                std::suspend_never final_suspend() noexcept { return {}; }
-                void return_void() {}
-                void unhandled_exception() { std::terminate(); }
-            };
-        };
-
-        // Test 9: Coroutine returning result (mimics spawn)
-        {
-            auto coro = []() -> fire_and_forget {
-                result_void r{};
-                (void)r;
-                co_return;
-            };
-            coro();
-        }
-
-        // Test 10: Coroutine with handler call (closest to actual spawn)
-        {
-            std::optional<result_void> received;
-            auto handler = [&](result_void r) {
-                received = r;
-            };
-            auto coro = [&]() -> fire_and_forget {
-                handler(result_void{});
-                co_return;
-            };
-            coro();
-            (void)received;
-        }
-
-        // Test 11: Coroutine with try/catch like spawn
-        {
-            std::optional<result_void> received;
-            auto handler = [&](result_void r) {
-                received = r;
-            };
-            auto coro = [&]() -> fire_and_forget {
-                try
-                {
-                    handler(result_void{});
-                }
-                catch (...)
-                {
-                    handler(result_void{std::current_exception()});
-                }
-                co_return;
-            };
-            coro();
-            (void)received;
-        }
-
-        // Test 12: Coroutine with string result
-        {
-            std::optional<result_string> received;
-            auto handler = [&](result_string r) {
-                received = r;
-            };
-            auto coro = [&]() -> fire_and_forget {
-                try
-                {
-                    handler(result_string{"test"});
-                }
-                catch (...)
-                {
-                    handler(result_string{std::current_exception()});
-                }
-                co_return;
-            };
-            coro();
-            (void)received;
-        }
-#endif
+        // async_run() function tests
+        testAsyncRunValueTask();
+        testAsyncRunVoidTask();
+        testAsyncRunTaskWithException();
+        testAsyncRunVoidTaskWithException();
+        testAsyncRunWithNestedAwaits();
+        testAsyncRunWithAsyncOp();
+        testAsyncRunAffinityPropagation();
+        testAsyncRunChained();
+        testAsyncRunErrorHandler();
+        testAsyncRunDeeplyNested();
+        testAsyncRunFireAndForget();
+        testAsyncRunSingleHandler();
     }
 };
 
@@ -1451,5 +1197,3 @@ TEST_SUITE(
 
 } // capy
 } // boost
-
-#endif

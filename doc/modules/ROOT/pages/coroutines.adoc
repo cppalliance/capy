@@ -9,337 +9,255 @@
 
 = Coroutines
 
+This page teaches you how to write coroutine functions using `task<T>` and
+launch them for execution using `async_run`.
+
+NOTE: Coroutine features require C++20 or later.
+
 == Introduction
 
-Capy provides lightweight coroutine support for C++20, enabling
-asynchronous code that reads like synchronous code. The library
-offers two awaitable types: `task<T>` for lazy coroutine-based
-operations, and `async_op<T>` for bridging callback-based
-APIs into the coroutine world.
+Capy provides lightweight coroutine support for C++20, enabling asynchronous
+code that reads like synchronous code. The primary building blocks are:
 
-This section covers the awaitable types provided by the library,
-demonstrates their usage patterns, and presents practical examples
-showing how to integrate coroutines into your applications.
+* `task<T>` — A lazy coroutine type that produces a value of type `T`
+* `async_run` — Launches a task for detached execution on an executor
 
-NOTE: Coroutine features are only available when compiling with
-C++20 or later.
+Tasks are _lazy_: they do not begin execution when created. A task remains
+suspended until it is either awaited by another coroutine or launched
+explicitly with `async_run`. This lazy evaluation enables structured
+composition where parent coroutines naturally await their children.
 
-== Awaitables
+== The task Type
 
-=== task
-
-xref:reference:boost/capy/task.adoc[`task<T>`] is a lazy coroutine type that produces a value of type `T`.
-The coroutine does not begin execution when created; it remains
-suspended until awaited. This lazy evaluation enables structured
-concurrency where parent coroutines naturally await their children.
-
-A `task` owns its coroutine handle and destroys it automatically.
-Exceptions thrown within the coroutine are captured and rethrown
-when the result is retrieved via `co_await`.
-
-Tasks support scheduler affinity through the `on()` method, which
-binds the task to an executor. When a task has affinity, all
-internal `co_await` expressions resume on the specified executor,
-ensuring consistent execution context.
-
-The `task<void>` specialization is used for coroutines that perform
-work but do not produce a value. These coroutines use `co_return;`
-with no argument.
-
-=== async_op
-
-xref:reference:boost/capy/async_op.adoc[`async_op<T>`] bridges traditional callback-based asynchronous
-APIs with coroutines. It wraps a deferred operation—a callable that
-accepts a completion handler, starts an asynchronous operation, and
-invokes the handler with the result.
-
-The key advantage of `async_op` is its type-erased design. The
-implementation details are hidden behind an abstract interface,
-allowing runtime-specific code such as Boost.Asio to be confined
-to source files. Headers that return `async_op` do not need
-to include Asio or other heavyweight dependencies, keeping compile
-times low and interfaces clean.
-
-Use xref:reference:boost/capy/make_async_op.adoc[`make_async_op<T>()`] to create an `async_op` from any
-callable that follows the deferred operation pattern.
-
-The `async_op<void>` specialization is used for operations that
-signal completion without producing a value, such as timers, write
-operations, or connection establishment. The completion handler
-takes no arguments.
-
-== Usage
-
-=== When to use task
-
-Return `task<T>` from a coroutine function—one that uses `co_await`
-or `co_return`. The function body contains coroutine logic and the
-return type tells the compiler to generate the appropriate coroutine
-machinery.
-
-[source,cpp]
-----
-task<int> compute()
-{
-    int a = co_await step_one();
-    int b = co_await step_two(a);
-    co_return a + b;
-}
-----
-
-Use `task` when composing asynchronous operations purely within the
-coroutine world. Tasks can await other tasks, forming a tree of
-dependent operations.
-
-=== When to use async_op
-
-Return `async_op<T>` from a regular (non-coroutine) function that
-wraps an existing callback-based API. The function does not use
-`co_await` or `co_return`; instead it constructs and returns an
-`async_op` using `make_async_op<T>()`.
-
-[source,cpp]
-----
-async_op<std::size_t> async_read(socket& s, buffer& b)
-{
-    return make_async_op<std::size_t>(
-        [&](auto handler) {
-            s.async_read(b, std::move(handler));
-        });
-}
-----
-
-Use `async_op` at the boundary between callback-based code and
-coroutines. It serves as an adapter that lets coroutines `co_await`
-operations implemented with traditional completion handlers.
-
-=== Choosing between them
-
-* Writing new asynchronous logic? Use `task`.
-* Wrapping an existing callback API? Use `async_op`.
-* Composing multiple awaitable operations? Use `task`.
-* Exposing a library function without leaking dependencies? Use
-  `async_op` with the implementation in a source file.
-
-In practice, application code is primarily `task`-based, while
-`async_op` appears at integration points with I/O libraries
-and other callback-driven systems.
-
-== Examples
-
-=== Chaining tasks
-
-This example demonstrates composing multiple tasks into a pipeline.
-Each step awaits the previous one, and the final result propagates
-back to the caller.
+A `task<T>` represents an asynchronous operation that will eventually
+produce a value of type `T`. You create a task by writing a coroutine
+function—one that uses `co_await` or `co_return`:
 
 [source,cpp]
 ----
 #include <boost/capy/task.hpp>
-#include <string>
 
 using boost::capy::task;
 
-task<int> parse_header(std::string const& data)
+task<int> compute()
 {
-    // Extract content length from header
+    co_return 42;
+}
+----
+
+The function `compute()` returns immediately with a suspended coroutine.
+No code inside the function body executes until the task is started.
+
+=== Returning Values
+
+Use `co_return` to produce the task's result:
+
+[source,cpp]
+----
+task<std::string> greet(std::string name)
+{
+    co_return "Hello, " + name + "!";
+}
+----
+
+=== Void Tasks
+
+For operations that perform work without producing a value, use
+`task<void>`:
+
+[source,cpp]
+----
+task<void> log_message(std::string msg)
+{
+    std::cout << msg << std::endl;
+    co_return;
+}
+----
+
+The explicit `co_return;` (or simply reaching the end of the function)
+completes a void task.
+
+=== Awaiting Other Tasks
+
+Tasks can await other tasks using `co_await`. The calling coroutine
+suspends until the awaited task completes:
+
+[source,cpp]
+----
+task<int> step_one()
+{
+    co_return 10;
+}
+
+task<int> step_two(int x)
+{
+    co_return x * 2;
+}
+
+task<int> pipeline()
+{
+    int a = co_await step_one();
+    int b = co_await step_two(a);
+    co_return a + b;  // 10 + 20 = 30
+}
+----
+
+Each `co_await` suspends the current coroutine, starts the child task,
+and resumes when the child completes. The child's return value becomes
+the result of the `co_await` expression.
+
+== Launching Tasks
+
+Tasks are lazy and require a driver to execute. The `async_run` function
+launches a task for detached execution on an executor:
+
+[source,cpp]
+----
+#include <boost/capy/async_run.hpp>
+
+using boost::capy::async_run;
+
+void start(executor ex)
+{
+    async_run(ex)(compute());
+}
+----
+
+The syntax `async_run(ex)(task)` creates a runner bound to the executor,
+then immediately launches the task. The task begins executing when the
+executor schedules it; if inline execution is permitted, the task runs
+synchronously until it suspends on an I/O operation.
+
+=== Fire and Forget
+
+The simplest form discards the result:
+
+[source,cpp]
+----
+async_run(ex)(compute());
+----
+
+If the task throws an exception, it is rethrown on the executor's thread.
+This is appropriate for top-level tasks where errors should propagate.
+
+=== Handling Results
+
+To receive the task's result, provide a completion handler:
+
+[source,cpp]
+----
+async_run(ex)(compute(), [](int result) {
+    std::cout << "Got: " << result << "\n";
+});
+----
+
+The handler is called when the task completes successfully. If the task
+throws, the exception is rethrown (default behavior).
+
+=== Handling Errors
+
+To handle both success and failure, provide a handler that accepts
+`std::exception_ptr`:
+
+[source,cpp]
+----
+async_run(ex)(compute(), overloaded{
+    [](int result) {
+        std::cout << "Success: " << result << "\n";
+    },
+    [](std::exception_ptr ep) {
+        try {
+            if (ep) std::rethrow_exception(ep);
+        } catch (std::exception const& e) {
+            std::cerr << "Error: " << e.what() << "\n";
+        }
+    }
+});
+----
+
+Alternatively, use separate handlers for success and error:
+
+[source,cpp]
+----
+async_run(ex)(compute(),
+    [](int result) { std::cout << result << "\n"; },
+    [](std::exception_ptr ep) { /* handle error */ }
+);
+----
+
+== Exception Handling
+
+Exceptions thrown within a task are captured and stored. When the task
+is awaited, the exception is rethrown in the awaiting coroutine:
+
+[source,cpp]
+----
+task<int> might_fail()
+{
+    throw std::runtime_error("oops");
+    co_return 0;  // never reached
+}
+
+task<void> caller()
+{
+    try {
+        int x = co_await might_fail();
+    } catch (std::exception const& e) {
+        std::cerr << "Caught: " << e.what() << "\n";
+    }
+}
+----
+
+This enables natural exception handling across coroutine boundaries.
+
+== Complete Example
+
+This example demonstrates a typical pattern: a chain of tasks that
+process data and produce a final result.
+
+[source,cpp]
+----
+#include <boost/capy/task.hpp>
+#include <boost/capy/async_run.hpp>
+#include <string>
+#include <iostream>
+
+using boost::capy::task;
+using boost::capy::async_run;
+
+// Simulate fetching data
+task<std::string> fetch_data()
+{
+    co_return "Content-Length: 42\r\n\r\nHello";
+}
+
+// Parse content length from headers
+task<int> parse_content_length(std::string const& data)
+{
     auto pos = data.find("Content-Length: ");
     if (pos == std::string::npos)
         co_return 0;
     co_return std::stoi(data.substr(pos + 16));
 }
 
-task<std::string> fetch_data()
-{
-    // Simulated network response
-    co_return std::string("Content-Length: 42\r\n\r\nHello");
-}
-
+// Compose the operations
 task<int> get_content_length()
 {
-    std::string response = co_await fetch_data();
-    int length = co_await parse_header(response);
+    std::string data = co_await fetch_data();
+    int length = co_await parse_content_length(data);
     co_return length;
 }
-----
 
-=== Wrapping a callback API
-
-This example shows how to wrap a hypothetical callback-based
-timer into an awaitable. The implementation details stay in
-the source file.
-
-[source,cpp]
-----
-// timer.hpp - public header, no Asio includes
-#ifndef TIMER_HPP
-#define TIMER_HPP
-
-#include <boost/capy/async_op.hpp>
-
-namespace mylib {
-
-// Returns the number of milliseconds actually elapsed
-boost::capy::async_op<int>
-async_wait(int milliseconds);
-
-} // namespace mylib
-
-#endif
-----
-
-[source,cpp]
-----
-// timer.cpp - implementation, Asio details hidden here
-#include "timer.hpp"
-#include <boost/asio.hpp>
-
-namespace mylib {
-
-boost::capy::async_op<int>
-async_wait(int milliseconds)
+void run_example(executor ex)
 {
-    return boost::capy::make_async_op<int>(
-        [milliseconds](auto handler)
-        {
-            // In a real implementation, this would use
-            // a shared io_context and steady_timer
-            auto timer = std::make_shared<boost::asio::steady_timer>(
-                get_io_context(),
-                std::chrono::milliseconds(milliseconds));
-
-            timer->async_wait(
-                [timer, milliseconds, h = std::move(handler)]
-                (boost::system::error_code) mutable
-                {
-                    h(milliseconds);
-                });
-        });
-}
-
-} // namespace mylib
-----
-
-=== Void operations
-
-This example shows `task<void>` and `async_op<void>` for
-operations that complete without producing a value.
-
-[source,cpp]
-----
-#include <boost/capy/task.hpp>
-#include <boost/capy/async_op.hpp>
-
-using boost::capy::task;
-using boost::capy::async_op;
-using boost::capy::make_async_op;
-
-// Wrap a callback-based timer (void result)
-async_op<void> async_sleep(int milliseconds)
-{
-    return make_async_op<void>(
-        [milliseconds](auto on_done)
-        {
-            // In real code, this would start a timer
-            // and call on_done() when it expires
-            start_timer(milliseconds, std::move(on_done));
-        });
-}
-
-// A void task that performs work without returning a value
-task<void> log_with_delay(std::string message)
-{
-    co_await async_sleep(100);
-    std::cout << message << std::endl;
-    co_return;
-}
-
-task<void> run_sequence()
-{
-    co_await log_with_delay("Step 1");
-    co_await log_with_delay("Step 2");
-    co_await log_with_delay("Step 3");
-    co_return;
-}
-----
-
-=== Spawning tasks on an executor
-
-Tasks are lazy and require a driver to execute. The `spawn()` function
-starts a task on an executor and delivers the result to a completion
-handler. This is useful for launching tasks from non-coroutine code
-or integrating tasks into callback-based systems.
-
-[source,cpp]
-----
-#include <boost/capy/task.hpp>
-#include <boost/capy/executor.hpp>
-
-using boost::capy::task;
-using boost::capy::executor;
-using boost::capy::spawn;
-
-task<int> compute()
-{
-    co_return 42;
-}
-
-void start_computation(executor ex)
-{
-    // Spawn a task on the executor with a completion handler
-    spawn(ex, compute(), [](auto result) {
-        if (result.has_value())
-            std::cout << "Result: " << *result << std::endl;
-        else
-            std::cerr << "Error occurred\n";
+    async_run(ex)(get_content_length(), [](int length) {
+        std::cout << "Content length: " << length << "\n";
     });
 }
 ----
 
-The `spawn()` function takes an executor, a task, and a completion handler.
-The handler receives `system::result<T, std::exception_ptr>` which holds
-either the task's return value or any exception thrown during execution.
-The task runs to completion on the executor with proper scheduler affinity.
+== Next Steps
 
-=== Complete request handler
-
-This example combines tasks and async_op to implement a
-request handler that reads a request, processes it, and sends
-a response.
-
-[source,cpp]
-----
-#include <boost/capy/task.hpp>
-#include <boost/capy/async_op.hpp>
-#include <string>
-
-using boost::capy::task;
-using boost::capy::async_op;
-
-// Forward declarations - implementations use async_op
-// to wrap the underlying I/O library
-async_op<std::string> async_read(int fd);
-async_op<std::size_t> async_write(int fd, std::string data);
-
-// Pure coroutine logic using task
-task<std::string> process_request(std::string const& request)
-{
-    // Transform the request into a response
-    co_return "HTTP/1.1 200 OK\r\n\r\nHello, " + request;
-}
-
-task<int> handle_connection(int fd)
-{
-    // Read the incoming request
-    std::string request = co_await async_read(fd);
-
-    // Process it
-    std::string response = co_await process_request(request);
-
-    // Send the response
-    std::size_t bytes_written = co_await async_write(fd, response);
-
-    co_return static_cast<int>(bytes_written);
-}
-----
-
+Now that you can write and launch coroutines, the next page explains
+xref:execution.adoc[where they execute]—how executor affinity works
+and how to control which thread or context runs your code.

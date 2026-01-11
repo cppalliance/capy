@@ -1,0 +1,107 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= affine_awaitable
+
+An awaitable is affine if it participates in the affine awaitable
+protocol by accepting a dispatcher in its `await_suspend` method.
+
+== Synopsis
+
+Defined in header `<boost/capy/affine.hpp>`
+
+[source,cpp]
+----
+namespace boost::capy {
+
+template<typename A, typename D, typename P = void>
+concept affine_awaitable =
+    dispatcher<D, P> &&
+    requires(A a, std::coroutine_handle<P> h, D const& d) {
+        a.await_suspend(h, d);
+    };
+
+} // namespace boost::capy
+----
+
+== Description
+
+The affine awaitable protocol enables zero-overhead scheduler affinity
+without requiring the full sender/receiver protocol. When an awaitable
+is affine, it receives the caller's dispatcher in `await_suspend` and
+uses it to resume the caller on the correct execution context.
+
+The awaitable must use the dispatcher `d` to resume the caller when
+the operation completes. Typically this looks like `return d(h);` for
+symmetric transfer or calling `d(h)` before returning
+`std::noop_coroutine()`.
+
+== Valid Expressions
+
+Given:
+
+* `a` — a value of type `A`
+* `h` — a value of type `std::coroutine_handle<P>`
+* `d` — a const value of type `D` satisfying `dispatcher<D, P>`
+
+[cols="2,1,3"]
+|===
+| Expression | Return Type | Description
+
+| `a.await_ready()`
+| `bool`
+| Returns `true` if the operation has already completed
+
+| `a.await_suspend(h, d)`
+| (unspecified)
+| Suspends and starts the async operation, using `d` for resumption
+
+| `a.await_resume()`
+| (unspecified)
+| Returns the operation result or rethrows any exception
+|===
+
+== Example
+
+[source,cpp]
+----
+struct my_async_op
+{
+    bool await_ready() const noexcept
+    {
+        return false;
+    }
+
+    template<typename Dispatcher>
+    auto await_suspend(coro h, Dispatcher const& d)
+    {
+        start_async([h, &d] {
+            // Operation completed, resume through dispatcher
+            d(h);
+        });
+        return std::noop_coroutine();
+    }
+
+    int await_resume()
+    {
+        return result_;
+    }
+
+private:
+    int result_ = 42;
+};
+
+static_assert(affine_awaitable<my_async_op, any_dispatcher>);
+----
+
+== See Also
+
+* xref:concepts/dispatcher.adoc[dispatcher]
+* xref:concepts/stoppable_awaitable.adoc[stoppable_awaitable]
+* xref:advanced.adoc[Advanced Topics]

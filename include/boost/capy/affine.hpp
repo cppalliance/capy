@@ -10,90 +10,260 @@
 #ifndef BOOST_CAPY_AFFINE_HPP
 #define BOOST_CAPY_AFFINE_HPP
 
-#include <boost/capy/detail/config.hpp>
-
-#ifdef BOOST_CAPY_HAS_CORO
+#include <boost/capy/coro.hpp>
 
 #include <concepts>
 #include <coroutine>
 #include <exception>
 #include <optional>
+#include <stop_token>
 #include <type_traits>
 #include <utility>
 
 namespace boost {
 namespace capy {
 
-/** Concept for types that can dispatch coroutine resumption.
+/** Concept for dispatcher types.
 
-    A dispatcher is a callable that accepts a coroutine handle
-    and arranges for it to be resumed on the target execution
-    context. Since std::coroutine_handle has operator() which
-    calls resume(), the dispatcher can invoke the handle directly.
+    A dispatcher is a callable object that accepts a coroutine handle
+    and schedules it for resumption. The dispatcher is responsible for
+    ensuring the handle is eventually resumed on the appropriate execution
+    context.
 
-    @par Example
-    @code
-    struct my_dispatcher
-    {
-        void operator()(std::coroutine_handle<> h) const
-        {
-            // Queue h for execution on target context
-            thread_pool_.post([h] { h(); });
-        }
-    };
-    @endcode
-
-    @tparam D The dispatcher type to check.
-    @tparam P The promise type for the coroutine handle (default void).
-*/
-template<typename D, typename P = void>
-concept dispatcher = requires(D d, std::coroutine_handle<P> h) { d(h); };
-
-/** Concept for awaitables that support scheduler affinity.
-
-    An affine_awaitable is an awaitable that accepts a dispatcher
-    in its await_suspend method, enabling zero-overhead scheduler
-    affinity. When an operation completes, it uses the dispatcher
-    to resume the coroutine on the correct execution context.
+    @tparam D The dispatcher type.
+    @tparam P The promise type (defaults to void).
 
     @par Requirements
-    The type must provide `await_suspend(handle, dispatcher)`
-    accepting a coroutine handle and a dispatcher reference.
-    The dispatcher must satisfy the dispatcher concept.
-    The other awaitable requirements (await_ready, await_resume)
-    are enforced by the compiler when used in a co_await expression.
+    @li `d(h)` must be valid where `h` is `std::coroutine_handle<P>` and
+        `d` is a const reference to `D`
+    @li `d(h)` must return a `coro` (or convertible type)
+        to enable symmetric transfer
+    @li Calling `d(h)` schedules `h` for resumption (typically by scheduling
+        it on a specific execution context) and returns a coroutine handle
+        that the caller may use for symmetric transfer
+    @li The dispatcher must be const-callable (logical constness), enabling
+        thread-safe concurrent dispatch from multiple coroutines
+
+    @note Since `coro` has `operator()` which invokes `resume()`, the handle
+    itself is callable and can be dispatched directly.
+*/
+template<typename D, typename P = void>
+concept dispatcher = requires(D const& d, std::coroutine_handle<P> h) {
+    { d(h) } -> std::convertible_to<coro>;
+};
+
+/** Concept for affine awaitable types.
+
+    An awaitable is affine if it participates in the affine awaitable protocol
+    by accepting a dispatcher in its `await_suspend` method. This enables
+    zero-overhead scheduler affinity without requiring the full sender/receiver
+    protocol.
+
+    @tparam A The awaitable type.
+    @tparam D The dispatcher type.
+    @tparam P The promise type (defaults to void).
+
+    @par Requirements
+    @li `D` must satisfy `dispatcher<D, P>`
+    @li `A` must provide `await_suspend(std::coroutine_handle<P> h, D const& d)`
+    @li The awaitable must use the dispatcher `d` to resume the caller,
+        e.g. `return d(h);`
+    @li The dispatcher returns a coroutine handle that `await_suspend` may
+        return for symmetric transfer
 
     @par Example
     @code
-    struct affine_async_op
+    struct my_async_op
     {
-        int result_;
-
-        bool await_ready() const noexcept { return false; }
-
         template<typename Dispatcher>
-        void await_suspend(std::coroutine_handle<> h, Dispatcher& d) const
+        auto await_suspend(coro h, Dispatcher const& d)
         {
-            // Start async work, then resume via dispatcher
-            start_async([h, &d]() {
-                d(h);
+            start_async([h, &d] {
+                d(h);  // Schedule resumption through dispatcher
             });
+            return std::noop_coroutine();  // Or return d(h) for symmetric transfer
         }
-
-        int await_resume() const noexcept { return result_; }
+        // ... await_ready, await_resume ...
     };
     @endcode
-
-    @tparam A The awaitable type to check.
-    @tparam D The dispatcher type.
-    @tparam P The promise type for the coroutine handle (default void).
 */
 template<typename A, typename D, typename P = void>
 concept affine_awaitable =
     dispatcher<D, P> &&
-    requires(A a, std::coroutine_handle<P> h, D& d) {
+    requires(A a, std::coroutine_handle<P> h, D const& d) {
         a.await_suspend(h, d);
     };
+
+/** Concept for stoppable awaitable types.
+
+    An awaitable is stoppable if it participates in the stoppable awaitable
+    protocol by accepting both a dispatcher and a stop_token in its
+    `await_suspend` method. This extends the affine awaitable protocol to
+    enable automatic stop token propagation through coroutine chains.
+
+    @tparam A The awaitable type.
+    @tparam D The dispatcher type.
+    @tparam P The promise type (defaults to void).
+
+    @par Requirements
+    @li `A` must satisfy `affine_awaitable<A, D, P>`
+    @li `A` must provide `await_suspend(std::coroutine_handle<P> h, D const& d,
+        std::stop_token token)`
+    @li The awaitable should use the stop_token to support cancellation
+    @li The awaitable must use the dispatcher `d` to resume the caller
+
+    @par Example
+    @code
+    struct my_stoppable_op
+    {
+        template<typename Dispatcher>
+        auto await_suspend(coro h, Dispatcher const& d, std::stop_token token)
+        {
+            start_async([h, &d, token] {
+                if (token.stop_requested()) {
+                    // Handle cancellation
+                }
+                d(h);  // Schedule resumption through dispatcher
+            });
+            return std::noop_coroutine();
+        }
+        // ... await_ready, await_resume ...
+    };
+    @endcode
+
+    @see affine_awaitable
+    @see dispatcher
+*/
+template<typename A, typename D, typename P = void>
+concept stoppable_awaitable =
+    affine_awaitable<A, D, P> &&
+    requires(A a, std::coroutine_handle<P> h, D const& d, std::stop_token token) {
+        a.await_suspend(h, d, token);
+    };
+
+/** A type-erased wrapper for dispatcher objects.
+
+    This class provides type erasure for any type satisfying the `dispatcher`
+    concept, enabling runtime polymorphism without virtual functions. It stores
+    a pointer to the original dispatcher and a function pointer to invoke it,
+    allowing dispatchers of different types to be stored uniformly.
+
+    @par Thread Safety
+    The `any_dispatcher` itself is not thread-safe for concurrent modification,
+    but `operator()` is const and safe to call concurrently if the underlying
+    dispatcher supports concurrent dispatch.
+
+    @par Lifetime
+    The `any_dispatcher` stores a pointer to the original dispatcher object.
+    The caller must ensure the referenced dispatcher outlives the `any_dispatcher`
+    instance. This is typically satisfied when the dispatcher is an executor
+    stored in a coroutine promise or service provider.
+
+    @par Example
+    @code
+    void store_dispatcher(any_dispatcher d)
+    {
+        // Can store any dispatcher type uniformly
+        auto h = d(some_coroutine);  // Invoke through type-erased interface
+    }
+
+    executor_base const& ex = get_executor();
+    store_dispatcher(ex);  // Implicitly converts to any_dispatcher
+    @endcode
+
+    @see dispatcher
+    @see executor_base
+*/
+class any_dispatcher
+{
+    void const* d_ = nullptr;
+    coro(*f_)(void const*, coro) = nullptr;
+
+public:
+    /** Default constructor.
+
+        Constructs an empty `any_dispatcher`. Calling `operator()` on a
+        default-constructed instance results in undefined behavior.
+    */
+    any_dispatcher() = default;
+
+    /** Copy constructor.
+
+        Copies the internal pointer and function, preserving identity.
+        This enables the same-dispatcher optimization when passing
+        any_dispatcher through coroutine chains.
+    */
+    any_dispatcher(any_dispatcher const&) = default;
+
+    /** Copy assignment operator. */
+    any_dispatcher& operator=(any_dispatcher const&) = default;
+
+    /** Constructs from any dispatcher type.
+
+        Captures a reference to the given dispatcher and stores a type-erased
+        invocation function. The dispatcher must remain valid for the lifetime
+        of this `any_dispatcher` instance.
+
+        @param d The dispatcher to wrap. Must satisfy the `dispatcher` concept.
+                 A pointer to this object is stored internally; the dispatcher
+                 must outlive this wrapper.
+    */
+    template<dispatcher D>
+        requires (!std::same_as<std::decay_t<D>, any_dispatcher>)
+    any_dispatcher(D const& d)
+        : d_(&d)
+        , f_([](void const* pd, coro h) {
+                return static_cast<D const*>(pd)->operator()(h);
+            })
+    {
+    }
+
+    /** Returns true if this instance holds a valid dispatcher.
+
+        @return `true` if constructed with a dispatcher, `false` if
+                default-constructed.
+    */
+    explicit operator bool() const noexcept
+    {
+        return d_ != nullptr;
+    }
+
+    /** Compares two dispatchers for identity.
+
+        Two `any_dispatcher` instances are equal if they wrap the same
+        underlying dispatcher object (pointer equality). This enables
+        the affinity optimization: when `caller_dispatcher == my_dispatcher`,
+        symmetric transfer can proceed without a `running_in_this_thread()`
+        check.
+
+        @param other The dispatcher to compare against.
+
+        @return `true` if both wrap the same dispatcher object.
+    */
+    bool operator==(any_dispatcher const& other) const noexcept
+    {
+        return d_ == other.d_;
+    }
+
+    /** Dispatches a coroutine handle through the wrapped dispatcher.
+
+        Invokes the stored dispatcher with the given coroutine handle,
+        returning a handle suitable for symmetric transfer.
+
+        @param h The coroutine handle to dispatch for resumption.
+
+        @return A coroutine handle that the caller may use for symmetric
+                transfer, or `std::noop_coroutine()` if the dispatcher
+                posted the work for later execution.
+
+        @pre This instance was constructed with a valid dispatcher
+             (not default-constructed).
+    */
+    coro operator()(coro h) const
+    {
+        return f_(d_, h);
+    }
+};
 
 /** Wrapper that bridges affine awaitables to standard coroutine machinery.
 
@@ -671,7 +841,5 @@ auto make_affine(Awaitable&& awaitable, Dispatcher& dispatcher)
 
 } // capy
 } // boost
-
-#endif
 
 #endif

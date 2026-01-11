@@ -16,6 +16,28 @@
 # include <version>
 #endif
 
+// Detect thread-local storage mechanism
+// Cascade: compiler keyword > thread_local > OS API
+#if !defined(BOOST_CAPY_TLS_KEYWORD)
+# if defined(_MSC_VER)
+#  define BOOST_CAPY_TLS_KEYWORD __declspec(thread)
+# elif defined(__GNUC__) || defined(__clang__)
+#  define BOOST_CAPY_TLS_KEYWORD __thread
+# endif
+#endif
+
+#if !defined(BOOST_CAPY_HAS_THREAD_LOCAL)
+# if defined(_MSC_VER) && _MSC_VER >= 1900
+#  define BOOST_CAPY_HAS_THREAD_LOCAL 1
+# elif defined(__clang__) && __has_feature(cxx_thread_local)
+#  define BOOST_CAPY_HAS_THREAD_LOCAL 1
+# elif defined(__GNUC__) && __GNUC__ >= 5
+#  define BOOST_CAPY_HAS_THREAD_LOCAL 1
+# else
+#  define BOOST_CAPY_HAS_THREAD_LOCAL 0
+# endif
+#endif
+
 namespace boost {
 namespace capy {
 
@@ -41,14 +63,6 @@ namespace capy {
 #  endif
 #  include <boost/config/auto_link.hpp>
 # endif
-
-//------------------------------------------------
-
-#if defined(__cpp_lib_coroutine) && __cpp_lib_coroutine >= 201902L
-# define BOOST_CAPY_HAS_CORO 1
-#elif defined(__cpp_impl_coroutine) && __cpp_impl_coroutines >= 201902L
-# define BOOST_CAPY_HAS_CORO 1
-#endif
 
 //------------------------------------------------
 

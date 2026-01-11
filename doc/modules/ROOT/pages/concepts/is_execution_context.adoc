@@ -1,0 +1,123 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= is_execution_context
+
+A type satisfies `is_execution_context` if it derives from
+`execution_context` and provides an associated executor type.
+
+== Synopsis
+
+Defined in header `<boost/capy/execution_context.hpp>`
+
+[source,cpp]
+----
+namespace boost::capy {
+
+template<class X>
+concept is_execution_context =
+    std::derived_from<X, execution_context> &&
+    requires { typename X::executor_type; } &&
+    executor<typename X::executor_type> &&
+    requires(X& x) {
+        { x.get_executor() } -> std::same_as<typename X::executor_type>;
+    };
+
+} // namespace boost::capy
+----
+
+== Description
+
+An execution context represents a place where function objects are
+executed. It provides:
+
+* A service registry for polymorphic services
+* An associated executor type for scheduling work
+* Lifecycle management (shutdown, destroy)
+
+Derived classes such as `io_context` extend `execution_context` to
+provide execution facilities like event loops and thread pools.
+
+=== Service Management
+
+Execution contexts own services that provide extensible functionality.
+Services are created on first use via `use_service<T>()` or explicitly
+via `make_service<T>()`. During destruction, services are shut down
+and deleted in reverse order of creation.
+
+=== Destructor Requirements
+
+The destructor must destroy all unexecuted work that was submitted
+via an executor object associated with the execution context. This
+is a semantic requirement that cannot be verified at compile time.
+
+== Valid Expressions
+
+Given:
+
+* `x` — a value of type `X`
+
+[cols="2,1,3"]
+|===
+| Expression | Return Type | Description
+
+| `X::executor_type`
+| type
+| The associated executor type, satisfying `executor`
+
+| `x.get_executor()`
+| `X::executor_type`
+| Returns an executor for scheduling work on this context
+|===
+
+== Example
+
+[source,cpp]
+----
+class io_context : public execution_context
+{
+public:
+    class executor_type
+    {
+        io_context* ctx_;
+
+    public:
+        executor_type(io_context& ctx) : ctx_(&ctx) {}
+
+        io_context& context() const noexcept { return *ctx_; }
+
+        void on_work_started() const noexcept { /* ... */ }
+        void on_work_finished() const noexcept { /* ... */ }
+
+        std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const;
+        void post(std::coroutine_handle<> h) const;
+        void defer(std::coroutine_handle<> h) const;
+
+        bool operator==(executor_type const&) const noexcept = default;
+    };
+
+    executor_type get_executor()
+    {
+        return executor_type{*this};
+    }
+
+    ~io_context()
+    {
+        shutdown();
+        destroy();
+    }
+};
+
+static_assert(is_execution_context<io_context>);
+----
+
+== See Also
+
+* xref:concepts/executor.adoc[executor]
+* xref:execution.adoc[Execution Model]

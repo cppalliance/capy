@@ -12,8 +12,6 @@
 
 #include <boost/capy/detail/config.hpp>
 
-#ifdef BOOST_CAPY_HAS_CORO
-
 #include <concepts>
 #include <coroutine>
 #include <exception>
@@ -195,9 +193,9 @@ public:
     */
     template<typename Dispatcher>
     void
-    await_suspend(std::coroutine_handle<> h, Dispatcher& dispatcher)
+    await_suspend(std::coroutine_handle<> h, Dispatcher const& dispatcher)
     {
-        impl_->start([h, &dispatcher]{ dispatcher(h); });
+        impl_->start([h, &dispatcher]{ dispatcher(h).resume(); });
     }
 
     /** Return the result after completion.
@@ -305,9 +303,9 @@ public:
     */
     template<typename Dispatcher>
     void
-    await_suspend(std::coroutine_handle<> h, Dispatcher& dispatcher)
+    await_suspend(std::coroutine_handle<> h, Dispatcher const& dispatcher)
     {
-        impl_->start([h, &dispatcher]{ dispatcher(h); });
+        impl_->start([h, &dispatcher]{ dispatcher(h).resume(); });
     }
 
     /** Complete the await and check for exceptions.
@@ -399,7 +397,5 @@ make_async_op(DeferredOp&& op)
 
 } // capy
 } // boost
-
-#endif
 
 #endif

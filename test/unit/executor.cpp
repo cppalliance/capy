@@ -9,734 +9,273 @@
 
 // Test that header file is self-contained.
 #include <boost/capy/executor.hpp>
+#include <boost/capy/execution_context.hpp>
 
-#include <boost/capy/task.hpp>
+#include <utility>
 
 #include "test_suite.hpp"
-
-#include <boost/system/result.hpp>
-#include <atomic>
-#include <cstdlib>
-#include <exception>
-#include <vector>
 
 namespace boost {
 namespace capy {
 
-//-----------------------------------------------------------------------------
-
-/** Simple synchronous executor for testing.
-
-    Executes work immediately in the calling thread.
-    Uses malloc/free for allocation with a header to track size.
-*/
-struct sync_executor
+// Test handler implementation
+struct test_handler : execution_context::handler
 {
-    friend struct executor::access;
+    int& invoked;
+    int& destroyed;
 
-    std::atomic<int> alloc_count{0};
-    std::atomic<int> submit_count{0};
-
-private:
-    struct header
+    test_handler(int& i, int& d)
+        : invoked(i)
+        , destroyed(d)
     {
-        std::size_t size;
-    };
-
-    void*
-    allocate(std::size_t size, std::size_t /*align*/)
-    {
-        ++alloc_count;
-        std::size_t total = sizeof(header) + size;
-        void* p = std::malloc(total);
-        auto* h = new(p) header{total};
-        return h + 1;
     }
 
-    void
-    deallocate(void* p, std::size_t /*size*/, std::size_t /*align*/)
+    void operator()() override
     {
-        auto* h = static_cast<header*>(p) - 1;
-        std::free(h);
+        ++invoked;
     }
 
-    void
-    submit(executor::work* w)
+    void destroy() override
     {
-        ++submit_count;
-        w->invoke();
-        w->~work();
-        deallocate(w, 0, 0);
+        ++destroyed;
     }
 };
 
-/** Entry for queued work.
-*/
-struct queued_entry
+// Minimal execution context for testing
+struct test_context
 {
-    executor::work* w;
-    void* storage;
+    int id = 0;
 };
 
-/** Value-type executor for testing owning mode.
-
-    This executor can be moved and copied, suitable for
-    use with executor::wrap().
-*/
-struct value_executor
+// Test executor that satisfies the concept
+struct test_executor
 {
-    friend struct executor::access;
+    test_context* ctx_ = nullptr;
 
-    // Shared state to track calls across copies
-    struct state
-    {
-        std::atomic<int> alloc_count{0};
-        std::atomic<int> submit_count{0};
-    };
+    test_executor() = default;
 
-    std::shared_ptr<state> state_;
-
-    value_executor()
-        : state_(std::make_shared<state>())
+    explicit
+    test_executor(test_context& ctx) noexcept
+        : ctx_(&ctx)
     {
     }
 
-    // Copyable and movable
-    value_executor(value_executor const&) = default;
-    value_executor(value_executor&&) = default;
-    value_executor& operator=(value_executor const&) = default;
-    value_executor& operator=(value_executor&&) = default;
-
-    int alloc_count() const { return state_->alloc_count.load(); }
-    int submit_count() const { return state_->submit_count.load(); }
-
-private:
-    struct header
+    // Equality comparison (required by Networking TS)
+    bool
+    operator==(test_executor const& other) const noexcept
     {
-        std::size_t size;
-    };
+        return ctx_ == other.ctx_;
+    }
 
-    void*
-    allocate(std::size_t size, std::size_t /*align*/)
+    // Execution context access
+    test_context&
+    context() const noexcept
     {
-        ++state_->alloc_count;
-        std::size_t total = sizeof(header) + size;
-        void* p = std::malloc(total);
-        header* h = new(p) header{total};
-        return h + 1;
+        return *ctx_;
+    }
+
+    // Work tracking
+    void
+    on_work_started() const noexcept
+    {
     }
 
     void
-    deallocate(void* p, std::size_t /*size*/, std::size_t /*align*/)
+    on_work_finished() const noexcept
     {
-        header* h = static_cast<header*>(p) - 1;
-        std::free(h);
+    }
+
+    // Work submission
+    std::coroutine_handle<>
+    dispatch(std::coroutine_handle<> h) const
+    {
+        return h;
     }
 
     void
-    submit(executor::work* w)
+    post(std::coroutine_handle<>) const
     {
-        ++state_->submit_count;
-        w->invoke();
-        w->~work();
-        deallocate(w, 0, 0);
+    }
+
+    void
+    defer(std::coroutine_handle<>) const
+    {
     }
 };
 
-//-----------------------------------------------------------------------------
+// Verify executor concept
+static_assert(executor<test_executor>);
 
-struct execution_test
+struct executor_test
 {
-    void
-    testDefaultConstruct()
-    {
-        executor exec;
-        BOOST_TEST(!exec);
-    }
-
-    void
-    testConstructFromImpl()
-    {
-        sync_executor ctx;
-        executor exec(ctx);
-        BOOST_TEST(static_cast<bool>(exec));
-    }
-
-    void
-    testCopyConstruct()
-    {
-        sync_executor ctx;
-        executor exec1(ctx);
-        executor exec2(exec1);
-        BOOST_TEST(static_cast<bool>(exec1));
-        BOOST_TEST(static_cast<bool>(exec2));
-    }
-
-    void
-    testMoveConstruct()
-    {
-        sync_executor ctx;
-        executor exec1(ctx);
-        executor exec2(std::move(exec1));
-        BOOST_TEST(static_cast<bool>(exec2));
-    }
-
-    void
-    testCopyAssign()
-    {
-        sync_executor ctx;
-        executor exec1(ctx);
-        executor exec2;
-        exec2 = exec1;
-        BOOST_TEST(static_cast<bool>(exec1));
-        BOOST_TEST(static_cast<bool>(exec2));
-    }
-
-    void
-    testMoveAssign()
-    {
-        sync_executor ctx;
-        executor exec1(ctx);
-        executor exec2;
-        exec2 = std::move(exec1);
-        BOOST_TEST(static_cast<bool>(exec2));
-    }
-
-    void
-    testPostLambda()
-    {
-        bool called = false;
-        sync_executor ctx;
-        executor exec(ctx);
-        exec.post([&called]{ called = true; });
-        BOOST_TEST(called);
-    }
-
-    void
-    testPostMultiple()
-    {
-        int count = 0;
-        sync_executor ctx;
-        executor exec(ctx);
-        exec.post([&count]{ ++count; });
-        exec.post([&count]{ ++count; });
-        exec.post([&count]{ ++count; });
-        BOOST_TEST_EQ(count, 3);
-    }
-
-    void
-    testPostWithCapture()
-    {
-        int result = 0;
-        int a = 10, b = 20;
-        sync_executor ctx;
-        executor exec(ctx);
-        exec.post([&result, a, b]{ result = a + b; });
-        BOOST_TEST_EQ(result, 30);
-    }
-
-    void
-    testPostWithMoveOnlyCapture()
-    {
-        struct callable
-        {
-            int& result;
-            std::unique_ptr<int> ptr;
-
-            void operator()()
-            {
-                result = *ptr;
-            }
-        };
-
-        int result = 0;
-        sync_executor ctx;
-        executor exec(ctx);
-        std::unique_ptr<int> ptr(new int(42));
-        exec.post(callable{result, std::move(ptr)});
-        BOOST_TEST_EQ(result, 42);
-    }
-
-    void
-    testQueuedExecution()
-    {
-        // Queued executor using shared state via pointers
-        struct shared_queue_executor
-        {
-            friend struct executor::access;
-
-            std::vector<queued_entry>* queue;
-
-        private:
-            void* allocate(std::size_t size, std::size_t)
-            {
-                return std::malloc(size);
-            }
-
-            void deallocate(void* p, std::size_t, std::size_t)
-            {
-                std::free(p);
-            }
-
-            void submit(executor::work* w)
-            {
-                queue->push_back({w, w});
-            }
-        };
-
-        int count = 0;
-        std::vector<queued_entry> queue;
-        shared_queue_executor ctx{&queue};
-        executor exec(ctx);
-
-        exec.post([&count]{ ++count; });
-        exec.post([&count]{ ++count; });
-
-        BOOST_TEST_EQ(count, 0);
-        BOOST_TEST_EQ(queue.size(), 2u);
-
-        // Run one
-        if(!queue.empty())
-        {
-            auto e = queue.front();
-            queue.erase(queue.begin());
-            e.w->invoke();
-            e.w->~work();
-            std::free(e.storage);
-        }
-        BOOST_TEST_EQ(count, 1);
-
-        // Run remaining
-        while(!queue.empty())
-        {
-            auto e = queue.front();
-            queue.erase(queue.begin());
-            e.w->invoke();
-            e.w->~work();
-            std::free(e.storage);
-        }
-        BOOST_TEST_EQ(count, 2);
-    }
-
-    void
-    testSharedReference()
-    {
-        int count = 0;
-        sync_executor ctx;
-        executor exec1(ctx);
-        executor exec2 = exec1;
-
-        exec1.post([&count]{ ++count; });
-        exec2.post([&count]{ ++count; });
-
-        BOOST_TEST_EQ(count, 2);
-        // Both executors reference the same context
-        BOOST_TEST_EQ(ctx.submit_count.load(), 2);
-    }
-
-    void
-    testSubmitNonVoid()
-    {
-        int result = 0;
-        bool handler_called = false;
-
-        sync_executor ctx;
-        executor exec(ctx);
-        exec.submit(
-            []{ return 42; },
-            [&](system::result<int, std::exception_ptr> r)
-            {
-                handler_called = true;
-                if(r.has_value())
-                    result = r.value();
-            });
-
-        BOOST_TEST(handler_called);
-        BOOST_TEST_EQ(result, 42);
-    }
-
-    void
-    testSubmitVoid()
-    {
-        bool work_called = false;
-        bool handler_called = false;
-
-        sync_executor ctx;
-        executor exec(ctx);
-        exec.submit(
-            [&work_called]{ work_called = true; },
-            [&handler_called](system::result<void, std::exception_ptr>)
-            {
-                handler_called = true;
-            });
-
-        BOOST_TEST(work_called);
-        BOOST_TEST(handler_called);
-    }
-
-    void
-    testSubmitException()
-    {
-        bool handler_called = false;
-        bool got_exception = false;
-
-        sync_executor ctx;
-        executor exec(ctx);
-        exec.submit(
-            []() -> int { throw std::runtime_error("test"); },
-            [&](system::result<int, std::exception_ptr> r)
-            {
-                handler_called = true;
-                if(r.has_error())
-                    got_exception = true;
-            });
-
-        BOOST_TEST(handler_called);
-        BOOST_TEST(got_exception);
-    }
-
-    void
-    testFactoryBasic()
-    {
-        sync_executor ctx;
-        executor exec(ctx);
-
-        struct my_work : executor::work
-        {
-            bool& flag;
-            explicit my_work(bool& f) : flag(f) {}
-            void invoke() override { flag = true; }
-        };
-
-        bool invoked = false;
-        {
-            executor::factory fac(exec);
-            void* p = fac.allocate(sizeof(my_work), alignof(my_work));
-            auto* w = ::new(p) my_work(invoked);
-            fac.commit(w);
-        }
-        BOOST_TEST(invoked);
-    }
-
-    void
-    testFactoryRollback()
-    {
-        // Use a tracking structure
-        struct tracking_executor
-        {
-            friend struct executor::access;
-
-            int alloc_count = 0;
-            int dealloc_count = 0;
-
-        private:
-            struct header { std::size_t size; };
-
-            void* allocate(std::size_t size, std::size_t)
-            {
-                ++alloc_count;
-                std::size_t total = sizeof(header) + size;
-                void* p = std::malloc(total);
-                header* h = new(p) header{total};
-                return h + 1;
-            }
-
-            void deallocate(void* p, std::size_t, std::size_t)
-            {
-                ++dealloc_count;
-                header* h = static_cast<header*>(p) - 1;
-                std::free(h);
-            }
-
-            void submit(executor::work* w)
-            {
-                w->invoke();
-                w->~work();
-                deallocate(w, 0, 0);
-            }
-        };
-
-        tracking_executor ctx;
-        executor exec(ctx);
-
-        {
-            executor::factory fac(exec);
-            fac.allocate(64, 8);
-            // No commit - destructor should deallocate
-        }
-
-        BOOST_TEST_EQ(ctx.alloc_count, 1);
-        BOOST_TEST_EQ(ctx.dealloc_count, 1);
-    }
-
-    //-------------------------------------------------------------------------
-    // Owning mode tests (executor::wrap)
-    //-------------------------------------------------------------------------
-
-    void
-    testWrapBasic()
-    {
-        value_executor ve;
-        executor exec = executor::wrap(ve);
-        BOOST_TEST(static_cast<bool>(exec));
-    }
-
-    void
-    testWrapTemporary()
-    {
-        executor exec = executor::wrap(value_executor{});
-        BOOST_TEST(static_cast<bool>(exec));
-    }
-
-    void
-    testWrapCopyConstruct()
-    {
-        value_executor ve;
-        executor exec1 = executor::wrap(ve);
-        executor exec2(exec1);
-        BOOST_TEST(static_cast<bool>(exec1));
-        BOOST_TEST(static_cast<bool>(exec2));
-    }
-
-    void
-    testWrapMoveConstruct()
-    {
-        value_executor ve;
-        executor exec1 = executor::wrap(ve);
-        executor exec2(std::move(exec1));
-        BOOST_TEST(static_cast<bool>(exec2));
-    }
-
-    void
-    testWrapCopyAssign()
-    {
-        value_executor ve;
-        executor exec1 = executor::wrap(ve);
-        executor exec2;
-        exec2 = exec1;
-        BOOST_TEST(static_cast<bool>(exec1));
-        BOOST_TEST(static_cast<bool>(exec2));
-    }
-
-    void
-    testWrapMoveAssign()
-    {
-        value_executor ve;
-        executor exec1 = executor::wrap(ve);
-        executor exec2;
-        exec2 = std::move(exec1);
-        BOOST_TEST(static_cast<bool>(exec2));
-    }
-
-    void
-    testWrapPostLambda()
-    {
-        bool called = false;
-        value_executor ve;
-        executor exec = executor::wrap(ve);
-        exec.post([&called]{ called = true; });
-        BOOST_TEST(called);
-        BOOST_TEST_EQ(ve.submit_count(), 1);
-    }
-
-    void
-    testWrapPostMultiple()
-    {
-        int count = 0;
-        value_executor ve;
-        executor exec = executor::wrap(ve);
-        exec.post([&count]{ ++count; });
-        exec.post([&count]{ ++count; });
-        exec.post([&count]{ ++count; });
-        BOOST_TEST_EQ(count, 3);
-        BOOST_TEST_EQ(ve.submit_count(), 3);
-    }
-
-    void
-    testWrapSharedOwnership()
-    {
-        // Verify that copies share the same underlying executor
-        int count = 0;
-        value_executor ve;
-        executor exec1 = executor::wrap(ve);
-        executor exec2 = exec1;
-
-        exec1.post([&count]{ ++count; });
-        exec2.post([&count]{ ++count; });
-
-        BOOST_TEST_EQ(count, 2);
-        // Both executors should use the same underlying value_executor
-        BOOST_TEST_EQ(ve.submit_count(), 2);
-    }
-
-    void
-    testWrapLifetime()
-    {
-        // Verify executor remains valid after original goes out of scope
-        executor exec;
-        {
-            value_executor ve;
-            exec = executor::wrap(ve);
-        }
-        // ve is destroyed but exec should still work
-        // (the holder keeps a copy of the value_executor)
-        BOOST_TEST(static_cast<bool>(exec));
-
-        bool called = false;
-        exec.post([&called]{ called = true; });
-        BOOST_TEST(called);
-    }
-
-    void
-    testWrapSubmit()
-    {
-        int result = 0;
-        bool handler_called = false;
-
-        value_executor ve;
-        executor exec = executor::wrap(ve);
-        exec.submit(
-            []{ return 42; },
-            [&](system::result<int, std::exception_ptr> r)
-            {
-                handler_called = true;
-                if(r.has_value())
-                    result = r.value();
-            });
-
-        BOOST_TEST(handler_called);
-        BOOST_TEST_EQ(result, 42);
-    }
-
     void
     run()
     {
-        testDefaultConstruct();
-        testConstructFromImpl();
-        testCopyConstruct();
-        testMoveConstruct();
-        testCopyAssign();
-        testMoveAssign();
-        testPostLambda();
-        testPostMultiple();
-        testPostWithCapture();
-        testPostWithMoveOnlyCapture();
-        testQueuedExecution();
-        testSharedReference();
-        testSubmitNonVoid();
-        testSubmitVoid();
-        testSubmitException();
-        testFactoryBasic();
-        testFactoryRollback();
+        // handler - invoke operator()
+        {
+            int invoked = 0;
+            int destroyed = 0;
+            test_handler h(invoked, destroyed);
 
-        // Owning mode tests
-        testWrapBasic();
-        testWrapTemporary();
-        testWrapCopyConstruct();
-        testWrapMoveConstruct();
-        testWrapCopyAssign();
-        testWrapMoveAssign();
-        testWrapPostLambda();
-        testWrapPostMultiple();
-        testWrapSharedOwnership();
-        testWrapLifetime();
-        testWrapSubmit();
+            h();
+
+            BOOST_TEST(invoked == 1);
+            BOOST_TEST(destroyed == 0);
+        }
+
+        // handler - invoke destroy()
+        {
+            int invoked = 0;
+            int destroyed = 0;
+            test_handler h(invoked, destroyed);
+
+            h.destroy();
+
+            BOOST_TEST(invoked == 0);
+            BOOST_TEST(destroyed == 1);
+        }
+
+        // queue - default construction
+        {
+            execution_context::queue q;
+            BOOST_TEST(q.empty());
+            BOOST_TEST(q.pop() == nullptr);
+        }
+
+        // queue - push and pop
+        {
+            int invoked = 0;
+            int destroyed = 0;
+            test_handler h(invoked, destroyed);
+
+            execution_context::queue q;
+            q.push(&h);
+            BOOST_TEST(!q.empty());
+
+            execution_context::handler* p = q.pop();
+            BOOST_TEST(p == &h);
+            BOOST_TEST(q.empty());
+        }
+
+        // queue - FIFO order
+        {
+            int invoked1 = 0, destroyed1 = 0;
+            int invoked2 = 0, destroyed2 = 0;
+            int invoked3 = 0, destroyed3 = 0;
+            test_handler h1(invoked1, destroyed1);
+            test_handler h2(invoked2, destroyed2);
+            test_handler h3(invoked3, destroyed3);
+
+            execution_context::queue q;
+            q.push(&h1);
+            q.push(&h2);
+            q.push(&h3);
+
+            BOOST_TEST(q.pop() == &h1);
+            BOOST_TEST(q.pop() == &h2);
+            BOOST_TEST(q.pop() == &h3);
+            BOOST_TEST(q.empty());
+        }
+
+        // queue - move constructor
+        {
+            int invoked = 0;
+            int destroyed = 0;
+            test_handler h(invoked, destroyed);
+
+            execution_context::queue q1;
+            q1.push(&h);
+
+            execution_context::queue q2(std::move(q1));
+            BOOST_TEST(q1.empty());
+            BOOST_TEST(!q2.empty());
+            BOOST_TEST(q2.pop() == &h);
+        }
+
+        // queue - splice
+        {
+            int i1 = 0, d1 = 0;
+            int i2 = 0, d2 = 0;
+            int i3 = 0, d3 = 0;
+            int i4 = 0, d4 = 0;
+            test_handler h1(i1, d1);
+            test_handler h2(i2, d2);
+            test_handler h3(i3, d3);
+            test_handler h4(i4, d4);
+
+            execution_context::queue q1;
+            execution_context::queue q2;
+            q1.push(&h1);
+            q1.push(&h2);
+            q2.push(&h3);
+            q2.push(&h4);
+
+            q1.push(q2);
+
+            BOOST_TEST(q2.empty());
+            BOOST_TEST(q1.pop() == &h1);
+            BOOST_TEST(q1.pop() == &h2);
+            BOOST_TEST(q1.pop() == &h3);
+            BOOST_TEST(q1.pop() == &h4);
+            BOOST_TEST(q1.empty());
+        }
+
+        // queue - destructor calls destroy
+        {
+            int invoked = 0;
+            int destroyed = 0;
+            test_handler h(invoked, destroyed);
+
+            {
+                execution_context::queue q;
+                q.push(&h);
+                // destructor should call destroy()
+            }
+
+            BOOST_TEST(invoked == 0);
+            BOOST_TEST(destroyed == 1);
+        }
+
+        // executor - equality comparison
+        {
+            test_context ctx1;
+            test_context ctx2;
+            test_executor e1(ctx1);
+            test_executor e2(ctx1);
+            test_executor e3(ctx2);
+
+            BOOST_TEST(e1 == e2);
+            BOOST_TEST(!(e1 != e2));
+            BOOST_TEST(e1 != e3);
+            BOOST_TEST(!(e1 == e3));
+        }
+
+        // executor - context() returns same reference for equal executors
+        {
+            test_context ctx;
+            test_executor e1(ctx);
+            test_executor e2(ctx);
+
+            BOOST_TEST(e1 == e2);
+            BOOST_TEST(&e1.context() == &e2.context());
+            BOOST_TEST(&e1.context() == &ctx);
+        }
+
+        // executor - copy preserves context
+        {
+            test_context ctx;
+            test_executor e1(ctx);
+            test_executor e2(e1);
+
+            BOOST_TEST(e1 == e2);
+            BOOST_TEST(&e1.context() == &e2.context());
+        }
     }
 };
 
 TEST_SUITE(
-    execution_test,
-    "boost.capy.execution");
-
-//-----------------------------------------------------------------------------
-
-#ifdef BOOST_CAPY_HAS_CORO
-
-template<class T>
-T run_task_exec(task<T>& t)
-{
-    while(!t.handle().done())
-        t.handle().resume();
-    return t.await_resume();
-}
-
-inline void run_task_exec(task<void>& t)
-{
-    while(!t.handle().done())
-        t.handle().resume();
-    t.await_resume();
-}
-
-struct execution_coro_test
-{
-    void
-    testSubmitAwaitableNonVoid()
-    {
-        sync_executor ctx;
-
-        auto run = [&ctx]() -> task<int>
-        {
-            executor exec(ctx);
-            int result = co_await exec.submit([]{ return 42; });
-            co_return result;
-        };
-
-        auto t = run();
-        BOOST_TEST_EQ(run_task_exec(t), 42);
-    }
-
-    void
-    testSubmitAwaitableVoid()
-    {
-        bool executed = false;
-        sync_executor ctx;
-
-        auto run = [&ctx, &executed]() -> task<void>
-        {
-            executor exec(ctx);
-            co_await exec.submit([&executed]{ executed = true; });
-            co_return;
-        };
-
-        auto t = run();
-        run_task_exec(t);
-        BOOST_TEST(executed);
-    }
-
-    void
-    testSubmitAwaitableMultiple()
-    {
-        sync_executor ctx;
-
-        auto run = [&ctx]() -> task<int>
-        {
-            executor exec(ctx);
-            int a = co_await exec.submit([]{ return 10; });
-            int b = co_await exec.submit([]{ return 20; });
-            int c = co_await exec.submit([]{ return 30; });
-            co_return a + b + c;
-        };
-
-        auto t = run();
-        BOOST_TEST_EQ(run_task_exec(t), 60);
-    }
-
-    void
-    run()
-    {
-#if 0
-        testSubmitAwaitableNonVoid();
-        testSubmitAwaitableVoid();
-        testSubmitAwaitableMultiple();
-#endif
-    }
-};
-
-TEST_SUITE(
-    execution_coro_test,
-    "boost.capy.execution.coro");
-
-#endif
+    executor_test,
+    "boost.capy.executor");
 
 } // capy
 } // boost

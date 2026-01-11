@@ -1,0 +1,153 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= executor
+
+An executor provides mechanisms for scheduling work for execution.
+
+== Synopsis
+
+Defined in header `<boost/capy/executor.hpp>`
+
+[source,cpp]
+----
+namespace boost::capy {
+
+template<class E>
+concept executor =
+    std::copy_constructible<E> &&
+    std::equality_comparable<E> &&
+    requires(E& e, E const& ce, std::coroutine_handle<> h) {
+        { ce.context() } -> std::same_as<decltype(ce.context())&>;
+        { ce.on_work_started() } noexcept;
+        { ce.on_work_finished() } noexcept;
+        { ce.dispatch(h) } -> std::convertible_to<std::coroutine_handle<>>;
+        { ce.post(h) };
+        { ce.defer(h) };
+    };
+
+} // namespace boost::capy
+----
+
+== Description
+
+A type meeting the executor requirements embodies a set of rules for
+determining how submitted coroutines are to be executed. An executor
+is a lightweight, copyable handle to an execution context such as a
+thread pool, I/O context, or strand.
+
+The executor provides three scheduling operations:
+
+* **dispatch** — Run inline if allowed, else queue. Cheapest path.
+* **post** — Always queue, never inline. Guaranteed asynchrony.
+* **defer** — Always queue with continuation hint. Enables optimizations.
+
+=== No-Throw Guarantee
+
+The following operations shall not exit via an exception: constructors,
+comparison operators, copy/move operations, swap, `context()`,
+`on_work_started()`, and `on_work_finished()`.
+
+=== Thread Safety
+
+The executor copy constructor, comparison operators, and other member
+functions shall not introduce data races as a result of concurrent
+calls from different threads.
+
+=== Executor Validity
+
+Let `ctx` be the execution context returned by `context()`. An executor
+becomes invalid when the first call to `ctx.shutdown()` returns. The
+effect of calling `dispatch`, `post`, or `defer` on an invalid executor
+is undefined.
+
+== Valid Expressions
+
+Given:
+
+* `e` — a value of type `E`
+* `ce` — a const value of type `E`
+* `h` — a value of type `std::coroutine_handle<>`
+
+[cols="2,1,3"]
+|===
+| Expression | Return Type | Description
+
+| `ce.context()`
+| `Context&`
+| Returns a reference to the associated execution context
+
+| `ce.on_work_started()`
+| —
+| Informs the executor that work is beginning. Must not throw.
+
+| `ce.on_work_finished()`
+| —
+| Informs the executor that work has completed. Must not throw.
+
+| `ce.dispatch(h)`
+| convertible to `std::coroutine_handle<>`
+| Execute inline if permitted, otherwise queue
+
+| `ce.post(h)`
+| —
+| Queue for later execution, never inline
+
+| `ce.defer(h)`
+| —
+| Queue with continuation hint for optimization
+|===
+
+== Example
+
+[source,cpp]
+----
+class my_executor
+{
+    my_context* ctx_;
+
+public:
+    my_executor(my_context& ctx) : ctx_(&ctx) {}
+
+    my_context& context() const noexcept { return *ctx_; }
+
+    void on_work_started() const noexcept { ctx_->work_++; }
+    void on_work_finished() const noexcept { ctx_->work_--; }
+
+    std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
+    {
+        if (ctx_->running_in_this_thread())
+            return h;  // Inline execution
+        post(h);
+        return std::noop_coroutine();
+    }
+
+    void post(std::coroutine_handle<> h) const
+    {
+        ctx_->queue_.push(h);
+    }
+
+    void defer(std::coroutine_handle<> h) const
+    {
+        ctx_->local_queue_.push(h);  // Thread-local optimization
+    }
+
+    bool operator==(my_executor const& other) const noexcept
+    {
+        return ctx_ == other.ctx_;
+    }
+};
+
+static_assert(executor<my_executor>);
+----
+
+== See Also
+
+* xref:concepts/is_execution_context.adoc[is_execution_context]
+* xref:execution.adoc[Execution Model]

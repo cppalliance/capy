@@ -11,7 +11,6 @@
 #define BOOST_CAPY_THREAD_POOL_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/executor.hpp>
 #include <cstddef>
 
 namespace boost {
@@ -55,17 +54,6 @@ public:
 
     thread_pool(thread_pool const&) = delete;
     thread_pool& operator=(thread_pool const&) = delete;
-
-    /** Return an executor that references this pool.
-
-        The returned executor is a lightweight handle that
-        can be copied freely. The caller must ensure this
-        thread_pool outlives all executors that reference it.
-
-        @return An executor bound to this thread pool.
-    */
-    executor
-    get_executor() noexcept;
 };
 
 } // capy

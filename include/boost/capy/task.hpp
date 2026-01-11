@@ -1,789 +1,269 @@
-// Copyright Vinnie Falco
-// SPDX-License-Identifier: BSL-1.0
-
-/**
-    @file task.hpp
-
-    Lazy coroutine task type with executor affinity.
-
-    Provides task<T>, a lazy coroutine that produces a value of type T,
-    and spawn() for running tasks with completion handlers. Tasks support
-    executor affinity via on() to control which executor resumes the
-    coroutine after each co_await.
-*/
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie dot falco at gmail dot com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/corosio
+//
 
 #ifndef BOOST_CAPY_TASK_HPP
 #define BOOST_CAPY_TASK_HPP
 
-#include <boost/capy/detail/config.hpp>
-
-#ifdef BOOST_CAPY_HAS_CORO
-
+#include <boost/capy/config.hpp>
 #include <boost/capy/affine.hpp>
-#include <boost/capy/async_op.hpp>
-#include <boost/capy/executor.hpp>
+#include <boost/capy/frame_allocator.hpp>
+#include <boost/capy/make_affine.hpp>
 
-#include <boost/system/result.hpp>
-
-#include <coroutine>
 #include <exception>
-#include <functional>
+#include <optional>
 #include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace boost {
 namespace capy {
 
 namespace detail {
 
-/** Adapter that wraps executor and satisfies the dispatcher concept.
-
-    This struct provides operator() by delegating to executor::post(),
-    enabling use with the affine awaitable protocol. It is stored as
-    a data member in the promise to ensure stable lifetime.
-*/
-struct executor_dispatcher
+// Helper base for result storage and return_void/return_value
+template<typename T>
+struct task_return_base
 {
-    executor ex_;
+    std::optional<T> result_;
 
-    executor_dispatcher() = default;
-
-    explicit
-    executor_dispatcher(executor ex) noexcept
-        : ex_(std::move(ex))
+    void return_value(T value)
     {
-    }
-
-    template<class F>
-    void
-    operator()(F&& f) const
-    {
-        if (ex_)
-            ex_.post(std::forward<F>(f));
-        else
-            std::forward<F>(f)();
-    }
-
-    explicit
-    operator bool() const noexcept
-    {
-        return static_cast<bool>(ex_);
+        result_ = std::move(value);
     }
 };
 
-} // detail
-
-/** A lazy coroutine task that produces a value of type T.
-
-    This class template represents an owning handle to a suspended
-    coroutine that will eventually produce a value of type @ref T.
-    The coroutine is lazy: it does not begin execution until it is
-    awaited or manually resumed via its handle.
-
-    @par Thread Safety
-    Distinct objects may be accessed concurrently. Shared objects
-    require external synchronization.
-
-    @par Example
-    @code
-    task<int> compute_value()
-    {
-        co_return 42;
-    }
-
-    task<void> example()
-    {
-        int result = co_await compute_value();
-    }
-    @endcode
-
-    @tparam T The type of value produced by the coroutine.
-
-    @see async_op, launch
-*/
-template<class T>
-class task
-    : public affine_task<T, task<T>, detail::executor_dispatcher>
-{
-public:
-    /** The coroutine promise type.
-
-        This nested type satisfies the coroutine promise requirements
-        and manages the coroutine's result storage and completion
-        notification.
-    */
-    struct promise_type
-        : affine_promise<promise_type, detail::executor_dispatcher>
-    {
-        /// Storage for the result value or exception (empty exception_ptr = incomplete)
-        system::result<T, std::exception_ptr> result_{std::exception_ptr{}};
-
-        /// Dispatcher for await_transform (always present for consistent types)
-        detail::executor_dispatcher await_dispatcher_{};
-
-        /** Get the executor for affinity.
-
-            @return The executor used for resumption affinity.
-        */
-        executor
-        get_executor() const noexcept
-        {
-            return await_dispatcher_.ex_;
-        }
-
-        /** Set the executor for affinity.
-
-            @param ex The executor to resume on after co_await.
-        */
-        void
-        set_executor(executor ex) noexcept
-        {
-            await_dispatcher_ = detail::executor_dispatcher{std::move(ex)};
-            // Also set on base class for final_suspend behavior
-            if (await_dispatcher_)
-                this->affine_promise<promise_type, detail::executor_dispatcher>::set_dispatcher(await_dispatcher_);
-            else
-                this->dispatcher_.reset();
-        }
-
-        /** Set the dispatcher for affinity (inheritance).
-
-            Called by affine_task::await_suspend when a parent task
-            awaits this task with a dispatcher. Only sets the dispatcher
-            if not already set, so explicit affinity via on() takes
-            precedence over inherited affinity.
-
-            @param d The dispatcher to use for resumption.
-        */
-        void
-        set_dispatcher(detail::executor_dispatcher d)
-        {
-            // Only inherit if not explicitly set (explicit affinity takes precedence)
-            if (!await_dispatcher_)
-            {
-                await_dispatcher_ = d;
-                this->affine_promise<promise_type, detail::executor_dispatcher>::set_dispatcher(std::move(d));
-            }
-        }
-
-        /** Transform awaitables for executor affinity.
-
-            Wraps co_await expressions to ensure the coroutine resumes
-            on the configured executor. Uses affine_awaiter for
-            affine-aware awaitables (zero overhead) and make_affine
-            trampoline for legacy awaitables.
-
-            @param a The awaitable to transform.
-            @return An affinity-wrapped awaitable.
-        */
-        template<typename Awaitable>
-        auto
-        await_transform(Awaitable&& a)
-        {
-            // Use if constexpr to get consistent return type per branch
-            if constexpr (affine_awaitable<Awaitable, detail::executor_dispatcher>)
-            {
-                // Affine-aware: use affine_awaiter (zero overhead)
-                return affine_awaiter{std::forward<Awaitable>(a), &await_dispatcher_};
-            }
-            else
-            {
-                // Legacy: use make_affine trampoline
-                return make_affine(std::forward<Awaitable>(a), await_dispatcher_);
-            }
-        }
-
-        /** Returns the task object for this coroutine.
-
-            @return A task owning the coroutine handle.
-        */
-        task
-        get_return_object()
-        {
-            return task{std::coroutine_handle<promise_type>::from_promise(*this)};
-        }
-
-        /** Suspend the coroutine at the start.
-
-            The coroutine is lazy and does not run until awaited.
-
-            @return An awaitable that always suspends.
-        */
-        std::suspend_always
-        initial_suspend() noexcept
-        {
-            return {};
-        }
-
-        /** Store the return value.
-
-            @param v The value to store as the coroutine result.
-        */
-        void
-        return_value(T v)
-        {
-            result_ = std::move(v);
-        }
-
-        /** Store an unhandled exception.
-
-            Captures the current exception for later rethrowing.
-        */
-        void
-        unhandled_exception()
-        {
-#if defined(__GNUC__) && __GNUC__ >= 12 && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-            result_ = std::current_exception();
-#if defined(__GNUC__) && __GNUC__ >= 12 && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-        }
-
-        /** Retrieve the result for await_resume.
-
-            @return The value produced by the coroutine.
-
-            @throws Any exception that was thrown inside the coroutine.
-        */
-        T
-        result()
-        {
-            if (result_.has_error())
-                std::rethrow_exception(result_.error());
-            return std::move(*result_);
-        }
-    };
-
-private:
-    std::coroutine_handle<promise_type> h_;
-
-public:
-    /** Construct a task from a coroutine handle.
-
-        @param h The coroutine handle to take ownership of.
-    */
-    explicit
-    task(std::coroutine_handle<promise_type> h)
-        : h_(h)
-    {
-    }
-
-    /** Destructor.
-
-        Destroys the owned coroutine if present.
-    */
-    ~task()
-    {
-        if (h_)
-            h_.destroy();
-    }
-
-    /** Move constructor.
-
-        @param o The task to move from. After the move, @p o will
-                 be empty.
-    */
-    task(task&& o) noexcept
-        : h_(std::exchange(o.h_, {}))
-    {
-    }
-
-    /// Move assignment is deleted.
-    task&
-    operator=(task&&) = delete;
-
-    /** Access the underlying coroutine handle.
-
-        @return The coroutine handle, without transferring ownership.
-    */
-    [[nodiscard]]
-    std::coroutine_handle<promise_type>
-    handle() const noexcept
-    {
-        return h_;
-    }
-
-    /** Release ownership of the coroutine handle.
-
-        After calling this function, the task no longer owns the
-        coroutine and the caller becomes responsible for destroying it.
-
-        @return The coroutine handle.
-    */
-    [[nodiscard]]
-    std::coroutine_handle<promise_type>
-    release() noexcept
-    {
-        return std::exchange(h_, {});
-    }
-
-    /** Bind this task to an executor for affinity.
-
-        Sets the executor so that when this task's internal
-        co_await expressions complete, the coroutine resumes
-        on the specified executor. Child tasks without explicit
-        affinity will inherit this executor.
-
-        @param e The executor to resume on.
-
-        @return A reference to this task for chaining.
-
-        @par Example
-        @code
-        task<void> example(executor ex)
-        {
-            // parse_request resumes on ex after internal co_awaits
-            auto data = co_await parse_request().on(ex);
-        }
-        @endcode
-    */
-    task&
-    on(executor ex) &
-    {
-        h_.promise().set_executor(std::move(ex));
-        return *this;
-    }
-
-    /// @copydoc on(executor)
-    task&&
-    on(executor ex) &&
-    {
-        h_.promise().set_executor(std::move(ex));
-        return std::move(*this);
-    }
-};
-
-//-----------------------------------------------------------------------------
-
-/** A lazy coroutine task that produces no value.
-
-    This specialization of task is used for coroutines that perform
-    work but do not return a value. It uses `co_return;` with no
-    argument to complete.
-
-    @par Thread Safety
-    Distinct objects may be accessed concurrently. Shared objects
-    require external synchronization.
-
-    @par Example
-    @code
-    task<void> log_message(std::string msg)
-    {
-        std::cout << msg << std::endl;
-        co_return;
-    }
-
-    task<void> example()
-    {
-        co_await log_message("Hello, World!");
-    }
-    @endcode
-
-    @see task, async_op, launch
-*/
 template<>
-class task<void>
-    : public affine_task<void, task<void>, detail::executor_dispatcher>
+struct task_return_base<void>
 {
-public:
-    /** The coroutine promise type for void tasks.
-
-        This nested type satisfies the coroutine promise requirements
-        and manages exception storage and completion notification.
-    */
-    struct promise_type
-        : affine_promise<promise_type, detail::executor_dispatcher>
+    void return_void()
     {
-        /// Storage for exception (nullptr = success)
-        std::exception_ptr error_;
+    }
+};
 
-        /// Dispatcher for await_transform (always present for consistent types)
-        detail::executor_dispatcher await_dispatcher_{};
+} // namespace detail
 
-        /** Get the executor for affinity.
+/** A coroutine task type implementing the affine awaitable protocol.
 
-            @return The executor used for resumption affinity.
-        */
-        executor
-        get_executor() const noexcept
-        {
-            return await_dispatcher_.ex_;
-        }
+    This task type represents an asynchronous operation that can be awaited.
+    It implements the affine awaitable protocol where `await_suspend` receives
+    the caller's executor, enabling proper completion dispatch across executor
+    boundaries.
 
-        /** Set the executor for affinity.
+    @tparam T The return type of the task. Defaults to void.
 
-            @param ex The executor to resume on after co_await.
-        */
-        void
-        set_executor(executor ex) noexcept
-        {
-            await_dispatcher_ = detail::executor_dispatcher{std::move(ex)};
-            // Also set on base class for final_suspend behavior
-            if (await_dispatcher_)
-                this->affine_promise<promise_type, detail::executor_dispatcher>::set_dispatcher(await_dispatcher_);
-            else
-                this->dispatcher_.reset();
-        }
+    Key features:
+    @li Lazy execution - the coroutine does not start until awaited
+    @li Symmetric transfer - uses coroutine handle returns for efficient
+        resumption
+    @li Executor inheritance - inherits caller's executor unless explicitly
+        bound
 
-        /** Set the dispatcher for affinity (inheritance).
+    The task uses `[[clang::coro_await_elidable]]` (when available) to enable
+    heap allocation elision optimization (HALO) for nested coroutine calls.
 
-            Called by affine_task::await_suspend when a parent task
-            awaits this task with a dispatcher. Only sets the dispatcher
-            if not already set, so explicit affinity via on() takes
-            precedence over inherited affinity.
+    @see any_dispatcher
+*/
+template<typename T = void>
+struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
+    task
+{
+    struct promise_type
+        : frame_allocating_base
+        , detail::task_return_base<T>
+    {
+        any_dispatcher ex_;
+        any_dispatcher caller_ex_;
+        coro continuation_;
+        std::exception_ptr ep_;
+        std::stop_token stop_token_;
+        bool needs_dispatch_ = false;
 
-            @param d The dispatcher to use for resumption.
-        */
-        void
-        set_dispatcher(detail::executor_dispatcher d)
-        {
-            // Only inherit if not explicitly set (explicit affinity takes precedence)
-            if (!await_dispatcher_)
-            {
-                await_dispatcher_ = d;
-                this->affine_promise<promise_type, detail::executor_dispatcher>::set_dispatcher(std::move(d));
-            }
-        }
-
-        /** Transform awaitables for executor affinity.
-
-            Wraps co_await expressions to ensure the coroutine resumes
-            on the configured executor. Uses affine_awaiter for
-            affine-aware awaitables (zero overhead) and make_affine
-            trampoline for legacy awaitables.
-
-            @param a The awaitable to transform.
-            @return An affinity-wrapped awaitable.
-        */
-        template<typename Awaitable>
-        auto
-        await_transform(Awaitable&& a)
-        {
-            // Use if constexpr to get consistent return type per branch
-            if constexpr (affine_awaitable<Awaitable, detail::executor_dispatcher>)
-            {
-                // Affine-aware: use affine_awaiter (zero overhead)
-                return affine_awaiter{std::forward<Awaitable>(a), &await_dispatcher_};
-            }
-            else
-            {
-                // Legacy: use make_affine trampoline
-                return make_affine(std::forward<Awaitable>(a), await_dispatcher_);
-            }
-        }
-
-        /** Returns the task object for this coroutine.
-
-            @return A task owning the coroutine handle.
-        */
-        task
-        get_return_object()
+        task get_return_object()
         {
             return task{std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
-        /** Suspend the coroutine at the start.
-
-            The coroutine is lazy and does not run until awaited.
-
-            @return An awaitable that always suspends.
-        */
-        std::suspend_always
-        initial_suspend() noexcept
+        std::suspend_always initial_suspend() noexcept
         {
             return {};
         }
 
-        /** Signal coroutine completion.
-
-            Called when the coroutine executes `co_return;`.
-        */
-        void
-        return_void() noexcept
+        auto final_suspend() noexcept
         {
-            error_ = nullptr;
+            struct awaiter
+            {
+                promise_type* p_;
+
+                bool await_ready() const noexcept
+                {
+                    return false;
+                }
+
+                coro await_suspend(coro) const noexcept
+                {
+                    if(p_->continuation_)
+                    {
+                        // Same dispatcher: true symmetric transfer
+                        if(!p_->needs_dispatch_)
+                            return p_->continuation_;
+                        return p_->caller_ex_(p_->continuation_);
+                    }
+                    return std::noop_coroutine();
+                }
+
+                void await_resume() const noexcept
+                {
+                }
+            };
+            return awaiter{this};
         }
 
-        /** Store an unhandled exception.
+        // return_void() or return_value() inherited from task_return_base
 
-            Captures the current exception for later rethrowing.
-        */
-        void
-        unhandled_exception() noexcept
+        void unhandled_exception()
         {
-            error_ = std::current_exception();
+            ep_ = std::current_exception();
         }
 
-        /** Retrieve the result for await_resume.
-
-            @throws Any exception that was thrown inside the coroutine.
-        */
-        void
-        result()
+        template<class Awaitable>
+        struct transform_awaiter
         {
-            if (error_)
-                std::rethrow_exception(error_);
+            std::decay_t<Awaitable> a_;
+            promise_type* p_;
+
+            bool await_ready()
+            {
+                return a_.await_ready();
+            }
+
+            auto await_resume()
+            {
+                return a_.await_resume();
+            }
+
+            template<class Promise>
+            auto await_suspend(std::coroutine_handle<Promise> h)
+            {
+                using A = std::decay_t<Awaitable>;
+                if constexpr (stoppable_awaitable<A, any_dispatcher>)
+                    return a_.await_suspend(h, p_->ex_, p_->stop_token_);
+                else
+                    return a_.await_suspend(h, p_->ex_);
+            }
+        };
+
+        template<class Awaitable>
+        auto await_transform(Awaitable&& a)
+        {
+            using A = std::decay_t<Awaitable>;
+            if constexpr (affine_awaitable<A, any_dispatcher>)
+            {
+                // Zero-overhead path for affine awaitables
+                return transform_awaiter<Awaitable>{
+                    std::forward<Awaitable>(a), this};
+            }
+            else
+            {
+                // Trampoline fallback for legacy awaitables
+                return make_affine(std::forward<Awaitable>(a), ex_);
+            }
         }
     };
 
-private:
     std::coroutine_handle<promise_type> h_;
 
-public:
-    /** Construct a task from a coroutine handle.
-
-        @param h The coroutine handle to take ownership of.
-    */
-    explicit
-    task(std::coroutine_handle<promise_type> h)
-        : h_(h)
-    {
-    }
-
-    /** Destructor.
-
-        Destroys the owned coroutine if present.
-    */
     ~task()
     {
-        if (h_)
+        if(h_)
             h_.destroy();
     }
 
-    /** Move constructor.
-
-        @param o The task to move from. After the move, @p o will
-                 be empty.
-    */
-    task(task&& o) noexcept
-        : h_(std::exchange(o.h_, {}))
+    bool await_ready() const noexcept
     {
+        return false;
     }
 
-    /// Move assignment is deleted.
-    task&
-    operator=(task&&) = delete;
-
-    /** Access the underlying coroutine handle.
-
-        @return The coroutine handle, without transferring ownership.
-    */
-    [[nodiscard]]
-    std::coroutine_handle<promise_type>
-    handle() const noexcept
+    auto await_resume()
     {
+        if(h_.promise().ep_)
+            std::rethrow_exception(h_.promise().ep_);
+        if constexpr (! std::is_void_v<T>)
+            return std::move(*h_.promise().result_);
+        else
+            return;
+    }
+
+    // Affine awaitable: receive caller's dispatcher for completion dispatch
+    template<dispatcher D>
+    coro await_suspend(coro continuation, D const& caller_ex)
+    {
+        h_.promise().caller_ex_ = caller_ex;
+        h_.promise().continuation_ = continuation;
+        h_.promise().ex_ = caller_ex;
+        h_.promise().needs_dispatch_ = false;
+        return h_;
+    }
+
+    // Stoppable awaitable: receive caller's dispatcher and stop_token
+    template<dispatcher D>
+    coro await_suspend(coro continuation, D const& caller_ex, std::stop_token token)
+    {
+        h_.promise().caller_ex_ = caller_ex;
+        h_.promise().continuation_ = continuation;
+        h_.promise().ex_ = caller_ex;
+        h_.promise().stop_token_ = token;
+        h_.promise().needs_dispatch_ = false;
         return h_;
     }
 
     /** Release ownership of the coroutine handle.
 
-        After calling this function, the task no longer owns the
-        coroutine and the caller becomes responsible for destroying it.
+        After calling this, the task no longer owns the handle and will
+        not destroy it. The caller is responsible for the handle's lifetime.
 
-        @return The coroutine handle.
+        @return The coroutine handle, or nullptr if already released.
     */
-    [[nodiscard]]
-    std::coroutine_handle<promise_type>
-    release() noexcept
+    auto release() noexcept ->
+        std::coroutine_handle<promise_type>
     {
-        return std::exchange(h_, {});
+        return std::exchange(h_, nullptr);
     }
 
-    /** Bind this task to an executor for affinity.
+    // Non-copyable
+    task(task const&) = delete;
+    task& operator=(task const&) = delete;
 
-        Sets the executor so that when this task's internal
-        co_await expressions complete, the coroutine resumes
-        on the specified executor. Child tasks without explicit
-        affinity will inherit this executor.
-
-        @param e The executor to resume on.
-
-        @return A reference to this task for chaining.
-
-        @par Example
-        @code
-        task<void> example(executor ex)
-        {
-            // do_work resumes on ex after internal co_awaits
-            co_await do_work().on(ex);
-        }
-        @endcode
-    */
-    task&
-    on(executor ex) &
+    // Movable
+    task(task&& other) noexcept
+        : h_(std::exchange(other.h_, nullptr))
     {
-        h_.promise().set_executor(std::move(ex));
+    }
+
+    task& operator=(task&& other) noexcept
+    {
+        if(this != &other)
+        {
+            if(h_)
+                h_.destroy();
+            h_ = std::exchange(other.h_, nullptr);
+        }
         return *this;
     }
 
-    /// @copydoc on(executor)
-    task&&
-    on(executor ex) &&
+private:
+    explicit task(std::coroutine_handle<promise_type> h)
+        : h_(h)
     {
-        h_.promise().set_executor(std::move(ex));
-        return std::move(*this);
     }
 };
 
-//-----------------------------------------------------------------------------
-
-namespace detail {
-
-/** Fire-and-forget coroutine for spawn().
-
-    This coroutine runs the spawned task and delivers the result
-    to the completion handler. It never suspends at final_suspend,
-    so the frame is destroyed immediately upon completion.
-*/
-template<class T>
-struct spawner
-{
-    struct promise_type
-    {
-        spawner
-        get_return_object() noexcept
-        {
-            return {};
-        }
-
-        std::suspend_never
-        initial_suspend() noexcept
-        {
-            return {};
-        }
-
-        std::suspend_never
-        final_suspend() noexcept
-        {
-            return {};
-        }
-
-        void
-        return_void() noexcept
-        {
-        }
-
-        void
-        unhandled_exception()
-        {
-            // Handler is called with exception in spawn's try/catch
-            std::terminate();
-        }
-    };
-};
-
-} // detail
-
-/** Spawn a task on an executor with a completion handler.
-
-    This function starts a task running on the specified executor.
-    When the task completes (with a value or exception), the handler
-    is invoked with the result.
-
-    The handler receives `system::result<T, std::exception_ptr>` which
-    holds either the task's return value or any exception that was
-    thrown during execution.
-
-    The coroutine frame is allocated using the executor's allocator.
-
-    @param ex The executor to run the task on.
-    @param t The task to spawn. Ownership is transferred.
-    @param handler The completion handler to invoke with the result.
-
-    @par Handler Signature
-    @code
-    void handler(system::result<T, std::exception_ptr> result);
-    @endcode
-
-    @par Example
-    @code
-    task<int> compute()
-    {
-        co_return 42;
-    }
-
-    void start_work(executor ex)
-    {
-        spawn(ex, compute(), [](auto result) {
-            if (result.has_value())
-                std::cout << "Result: " << *result << std::endl;
-            else
-                std::cerr << "Error occurred\n";
-        });
-    }
-    @endcode
-
-    @see task, executor, system::result
-*/
-template<class T, class Handler>
-void
-spawn(executor ex, task<T> t, Handler&& handler)
-{
-    using result_type = system::result<T, std::exception_ptr>;
-    t.on(ex);
-    auto do_spawn = [](
-        task<T> t,
-        std::decay_t<Handler> h) -> detail::spawner<void>
-    {
-#if defined(__GNUC__) && __GNUC__ >= 12 && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-        try
-        {
-            h(result_type(co_await t));
-        }
-        catch (...)
-        {
-            h(result_type(std::current_exception()));
-        }
-#if defined(__GNUC__) && __GNUC__ >= 12 && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-    };
-    do_spawn(std::move(t), std::forward<Handler>(handler));
-}
-
-/** Spawn a void task on an executor with a completion handler.
-
-    @copydetails spawn(executor,task<T>,Handler&&)
-*/
-template<class Handler>
-void
-spawn(executor ex, task<void> t, Handler&& handler)
-{
-    using result_type = system::result<void, std::exception_ptr>;
-    t.on(ex);
-    auto do_spawn = [](
-        task<void> t,
-        std::decay_t<Handler> h) -> detail::spawner<void>
-    {
-#if defined(__GNUC__) && __GNUC__ >= 12 && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-        try
-        {
-            co_await t;
-            h(result_type());
-        }
-        catch (...)
-        {
-            h(result_type(std::current_exception()));
-        }
-#if defined(__GNUC__) && __GNUC__ >= 12 && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-    };
-    do_spawn(std::move(t), std::forward<Handler>(handler));
-}
-
-} // capy
-} // boost
-
-#endif
+} // namespace capy
+} // namespace boost
 
 #endif

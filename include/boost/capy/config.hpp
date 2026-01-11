@@ -7,5 +7,9 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Test that header file is self-contained.
-#include <boost/capy/affine.hpp>
+#ifndef BOOST_CAPY_CONFIG_HPP
+#define BOOST_CAPY_CONFIG_HPP
+
+#include <boost/capy/detail/config.hpp>
+
+#endif

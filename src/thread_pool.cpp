@@ -7,8 +7,10 @@
 // Official repository: https://github.com/boostorg/capy
 //
 
+#include "src/work_allocator.hpp"
+
 #include <boost/capy/thread_pool.hpp>
-#include "work_allocator.hpp"
+#include <boost/capy/execution_context.hpp>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -64,8 +66,8 @@ public:
         {
             header* h = head_;
             head_ = head_->next;
-            auto* w = static_cast<executor::work*>(from_header(h));
-            w->~work();
+            auto* w = static_cast<execution_context::handler*>(from_header(h));
+            w->destroy();
             arena_.deallocate(h, h->size, h->align);
         }
     }
@@ -107,17 +109,17 @@ public:
     }
 
     void
-    submit(executor::work* w)
+    submit(execution_context::handler* h)
     {
-        header* h = to_header(w);
+        header* hdr = to_header(h);
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            h->next = nullptr;
+            hdr->next = nullptr;
             if(tail_)
-                tail_->next = h;
+                tail_->next = hdr;
             else
-                head_ = h;
-            tail_ = h;
+                head_ = hdr;
+            tail_ = hdr;
         }
         cv_.notify_one();
     }
@@ -144,9 +146,8 @@ private:
                     tail_ = nullptr;
             }
 
-            auto* w = static_cast<executor::work*>(from_header(h));
-            w->invoke();
-            w->~work();
+            auto* w = static_cast<execution_context::handler*>(from_header(h));
+            (*w)();
 
             {
                 std::lock_guard<std::mutex> lock(mutex_);
@@ -168,13 +169,6 @@ thread_pool::
 thread_pool(std::size_t num_threads)
     : impl_(new impl(num_threads))
 {
-}
-
-executor
-thread_pool::
-get_executor() noexcept
-{
-    return executor(*impl_);
 }
 
 } // capy
