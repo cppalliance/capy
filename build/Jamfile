@@ -43,9 +43,11 @@ lib boost_capy
   : capy_sources
   : requirements
      <include>../
+     <library>/boost/buffers//boost_buffers
      <target-os>windows:<library>bcrypt_sys
      <target-os>darwin:<linkflags>"-framework Security"
   : usage-requirements
+     <library>/boost/buffers//boost_buffers
      <target-os>windows:<library>bcrypt_sys
      <target-os>darwin:<linkflags>"-framework Security"
   ;
