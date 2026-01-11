@@ -57,15 +57,9 @@ void try_delete_array(U*, long) noexcept
     When `T` is empty and non-final, inherits from it to
     apply EBO. Otherwise stores as a member.
 */
-#if __cplusplus >= 201402L
 template<
     class T,
     bool = std::is_empty<T>::value && !std::is_final<T>::value>
-#else
-template<
-    class T,
-    bool = std::is_empty<T>::value>
-#endif
 struct ebo_storage
 {
     T value_;

@@ -10,13 +10,9 @@
 import ac ;
 import config : requires ;
 
-constant c11-requires :
+constant c20-requires :
     [ requires
-    cxx11_constexpr
-    cxx11_decltype
-    cxx11_hdr_tuple
-    cxx11_template_aliases
-    cxx11_variadic_templates
+    cxx20_hdr_concepts
     ]
     ;
 
@@ -24,7 +20,7 @@ path-constant CAPY_ROOT : .. ;
 
 project boost/capy
   : requirements
-    $(c11-requires)
+    $(c20-requires)
     <define>BOOST_CAPY_SOURCE
   : common-requirements
     <link>shared:<define>BOOST_CAPY_DYN_LINK
@@ -43,11 +39,9 @@ lib boost_capy
   : capy_sources
   : requirements
      <include>../
-     <library>/boost/buffers//boost_buffers
      <target-os>windows:<library>bcrypt_sys
      <target-os>darwin:<linkflags>"-framework Security"
   : usage-requirements
-     <library>/boost/buffers//boost_buffers
      <target-os>windows:<library>bcrypt_sys
      <target-os>darwin:<linkflags>"-framework Security"
   ;

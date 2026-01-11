@@ -12,7 +12,7 @@ import testing ;
 
 project
     : requirements
-      $(c11-requires)
+      $(c20-requires)
       <library>/boost/capy//boost_capy
       [ ac.check-library /boost/capy//boost_capy_zlib : <library>/boost/capy//boost_capy_zlib : ]
       [ ac.check-library /boost/capy//boost_capy_brotli : <library>/boost/capy//boost_capy_brotli : ]
