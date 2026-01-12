@@ -20,3 +20,5 @@
 ** xref:concepts/stoppable_awaitable.adoc[stoppable_awaitable]
 ** xref:concepts/frame_allocator.adoc[frame_allocator]
 ** xref:concepts/is_execution_context.adoc[is_execution_context]
+* Performance Tuning
+** xref:performance-tuning/high-performance-allocators.adoc[High-Performance Allocators]
