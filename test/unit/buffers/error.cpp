@@ -44,7 +44,7 @@ public:
     void
     run()
     {
-        char const* const n = "boost.capy.buffers";
+        char const* const n = "boost.capy";
 
         check(n, error::eof);
     }

@@ -35,30 +35,21 @@ class mutable_buffer;
 
 namespace detail {
 
-// this is designed to satisfy Asio's buffer constructors
+// satisfies Asio's buffer constructors, CANNOT be removed!
 template<class T, std::size_t Extent = (std::size_t)(-1)>
 class basic_buffer
 {
-public:
-    /** Return a pointer to the beginning of the memory region
-    */
-    constexpr auto
-    data() const noexcept ->
-        std::conditional_t<
-            std::is_const_v<T>,
-            void const*, void*>
+    constexpr auto data() const noexcept ->
+        std::conditional_t<std::is_const_v<T>, void const*, void*>
     {
         return p_;
     }
 
-    /** Return the number of valid bytes in the referenced memory region
-    */
     constexpr std::size_t size() const noexcept
     {
         return n_;
     }
 
-private:
     friend class buffers::const_buffer;
     friend class buffers::mutable_buffer;
     friend class asio::const_buffer;
@@ -148,6 +139,20 @@ public:
             static_cast<unsigned char*>(
                 b.data()), b.size())
     {
+    }
+
+    /** Return a pointer to the beginning of the memory region
+    */
+    constexpr void* data() const noexcept
+    {
+        return p_;
+    }
+
+    /** Return the number of valid bytes in the referenced memory region
+    */
+    constexpr std::size_t size() const noexcept
+    {
+        return n_;
     }
 
     /** Remove a prefix of the memory region
@@ -253,6 +258,20 @@ public:
             static_cast<unsigned char const*>(
                 b.data()), b.size())
     {
+    }
+
+    /** Return a pointer to the beginning of the memory region
+    */
+    constexpr void const* data() const noexcept
+    {
+        return p_;
+    }
+
+    /** Return the number of valid bytes in the referenced memory region
+    */
+    constexpr std::size_t size() const noexcept
+    {
+        return n_;
     }
 
     /** Remove a prefix of the memory region
