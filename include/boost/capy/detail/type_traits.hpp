@@ -16,9 +16,6 @@ namespace boost {
 namespace capy {
 namespace detail {
 
-template<class...> struct make_void { typedef void type; };
-template<class... Ts> using void_t = typename make_void<Ts...>::type;
-
 template<class Base, class Derived>
 using derived_from = std::integral_constant<bool,
     std::is_base_of<Base, Derived>::value &&

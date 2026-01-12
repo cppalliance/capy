@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_BUFFERS_SINK_HPP
 #define BOOST_CAPY_BUFFERS_SINK_HPP
 
-#include <boost/capy/buffers/detail/config.hpp>
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers/detail/except.hpp>
 #include <boost/capy/buffers/buffer.hpp>
 #include <boost/system/error_code.hpp>
@@ -62,7 +62,7 @@ template<class T, class = void>
 struct is_write_sink : std::false_type {};
 
 template<class T>
-struct is_write_sink<T, detail::void_t<
+struct is_write_sink<T, std::void_t<
     decltype(std::declval<T&>().size_hint(std::declval<std::size_t>())),
     typename std::enable_if<
         std::is_same<

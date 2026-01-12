@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_BUFFERS_DETAIL_IS_SPAN_HPP
 #define BOOST_CAPY_BUFFERS_DETAIL_IS_SPAN_HPP
 
-#include <boost/capy/buffers/detail/config.hpp>
+#include <boost/capy/detail/config.hpp>
 #include <type_traits>
 
 namespace boost {
@@ -23,7 +23,7 @@ template<class T, class = void>
 struct is_span : std::false_type {};
 
 template<class T>
-struct is_span<T, detail::void_t<
+struct is_span<T, std::void_t<
     decltype(std::declval<T const&>().subspan(
         std::size_t(0), std::size_t(0)))
     > > : std::true_type

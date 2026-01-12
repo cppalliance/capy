@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_BUFFERS_COPY_HPP
 #define BOOST_CAPY_BUFFERS_COPY_HPP
 
-#include <boost/capy/buffers/detail/config.hpp>
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers/buffer.hpp>
 #include <cstring>
 #include <utility>

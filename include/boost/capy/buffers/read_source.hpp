@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_BUFFERS_READ_SOURCE_HPP
 #define BOOST_CAPY_BUFFERS_READ_SOURCE_HPP
 
-#include <boost/capy/buffers/detail/config.hpp>
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers/detail/except.hpp>
 #include <boost/capy/buffers/buffer.hpp>
 #include <boost/system/error_code.hpp>
@@ -54,7 +54,7 @@ struct is_read_source
 };
 
 template<class T>
-struct is_read_source<T, detail::void_t<typename
+struct is_read_source<T, std::void_t<typename
     std::enable_if<
         std::is_convertible<
             decltype(std::declval<T&>().read(
@@ -73,7 +73,7 @@ struct has_size : std::false_type
 };
 
 template<class T>
-struct has_size<T, detail::void_t<
+struct has_size<T, std::void_t<
     typename std::enable_if<
         std::is_convertible<
             decltype(std::declval<T const&>().size()),
@@ -90,7 +90,7 @@ struct has_rewind : std::false_type
 };
 
 template<class T>
-struct has_rewind<T, detail::void_t<decltype(
+struct has_rewind<T, std::void_t<decltype(
     std::declval<T&>().rewind())>>
     : std::true_type
 {

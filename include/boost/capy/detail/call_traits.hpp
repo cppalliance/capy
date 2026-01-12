@@ -73,7 +73,7 @@ struct is_invocable_impl : std::false_type {};
 template<class T, class R, class... Args>
 struct is_invocable_impl<
     T, R, mp11::mp_list<Args...>,
-    void_t<decltype(std::declval<T>()(
+    std::void_t<decltype(std::declval<T>()(
         std::declval<Args>()...))>>
     : std::integral_constant<bool,
         call_traits<T>::value &&

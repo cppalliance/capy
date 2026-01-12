@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_BUFFERS_ANY_STREAM_HPP
 #define BOOST_CAPY_BUFFERS_ANY_STREAM_HPP
 
-#include <boost/capy/buffers/detail/config.hpp>
+#include <boost/capy/detail/config.hpp>
 
 #if 0
 

@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_BUFFERS_ANY_BUFFERS_HPP
 #define BOOST_CAPY_BUFFERS_ANY_BUFFERS_HPP
 
-#include <boost/capy/buffers/detail/config.hpp>
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers/buffer.hpp>
 #include <boost/core/null_deleter.hpp>
 #include <boost/assert.hpp>

@@ -13,6 +13,6 @@
 // This header is deprecated and will be removed in a future release.
 // Use C++20 concepts from <boost/capy/buffers/buffer.hpp> instead.
 
-#include <boost/capy/buffers/detail/config.hpp>
+#include <boost/capy/detail/config.hpp>
 
 #endif

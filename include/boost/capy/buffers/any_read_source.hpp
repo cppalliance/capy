@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_BUFFERS_ANY_READ_SOURCE_HPP
 #define BOOST_CAPY_BUFFERS_ANY_READ_SOURCE_HPP
 
-#include <boost/capy/buffers/detail/config.hpp>
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/buffers/read_source.hpp>
 #include <boost/core/span.hpp>

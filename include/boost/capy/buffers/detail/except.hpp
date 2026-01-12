@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_BUFFERS_DETAIL_EXCEPT_HPP
 #define BOOST_CAPY_BUFFERS_DETAIL_EXCEPT_HPP
 
-#include <boost/capy/buffers/detail/config.hpp>
+#include <boost/capy/detail/config.hpp>
 #include <boost/assert/source_location.hpp>
 
 namespace boost {
