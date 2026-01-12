@@ -4,6 +4,9 @@
 /__build__
 /toolchain.cmake
 
+# Build outputs and temporary files
+/.temp/
+
 # Emacs
 *#
 
@@ -22,6 +25,9 @@
 /.clangd
 /compile_commands.json
 
-/.cursor/
+# Cursor - ignore user-local content but allow shared rules
+/.cursor/*
+!/.cursor/rules/
+
 /build_clang/
 
