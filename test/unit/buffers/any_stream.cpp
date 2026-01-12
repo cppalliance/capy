@@ -14,7 +14,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 struct any_stream_test
 {
@@ -27,6 +26,5 @@ TEST_SUITE(
     any_stream_test,
     "boost.capy.buffers.any_stream");
 
-} // buffers
 } // capy
 } // boost

@@ -16,7 +16,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 struct buffer_copy_test
 {
@@ -145,6 +144,5 @@ TEST_SUITE(
     buffer_copy_test,
     "boost.capy.buffers.copy");
 
-} // buffers
 } // capy
 } // boost

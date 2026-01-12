@@ -22,7 +22,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /** Result of an asynchronous I/O operation.
 */
@@ -98,7 +97,6 @@ private:
     std::shared_ptr<impl> impl_;
 };
 
-} // buffers
 } // capy
 } // boost
 

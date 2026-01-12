@@ -10,6 +10,8 @@
 #ifndef BOOST_CAPY_POLYSTORE_FWD_HPP
 #define BOOST_CAPY_POLYSTORE_FWD_HPP
 
+#include <boost/capy/detail/config.hpp>
+
 namespace boost {
 namespace capy {
 

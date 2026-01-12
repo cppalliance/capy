@@ -22,7 +22,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /** Return a buffer.
 */
@@ -96,7 +95,6 @@ make_buffer(
         data, N * sizeof(T));
 }
 
-} // buffers
 } // capy
 } // boost
 

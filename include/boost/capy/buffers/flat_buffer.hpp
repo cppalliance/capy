@@ -16,7 +16,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /** A DynamicBuffer with a fixed capacity.
 
@@ -155,7 +154,6 @@ public:
     }
 };
 
-} // buffers
 } // capy
 } // boost
 

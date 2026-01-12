@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_TASK_HPP
 #define BOOST_CAPY_TASK_HPP
 
-#include <boost/capy/config.hpp>
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/any_dispatcher.hpp>
 #include <boost/capy/concept/affine_awaitable.hpp>
 #include <boost/capy/concept/stoppable_awaitable.hpp>

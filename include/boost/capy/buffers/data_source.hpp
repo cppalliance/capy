@@ -17,7 +17,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /** Metafunction to detect if a type is a data source.
 */
@@ -27,7 +26,6 @@ struct is_data_source
 {
 };
 
-} // buffers
 } // capy
 } // boost
 

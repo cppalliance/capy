@@ -10,6 +10,7 @@
 #ifndef BOOST_CAPY_ANY_DISPATCHER_HPP
 #define BOOST_CAPY_ANY_DISPATCHER_HPP
 
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/concept/dispatcher.hpp>
 

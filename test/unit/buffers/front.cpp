@@ -22,7 +22,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 struct front_test
 {
@@ -160,7 +159,6 @@ TEST_SUITE(
     front_test,
     "boost.capy.buffers.front");
 
-} // buffers
 } // capy
 } // boost
 

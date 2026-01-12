@@ -29,7 +29,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 namespace test {
 
@@ -104,7 +103,7 @@ check_iterators(
     std::string& s)
 {
     static_assert(const_buffer_sequence<ConstBufferSequence>);
-    BOOST_TEST_EQ(size(bs), pat.size());
+    BOOST_TEST_EQ(buffer_size(bs), pat.size());
 
     auto const& ct = bs;
 
@@ -255,7 +254,7 @@ check_eq(
     ConstBufferSequence const& bs,
     core::string_view pat)
 {
-    if(! BOOST_TEST_EQ(size(bs), pat.size()))
+    if(! BOOST_TEST_EQ(buffer_size(bs), pat.size()))
         return;
     auto const s = make_string(bs);
     if(! BOOST_TEST_EQ(s.size(), pat.size()))
@@ -390,7 +389,6 @@ test_pattern()
     return pat;
 }
 
-} // buffers
 } // capy
 } // boost
 

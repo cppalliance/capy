@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_ASYNC_RUN_HPP
 #define BOOST_CAPY_ASYNC_RUN_HPP
 
-#include <boost/capy/config.hpp>
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/affine_awaitable.hpp>
 #include <boost/capy/detail/recycling_frame_allocator.hpp>
 #include <boost/capy/frame_allocator.hpp>

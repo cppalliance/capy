@@ -16,7 +16,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /** A circular buffer.
 
@@ -179,7 +178,6 @@ public:
     consume(std::size_t n) noexcept;
 };
 
-} // buffers
 } // capy
 } // boost
 

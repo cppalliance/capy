@@ -22,7 +22,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 template<bool IsMutable>
 class consumer
@@ -107,7 +106,6 @@ TEST_SUITE(
     io_param_test,
     "boost.capy.buffers.io_param");
 
-} // buffers
 } // capy
 } // boost
 

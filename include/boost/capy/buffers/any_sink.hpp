@@ -14,9 +14,7 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
-} // buffers
 } // capy
 } // boost
 

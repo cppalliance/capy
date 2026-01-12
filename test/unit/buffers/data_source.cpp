@@ -17,7 +17,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 namespace {
 
@@ -88,6 +87,5 @@ TEST_SUITE(
     data_source_test,
     "boost.capy.buffers.data_source");
 
-} // buffers
 } // capy
 } // boost

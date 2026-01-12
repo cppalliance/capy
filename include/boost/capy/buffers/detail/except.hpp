@@ -10,29 +10,7 @@
 #ifndef BOOST_CAPY_BUFFERS_DETAIL_EXCEPT_HPP
 #define BOOST_CAPY_BUFFERS_DETAIL_EXCEPT_HPP
 
-#include <boost/capy/detail/config.hpp>
-#include <boost/assert/source_location.hpp>
-
-namespace boost {
-namespace capy {
-namespace buffers {
-namespace detail {
-
-BOOST_CAPY_DECL
-void
-BOOST_NORETURN
-throw_invalid_argument(
-    source_location const& loc = BOOST_CURRENT_LOCATION);
-
-BOOST_CAPY_DECL
-void
-BOOST_NORETURN
-throw_length_error(
-    source_location const& loc = BOOST_CURRENT_LOCATION);
-
-} // detail
-} // buffers
-} // capy
-} // boost
+// This header is deprecated - include boost/capy/detail/except.hpp directly
+#include <boost/capy/detail/except.hpp>
 
 #endif

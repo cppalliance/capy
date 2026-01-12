@@ -24,7 +24,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 template<
     std::size_t I,
@@ -108,9 +107,9 @@ struct slice_test
     {
         auto constexpr M = 1024;
         char buf[M];
-        if(! BOOST_TEST_LE(size(b), M))
+        if(! BOOST_TEST_LE(buffer_size(b), M))
             return;
-        if(! BOOST_TEST_EQ(size(b), s.size()))
+        if(! BOOST_TEST_EQ(buffer_size(b), s.size()))
             return;
         auto const n = copy(
             mutable_buffer(buf, M), b);
@@ -131,7 +130,7 @@ struct slice_test
         slice_of<seq_type> const& bs0,
         core::string_view pat0)
     {
-        auto const n = size(bs0);
+        auto const n = buffer_size(bs0);
         if(! BOOST_TEST_EQ(n, pat0.size()))
             return;
         for(std::size_t i = 0; i < n; ++i)
@@ -141,12 +140,12 @@ struct slice_test
             remove_suffix(bs, i);
             check(bs, pat);
         }
-        // n >= size
+        // n >= buffer_size
         for(std::size_t i = 0; i < 2; ++i)
         {
             auto bs = bs0;
             remove_suffix(bs, n + i);
-            BOOST_TEST_EQ(size(bs), 0);
+            BOOST_TEST_EQ(buffer_size(bs), 0);
             check(bs, "");
         }
     }
@@ -156,7 +155,7 @@ struct slice_test
         slice_of<seq_type> const& bs0,
         core::string_view pat0)
     {
-        auto const n = size(bs0);
+        auto const n = buffer_size(bs0);
         if(! BOOST_TEST_EQ(n, pat0.size()))
             return;
         for(std::size_t i = 0; i < n; ++i)
@@ -167,12 +166,12 @@ struct slice_test
             check(bs, pat);
             grind_back(bs, pat);
         }
-        // n >= size
+        // n >= buffer_size
         for(std::size_t i = 0; i < 2; ++i)
         {
             auto bs = bs0;
             remove_prefix(bs, n + i);
-            BOOST_TEST_EQ(size(bs), 0);
+            BOOST_TEST_EQ(buffer_size(bs), 0);
             check(bs, "");
         }
     }
@@ -193,6 +192,5 @@ TEST_SUITE(
     slice_test,
     "boost.capy.buffers.slice");
 
-} // buffers
 } // capy
 } // boost

@@ -10,6 +10,8 @@
 #ifndef BOOST_CAPY_BROTLI_TYPES_HPP
 #define BOOST_CAPY_BROTLI_TYPES_HPP
 
+#include <boost/capy/detail/config.hpp>
+
 #include <cstddef>
 
 namespace boost {

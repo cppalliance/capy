@@ -14,7 +14,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 struct buffer_pair_test
 {
@@ -27,7 +26,7 @@ struct buffer_pair_test
         {
             const_buffer_pair cb;
             BOOST_TEST_EQ(
-                size(cb), 0);
+                buffer_size(cb), 0);
         }
 
         // const_buffer_pair(
@@ -99,7 +98,7 @@ struct buffer_pair_test
         // mutable_buffer_pair()
         {
             mutable_buffer_pair mb;
-            BOOST_TEST_EQ(size(mb), 0);
+            BOOST_TEST_EQ(buffer_size(mb), 0);
         }
 
         // mutable_buffer_pair(
@@ -194,6 +193,5 @@ TEST_SUITE(
     buffer_pair_test,
     "boost.capy.buffers.buffer_pair");
 
-} // buffers
 } // capy
 } // boost

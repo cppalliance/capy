@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_CONCEPT_FRAME_ALLOCATOR_HPP
 #define BOOST_CAPY_CONCEPT_FRAME_ALLOCATOR_HPP
 
-#include <boost/capy/config.hpp>
+#include <boost/capy/detail/config.hpp>
 
 #include <concepts>
 #include <cstddef>

@@ -16,7 +16,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 struct flat_buffer_test
 {
@@ -192,6 +191,5 @@ TEST_SUITE(
     flat_buffer_test,
     "boost.capy.buffers.flat_buffer");
 
-} // buffers
 } // capy
 } // boost

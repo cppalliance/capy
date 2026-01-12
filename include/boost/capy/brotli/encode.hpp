@@ -10,6 +10,7 @@
 #ifndef BOOST_CAPY_BROTLI_ENCODE_HPP
 #define BOOST_CAPY_BROTLI_ENCODE_HPP
 
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/brotli/shared_dictionary.hpp>
 
 #include <cstdint>

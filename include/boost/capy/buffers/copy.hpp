@@ -17,7 +17,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /** Copy the contents of a buffer sequence into another buffer sequence
 
@@ -103,7 +102,6 @@ constexpr struct copy_mrdocs_workaround_t
     }
 } copy {};
 
-} // buffers
 } // capy
 } // boost
 

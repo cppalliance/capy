@@ -32,7 +32,6 @@ namespace capy {
 class const_buffer;
 class mutable_buffer;
 
-namespace buffers {
 namespace detail {
 
 // satisfies Asio's buffer constructors, CANNOT be removed!
@@ -98,14 +97,12 @@ enum class slice_how
     keep_prefix
 };
 
-} // buffers
-
 //------------------------------------------------
 
 /** Holds a contiguous range of modifiable bytes
 */
 class mutable_buffer
-    : public buffers::detail::basic_buffer<unsigned char>
+    : public detail::basic_buffer<unsigned char>
 {
 public:
     /** Constructor.
@@ -179,9 +176,9 @@ public:
     friend
     void
     tag_invoke(
-        buffers::slice_tag const&,
+        slice_tag const&,
         mutable_buffer& b,
-        buffers::slice_how how,
+        slice_how how,
         std::size_t n) noexcept
     {
         b.do_slice(how, n);
@@ -189,15 +186,15 @@ public:
 
 private:
     void do_slice(
-        buffers::slice_how how, std::size_t n) noexcept
+        slice_how how, std::size_t n) noexcept
     {
         switch(how)
         {
-        case buffers::slice_how::remove_prefix:
+        case slice_how::remove_prefix:
             *this += n;
             return;
 
-        case buffers::slice_how::keep_prefix:
+        case slice_how::keep_prefix:
             if( n < n_)
                 n_ = n;
             return;
@@ -210,7 +207,7 @@ private:
 /** Holds a contiguous range of unmodifiable bytes
 */
 class const_buffer
-    : public buffers::detail::basic_buffer<unsigned char const>
+    : public detail::basic_buffer<unsigned char const>
 {
 public:
     /** Constructor
@@ -298,9 +295,9 @@ public:
     friend
     void
     tag_invoke(
-        buffers::slice_tag const&,
+        slice_tag const&,
         const_buffer& b,
-        buffers::slice_how how,
+        slice_how how,
         std::size_t n) noexcept
     {
         b.do_slice(how, n);
@@ -308,15 +305,15 @@ public:
 
 private:
     void do_slice(
-        buffers::slice_how how, std::size_t n) noexcept
+        slice_how how, std::size_t n) noexcept
     {
         switch(how)
         {
-        case buffers::slice_how::remove_prefix:
+        case slice_how::remove_prefix:
             *this += n;
             return;
 
-        case buffers::slice_how::keep_prefix:
+        case slice_how::keep_prefix:
             if( n < n_)
                 n_ = n;
             return;
@@ -325,8 +322,6 @@ private:
 };
 
 //------------------------------------------------
-
-namespace buffers {
 
 /** Concept for types that model ConstBufferSequence.
 
@@ -441,8 +436,6 @@ tag_invoke(
     return n;
 }
 
-} // buffers
-
 //------------------------------------------------------------------------------
 
 /** Return the total number of bytes in a buffer sequence
@@ -467,17 +460,16 @@ tag_invoke(
 */
 constexpr struct buffer_size_mrdocs_workaround_t
 {
-    template<buffers::const_buffer_sequence ConstBufferSequence>
+    template<const_buffer_sequence ConstBufferSequence>
     constexpr std::size_t operator()(
         ConstBufferSequence const& bs) const noexcept
     {
-        return tag_invoke(buffers::size_tag{}, bs);
+        return tag_invoke(size_tag{}, bs);
     }
 } buffer_size {};
 
 //-----------------------------------------------
 
-namespace buffers {
 namespace detail {
 
 template<class It>
@@ -502,23 +494,22 @@ length_impl(It first, It last, long)
 }
 
 } // detail
-} // buffers
 
 /** Return the number of elements in a buffer sequence.
 */
-template<buffers::const_buffer_sequence ConstBufferSequence>
+template<const_buffer_sequence ConstBufferSequence>
 std::size_t
 buffer_length(ConstBufferSequence const& bs)
 {
-    return buffers::detail::length_impl(
-        buffers::begin(bs), buffers::end(bs), 0);
+    return detail::length_impl(
+        begin(bs), end(bs), 0);
 }
 
 /** Alias for const_buffer or mutable_buffer depending on sequence type.
 */
 template<typename BufferSequence>
 using buffer_type = std::conditional_t<
-    buffers::mutable_buffer_sequence<BufferSequence>,
+    mutable_buffer_sequence<BufferSequence>,
     mutable_buffer, const_buffer>;
 
 } // capy

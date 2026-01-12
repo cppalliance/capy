@@ -16,10 +16,8 @@
 #include <boost/capy/async_run.hpp>
 #include <boost/capy/bcrypt.hpp>
 #include <boost/capy/brotli.hpp>
-#include <boost/capy/buffers/any_buffers.hpp>
 #include <boost/capy/buffers/any_read_source.hpp>
 #include <boost/capy/buffers/any_sink.hpp>
-#include <boost/capy/buffers/any_source.hpp>
 #include <boost/capy/buffers/any_stream.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_pair.hpp>
@@ -44,7 +42,7 @@
 #include <boost/capy/concept/frame_allocator.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/concept/stoppable_awaitable.hpp>
-#include <boost/capy/config.hpp>
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/datastore.hpp>
 #include <boost/capy/embed.hpp>

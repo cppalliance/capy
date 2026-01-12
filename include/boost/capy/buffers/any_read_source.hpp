@@ -18,7 +18,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /** Type-erased interface to a read source
 */
@@ -61,8 +60,8 @@ read(
     constexpr std::size_t N = 16;
     std::size_t n = 0;
     mutable_buffer mb[N];
-    auto it = buffers::begin(dest);
-    auto const end_ = buffers::end(dest);
+    auto it = begin(dest);
+    auto const end_ = end(dest);
     while(it != end_)
     {
         mb[n++] = *it++;
@@ -110,17 +109,17 @@ public:
 private:
     bool has_size() const noexcept override
     {
-        return buffers::has_size<Source>::value;
+        return capy::has_size<Source>::value;
     }
 
     bool has_rewind() const noexcept override
     {
-        return buffers::has_rewind<Source>::value;
+        return capy::has_rewind<Source>::value;
     }
 
     std::uint64_t size() const override
     {
-        return size(buffers::has_size<Source>{});
+        return size(capy::has_size<Source>{});
     }
 
     std::uint64_t size(std::true_type) const
@@ -135,7 +134,7 @@ private:
 
     void rewind() override
     {
-        rewind(buffers::has_rewind<Source>{});
+        rewind(capy::has_rewind<Source>{});
     }
 
     void rewind(std::true_type)
@@ -185,7 +184,6 @@ make_any_read_source(
             std::forward<ReadSource>(source));
 }
 
-} // buffers
 } // capy
 } // boost
 

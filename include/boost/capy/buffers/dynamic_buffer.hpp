@@ -18,7 +18,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /** Metafunction to detect if a type is a dynamic buffer.
 */
@@ -166,7 +165,6 @@ make_any(DynamicBuffer&& b) ->
             std::forward<DynamicBuffer>(b));
 }
 
-} // buffers
 } // capy
 } // boost
 

@@ -35,6 +35,7 @@
 #ifndef BOOST_CAPY_ZLIB_HPP
 #define BOOST_CAPY_ZLIB_HPP
 
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/zlib/compression_level.hpp>
 #include <boost/capy/zlib/compression_method.hpp>
 #include <boost/capy/zlib/compression_strategy.hpp>

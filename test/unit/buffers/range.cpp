@@ -14,7 +14,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 struct range_test
 {
@@ -28,6 +27,5 @@ TEST_SUITE(
     range_test,
     "boost.capy.buffers.range");
 
-} // buffers
 } // capy
 } // boost

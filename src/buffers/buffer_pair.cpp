@@ -12,7 +12,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 void
 tag_invoke(
@@ -96,6 +95,5 @@ tag_invoke(
     }
 }
 
-} // buffers
 } // capy
 } // boost

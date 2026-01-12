@@ -17,7 +17,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 BOOST_STATIC_ASSERT(is_dynamic_buffer<string_buffer>::value);
 
@@ -111,7 +110,7 @@ struct string_buffer_test
                 string_buffer b(&s);
                 auto dest = b.prepare(10);
                 BOOST_TEST_GE(s.capacity(),
-                    size(dest));
+                    buffer_size(dest));
             }
             {
                 s = std::string();
@@ -119,7 +118,7 @@ struct string_buffer_test
                 b.prepare(10);
                 auto dest = b.prepare(10);
                 BOOST_TEST_EQ(
-                    size(dest),
+                    buffer_size(dest),
                     10);
             }
         }
@@ -155,7 +154,7 @@ struct string_buffer_test
                     string_buffer b(&s);
                     b.consume(5);
                     BOOST_TEST_EQ(
-                        size(b.data()), 0);
+                        buffer_size(b.data()), 0);
                 }
                 BOOST_TEST(s.empty());
             }
@@ -173,6 +172,5 @@ TEST_SUITE(
     string_buffer_test,
     "boost.capy.buffers.string_buffer");
 
-} // buffers
 } // capy
 } // boost

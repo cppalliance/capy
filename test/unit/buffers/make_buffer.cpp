@@ -14,7 +14,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 struct make_buffer_test
 {
@@ -81,6 +80,5 @@ TEST_SUITE(
     make_buffer_test,
     "boost.capy.buffers.make_buffer");
 
-} // buffers
 } // capy
 } // boost

@@ -16,7 +16,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /** A constant buffer pair
 */
@@ -42,7 +41,6 @@ tag_invoke(
     slice_how how,
     std::size_t n) noexcept;
 
-} // buffers
 } // capy
 } // boost
 

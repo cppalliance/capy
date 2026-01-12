@@ -10,6 +10,7 @@
 #ifndef BOOST_CAPY_BUFFERS_STRING_BUFFER_HPP
 #define BOOST_CAPY_BUFFERS_STRING_BUFFER_HPP
 
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/detail/except.hpp>
 #include <boost/assert.hpp>
@@ -17,7 +18,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /** A dynamic buffer using an underlying string
 */
@@ -149,7 +149,6 @@ public:
 
 using string_buffer = basic_string_buffer<char>;
 
-} // buffers
 } // capy
 } // boost
 

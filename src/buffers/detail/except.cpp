@@ -7,35 +7,6 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#include <boost/capy/buffers/detail/except.hpp>
-#include <boost/version.hpp>
-#include <boost/throw_exception.hpp>
-#include <stdexcept>
-
-namespace boost {
-namespace capy {
-namespace buffers {
-namespace detail {
-
-void
-throw_invalid_argument(
-    source_location const& loc)
-{
-    throw_exception(
-        std::invalid_argument(
-            "invalid argument"), loc);
-}
-
-void
-throw_length_error(
-    source_location const& loc)
-{
-    throw_exception(
-        std::length_error(
-            "length error"), loc);
-}
-
-} // detail
-} // buffers
-} // capy
-} // boost
+// This file is now empty - all exception functions are defined in
+// src/detail/except.cpp. This file is kept for backward compatibility
+// with build systems that may reference it.

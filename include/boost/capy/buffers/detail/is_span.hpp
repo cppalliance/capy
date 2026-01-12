@@ -15,7 +15,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 namespace detail {
 
 // Alias for true_type if T is a span-like type
@@ -31,7 +30,6 @@ struct is_span<T, std::void_t<
 };
 
 } // detail
-} // buffers
 } // capy
 } // boost
 

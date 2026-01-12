@@ -10,13 +10,13 @@
 #ifndef BOOST_CAPY_CONCEPT_DYNAMIC_BUFFER_HPP
 #define BOOST_CAPY_CONCEPT_DYNAMIC_BUFFER_HPP
 
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
 
 #include <cstddef>
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /** Concept for types that model DynamicBuffer.
 */
@@ -37,7 +37,6 @@ concept dynamic_buffer =
     const_buffer_sequence<typename T::const_buffers_type> &&
     mutable_buffer_sequence<typename T::mutable_buffers_type>;
 
-} // buffers
 } // capy
 } // boost
 

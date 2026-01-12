@@ -31,10 +31,10 @@ namespace capy {
 
     @tparam T The stream type.
     @tparam MutableBufferSequence The buffer sequence type, must satisfy
-        `buffers::mutable_buffer_sequence`.
+        `mutable_buffer_sequence`.
 
     @par Requirements
-    @li `MutableBufferSequence` must satisfy `buffers::mutable_buffer_sequence`
+    @li `MutableBufferSequence` must satisfy `mutable_buffer_sequence`
     @li `T` must provide a templated `read_some` member function
     @li `read_some` must accept a `MutableBufferSequence const&`
     @li The awaitable returned by `read_some` must satisfy
@@ -60,7 +60,7 @@ namespace capy {
 */
 template<typename T, typename MutableBufferSequence>
 concept read_stream =
-    buffers::mutable_buffer_sequence<MutableBufferSequence> &&
+    mutable_buffer_sequence<MutableBufferSequence> &&
     requires(T& stream, MutableBufferSequence const& buffers)
     {
         { stream.read_some(buffers) } ->

@@ -20,7 +20,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 template<class T> class slice_of;
 
@@ -94,8 +93,8 @@ public:
         BufferSequence const& bs)
         : bs_(bs)
     {
-        iter_type it = buffers::begin(bs_);
-        iter_type eit = buffers::end(bs_);
+        iter_type it = capy::begin(bs_);
+        iter_type eit = capy::end(bs_);
         begin_ = 0;
         end_ = std::distance(it, eit);
         while(it != eit)
@@ -132,7 +131,7 @@ private:
     iter_type
     begin_iter_impl() const noexcept
     {
-        iter_type it = buffers::begin(bs_);
+        iter_type it = capy::begin(bs_);
         std::advance(it, begin_);
         return it;
     }
@@ -140,7 +139,7 @@ private:
     iter_type
     end_iter_impl() const noexcept
     {
-        iter_type it = buffers::begin(bs_);
+        iter_type it = capy::begin(bs_);
         std::advance(it, end_);
         return it;
     }
@@ -452,7 +451,7 @@ constexpr struct keep_suffix_mrdocs_workaround_t
         BufferSequence& bs,
         std::size_t n) const
     {
-        auto n0 = size(bs);
+        auto n0 = buffer_size(bs);
         if(n < n0)
             tag_invoke(slice_tag{}, bs, slice_how::remove_prefix, n0 - n);
     }
@@ -482,7 +481,7 @@ constexpr struct remove_suffix_mrdocs_workaround_t
         BufferSequence& bs,
         std::size_t n) const
     {
-        auto n0 = size(bs);
+        auto n0 = buffer_size(bs);
         if(n > 0)
         {
             if( n > n0)
@@ -554,7 +553,6 @@ constexpr struct sans_suffix_mrdocs_workaround_t
     }
 } sans_suffix{};
 
-} // buffers
 } // capy
 } // boost
 

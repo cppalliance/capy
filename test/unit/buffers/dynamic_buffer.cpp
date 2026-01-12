@@ -16,7 +16,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 struct any_dynamic_buffer_test
 {
@@ -85,6 +84,5 @@ TEST_SUITE(
     any_dynamic_buffer_test,
     "boost.capy.buffers.any_dynamic_buffer");
 
-} // buffers
 } // capy
 } // boost

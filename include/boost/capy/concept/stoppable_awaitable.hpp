@@ -10,6 +10,7 @@
 #ifndef BOOST_CAPY_CONCEPT_STOPPABLE_AWAITABLE_HPP
 #define BOOST_CAPY_CONCEPT_STOPPABLE_AWAITABLE_HPP
 
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/affine_awaitable.hpp>
 
 #include <coroutine>

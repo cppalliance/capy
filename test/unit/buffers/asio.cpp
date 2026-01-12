@@ -23,7 +23,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 // These tests check to make sure the Asio buffer
 // sequences and our buffer sequences are interoperable
@@ -106,6 +105,5 @@ TEST_SUITE(
     asio_test,
     "boost.capy.buffers.asio");
 
-} // buffers
 } // capy
 } // boost

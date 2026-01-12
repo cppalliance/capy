@@ -10,6 +10,8 @@
 #ifndef BOOST_CAPY_BCRYPT_VERSION_HPP
 #define BOOST_CAPY_BCRYPT_VERSION_HPP
 
+#include <boost/capy/detail/config.hpp>
+
 namespace boost {
 namespace capy {
 namespace bcrypt {

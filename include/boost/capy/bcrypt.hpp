@@ -40,6 +40,7 @@
 #ifndef BOOST_CAPY_BCRYPT_HPP
 #define BOOST_CAPY_BCRYPT_HPP
 
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/bcrypt/error.hpp>
 #include <boost/capy/bcrypt/hash.hpp>
 #include <boost/capy/bcrypt/result.hpp>

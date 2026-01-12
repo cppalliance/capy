@@ -25,7 +25,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 static_assert(  const_buffer_sequence<const_buffer>);
 static_assert(  const_buffer_sequence<mutable_buffer>);
@@ -220,10 +219,10 @@ struct buffer_test
     {
         core::string_view pat = "0123456789abcdef";
 
-        // size()
+        // buffer_size()
         {
             fixt<T> f(pat);
-            BOOST_TEST_EQ(size(f.t), pat.size());
+            BOOST_TEST_EQ(buffer_size(f.t), pat.size());
         }
 
         // copy()
@@ -402,7 +401,7 @@ struct buffer_test
             };
             span<const_buffer const> s(cb, 3);
             BOOST_TEST_EQ(
-                size(s), i + j + k);
+                buffer_size(s), i + j + k);
         }
     }
 
@@ -419,7 +418,6 @@ TEST_SUITE(
     buffer_test,
     "boost.capy.buffers.buffer");
 
-} // buffers
 } // capy
 } // boost
 

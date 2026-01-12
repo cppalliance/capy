@@ -14,7 +14,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 class error_test
 {
@@ -52,6 +51,5 @@ public:
 
 TEST_SUITE(error_test, "boost.capy.buffers");
 
-} // buffers
 } // capy
 } // boost

@@ -10,13 +10,13 @@
 #ifndef BOOST_CAPY_CONCEPT_DATA_SOURCE_HPP
 #define BOOST_CAPY_CONCEPT_DATA_SOURCE_HPP
 
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
 
 #include <type_traits>
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /** Concept for types that model DataSource.
 
@@ -41,7 +41,6 @@ concept data_source =
         { t.data() } -> const_buffer_sequence;
     };
 
-} // buffers
 } // capy
 } // boost
 

@@ -10,6 +10,8 @@
 #ifndef BOOST_CAPY_DETAIL_TYPE_TRAITS_HPP
 #define BOOST_CAPY_DETAIL_TYPE_TRAITS_HPP
 
+#include <boost/capy/detail/config.hpp>
+
 #include <type_traits>
 
 namespace boost {

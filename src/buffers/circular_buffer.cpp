@@ -13,7 +13,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 auto
 circular_buffer::
@@ -91,6 +90,5 @@ consume(
     }
 }
 
-} // buffers
 } // capy
 } // boost

@@ -16,7 +16,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /** Return the first buffer in a sequence.
 */
@@ -46,7 +45,6 @@ constexpr struct front_mrdocs_workaround_t
     }
 } const front{};
 
-} // buffers
 } // capy
 } // boost
 

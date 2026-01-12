@@ -16,7 +16,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 BOOST_STATIC_ASSERT(is_dynamic_buffer<circular_buffer>::value);
 
@@ -210,6 +209,5 @@ TEST_SUITE(
     circular_buffer_test,
     "boost.capy.buffers.circular_buffer");
 
-} // buffers
 } // capy
 } // boost

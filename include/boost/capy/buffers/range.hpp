@@ -16,7 +16,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 //------------------------------------------------
 
@@ -26,17 +25,17 @@ template<class T>
 class iter_range
 {
     using begin_type = decltype(
-        buffers::begin(std::declval<T&>()));
+        begin(std::declval<T&>()));
     using end_type = decltype(
-        buffers::end(std::declval<T&>()));
+        end(std::declval<T&>()));
 
     begin_type begin_;
     end_type end_;
 
 public:
     iter_range(T& t) noexcept
-        : begin_(buffers::begin(t))
-        , end_(buffers::end(t))
+        : begin_(begin(t))
+        , end_(end(t))
     {
     }
 
@@ -73,7 +72,6 @@ struct range_impl
 */
 constexpr detail::range_impl range{};
 
-} // buffers
 } // capy
 } // boost
 

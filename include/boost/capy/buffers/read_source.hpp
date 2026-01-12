@@ -17,7 +17,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /** Metafunction to detect if a type is a read source.
 
@@ -96,7 +95,6 @@ struct has_rewind<T, std::void_t<decltype(
 {
 };
 
-} // buffers
 } // capy
 } // boost
 

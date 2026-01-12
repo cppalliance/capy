@@ -10,6 +10,7 @@
 #ifndef BOOST_CAPY_BROTLI_DECODE_HPP
 #define BOOST_CAPY_BROTLI_DECODE_HPP
 
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/brotli/error.hpp>
 #include <boost/capy/brotli/shared_dictionary.hpp>
 

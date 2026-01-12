@@ -14,7 +14,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 struct to_string_test
 {
@@ -29,6 +28,5 @@ TEST_SUITE(
     to_string_test,
     "boost.capy.buffers.to_string");
 
-} // buffers
 } // capy
 } // boost

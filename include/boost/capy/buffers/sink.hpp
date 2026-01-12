@@ -17,7 +17,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /*
 struct buffer_sink
@@ -91,7 +90,6 @@ struct body
 
 };
 
-} // buffers
 } // capy
 } // boost
 

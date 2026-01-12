@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_RUN_ON_HPP
 #define BOOST_CAPY_RUN_ON_HPP
 
-#include <boost/capy/config.hpp>
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/any_dispatcher.hpp>
 #include <boost/capy/task.hpp>
 

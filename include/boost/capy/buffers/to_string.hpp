@@ -16,7 +16,6 @@
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 /** Convert a buffer sequence to a string
 
@@ -48,7 +47,6 @@ to_string(ConstBufferSequence const& bs)
     return s;
 }
 
-} // buffers
 } // capy
 } // boost
 

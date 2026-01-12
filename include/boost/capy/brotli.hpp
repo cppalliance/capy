@@ -34,6 +34,7 @@
 #ifndef BOOST_CAPY_BROTLI_HPP
 #define BOOST_CAPY_BROTLI_HPP
 
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/brotli/decode.hpp>
 #include <boost/capy/brotli/encode.hpp>
 #include <boost/capy/brotli/error.hpp>
