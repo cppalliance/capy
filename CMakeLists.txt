@@ -37,6 +37,7 @@ if (BOOST_CAPY_IS_ROOT)
 endif ()
 option(BOOST_CAPY_BUILD_TESTS "Build boost::capy tests" ${BUILD_TESTING})
 option(BOOST_CAPY_BUILD_EXAMPLES "Build boost::capy examples" ${BOOST_CAPY_IS_ROOT})
+option(BOOST_CAPY_MRDOCS_BUILD "Build the target for MrDocs: see mrdocs.yml" OFF)
 
 
 # Check if environment variable BOOST_SRC_DIR is set
