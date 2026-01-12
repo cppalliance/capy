@@ -8,4 +8,4 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/affine.hpp>
+#include <boost/capy/coro.hpp>

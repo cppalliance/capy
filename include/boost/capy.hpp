@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_HPP
 #define BOOST_CAPY_HPP
 
-#include <boost/capy/affine.hpp>
+#include <boost/capy/any_dispatcher.hpp>
 #include <boost/capy/application.hpp>
 #include <boost/capy/async_op.hpp>
 #include <boost/capy/async_run.hpp>
@@ -58,7 +58,6 @@
 #include <boost/capy/intrusive_queue.hpp>
 #include <boost/capy/make_affine.hpp>
 #include <boost/capy/neunique_ptr.hpp>
-#include <boost/capy/path.hpp>
 #include <boost/capy/polystore.hpp>
 #include <boost/capy/polystore_fwd.hpp>
 #include <boost/capy/run_on.hpp>

@@ -15,6 +15,8 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/zlib/stream.hpp>
 
+#include <cstddef>
+
 namespace boost {
 namespace capy {
 namespace zlib {
