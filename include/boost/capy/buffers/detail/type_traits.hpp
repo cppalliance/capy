@@ -11,7 +11,7 @@
 #define BOOST_CAPY_BUFFERS_DETAIL_TYPE_TRAITS_HPP
 
 // This header is deprecated and will be removed in a future release.
-// Use C++20 concepts from <boost/capy/buffers/buffer.hpp> instead.
+// Use C++20 concepts from <boost/capy/buffers.hpp> instead.
 
 #include <boost/capy/detail/config.hpp>
 

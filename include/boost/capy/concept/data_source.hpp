@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_CONCEPT_DATA_SOURCE_HPP
 #define BOOST_CAPY_CONCEPT_DATA_SOURCE_HPP
 
-#include <boost/capy/buffers/buffer.hpp>
+#include <boost/capy/buffers.hpp>
 
 #include <type_traits>
 

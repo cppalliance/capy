@@ -21,7 +21,7 @@
 #include <boost/capy/buffers/any_sink.hpp>
 #include <boost/capy/buffers/any_source.hpp>
 #include <boost/capy/buffers/any_stream.hpp>
-#include <boost/capy/buffers/buffer.hpp>
+#include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_pair.hpp>
 #include <boost/capy/buffers/circular_buffer.hpp>
 #include <boost/capy/buffers/copy.hpp>

@@ -11,7 +11,7 @@
 #define BOOST_CAPY_BUFFERS_DYNAMIC_BUFFER_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/buffers/buffer.hpp>
+#include <boost/capy/buffers.hpp>
 #include <boost/capy/concept/dynamic_buffer.hpp>
 #include <boost/core/span.hpp>
 #include <cstdlib>

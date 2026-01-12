@@ -12,7 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers/any_buffers.hpp>
-#include <boost/capy/buffers/buffer.hpp>
+#include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/copy.hpp>
 #include <boost/capy/buffers/data_source.hpp>
 #include <boost/capy/error.hpp>

@@ -12,7 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers/detail/except.hpp>
-#include <boost/capy/buffers/buffer.hpp>
+#include <boost/capy/buffers.hpp>
 #include <boost/system/error_code.hpp>
 
 namespace boost {

@@ -8,13 +8,13 @@
 //
 
 // Test that header file is self-contained.
-//#include <boost/capy/buffers/buffer.hpp>
+//#include <boost/capy/buffers.hpp>
 
 #if 0
 
 #include <boost/capy/buffers/detail/config.hpp>
 
-#include <boost/capy/buffers/buffer.hpp>
+#include <boost/capy/buffers.hpp>
 
 #include "test_buffers.hpp"
 

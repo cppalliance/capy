@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/buffers/buffer.hpp>
+#include <boost/capy/buffers.hpp>
 
 #include <boost/capy.hpp>
 #include <boost/core/span.hpp>

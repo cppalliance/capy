@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_CONCEPT_DYNAMIC_BUFFER_HPP
 #define BOOST_CAPY_CONCEPT_DYNAMIC_BUFFER_HPP
 
-#include <boost/capy/buffers/buffer.hpp>
+#include <boost/capy/buffers.hpp>
 
 #include <cstddef>
 

@@ -7,5 +7,5 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#include <boost/capy/buffers/buffer.hpp>
+#include <boost/capy/buffers.hpp>
 

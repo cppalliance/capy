@@ -14,7 +14,7 @@
 
 #if 0
 
-#include <boost/capy/buffers/buffer.hpp>
+#include <boost/capy/buffers.hpp>
 #include <boost/capy/async_op.hpp>
 #include <boost/system/error_code.hpp>
 #include <cstdint>

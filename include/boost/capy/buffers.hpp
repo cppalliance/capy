@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_BUFFERS_BUFFER_HPP
-#define BOOST_CAPY_BUFFERS_BUFFER_HPP
+#ifndef BOOST_CAPY_BUFFERS_HPP
+#define BOOST_CAPY_BUFFERS_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <concepts>

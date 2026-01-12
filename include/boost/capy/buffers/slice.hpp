@@ -11,7 +11,7 @@
 #define BOOST_CAPY_BUFFERS_SLICE_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/buffers/buffer.hpp>
+#include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/range.hpp>
 #include <boost/assert.hpp>
 #include <array>

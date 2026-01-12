@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_BUFFERS_STRING_BUFFER_HPP
 #define BOOST_CAPY_BUFFERS_STRING_BUFFER_HPP
 
-#include <boost/capy/buffers/buffer.hpp>
+#include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/detail/except.hpp>
 #include <boost/assert.hpp>
 #include <string>
