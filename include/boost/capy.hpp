@@ -63,6 +63,7 @@
 #include <boost/capy/task.hpp>
 #include <boost/capy/thread_local_ptr.hpp>
 #include <boost/capy/thread_pool.hpp>
+#include <boost/capy/when_all.hpp>
 #include <boost/capy/zlib.hpp>
 
 #endif
