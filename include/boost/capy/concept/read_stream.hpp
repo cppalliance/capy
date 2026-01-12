@@ -40,6 +40,8 @@ namespace capy {
     @li The awaitable returned by `read_some` must satisfy
         `capy::affine_awaitable<capy::any_dispatcher>`
     @li The awaitable must resolve to `std::pair<system::error_code, std::size_t>`
+    @li When end-of-file is reached, `read_some` must return
+        `capy::error::eof` as the error code
 
     @par Example
     @code
