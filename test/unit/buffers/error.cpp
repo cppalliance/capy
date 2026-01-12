@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/buffers/error.hpp>
+#include <boost/capy/error.hpp>
 
 #include "test_suite.hpp"
 

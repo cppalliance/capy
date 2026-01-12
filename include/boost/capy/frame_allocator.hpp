@@ -11,8 +11,8 @@
 #define BOOST_CAPY_FRAME_ALLOCATOR_HPP
 
 #include <boost/capy/config.hpp>
+#include <boost/capy/concept/frame_allocator.hpp>
 
-#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <new>
@@ -23,33 +23,6 @@ namespace capy {
 //----------------------------------------------------------
 // Public API
 //----------------------------------------------------------
-
-/** A concept for types that can allocate and deallocate coroutine frames.
-
-    Frame allocators must be cheaply copyable handles to an underlying
-    memory resource (e.g., a pointer to a pool). The framework copies
-    the allocator into the first coroutine frame for lifetime safety.
-
-    @par Requirements
-
-    Given:
-    @li `a` a reference to type `A`
-    @li `p` a `void*`
-    @li `n` a `std::size_t`
-
-    The following expressions must be valid:
-    @li `a.allocate(n)` - Returns `void*`
-    @li `a.deallocate(p, n)` - Returns void
-
-    @tparam A The type to check for frame allocator conformance.
-*/
-template<class A>
-concept frame_allocator =
-    std::copy_constructible<A> &&
-    requires(A& a, void* p, std::size_t n) {
-        { a.allocate(n) } -> std::same_as<void*>;
-        { a.deallocate(p, n) };
-    };
 
 /** A frame allocator that passes through to global new/delete.
 

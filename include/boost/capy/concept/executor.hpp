@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_EXECUTOR_HPP
-#define BOOST_CAPY_EXECUTOR_HPP
+#ifndef BOOST_CAPY_CONCEPT_EXECUTOR_HPP
+#define BOOST_CAPY_CONCEPT_EXECUTOR_HPP
 
 #include <boost/capy/detail/config.hpp>
 

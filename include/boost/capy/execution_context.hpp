@@ -11,7 +11,7 @@
 #define BOOST_CAPY_EXECUTION_CONTEXT_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/executor.hpp>
+#include <boost/capy/concept/executor.hpp>
 #include <boost/capy/intrusive_queue.hpp>
 #include <concepts>
 #include <mutex>
@@ -607,37 +607,6 @@ private:
     service* head_ = nullptr;
     bool shutdown_ = false;
 };
-
-//------------------------------------------------
-
-/** Concept for types meeting ExecutionContext requirements.
-
-    A type X satisfies is_execution_context if it is publicly
-    and unambiguously derived from execution_context and
-    provides the following:
-
-    @li `X::executor_type` - A nested type meeting
-        the executor concept requirements.
-
-    @li `x.get_executor()` - Returns an executor
-        object associated with the execution context.
-
-    @li `x.~X()` - The destructor must destroy all
-        unexecuted work that was submitted via an executor
-        object associated with the execution context. This
-        is a semantic requirement that cannot be verified
-        at compile time.
-
-    @see executor
-*/
-template<class X>
-concept is_execution_context =
-    std::derived_from<X, execution_context> &&
-    requires { typename X::executor_type; } &&
-    executor<typename X::executor_type> &&
-    requires(X& x) {
-        { x.get_executor() } -> std::same_as<typename X::executor_type>;
-    };
 
 } // namespace capy
 } // namespace boost

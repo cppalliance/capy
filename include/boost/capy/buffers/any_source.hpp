@@ -15,7 +15,7 @@
 #include <boost/capy/buffers/buffer.hpp>
 #include <boost/capy/buffers/copy.hpp>
 #include <boost/capy/buffers/data_source.hpp>
-#include <boost/capy/buffers/error.hpp>
+#include <boost/capy/error.hpp>
 #include <boost/capy/buffers/read_source.hpp>
 #include <boost/capy/buffers/slice.hpp>
 #include <boost/capy/buffers/detail/except.hpp>

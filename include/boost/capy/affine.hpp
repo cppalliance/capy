@@ -11,6 +11,9 @@
 #define BOOST_CAPY_AFFINE_HPP
 
 #include <boost/capy/coro.hpp>
+#include <boost/capy/concept/dispatcher.hpp>
+#include <boost/capy/concept/affine_awaitable.hpp>
+#include <boost/capy/concept/stoppable_awaitable.hpp>
 
 #include <concepts>
 #include <coroutine>
@@ -22,124 +25,6 @@
 
 namespace boost {
 namespace capy {
-
-/** Concept for dispatcher types.
-
-    A dispatcher is a callable object that accepts a coroutine handle
-    and schedules it for resumption. The dispatcher is responsible for
-    ensuring the handle is eventually resumed on the appropriate execution
-    context.
-
-    @tparam D The dispatcher type.
-    @tparam P The promise type (defaults to void).
-
-    @par Requirements
-    @li `d(h)` must be valid where `h` is `std::coroutine_handle<P>` and
-        `d` is a const reference to `D`
-    @li `d(h)` must return a `coro` (or convertible type)
-        to enable symmetric transfer
-    @li Calling `d(h)` schedules `h` for resumption (typically by scheduling
-        it on a specific execution context) and returns a coroutine handle
-        that the caller may use for symmetric transfer
-    @li The dispatcher must be const-callable (logical constness), enabling
-        thread-safe concurrent dispatch from multiple coroutines
-
-    @note Since `coro` has `operator()` which invokes `resume()`, the handle
-    itself is callable and can be dispatched directly.
-*/
-template<typename D, typename P = void>
-concept dispatcher = requires(D const& d, std::coroutine_handle<P> h) {
-    { d(h) } -> std::convertible_to<coro>;
-};
-
-/** Concept for affine awaitable types.
-
-    An awaitable is affine if it participates in the affine awaitable protocol
-    by accepting a dispatcher in its `await_suspend` method. This enables
-    zero-overhead scheduler affinity without requiring the full sender/receiver
-    protocol.
-
-    @tparam A The awaitable type.
-    @tparam D The dispatcher type.
-    @tparam P The promise type (defaults to void).
-
-    @par Requirements
-    @li `D` must satisfy `dispatcher<D, P>`
-    @li `A` must provide `await_suspend(std::coroutine_handle<P> h, D const& d)`
-    @li The awaitable must use the dispatcher `d` to resume the caller,
-        e.g. `return d(h);`
-    @li The dispatcher returns a coroutine handle that `await_suspend` may
-        return for symmetric transfer
-
-    @par Example
-    @code
-    struct my_async_op
-    {
-        template<typename Dispatcher>
-        auto await_suspend(coro h, Dispatcher const& d)
-        {
-            start_async([h, &d] {
-                d(h);  // Schedule resumption through dispatcher
-            });
-            return std::noop_coroutine();  // Or return d(h) for symmetric transfer
-        }
-        // ... await_ready, await_resume ...
-    };
-    @endcode
-*/
-template<typename A, typename D, typename P = void>
-concept affine_awaitable =
-    dispatcher<D, P> &&
-    requires(A a, std::coroutine_handle<P> h, D const& d) {
-        a.await_suspend(h, d);
-    };
-
-/** Concept for stoppable awaitable types.
-
-    An awaitable is stoppable if it participates in the stoppable awaitable
-    protocol by accepting both a dispatcher and a stop_token in its
-    `await_suspend` method. This extends the affine awaitable protocol to
-    enable automatic stop token propagation through coroutine chains.
-
-    @tparam A The awaitable type.
-    @tparam D The dispatcher type.
-    @tparam P The promise type (defaults to void).
-
-    @par Requirements
-    @li `A` must satisfy `affine_awaitable<A, D, P>`
-    @li `A` must provide `await_suspend(std::coroutine_handle<P> h, D const& d,
-        std::stop_token token)`
-    @li The awaitable should use the stop_token to support cancellation
-    @li The awaitable must use the dispatcher `d` to resume the caller
-
-    @par Example
-    @code
-    struct my_stoppable_op
-    {
-        template<typename Dispatcher>
-        auto await_suspend(coro h, Dispatcher const& d, std::stop_token token)
-        {
-            start_async([h, &d, token] {
-                if (token.stop_requested()) {
-                    // Handle cancellation
-                }
-                d(h);  // Schedule resumption through dispatcher
-            });
-            return std::noop_coroutine();
-        }
-        // ... await_ready, await_resume ...
-    };
-    @endcode
-
-    @see affine_awaitable
-    @see dispatcher
-*/
-template<typename A, typename D, typename P = void>
-concept stoppable_awaitable =
-    affine_awaitable<A, D, P> &&
-    requires(A a, std::coroutine_handle<P> h, D const& d, std::stop_token token) {
-        a.await_suspend(h, d, token);
-    };
 
 /** A type-erased wrapper for dispatcher objects.
 

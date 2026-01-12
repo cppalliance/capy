@@ -12,31 +12,13 @@
 
 #include <boost/capy/buffers/detail/config.hpp>
 #include <boost/capy/buffers/buffer.hpp>
+#include <boost/capy/concept/dynamic_buffer.hpp>
 #include <boost/core/span.hpp>
 #include <cstdlib>
 
 namespace boost {
 namespace capy {
 namespace buffers {
-
-/** Concept for types that model DynamicBuffer.
-*/
-template<class T>
-concept dynamic_buffer =
-    requires(T& t, T const& ct, std::size_t n)
-    {
-        typename T::const_buffers_type;
-        typename T::mutable_buffers_type;
-        { ct.size() } -> std::convertible_to<std::size_t>;
-        { ct.max_size() } -> std::convertible_to<std::size_t>;
-        { ct.capacity() } -> std::convertible_to<std::size_t>;
-        { ct.data() } -> std::same_as<typename T::const_buffers_type>;
-        { t.prepare(n) } -> std::same_as<typename T::mutable_buffers_type>;
-        t.commit(n);
-        t.consume(n);
-    } &&
-    const_buffer_sequence<typename T::const_buffers_type> &&
-    mutable_buffer_sequence<typename T::mutable_buffers_type>;
 
 /** Metafunction to detect if a type is a dynamic buffer.
 */

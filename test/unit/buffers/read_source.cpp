@@ -10,7 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/buffers/read_source.hpp>
 
-#include <boost/capy/buffers/error.hpp>
+#include <boost/capy/error.hpp>
 #include <boost/capy/buffers/slice.hpp>
 
 #include <boost/core/detail/static_assert.hpp>

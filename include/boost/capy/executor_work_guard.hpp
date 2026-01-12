@@ -12,7 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/execution_context.hpp>
-#include <boost/capy/executor.hpp>
+#include <boost/capy/concept/executor.hpp>
 
 #include <utility>
 
@@ -223,28 +223,6 @@ executor_work_guard<Executor>
 make_work_guard(Executor ex)
 {
     return executor_work_guard<Executor>(std::move(ex));
-}
-
-/** Create a work guard from an execution context.
-
-    Equivalent to `make_work_guard(ctx.get_executor())`.
-
-    @par Exception Safety
-    No-throw guarantee.
-
-    @param ctx The execution context to create the guard for.
-
-    @return An `executor_work_guard` holding work on the context's
-        executor.
-
-    @see executor_work_guard
-*/
-template<is_execution_context ExecutionContext>
-executor_work_guard<typename ExecutionContext::executor_type>
-make_work_guard(ExecutionContext& ctx)
-{
-    return executor_work_guard<typename ExecutionContext::executor_type>(
-        ctx.get_executor());
 }
 
 } // capy

@@ -7,11 +7,10 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#include <boost/capy/buffers/error.hpp>
+#include <boost/capy/error.hpp>
 
 namespace boost {
 namespace capy {
-namespace buffers {
 
 namespace detail {
 
@@ -19,7 +18,7 @@ const char*
 error_cat_type::
 name() const noexcept
 {
-    return "boost.capy.buffers";
+    return "boost.capy";
 }
 
 std::string
@@ -66,6 +65,5 @@ error_cat_type error_cat;
 
 } // detail
 
-} // buffers
 } // capy
 } // boost
