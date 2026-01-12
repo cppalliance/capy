@@ -11,7 +11,7 @@
 #define BOOST_CAPY_CONCEPT_READ_STREAM_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/buffers/buffer.hpp>
+#include <boost/capy/buffers/buffer.hpp>
 #include <boost/capy/affine.hpp>
 #include <boost/system/error_code.hpp>
 

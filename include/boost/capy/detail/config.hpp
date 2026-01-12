@@ -66,6 +66,10 @@ namespace capy {
 
 //------------------------------------------------
 
+#if defined(BOOST_NO_CXX14_AGGREGATE_NSDMI) || defined(BOOST_MSVC)
+# define BOOST_CAPY_AGGREGATE_WORKAROUND
+#endif
+
 // Add source location to error codes
 #ifdef BOOST_CAPY_NO_SOURCE_LOCATION
 # define BOOST_CAPY_ERR(ev) (::boost::system::error_code(ev))

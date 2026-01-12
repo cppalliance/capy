@@ -7,7 +7,7 @@
 # Official repository: https://github.com/cppalliance/capy
 #
 
-if(NOT TARGET boost_url_test_suite)
+if (NOT TARGET boost_url_test_suite)
     add_subdirectory(../../../url/extra/test_suite test_suite)
 endif()
 
@@ -18,26 +18,15 @@ list(APPEND PFILES
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} PREFIX "" FILES ${PFILES})
 
-add_executable(boost_capy_tests ${PFILES})
+add_executable(boost_capy_buffers_tests ${PFILES})
 target_link_libraries(
-    boost_capy_tests PRIVATE
+    boost_capy_buffers_tests PRIVATE
     boost_url_test_suite_with_main
     Boost::asio
-    Boost::filesystem
     Boost::capy)
 
-target_include_directories(boost_capy_tests PRIVATE . ../../)
-
-if (TARGET Boost::capy_zlib)
-    target_link_libraries(boost_capy_tests PRIVATE Boost::capy_zlib)
-endif ()
-
-if (TARGET Boost::capy_brotli)
-    target_link_libraries(boost_capy_tests PRIVATE Boost::capy_brotli)
-endif ()
-
 # Register individual tests with CTest
-boost_url_test_suite_discover_tests(boost_capy_tests)
+boost_url_test_suite_discover_tests(boost_capy_buffers_tests)
 
 # Add the main test target to Boost's test suite
-add_dependencies(tests boost_capy_tests)
+add_dependencies(tests boost_capy_buffers_tests)

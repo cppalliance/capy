@@ -67,7 +67,7 @@ foreach (BOOST_CAPY_DEPENDENCY ${BOOST_CAPY_DEPENDENCIES})
 endforeach ()
 # Conditional dependencies
 if (BOOST_CAPY_BUILD_TESTS)
-    set(BOOST_CAPY_UNIT_TEST_LIBRARIES filesystem url)
+    set(BOOST_CAPY_UNIT_TEST_LIBRARIES asio filesystem url)
 endif ()
 if (BOOST_CAPY_BUILD_EXAMPLES)
     # set(BOOST_CAPY_EXAMPLE_LIBRARIES url)
