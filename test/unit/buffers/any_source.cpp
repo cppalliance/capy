@@ -32,7 +32,7 @@ struct test_data_source
     {
     }
 
-    buffers::const_buffer
+    const_buffer
     data() const
     {
         return { s_.data(), s_.size() };
@@ -72,7 +72,7 @@ struct test_read_source
         }
         auto n = buffers::copy(
             dest,
-            buffers::const_buffer(
+            const_buffer(
                 s_.data() + nread_,
                 s_.size() - nread_));
         nread_ += n;
@@ -117,7 +117,7 @@ struct any_source_test
         BOOST_TEST_EQ(s.has_size(), true);
         BOOST_TEST_EQ(s.has_buffers(), true);
         BOOST_TEST_EQ(s.size(), 0);
-        BOOST_TEST_EQ(size(s.data()), 0);
+        BOOST_TEST_EQ(buffer_size(s.data()), 0);
         BOOST_TEST_NO_THROW(s.rewind());
         mutable_buffer mb;
         system::error_code ec;
@@ -175,7 +175,7 @@ struct any_source_test
         BOOST_TEST_EQ(b1.has_size(), true);
         BOOST_TEST_EQ(b1.size(), s1.size());
         BOOST_TEST_EQ(b1.has_buffers(), true);
-        BOOST_TEST_EQ(buffers::size(b1.data()), s1.size());
+        BOOST_TEST_EQ(buffer_size(b1.data()), s1.size());
         BOOST_TEST_NO_THROW(b1.rewind());
         grind(b1, s1);
 
@@ -184,7 +184,7 @@ struct any_source_test
         BOOST_TEST_EQ(b2.has_size(), true);
         BOOST_TEST_EQ(b2.size(), s1.size());
         BOOST_TEST_EQ(b2.has_buffers(), true);
-        BOOST_TEST_EQ(buffers::size(b2.data()), s1.size());
+        BOOST_TEST_EQ(buffer_size(b2.data()), s1.size());
         BOOST_TEST_NO_THROW(b2.rewind());
         grind(b2, s1);
 
@@ -192,7 +192,7 @@ struct any_source_test
         BOOST_TEST_EQ(b1.has_size(), true);
         BOOST_TEST_EQ(b1.size(), s2.size());
         BOOST_TEST_EQ(b1.has_buffers(), true);
-        BOOST_TEST_EQ(buffers::size(b1.data()), s2.size());
+        BOOST_TEST_EQ(buffer_size(b1.data()), s2.size());
         BOOST_TEST_NO_THROW(b1.rewind());
         grind(b1, s2);
     }

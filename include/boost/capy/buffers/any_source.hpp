@@ -200,7 +200,7 @@ public:
             auto const nread = sp_->read(dest1, ec);
             BOOST_ASSERT(
                 ec.failed() ||
-                nread == buffers::size(dest1));
+                nread == buffer_size(dest1));
             result += nread;
             if(ec.failed())
                 break;
@@ -248,7 +248,7 @@ struct any_source::
     explicit data_model(
         DataSource_&& source) noexcept
         : source_(std::forward<DataSource_>(source))
-        , size_(buffers::size(source_.data()))
+        , size_(buffer_size(source_.data()))
     {
     }
 

@@ -49,11 +49,11 @@ public:
         virtual ~impl() = default;
 
         virtual auto read_some(
-            buffers::mutable_buffer) ->
+            mutable_buffer) ->
                 async_io_result = 0;
 
         virtual auto write_some(
-            buffers::const_buffer) ->
+            const_buffer) ->
                 async_io_result = 0;
     };
 
@@ -75,7 +75,7 @@ public:
         @return The asynchronous result.
     */
     auto read_some(
-        buffers::mutable_buffer b) ->
+        mutable_buffer b) ->
             async_io_result
     {
         return impl_->read_some(b);
@@ -88,7 +88,7 @@ public:
         @return The asynchronous result.
     */
     auto write_some(
-        buffers::const_buffer b) ->
+        const_buffer b) ->
             async_io_result
     {
         return impl_->write_some(b);

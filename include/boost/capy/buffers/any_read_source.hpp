@@ -71,7 +71,7 @@ read(
         auto const nread = do_read(mb, n, ec);
         BOOST_ASSERT(
             ec.failed() ||
-            nread == buffers::size(
+            nread == buffer_size(
                 span<mutable_buffer const>(mb, n)));
         result += nread;
         if(ec.failed())
@@ -83,7 +83,7 @@ read(
         auto const nread = do_read(mb, n, ec);
         BOOST_ASSERT(
             ec.failed() ||
-            nread == buffers::size(
+            nread == buffer_size(
                 span<mutable_buffer const>(mb, n)));
         result += nread;
         if(ec.failed())
