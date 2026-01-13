@@ -11,6 +11,9 @@
 #define BOOST_CAPY_ASYNC_MUTEX_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/any_dispatcher.hpp>
+#include <boost/capy/coro.hpp>
+#include <boost/capy/concept/dispatcher.hpp>
 
 #include <coroutine>
 #include <utility>
@@ -72,6 +75,7 @@ public:
         async_mutex* m_;
         lock_awaiter* next_ = nullptr;
         std::coroutine_handle<> h_;
+        any_dispatcher d_;
 
     public:
         explicit lock_awaiter(async_mutex* m) noexcept
@@ -92,13 +96,29 @@ public:
         bool await_suspend(std::coroutine_handle<> h) noexcept
         {
             h_ = h;
-            // Enqueue at tail (O(1))
+            d_ = {};
             if(m_->tail_)
                 m_->tail_->next_ = this;
             else
                 m_->head_ = this;
             m_->tail_ = this;
             return true;
+        }
+
+        /** Affine awaitable protocol overload. */
+        template<dispatcher Dispatcher>
+        auto await_suspend(
+            std::coroutine_handle<> h,
+            Dispatcher const& d) noexcept -> std::coroutine_handle<>
+        {
+            h_ = h;
+            d_ = d;
+            if(m_->tail_)
+                m_->tail_->next_ = this;
+            else
+                m_->head_ = this;
+            m_->tail_ = this;
+            return std::noop_coroutine();
         }
 
         void await_resume() const noexcept
@@ -172,6 +192,15 @@ public:
             return inner_.await_suspend(h);
         }
 
+        /** Affine awaitable protocol overload. */
+        template<dispatcher Dispatcher>
+        auto await_suspend(
+            std::coroutine_handle<> h,
+            Dispatcher const& d) noexcept -> std::coroutine_handle<>
+        {
+            return inner_.await_suspend(h, d);
+        }
+
         lock_guard await_resume() noexcept
         {
             return lock_guard(m_);
@@ -216,8 +245,11 @@ public:
             head_ = head_->next_;
             if(!head_)
                 tail_ = nullptr;
-            // Lock stays held - ownership transfers to next waiter
-            waiter->h_.resume();
+            // Lock ownership transfers to next waiter
+            if(waiter->d_)
+                waiter->d_(coro{waiter->h_}).resume();
+            else
+                waiter->h_.resume();
         }
         else
         {
