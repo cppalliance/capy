@@ -85,6 +85,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         coro continuation_;
         std::exception_ptr ep_;
         std::stop_token stop_token_;
+        detail::frame_allocator_base* alloc_ = nullptr;
         bool needs_dispatch_ = false;
 
         task get_return_object()
@@ -92,9 +93,31 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             return task{std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
-        std::suspend_always initial_suspend() noexcept
+        auto initial_suspend() noexcept
         {
-            return {};
+            struct awaiter
+            {
+                promise_type* p_;
+
+                bool await_ready() const noexcept
+                {
+                    return false;
+                }
+
+                void await_suspend(coro) const noexcept
+                {
+                    // Capture TLS allocator while it's still valid
+                    p_->alloc_ = get_frame_allocator();
+                }
+
+                void await_resume() const noexcept
+                {
+                    // Restore TLS when body starts executing
+                    if(p_->alloc_)
+                        set_frame_allocator(*p_->alloc_);
+                }
+            };
+            return awaiter{this};
         }
 
         auto final_suspend() noexcept
@@ -147,6 +170,9 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
             auto await_resume()
             {
+                // Restore TLS before body resumes
+                if(p_->alloc_)
+                    set_frame_allocator(*p_->alloc_);
                 return a_.await_resume();
             }
 
