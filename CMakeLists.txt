@@ -46,7 +46,7 @@ if (NOT DEFINED BOOST_SRC_DIR AND DEFINED ENV{BOOST_SRC_DIR})
 else ()
     set(DEFAULT_BOOST_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../..")
 endif ()
-set(BOOST_SRC_DIR ${DEFAULT_BOOST_SRC_DIR} CACHE STRING "Boost source dir to use when running CMake from this directory")
+set(BOOST_SRC_DIR ${DEFAULT_BOOST_SRC_DIR} CACHE STRING "Boost source dir to use when running CMake from this directory.")
 
 #-------------------------------------------------
 #
@@ -228,3 +228,4 @@ endif ()
 if (BOOST_CAPY_BUILD_EXAMPLES)
     # add_subdirectory(example)
 endif ()
+

@@ -25,9 +25,9 @@ template<class T>
 class iter_range
 {
     using begin_type = decltype(
-        begin(std::declval<T&>()));
+        capy::begin(std::declval<T&>()));
     using end_type = decltype(
-        end(std::declval<T&>()));
+        capy::end(std::declval<T&>()));
 
     begin_type begin_;
     end_type end_;

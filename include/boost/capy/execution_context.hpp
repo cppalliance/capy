@@ -375,7 +375,6 @@ public:
         @par Exception Safety
         No-throw guarantee.
     */
-    BOOST_CAPY_DECL
     ~execution_context();
 
     /** Default constructor.
@@ -383,7 +382,6 @@ public:
         @par Exception Safety
         Strong guarantee.
     */
-    BOOST_CAPY_DECL
     execution_context();
 
     /** Return true if a service of type T exists.
@@ -554,7 +552,6 @@ protected:
         Not thread-safe. Must not be called concurrently with other
         operations on this execution_context.
     */
-    BOOST_CAPY_DECL
     void shutdown() noexcept;
 
     /** Destroy all services.
@@ -579,7 +576,6 @@ protected:
         Not thread-safe. Must not be called concurrently with other
         operations on this execution_context.
     */
-    BOOST_CAPY_DECL
     void destroy() noexcept;
 
 private:
@@ -603,7 +599,14 @@ private:
     service& use_service_impl(factory& f);
     service& make_service_impl(factory& f);
 
+#ifdef _MSC_VER
+# pragma warning(push)
+# pragma warning(disable: 4251)
+#endif
     mutable std::mutex mutex_;
+#ifdef _MSC_VER
+# pragma warning(pop)
+#endif
     service* head_ = nullptr;
     bool shutdown_ = false;
 };

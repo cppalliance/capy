@@ -32,7 +32,7 @@ project boost/capy
 
 alias capy_sources : [ glob-tree-ex ./src : *.cpp ] ;
 
-# Windows CNG library for bcrypt random number generation
+# Windows CNG library for bcrypt random number generation.
 lib bcrypt_sys : : <name>bcrypt ;
 
 lib boost_capy
@@ -79,3 +79,4 @@ lib boost_capy_brotli
   ;
 
 boost-install boost_capy boost_capy_zlib boost_capy_brotli ;
+

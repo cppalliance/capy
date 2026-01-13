@@ -115,39 +115,48 @@ jobs:
 
           - compiler: "clang-cl"
             version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
             cxx: "clang++-cl"
             cc: "clang-cl"
             runs-on: "windows-2022"
             b2-toolset: "clang-win"
             generator-toolset: "ClangCL"
             is-latest: true
-            name: "Windows-Clang"
+            is-earliest: true
+            name: "Windows-Clang: C++20"
             shared: true
             build-type: "Release"
             build-cmake: true
 
           - compiler: "mingw"
             version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
             cxx: "g++"
             cc: "gcc"
             runs-on: "windows-2022"
             b2-toolset: "gcc"
             generator: "MinGW Makefiles"
             is-latest: true
-            name: "MinGW (shared)"
+            is-earliest: true
+            name: "MinGW (shared): C++20"
             shared: true
             build-type: "Debug"
             build-cmake: true
 
           - compiler: "mingw"
             version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
             cxx: "g++"
             cc: "gcc"
             runs-on: "windows-2022"
             b2-toolset: "gcc"
             generator: "MinGW Makefiles"
             is-latest: true
-            name: "MinGW (static)"
+            is-earliest: true
+            name: "MinGW (static): C++20"
             shared: false
             build-type: "Release"
             build-cmake: true
@@ -157,58 +166,68 @@ jobs:
 
           - compiler: "apple-clang"
             version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
             cxx: "clang++"
             cc: "clang"
             runs-on: "macos-26"
             b2-toolset: "clang"
             is-latest: true
-            name: "Apple-Clang (macOS 26)"
+            name: "Apple-Clang (macOS 26): C++20"
             shared: true
             build-type: "Release"
             build-cmake: true
 
           - compiler: "apple-clang"
             version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
             cxx: "clang++"
             cc: "clang"
             runs-on: "macos-26"
             b2-toolset: "clang"
             is-latest: true
-            name: "Apple-Clang (macOS 26, ubsan)"
+            name: "Apple-Clang (macOS 26, ubsan): C++20"
             shared: false
             build-type: "RelWithDebInfo"
             ubsan: true
 
           - compiler: "apple-clang"
             version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
             cxx: "clang++"
             cc: "clang"
             runs-on: "macos-26"
             b2-toolset: "clang"
             is-latest: true
-            name: "Apple-Clang (macOS 26, asan)"
+            name: "Apple-Clang (macOS 26, asan): C++20"
             shared: true
             build-type: "RelWithDebInfo"
             asan: true
 
           - compiler: "apple-clang"
             version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
             cxx: "clang++"
             cc: "clang"
             runs-on: "macos-15"
             b2-toolset: "clang"
-            name: "Apple-Clang (macOS 15)"
+            name: "Apple-Clang (macOS 15): C++20"
             shared: false
             build-type: "Release"
             build-cmake: true
 
           - compiler: "apple-clang"
             version: "*"
+            cxxstd: "20"
+            latest-cxxstd: "20"
             cxx: "clang++"
             cc: "clang"
             runs-on: "macos-14"
             b2-toolset: "clang"
-            name: "Apple-Clang (macOS 14)"
+            name: "Apple-Clang (macOS 14): C++20"
             shared: true
             build-type: "Release"
             build-cmake: true
@@ -421,7 +440,6 @@ jobs:
             runs-on: "ubuntu-latest"
             container: "ubuntu:22.04"
             b2-toolset: "gcc"
-            is-earliest: true
             name: "GCC 11: C++20"
             shared: false
             build-type: "Release"
@@ -613,33 +631,6 @@ jobs:
             shared: true
             build-type: "Release"
 
-          - compiler: "clang"
-            version: "13"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++-13"
-            cc: "clang-13"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:22.04"
-            b2-toolset: "clang"
-            name: "Clang 13: C++20"
-            shared: false
-            build-type: "Release"
-
-          - compiler: "clang"
-            version: "12"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++-12"
-            cc: "clang-12"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:22.04"
-            b2-toolset: "clang"
-            is-earliest: true
-            name: "Clang 12: C++20"
-            shared: true
-            build-type: "Release"
-
     name: ${{ matrix.name }}
     runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)[matrix.runs-on] }}
     container:
@@ -768,7 +759,7 @@ jobs:
           asan: ${{ matrix.asan }}
           ubsan: ${{ matrix.ubsan }}
           shared: ${{ matrix.shared }}
-          rtti: ${{ (matrix.is-latest && 'on,off') || 'on' }}
+          rtti: on
           cxxflags: ${{ (matrix.asan && '-fsanitize-address-use-after-scope -fsanitize=pointer-subtract') || '' }}
           user-config: ${{ (startsWith(matrix.runs-on, 'windows') && !matrix.skip-zlib && format('{0}/user-config.jam', steps.patch.outputs.workspace_root)) || '' }}
           stop-on-error: true

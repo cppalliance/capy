@@ -71,6 +71,7 @@ struct [[nodiscard]] run_on_awaitable
         return h_;
     }
 
+#if BOOST_CAPY_HAS_STOP_TOKEN
     // Stoppable awaitable: receives caller's dispatcher and stop_token
     template<dispatcher Caller>
     coro await_suspend(coro continuation, Caller const& caller_ex, std::stop_token token)
@@ -82,6 +83,7 @@ struct [[nodiscard]] run_on_awaitable
         h_.promise().needs_dispatch_ = true;
         return h_;
     }
+#endif
 
     ~run_on_awaitable()
     {

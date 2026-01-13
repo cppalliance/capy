@@ -16,6 +16,15 @@
 # include <version>
 #endif
 
+// Detect std::stop_token availability (C++20 jthread facility)
+#if !defined(BOOST_CAPY_HAS_STOP_TOKEN)
+# if defined(__cpp_lib_jthread) && __cpp_lib_jthread >= 201911L
+#  define BOOST_CAPY_HAS_STOP_TOKEN 1
+# else
+#  define BOOST_CAPY_HAS_STOP_TOKEN 0
+# endif
+#endif
+
 // Detect thread-local storage mechanism
 // Cascade: compiler keyword > thread_local > OS API
 #if !defined(BOOST_CAPY_TLS_KEYWORD)
@@ -29,8 +38,14 @@
 #if !defined(BOOST_CAPY_HAS_THREAD_LOCAL)
 # if defined(_MSC_VER) && _MSC_VER >= 1900
 #  define BOOST_CAPY_HAS_THREAD_LOCAL 1
-# elif defined(__clang__) && __has_feature(cxx_thread_local)
-#  define BOOST_CAPY_HAS_THREAD_LOCAL 1
+# elif defined(__has_feature)
+#  if __has_feature(cxx_thread_local)
+#   define BOOST_CAPY_HAS_THREAD_LOCAL 1
+#  elif defined(__GNUC__) && __GNUC__ >= 5
+#   define BOOST_CAPY_HAS_THREAD_LOCAL 1
+#  else
+#   define BOOST_CAPY_HAS_THREAD_LOCAL 0
+#  endif
 # elif defined(__GNUC__) && __GNUC__ >= 5
 #  define BOOST_CAPY_HAS_THREAD_LOCAL 1
 # else

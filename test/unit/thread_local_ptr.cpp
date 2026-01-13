@@ -131,13 +131,27 @@ struct thread_local_ptr_test
 
             std::thread t1([&]() {
                 widget w(10);
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ == 12
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdangling-pointer"
+#endif
                 p = &w;
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ == 12
+#pragma GCC diagnostic pop
+#endif
                 BOOST_TEST(p->value == 10);
             });
 
             std::thread t2([&]() {
                 widget w(20);
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ == 12
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdangling-pointer"
+#endif
                 p = &w;
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ == 12
+#pragma GCC diagnostic pop
+#endif
                 BOOST_TEST(p->value == 20);
             });
 

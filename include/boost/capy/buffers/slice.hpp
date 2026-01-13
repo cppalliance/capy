@@ -81,7 +81,116 @@ public:
 
     /** The type of returned iterators
     */
-    class const_iterator;
+    class const_iterator
+    {
+        iter_type it_;
+        // VFALCO we could just point back to
+        // the original sequence to save size
+        std::size_t prefix_ = 0;
+        std::size_t suffix_ = 0;
+        std::size_t i_ = 0;
+        std::size_t n_ = 0;
+
+        friend class slice_of<BufferSequence>;
+
+        const_iterator(
+            iter_type it,
+            std::size_t prefix__,
+            std::size_t suffix__,
+            std::size_t i,
+            std::size_t n) noexcept
+            : it_(it)
+            , prefix_(prefix__)
+            , suffix_(suffix__)
+            , i_(i)
+            , n_(n)
+        {
+            // n_ is the index of the end iterator
+        }
+
+    public:
+        using value_type = typename slice_of::value_type;
+        using reference = value_type;
+        using pointer = void;
+        using difference_type = std::ptrdiff_t;
+        using iterator_category =
+            std::bidirectional_iterator_tag;
+        using iterator_concept = std::bidirectional_iterator_tag;
+
+        const_iterator() = default;
+
+        bool
+        operator==(
+            const_iterator const& other) const noexcept
+        {
+            return
+                it_     == other.it_ &&
+                prefix_ == other.prefix_ &&
+                suffix_ == other.suffix_ &&
+                i_      == other.i_ &&
+                n_      == other.n_;
+        }
+
+        bool
+        operator!=(
+            const_iterator const& other) const noexcept
+        {
+            return !(*this == other);
+        }
+
+        reference
+        operator*() const noexcept
+        {
+            value_type v = *it_;
+            using P = std::conditional_t<
+                mutable_buffer_sequence<BufferSequence>,
+                char*, char const*>;
+            auto p = reinterpret_cast<P>(v.data());
+            auto n = v.size();
+            if(i_ == 0)
+            {
+                p += prefix_;
+                n -= prefix_;
+            }
+            if(i_ == n_ - 1)
+                n -= suffix_;
+            return value_type(p, n);
+        }
+
+        const_iterator&
+        operator++() noexcept
+        {
+            BOOST_ASSERT(i_ < n_);
+            ++it_;
+            ++i_;
+            return *this;
+        }
+
+        const_iterator
+        operator++(int) noexcept
+        {
+            auto temp = *this;
+            ++(*this);
+            return temp;
+        }
+
+        const_iterator&
+        operator--() noexcept
+        {
+            BOOST_ASSERT(i_ > 0);
+            --it_;
+            --i_;
+            return *this;
+        }
+
+        const_iterator
+        operator--(int) noexcept
+        {
+            auto temp = *this;
+            --(*this);
+            return temp;
+        }
+    };
 
     /** Constructor
     */
@@ -109,12 +218,20 @@ public:
     /** Return an iterator to the beginning of the sequence
     */
     const_iterator
-    begin() const noexcept;
+    begin() const noexcept
+    {
+        return const_iterator(
+            begin_iter_impl(), prefix_, suffix_, 0, len_);
+    }
 
     /** Return an iterator to the end of the sequence
     */
     const_iterator
-    end() const noexcept;
+    end() const noexcept
+    {
+        return const_iterator(
+            end_iter_impl(), prefix_, suffix_, len_, len_);
+    }
 
     friend
     void
@@ -277,146 +394,6 @@ private:
         }
     }
 };
-
-//------------------------------------------------
-
-template<const_buffer_sequence BufferSequence>
-class slice_of<BufferSequence>::
-    const_iterator
-{
-    using iter_type = typename
-        slice_of::iter_type;
-
-    iter_type it_;
-    // VFALCO we could just point back to
-    // the original sequence to save size
-    std::size_t prefix_ = 0;
-    std::size_t suffix_ = 0;
-    std::size_t i_ = 0;
-    std::size_t n_ = 0;
-
-    friend class slice_of<BufferSequence>;
-
-    const_iterator(
-        iter_type it,
-        std::size_t prefix__,
-        std::size_t suffix__,
-        std::size_t i,
-        std::size_t n) noexcept
-        : it_(it)
-        , prefix_(prefix__)
-        , suffix_(suffix__)
-        , i_(i)
-        , n_(n)
-    {
-        // n_ is the index of the end iterator
-    }
-
-public:
-    using value_type = typename slice_of::value_type;
-    using reference = value_type;
-    using pointer = void;
-    using difference_type = std::ptrdiff_t;
-    using iterator_category =
-        std::bidirectional_iterator_tag;
-    using iterator_concept = std::bidirectional_iterator_tag;
-
-    const_iterator() = default;
-
-    bool
-    operator==(
-        const_iterator const& other) const noexcept
-    {
-        return
-            it_     == other.it_ &&
-            prefix_ == other.prefix_ &&
-            suffix_ == other.suffix_ &&
-            i_      == other.i_ &&
-            n_      == other.n_;
-    }
-
-    bool
-    operator!=(
-        const_iterator const& other) const noexcept
-    {
-        return !(*this == other);
-    }
-
-    reference
-    operator*() const noexcept
-    {
-        value_type v = *it_;
-        using P = std::conditional_t<
-            mutable_buffer_sequence<BufferSequence>,
-            char*, char const*>;
-        auto p = reinterpret_cast<P>(v.data());
-        auto n = v.size();
-        if(i_ == 0)
-        {
-            p += prefix_;
-            n -= prefix_;
-        }
-        if(i_ == n_ - 1)
-            n -= suffix_;
-        return value_type(p, n);
-    }
-
-    const_iterator&
-    operator++() noexcept
-    {
-        BOOST_ASSERT(i_ < n_);
-        ++it_;
-        ++i_;
-        return *this;
-    }
-
-    const_iterator
-    operator++(int) noexcept
-    {
-        auto temp = *this;
-        ++(*this);
-        return temp;
-    }
-
-    const_iterator&
-    operator--() noexcept
-    {
-        BOOST_ASSERT(i_ > 0);
-        --it_;
-        --i_;
-        return *this;
-    }
-
-    const_iterator
-    operator--(int) noexcept
-    {
-        auto temp = *this;
-        --(*this);
-        return temp;
-    }
-};
-
-//------------------------------------------------
-
-template<const_buffer_sequence BufferSequence>
-auto
-slice_of<BufferSequence>::
-begin() const noexcept ->
-    const_iterator
-{
-    return const_iterator(
-        begin_iter_impl(), prefix_, suffix_, 0, len_);
-}
-
-template<const_buffer_sequence BufferSequence>
-auto
-slice_of<BufferSequence>::
-end() const noexcept ->
-    const_iterator
-{
-    return const_iterator(
-        end_iter_impl(), prefix_, suffix_, len_, len_);
-}
 
 //------------------------------------------------
 

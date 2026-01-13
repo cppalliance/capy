@@ -241,7 +241,7 @@ template<
     typename T,
     typename Handler>
 async_run_task<Dispatcher, T, Handler>
-make_async_run_task(Dispatcher, Handler handler, task<T> t)
+make_async_run_task(Dispatcher, Handler, task<T> t)
 {
     if constexpr (std::is_void_v<T>)
         co_await std::move(t);

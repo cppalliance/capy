@@ -26,7 +26,8 @@ project
       <target-os>darwin,<undefined-sanitizer>norecover:<link>static
     ;
 
-for local f in [ glob-tree-ex . : *.cpp : file*.cpp ]
+# Exclude buffers/ which has its own Jamfile
+for local f in [ glob-tree-ex . : *.cpp : file*.cpp buffers ]
 {
     run $(f) ;
 }
@@ -39,3 +40,5 @@ for local f in [ glob-tree-ex . : file*.cpp ]
           <warnings>off <undefined-sanitizer>norecover:<link>static
         ;
 }
+
+build-project buffers ;

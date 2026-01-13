@@ -14,10 +14,14 @@
 #include <boost/capy/concept/affine_awaitable.hpp>
 
 #include <coroutine>
+#if BOOST_CAPY_HAS_STOP_TOKEN
 #include <stop_token>
+#endif
 
 namespace boost {
 namespace capy {
+
+#if BOOST_CAPY_HAS_STOP_TOKEN
 
 /** Concept for stoppable awaitable types.
 
@@ -65,6 +69,8 @@ concept stoppable_awaitable =
     requires(A a, std::coroutine_handle<P> h, D const& d, std::stop_token token) {
         a.await_suspend(h, d, token);
     };
+
+#endif // BOOST_CAPY_HAS_STOP_TOKEN
 
 } // capy
 } // boost

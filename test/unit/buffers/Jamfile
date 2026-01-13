@@ -14,17 +14,21 @@ project
       <cxxstd>20
       <library>/boost/capy//boost_capy
       <library>/boost/asio//boost_asio/<warnings-as-errors>off
-      <source>../../../url/extra/test_suite/test_main.cpp
-      <source>../../../url/extra/test_suite/test_suite.cpp
+      <source>../../../../url/extra/test_suite/test_main.cpp
+      <source>../../../../url/extra/test_suite/test_suite.cpp
       <include>.
-      <include>../../../url/extra/test_suite
+      <include>../../../../url/extra/test_suite
       <warnings>extra
       <warnings-as-errors>on
       <target-os>darwin,<undefined-sanitizer>norecover:<link>static
       <target-os>windows:<define>_WIN32_WINNT=0x0601
     ;
 
-for local f in [ glob-tree-ex . : *.cpp : ]
+# Exclude buffers.cpp to avoid output name conflict with buffers/ directory
+for local f in [ glob-tree-ex . : *.cpp : buffers.cpp ]
 {
     run $(f) ;
 }
+
+# Use explicit target name to avoid conflict with buffers/ output directory
+run buffers.cpp : : : : buffers_ ;

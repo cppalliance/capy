@@ -84,7 +84,9 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         any_dispatcher caller_ex_;
         coro continuation_;
         std::exception_ptr ep_;
+#if BOOST_CAPY_HAS_STOP_TOKEN
         std::stop_token stop_token_;
+#endif
         detail::frame_allocator_base* alloc_ = nullptr;
         bool needs_dispatch_ = false;
 
@@ -179,10 +181,12 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             template<class Promise>
             auto await_suspend(std::coroutine_handle<Promise> h)
             {
+#if BOOST_CAPY_HAS_STOP_TOKEN
                 using A = std::decay_t<Awaitable>;
                 if constexpr (stoppable_awaitable<A, any_dispatcher>)
                     return a_.await_suspend(h, p_->ex_, p_->stop_token_);
                 else
+#endif
                     return a_.await_suspend(h, p_->ex_);
             }
         };
@@ -239,6 +243,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         return h_;
     }
 
+#if BOOST_CAPY_HAS_STOP_TOKEN
     // Stoppable awaitable: receive caller's dispatcher and stop_token
     template<dispatcher D>
     coro await_suspend(coro continuation, D const& caller_ex, std::stop_token token)
@@ -250,6 +255,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         h_.promise().needs_dispatch_ = false;
         return h_;
     }
+#endif
 
     /** Release ownership of the coroutine handle.
 
