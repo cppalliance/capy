@@ -84,6 +84,16 @@ class recycling_frame_allocator
     {
         block* head = nullptr;
 
+        ~local_pool()
+        {
+            while(head)
+            {
+                auto p = head;
+                head = head->next;
+                ::operator delete(p);
+            }
+        }
+
         void push(block* b)
         {
             b->next = head;
