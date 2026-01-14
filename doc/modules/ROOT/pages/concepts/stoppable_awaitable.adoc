@@ -89,7 +89,7 @@ Given:
 #include <boost/capy/ex/affine.hpp>
 #include <stop_token>
 
-using boost::capy::coro;
+using boost::capy::any_coro;
 using boost::capy::stoppable_awaitable;
 using boost::capy::any_dispatcher;
 
@@ -105,7 +105,7 @@ struct stoppable_timer
 
     // Affine path (no cancellation)
     template<typename Dispatcher>
-    auto await_suspend(coro h, Dispatcher const& d)
+    auto await_suspend(any_coro h, Dispatcher const& d)
     {
         start_timer(duration_, [h, &d] { d(h); });
         return std::noop_coroutine();
@@ -113,7 +113,7 @@ struct stoppable_timer
 
     // Stoppable path (with cancellation)
     template<typename Dispatcher>
-    auto await_suspend(coro h, Dispatcher const& d, std::stop_token token)
+    auto await_suspend(any_coro h, Dispatcher const& d, std::stop_token token)
     {
         if (token.stop_requested())
         {

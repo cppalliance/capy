@@ -82,7 +82,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     {
         any_dispatcher ex_;
         any_dispatcher caller_ex_;
-        coro continuation_;
+        any_coro continuation_;
         std::exception_ptr ep_;
 #if BOOST_CAPY_HAS_STOP_TOKEN
         std::stop_token stop_token_;
@@ -106,7 +106,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                     return false;
                 }
 
-                void await_suspend(coro) const noexcept
+                void await_suspend(any_coro) const noexcept
                 {
                     // Capture TLS allocator while it's still valid
                     p_->alloc_ = get_frame_allocator();
@@ -133,7 +133,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                     return false;
                 }
 
-                coro await_suspend(coro) const noexcept
+                any_coro await_suspend(any_coro) const noexcept
                 {
                     if(p_->continuation_)
                     {
@@ -234,7 +234,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
     // Affine awaitable: receive caller's dispatcher for completion dispatch
     template<dispatcher D>
-    coro await_suspend(coro continuation, D const& caller_ex)
+    any_coro await_suspend(any_coro continuation, D const& caller_ex)
     {
         h_.promise().caller_ex_ = caller_ex;
         h_.promise().continuation_ = continuation;
@@ -246,7 +246,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 #if BOOST_CAPY_HAS_STOP_TOKEN
     // Stoppable awaitable: receive caller's dispatcher and stop_token
     template<dispatcher D>
-    coro await_suspend(coro continuation, D const& caller_ex, std::stop_token token)
+    any_coro await_suspend(any_coro continuation, D const& caller_ex, std::stop_token token)
     {
         h_.promise().caller_ex_ = caller_ex;
         h_.promise().continuation_ = continuation;

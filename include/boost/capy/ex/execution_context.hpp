@@ -201,9 +201,9 @@ public:
         @code
         void operator()() override
         {
-            auto coro = coro_;
+            auto h = h_;
             delete this;    // cleanup FIRST
-            coro.resume();  // then resume (may throw)
+            h.resume();     // then resume (may throw)
         }
         @endcode
 

@@ -42,7 +42,7 @@ namespace capy {
     struct my_async_op
     {
         template<typename Dispatcher>
-        auto await_suspend(coro h, Dispatcher const& d)
+        auto await_suspend(any_coro h, Dispatcher const& d)
         {
             start_async([h, &d] {
                 d(h);  // Schedule resumption through dispatcher

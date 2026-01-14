@@ -11,7 +11,7 @@
 #define BOOST_CAPY_ANY_DISPATCHER_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/coro.hpp>
+#include <boost/capy/ex/any_coro.hpp>
 #include <boost/capy/concept/dispatcher.hpp>
 
 #include <concepts>
@@ -38,25 +38,12 @@ namespace capy {
     instance. This is typically satisfied when the dispatcher is an executor
     stored in a coroutine promise or service provider.
 
-    @par Example
-    @code
-    void store_dispatcher(any_dispatcher d)
-    {
-        // Can store any dispatcher type uniformly
-        auto h = d(some_coroutine);  // Invoke through type-erased interface
-    }
-
-    executor_base const& ex = get_executor();
-    store_dispatcher(ex);  // Implicitly converts to any_dispatcher
-    @endcode
-
     @see dispatcher
-    @see executor_base
 */
 class any_dispatcher
 {
     void const* d_ = nullptr;
-    coro(*f_)(void const*, coro) = nullptr;
+    any_coro(*f_)(void const*, any_coro) = nullptr;
 
 public:
     /** Default constructor.
@@ -91,7 +78,7 @@ public:
         requires (!std::same_as<std::decay_t<D>, any_dispatcher>)
     any_dispatcher(D const& d)
         : d_(&d)
-        , f_([](void const* pd, coro h) {
+        , f_([](void const* pd, any_coro h) {
                 return static_cast<D const*>(pd)->operator()(h);
             })
     {
@@ -138,7 +125,7 @@ public:
         @pre This instance was constructed with a valid dispatcher
              (not default-constructed).
     */
-    coro operator()(coro h) const
+    any_coro operator()(any_coro h) const
     {
         return f_(d_, h);
     }

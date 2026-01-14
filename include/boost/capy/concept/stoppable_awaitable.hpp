@@ -46,7 +46,7 @@ namespace capy {
     struct my_stoppable_op
     {
         template<typename Dispatcher>
-        auto await_suspend(coro h, Dispatcher const& d, std::stop_token token)
+        auto await_suspend(any_coro h, Dispatcher const& d, std::stop_token token)
         {
             start_async([h, &d, token] {
                 if (token.stop_requested()) {

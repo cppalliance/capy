@@ -78,7 +78,7 @@ Given:
 ----
 #include <boost/capy/ex/affine.hpp>
 
-using boost::capy::coro;
+using boost::capy::any_coro;
 using boost::capy::affine_awaitable;
 using boost::capy::any_dispatcher;
 
@@ -90,7 +90,7 @@ struct my_async_op
     }
 
     template<typename Dispatcher>
-    auto await_suspend(coro h, Dispatcher const& d)
+    auto await_suspend(any_coro h, Dispatcher const& d)
     {
         start_async([h, &d] {
             // Operation completed, resume through dispatcher

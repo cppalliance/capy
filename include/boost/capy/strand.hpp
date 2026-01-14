@@ -11,7 +11,7 @@
 #define BOOST_CAPY_STRAND_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/coro.hpp>
+#include <boost/capy/ex/any_coro.hpp>
 #include <boost/capy/core/intrusive_queue.hpp>
 
 #include <memory>
@@ -26,9 +26,9 @@ namespace detail {
 */
 struct strand_node : intrusive_queue<strand_node>::node
 {
-    coro h_;
+    any_coro h_;
 
-    explicit strand_node(coro h) noexcept
+    explicit strand_node(any_coro h) noexcept
         : h_(h)
     {
     }
@@ -125,8 +125,8 @@ public:
 
         @return A coroutine handle for symmetric transfer.
     */
-    coro
-    operator()(coro h) const
+    any_coro
+    operator()(any_coro h) const
     {
         auto* node = new detail::strand_node(h);
 
@@ -145,7 +145,7 @@ private:
 
         Must be called with mutex held and locked_ == true.
     */
-    coro
+    any_coro
     run_pending() const
     {
         auto* node = impl_->pending_.pop();
@@ -155,7 +155,7 @@ private:
             return std::noop_coroutine();
         }
 
-        coro h = node->h_;
+        any_coro h = node->h_;
         delete node;
 
         // Dispatch through inner executor

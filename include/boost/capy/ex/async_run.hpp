@@ -139,7 +139,7 @@ struct async_run_task
                     return false;
                 }
 
-                coro await_suspend(coro h) const noexcept
+                any_coro await_suspend(any_coro h) const noexcept
                 {
                     // Save before destroy
                     auto handler = std::move(p_->handler_);
@@ -260,7 +260,7 @@ run_async_run_task(Dispatcher d, task<T> t, Handler handler)
 {
     auto root = make_async_run_task<Dispatcher, T, Handler>(
         std::move(d), std::move(handler), std::move(t));
-    root.h_.promise().d_(coro{root.h_}).resume();
+    root.h_.promise().d_(any_coro{root.h_}).resume();
     root.release();
 }
 
@@ -417,7 +417,7 @@ struct async_run_awaitable
 
     The dispatcher controls where and how the task resumes after each
     suspension point. Tasks deal only with type-erased dispatchers
-    (`coro(coro)` signature), not typed executors. This leverages the
+    (`any_coro(any_coro)` signature), not typed executors. This leverages the
     coroutine handle's natural type erasure.
 
     @par Dispatcher Behavior

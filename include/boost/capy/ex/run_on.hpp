@@ -60,7 +60,7 @@ struct [[nodiscard]] run_on_awaitable
 
     // Affine awaitable: receives caller's dispatcher for completion dispatch
     template<dispatcher Caller>
-    coro await_suspend(coro continuation, Caller const& caller_ex)
+    any_coro await_suspend(any_coro continuation, Caller const& caller_ex)
     {
         // 'this' is kept alive by co_await until completion
         // d_ is valid for the entire operation
@@ -74,7 +74,7 @@ struct [[nodiscard]] run_on_awaitable
 #if BOOST_CAPY_HAS_STOP_TOKEN
     // Stoppable awaitable: receives caller's dispatcher and stop_token
     template<dispatcher Caller>
-    coro await_suspend(coro continuation, Caller const& caller_ex, std::stop_token token)
+    any_coro await_suspend(any_coro continuation, Caller const& caller_ex, std::stop_token token)
     {
         h_.promise().ex_ = d_;
         h_.promise().caller_ex_ = caller_ex;

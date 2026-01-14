@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_CORO_HPP
-#define BOOST_CAPY_CORO_HPP
+#ifndef BOOST_CAPY_ANY_CORO_HPP
+#define BOOST_CAPY_ANY_CORO_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <coroutine>
@@ -24,7 +24,7 @@ namespace capy {
 
 /** Alias for a type-erased coroutine handle
 */
-using coro = std::coroutine_handle<>;
+using any_coro = std::coroutine_handle<>;
 
 } // capy
 } // boost

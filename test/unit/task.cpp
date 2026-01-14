@@ -33,7 +33,7 @@ static_assert(stoppable_awaitable<task<int>, any_dispatcher>);
 
 /** Simple synchronous dispatcher for testing.
 
-    Satisfies the dispatcher concept: callable with (coro) returning coro.
+    Satisfies the dispatcher concept: callable with (any_coro) returning any_coro.
     Executes inline (returns the handle for symmetric transfer).
     Uses a pointer to external counter to allow copying.
 */
@@ -46,7 +46,7 @@ struct test_dispatcher
     {
     }
 
-    coro operator()(coro h) const
+    any_coro operator()(any_coro h) const
     {
         ++(*dispatch_count_);
         return h;  // Inline execution for sync tests
@@ -71,7 +71,7 @@ struct tracking_dispatcher
     {
     }
 
-    coro operator()(coro h) const
+    any_coro operator()(any_coro h) const
     {
         ++(*dispatch_count_);
         if (dispatch_log)

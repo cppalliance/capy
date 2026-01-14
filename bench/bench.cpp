@@ -68,7 +68,7 @@ public:
     }
 
     // Dispatcher interface - dispatch inline
-    coro operator()(coro h) const
+    any_coro operator()(any_coro h) const
     {
         return h;
     }
@@ -98,7 +98,7 @@ struct foreign_awaitable
 
     // Affine awaitable protocol
     template<typename D>
-    coro await_suspend(coro h, D const&) const
+    any_coro await_suspend(any_coro h, D const&) const
     {
         return h;
     }
