@@ -104,6 +104,7 @@ struct async_run_task
         Dispatcher d_;
         Handler handler_;
         std::exception_ptr ep_;
+        std::optional<task<T>> t_;
 
         template<typename D, typename H, typename... Args>
         promise_type(D&& d, H&& h, Args&&...)
