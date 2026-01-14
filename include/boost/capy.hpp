@@ -60,6 +60,7 @@
 #include <boost/capy/polystore_fwd.hpp>
 #include <boost/capy/run_on.hpp>
 #include <boost/capy/small_unique_ptr.hpp>
+#include <boost/capy/strand.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/thread_local_ptr.hpp>
 #include <boost/capy/thread_pool.hpp>
