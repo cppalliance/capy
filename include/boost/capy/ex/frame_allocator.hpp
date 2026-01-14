@@ -15,9 +15,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <new>
-#include <utility>
 
 namespace boost {
 namespace capy {
@@ -63,7 +61,7 @@ namespace detail {
 class frame_allocator_base
 {
 public:
-    virtual ~frame_allocator_base() = default;
+    virtual ~frame_allocator_base() {}
 
     /** Allocate memory for a coroutine frame.
 
@@ -156,8 +154,6 @@ template<frame_allocator Allocator>
 class frame_allocator_wrapper : public frame_allocator_base
 {
     Allocator alloc_;
-    std::size_t refcount_ = 0;  // Number of child frames using this wrapper
-    void* pending_block_ = nullptr;  // Embedded block awaiting deallocation
 
     static constexpr std::size_t alignment = alignof(void*);
 
@@ -165,22 +161,6 @@ class frame_allocator_wrapper : public frame_allocator_base
     aligned_offset(std::size_t n) noexcept
     {
         return (n + alignment - 1) & ~(alignment - 1);
-    }
-
-    void
-    try_complete_embedded_deallocation()
-    {
-        if(pending_block_ && refcount_ == 0)
-        {
-            void* block = pending_block_;
-            std::size_t wrapper_offset =
-                reinterpret_cast<char*>(this) - static_cast<char*>(block);
-            std::size_t total = wrapper_offset + sizeof(frame_allocator_wrapper);
-
-            Allocator alloc_copy = alloc_;  // Copy before destroying self
-            this->~frame_allocator_wrapper();
-            alloc_copy.deallocate(block, total);
-        }
     }
 
 public:
@@ -203,8 +183,6 @@ public:
             static_cast<char*>(raw) + ptr_offset);
         *ptr_loc = this;
 
-        ++refcount_;  // Track child frame
-
         return raw;
     }
 
@@ -215,16 +193,19 @@ public:
         std::size_t ptr_offset = aligned_offset(user_size);
         std::size_t total = ptr_offset + sizeof(frame_allocator_base*);
         alloc_.deallocate(block, total);
-
-        --refcount_;
-        try_complete_embedded_deallocation();
     }
 
     void
-    deallocate_embedded(void* block, std::size_t) override
+    deallocate_embedded(void* block, std::size_t user_size) override
     {
-        pending_block_ = block;
-        try_complete_embedded_deallocation();
+        // First frame deallocation: layout is [frame | ptr | wrapper]
+        std::size_t ptr_offset = aligned_offset(user_size);
+        std::size_t wrapper_offset = ptr_offset + sizeof(frame_allocator_base*);
+        std::size_t total = wrapper_offset + sizeof(frame_allocator_wrapper);
+
+        Allocator alloc_copy = alloc_;  // Copy before destroying self
+        this->~frame_allocator_wrapper();
+        alloc_copy.deallocate(block, total);
     }
 };
 
@@ -354,19 +335,15 @@ public:
         // Null pointer means global new/delete
         if(raw_ptr == 0)
         {
-#if defined(__cpp_sized_deallocation) && __cpp_sized_deallocation >= 201309L
             std::size_t total = ptr_offset + sizeof(detail::frame_allocator_base*);
             ::operator delete(ptr, total);
-#else
-            ::operator delete(ptr);
-#endif
             return;
         }
 
         // Tag bit distinguishes first frame (embedded) from child frames
         bool is_embedded = raw_ptr & 1;
-        auto* wrapper = std::launder(reinterpret_cast<detail::frame_allocator_base*>(
-            raw_ptr & ~std::uintptr_t(1)));
+        auto* wrapper = reinterpret_cast<detail::frame_allocator_base*>(
+            raw_ptr & ~std::uintptr_t(1));
 
         if(is_embedded)
             wrapper->deallocate_embedded(ptr, size);
