@@ -1,0 +1,261 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Dynamic Buffers
+
+This page explains growable buffer containers that manage their own storage.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== What is a Dynamic Buffer?
+
+A dynamic buffer is a container that provides both readable and writable
+regions. Data flows through a dynamic buffer:
+
+1. **Prepare** writable space
+2. **Write** data into that space
+3. **Commit** the written bytes to make them readable
+4. **Read** the data
+5. **Consume** the read bytes
+
+This model enables efficient streaming without copying.
+
+== Common Interface
+
+All dynamic buffers provide these operations:
+
+[cols="1,3"]
+|===
+| Operation | Description
+
+| `size()`
+| Number of readable bytes
+
+| `max_size()`
+| Maximum capacity
+
+| `capacity()`
+| Current writable space available
+
+| `data()`
+| Buffer sequence of readable bytes
+
+| `prepare(n)`
+| Buffer sequence of `n` writable bytes
+
+| `commit(n)`
+| Move `n` bytes from writable to readable
+
+| `consume(n)`
+| Remove `n` bytes from readable region
+|===
+
+== flat_buffer
+
+A `flat_buffer` uses a single contiguous memory region:
+
+[source,cpp]
+----
+// Fixed storage (stack or pre-allocated)
+char storage[1024];
+flat_buffer buf(storage, sizeof(storage));
+
+// Prepare space for writing
+mutable_buffer out = buf.prepare(100);
+
+// Write data
+std::memcpy(out.data(), "Hello", 5);
+
+// Commit written bytes
+buf.commit(5);
+
+// Read data
+const_buffer in = buf.data();
+// in.data() points to "Hello", in.size() == 5
+
+// Consume read bytes
+buf.consume(5);
+// buf.size() == 0
+----
+
+=== Characteristics
+
+* Single contiguous buffer (no wrapping)
+* Buffer sequences always have one element
+* Simple and efficient for linear data flow
+* Capacity may become fragmented after consume operations
+
+=== Construction
+
+[source,cpp]
+----
+// Default (zero capacity)
+flat_buffer buf1;
+
+// From storage with capacity
+flat_buffer buf2(storage, capacity);
+
+// From storage with initial readable size
+flat_buffer buf3(storage, capacity, initial_size);
+----
+
+== circular_buffer
+
+A `circular_buffer` uses a ring buffer that wraps around:
+
+[source,cpp]
+----
+char storage[1024];
+circular_buffer buf(storage, sizeof(storage));
+
+// Same interface as flat_buffer
+auto out = buf.prepare(100);  // May return two-element sequence
+buf.commit(50);
+
+auto in = buf.data();         // May return two-element sequence
+buf.consume(25);
+----
+
+=== Characteristics
+
+* Wraps around at the end of storage
+* Buffer sequences may have two elements (before and after wrap point)
+* No capacity loss from fragmentation
+* Better space utilization for streaming
+
+=== When Data Wraps
+
+[source,cpp]
+----
+// Data may span the wrap point
+const_buffer_pair readable = buf.data();
+
+// readable[0] = bytes from current position to end
+// readable[1] = bytes from start to wrap point
+
+// Total readable bytes
+std::size_t total = buffer_size(readable);
+----
+
+== string_buffer
+
+A `string_buffer` adapts a `std::string` as a dynamic buffer:
+
+[source,cpp]
+----
+std::string str;
+string_buffer buf(&str);
+
+// Write data
+auto out = buf.prepare(100);
+std::memcpy(out.data(), "Hello", 5);
+buf.commit(5);
+
+// str now contains "Hello"
+----
+
+=== Characteristics
+
+* Owns no storage - wraps an existing string
+* String grows as needed (up to max_size)
+* Destructor resizes string to final size
+* Move-only (cannot be copied)
+
+=== Construction
+
+[source,cpp]
+----
+std::string str;
+
+// Basic usage
+string_buffer buf1(&str);
+
+// With maximum size limit
+string_buffer buf2(&str, 1024);  // Will not grow past 1024 bytes
+----
+
+=== Lifetime
+
+The `string_buffer` must not outlive the string it wraps:
+
+[source,cpp]
+----
+std::string str;
+{
+    string_buffer buf(&str);
+    // Use buffer...
+    buf.prepare(100);
+    buf.commit(50);
+}  // Destructor resizes str to 50 bytes
+
+// str.size() == 50
+----
+
+== Choosing a Buffer Type
+
+[cols="1,2,2"]
+|===
+| Type | Best For | Trade-off
+
+| `flat_buffer`
+| Simple linear data flow
+| May waste space after consume
+
+| `circular_buffer`
+| Continuous streaming
+| Two-element sequences add complexity
+
+| `string_buffer`
+| Building strings incrementally
+| Requires external string ownership
+|===
+
+== Example: Reading Chunked Data
+
+[source,cpp]
+----
+char storage[4096];
+circular_buffer buf(storage, sizeof(storage));
+
+while (!done)
+{
+    // Prepare space
+    auto writable = buf.prepare(1024);
+    
+    // Read into buffer
+    std::size_t n = read_some(writable);
+    buf.commit(n);
+    
+    // Process available data
+    auto readable = buf.data();
+    std::size_t processed = process(readable);
+    buf.consume(processed);
+}
+----
+
+== Summary
+
+[cols="1,3"]
+|===
+| Type | Description
+
+| `flat_buffer`
+| Single contiguous region, simple sequences
+
+| `circular_buffer`
+| Ring buffer, two-element sequences, no fragmentation
+
+| `string_buffer`
+| Adapts `std::string`, growable, move-only
+|===
+
+== Next Steps
+
+* xref:sequences.adoc[Buffer Sequences] — Buffer sequence concepts
+* xref:index.adoc[Buffer Types] — Basic buffer types

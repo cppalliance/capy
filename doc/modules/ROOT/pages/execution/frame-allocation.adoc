@@ -208,4 +208,4 @@ Do NOT use custom allocators when:
 == Next Steps
 
 * xref:../utilities/containers.adoc[Containers] — Type-erased storage
-* xref:../concepts/frame_allocator.adoc[frame_allocator] — Reference documentation
+* xref:reference:boost/capy.adoc[API Reference] — Full reference documentation

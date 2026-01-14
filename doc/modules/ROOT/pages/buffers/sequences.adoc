@@ -1,0 +1,222 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Buffer Sequences
+
+This page explains how to work with sequences of buffers.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== What is a Buffer Sequence?
+
+A buffer sequence represents a logical contiguous byte stream that may be
+stored in multiple non-contiguous memory regions. This enables scatter/gather
+I/O and avoids copying when data spans multiple buffers.
+
+[source,cpp]
+----
+// A sequence of three buffers representing a single message
+std::array<const_buffer, 3> buffers = {
+    const_buffer(header, header_size),
+    const_buffer(payload, payload_size),
+    const_buffer(trailer, trailer_size)
+};
+----
+
+== Buffer Sequence Concepts
+
+Capy defines two concepts for buffer sequences:
+
+[cols="1,3"]
+|===
+| Concept | Description
+
+| `const_buffer_sequence`
+| A range of elements convertible to `const_buffer`
+
+| `mutable_buffer_sequence`
+| A range of elements convertible to `mutable_buffer`
+|===
+
+A type satisfies `const_buffer_sequence` if it is:
+
+* Convertible to `const_buffer`, OR
+* A bidirectional range whose value type is convertible to `const_buffer`
+
+Single buffers are valid buffer sequences containing one element.
+
+== Iterating Buffer Sequences
+
+Use `begin` and `end` to iterate over a buffer sequence:
+
+[source,cpp]
+----
+template<const_buffer_sequence Buffers>
+void process(Buffers const& buffers)
+{
+    for (auto it = begin(buffers); it != end(buffers); ++it)
+    {
+        const_buffer buf = *it;
+        // Process each contiguous region
+    }
+}
+----
+
+These functions work uniformly for both single buffers and ranges of buffers.
+
+== Buffer Size and Length
+
+Two functions measure buffer sequences differently:
+
+[cols="1,3"]
+|===
+| Function | Returns
+
+| `buffer_size(seq)`
+| Total bytes across all buffers in the sequence
+
+| `buffer_length(seq)`
+| Number of buffers in the sequence
+|===
+
+[source,cpp]
+----
+std::array<const_buffer, 3> buffers = {
+    const_buffer(a, 10),
+    const_buffer(b, 20),
+    const_buffer(c, 30)
+};
+
+std::size_t bytes = buffer_size(buffers);   // 60 (total bytes)
+std::size_t count = buffer_length(buffers); // 3 (number of buffers)
+----
+
+== Buffer Pairs
+
+For sequences that always have exactly two elements, use `const_buffer_pair`
+or `mutable_buffer_pair`:
+
+[source,cpp]
+----
+const_buffer_pair pair(
+    const_buffer(first, first_size),
+    const_buffer(second, second_size)
+);
+
+// Access elements
+const_buffer& b0 = pair[0];
+const_buffer& b1 = pair[1];
+
+// Iterate
+for (const_buffer const& buf : pair)
+{
+    // ...
+}
+----
+
+Buffer pairs are useful for circular buffers where data wraps around.
+
+== Slicing Buffer Sequences
+
+The slicing algorithms adjust buffer sequences without copying data:
+
+[source,cpp]
+----
+// Remove bytes from front
+tag_invoke(slice_tag{}, buf, slice_how::remove_prefix, n);
+
+// Keep only the first n bytes
+tag_invoke(slice_tag{}, buf, slice_how::keep_prefix, n);
+----
+
+These modify the buffer in place.
+
+== Type Aliases
+
+[cols="1,3"]
+|===
+| Alias | Definition
+
+| `buffer_type<Seq>`
+| `mutable_buffer` if `Seq` is mutable, else `const_buffer`
+|===
+
+[source,cpp]
+----
+template<const_buffer_sequence Buffers>
+void process(Buffers const& buffers)
+{
+    using buf_t = buffer_type<Buffers>;  // const_buffer or mutable_buffer
+    // ...
+}
+----
+
+== Common Patterns
+
+=== Scatter Read
+
+Read into multiple buffers in a single operation:
+
+[source,cpp]
+----
+std::array<mutable_buffer, 2> buffers = {
+    mutable_buffer(header_buf, 16),
+    mutable_buffer(body_buf, 1024)
+};
+
+std::size_t bytes_read = read_some(buffers);
+----
+
+=== Gather Write
+
+Write from multiple buffers in a single operation:
+
+[source,cpp]
+----
+std::array<const_buffer, 3> buffers = {
+    const_buffer(header, header_len),
+    const_buffer(body, body_len),
+    const_buffer(footer, footer_len)
+};
+
+std::size_t bytes_written = write_some(buffers);
+----
+
+== Summary
+
+[cols="1,3"]
+|===
+| Component | Purpose
+
+| `const_buffer_sequence`
+| Concept for read-only buffer sequences
+
+| `mutable_buffer_sequence`
+| Concept for writable buffer sequences
+
+| `begin`, `end`
+| Iterate buffer sequences uniformly
+
+| `buffer_size`
+| Total bytes in sequence
+
+| `buffer_length`
+| Number of buffers in sequence
+
+| `const_buffer_pair`
+| Two-element const buffer sequence
+
+| `mutable_buffer_pair`
+| Two-element mutable buffer sequence
+|===
+
+== Next Steps
+
+* xref:dynamic.adoc[Dynamic Buffers] — Growable buffer containers
+* xref:index.adoc[Buffer Types] — Basic buffer types

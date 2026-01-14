@@ -22,7 +22,8 @@ namespace capy {
 
     Data is obtained from a read source by calling @ref read one
     or more times with caller-provided buffers, until the function
-    returns @ref error::eof.
+    returns @ref error::eof. Check `ec == cond::eof` for portable
+    comparison.
 
     The members `size` and `rewind` are optional. The metafunctions
     @ref has_size and @ref has_rewind may be used to detect the

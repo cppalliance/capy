@@ -7,24 +7,30 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_ERROR_HPP
-#define BOOST_CAPY_ERROR_HPP
+#ifndef BOOST_CAPY_COND_HPP
+#define BOOST_CAPY_COND_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/system/error_category.hpp>
-#include <boost/system/is_error_code_enum.hpp>
+#include <boost/system/is_error_condition_enum.hpp>
 
 namespace boost {
 namespace capy {
 
-/** Error codes returned from algorithms and operations.
+/** Portable error conditions.
 
-    Return `error::eof` when originating an eof error.
-    Check `ec == cond::eof` for portable comparison.
+    Use these conditions for portable error comparisons:
+
+  - Return `error::eof` when originating an eof error.
+      Check `ec == cond::eof` to portably test for eof.
+
+  - Return the platform canceled error when originating canceled.
+      Check `ec == cond::canceled` to portably test for cancellation.
 */
-enum class error
+enum class cond
 {
-    eof = 1
+    eof = 1,
+    canceled = 2
 };
 
 //-----------------------------------------------
@@ -33,8 +39,8 @@ enum class error
 
 namespace system {
 template<>
-struct is_error_code_enum<
-    ::boost::capy::error>
+struct is_error_condition_enum<
+    ::boost::capy::cond>
 {
     static bool const value = true;
 };
@@ -45,9 +51,9 @@ namespace capy {
 //-----------------------------------------------
 
 namespace detail {
- 
+
 struct BOOST_SYMBOL_VISIBLE
-    error_cat_type
+    cond_cat_type
     : system::error_category
 {
     BOOST_CAPY_DECL const char* name(
@@ -57,13 +63,16 @@ struct BOOST_SYMBOL_VISIBLE
     BOOST_CAPY_DECL char const* message(
         int, char*, std::size_t
             ) const noexcept override;
-    BOOST_SYSTEM_CONSTEXPR error_cat_type()
-        : error_category(0x884562ca8e2fc5fd)
+    BOOST_CAPY_DECL bool equivalent(
+        system::error_code const& ec,
+        int condition) const noexcept override;
+    BOOST_SYSTEM_CONSTEXPR cond_cat_type()
+        : error_category(0x2f7a9b3c4e8d1a05)
     {
     }
 };
 
-BOOST_CAPY_DECL extern error_cat_type error_cat;
+BOOST_CAPY_DECL extern cond_cat_type cond_cat;
 
 } // detail
 
@@ -71,14 +80,14 @@ BOOST_CAPY_DECL extern error_cat_type error_cat;
 
 inline
 BOOST_SYSTEM_CONSTEXPR
-system::error_code
-make_error_code(
-    error ev) noexcept
+system::error_condition
+make_error_condition(
+    cond ev) noexcept
 {
-    return system::error_code{
+    return system::error_condition{
         static_cast<std::underlying_type<
-            error>::type>(ev),
-        detail::error_cat};
+            cond>::type>(ev),
+        detail::cond_cat};
 }
 
 } // capy

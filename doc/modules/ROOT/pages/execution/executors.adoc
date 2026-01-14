@@ -180,11 +180,11 @@ An executor becomes invalid when its execution context shuts down:
 
 [source,cpp]
 ----
-io_context ctx;
-auto ex = ctx.get_executor();
-ctx.stop();  // Begin shutdown
+thread_pool pool;
+auto ex = pool.get_executor();
+// When pool is destroyed, ex becomes invalid
 
-// WARNING: Calling ex.dispatch() now is undefined behavior
+// WARNING: Calling ex.dispatch() after pool destruction is undefined behavior
 ----
 
 The copy constructor and `context()` remain valid until the context is
@@ -225,4 +225,4 @@ Do NOT use executors directly when:
 == Next Steps
 
 * xref:contexts.adoc[Execution Contexts] — Service management and thread pools
-* xref:../concepts/executor.adoc[executor concept] — Reference documentation
+* xref:reference:boost/capy.adoc[API Reference] — Full reference documentation

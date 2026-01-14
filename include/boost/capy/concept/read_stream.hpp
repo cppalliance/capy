@@ -41,7 +41,8 @@ namespace capy {
         `capy::affine_awaitable<capy::any_dispatcher>`
     @li The awaitable must resolve to `std::pair<system::error_code, std::size_t>`
     @li When end-of-file is reached, `read_some` must return
-        `capy::error::eof` as the error code
+        `capy::error::eof` as the error code. Check `ec == cond::eof`
+        for portable comparison.
 
     @par Example
     @code

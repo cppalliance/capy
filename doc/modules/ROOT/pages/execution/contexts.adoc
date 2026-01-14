@@ -25,14 +25,14 @@ The `execution_context` class is the base class for all contexts:
 
 [source,cpp]
 ----
-class io_context : public execution_context
+class my_context : public execution_context
 {
 public:
     using executor_type = /* ... */;
 
     executor_type get_executor();
 
-    ~io_context()
+    ~my_context()
     {
         shutdown();
         destroy();
@@ -137,16 +137,62 @@ Handlers implement the ownership contract:
 
 == Thread Pool
 
-The `thread_pool` class provides a pool of worker threads:
+The `thread_pool` class is an execution context that provides a pool of worker
+threads. It inherits from `execution_context`, providing service management
+and a nested `executor_type` that satisfies the `capy::executor` concept.
+
+[source,cpp]
+----
+class thread_pool : public execution_context
+{
+public:
+    class executor_type;
+
+    thread_pool(std::size_t num_threads = 0);
+    ~thread_pool();
+
+    executor_type get_executor() const noexcept;
+};
+----
+
+=== Basic Usage
 
 [source,cpp]
 ----
 thread_pool pool(4);  // 4 worker threads
 auto ex = pool.get_executor();
 
-async_run(ex)(my_task());
+// Post work to the pool
+ex.post(my_coroutine_handle);
 
-// ... work runs on pool threads ...
+// dispatch() always posts for thread_pool
+// (caller is never "inside" the pool's run loop)
+ex.dispatch(another_handle);
+----
+
+=== Executor Operations
+
+The `thread_pool::executor_type` provides the standard executor interface:
+
+[source,cpp]
+----
+auto ex = pool.get_executor();
+
+// Access the owning context
+thread_pool& ctx = ex.context();
+
+// Work tracking
+ex.on_work_started();
+ex.on_work_finished();
+
+// Submit coroutines
+ex.post(handle);      // Queue for execution
+ex.dispatch(handle);  // Same as post for thread_pool
+ex.defer(handle);     // Same as post for thread_pool
+
+// Comparison
+auto ex2 = pool.get_executor();
+assert(ex == ex2);  // Same pool = equal executors
 ----
 
 === Construction
@@ -157,9 +203,29 @@ thread_pool();                  // Default: hardware_concurrency threads
 thread_pool(std::size_t n);     // Explicit thread count
 ----
 
+=== Service Management
+
+Since `thread_pool` inherits from `execution_context`, it supports services:
+
+[source,cpp]
+----
+thread_pool pool(4);
+
+// Add a service
+pool.make_service<my_service>(arg1, arg2);
+
+// Get or create
+my_service& svc = pool.use_service<my_service>();
+
+// Query
+if (pool.has_service<my_service>())
+    // ...
+----
+
 === Destruction
 
 The destructor signals all threads to stop and waits for them to complete.
+Services are shut down and destroyed in reverse order of creation.
 Pending work is discarded.
 
 == Lifecycle Pattern
@@ -215,8 +281,8 @@ Use `execution_context` directly when:
 
 Do NOT use `execution_context` directly when:
 
-* You just need to run coroutines — use an existing context like Asio's
-* You need a thread pool — use `thread_pool` directly
+* You just need to run coroutines — use `thread_pool`
+* You need simple work distribution — use `thread_pool` directly
 
 == Summary
 
@@ -237,7 +303,10 @@ Do NOT use `execution_context` directly when:
 | FIFO queue of handlers
 
 | `thread_pool`
-| Multi-threaded execution context
+| Execution context with worker thread pool (derives from `execution_context`)
+
+| `thread_pool::executor_type`
+| Executor for posting work to a `thread_pool`
 
 | `is_execution_context`
 | Concept for valid execution contexts
@@ -245,5 +314,6 @@ Do NOT use `execution_context` directly when:
 
 == Next Steps
 
+* xref:thread-pool.adoc[Thread Pool] — Using the thread pool execution context
 * xref:frame-allocation.adoc[Frame Allocation] — Optimize coroutine memory
-* xref:../concepts/is_execution_context.adoc[is_execution_context] — Reference
+* xref:reference:boost/capy.adoc[API Reference] — Full reference documentation

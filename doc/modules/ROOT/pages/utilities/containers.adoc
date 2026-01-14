@@ -245,4 +245,5 @@ in source code.
 == Next Steps
 
 * xref:file-io.adoc[File I/O] — Platform-independent file operations
-* xref:compression.adoc[Compression] — Brotli and ZLib support
+* xref:../compression/brotli.adoc[Brotli] — High-ratio compression
+* xref:../compression/zlib.adoc[ZLib] — DEFLATE/gzip compression

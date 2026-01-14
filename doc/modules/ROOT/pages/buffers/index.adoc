@@ -1,0 +1,131 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Buffers
+
+This page introduces the buffer types that represent contiguous memory regions.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== What are Buffers?
+
+A buffer is a view into a contiguous region of memory. Capy provides two
+fundamental buffer types:
+
+[cols="1,3"]
+|===
+| Type | Description
+
+| `const_buffer`
+| A view into read-only memory
+
+| `mutable_buffer`
+| A view into writable memory
+|===
+
+Buffers do not own memory. They are lightweight handles (pointer + size) that
+refer to memory owned elsewhere.
+
+== const_buffer
+
+A `const_buffer` represents a contiguous region of read-only bytes:
+
+[source,cpp]
+----
+char const data[] = "Hello, World!";
+const_buffer buf(data, sizeof(data) - 1);
+
+void const* p = buf.data();   // Pointer to first byte
+std::size_t n = buf.size();   // Number of bytes
+----
+
+=== Construction
+
+[source,cpp]
+----
+// From pointer and size
+const_buffer buf1(ptr, size);
+
+// From mutable_buffer (implicit conversion)
+mutable_buffer mbuf(ptr, size);
+const_buffer buf2 = mbuf;  // Read-only view of same memory
+----
+
+=== Operations
+
+[source,cpp]
+----
+const_buffer buf(data, 100);
+
+// Remove prefix (advance start, reduce size)
+buf += 10;  // Now points to data+10, size is 90
+----
+
+== mutable_buffer
+
+A `mutable_buffer` represents a contiguous region of writable bytes:
+
+[source,cpp]
+----
+char data[1024];
+mutable_buffer buf(data, sizeof(data));
+
+void* p = buf.data();         // Pointer to first byte
+std::size_t n = buf.size();   // Number of bytes
+----
+
+=== Construction
+
+[source,cpp]
+----
+// From pointer and size
+mutable_buffer buf(ptr, size);
+----
+
+=== Operations
+
+[source,cpp]
+----
+mutable_buffer buf(data, 100);
+
+// Remove prefix (advance start, reduce size)
+buf += 10;  // Now points to data+10, size is 90
+----
+
+== When to Use Each
+
+**Use `const_buffer` when:**
+
+* You need to read data without modifying it
+* Passing data to functions that only read
+* Creating views of string literals or constant data
+
+**Use `mutable_buffer` when:**
+
+* You need to write data into the buffer
+* Receiving data from I/O operations
+* The underlying memory must be modified
+
+== Summary
+
+[cols="1,3"]
+|===
+| Type | Purpose
+
+| `const_buffer`
+| Read-only view of contiguous bytes
+
+| `mutable_buffer`
+| Writable view of contiguous bytes
+|===
+
+== Next Steps
+
+* xref:sequences.adoc[Buffer Sequences] — Work with multiple buffers
+* xref:dynamic.adoc[Dynamic Buffers] — Growable buffer containers

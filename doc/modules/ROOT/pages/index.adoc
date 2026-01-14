@@ -10,7 +10,8 @@
 = Boost.Capy
 
 Boost.Capy is a lightweight C++20 coroutine framework that provides lazy tasks
-with automatic executor affinity propagation.
+with automatic executor affinity propagation, along with buffer management,
+compression, and cryptographic utilities.
 
 == What This Library Does
 
@@ -24,12 +25,16 @@ Capy provides:
 * **Automatic affinity propagation** through coroutine call chains
 * **Zero-overhead dispatcher protocol** for custom awaitables
 * **Frame allocation recycling** to minimize allocation overhead
+* **Thread pool** execution context with service management
+* **Buffer types** for efficient memory handling (`const_buffer`, `mutable_buffer`, sequences)
+* **Compression** support (Brotli and ZLib)
+* **BCrypt password hashing** for secure credential storage
 
 == What This Library Does Not Do
 
 Capy is not a general-purpose I/O framework. It does not include:
 
-* Event loops or I/O polling (use Asio, io_uring wrappers, etc.)
+* Event loops or I/O polling (use io_uring wrappers, etc.)
 * Networking primitives (sockets, HTTP, etc.)
 * The sender/receiver execution model (P2300)
 
@@ -67,17 +72,19 @@ For I/O-bound code, this cost is negligible.
 ----
 #include <boost/capy/task.hpp>
 #include <boost/capy/ex/async_run.hpp>
+#include <boost/capy/ex/thread_pool.hpp>
 #include <iostream>
 
 using boost::capy::task;
 using boost::capy::async_run;
+using boost::capy::thread_pool;
 
 task<int> compute()
 {
     co_return 42;
 }
 
-task<void> run(auto executor)
+task<void> run()
 {
     int result = co_await compute();
     std::cout << "Result: " << result << "\n";
@@ -85,9 +92,9 @@ task<void> run(auto executor)
 
 int main()
 {
-    io_context ioc;
-    async_run(ioc.get_executor())(run(ioc.get_executor()));
-    ioc.run();
+    thread_pool pool(1);
+    async_run(pool.get_executor())(run());
+    // Pool destructor waits for completion
 }
 ----
 
@@ -95,4 +102,4 @@ int main()
 
 * xref:quick-start.adoc[Quick Start] — Get a working program in 5 minutes
 * xref:coroutines/tasks.adoc[Tasks] — Understand lazy coroutines
-* xref:execution/executors.adoc[Executors] — Learn about the execution model
+* xref:execution/contexts.adoc[Execution Contexts] — Thread pools and services

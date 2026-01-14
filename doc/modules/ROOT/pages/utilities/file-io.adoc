@@ -250,4 +250,5 @@ for (std::string_view segment : p.segments())
 
 == Next Steps
 
-* xref:compression.adoc[Compression] — Brotli and ZLib support
+* xref:../compression/brotli.adoc[Brotli] — High-ratio compression
+* xref:../compression/zlib.adoc[ZLib] — DEFLATE/gzip compression

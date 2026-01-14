@@ -293,6 +293,8 @@ public:
         return current_allocator();
     }
 
+    // VFALCO turned off
+#if 0
     static void*
     operator new(std::size_t size)
     {
@@ -351,6 +353,7 @@ public:
         else
             wrapper->deallocate(ptr, size);
     }
+#endif
 };
 
 //----------------------------------------------------------

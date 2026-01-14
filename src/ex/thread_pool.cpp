@@ -9,8 +9,8 @@
 
 #include "src/work_allocator.hpp"
 
-#include <boost/capy/thread_pool.hpp>
-#include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/ex/thread_pool.hpp>
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -18,6 +18,32 @@
 
 namespace boost {
 namespace capy {
+
+//------------------------------------------------------------------------------
+
+// Handler that wraps an any_coro for execution
+class coro_handler : public execution_context::handler
+{
+    any_coro h_;
+
+public:
+    explicit coro_handler(any_coro h) noexcept
+        : h_(h)
+    {
+    }
+
+    void operator()() override
+    {
+        h_.resume();
+    }
+
+    void destroy() override
+    {
+        // Coroutine handle is not owned, nothing to destroy
+    }
+};
+
+//------------------------------------------------------------------------------
 
 class thread_pool::impl
 {
@@ -35,6 +61,7 @@ class thread_pool::impl
     header* tail_;
     std::vector<std::thread> threads_;
     work_allocator arena_;
+    std::atomic<std::size_t> work_count_;
     bool stop_;
 
     static header*
@@ -76,6 +103,7 @@ public:
     impl(std::size_t num_threads)
         : head_(nullptr)
         , tail_(nullptr)
+        , work_count_(0)
         , stop_(false)
     {
         if(num_threads == 0)
@@ -86,6 +114,18 @@ public:
         threads_.reserve(num_threads);
         for(std::size_t i = 0; i < num_threads; ++i)
             threads_.emplace_back([this]{ run(); });
+    }
+
+    void
+    on_work_started() noexcept
+    {
+        ++work_count_;
+    }
+
+    void
+    on_work_finished() noexcept
+    {
+        --work_count_;
     }
 
     void*
@@ -122,6 +162,15 @@ public:
             tail_ = hdr;
         }
         cv_.notify_one();
+    }
+
+    void
+    post(any_coro h)
+    {
+        // Allocate handler and submit
+        void* p = allocate(sizeof(coro_handler), alignof(coro_handler));
+        auto* handler = new(p) coro_handler(h);
+        submit(handler);
     }
 
 private:
@@ -162,13 +211,38 @@ private:
 thread_pool::
 ~thread_pool()
 {
+    shutdown();
     delete impl_;
+    destroy();
 }
 
 thread_pool::
 thread_pool(std::size_t num_threads)
     : impl_(new impl(num_threads))
 {
+}
+
+//------------------------------------------------------------------------------
+
+void
+thread_pool::executor_type::
+on_work_started() const noexcept
+{
+    pool_->impl_->on_work_started();
+}
+
+void
+thread_pool::executor_type::
+on_work_finished() const noexcept
+{
+    pool_->impl_->on_work_finished();
+}
+
+void
+thread_pool::executor_type::
+post(any_coro h) const
+{
+    pool_->impl_->post(h);
 }
 
 } // capy

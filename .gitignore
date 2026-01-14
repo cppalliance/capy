@@ -1,28 +1,6 @@
-/bin
-/bin64
-
-/__build__
-/toolchain.cmake
-
-# Build outputs and temporary files
-/.temp/
-
-# Emacs
-*#
-
-# Vim
-*~
-
-# Visual Studio
-/.vs
-/out
-
-# Visual Studio Code
-/.vscode
-
-# clangd
-/.cache
-/.clangd
-/compile_commands.json
-
+/.vscode/
 /build/
+!/build/Jamfile
+!/build/brotli.jam
+/out/
+CMakeUserPresets.json

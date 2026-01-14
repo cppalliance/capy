@@ -191,4 +191,4 @@ Do NOT use cancellation when:
 == Next Steps
 
 * xref:../execution/executors.adoc[Executors] — Understand the execution model
-* xref:../concepts/stoppable_awaitable.adoc[stoppable_awaitable] — Reference documentation
+* xref:reference:boost/capy.adoc[API Reference] — Full reference documentation

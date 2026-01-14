@@ -21,11 +21,10 @@ Create a file `hello_coro.cpp`:
 ----
 #include <boost/capy/task.hpp>
 #include <boost/capy/ex/async_run.hpp>
-#include <boost/asio/io_context.hpp>
+#include <boost/capy/ex/thread_pool.hpp>
 #include <iostream>
 
 namespace capy = boost::capy;
-namespace asio = boost::asio;
 
 // A coroutine that returns a value
 capy::task<int> answer()
@@ -42,13 +41,12 @@ capy::task<void> greet()
 
 int main()
 {
-    asio::io_context ioc;
+    capy::thread_pool pool(1);
 
-    // Launch the coroutine on the io_context's executor
-    capy::async_run(ioc.get_executor())(greet());
+    // Launch the coroutine on the pool's executor
+    capy::async_run(pool.get_executor())(greet());
 
-    // Run until all work completes
-    ioc.run();
+    // Pool destructor waits for all work to complete
 }
 ----
 
@@ -73,11 +71,11 @@ The answer is 42
 
 1. `answer()` creates a suspended coroutine that will return 42
 2. `greet()` creates a suspended coroutine that will await `answer()`
-3. `async_run(executor)(greet())` starts `greet()` on the io_context's executor
+3. `async_run(executor)(greet())` starts `greet()` on the pool's executor
 4. `greet()` runs until it hits `co_await answer()`
 5. `answer()` runs and returns 42
 6. `greet()` resumes with the result and prints it
-7. `greet()` completes, `ioc.run()` returns
+7. `greet()` completes, the pool destructor waits and returns
 
 The key insight: both coroutines ran on the same executor because affinity
 propagated automatically through the `co_await`.

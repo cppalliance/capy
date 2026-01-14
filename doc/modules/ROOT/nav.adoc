@@ -6,20 +6,22 @@
 ** xref:coroutines/affinity.adoc[Executor Affinity]
 ** xref:coroutines/cancellation.adoc[Cancellation]
 * Execution
-** xref:execution/executors.adoc[Executors]
+** xref:execution/thread-pool.adoc[Thread Pool]
 ** xref:execution/contexts.adoc[Execution Contexts]
+** xref:execution/executors.adoc[Executors]
 ** xref:execution/frame-allocation.adoc[Frame Allocation]
+* Buffers
+** xref:buffers/index.adoc[Buffer Types]
+** xref:buffers/sequences.adoc[Buffer Sequences]
+** xref:buffers/dynamic.adoc[Dynamic Buffers]
+* Cryptography
+** xref:cryptography/bcrypt.adoc[BCrypt Password Hashing]
+* Compression
+** xref:compression/brotli.adoc[Brotli]
+** xref:compression/zlib.adoc[ZLib]
 * Utilities
 ** xref:utilities/containers.adoc[Containers]
 ** xref:utilities/file-io.adoc[File I/O]
-** xref:utilities/compression.adoc[Compression]
-* Concepts
-** xref:concepts/dispatcher.adoc[dispatcher]
-** xref:concepts/executor.adoc[executor]
-** xref:concepts/affine_awaitable.adoc[affine_awaitable]
-** xref:concepts/stoppable_awaitable.adoc[stoppable_awaitable]
-** xref:concepts/frame_allocator.adoc[frame_allocator]
-** xref:concepts/is_execution_context.adoc[is_execution_context]
 * Performance Tuning
 ** xref:performance-tuning/high-performance-allocators.adoc[High-Performance Allocators]
 * xref:reference:boost/capy.adoc[Reference]

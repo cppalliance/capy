@@ -1,0 +1,297 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Thread Pool
+
+This page explains how to use `thread_pool` as an execution context for
+running coroutines.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== What is thread_pool?
+
+The `thread_pool` class provides a pool of worker threads that execute
+submitted work items. It is the primary way to run coroutines in Capy.
+
+[source,cpp]
+----
+#include <boost/capy/ex/thread_pool.hpp>
+
+thread_pool pool(4);  // 4 worker threads
+auto ex = pool.get_executor();
+
+// Submit coroutines for execution
+async_run(ex)(my_coroutine());
+----
+
+== Creating a Thread Pool
+
+[source,cpp]
+----
+// Default: hardware_concurrency() threads
+thread_pool pool1;
+
+// Explicit thread count
+thread_pool pool2(4);
+
+// Single thread (useful for testing)
+thread_pool pool3(1);
+----
+
+The thread count cannot be changed after construction.
+
+== Getting an Executor
+
+The executor is your handle for submitting work:
+
+[source,cpp]
+----
+thread_pool pool(4);
+auto ex = pool.get_executor();
+
+// ex can be copied freely
+auto ex2 = ex;
+assert(ex == ex2);  // Same pool = equal executors
+----
+
+Multiple executors from the same pool are interchangeable.
+
+== Running Coroutines
+
+Use `async_run` to launch coroutines on the pool:
+
+[source,cpp]
+----
+#include <boost/capy/ex/async_run.hpp>
+
+task<int> compute()
+{
+    co_return 42;
+}
+
+thread_pool pool(4);
+
+// Launch and forget
+async_run(pool.get_executor())(compute());
+
+// Launch with completion handler
+async_run(pool.get_executor())(compute(), [](int result) {
+    std::cout << "Result: " << result << "\n";
+});
+----
+
+== Lifetime and Shutdown
+
+The pool destructor waits for all work to complete:
+
+[source,cpp]
+----
+{
+    thread_pool pool(4);
+    async_run(pool.get_executor())(long_running_task());
+    // Destructor blocks until long_running_task completes
+}
+----
+
+This ensures orderly shutdown without orphaned coroutines.
+
+=== Destruction Order
+
+When a pool is destroyed:
+
+1. Threads are signaled to stop accepting new work
+2. Pending work continues to completion
+3. Services are shut down (in reverse order of creation)
+4. Services are destroyed
+5. Threads are joined
+
+== Executor Operations
+
+The `thread_pool::executor_type` provides the full executor interface:
+
+[source,cpp]
+----
+auto ex = pool.get_executor();
+
+// Access the owning pool
+thread_pool& ctx = ex.context();
+
+// Submit coroutines
+ex.post(handle);      // Queue for execution
+ex.dispatch(handle);  // Same as post (always queues)
+ex.defer(handle);     // Same as post
+
+// Work tracking
+ex.on_work_started();
+ex.on_work_finished();
+----
+
+=== dispatch vs post vs defer
+
+For `thread_pool`, all three operations behave identically: they queue the
+work for execution on a pool thread. The distinction matters for other
+execution contexts:
+
+[cols="1,3"]
+|===
+| Operation | Behavior
+
+| `post(h)`
+| Always queue, never execute inline
+
+| `dispatch(h)`
+| Execute inline if safe, otherwise queue
+
+| `defer(h)`
+| Like post, but hints "this is my continuation"
+|===
+
+Since callers are never "inside" the thread pool's execution context,
+`dispatch` always queues.
+
+== Work Tracking
+
+Work tracking keeps the pool alive while operations are outstanding:
+
+[source,cpp]
+----
+auto ex = pool.get_executor();
+
+ex.on_work_started();   // Increment work count
+// ... work is outstanding ...
+ex.on_work_finished();  // Decrement work count
+----
+
+The `executor_work_guard` RAII wrapper simplifies this:
+
+[source,cpp]
+----
+{
+    executor_work_guard guard(ex);
+    // Work count incremented
+    
+    // ... do work ...
+    
+}  // Work count decremented
+----
+
+`async_run` handles work tracking automatically.
+
+== Services
+
+Since `thread_pool` inherits from `execution_context`, it supports services:
+
+[source,cpp]
+----
+thread_pool pool(4);
+
+// Add a service
+pool.make_service<my_service>(arg1, arg2);
+
+// Get or create
+my_service& svc = pool.use_service<my_service>();
+
+// Query
+if (pool.has_service<my_service>())
+    // ...
+
+// Find (returns nullptr if not found)
+my_service* svc = pool.find_service<my_service>();
+----
+
+Services are shut down and destroyed when the pool is destroyed.
+
+== Thread Safety
+
+[cols="1,2"]
+|===
+| Operation | Thread Safety
+
+| `get_executor()`
+| Safe
+
+| `executor.post/dispatch/defer`
+| Safe (concurrent calls allowed)
+
+| `executor.context()`
+| Safe
+
+| Service functions
+| Safe (use internal mutex)
+
+| Destructor
+| Not safe (must not be concurrent with other operations)
+|===
+
+== Sizing the Pool
+
+**Compute-bound work:** Use `hardware_concurrency()` threads (the default).
+
+**I/O-bound work:** May benefit from more threads than cores.
+
+**Mixed workloads:** Consider separate pools for compute and I/O.
+
+[source,cpp]
+----
+// Compute pool: match CPU cores
+thread_pool compute_pool;
+
+// I/O pool: more threads for blocking operations
+thread_pool io_pool(16);
+----
+
+== Common Patterns
+
+=== Single-Threaded Testing
+
+[source,cpp]
+----
+thread_pool pool(1);  // Single thread for deterministic testing
+
+async_run(pool.get_executor())(test_coroutine());
+----
+
+=== Scoped Pool
+
+[source,cpp]
+----
+void process_batch()
+{
+    thread_pool pool(4);  // Pool lives for this scope
+    
+    for (auto& item : batch)
+        async_run(pool.get_executor())(process(item));
+    
+    // Destructor waits for all processing to complete
+}
+----
+
+== Summary
+
+[cols="1,3"]
+|===
+| Component | Purpose
+
+| `thread_pool`
+| Execution context with worker threads
+
+| `thread_pool::executor_type`
+| Executor for submitting work
+
+| `get_executor()`
+| Get an executor for the pool
+
+| Services
+| Polymorphic components owned by the pool
+|===
+
+== Next Steps
+
+* xref:contexts.adoc[Execution Contexts] — Service management details
+* xref:executors.adoc[Executors] — Executor concepts in depth
