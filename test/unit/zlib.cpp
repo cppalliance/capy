@@ -7,7 +7,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#include <boost/capy/polystore.hpp>
+#include <boost/capy/core/polystore.hpp>
 #include <boost/capy/zlib.hpp>
 
 #include "test_helpers.hpp"

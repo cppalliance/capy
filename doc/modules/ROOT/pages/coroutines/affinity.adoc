@@ -112,7 +112,7 @@ The `run_on` function changes affinity for a subtree:
 
 [source,cpp]
 ----
-#include <boost/capy/run_on.hpp>
+#include <boost/capy/ex/run_on.hpp>
 
 task<void> parent()
 {
@@ -160,7 +160,7 @@ The `any_dispatcher` class provides type erasure for dispatchers:
 
 [source,cpp]
 ----
-#include <boost/capy/affine.hpp>
+#include <boost/capy/ex/affine.hpp>
 
 void store_dispatcher(any_dispatcher d)
 {

@@ -11,7 +11,7 @@
 #define BOOST_CAPY_APPLICATION_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/polystore.hpp>
+#include <boost/capy/core/polystore.hpp>
 #include <memory>
 #include <type_traits>
 

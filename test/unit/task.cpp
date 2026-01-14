@@ -10,8 +10,8 @@
 // Test that header file is self-contained.
 #include <boost/capy/task.hpp>
 
-#include <boost/capy/async_op.hpp>
-#include <boost/capy/async_run.hpp>
+#include <boost/capy/ex/async_op.hpp>
+#include <boost/capy/ex/async_run.hpp>
 
 #include "test_suite.hpp"
 

@@ -8,7 +8,7 @@
 //
 
 #include <boost/capy/brotli/decode.hpp>
-#include <boost/capy/polystore.hpp>
+#include <boost/capy/core/polystore.hpp>
 
 #include <brotli/decode.h>
 

@@ -7,9 +7,9 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#include <boost/capy/async_run.hpp>
-#include <boost/capy/execution_context.hpp>
-#include <boost/capy/run_on.hpp>
+#include <boost/capy/ex/async_run.hpp>
+#include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/ex/run_on.hpp>
 #include <boost/capy/strand.hpp>
 #include <boost/capy/task.hpp>
 

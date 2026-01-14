@@ -1,0 +1,141 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie dot falco at gmail dot com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+#ifndef BOOST_CAPY_RUN_ON_HPP
+#define BOOST_CAPY_RUN_ON_HPP
+
+#include <boost/capy/detail/config.hpp>
+#include <boost/capy/ex/any_dispatcher.hpp>
+#include <boost/capy/task.hpp>
+
+#include <utility>
+
+namespace boost {
+namespace capy {
+namespace detail {
+
+/** Awaitable that binds a task to a specific executor.
+
+    Stores the executor by value. When co_awaited, the co_await
+    expression's lifetime extension keeps the executor alive for
+    the duration of the operation.
+
+    @tparam T The task's return type
+    @tparam E The executor type
+*/
+template<typename T, dispatcher D>
+struct [[nodiscard]] run_on_awaitable
+{
+    D d_;
+    std::coroutine_handle<typename task<T>::promise_type> h_;
+
+    run_on_awaitable(
+        D d,
+        std::coroutine_handle<typename task<T>::promise_type> h)
+        : d_(std::move(d))
+        , h_(h)
+    {
+    }
+
+    bool await_ready() const noexcept
+    {
+        return false;
+    }
+
+    auto await_resume()
+    {
+        if(h_.promise().ep_)
+            std::rethrow_exception(h_.promise().ep_);
+        if constexpr (std::is_void_v<T>)
+            return;
+        else
+            return std::move(*h_.promise().result_);
+    }
+
+    // Affine awaitable: receives caller's dispatcher for completion dispatch
+    template<dispatcher Caller>
+    coro await_suspend(coro continuation, Caller const& caller_ex)
+    {
+        // 'this' is kept alive by co_await until completion
+        // d_ is valid for the entire operation
+        h_.promise().ex_ = d_;
+        h_.promise().caller_ex_ = caller_ex;
+        h_.promise().continuation_ = continuation;
+        h_.promise().needs_dispatch_ = true;
+        return h_;
+    }
+
+#if BOOST_CAPY_HAS_STOP_TOKEN
+    // Stoppable awaitable: receives caller's dispatcher and stop_token
+    template<dispatcher Caller>
+    coro await_suspend(coro continuation, Caller const& caller_ex, std::stop_token token)
+    {
+        h_.promise().ex_ = d_;
+        h_.promise().caller_ex_ = caller_ex;
+        h_.promise().continuation_ = continuation;
+        h_.promise().stop_token_ = token;
+        h_.promise().needs_dispatch_ = true;
+        return h_;
+    }
+#endif
+
+    ~run_on_awaitable()
+    {
+        if(h_ && !h_.done())
+            h_.destroy();
+    }
+
+    // Non-copyable
+    run_on_awaitable(run_on_awaitable const&) = delete;
+    run_on_awaitable& operator=(run_on_awaitable const&) = delete;
+
+    // Movable
+    run_on_awaitable(run_on_awaitable&& other) noexcept
+        : d_(std::move(other.d_))
+        , h_(std::exchange(other.h_, nullptr))
+    {
+    }
+
+    run_on_awaitable& operator=(run_on_awaitable&& other) noexcept
+    {
+        if(this != &other)
+        {
+            if(h_ && !h_.done())
+                h_.destroy();
+            d_ = std::move(other.d_);
+            h_ = std::exchange(other.h_, nullptr);
+        }
+        return *this;
+    }
+};
+
+} // namespace detail
+
+/** Binds a task to execute on a specific executor.
+
+    The executor is stored by value in the returned awaitable.
+    When co_awaited, the inner task receives this executor through
+    direct promise configuration.
+
+    @param ex The executor on which the task should run (copied by value).
+    @param t The task to bind to the executor.
+
+    @return An awaitable that runs t on the specified executor.
+*/
+template<dispatcher D, typename T>
+[[nodiscard]] auto run_on(D d, task<T> t)
+{
+    return detail::run_on_awaitable<T, D>{
+        std::move(d), t.release()};
+}
+
+} // namespace capy
+} // namespace boost
+
+#endif

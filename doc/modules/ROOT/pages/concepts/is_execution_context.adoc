@@ -82,7 +82,7 @@ Given:
 
 [source,cpp]
 ----
-#include <boost/capy/execution_context.hpp>
+#include <boost/capy/ex/execution_context.hpp>
 
 using boost::capy::execution_context;
 using boost::capy::is_execution_context;

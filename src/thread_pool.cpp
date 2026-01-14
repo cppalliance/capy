@@ -10,7 +10,7 @@
 #include "src/work_allocator.hpp"
 
 #include <boost/capy/thread_pool.hpp>
-#include <boost/capy/execution_context.hpp>
+#include <boost/capy/ex/execution_context.hpp>
 #include <condition_variable>
 #include <mutex>
 #include <thread>

@@ -11,11 +11,11 @@
 #define BOOST_CAPY_TASK_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/any_dispatcher.hpp>
+#include <boost/capy/ex/any_dispatcher.hpp>
 #include <boost/capy/concept/affine_awaitable.hpp>
 #include <boost/capy/concept/stoppable_awaitable.hpp>
-#include <boost/capy/frame_allocator.hpp>
-#include <boost/capy/make_affine.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
+#include <boost/capy/ex/make_affine.hpp>
 
 #include <exception>
 #include <optional>

@@ -66,7 +66,7 @@ For I/O-bound code, this cost is negligible.
 [source,cpp]
 ----
 #include <boost/capy/task.hpp>
-#include <boost/capy/async_run.hpp>
+#include <boost/capy/ex/async_run.hpp>
 #include <iostream>
 
 using boost::capy::task;

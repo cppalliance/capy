@@ -8,7 +8,7 @@
 //
 
 #include <boost/capy/brotli/shared_dictionary.hpp>
-#include <boost/capy/polystore.hpp>
+#include <boost/capy/core/polystore.hpp>
 
 #if 0
 #include <brotli/shared_dictionary.h>

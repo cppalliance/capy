@@ -20,7 +20,7 @@ Create a file `hello_coro.cpp`:
 [source,cpp]
 ----
 #include <boost/capy/task.hpp>
-#include <boost/capy/async_run.hpp>
+#include <boost/capy/ex/async_run.hpp>
 #include <boost/asio/io_context.hpp>
 #include <iostream>
 

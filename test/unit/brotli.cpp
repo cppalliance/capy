@@ -8,7 +8,7 @@
 //
 
 #include <boost/capy/brotli.hpp>
-#include <boost/capy/polystore.hpp>
+#include <boost/capy/core/polystore.hpp>
 
 #include "test_helpers.hpp"
 

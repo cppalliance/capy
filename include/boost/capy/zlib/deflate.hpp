@@ -11,7 +11,7 @@
 #ifndef BOOST_CAPY_ZLIB_DEFLATE_HPP
 #define BOOST_CAPY_ZLIB_DEFLATE_HPP
 
-#include <boost/capy/polystore_fwd.hpp>
+#include <boost/capy/core/polystore_fwd.hpp>
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/zlib/stream.hpp>
 

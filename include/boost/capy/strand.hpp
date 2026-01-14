@@ -11,8 +11,8 @@
 #define BOOST_CAPY_STRAND_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/coro.hpp>
-#include <boost/capy/intrusive_queue.hpp>
+#include <boost/capy/ex/coro.hpp>
+#include <boost/capy/core/intrusive_queue.hpp>
 
 #include <memory>
 #include <mutex>

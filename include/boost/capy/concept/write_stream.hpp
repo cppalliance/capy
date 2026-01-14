@@ -11,7 +11,7 @@
 #define BOOST_CAPY_CONCEPT_WRITE_STREAM_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/any_dispatcher.hpp>
+#include <boost/capy/ex/any_dispatcher.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/concept/affine_awaitable.hpp>
 #include <boost/system/error_code.hpp>

@@ -76,7 +76,7 @@ Given:
 
 [source,cpp]
 ----
-#include <boost/capy/affine.hpp>
+#include <boost/capy/ex/affine.hpp>
 
 using boost::capy::coro;
 using boost::capy::affine_awaitable;

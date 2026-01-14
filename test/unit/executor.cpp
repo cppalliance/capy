@@ -9,7 +9,7 @@
 
 // Test that header file is self-contained.
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/execution_context.hpp>
+#include <boost/capy/ex/execution_context.hpp>
 
 #include <utility>
 

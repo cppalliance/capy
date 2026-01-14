@@ -11,7 +11,7 @@
 #define BOOST_CAPY_CONCEPT_DISPATCHER_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/coro.hpp>
+#include <boost/capy/ex/coro.hpp>
 
 #include <concepts>
 #include <coroutine>

@@ -8,7 +8,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#include <boost/capy/polystore.hpp>
+#include <boost/capy/core/polystore.hpp>
 #include <boost/capy/zlib/deflate.hpp>
 
 #include "stream_cast.hpp"

@@ -12,7 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/brotli/types.hpp>
-#include <boost/capy/polystore_fwd.hpp>
+#include <boost/capy/core/polystore_fwd.hpp>
 
 namespace boost {
 namespace capy {

@@ -95,8 +95,8 @@ Given:
 
 [source,cpp]
 ----
-#include <boost/capy/frame_allocator.hpp>
-#include <boost/capy/async_run.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
+#include <boost/capy/ex/async_run.hpp>
 
 using boost::capy::frame_allocator;
 using boost::capy::async_run;
