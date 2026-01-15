@@ -139,6 +139,10 @@ struct async_run_task
                     return false;
                 }
 
+                // GCC gives false positive -Wmaybe-uninitialized warnings on result_.
+                // The coroutine guarantees return_value() is called before final_suspend(),
+                // so result_ is always initialized here, but GCC's flow analysis can't prove it.
+                // GCC-12+ respects the narrow pragma scope; GCC-11 requires file-level suppression.
                 any_coro await_suspend(any_coro h) const noexcept
                 {
                     // Save before destroy
@@ -151,12 +155,19 @@ struct async_run_task
                     // For non-void, we need to get the result before destroy
                     if constexpr (!std::is_void_v<T>)
                     {
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 12
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
                         auto result = std::move(p_->result_);
                         h.destroy();
                         if(ep)
                             handler(ep);
                         else
                             handler(std::move(*result));
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 12
+#pragma GCC diagnostic pop
+#endif
                     }
                     else
                     {

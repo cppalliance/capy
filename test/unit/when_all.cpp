@@ -18,6 +18,14 @@
 #include <atomic>
 #include <stdexcept>
 #include <string>
+
+// GCC-11 gives false positive -Wmaybe-uninitialized warnings when async_run.hpp's
+// await_suspend is inlined into lambdas. The warnings occur because GCC's flow
+// analysis can't see through the coroutine machinery to verify that result_ is
+// initialized before use. Suppress these false positives for this entire file.
+#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ == 11
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 #include <type_traits>
 
 namespace boost {
@@ -391,7 +399,7 @@ struct when_all_test
 
     // Helper: task that records if stop was requested
     static task<int>
-    checks_stop_token(std::atomic<bool>& stop_was_requested)
+    checks_stop_token(std::atomic<bool>&)
     {
         // This task just returns immediately, but in real usage
         // you would check stop_token in a loop

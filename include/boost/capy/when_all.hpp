@@ -262,10 +262,21 @@ struct when_all_runner
     {
     }
 
+#if defined(__clang__) && __clang_major__ == 14 && !defined(__apple_build_version__)
+    // Clang 14 has a bug where it calls the move constructor for coroutine
+    // return objects even though they should be constructed in-place via RVO.
+    // This happens when returning a non-movable type from a coroutine.
+    when_all_runner(when_all_runner&& other) noexcept : h_(std::exchange(other.h_, nullptr)) {}
+#endif
+
     // Non-copyable, non-movable - release() is always called immediately
     when_all_runner(when_all_runner const&) = delete;
     when_all_runner& operator=(when_all_runner const&) = delete;
+
+#if !defined(__clang__) || __clang_major__ != 14 || defined(__apple_build_version__)
     when_all_runner(when_all_runner&&) = delete;
+#endif
+
     when_all_runner& operator=(when_all_runner&&) = delete;
 
     auto release() noexcept
@@ -408,21 +419,27 @@ using when_all_result_t = std::conditional_t<
     void,
     filter_void_tuple_t<Ts...>>;
 
+/** Helper to extract a single result, returning empty tuple for void.
+    This is a separate function to work around a GCC-11 ICE that occurs
+    when using nested immediately-invoked lambdas with pack expansion.
+*/
+template<std::size_t I, typename... Ts>
+auto extract_single_result(when_all_state<Ts...>& state)
+{
+    using T = std::tuple_element_t<I, std::tuple<Ts...>>;
+    if constexpr (std::is_void_v<T>)
+        return std::tuple<>();
+    else
+        return std::make_tuple(std::move(std::get<I>(state.results_)).get());
+}
+
 /** Extract results from state, filtering void types.
 */
 template<typename... Ts>
 auto extract_results(when_all_state<Ts...>& state)
 {
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        return std::tuple_cat(
-            [&]() {
-                using T = std::tuple_element_t<Is, std::tuple<Ts...>>;
-                if constexpr (std::is_void_v<T>)
-                    return std::tuple<>();
-                else
-                    return std::make_tuple(std::move(std::get<Is>(state.results_)).get());
-            }()...
-        );
+        return std::tuple_cat(extract_single_result<Is>(state)...);
     }(std::index_sequence_for<Ts...>{});
 }
 
