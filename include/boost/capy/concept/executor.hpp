@@ -38,15 +38,25 @@ namespace capy {
         `on_work_started()` on an equal executor.
 
     @li `dispatch(h)` - Execute a coroutine, potentially immediately
-        if the executor determines it is safe to do so.
+        if the executor determines it is safe to do so. The executor
+        may block forward progress of the caller until execution
+        completes.
 
-    @li `post(h)` - Queue a coroutine for later execution. Shall not
-        block forward progress of the caller.
+    @li `post(h)` - Queue a coroutine for later execution. The
+        executor shall not block forward progress of the caller
+        pending completion.
 
-    @li `defer(h)` - Queue a coroutine for later execution, with
-        a hint that the caller prefers deferral. Semantically
-        identical to `post`, but conveys that the coroutine is a
-        continuation of the current call context.
+    @li `defer(h)` - Queue a coroutine for later execution. The
+        executor shall not block forward progress of the caller
+        pending completion. Semantically identical to `post`, but
+        conveys a preference that the coroutine is a continuation
+        of the current call context. The executor may use this
+        information to optimize or otherwise adjust invocation.
+
+    @par Synchronization
+
+    The invocation of `dispatch`, `post`, or `defer` synchronizes
+    with the invocation of the coroutine.
 
     @par No-Throw Guarantee
 
@@ -78,8 +88,8 @@ concept executor =
     std::copy_constructible<E> &&
     std::equality_comparable<E> &&
     requires(E& e, E const& ce, std::coroutine_handle<> h) {
-        // Execution context access
-        { ce.context() } -> std::same_as<decltype(ce.context())&>;
+        // Execution context access (must not throw)
+        { ce.context() } noexcept -> std::same_as<decltype(ce.context())&>;
 
         // Work tracking (must not throw)
         { ce.on_work_started() } noexcept;

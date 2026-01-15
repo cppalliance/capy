@@ -18,30 +18,24 @@
 namespace boost {
 namespace capy {
 
-/** A pool of threads for running work asynchronously.
+/** A pool of threads for executing work concurrently.
 
-    This class provides a pool of worker threads that execute
-    submitted work items. It inherits from `execution_context`,
-    providing service management and a nested `executor_type`
-    that satisfies the `capy::executor` concept.
-
-    Work is submitted via the executor obtained from `get_executor()`.
-    The executor's `post()`, `dispatch()`, and `defer()` functions
-    queue coroutines for execution on pool threads.
+    Use this when you need to run coroutines on multiple threads
+    without the overhead of creating and destroying threads for
+    each task. Work items are distributed across the pool using
+    a shared queue.
 
     @par Thread Safety
-    All member functions may be called concurrently.
+    Distinct objects: Safe.
+    Shared objects: Unsafe.
 
     @par Example
     @code
     thread_pool pool(4);  // 4 worker threads
     auto ex = pool.get_executor();
-
-    // Post a coroutine for execution
-    async_run(ex)( my_coro() );
+    ex.post(some_coroutine);
+    // pool destructor waits for all work to complete
     @endcode
-
-    @see execution_context, executor
 */
 class BOOST_CAPY_DECL
     thread_pool
@@ -53,17 +47,21 @@ class BOOST_CAPY_DECL
 public:
     class executor_type;
 
-    /** Destructor.
+    /** Destroy the thread pool.
 
-        Signals all threads to stop and waits for them to complete.
-        Calls `shutdown()` and `destroy()` to clean up services.
+        Signals all worker threads to stop, waits for them to
+        finish, and destroys any pending work items.
     */
     ~thread_pool();
 
     /** Construct a thread pool.
 
-        @param num_threads The number of worker threads to create.
-        If zero, defaults to the hardware concurrency.
+        Creates a pool with the specified number of worker threads.
+        If `num_threads` is zero, the number of threads is set to
+        the hardware concurrency, or one if that cannot be determined.
+
+        @param num_threads The number of worker threads, or zero
+            for automatic selection.
     */
     explicit
     thread_pool(std::size_t num_threads = 0);
@@ -73,9 +71,6 @@ public:
 
     /** Return an executor for this thread pool.
 
-        The returned executor can be used to post work items
-        to this thread pool.
-
         @return An executor associated with this thread pool.
     */
     executor_type
@@ -84,18 +79,13 @@ public:
 
 //------------------------------------------------------------------------------
 
-/** An executor for dispatching work to a thread_pool.
+/** An executor that submits work to a thread_pool.
 
-    The executor provides the interface for posting work items
-    to the associated thread_pool. It satisfies the `capy::executor`
-    concept.
-
-    Executors are lightweight handles that can be copied and compared
-    for equality. Two executors compare equal if they refer to the
-    same thread_pool.
+    Executors are lightweight handles that can be copied and stored.
+    All copies refer to the same underlying thread pool.
 
     @par Thread Safety
-    Distinct objects: Safe.@n
+    Distinct objects: Safe.
     Shared objects: Safe.
 */
 class thread_pool::executor_type
@@ -111,49 +101,37 @@ class thread_pool::executor_type
     }
 
 public:
-    /** Default constructor.
-
-        Constructs an executor not associated with any thread_pool.
-    */
+    /// Default construct a null executor.
     executor_type() = default;
 
-    /** Return a reference to the associated execution context.
-
-        @return Reference to the thread_pool.
-    */
+    /// Return the underlying thread pool.
     thread_pool&
     context() const noexcept
     {
         return *pool_;
     }
 
-    /** Informs the executor that work is beginning.
-
-        Must be paired with `on_work_finished()`.
-    */
+    /// Notify that work has started (no-op for thread pools).
     void
     on_work_started() const noexcept
     {
     }
 
-    /** Informs the executor that work has completed.
-
-        @par Preconditions
-        A preceding call to `on_work_started()` on an equal executor.
-    */
+    /// Notify that work has finished (no-op for thread pools).
     void
     on_work_finished() const noexcept
     {
     }
 
-    /** Dispatch a coroutine handle.
+    /** Submit a coroutine for execution.
 
-        For thread_pool, dispatch always posts the work since
-        the calling thread is never "inside" the pool's run loop.
+        Posts the coroutine to the thread pool and returns
+        immediately. The caller should suspend after calling
+        this function.
 
-        @param h The coroutine handle to dispatch.
+        @param h The coroutine handle to execute.
 
-        @return `std::noop_coroutine()` since work is always posted.
+        @return A noop coroutine handle to resume.
     */
     any_coro
     dispatch(any_coro h) const
@@ -162,23 +140,22 @@ public:
         return std::noop_coroutine();
     }
 
-    /** Post a coroutine for deferred execution.
+    /** Post a coroutine to the thread pool.
 
         The coroutine will be resumed on one of the pool's
         worker threads.
 
-        @param h The coroutine handle to post.
+        @param h The coroutine handle to execute.
     */
     BOOST_CAPY_DECL
     void
     post(any_coro h) const;
 
-    /** Queue a coroutine for deferred execution.
+    /** Defer a coroutine to the thread pool.
 
-        This is semantically identical to `post`, but conveys that
-        `h` is a continuation of the current call context.
+        Equivalent to post() for thread pools.
 
-        @param h The coroutine handle to defer.
+        @param h The coroutine handle to execute.
     */
     void
     defer(any_coro h) const
@@ -186,10 +163,7 @@ public:
         post(h);
     }
 
-    /** Compare two executors for equality.
-
-        @return `true` if both executors refer to the same thread_pool.
-    */
+    /// Return true if two executors refer to the same thread pool.
     bool
     operator==(executor_type const& other) const noexcept
     {

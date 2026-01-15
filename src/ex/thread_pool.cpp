@@ -19,8 +19,10 @@ namespace capy {
 
 //------------------------------------------------------------------------------
 
+// Pimpl implementation hides threading details from the header
 class thread_pool::impl
 {
+    // Wraps a coroutine handle for queue storage
     struct work : intrusive_queue<work>::node
     {
         any_coro h_;
@@ -32,6 +34,7 @@ class thread_pool::impl
 
         void run()
         {
+            // delete before dispatch
             auto h = h_;
             delete this;
             h.resume();
@@ -61,6 +64,7 @@ public:
         for(auto& t : threads_)
             t.join();
 
+        // Destroy any work items that were never executed
         while(auto* w = q_.pop())
             w->destroy();
     }
@@ -69,9 +73,10 @@ public:
     impl(std::size_t num_threads)
         : stop_(false)
     {
-        if(num_threads == 0)
+        if( num_threads == 0)
             num_threads = std::thread::hardware_concurrency();
-        if(num_threads == 0)
+        // Fallback
+        if( num_threads == 0)
             num_threads = 1;
 
         threads_.reserve(num_threads);
@@ -103,6 +108,7 @@ private:
                     return stop_ || !q_.empty();
                 });
 
+                // Only exit when stopped AND queue is drained
                 if(stop_ && q_.empty())
                     return;
 
@@ -119,6 +125,7 @@ private:
 thread_pool::
 ~thread_pool()
 {
+    // Order matters: shutdown services, then impl, then base
     shutdown();
     delete impl_;
     destroy();
