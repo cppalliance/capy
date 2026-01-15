@@ -38,18 +38,23 @@ env:
   TZ: "Europe/London"
 
 jobs:
-  runner-selection:
-    name: Runner Selection
-    runs-on: ${{ github.repository_owner == 'boostorg' && fromJSON('[ "self-hosted", "linux", "x64", "ubuntu-latest-aws" ]') || 'ubuntu-latest' }}
-    outputs:
-      labelmatrix: ${{ steps.aws_hosted_runners.outputs.labelmatrix }}
-    steps:
-      - name: AWS Hosted Runners
-        id: aws_hosted_runners
-        uses: cppalliance/aws-hosted-runners@v1.0.0
+  # Self-hosted runner selection is disabled to allow re-running individual
+  # failed jobs from the GitHub Actions UI. When using dynamic runner selection,
+  # the runs-on value depends on this job's output, which isn't available when
+  # re-running a subset of jobs.
+  #
+  # runner-selection:
+  #   name: Runner Selection
+  #   runs-on: ${{ github.repository_owner == 'boostorg' && fromJSON('[ "self-hosted", "linux", "x64", "ubuntu-latest-aws" ]') || 'ubuntu-latest' }}
+  #   outputs:
+  #     labelmatrix: ${{ steps.aws_hosted_runners.outputs.labelmatrix }}
+  #   steps:
+  #     - name: AWS Hosted Runners
+  #       id: aws_hosted_runners
+  #       uses: cppalliance/aws-hosted-runners@v1.0.0
 
   build:
-    needs: [ runner-selection ]
+    # needs: [ runner-selection ]
     defaults:
       run:
         shell: bash
@@ -58,8 +63,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows compilers
-          #
+          # Windows (3 configurations)
 
           - compiler: "msvc"
             version: "14.42"
@@ -81,53 +85,9 @@ jobs:
             runs-on: "windows-2022"
             b2-toolset: "msvc-14.3"
             generator: "Visual Studio 17 2022"
-            is-latest: true
-            name: "MSVC 14.34: C++20"
+            name: "MSVC 14.34: C++20 (shared)"
             shared: true
             build-type: "Release"
-            build-cmake: true
-
-          - compiler: "msvc"
-            version: "14.34"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            runs-on: "windows-2022"
-            b2-toolset: "msvc-14.3"
-            generator: "Visual Studio 17 2022"
-            is-latest: true
-            name: "MSVC 14.34: C++20 (x86)"
-            shared: false
-            x86: true
-            build-type: "Release"
-
-          - compiler: "msvc"
-            version: "14.34"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            runs-on: "windows-2022"
-            b2-toolset: "msvc-14.3"
-            generator: "Visual Studio 17 2022"
-            is-latest: true
-            name: "MSVC 14.34: C++20"
-            shared: true
-            build-type: "Release"
-            build-cmake: true
-
-          - compiler: "clang-cl"
-            version: "*"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++-cl"
-            cc: "clang-cl"
-            runs-on: "windows-2022"
-            b2-toolset: "clang-win"
-            generator-toolset: "ClangCL"
-            is-latest: true
-            is-earliest: true
-            name: "Windows-Clang: C++20"
-            shared: true
-            build-type: "Release"
-            build-cmake: true
 
           - compiler: "mingw"
             version: "*"
@@ -140,29 +100,12 @@ jobs:
             generator: "MinGW Makefiles"
             is-latest: true
             is-earliest: true
-            name: "MinGW (shared): C++20"
-            shared: true
-            build-type: "Debug"
-            build-cmake: true
-
-          - compiler: "mingw"
-            version: "*"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++"
-            cc: "gcc"
-            runs-on: "windows-2022"
-            b2-toolset: "gcc"
-            generator: "MinGW Makefiles"
-            is-latest: true
-            is-earliest: true
-            name: "MinGW (static): C++20"
+            name: "MinGW: C++20"
             shared: false
             build-type: "Release"
             build-cmake: true
 
-          # OSX compilers
-          #
+          # macOS (2 configurations)
 
           - compiler: "apple-clang"
             version: "*"
@@ -173,51 +116,11 @@ jobs:
             runs-on: "macos-26"
             b2-toolset: "clang"
             is-latest: true
-            name: "Apple-Clang (macOS 26): C++20"
-            shared: true
-            build-type: "Release"
-            build-cmake: true
-
-          - compiler: "apple-clang"
-            version: "*"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++"
-            cc: "clang"
-            runs-on: "macos-26"
-            b2-toolset: "clang"
-            is-latest: true
-            name: "Apple-Clang (macOS 26, ubsan): C++20"
-            shared: false
-            build-type: "RelWithDebInfo"
-            ubsan: true
-
-          - compiler: "apple-clang"
-            version: "*"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++"
-            cc: "clang"
-            runs-on: "macos-26"
-            b2-toolset: "clang"
-            is-latest: true
-            name: "Apple-Clang (macOS 26, asan): C++20"
+            name: "Apple-Clang (macOS 26, asan+ubsan): C++20"
             shared: true
             build-type: "RelWithDebInfo"
             asan: true
-
-          - compiler: "apple-clang"
-            version: "*"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++"
-            cc: "clang"
-            runs-on: "macos-15"
-            b2-toolset: "clang"
-            name: "Apple-Clang (macOS 15): C++20"
-            shared: false
-            build-type: "Release"
-            build-cmake: true
+            ubsan: true
 
           - compiler: "apple-clang"
             version: "*"
@@ -232,54 +135,7 @@ jobs:
             build-type: "Release"
             build-cmake: true
 
-          # Linux compilers
-          #
-
-          - compiler: "gcc"
-            version: "15"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-15"
-            cc: "gcc-15"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:25.04"
-            b2-toolset: "gcc"
-            is-latest: true
-            name: "GCC 15: C++20"
-            shared: false
-            build-type: "Release"
-            build-cmake: true
-
-          - compiler: "gcc"
-            version: "15"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-15"
-            cc: "gcc-15"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:25.04"
-            b2-toolset: "gcc"
-            is-latest: true
-            name: "GCC 15: C++20 (no zlib)"
-            shared: true
-            build-type: "Release"
-            build-cmake: true
-
-          - compiler: "gcc"
-            version: "15"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-15"
-            cc: "gcc-15"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:25.04"
-            b2-toolset: "gcc"
-            is-latest: true
-            name: "GCC 15: C++20 (x86)"
-            shared: false
-            x86: true
-            build-type: "Release"
-            install: "gcc-15-multilib g++-15-multilib"
+          # Linux GCC (4 configurations)
 
           - compiler: "gcc"
             version: "15"
@@ -306,117 +162,11 @@ jobs:
             container: "ubuntu:25.04"
             b2-toolset: "gcc"
             is-latest: true
-            name: "GCC 15: C++20 (x86)"
-            shared: false
-            x86: true
-            build-type: "Release"
-            install: "gcc-15-multilib g++-15-multilib"
-            build-cmake: true
-
-          - compiler: "gcc"
-            version: "15"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-15"
-            cc: "gcc-15"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:25.04"
-            b2-toolset: "gcc"
-            is-latest: true
-            name: "GCC 15: C++20 (asan)"
+            name: "GCC 15: C++20 (asan+ubsan)"
             shared: true
             asan: true
-            build-type: "RelWithDebInfo"
-
-          - compiler: "gcc"
-            version: "15"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-15"
-            cc: "gcc-15"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:25.04"
-            b2-toolset: "gcc"
-            is-latest: true
-            name: "GCC 15: C++20 (asan, x86)"
-            shared: false
-            asan: true
-            x86: true
-            build-type: "RelWithDebInfo"
-            install: "gcc-15-multilib g++-15-multilib"
-
-          - compiler: "gcc"
-            version: "15"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-15"
-            cc: "gcc-15"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:25.04"
-            b2-toolset: "gcc"
-            is-latest: true
-            name: "GCC 15: C++20 (ubsan)"
-            shared: true
             ubsan: true
             build-type: "RelWithDebInfo"
-
-          - compiler: "gcc"
-            version: "15"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-15"
-            cc: "gcc-15"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:25.04"
-            b2-toolset: "gcc"
-            is-latest: true
-            name: "GCC 15: C++20 (ubsan, x86)"
-            shared: false
-            ubsan: true
-            x86: true
-            build-type: "RelWithDebInfo"
-            install: "gcc-15-multilib g++-15-multilib"
-
-          - compiler: "gcc"
-            version: "14"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-14"
-            cc: "gcc-14"
-            runs-on: "ubuntu-24.04"
-            b2-toolset: "gcc"
-            name: "GCC 14: C++20"
-            shared: true
-            build-type: "Release"
-
-          - compiler: "gcc"
-            version: "13"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-13"
-            cc: "gcc-13"
-            runs-on: "ubuntu-24.04"
-            b2-toolset: "gcc"
-            name: "GCC 13: C++20"
-            shared: true
-            build-type: "Release"
-
-          - compiler: "gcc"
-            version: "13"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-13"
-            cc: "gcc-13"
-            runs-on: "ubuntu-24.04"
-            b2-toolset: "gcc"
-            is-latest: true
-            name: "GCC 13: C++20 (coverage)"
-            shared: false
-            coverage: true
-            build-type: "Debug"
-            cxxflags: "--coverage -fprofile-arcs -ftest-coverage"
-            ccflags: "--coverage -fprofile-arcs -ftest-coverage"
-            install: "lcov wget unzip"
 
           - compiler: "gcc"
             version: "12"
@@ -432,17 +182,22 @@ jobs:
             build-type: "Release"
 
           - compiler: "gcc"
-            version: "11"
+            version: "13"
             cxxstd: "20"
             latest-cxxstd: "20"
-            cxx: "g++-11"
-            cc: "gcc-11"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:22.04"
+            cxx: "g++-13"
+            cc: "gcc-13"
+            runs-on: "ubuntu-24.04"
             b2-toolset: "gcc"
-            name: "GCC 11: C++20"
+            name: "GCC 13: C++20 (coverage)"
             shared: false
-            build-type: "Release"
+            coverage: true
+            build-type: "Debug"
+            cxxflags: "--coverage -fprofile-arcs -ftest-coverage"
+            ccflags: "--coverage -fprofile-arcs -ftest-coverage"
+            install: "lcov wget unzip"
+
+          # Linux Clang (5 configurations)
 
           - compiler: "clang"
             version: "20"
@@ -461,22 +216,6 @@ jobs:
 
           - compiler: "clang"
             version: "20"
-            cxxstd: "20,23"
-            latest-cxxstd: "23"
-            cxx: "clang++-20"
-            cc: "clang-20"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:24.04"
-            b2-toolset: "clang"
-            is-latest: true
-            name: "Clang 20: C++20-23 (x86)"
-            shared: false
-            x86: true
-            build-type: "Release"
-            install: "gcc-multilib g++-multilib"
-
-          - compiler: "clang"
-            version: "20"
             cxxstd: "20"
             latest-cxxstd: "20"
             cxx: "clang++-20"
@@ -485,101 +224,11 @@ jobs:
             container: "ubuntu:24.04"
             b2-toolset: "clang"
             is-latest: true
-            name: "Clang 20: C++20 (time-trace)"
-            shared: true
-            time-trace: true
-            build-type: "Release"
-            cxxflags: "-ftime-trace"
-            ccflags: "-ftime-trace"
-            install: " wget unzip"
-
-          - compiler: "clang"
-            version: "20"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++-20"
-            cc: "clang-20"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:24.04"
-            b2-toolset: "clang"
-            is-latest: true
-            name: "Clang 20: C++20 (asan)"
+            name: "Clang 20: C++20 (asan+ubsan)"
             shared: false
             asan: true
-            build-type: "RelWithDebInfo"
-
-          - compiler: "clang"
-            version: "20"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++-20"
-            cc: "clang-20"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:24.04"
-            b2-toolset: "clang"
-            is-latest: true
-            name: "Clang 20: C++20 (asan, x86)"
-            shared: true
-            asan: true
-            x86: true
-            build-type: "RelWithDebInfo"
-            install: "gcc-multilib g++-multilib"
-
-          - compiler: "clang"
-            version: "20"
-            cxxstd: "20,23"
-            latest-cxxstd: "23"
-            cxx: "clang++-20"
-            cc: "clang-20"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:24.04"
-            b2-toolset: "clang"
-            is-latest: true
-            name: "Clang 20: C++20-23 (ubsan)"
-            shared: false
             ubsan: true
             build-type: "RelWithDebInfo"
-
-          - compiler: "clang"
-            version: "20"
-            cxxstd: "20,23"
-            latest-cxxstd: "23"
-            cxx: "clang++-20"
-            cc: "clang-20"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:24.04"
-            b2-toolset: "clang"
-            is-latest: true
-            name: "Clang 20: C++20-23 (ubsan, x86)"
-            shared: true
-            ubsan: true
-            x86: true
-            build-type: "RelWithDebInfo"
-            install: "gcc-multilib g++-multilib"
-
-          - compiler: "clang"
-            version: "19"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++-19"
-            cc: "clang-19"
-            runs-on: "ubuntu-24.04"
-            b2-toolset: "clang"
-            name: "Clang 19: C++20"
-            shared: false
-            build-type: "Release"
-
-          - compiler: "clang"
-            version: "18"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++-18"
-            cc: "clang-18"
-            runs-on: "ubuntu-24.04"
-            b2-toolset: "clang"
-            name: "Clang 18: C++20"
-            shared: true
-            build-type: "Release"
 
           - compiler: "clang"
             version: "17"
@@ -590,31 +239,6 @@ jobs:
             runs-on: "ubuntu-24.04"
             b2-toolset: "clang"
             name: "Clang 17: C++20"
-            shared: false
-            build-type: "Release"
-
-          - compiler: "clang"
-            version: "16"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++-16"
-            cc: "clang-16"
-            runs-on: "ubuntu-24.04"
-            b2-toolset: "clang"
-            name: "Clang 16: C++20"
-            shared: true
-            build-type: "Release"
-
-          - compiler: "clang"
-            version: "15"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++-15"
-            cc: "clang-15"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:22.04"
-            b2-toolset: "clang"
-            name: "Clang 15: C++20"
             shared: false
             build-type: "Release"
 
@@ -631,8 +255,26 @@ jobs:
             shared: true
             build-type: "Release"
 
+          - compiler: "clang"
+            version: "20"
+            cxxstd: "20,23"
+            latest-cxxstd: "23"
+            cxx: "clang++-20"
+            cc: "clang-20"
+            runs-on: "ubuntu-latest"
+            container: "ubuntu:24.04"
+            b2-toolset: "clang"
+            is-latest: true
+            name: "Clang 20: C++20-23 (x86)"
+            shared: false
+            x86: true
+            build-type: "Release"
+            install: "gcc-multilib g++-multilib"
+
     name: ${{ matrix.name }}
-    runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)[matrix.runs-on] }}
+    # Skip self-hosted runner selection for now
+    # runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)[matrix.runs-on] }}
+    runs-on: ${{ matrix.runs-on }}
     container:
       image: ${{ matrix.container }}
       options: --privileged
@@ -906,13 +548,15 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
   changelog:
-    needs: [ runner-selection ]
+    # needs: [ runner-selection ]
     defaults:
       run:
         shell: bash
 
     name: Changelog Summary
-    runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)['ubuntu-22.04'] }}
+    # Skip self-hosted runner selection for now
+    # runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)['ubuntu-22.04'] }}
+    runs-on: 'ubuntu-22.04'
     timeout-minutes: 120
 
     steps:
@@ -931,16 +575,11 @@ jobs:
           tag-pattern: 'boost-.*\..*\..*'
 
   antora:
-    needs: [ runner-selection ]
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { name: Windows, os: windows-latest }
-          - { name: Ubuntu, os: ubuntu-latest }
-          - { name: MacOS, os: macos-15 }
-    name: Antora Docs (${{ matrix.name }})
-    runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)[matrix.os] }}
+    # needs: [ runner-selection ]
+    name: Antora Docs
+    # Skip self-hosted runner selection for now
+    # runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)['ubuntu-latest'] }}
+    runs-on: 'ubuntu-latest'
     defaults:
       run:
         shell: bash
@@ -997,28 +636,23 @@ jobs:
           # Patch boost-root with workspace module
           cp -r "$workspace_root"/capy-root "libs/$module"
 
-
       - uses: actions/setup-node@v4
         with:
           node-version: 18
-
-      - name: Setup Ninja
-        if: runner.os == 'Windows'
-        uses: seanmiddleditch/gha-setup-ninja@v5
 
       - name: Build Antora Docs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config --global --add safe.directory "$(pwd)"
-          
+
           BOOST_SRC_DIR="$(pwd)/boost-root"
           export BOOST_SRC_DIR
           cd boost-root/libs/capy
-          
+
           cd doc
           bash ./build_antora.sh
-          
+
           # Antora returns zero even if it fails, so we check if the site directory exists
           if [ ! -d "build/site" ]; then
               echo "Antora build failed"
@@ -1028,5 +662,5 @@ jobs:
       - name: Create Antora Docs Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: antora-docs-${{ matrix.name }}
+          name: antora-docs
           path: boost-root/libs/capy/doc/build/site

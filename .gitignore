@@ -1,4 +1,5 @@
 /.vscode/
+/.cache/
 /build/*
 !/build/Jamfile
 !/build/brotli.jam
