@@ -18,7 +18,7 @@
 namespace boost {
 namespace capy {
 
-/** A thread pool execution context for running work asynchronously.
+/** A pool of threads for running work asynchronously.
 
     This class provides a pool of worker threads that execute
     submitted work items. It inherits from `execution_context`,
@@ -38,7 +38,7 @@ namespace capy {
     auto ex = pool.get_executor();
 
     // Post a coroutine for execution
-    ex.post(my_coroutine_handle);
+    async_run(ex)( my_coro() );
     @endcode
 
     @see execution_context, executor
@@ -131,18 +131,20 @@ public:
 
         Must be paired with `on_work_finished()`.
     */
-    BOOST_CAPY_DECL
     void
-    on_work_started() const noexcept;
+    on_work_started() const noexcept
+    {
+    }
 
     /** Informs the executor that work has completed.
 
         @par Preconditions
         A preceding call to `on_work_started()` on an equal executor.
     */
-    BOOST_CAPY_DECL
     void
-    on_work_finished() const noexcept;
+    on_work_finished() const noexcept
+    {
+    }
 
     /** Dispatch a coroutine handle.
 
