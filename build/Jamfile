@@ -16,8 +16,6 @@ constant c20-requires :
     ]
     ;
 
-path-constant CAPY_ROOT : .. ;
-
 project boost/capy
   : requirements
     $(c20-requires)
@@ -27,10 +25,10 @@ project boost/capy
     <link>static:<define>BOOST_CAPY_STATIC_LINK
   : usage-requirements
     <define>BOOST_CAPY_NO_LIB
-  : source-location $(CAPY_ROOT)
+  : source-location ..
   ;
 
-alias capy_sources : [ glob-tree-ex ./src : *.cpp ] ;
+alias capy_sources : [ glob-tree-ex src : *.cpp ] ;
 
 # Windows CNG library for bcrypt random number generation.
 lib bcrypt_sys : : <name>bcrypt ;
@@ -49,7 +47,7 @@ lib boost_capy
 # Zlib
 using zlib ;
 
-alias capy_zlib_sources : [ glob-tree-ex ./src_zlib : *.cpp ] ;
+alias capy_zlib_sources : [ glob-tree-ex src_zlib : *.cpp ] ;
 
 lib boost_capy_zlib
   : capy_zlib_sources
@@ -64,7 +62,7 @@ lib boost_capy_zlib
 # Brotli
 using brotli ;
 
-alias capy_brotli_sources : [ glob-tree-ex ./src_brotli : *.cpp ] ;
+alias capy_brotli_sources : [ glob-tree-ex src_brotli : *.cpp ] ;
 
 lib boost_capy_brotli
   : capy_brotli_sources

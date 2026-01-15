@@ -128,7 +128,8 @@ public:
 
         @see execution_context
     */
-    class service
+    class BOOST_CAPY_DECL
+        service
     {
     public:
         virtual ~service() = default;
@@ -152,8 +153,15 @@ public:
         friend class execution_context;
 
         service* next_ = nullptr;
+#ifdef _MSC_VER
+# pragma warning(push)
+# pragma warning(disable: 4251)
+#endif
         std::type_index t0_ = typeid(void);
         std::type_index t1_ = typeid(void);
+#ifdef _MSC_VER
+# pragma warning(pop)
+#endif
     };
 
     //------------------------------------------------
@@ -377,10 +385,18 @@ protected:
     void destroy() noexcept;
 
 private:
-    struct factory
+    struct BOOST_CAPY_DECL
+        factory
     {
+#ifdef _MSC_VER
+# pragma warning(push)
+# pragma warning(disable: 4251)
+#endif
         std::type_index t0;
         std::type_index t1;
+#ifdef _MSC_VER
+# pragma warning(pop)
+#endif
 
         factory(std::type_index t0_, std::type_index t1_)
             : t0(t0_), t1(t1_)

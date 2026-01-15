@@ -10,7 +10,7 @@
 #include <boost/capy/ex/async_run.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/run_on.hpp>
-#include <boost/capy/strand.hpp>
+#include <boost/capy/ex/strand.hpp>
 #include <boost/capy/task.hpp>
 
 #include <chrono>
