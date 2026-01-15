@@ -149,12 +149,17 @@ public:
     frame by embedding_frame_allocator. It handles all subsequent
     allocations (storing a pointer to itself) and all deallocations.
 
+    IMPORTANT: This wrapper stores a POINTER to the allocator in the
+    launcher's embedder, not a copy. This is safe because Frame #1
+    (where this wrapper lives) is always destroyed before Frame #2
+    (the launcher, where embedder lives).
+
     @tparam Allocator The underlying allocator type satisfying frame_allocator.
 */
 template<frame_allocator Allocator>
 class frame_allocator_wrapper : public frame_allocator_base
 {
-    Allocator alloc_;
+    Allocator* alloc_;  // Pointer, not copy
 
     static constexpr std::size_t alignment = alignof(void*);
 
@@ -165,8 +170,8 @@ class frame_allocator_wrapper : public frame_allocator_base
     }
 
 public:
-    explicit frame_allocator_wrapper(Allocator a)
-        : alloc_(std::move(a))
+    explicit frame_allocator_wrapper(Allocator& a)
+        : alloc_(&a)
     {
     }
 
@@ -177,7 +182,7 @@ public:
         std::size_t ptr_offset = aligned_offset(n);
         std::size_t total = ptr_offset + sizeof(frame_allocator_base*);
 
-        void* raw = alloc_.allocate(total);
+        void* raw = alloc_->allocate(total);
 
         // Store untagged pointer to self at fixed offset
         auto* ptr_loc = reinterpret_cast<frame_allocator_base**>(
@@ -193,7 +198,7 @@ public:
         // Child frame deallocation: layout is [frame | ptr]
         std::size_t ptr_offset = aligned_offset(user_size);
         std::size_t total = ptr_offset + sizeof(frame_allocator_base*);
-        alloc_.deallocate(block, total);
+        alloc_->deallocate(block, total);
     }
 
     void
@@ -204,9 +209,11 @@ public:
         std::size_t wrapper_offset = ptr_offset + sizeof(frame_allocator_base*);
         std::size_t total = wrapper_offset + sizeof(frame_allocator_wrapper);
 
-        Allocator alloc_copy = alloc_;  // Copy before destroying self
+        // Safe to use alloc_ pointer because embedder (in Frame #2)
+        // is guaranteed to outlive this wrapper (in Frame #1)
+        Allocator* alloc_ptr = alloc_;  // Save pointer before destroying self
         this->~frame_allocator_wrapper();
-        alloc_copy.deallocate(block, total);
+        alloc_ptr->deallocate(block, total);
     }
 };
 
@@ -293,8 +300,6 @@ public:
         return current_allocator();
     }
 
-    // VFALCO turned off
-#if 0
     static void*
     operator new(std::size_t size)
     {
@@ -338,8 +343,12 @@ public:
         // Null pointer means global new/delete
         if(raw_ptr == 0)
         {
+#if __cpp_sized_deallocation >= 201309
             std::size_t total = ptr_offset + sizeof(detail::frame_allocator_base*);
             ::operator delete(ptr, total);
+#else
+            ::operator delete(ptr);
+#endif
             return;
         }
 
@@ -353,7 +362,6 @@ public:
         else
             wrapper->deallocate(ptr, size);
     }
-#endif
 };
 
 //----------------------------------------------------------
@@ -375,6 +383,7 @@ embedding_frame_allocator<Allocator>::allocate(std::size_t n)
     void* raw = alloc_.allocate(total);
 
     // Construct embedded wrapper after the pointer
+    // Pass REFERENCE to alloc_ so wrapper stores pointer, not copy
     auto* wrapper_loc = static_cast<char*>(raw) + wrapper_offset;
     auto* embedded = new (wrapper_loc) frame_allocator_wrapper<Allocator>(alloc_);
 

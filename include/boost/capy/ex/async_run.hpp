@@ -14,9 +14,9 @@
 #include <boost/capy/concept/affine_awaitable.hpp>
 #include <boost/capy/ex/detail/recycling_frame_allocator.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-#include <boost/capy/ex/make_affine.hpp>
 #include <boost/capy/task.hpp>
 
+#include <coroutine>
 #include <exception>
 #include <optional>
 #include <utility>
@@ -69,430 +69,390 @@ struct handler_pair
     }
 };
 
-template<typename T>
-struct async_run_task_result
-{
-    std::optional<T> result_;
+/** Suspended coroutine launcher using the suspended coroutine pattern.
 
-    template<typename V>
-    void return_value(V&& value)
-    {
-        result_ = std::forward<V>(value);
-    }
-};
+    This coroutine is created by async_run() and suspends immediately after
+    setting up the frame allocator. Its frame (Frame #2) is allocated BEFORE
+    the user's task (Frame #1), ensuring proper lifetime ordering.
 
-template<>
-struct async_run_task_result<void>
-{
-    void return_void()
-    {
-    }
-};
-
-// Lifetime storage for the Dispatcher value.
-// The Allocator is embedded in the user's coroutine frame.
+    The embedder lives on this coroutine's stack, guaranteeing it outlives
+    the embedded wrapper in the user's task frame.
+*/
 template<
     dispatcher Dispatcher,
-    typename T,
-    typename Handler>
-struct async_run_task
+    frame_allocator Allocator>
+struct async_run_launcher
 {
     struct promise_type
-        : frame_allocating_base
-        , async_run_task_result<T>
     {
-        Dispatcher d_;
-        Handler handler_;
-        std::exception_ptr ep_;
-        std::optional<task<T>> t_;
+        std::optional<Dispatcher> d_;
+        detail::embedding_frame_allocator<Allocator> embedder_;
+        std::coroutine_handle<> inner_handle_;
+        std::coroutine_handle<> continuation_;
 
-        template<typename D, typename H, typename... Args>
-        promise_type(D&& d, H&& h, Args&&...)
+        // Constructor that takes dispatcher and allocator from async_run parameters
+        template<typename D, typename A>
+        promise_type(D&& d, A&& a)
             : d_(std::forward<D>(d))
-            , handler_(std::forward<H>(h))
+            , embedder_(std::forward<A>(a))
+        {
+            // Set TLS immediately so it's available for nested coroutine allocations
+            frame_allocating_base::set_frame_allocator(embedder_);
+        }
+
+        // Default constructor (required but should not be used in normal flow)
+        promise_type()
+            : embedder_(Allocator{})
         {
         }
 
-        async_run_task get_return_object()
+        async_run_launcher get_return_object()
         {
-            return {std::coroutine_handle<promise_type>::from_promise(*this)};
+            return async_run_launcher{
+                std::coroutine_handle<promise_type>::from_promise(*this)
+            };
         }
 
-        /** Suspend initially.
-
-            The frame allocator is already set in TLS by the
-            embedding_frame_allocator when the user's task was created.
-            No action needed here.
-        */
         std::suspend_always initial_suspend() noexcept
         {
             return {};
         }
 
-        auto final_suspend() noexcept
+        struct final_awaiter
         {
-            struct awaiter
+            bool await_ready() noexcept { return false; }
+
+            std::coroutine_handle<> await_suspend(
+                std::coroutine_handle<promise_type> h) noexcept
             {
-                promise_type* p_;
+                // Clear TLS after inner task completes
+                frame_allocating_base::clear_frame_allocator();
 
-                bool await_ready() const noexcept
-                {
-                    return false;
-                }
-
-                // GCC gives false positive -Wmaybe-uninitialized warnings on result_.
-                // The coroutine guarantees return_value() is called before final_suspend(),
-                // so result_ is always initialized here, but GCC's flow analysis can't prove it.
-                // GCC-12+ respects the narrow pragma scope; GCC-11 requires file-level suppression.
-                any_coro await_suspend(any_coro h) const noexcept
-                {
-                    // Save before destroy
-                    auto handler = std::move(p_->handler_);
-                    auto ep = p_->ep_;
-
-                    // Clear thread-local before destroy to avoid dangling pointer
-                    frame_allocating_base::clear_frame_allocator();
-
-                    // For non-void, we need to get the result before destroy
-                    if constexpr (!std::is_void_v<T>)
-                    {
-#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 12
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-                        auto result = std::move(p_->result_);
-                        h.destroy();
-                        if(ep)
-                            handler(ep);
-                        else
-                            handler(std::move(*result));
-#if defined(__GNUC__) && !defined(__clang__) && __GNUC__ >= 12
-#pragma GCC diagnostic pop
-#endif
-                    }
-                    else
-                    {
-                        h.destroy();
-                        if(ep)
-                            handler(ep);
-                        else
-                            handler();
-                    }
-                    return std::noop_coroutine();
-                }
-
-                void await_resume() const noexcept
-                {
-                }
-            };
-            return awaiter{this};
-        }
-
-        void unhandled_exception()
-        {
-            ep_ = std::current_exception();
-        }
-
-        template<class Awaitable>
-        struct transform_awaiter
-        {
-            std::decay_t<Awaitable> a_;
-            promise_type* p_;
-
-            bool await_ready()
-            {
-                return a_.await_ready();
+                // Return continuation (or noop for fire-and-forget).
+                // In fire-and-forget mode, we return noop and the launcher
+                // will be destroyed by launch_awaitable's destructor after resume() returns.
+                auto cont = h.promise().continuation_;
+                return cont ? cont : std::noop_coroutine();
             }
 
-            auto await_resume()
-            {
-                return a_.await_resume();
-            }
-
-            template<class Promise>
-            auto await_suspend(std::coroutine_handle<Promise> h)
-            {
-                return a_.await_suspend(h, p_->d_);
-            }
+            void await_resume() noexcept {}
         };
 
-        template<class Awaitable>
-        auto await_transform(Awaitable&& a)
+        final_awaiter final_suspend() noexcept { return {}; }
+
+        void unhandled_exception() { throw; }
+        void return_void() {}
+
+        // Awaitable to transfer control to inner task
+        struct transfer_to_inner
         {
-            using A = std::decay_t<Awaitable>;
-            if constexpr (affine_awaitable<A, Dispatcher>)
+            promise_type* p_;
+
+            bool await_ready() noexcept { return false; }
+
+            std::coroutine_handle<> await_suspend(
+                std::coroutine_handle<>) noexcept
             {
-                // Zero-overhead path for affine awaitables
-                return transform_awaiter<Awaitable>{
-                    std::forward<Awaitable>(a), this};
+                return p_->inner_handle_;
             }
-            else
+
+            void await_resume() noexcept {}
+        };
+    };
+
+    std::coroutine_handle<promise_type> handle_;
+
+    // Awaitable to get promise without suspending
+    struct get_promise
+    {
+        promise_type* p_;
+
+        bool await_ready() noexcept { return false; }
+
+        bool await_suspend(std::coroutine_handle<promise_type> h) noexcept
+        {
+            p_ = &h.promise();
+            return false;  // Don't suspend
+        }
+
+        promise_type& await_resume() noexcept { return *p_; }
+    };
+
+    template<typename T>
+    struct launch_awaitable
+    {
+        std::coroutine_handle<promise_type> launcher_;
+        std::coroutine_handle<typename task<T>::promise_type> inner_;
+        Dispatcher d_;
+        bool started_ = false;
+
+        launch_awaitable(
+            std::coroutine_handle<promise_type> launcher,
+            std::coroutine_handle<typename task<T>::promise_type> inner,
+            Dispatcher d)
+            : launcher_(launcher)
+            , inner_(inner)
+            , d_(std::move(d))
+        {
+        }
+
+        ~launch_awaitable()
+        {
+            // If not awaited, run fire-and-forget style
+            if(!started_ && launcher_)
             {
-                // Trampoline fallback for legacy awaitables
-                return make_affine(std::forward<Awaitable>(a), d_);
+                // Store inner handle in launcher's promise
+                launcher_.promise().inner_handle_ = inner_;
+
+                // Fire-and-forget: no continuation
+                launcher_.promise().continuation_ = std::noop_coroutine();
+                inner_.promise().continuation_ = launcher_;
+                inner_.promise().ex_ = d_;
+                inner_.promise().caller_ex_ = d_;
+                inner_.promise().needs_dispatch_ = false;
+
+                // Run synchronously
+                d_(any_coro{launcher_}).resume();
+
+                // Clean up
+                inner_.destroy();
+                launcher_.destroy();
+            }
+        }
+
+        // Move-only
+        launch_awaitable(launch_awaitable&& o) noexcept
+            : launcher_(std::exchange(o.launcher_, nullptr))
+            , inner_(std::exchange(o.inner_, nullptr))
+            , d_(std::move(o.d_))
+            , started_(o.started_)
+        {
+        }
+
+        launch_awaitable(launch_awaitable const&) = delete;
+        launch_awaitable& operator=(launch_awaitable const&) = delete;
+        launch_awaitable& operator=(launch_awaitable&&) = delete;
+
+        bool await_ready() noexcept { return false; }
+
+        // Affine awaitable interface: takes continuation and dispatcher
+        template<typename D>
+        std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, D const&)
+        {
+            started_ = true;
+
+            // Store inner handle in launcher's promise
+            launcher_.promise().inner_handle_ = inner_;
+
+            // Set up continuation chain: cont <- launcher <- inner
+            launcher_.promise().continuation_ = cont;
+            inner_.promise().continuation_ = launcher_;
+            inner_.promise().ex_ = d_;
+            inner_.promise().caller_ex_ = d_;
+            inner_.promise().needs_dispatch_ = false;  // Direct transfer, no dispatch
+
+            // Transfer to launcher (which will transfer to inner)
+            return launcher_;
+        }
+
+        T await_resume()
+        {
+            // Get result from inner task
+            auto& inner_promise = inner_.promise();
+            std::exception_ptr ep = inner_promise.ep_;
+
+            // Clean up handles
+            inner_.destroy();
+            launcher_.destroy();
+            launcher_ = nullptr;  // Prevent destructor from running
+
+            if(ep)
+                std::rethrow_exception(ep);
+
+            if constexpr (!std::is_void_v<T>)
+            {
+                auto& result_base = static_cast<detail::task_return_base<T>&>(inner_promise);
+                return std::move(*result_base.result_);
             }
         }
     };
 
-    std::coroutine_handle<promise_type> h_;
-
-    void release()
-    {
-        h_ = nullptr;
-    }
-
-    ~async_run_task()
-    {
-        if(h_)
-            h_.destroy();
-    }
-};
-
-template<
-    dispatcher Dispatcher,
-    typename T,
-    typename Handler>
-async_run_task<Dispatcher, T, Handler>
-make_async_run_task(Dispatcher, Handler, task<T> t)
-{
-    if constexpr (std::is_void_v<T>)
-        co_await std::move(t);
-    else
-        co_return co_await std::move(t);
-}
-
-/** Runs the root task with the given dispatcher and handler.
-*/
-template<
-    dispatcher Dispatcher,
-    typename T,
-    typename Handler>
-void
-run_async_run_task(Dispatcher d, task<T> t, Handler handler)
-{
-    auto root = make_async_run_task<Dispatcher, T, Handler>(
-        std::move(d), std::move(handler), std::move(t));
-    root.h_.promise().d_(any_coro{root.h_}).resume();
-    root.release();
-}
-
-/** Runner object returned by async_run(dispatcher).
-
-    Provides operator() overloads to launch tasks with various
-    handler configurations. The dispatcher is captured and used
-    to schedule the task execution.
-
-    @par Frame Allocator Activation
-    The constructor sets the thread-local frame allocator, enabling
-    coroutine frame recycling for tasks created after construction.
-    This requires the single-expression usage pattern.
-
-    @par Required Usage Pattern
-    @code
-    // CORRECT: Single expression - allocator active when task created
-    async_run(ex)(make_task());
-    async_run(ex)(make_task(), handler);
-
-    // INCORRECT: Split pattern - allocator may be changed between lines
-    auto runner = async_run(ex);  // Sets TLS
-    // ... other code may change TLS here ...
-    runner(make_task());          // Won't compile (deleted move)
-    @endcode
-
-    @par Enforcement Mechanisms
-    Multiple layers ensure correct usage:
-
-    @li <b>Deleted copy/move constructors</b> - Relies on C++17 guaranteed
-        copy elision. The runner can only exist as a prvalue constructed
-        directly at the call site. If this compiles, elision occurred.
-
-    @li <b>Rvalue-qualified operator()</b> - All operator() overloads are
-        &&-qualified, meaning they can only be called on rvalues. This
-        forces the idiom `async_run(ex)(task)` as a single expression.
-
-    @see async_run
-*/
-template<
-    dispatcher Dispatcher,
-    frame_allocator Allocator = detail::recycling_frame_allocator>
-struct async_run_awaitable
-{
-    Dispatcher d_;
-    detail::embedding_frame_allocator<Allocator> embedder_;
-
-    /** Construct runner and activate frame allocator.
-
-        Sets the thread-local frame allocator to enable recycling
-        for coroutines created after this call.
-
-        @param d The dispatcher for task execution.
-        @param a The frame allocator (default: recycling_frame_allocator).
-    */
-    async_run_awaitable(Dispatcher d, Allocator a)
-        : d_(std::move(d))
-        , embedder_(std::move(a))
-    {
-        frame_allocating_base::set_frame_allocator(embedder_);
-    }
-
-    // Enforce C++17 guaranteed copy elision.
-    // If this compiles, elision occurred and &embedder_ is stable.
-    async_run_awaitable(async_run_awaitable const&) = delete;
-    async_run_awaitable(async_run_awaitable&&) = delete;
-    async_run_awaitable& operator=(async_run_awaitable const&) = delete;
-    async_run_awaitable& operator=(async_run_awaitable&&) = delete;
-
-    /** Launch task with default handler (fire-and-forget).
-
-        Uses default_handler which discards results and rethrows
-        exceptions.
-
-        @param t The task to execute.
-    */
+    // operator() returning awaitable (can be co_awaited or run fire-and-forget)
     template<typename T>
-    void operator()(task<T> t) &&
+    launch_awaitable<T> operator()(task<T> inner) &&
     {
-        // Note: TLS now points to embedded wrapper in user's task frame,
-        // not to embedder_. This is expected behavior.
-        run_async_run_task<Dispatcher, T, default_handler>(
-            std::move(d_), std::move(t), default_handler{});
+        auto d = std::move(*handle_.promise().d_);
+        auto launcher = handle_;
+        handle_ = nullptr;  // Prevent destructor from destroying
+        return launch_awaitable<T>{launcher, inner.release(), std::move(d)};
     }
 
-    /** Launch task with completion handler.
-
-        The handler is called on success with the result value (non-void)
-        or no arguments (void tasks). If the handler also provides an
-        overload for `std::exception_ptr`, it handles exceptions directly.
-        Otherwise, exceptions are automatically rethrown (default behavior).
-
-        @code
-        // Success-only handler (exceptions rethrow automatically)
-        async_run(ex)(my_task(), [](int result) {
-            std::cout << result;
-        });
-
-        // Full handler with exception support
-        async_run(ex)(my_task(), overloaded{
-            [](int result) { std::cout << result; },
-            [](std::exception_ptr) { }
-        });
-        @endcode
-
-        @param t The task to execute.
-        @param h The completion handler.
-    */
+    // operator() with handler - runs fire-and-forget and calls handler with result
     template<typename T, typename Handler>
-    void operator()(task<T> t, Handler h) &&
+    void operator()(task<T> inner, Handler h) &&
     {
+        auto d = std::move(*handle_.promise().d_);
+
         if constexpr (std::is_invocable_v<Handler, std::exception_ptr>)
         {
             // Handler handles exceptions itself
-            run_async_run_task<Dispatcher, T, Handler>(
-                std::move(d_), std::move(t), std::move(h));
+            std::move(*this).run_with_handler(std::move(inner), std::move(h), std::move(d));
         }
         else
         {
             // Handler only handles success - pair with default exception handler
             using combined = handler_pair<Handler, default_handler>;
-            run_async_run_task<Dispatcher, T, combined>(
-                std::move(d_), std::move(t),
-                    combined{std::move(h), default_handler{}});
+            std::move(*this).run_with_handler(
+                std::move(inner),
+                combined{std::move(h), default_handler{}},
+                std::move(d));
         }
     }
 
-    /** Launch task with separate success/error handlers.
-
-        @param t The task to execute.
-        @param h1 Handler called on success with the result value
-                  (or no args for void tasks).
-        @param h2 Handler called on error with exception_ptr.
-    */
+    // operator() with separate success/error handlers
     template<typename T, typename H1, typename H2>
-    void operator()(task<T> t, H1 h1, H2 h2) &&
+    void operator()(task<T> inner, H1 h1, H2 h2) &&
     {
+        auto d = std::move(*handle_.promise().d_);
+
         using combined = handler_pair<H1, H2>;
-        run_async_run_task<Dispatcher, T, combined>(
-            std::move(d_), std::move(t),
-                combined{std::move(h1), std::move(h2)});
+        std::move(*this).run_with_handler(
+            std::move(inner),
+            combined{std::move(h1), std::move(h2)},
+            std::move(d));
+    }
+
+    ~async_run_launcher()
+    {
+        if(handle_)
+            handle_.destroy();
+    }
+
+    // Move-only
+    async_run_launcher(async_run_launcher&& o) noexcept
+        : handle_(std::exchange(o.handle_, nullptr))
+    {}
+
+    async_run_launcher(async_run_launcher const&) = delete;
+    async_run_launcher& operator=(async_run_launcher const&) = delete;
+    async_run_launcher& operator=(async_run_launcher&&) = delete;
+
+private:
+    explicit async_run_launcher(std::coroutine_handle<promise_type> h)
+        : handle_(h)
+    {}
+
+    template<dispatcher D, frame_allocator A>
+    friend async_run_launcher<D, A> async_run(D, A);
+
+    // Run with handler - executes synchronously then invokes handler
+    template<typename T, typename Handler>
+    void run_with_handler(task<T> inner, Handler h, Dispatcher d)
+    {
+        auto inner_handle = inner.release();
+
+        // Store inner handle in launcher's promise
+        handle_.promise().inner_handle_ = inner_handle;
+
+        // Fire-and-forget: no continuation
+        handle_.promise().continuation_ = std::noop_coroutine();
+        inner_handle.promise().continuation_ = handle_;
+        inner_handle.promise().ex_ = d;
+        inner_handle.promise().caller_ex_ = d;
+        inner_handle.promise().needs_dispatch_ = false;
+
+        // Run synchronously
+        auto launcher = handle_;
+        handle_ = nullptr;  // Prevent destructor from destroying
+        d(any_coro{launcher}).resume();
+
+        // Get result from inner task and invoke handler
+        std::exception_ptr ep = inner_handle.promise().ep_;
+
+        if constexpr (std::is_void_v<T>)
+        {
+            if(ep)
+                h(ep);
+            else
+                h();
+        }
+        else
+        {
+            if(ep)
+                h(ep);
+            else
+            {
+                auto& result_base = static_cast<detail::task_return_base<T>&>(
+                    inner_handle.promise());
+                h(std::move(*result_base.result_));
+            }
+        }
+
+        // Clean up
+        inner_handle.destroy();
+        launcher.destroy();
     }
 };
 
 } // namespace detail
 
-/** Creates a runner to launch lazy tasks for detached execution.
+/** Creates a launcher coroutine to launch lazy tasks for detached execution.
 
-    Returns an async_run_awaitable that captures the dispatcher and provides
-    operator() overloads to launch tasks. This is analogous to Asio's
-    `co_spawn`. The task begins executing when the dispatcher schedules
-    it; if the dispatcher permits inline execution, the task runs
-    immediately until it awaits an I/O operation.
+    Returns a suspended coroutine launcher whose frame is allocated BEFORE
+    the user's task. This ensures the embedder (which lives on the launcher's
+    stack frame) outlives the embedded wrapper in the user's task frame,
+    preventing use-after-free bugs.
 
-    The dispatcher controls where and how the task resumes after each
-    suspension point. Tasks deal only with type-erased dispatchers
-    (`any_coro(any_coro)` signature), not typed executors. This leverages the
-    coroutine handle's natural type erasure.
-
-    @par Dispatcher Behavior
-    The dispatcher is invoked to start the task and propagated through
-    the coroutine chain via the affine awaitable protocol. When the task
-    completes, the handler runs on the same dispatcher context. If inline
-    execution is permitted, the call chain proceeds synchronously until
-    an I/O await suspends execution.
+    This implementation uses the "suspended coroutine launcher" pattern to
+    achieve exactly two coroutine frames with guaranteed allocation order.
 
     @par Usage
     @code
     io_context ioc;
     auto ex = ioc.get_executor();
 
-    // Fire and forget (uses default_handler)
+    // Fire and forget - discards result, rethrows exceptions
     async_run(ex)(my_coroutine());
 
-    // Single overloaded handler
-    async_run(ex)(compute_value(), overload{
-        [](int result) { std::cout << "Got: " << result << "\n"; },
-        [](std::exception_ptr) { }
+    // With handler - captures result
+    async_run(ex)(compute_value(), [](int result) {
+        std::cout << "Got: " << result << "\n";
     });
 
-    // Separate handlers: h1 for value, h2 for exception
-    async_run(ex)(compute_value(),
-        [](int result) { std::cout << result; },
-        [](std::exception_ptr ep) { if (ep) std::rethrow_exception(ep); }
-    );
+    // Awaitable mode - co_await to get result
+    task<void> caller(auto ex) {
+        int result = co_await async_run(ex)(compute_value());
+        std::cout << "Got: " << result << "\n";
+    }
 
-    // Donate thread to run queued work
     ioc.run();
     @endcode
 
     @param d The dispatcher that schedules and resumes the task.
+    @param alloc The frame allocator (default: recycling_frame_allocator).
 
-    @return An async_run_awaitable object with operator() to launch tasks.
+    @return A suspended async_run_launcher with operator() to launch tasks.
 
-    @see async_run_awaitable
+    @see async_run_launcher
     @see task
     @see dispatcher
 */
-template<dispatcher Dispatcher>
-[[nodiscard]] auto async_run(Dispatcher d)
-{
-    return detail::async_run_awaitable<Dispatcher>{std::move(d), {}};
-}
-
-/** Creates a runner with an explicit frame allocator.
-
-    @param d The dispatcher that schedules and resumes the task.
-    @param alloc The allocator for coroutine frame allocation.
-
-    @return An async_run_awaitable object with operator() to launch tasks.
-
-    @see async_run_awaitable
-*/
 template<
     dispatcher Dispatcher,
-    frame_allocator Allocator>
-[[nodiscard]] auto async_run(Dispatcher d, Allocator alloc)
+    frame_allocator Allocator = detail::recycling_frame_allocator>
+detail::async_run_launcher<Dispatcher, Allocator>
+async_run(Dispatcher, Allocator = {})
 {
-    return detail::async_run_awaitable<
-        Dispatcher, Allocator>{std::move(d), std::move(alloc)};
+    // Get promise without suspending - TLS was already set in promise constructor
+    auto& promise = co_await typename detail::async_run_launcher<
+        Dispatcher, Allocator>::get_promise{};
+
+    // Transfer control to inner task (user's task)
+    co_await typename detail::async_run_launcher<
+        Dispatcher, Allocator>::promise_type::transfer_to_inner{&promise};
+
+    // When we resume here, inner task has completed.
+    // TLS is cleared in final_suspend before returning to continuation.
 }
 
 } // namespace capy
