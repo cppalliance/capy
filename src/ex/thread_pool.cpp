@@ -8,6 +8,7 @@
 //
 
 #include <boost/capy/ex/thread_pool.hpp>
+#include <boost/capy/core/intrusive_queue.hpp>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -18,37 +19,33 @@ namespace capy {
 
 //------------------------------------------------------------------------------
 
-// Handler that wraps an any_coro for execution
-class coro_handler : public execution_context::handler
-{
-    any_coro h_;
-
-public:
-    explicit coro_handler(any_coro h) noexcept
-        : h_(h)
-    {
-    }
-
-    void operator()() override
-    {
-        auto h = h_;
-        delete this;
-        h.resume();
-    }
-
-    void destroy() override
-    {
-        delete this;
-    }
-};
-
-//------------------------------------------------------------------------------
-
 class thread_pool::impl
 {
+    struct work : intrusive_queue<work>::node
+    {
+        any_coro h_;
+
+        explicit work(any_coro h) noexcept
+            : h_(h)
+        {
+        }
+
+        void run()
+        {
+            auto h = h_;
+            delete this;
+            h.resume();
+        }
+
+        void destroy()
+        {
+            delete this;
+        }
+    };
+
     std::mutex mutex_;
     std::condition_variable cv_;
-    execution_context::queue q_;
+    intrusive_queue<work> q_;
     std::vector<std::thread> threads_;
     bool stop_;
 
@@ -64,7 +61,8 @@ public:
         for(auto& t : threads_)
             t.join();
 
-        // Remaining handlers destroyed by queue destructor
+        while(auto* w = q_.pop())
+            w->destroy();
     }
 
     explicit
@@ -84,10 +82,10 @@ public:
     void
     post(any_coro h)
     {
-        auto* handler = new coro_handler(h);
+        auto* w = new work(h);
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            q_.push(handler);
+            q_.push(w);
         }
         cv_.notify_one();
     }
@@ -98,7 +96,7 @@ private:
     {
         for(;;)
         {
-            execution_context::handler* h = nullptr;
+            work* w = nullptr;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
                 cv_.wait(lock, [this]{
@@ -108,10 +106,10 @@ private:
                 if(stop_ && q_.empty())
                     return;
 
-                h = q_.pop();
+                w = q_.pop();
             }
 
-            (*h)();
+            w->run();
         }
     }
 };
