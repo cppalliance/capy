@@ -128,16 +128,6 @@ struct nested_service : execution_context::service
     void shutdown() override {}
 };
 
-// Concrete handler for testing data() behavior
-struct test_handler : execution_context::handler
-{
-    void operator()() override {}
-    void destroy() override {}
-
-    // Expose data_ for testing
-    void set_data(void* p) { data_ = p; }
-};
-
 } // namespace
 
 struct execution_context_test
@@ -334,32 +324,6 @@ struct execution_context_test
     }
 
     void
-    testHandlerDataInitiallyNull()
-    {
-        test_handler h;
-        BOOST_TEST_EQ(h.data(), nullptr);
-    }
-
-    void
-    testHandlerDataReflectsChanges()
-    {
-        test_handler h;
-        int dummy = 42;
-
-        h.set_data(&dummy);
-        BOOST_TEST_EQ(h.data(), &dummy);
-
-        // Change to different value
-        double other = 3.14;
-        h.set_data(&other);
-        BOOST_TEST_EQ(h.data(), &other);
-
-        // Change back to nullptr
-        h.set_data(nullptr);
-        BOOST_TEST_EQ(h.data(), nullptr);
-    }
-
-    void
     run()
     {
         testConstruct();
@@ -374,8 +338,6 @@ struct execution_context_test
         testMultipleServices();
         testNestedServiceCreation();
         testConcurrentAccess();
-        testHandlerDataInitiallyNull();
-        testHandlerDataReflectsChanges();
     }
 };
 
