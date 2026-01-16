@@ -24,7 +24,8 @@ namespace capy {
 */
 enum class error
 {
-    eof = 1
+    eof = 1,
+    test_failure
 };
 
 //-----------------------------------------------

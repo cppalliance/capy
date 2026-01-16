@@ -38,6 +38,7 @@ message(
     switch(static_cast<error>(code))
     {
     case error::eof: return "eof";
+    case error::test_failure: return "test failure";
     default:
         return "unknown";
     }
