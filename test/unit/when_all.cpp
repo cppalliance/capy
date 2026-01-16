@@ -18,6 +18,7 @@
 #include <atomic>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 // GCC-11 gives false positive -Wmaybe-uninitialized warnings when async_run.hpp's
 // await_suspend is inlined into lambdas. The warnings occur because GCC's flow
@@ -144,9 +145,7 @@ struct when_all_test
         int result = 0;
 
         async_run(d)(
-            []() -> task<std::tuple<int, int>> {
-                co_return co_await when_all(returns_int(10), returns_int(20));
-            }(),
+            when_all(returns_int(10), returns_int(20)),
             [&](std::tuple<int, int> t) {
                 auto [a, b] = t;
                 completed = true;
@@ -168,9 +167,7 @@ struct when_all_test
         int result = 0;
 
         async_run(d)(
-            []() -> task<std::tuple<int, int, int>> {
-                co_return co_await when_all(returns_int(1), returns_int(2), returns_int(3));
-            }(),
+            when_all(returns_int(1), returns_int(2), returns_int(3)),
             [&](std::tuple<int, int, int> t) {
                 auto [a, b, c] = t;
                 completed = true;
@@ -193,9 +190,7 @@ struct when_all_test
 
         // void_task() doesn't contribute to result tuple
         async_run(d)(
-            []() -> task<std::tuple<int, std::string>> {
-                co_return co_await when_all(returns_int(42), returns_string("hello"), void_task());
-            }(),
+            when_all(returns_int(42), returns_string("hello"), void_task()),
             [&](std::tuple<int, std::string> t) {
                 auto [a, b] = t;
                 completed = true;
@@ -217,9 +212,7 @@ struct when_all_test
         int result = 0;
 
         async_run(d)(
-            []() -> task<std::tuple<int>> {
-                co_return co_await when_all(returns_int(99));
-            }(),
+            when_all(returns_int(99)),
             [&](std::tuple<int> t) {
                 auto [a] = t;
                 completed = true;
@@ -242,9 +235,7 @@ struct when_all_test
         std::string error_msg;
 
         async_run(d)(
-            []() -> task<std::tuple<int, int>> {
-                co_return co_await when_all(throws_exception("first error"), returns_int(10));
-            }(),
+            when_all(throws_exception("first error"), returns_int(10)),
             [&](std::tuple<int, int>) { completed = true; },
             [&](std::exception_ptr ep) {
                 try {
@@ -270,12 +261,10 @@ struct when_all_test
         std::string error_msg;
 
         async_run(d)(
-            []() -> task<std::tuple<int, int, int>> {
-                co_return co_await when_all(
-                    throws_exception("error_1"),
-                    throws_exception("error_2"),
-                    throws_exception("error_3"));
-            }(),
+            when_all(
+                throws_exception("error_1"),
+                throws_exception("error_2"),
+                throws_exception("error_3")),
             [](std::tuple<int, int, int>) {},
             [&](std::exception_ptr ep) {
                 try {
@@ -303,9 +292,7 @@ struct when_all_test
         std::string error_msg;
 
         async_run(d)(
-            []() -> task<std::tuple<int>> {
-                co_return co_await when_all(returns_int(10), void_throws_exception("void error"));
-            }(),
+            when_all(returns_int(10), void_throws_exception("void error")),
             [](std::tuple<int>) {},
             [&](std::exception_ptr ep) {
                 try {
@@ -329,21 +316,19 @@ struct when_all_test
         bool completed = false;
         int result = 0;
 
+        // Helper tasks that use when_all internally
+        auto inner1 = []() -> task<int> {
+            auto [a, b] = co_await when_all(returns_int(1), returns_int(2));
+            co_return a + b;
+        };
+
+        auto inner2 = []() -> task<int> {
+            auto [a, b] = co_await when_all(returns_int(3), returns_int(4));
+            co_return a + b;
+        };
+
         async_run(d)(
-            []() -> task<std::tuple<int, int>> {
-                // Helper tasks that use when_all internally
-                auto inner1 = []() -> task<int> {
-                    auto [a, b] = co_await when_all(returns_int(1), returns_int(2));
-                    co_return a + b;
-                };
-
-                auto inner2 = []() -> task<int> {
-                    auto [a, b] = co_await when_all(returns_int(3), returns_int(4));
-                    co_return a + b;
-                };
-
-                co_return co_await when_all(inner1(), inner2());
-            }(),
+            when_all(inner1(), inner2()),
             [&](std::tuple<int, int> t) {
                 auto [x, y] = t;
                 completed = true;
@@ -365,9 +350,7 @@ struct when_all_test
 
         // All void tasks return void, not std::tuple<>
         async_run(d)(
-            []() -> task<void> {
-                co_await when_all(void_task(), void_task(), void_task());
-            }(),
+            when_all(void_task(), void_task(), void_task()),
             [&]() { completed = true; },
             [](std::exception_ptr) {});
 
@@ -423,9 +406,7 @@ struct when_all_test
         bool caught_exception = false;
 
         async_run(d)(
-            []() -> task<std::tuple<int, int>> {
-                co_return co_await when_all(throws_exception("error"), returns_int(10));
-            }(),
+            when_all(throws_exception("error"), returns_int(10)),
             [](std::tuple<int, int>) {},
             [&](std::exception_ptr) {
                 caught_exception = true;
@@ -456,15 +437,11 @@ struct when_all_test
         };
 
         async_run(d)(
-            [&]() -> task<int> {
-                auto [a, b, c] = co_await when_all(
-                    counting_task(),
-                    failing_task(),
-                    counting_task()
-                );
-                co_return a + b + c;
-            }(),
-            [](int) {},
+            when_all(
+                counting_task(),
+                failing_task(),
+                counting_task()),
+            [](std::tuple<int, int, int>) {},
             [&](std::exception_ptr) {
                 caught_exception = true;
             });
@@ -488,11 +465,9 @@ struct when_all_test
         int result = 0;
 
         async_run(d)(
-            []() -> task<std::tuple<int, int, int, int, int, int, int, int>> {
-                co_return co_await when_all(
-                    returns_int(1), returns_int(2), returns_int(3), returns_int(4),
-                    returns_int(5), returns_int(6), returns_int(7), returns_int(8));
-            }(),
+            when_all(
+                returns_int(1), returns_int(2), returns_int(3), returns_int(4),
+                returns_int(5), returns_int(6), returns_int(7), returns_int(8)),
             [&](auto t) {
                 auto [a, b, c, d, e, f, g, h] = t;
                 completed = true;
@@ -524,9 +499,7 @@ struct when_all_test
         int result = 0;
 
         async_run(d)(
-            []() -> task<std::tuple<int, int>> {
-                co_return co_await when_all(multi_step_task(10), multi_step_task(20));
-            }(),
+            when_all(multi_step_task(10), multi_step_task(20)),
             [&](std::tuple<int, int> t) {
                 auto [a, b] = t;
                 completed = true;
@@ -564,9 +537,7 @@ struct when_all_test
         bool caught_other = false;
 
         async_run(d)(
-            []() -> task<std::tuple<int, int>> {
-                co_return co_await when_all(throws_exception("test"), throws_other_exception("other"));
-            }(),
+            when_all(throws_exception("test"), throws_other_exception("other")),
             [](std::tuple<int, int>) {},
             [&](std::exception_ptr ep) {
                 try {
@@ -615,9 +586,7 @@ struct when_all_test
         bool completed = false;
 
         async_run(d)(
-            []() -> task<std::tuple<int, int, int>> {
-                co_return co_await when_all(returns_int(1), returns_int(2), returns_int(3));
-            }(),
+            when_all(returns_int(1), returns_int(2), returns_int(3)),
             [&](std::tuple<int, int, int> t) {
                 auto [a, b, c] = t;
                 completed = true;
@@ -646,12 +615,10 @@ struct when_all_test
         bool completed = false;
 
         async_run(d)(
-            []() -> task<std::tuple<std::string, std::string, std::string>> {
-                co_return co_await when_all(
-                    returns_string("first"),
-                    returns_string("second"),
-                    returns_string("third"));
-            }(),
+            when_all(
+                returns_string("first"),
+                returns_string("second"),
+                returns_string("third")),
             [&](std::tuple<std::string, std::string, std::string> t) {
                 auto [first, second, third] = t;
                 BOOST_TEST_EQ(first, "first");
@@ -674,9 +641,7 @@ struct when_all_test
 
         // void at index 1, values at 0 and 2
         async_run(d)(
-            []() -> task<std::tuple<int, int>> {
-                co_return co_await when_all(returns_int(100), void_task(), returns_int(300));
-            }(),
+            when_all(returns_int(100), void_task(), returns_int(300)),
             [&](std::tuple<int, int> t) {
                 // a should be from index 0, b from index 2
                 auto [a, b] = t;
@@ -701,16 +666,15 @@ struct when_all_test
         test_dispatcher d(dispatch_count);
         bool completed = false;
 
+        auto awaitable1 = when_all(returns_int(1), returns_int(2));
+        auto awaitable2 = std::move(awaitable1);
+
         async_run(d)(
-            []() -> task<int> {
-                auto awaitable1 = when_all(returns_int(1), returns_int(2));
-                auto awaitable2 = std::move(awaitable1);
-                auto [a, b] = co_await std::move(awaitable2);
-                co_return a + b;
-            }(),
-            [&](int r) {
+            std::move(awaitable2),
+            [&](std::tuple<int, int> t) {
+                auto [a, b] = t;
                 completed = true;
-                BOOST_TEST_EQ(r, 3);
+                BOOST_TEST_EQ(a + b, 3);
             },
             [](std::exception_ptr) {});
 
@@ -725,16 +689,14 @@ struct when_all_test
         test_dispatcher d(dispatch_count);
         bool completed = false;
 
+        auto deferred = when_all(returns_int(10), returns_int(20));
+        // Await later
         async_run(d)(
-            []() -> task<int> {
-                auto deferred = when_all(returns_int(10), returns_int(20));
-                // Await later
-                auto [a, b] = co_await std::move(deferred);
-                co_return a + b;
-            }(),
-            [&](int r) {
+            std::move(deferred),
+            [&](std::tuple<int, int> t) {
+                auto [a, b] = t;
                 completed = true;
-                BOOST_TEST_EQ(r, 30);
+                BOOST_TEST_EQ(a + b, 30);
             },
             [](std::exception_ptr) {});
 
@@ -772,31 +734,25 @@ struct when_all_test
         test_dispatcher d(dispatch_count);
         bool caught_exception = false;
 
+        auto inner_failing = []() -> task<int> {
+            auto [a, b] = co_await when_all(
+                throws_exception("inner error"),
+                returns_int(1)
+            );
+            co_return a + b;
+        };
+
+        auto inner_success = []() -> task<int> {
+            auto [a, b] = co_await when_all(
+                returns_int(2),
+                returns_int(3)
+            );
+            co_return a + b;
+        };
+
         async_run(d)(
-            []() -> task<int> {
-                auto inner_failing = []() -> task<int> {
-                    auto [a, b] = co_await when_all(
-                        throws_exception("inner error"),
-                        returns_int(1)
-                    );
-                    co_return a + b;
-                };
-
-                auto inner_success = []() -> task<int> {
-                    auto [a, b] = co_await when_all(
-                        returns_int(2),
-                        returns_int(3)
-                    );
-                    co_return a + b;
-                };
-
-                auto [x, y] = co_await when_all(
-                    inner_failing(),
-                    inner_success()
-                );
-                co_return x + y;
-            }(),
-            [](int) {},
+            when_all(inner_failing(), inner_success()),
+            [](std::tuple<int, int>) {},
             [&](std::exception_ptr ep) {
                 caught_exception = true;
                 try {
@@ -850,6 +806,116 @@ struct when_all_test
         testStoppableAwaitableConcept();
         testNestedWhenAllStopPropagation();
 #endif
+
+        // Frame allocator tests
+        testWhenAllUsesAllocator();
+        testNestedWhenAllUsesAllocator();
+    }
+
+    //----------------------------------------------------------
+    // Frame allocator tests
+    //----------------------------------------------------------
+
+    /** Tracking frame allocator that logs allocation events.
+    */
+    struct tracking_frame_allocator
+    {
+        int id;
+        int* alloc_count;
+        int* dealloc_count;
+        std::vector<int>* alloc_log;
+
+        void* allocate(std::size_t n)
+        {
+            ++(*alloc_count);
+            if(alloc_log)
+                alloc_log->push_back(id);
+            return ::operator new(n);
+        }
+
+        void deallocate(void* p, std::size_t)
+        {
+            ++(*dealloc_count);
+            ::operator delete(p);
+        }
+    };
+
+    void
+    testWhenAllUsesAllocator()
+    {
+        // Verify that when_all() coroutines use the custom allocator
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool completed = false;
+
+        int alloc_count = 0;
+        int dealloc_count = 0;
+        std::vector<int> alloc_log;
+
+        tracking_frame_allocator alloc{1, &alloc_count, &dealloc_count, &alloc_log};
+
+        async_run(d, alloc)(
+            when_all(returns_int(10), returns_int(20), returns_int(30)),
+            [&](std::tuple<int, int, int> t) {
+                auto [a, b, c] = t;
+                completed = true;
+                BOOST_TEST_EQ(a + b + c, 60);
+            },
+            [](std::exception_ptr) {});
+
+        BOOST_TEST(completed);
+        // when_all should have allocated frames through our allocator
+        BOOST_TEST_GE(alloc_count, 1);
+        // All allocations should use our allocator
+        for(int id : alloc_log)
+            BOOST_TEST_EQ(id, 1);
+        // All allocations should be deallocated
+        BOOST_TEST_EQ(alloc_count, dealloc_count);
+    }
+
+    void
+    testNestedWhenAllUsesAllocator()
+    {
+        // Verify nested when_all calls also use the allocator
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool completed = false;
+
+        int alloc_count = 0;
+        int dealloc_count = 0;
+        std::vector<int> alloc_log;
+
+        tracking_frame_allocator alloc{1, &alloc_count, &dealloc_count, &alloc_log};
+
+        auto inner1 = []() -> task<int> {
+            auto [a, b] = co_await when_all(returns_int(1), returns_int(2));
+            co_return a + b;
+        };
+
+        auto inner2 = []() -> task<int> {
+            auto [a, b] = co_await when_all(returns_int(3), returns_int(4));
+            co_return a + b;
+        };
+
+        int result = 0;
+        async_run(d, alloc)(
+            when_all(inner1(), inner2()),
+            [&](std::tuple<int, int> t) {
+                auto [x, y] = t;
+                completed = true;
+                result = x + y;
+            },
+            [](std::exception_ptr) {});
+
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(result, 10);  // (1+2) + (3+4) = 10
+        // Nested when_all should also allocate through our allocator
+        BOOST_TEST_GE(alloc_count, 1);
+        // All allocations should use our allocator
+        for(int id : alloc_log)
+            BOOST_TEST_EQ(id, 1);
+        // All allocations should be deallocated
+        BOOST_TEST_EQ(alloc_count, dealloc_count);
     }
 };
 

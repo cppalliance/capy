@@ -14,7 +14,6 @@
 #include <boost/capy/concept/frame_allocator.hpp>
 
 #include <cstddef>
-#include <cstdint>
 #include <new>
 #include <utility>
 
@@ -72,94 +71,30 @@ public:
     */
     virtual void* allocate(std::size_t n) = 0;
 
-    /** Deallocate memory for a child coroutine frame.
+    /** Deallocate memory for a coroutine frame.
 
         @param p Pointer to the memory to deallocate.
         @param n The user-requested size (not total allocation).
     */
     virtual void deallocate(void* p, std::size_t n) = 0;
-
-    /** Deallocate the first coroutine frame (where this wrapper is embedded).
-
-        This method handles the special case where the wrapper itself
-        is embedded at the end of the block being deallocated.
-
-        @param block Pointer to the block to deallocate.
-        @param user_size The user-requested size (not total allocation).
-    */
-    virtual void deallocate_embedded(void* block, std::size_t user_size) = 0;
 };
 
-// Forward declaration
-template<frame_allocator Allocator>
-class frame_allocator_wrapper;
+/** Frame allocator wrapper that lives in the launcher frame.
 
-/** Wrapper that embeds a frame_allocator_wrapper in the first allocation.
+    This wrapper is stored in the async_run launcher's promise and
+    handles all coroutine frame allocations. Because the launcher
+    frame is destroyed LAST (after all inner coroutines), this
+    wrapper is guaranteed to outlive all frames that reference it.
 
-    This wrapper lives on the stack (in async_run_awaitable) and is used only
-    for the FIRST coroutine frame allocation. It embeds a copy of
-    frame_allocator_wrapper at the end of the allocated block, then
-    updates TLS to point to that embedded wrapper for subsequent
-    allocations.
-
-    @tparam Allocator The underlying allocator type satisfying frame_allocator.
-*/
-template<frame_allocator Allocator>
-class embedding_frame_allocator : public frame_allocator_base
-{
-    Allocator alloc_;
-
-    static constexpr std::size_t alignment = alignof(void*);
-
-    static_assert(
-        alignof(frame_allocator_wrapper<Allocator>) <= alignment,
-        "alignment must be at least as strict as wrapper alignment");
-
-    static std::size_t
-    aligned_offset(std::size_t n) noexcept
-    {
-        return (n + alignment - 1) & ~(alignment - 1);
-    }
-
-public:
-    explicit embedding_frame_allocator(Allocator a)
-        : alloc_(std::move(a))
-    {
-    }
-
-    void*
-    allocate(std::size_t n) override;
-
-    void
-    deallocate(void*, std::size_t) override
-    {
-        // Never called - stack wrapper not used for deallocation
-    }
-
-    void
-    deallocate_embedded(void*, std::size_t) override
-    {
-        // Never called
-    }
-};
-
-/** Wrapper embedded in the first coroutine frame.
-
-    This wrapper is constructed at the end of the first coroutine
-    frame by embedding_frame_allocator. It handles all subsequent
-    allocations (storing a pointer to itself) and all deallocations.
-
-    IMPORTANT: This wrapper stores a POINTER to the allocator in the
-    launcher's embedder, not a copy. This is safe because Frame #1
-    (where this wrapper lives) is always destroyed before Frame #2
-    (the launcher, where embedder lives).
+    All allocated frames have the layout: [frame | ptr]
+    where ptr points back to this wrapper for deallocation.
 
     @tparam Allocator The underlying allocator type satisfying frame_allocator.
 */
 template<frame_allocator Allocator>
 class frame_allocator_wrapper : public frame_allocator_base
 {
-    Allocator* alloc_;  // Pointer, not copy
+    Allocator alloc_;
 
     static constexpr std::size_t alignment = alignof(void*);
 
@@ -170,8 +105,8 @@ class frame_allocator_wrapper : public frame_allocator_base
     }
 
 public:
-    explicit frame_allocator_wrapper(Allocator& a)
-        : alloc_(&a)
+    explicit frame_allocator_wrapper(Allocator a)
+        : alloc_(std::move(a))
     {
     }
 
@@ -182,9 +117,9 @@ public:
         std::size_t ptr_offset = aligned_offset(n);
         std::size_t total = ptr_offset + sizeof(frame_allocator_base*);
 
-        void* raw = alloc_->allocate(total);
+        void* raw = alloc_.allocate(total);
 
-        // Store untagged pointer to self at fixed offset
+        // Store pointer to self at fixed offset
         auto* ptr_loc = reinterpret_cast<frame_allocator_base**>(
             static_cast<char*>(raw) + ptr_offset);
         *ptr_loc = this;
@@ -195,25 +130,9 @@ public:
     void
     deallocate(void* block, std::size_t user_size) override
     {
-        // Child frame deallocation: layout is [frame | ptr]
         std::size_t ptr_offset = aligned_offset(user_size);
         std::size_t total = ptr_offset + sizeof(frame_allocator_base*);
-        alloc_->deallocate(block, total);
-    }
-
-    void
-    deallocate_embedded(void* block, std::size_t user_size) override
-    {
-        // First frame deallocation: layout is [frame | ptr | wrapper]
-        std::size_t ptr_offset = aligned_offset(user_size);
-        std::size_t wrapper_offset = ptr_offset + sizeof(frame_allocator_base*);
-        std::size_t total = wrapper_offset + sizeof(frame_allocator_wrapper);
-
-        // Safe to use alloc_ pointer because embedder (in Frame #2)
-        // is guaranteed to outlive this wrapper (in Frame #1)
-        Allocator* alloc_ptr = alloc_;  // Save pointer before destroying self
-        this->~frame_allocator_wrapper();
-        alloc_ptr->deallocate(block, total);
+        alloc_.deallocate(block, total);
     }
 };
 
@@ -233,17 +152,13 @@ public:
 
     @par Memory Layout
 
-    For the first coroutine frame (allocated via embedding_frame_allocator):
-    @code
-    [coroutine frame | tagged_ptr | frame_allocator_wrapper]
-    @endcode
-
-    For subsequent frames (allocated via frame_allocator_wrapper):
+    All coroutine frames have the same layout:
     @code
     [coroutine frame | ptr]
     @endcode
 
-    The tag bit (low bit) distinguishes the two cases during deallocation.
+    Where ptr points to the frame_allocator_wrapper in the launcher frame,
+    or is nullptr if allocated with global new/delete.
 
     @see frame_allocator
 */
@@ -300,6 +215,22 @@ public:
         return current_allocator();
     }
 
+    // GCC 11+ emits -Wmismatched-new-delete because it tracks that
+    // operator new returns a pointer, and operator delete should be
+    // the one to free it. Our design intentionally over-allocates to
+    // store a pointer at the end of each frame. The deallocation is
+    // correct: we recalculate the total size and free the full block.
+    // This warning is suppressed for these two functions only.
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
+#endif
+
+    /** Allocate a coroutine frame.
+
+        If a thread-local allocator is set, delegates to it.
+        Otherwise, allocates with extra space for a null pointer marker.
+    */
     static void*
     operator new(std::size_t size)
     {
@@ -324,12 +255,9 @@ public:
     /** Deallocate a coroutine frame.
 
         Reads the pointer stored at the end of the frame to find
-        the allocator. The tag bit (low bit) indicates whether
-        this is the first frame (with embedded wrapper) or a
-        child frame (with pointer to external wrapper).
-
-        A null pointer indicates the frame was allocated with
-        global new/delete (no custom allocator was active).
+        the allocator wrapper. A null pointer indicates the frame
+        was allocated with global new/delete (no custom allocator
+        was active).
     */
     static void
     operator delete(void* ptr, std::size_t size)
@@ -338,68 +266,22 @@ public:
         std::size_t ptr_offset = aligned_offset(size);
         auto* ptr_loc = reinterpret_cast<detail::frame_allocator_base**>(
             static_cast<char*>(ptr) + ptr_offset);
-        auto raw_ptr = reinterpret_cast<std::uintptr_t>(*ptr_loc);
+        auto* wrapper = *ptr_loc;
 
         // Null pointer means global new/delete
-        if(raw_ptr == 0)
+        if(!wrapper)
         {
-#if __cpp_sized_deallocation >= 201309
-            std::size_t total = ptr_offset + sizeof(detail::frame_allocator_base*);
-            ::operator delete(ptr, total);
-#else
             ::operator delete(ptr);
-#endif
             return;
         }
 
-        // Tag bit distinguishes first frame (embedded) from child frames
-        bool is_embedded = raw_ptr & 1;
-        auto* wrapper = reinterpret_cast<detail::frame_allocator_base*>(
-            raw_ptr & ~std::uintptr_t(1));
-
-        if(is_embedded)
-            wrapper->deallocate_embedded(ptr, size);
-        else
-            wrapper->deallocate(ptr, size);
+        wrapper->deallocate(ptr, size);
     }
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 };
-
-//----------------------------------------------------------
-// embedding_frame_allocator implementation
-// (must come after frame_allocating_base is defined)
-//----------------------------------------------------------
-
-namespace detail {
-
-template<frame_allocator Allocator>
-void*
-embedding_frame_allocator<Allocator>::allocate(std::size_t n)
-{
-    // Layout: [frame | ptr | wrapper]
-    std::size_t ptr_offset = aligned_offset(n);
-    std::size_t wrapper_offset = ptr_offset + sizeof(frame_allocator_base*);
-    std::size_t total = wrapper_offset + sizeof(frame_allocator_wrapper<Allocator>);
-
-    void* raw = alloc_.allocate(total);
-
-    // Construct embedded wrapper after the pointer
-    // Pass REFERENCE to alloc_ so wrapper stores pointer, not copy
-    auto* wrapper_loc = static_cast<char*>(raw) + wrapper_offset;
-    auto* embedded = new (wrapper_loc) frame_allocator_wrapper<Allocator>(alloc_);
-
-    // Store tagged pointer at fixed offset (bit 0 set = embedded)
-    auto* ptr_loc = reinterpret_cast<frame_allocator_base**>(
-        static_cast<char*>(raw) + ptr_offset);
-    *ptr_loc = reinterpret_cast<frame_allocator_base*>(
-        reinterpret_cast<std::uintptr_t>(embedded) | 1);
-
-    // Update TLS to embedded wrapper for subsequent allocations
-    frame_allocating_base::set_frame_allocator(*embedded);
-
-    return raw;
-}
-
-} // namespace detail
 
 } // namespace capy
 } // namespace boost
