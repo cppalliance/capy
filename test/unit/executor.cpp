@@ -64,7 +64,7 @@ struct test_executor
 
     // Work submission
     std::coroutine_handle<>
-    dispatch(std::coroutine_handle<> h) const
+    operator()(std::coroutine_handle<> h) const
     {
         return h;
     }

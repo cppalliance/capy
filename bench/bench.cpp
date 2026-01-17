@@ -81,11 +81,6 @@ public:
         return h;
     }
 
-    any_coro dispatch(any_coro h) const
-    {
-        return h;
-    }
-
     // Post interface - resume inline for benchmarking
     void post(any_coro h) const
     {

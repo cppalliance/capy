@@ -89,7 +89,7 @@ concept executor =
         { ce.context() } -> /* reference to execution context */;
         { ce.on_work_started() } noexcept;
         { ce.on_work_finished() } noexcept;
-        { ce.dispatch(h) } -> std::convertible_to<std::coroutine_handle<>>;
+        { ce(h) } -> std::convertible_to<std::coroutine_handle<>>;
         { ce.post(h) };
         { ce.defer(h) };
     };
@@ -101,8 +101,8 @@ concept executor =
 |===
 | Operation | Behavior
 
-| `dispatch(h)`
-| Run inline if safe, otherwise queue. Cheapest path.
+| `operator()(h)`
+| Run inline if safe, otherwise queue. Cheapest path. Also serves as dispatcher interface.
 
 | `post(h)`
 | Always queue, never inline. Guaranteed asynchrony.
@@ -113,7 +113,7 @@ concept executor =
 
 **When to use each:**
 
-* `dispatch` — Default choice. Allows the executor to optimize.
+* `operator()` — Default choice. Allows the executor to optimize.
 * `post` — When you need guaranteed asynchrony (e.g., releasing a lock first).
 * `defer` — When posting your own continuation (enables thread-local queuing).
 
@@ -171,7 +171,7 @@ Stoppable awaitables provide _both_ overloads of `await_suspend`.
 Executors have specific thread safety guarantees:
 
 * Copy constructor, comparison, `context()` — always thread-safe
-* `dispatch`, `post`, `defer` — thread-safe for concurrent calls
+* `operator()`, `post`, `defer` — thread-safe for concurrent calls
 * `on_work_started`, `on_work_finished` — thread-safe, must not throw
 
 == Executor Validity
@@ -184,7 +184,7 @@ thread_pool pool;
 auto ex = pool.get_executor();
 // When pool is destroyed, ex becomes invalid
 
-// WARNING: Calling ex.dispatch() after pool destruction is undefined behavior
+// WARNING: Calling ex() after pool destruction is undefined behavior
 ----
 
 The copy constructor and `context()` remain valid until the context is

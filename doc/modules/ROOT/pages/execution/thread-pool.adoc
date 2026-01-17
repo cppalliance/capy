@@ -123,16 +123,16 @@ auto ex = pool.get_executor();
 thread_pool& ctx = ex.context();
 
 // Submit coroutines
-ex.post(handle);      // Queue for execution
-ex.dispatch(handle);  // Same as post (always queues)
-ex.defer(handle);     // Same as post
+ex.post(handle);   // Queue for execution
+ex(handle);        // Same as post (always queues)
+ex.defer(handle);  // Same as post
 
 // Work tracking
 ex.on_work_started();
 ex.on_work_finished();
 ----
 
-=== dispatch vs post vs defer
+=== operator() vs post vs defer
 
 For `thread_pool`, all three operations behave identically: they queue the
 work for execution on a pool thread. The distinction matters for other
@@ -145,7 +145,7 @@ execution contexts:
 | `post(h)`
 | Always queue, never execute inline
 
-| `dispatch(h)`
+| `operator()(h)`
 | Execute inline if safe, otherwise queue
 
 | `defer(h)`
@@ -153,7 +153,7 @@ execution contexts:
 |===
 
 Since callers are never "inside" the thread pool's execution context,
-`dispatch` always queues.
+`operator()` always queues.
 
 == Work Tracking
 
@@ -216,7 +216,7 @@ Services are shut down and destroyed when the pool is destroyed.
 | `get_executor()`
 | Safe
 
-| `executor.post/dispatch/defer`
+| `executor.post/operator()/defer`
 | Safe (concurrent calls allowed)
 
 | `executor.context()`

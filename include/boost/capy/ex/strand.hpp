@@ -47,7 +47,7 @@ namespace capy {
     This class satisfies the `executor` concept, providing:
     - `context()` - Returns the underlying execution context
     - `on_work_started()` / `on_work_finished()` - Work tracking
-    - `dispatch(h)` - May run immediately if strand is idle
+    - `operator()(h)` - May run immediately if strand is idle
     - `post(h)` - Always queues for later execution
     - `defer(h)` - Same as post (continuation hint)
 
@@ -196,30 +196,6 @@ public:
         return impl_ == other.impl_;
     }
 
-    /** Dispatch a coroutine through the strand.
-
-        If the calling thread is already executing within this strand,
-        the coroutine is resumed immediately via symmetric transfer,
-        bypassing the queue. This provides optimal performance but
-        means the coroutine may execute before previously queued work.
-
-        Otherwise, the coroutine is queued and will execute in FIFO
-        order relative to other queued coroutines.
-
-        @par Ordering
-        Callers requiring strict FIFO ordering should use post()
-        instead, which always queues the coroutine.
-
-        @param h The coroutine handle to dispatch.
-        @return A coroutine handle for symmetric transfer.
-    */
-    // TODO: measure before deciding to split strand_impl for inlining fast-path check
-    any_coro
-    dispatch(any_coro h) const
-    {
-        return detail::strand_service::dispatch(*impl_, any_dispatcher(post_), h);
-    }
-
     /** Post a coroutine to the strand.
 
         The coroutine is always queued for execution, never resumed
@@ -254,16 +230,26 @@ public:
 
     /** Dispatch a coroutine through the strand.
 
-        This operator provides a dispatcher-style interface for
-        use with symmetric transfer. Equivalent to `dispatch()`.
+        If the calling thread is already executing within this strand,
+        the coroutine is resumed immediately via symmetric transfer,
+        bypassing the queue. This provides optimal performance but
+        means the coroutine may execute before previously queued work.
+
+        Otherwise, the coroutine is queued and will execute in FIFO
+        order relative to other queued coroutines.
+
+        @par Ordering
+        Callers requiring strict FIFO ordering should use post()
+        instead, which always queues the coroutine.
 
         @param h The coroutine handle to dispatch.
         @return A coroutine handle for symmetric transfer.
     */
+    // TODO: measure before deciding to split strand_impl for inlining fast-path check
     any_coro
     operator()(any_coro h) const
     {
-        return dispatch(h);
+        return detail::strand_service::dispatch(*impl_, any_dispatcher(post_), h);
     }
 };
 

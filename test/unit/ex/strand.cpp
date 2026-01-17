@@ -354,7 +354,7 @@ struct strand_test
         std::atomic<int> counter{0};
 
         auto coro = make_counter_coro(counter);
-        s.dispatch(coro.handle());
+        s(coro.handle());
         coro.release();
 
         // Wait for work to complete
@@ -550,7 +550,7 @@ struct strand_test
 
         std::atomic<int> counter{0};
         auto coro = make_counter_coro(counter);
-        s.dispatch(coro.handle());
+        s(coro.handle());
         coro.release();
 
         BOOST_TEST(wait_for([&]{ return counter.load() >= 1; }));

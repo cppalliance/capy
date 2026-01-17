@@ -37,10 +37,10 @@ namespace capy {
         completed. Precondition: a preceding call to
         `on_work_started()` on an equal executor.
 
-    @li `dispatch(h)` - Execute a coroutine, potentially immediately
+    @li `operator()(h)` - Execute a coroutine, potentially immediately
         if the executor determines it is safe to do so. The executor
         may block forward progress of the caller until execution
-        completes.
+        completes. This also serves as the dispatcher interface.
 
     @li `post(h)` - Queue a coroutine for later execution. The
         executor shall not block forward progress of the caller
@@ -96,7 +96,7 @@ concept executor =
         { ce.on_work_finished() } noexcept;
 
         // Work submission
-        { ce.dispatch(h) } -> std::convertible_to<std::coroutine_handle<>>;
+        { ce(h) } -> std::convertible_to<std::coroutine_handle<>>;
         { ce.post(h) };
         { ce.defer(h) };
     };

@@ -127,14 +127,14 @@ public:
 
         Posts the coroutine to the thread pool and returns
         immediately. The caller should suspend after calling
-        this function.
+        this function. Also serves as the dispatcher interface.
 
         @param h The coroutine handle to execute.
 
         @return A noop coroutine handle to resume.
     */
     any_coro
-    dispatch(any_coro h) const
+    operator()(any_coro h) const
     {
         post(h);
         return std::noop_coroutine();
