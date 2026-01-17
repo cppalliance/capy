@@ -12,6 +12,7 @@
 
 #include <boost/capy/error.hpp>
 #include <boost/system/errc.hpp>
+#include <cstdint>
 #include <stdexcept>
 
 #include "test_suite.hpp"
@@ -327,7 +328,7 @@ public:
     {
         // Test that source location is captured on fail()
         fuse f;
-        int line_of_fail = 0;
+        std::uint_least32_t line_of_fail = 0;
 
         auto r = f([&](fuse& fu) {
             auto ec = fu.maybe_fail();
@@ -435,7 +436,7 @@ public:
     {
         // Test that fail() works in inert mode
         fuse f;
-        int line_of_fail = 0;
+        std::uint_least32_t line_of_fail = 0;
 
         auto r = f.inert([&](fuse& fu) {
             auto ec = fu.maybe_fail();
