@@ -45,7 +45,7 @@ mechanisms in affine-aware awaitables.
 
 **Lazy by default.** Tasks suspend immediately on creation. This enables
 structured composition where parent coroutines naturally await their children.
-Eager execution is available through `async_run`.
+Eager execution is available through `run_async`.
 
 **Affinity through the protocol.** The dispatcher propagates through
 `await_suspend` parameters, not through thread-local storage or global state.
@@ -71,12 +71,12 @@ For I/O-bound code, this cost is negligible.
 [source,cpp]
 ----
 #include <boost/capy/task.hpp>
-#include <boost/capy/ex/async_run.hpp>
+#include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 #include <iostream>
 
 using boost::capy::task;
-using boost::capy::async_run;
+using boost::capy::run_async;
 using boost::capy::thread_pool;
 
 task<int> compute()
@@ -93,7 +93,7 @@ task<void> run()
 int main()
 {
     thread_pool pool(1);
-    async_run(pool.get_executor())(run());
+    run_async(pool.get_executor())(run());
     // Pool destructor waits for completion
 }
 ----

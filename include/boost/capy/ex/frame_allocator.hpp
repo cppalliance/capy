@@ -81,7 +81,7 @@ public:
 
 /** Frame allocator wrapper that lives in the launcher frame.
 
-    This wrapper is stored in the async_run launcher's promise and
+    This wrapper is stored in the run_async launcher's promise and
     handles all coroutine frame allocations. Because the launcher
     frame is destroyed LAST (after all inner coroutines), this
     wrapper is guaranteed to outlive all frames that reference it.

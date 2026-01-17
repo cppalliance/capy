@@ -1,8 +1,8 @@
-# async_run Implementation: Using Vinnie's Suspended Coroutine Launcher Pattern
+# run_async Implementation: Using Vinnie's Suspended Coroutine Launcher Pattern
 
 ## Overview
 
-The current `async_run` implementation **successfully uses** Vinnie Falco's suspended coroutine launcher pattern with **exactly two frames**, while also supporting handler-based execution that Vinnie's original design didn't address.
+The current `run_async` implementation **successfully uses** Vinnie Falco's suspended coroutine launcher pattern with **exactly two frames**, while also supporting handler-based execution that Vinnie's original design didn't address.
 
 ---
 
@@ -32,7 +32,7 @@ We implement Vinnie's pattern **exactly as described**, with the addition of han
 ### Frame Structure (2 Frames Total)
 
 ```
-Frame #2: async_run_launcher (launcher coroutine)
+Frame #2: run_async_launcher (launcher coroutine)
   ├─ promise_type
   │   ├─ d_ (dispatcher)                          ← Added for handler/dispatcher support
   │   ├─ embedder_ (embedding_frame_allocator)   ← Added for frame allocator fix
@@ -51,10 +51,10 @@ Frame #2: async_run_launcher (launcher coroutine)
 ### Code Structure
 
 ```cpp
-// async_run() is a COROUTINE - allocates Frame #2
+// run_async() is a COROUTINE - allocates Frame #2
 template<dispatcher Dispatcher, frame_allocator Allocator>
-detail::async_run_launcher<Dispatcher, Allocator>
-async_run(Dispatcher d, Allocator alloc = {})
+detail::run_async_launcher<Dispatcher, Allocator>
+run_async(Dispatcher d, Allocator alloc = {})
 {
     // TLS set in promise constructor (line 100)
     auto& promise = co_await get_promise{};
@@ -63,7 +63,7 @@ async_run(Dispatcher d, Allocator alloc = {})
 ```
 
 **This follows Vinnie's pattern**:
-- ✅ `async_run()` is a coroutine
+- ✅ `run_async()` is a coroutine
 - ✅ Allocates Frame #2 first
 - ✅ `embedder_` lives in promise (line 89)
 - ✅ TLS set in promise constructor (line 100)
@@ -143,7 +143,7 @@ inner_handle.promise().caller_ex_ = d;
 This bypasses the need for a wrapper coroutine that would provide `await_transform` for dispatcher propagation. The dispatcher is simply assigned directly to the inner task's promise.
 
 **Execution flow**:
-1. `async_run(d)` creates launcher (Frame #2)
+1. `run_async(d)` creates launcher (Frame #2)
 2. `operator()` with handler calls `run_with_handler`
 3. User task handle obtained (Frame #1 already allocated)
 4. Dispatcher assigned directly to inner task
@@ -219,7 +219,7 @@ This also uses only 2 frames:
 | Aspect | Vinnie's Pattern | Our Implementation | Match? |
 |--------|------------------|-------------------|--------|
 | **Frame count** | 2 frames | 2 frames | ✅ Yes |
-| **`async_run()` type** | Coroutine | Coroutine | ✅ Yes |
+| **`run_async()` type** | Coroutine | Coroutine | ✅ Yes |
 | **Embedder location** | Launcher promise | Launcher promise | ✅ Yes |
 | **TLS setup** | Promise constructor | Promise constructor | ✅ Yes |
 | **`operator()` return** | Awaitable | Awaitable (+ handler overloads) | ✅ Extended |
@@ -241,7 +241,7 @@ int result = co_await launcher()(compute_value());
 
 We added handler support:
 ```cpp
-async_run(ex)(compute_value(), [](int result) { /* ... */ });
+run_async(ex)(compute_value(), [](int result) { /* ... */ });
 ```
 
 **How we achieve this with 2 frames**:
@@ -256,10 +256,10 @@ Our `launch_awaitable` supports two modes:
 
 ```cpp
 // Mode 1: Fire-and-forget (destructor path)
-async_run(ex)(my_task());
+run_async(ex)(my_task());
 
 // Mode 2: Awaitable (await_suspend path)
-int result = co_await async_run(ex)(my_task());
+int result = co_await run_async(ex)(my_task());
 ```
 
 The `started_` flag tracks which path was taken, and the destructor runs fire-and-forget if not awaited.
@@ -270,16 +270,16 @@ Support for flexible handler patterns:
 
 ```cpp
 // Success-only handler (exceptions rethrow)
-async_run(ex)(task, [](int result) { });
+run_async(ex)(task, [](int result) { });
 
 // Full handler with exception handling
-async_run(ex)(task, overload{
+run_async(ex)(task, overload{
     [](int result) { },
     [](std::exception_ptr) { }
 });
 
 // Separate success/error handlers
-async_run(ex)(task,
+run_async(ex)(task,
     [](int result) { },
     [](std::exception_ptr) { });
 ```
@@ -293,8 +293,8 @@ The `handler_pair` utility combines handlers, and `default_handler` provides def
 ### Frame Allocation Timeline
 
 ```
-1. async_run(ex) called
-   └─> async_run() coroutine starts
+1. run_async(ex) called
+   └─> run_async() coroutine starts
        └─> Allocates Frame #2 (launcher)
        └─> promise_type constructor runs
            └─> embedder_ initialized
@@ -355,7 +355,7 @@ The confusion arose because I was looking at an older version or misread the cod
 The allocator is stored **only** in Frame #2's promise, inside the `embedder_`:
 
 ```cpp
-// Frame #2: async_run_launcher
+// Frame #2: run_async_launcher
 struct promise_type {
     std::optional<Dispatcher> d_;
     detail::embedding_frame_allocator<Allocator> embedder_;  // Contains the allocator
@@ -398,7 +398,7 @@ class frame_allocator_wrapper {
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ Frame #2: async_run_launcher (heap)                         │
+│ Frame #2: run_async_launcher (heap)                         │
 ├─────────────────────────────────────────────────────────────┤
 │ promise_type:                                               │
 │   ├─ d_: Dispatcher                                         │
@@ -437,7 +437,7 @@ Since the wrapper (Frame #1) is destroyed first, the pointer to `embedder_.alloc
 ### Construction Flow
 
 ```cpp
-// 1. async_run(d, alloc) called
+// 1. run_async(d, alloc) called
 // Frame #2 allocated, promise_type constructor runs:
 promise_type(Dispatcher d, Allocator a)
     : embedder_(std::move(a))  // Allocator moved into embedder_
@@ -617,12 +617,12 @@ co_await launcher()(user_task());
 
 ### Comparison to Our Implementation
 
-Our `async_run` implementation follows Vinnie's pattern with these additions:
+Our `run_async` implementation follows Vinnie's pattern with these additions:
 
 | Component | Vinnie's Pattern | Our Implementation |
 |-----------|------------------|-------------------|
 | **Frame allocation** | 2 frames (launcher + user task) | 2 frames (launcher + user task) ✅ |
-| **Launcher coroutine** | Suspends immediately, transfers to inner | `async_run_launcher` - same approach ✅ |
+| **Launcher coroutine** | Suspends immediately, transfers to inner | `run_async_launcher` - same approach ✅ |
 | **Non-coroutine operator()** | Returns awaitable without frame | `launch_awaitable` - same approach ✅ |
 | **Frame allocator** | Not specified | Added `embedder_` for allocator lifetime |
 | **Handler support** | Not specified | Added `d_` and handler-based execution |

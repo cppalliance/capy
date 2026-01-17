@@ -20,7 +20,7 @@ Create a file `hello_coro.cpp`:
 [source,cpp]
 ----
 #include <boost/capy/task.hpp>
-#include <boost/capy/ex/async_run.hpp>
+#include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 #include <iostream>
 
@@ -44,7 +44,7 @@ int main()
     capy::thread_pool pool(1);
 
     // Launch the coroutine on the pool's executor
-    capy::async_run(pool.get_executor())(greet());
+    capy::run_async(pool.get_executor())(greet());
 
     // Pool destructor waits for all work to complete
 }
@@ -71,7 +71,7 @@ The answer is 42
 
 1. `answer()` creates a suspended coroutine that will return 42
 2. `greet()` creates a suspended coroutine that will await `answer()`
-3. `async_run(executor)(greet())` starts `greet()` on the pool's executor
+3. `run_async(executor)(greet())` starts `greet()` on the pool's executor
 4. `greet()` runs until it hits `co_await answer()`
 5. `answer()` runs and returns 42
 6. `greet()` resumes with the result and prints it
@@ -86,7 +86,7 @@ To receive a task's result outside a coroutine, provide a completion handler:
 
 [source,cpp]
 ----
-capy::async_run(executor)(answer(), [](int result) {
+capy::run_async(executor)(answer(), [](int result) {
     std::cout << "Got: " << result << "\n";
 });
 ----
@@ -97,7 +97,7 @@ Exceptions propagate through coroutine chains. To handle them at the top level:
 
 [source,cpp]
 ----
-capy::async_run(executor)(might_fail(),
+capy::run_async(executor)(might_fail(),
     [](int result) {
         std::cout << "Success: " << result << "\n";
     },
@@ -116,5 +116,5 @@ capy::async_run(executor)(might_fail(),
 Now that you have a working program:
 
 * xref:coroutines/tasks.adoc[Tasks] — Learn how lazy tasks work
-* xref:coroutines/launching.adoc[Launching Tasks] — Understand `async_run` in detail
+* xref:coroutines/launching.adoc[Launching Tasks] — Understand `run_async` in detail
 * xref:coroutines/affinity.adoc[Executor Affinity] — Control where coroutines execute

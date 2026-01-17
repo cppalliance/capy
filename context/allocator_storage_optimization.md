@@ -193,7 +193,7 @@ void deallocate_embedded(void* block, std::size_t user_size) override {
 ### Before (Copy)
 
 ```
-Frame #2: async_run_launcher
+Frame #2: run_async_launcher
 ┌─────────────────────────────────────┐
 │ promise_type                        │
 │   └─ embedder_                      │
@@ -218,7 +218,7 @@ Total allocator storage: 144 bytes
 ### After (Pointer)
 
 ```
-Frame #2: async_run_launcher
+Frame #2: run_async_launcher
 ┌─────────────────────────────────────┐
 │ promise_type                        │
 │   └─ embedder_                      │
@@ -282,7 +282,7 @@ static thread_local Allocator* g_allocator;
 ```
 
 **Problems**:
-- Can't support multiple concurrent async_run calls
+- Can't support multiple concurrent run_async calls
 - Global state is error-prone
 - Doesn't work with nested or parallel tasks
 

@@ -62,7 +62,7 @@ struct default_frame_allocator
 
 == Recycling Frame Allocator
 
-By default, `async_run` uses a recycling frame allocator that caches deallocated
+By default, `run_async` uses a recycling frame allocator that caches deallocated
 frames for reuse. This eliminates most allocation overhead for typical coroutine
 patterns where frames are created and destroyed in LIFO order.
 
@@ -72,15 +72,15 @@ The recycling allocator:
 * Reuses frames of matching size
 * Falls back to global new/delete for mismatched sizes
 
-== Custom Allocators with async_run
+== Custom Allocators with run_async
 
-Pass a custom allocator as the second argument to `async_run`:
+Pass a custom allocator as the second argument to `run_async`:
 
 [source,cpp]
 ----
 my_pool_allocator alloc{pool};
 
-async_run(ex, alloc)(my_task());
+run_async(ex, alloc)(my_task());
 ----
 
 The allocator is used for all coroutine frames in the launched call tree.
@@ -128,7 +128,7 @@ first frame (with embedded wrapper) from child frames.
 
 === First Frame
 
-The first frame in a call tree (created by `async_run`) contains an embedded
+The first frame in a call tree (created by `run_async`) contains an embedded
 `frame_allocator_wrapper` that holds a copy of the allocator. This ensures the
 allocator outlives all frames that use it.
 
@@ -169,7 +169,7 @@ frame_allocating_base::clear_frame_allocator();
 auto* alloc = frame_allocating_base::get_frame_allocator();
 ----
 
-The `async_run` function manages this automatically—you rarely need to call
+The `run_async` function manages this automatically—you rarely need to call
 these directly.
 
 == When NOT to Use Custom Allocators

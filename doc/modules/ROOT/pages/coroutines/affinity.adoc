@@ -36,7 +36,7 @@ You establish affinity when launching a task:
 
 [source,cpp]
 ----
-async_run(ex)(my_task());  // my_task has affinity to ex
+run_async(ex)(my_task());  // my_task has affinity to ex
 ----
 
 == How Affinity Propagates
@@ -46,7 +46,7 @@ affinity awaits a child task, the child inherits the same affinity:
 
 [source,cpp]
 ----
-task<void> parent()  // affinity: ex (from async_run)
+task<void> parent()  // affinity: ex (from run_async)
 {
     co_await child();  // child inherits ex
 }

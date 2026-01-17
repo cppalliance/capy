@@ -18,7 +18,7 @@ NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
 A `task<T>` represents an asynchronous operation that will produce a value
 of type `T`. Tasks are _lazy_: they do not begin execution when created.
 A task remains suspended until it is either awaited by another coroutine
-or launched explicitly with `async_run`.
+or launched explicitly with `run_async`.
 
 This laziness enables structured composition. When you write:
 
@@ -196,5 +196,5 @@ Tasks are NOT appropriate when:
 
 Now that you understand tasks, learn how to run them:
 
-* xref:launching.adoc[Launching Tasks] — Start tasks with `async_run`
+* xref:launching.adoc[Launching Tasks] — Start tasks with `run_async`
 * xref:affinity.adoc[Executor Affinity] — Control where tasks execute

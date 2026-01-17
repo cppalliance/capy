@@ -27,7 +27,7 @@ thread_pool pool(4);  // 4 worker threads
 auto ex = pool.get_executor();
 
 // Submit coroutines for execution
-async_run(ex)(my_coroutine());
+run_async(ex)(my_coroutine());
 ----
 
 == Creating a Thread Pool
@@ -64,11 +64,11 @@ Multiple executors from the same pool are interchangeable.
 
 == Running Coroutines
 
-Use `async_run` to launch coroutines on the pool:
+Use `run_async` to launch coroutines on the pool:
 
 [source,cpp]
 ----
-#include <boost/capy/ex/async_run.hpp>
+#include <boost/capy/ex/run_async.hpp>
 
 task<int> compute()
 {
@@ -78,10 +78,10 @@ task<int> compute()
 thread_pool pool(4);
 
 // Launch and forget
-async_run(pool.get_executor())(compute());
+run_async(pool.get_executor())(compute());
 
 // Launch with completion handler
-async_run(pool.get_executor())(compute(), [](int result) {
+run_async(pool.get_executor())(compute(), [](int result) {
     std::cout << "Result: " << result << "\n";
 });
 ----
@@ -94,7 +94,7 @@ The pool destructor waits for all work to complete:
 ----
 {
     thread_pool pool(4);
-    async_run(pool.get_executor())(long_running_task());
+    run_async(pool.get_executor())(long_running_task());
     // Destructor blocks until long_running_task completes
 }
 ----
@@ -181,7 +181,7 @@ The `executor_work_guard` RAII wrapper simplifies this:
 }  // Work count decremented
 ----
 
-`async_run` handles work tracking automatically.
+`run_async` handles work tracking automatically.
 
 == Services
 
@@ -254,7 +254,7 @@ thread_pool io_pool(16);
 ----
 thread_pool pool(1);  // Single thread for deterministic testing
 
-async_run(pool.get_executor())(test_coroutine());
+run_async(pool.get_executor())(test_coroutine());
 ----
 
 === Scoped Pool
@@ -266,7 +266,7 @@ void process_batch()
     thread_pool pool(4);  // Pool lives for this scope
     
     for (auto& item : batch)
-        async_run(pool.get_executor())(process(item));
+        run_async(pool.get_executor())(process(item));
     
     // Destructor waits for all processing to complete
 }

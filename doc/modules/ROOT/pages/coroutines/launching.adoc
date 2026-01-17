@@ -9,7 +9,7 @@
 
 = Launching Tasks
 
-This page explains how to start lazy tasks for execution using `async_run`.
+This page explains how to start lazy tasks for execution using `run_async`.
 
 NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
 
@@ -19,7 +19,7 @@ Tasks are lazy. They remain suspended until something starts them. Within a
 coroutine, `co_await` serves this purpose. But at the program's entry point,
 you need a way to kick off the first coroutine.
 
-The `async_run` function provides this capability. It:
+The `run_async` function provides this capability. It:
 
 1. Binds a task to a dispatcher (typically an executor)
 2. Starts the task's execution
@@ -29,15 +29,15 @@ The `async_run` function provides this capability. It:
 
 [source,cpp]
 ----
-#include <boost/capy/ex/async_run.hpp>
+#include <boost/capy/ex/run_async.hpp>
 
 void start(executor ex)
 {
-    async_run(ex)(compute());
+    run_async(ex)(compute());
 }
 ----
 
-The syntax `async_run(ex)(task)` creates a runner bound to the executor, then
+The syntax `run_async(ex)(task)` creates a runner bound to the executor, then
 immediately launches the task. The task begins executing when the executor
 schedules it.
 
@@ -47,7 +47,7 @@ The simplest pattern discards the result:
 
 [source,cpp]
 ----
-async_run(ex)(compute());
+run_async(ex)(compute());
 ----
 
 If the task throws an exception, it propagates to the executor's error handling
@@ -60,7 +60,7 @@ To receive the task's result, provide a completion handler:
 
 [source,cpp]
 ----
-async_run(ex)(compute(), [](int result) {
+run_async(ex)(compute(), [](int result) {
     std::cout << "Got: " << result << "\n";
 });
 ----
@@ -70,7 +70,7 @@ the handler takes no arguments:
 
 [source,cpp]
 ----
-async_run(ex)(do_work(), []() {
+run_async(ex)(do_work(), []() {
     std::cout << "Work complete\n";
 });
 ----
@@ -82,7 +82,7 @@ To handle both success and failure, provide a handler that also accepts
 
 [source,cpp]
 ----
-async_run(ex)(compute(), overloaded{
+run_async(ex)(compute(), overloaded{
     [](int result) {
         std::cout << "Success: " << result << "\n";
     },
@@ -100,7 +100,7 @@ Alternatively, use separate handlers for success and error:
 
 [source,cpp]
 ----
-async_run(ex)(compute(),
+run_async(ex)(compute(),
     [](int result) { std::cout << result << "\n"; },
     [](std::exception_ptr ep) { /* handle error */ }
 );
@@ -108,15 +108,15 @@ async_run(ex)(compute(),
 
 == The Single-Expression Idiom
 
-The `async_run` return value enforces a specific usage pattern:
+The `run_async` return value enforces a specific usage pattern:
 
 [source,cpp]
 ----
 // CORRECT: Single expression
-async_run(ex)(make_task());
+run_async(ex)(make_task());
 
 // INCORRECT: Split across statements
-auto runner = async_run(ex);  // Sets thread-local state
+auto runner = run_async(ex);  // Sets thread-local state
 // ... other code may interfere ...
 runner(make_task());          // Won't compile (deleted move)
 ----
@@ -126,29 +126,29 @@ enabling frame recycling optimization.
 
 == Custom Frame Allocators
 
-By default, `async_run` uses a recycling allocator that caches deallocated
+By default, `run_async` uses a recycling allocator that caches deallocated
 frames. For custom allocation strategies:
 
 [source,cpp]
 ----
 my_pool_allocator alloc{pool};
-async_run(ex, alloc)(my_task());
+run_async(ex, alloc)(my_task());
 ----
 
 The allocator is used for all coroutine frames in the launched call tree.
 
-== When NOT to Use async_run
+== When NOT to Use run_async
 
-Use `async_run` when:
+Use `run_async` when:
 
 * You need to start a coroutine from non-coroutine code
 * You want fire-and-forget semantics
 * You need to receive the result via callback
 
-Do NOT use `async_run` when:
+Do NOT use `run_async` when:
 
 * You are already inside a coroutine — just `co_await` the task directly
-* You need the result synchronously — `async_run` is asynchronous
+* You need the result synchronously — `run_async` is asynchronous
 
 == Summary
 
@@ -157,16 +157,16 @@ Do NOT use `async_run` when:
 | Pattern | Code
 
 | Fire and forget
-| `async_run(ex)(task)`
+| `run_async(ex)(task)`
 
 | Success handler
-| `async_run(ex)(task, handler)`
+| `run_async(ex)(task, handler)`
 
 | Success + error handlers
-| `async_run(ex)(task, on_success, on_error)`
+| `run_async(ex)(task, on_success, on_error)`
 
 | Custom allocator
-| `async_run(ex, alloc)(task)`
+| `run_async(ex, alloc)(task)`
 |===
 
 == Next Steps

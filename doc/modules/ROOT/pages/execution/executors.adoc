@@ -200,7 +200,7 @@ Use executors directly when:
 
 Do NOT use executors directly when:
 
-* Writing application code — use `async_run` and `task<T>` instead
+* Writing application code — use `run_async` and `task<T>` instead
 * You just need to run some code later — use the higher-level abstractions
 
 == Summary

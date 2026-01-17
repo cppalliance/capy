@@ -7,7 +7,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#include <boost/capy/ex/async_run.hpp>
+#include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/run_on.hpp>
 #include <boost/capy/ex/strand.hpp>
@@ -243,61 +243,61 @@ int main()
 
     foreign_awaitable foreign;
 
-    std::cout << "=== async_run depth benchmarks ===\n\n";
+    std::cout << "=== run_async depth benchmarks ===\n\n";
 
     //-----------------------------------------------
     // Flow: c -> (return)
     //-----------------------------------------------
-    run_benchmark("async_run depth=1", iterations, [&]{
+    run_benchmark("run_async depth=1", iterations, [&]{
         int result = 0;
-        async_run(ex1)(depth1(), [&](int v){ result = v; });
+        run_async(ex1, [&](int v){ result = v; })(depth1());
         (void)result;
     });
 
     //-----------------------------------------------
     // Flow: c1 -> c2
     //-----------------------------------------------
-    run_benchmark("async_run depth=2", iterations, [&]{
+    run_benchmark("run_async depth=2", iterations, [&]{
         int result = 0;
-        async_run(ex1)(depth2(), [&](int v){ result = v; });
+        run_async(ex1, [&](int v){ result = v; })(depth2());
         (void)result;
     });
 
     //-----------------------------------------------
     // Flow: c1 -> c2 -> c3
     //-----------------------------------------------
-    run_benchmark("async_run depth=3", iterations, [&]{
+    run_benchmark("run_async depth=3", iterations, [&]{
         int result = 0;
-        async_run(ex1)(depth3(), [&](int v){ result = v; });
+        run_async(ex1, [&](int v){ result = v; })(depth3());
         (void)result;
     });
 
     //-----------------------------------------------
     // Flow: c1 -> c2 -> c3 -> c4
     //-----------------------------------------------
-    run_benchmark("async_run depth=4", iterations, [&]{
+    run_benchmark("run_async depth=4", iterations, [&]{
         int result = 0;
-        async_run(ex1)(depth4(), [&](int v){ result = v; });
+        run_async(ex1, [&](int v){ result = v; })(depth4());
         (void)result;
     });
 
-    std::cout << "\n=== strand async_run benchmarks ===\n\n";
+    std::cout << "\n=== strand run_async benchmarks ===\n\n";
 
     //-----------------------------------------------
     // Flow: c -> (return) via strand
     //-----------------------------------------------
-    run_benchmark("strand async_run depth=1", iterations, [&]{
+    run_benchmark("strand run_async depth=1", iterations, [&]{
         int result = 0;
-        async_run(strand1)(depth1(), [&](int v){ result = v; });
+        run_async(strand1, [&](int v){ result = v; })(depth1());
         (void)result;
     });
 
     //-----------------------------------------------
     // Flow: c1 -> c2 -> c3 -> c4 via strand
     //-----------------------------------------------
-    run_benchmark("strand async_run depth=4", iterations, [&]{
+    run_benchmark("strand run_async depth=4", iterations, [&]{
         int result = 0;
-        async_run(strand1)(depth4(), [&](int v){ result = v; });
+        run_async(strand1, [&](int v){ result = v; })(depth4());
         (void)result;
     });
 
@@ -310,7 +310,7 @@ int main()
     //-----------------------------------------------
     run_benchmark("run_on executor switch + foreign", iterations, [&]{
         int result = 0;
-        async_run(ex1)(switch_c1(ex2, foreign), [&](int v){ result = v; });
+        run_async(ex1, [&](int v){ result = v; })(switch_c1(ex2, foreign));
         (void)result;
     });
 
@@ -321,7 +321,7 @@ int main()
     //-----------------------------------------------
     run_benchmark("run_on strand switch + foreign", iterations, [&]{
         int result = 0;
-        async_run(strand1)(switch_c1(strand2, foreign), [&](int v){ result = v; });
+        run_async(strand1, [&](int v){ result = v; })(switch_c1(strand2, foreign));
         (void)result;
     });
 
