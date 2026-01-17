@@ -21,10 +21,14 @@ namespace capy {
 
     Return `error::eof` when originating an eof error.
     Check `ec == cond::eof` for portable comparison.
+
+    Return `error::canceled` when originating a cancellation error.
+    Check `ec == cond::canceled` for portable comparison.
 */
 enum class error
 {
     eof = 1,
+    canceled,
     test_failure
 };
 

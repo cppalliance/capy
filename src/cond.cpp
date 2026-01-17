@@ -59,6 +59,9 @@ equivalent(
         return ec == capy::error::eof;
 
     case cond::canceled:
+        // Check capy::error::canceled
+        if(ec == capy::error::canceled)
+            return true;
         // Check boost::system::errc
         if(ec == boost::system::errc::operation_canceled)
             return true;
