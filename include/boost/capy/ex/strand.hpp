@@ -14,56 +14,10 @@
 #include <boost/capy/ex/any_coro.hpp>
 #include <boost/capy/ex/detail/strand_service.hpp>
 
+#include <type_traits>
+
 namespace boost {
 namespace capy {
-
-namespace detail {
-
-/** Push a coroutine to the strand queue.
-
-    @param impl The strand implementation.
-    @param h The coroutine handle to enqueue.
-    @param should_run Set to true if the caller should run the batch.
-*/
-BOOST_CAPY_DECL
-void
-strand_enqueue(
-    strand_impl& impl,
-    any_coro h,
-    bool& should_run);
-
-/** Dispatch all pending coroutines.
-
-    Resumes all coroutines in the pending queue. After this
-    function returns, the queue will be empty.
-
-    @param impl The strand implementation.
-*/
-BOOST_CAPY_DECL
-void
-strand_dispatch_pending(strand_impl& impl);
-
-/** Release the strand lock.
-
-    Sets locked_ to false, allowing another caller to acquire
-    the strand. Must be called after dispatching is complete.
-
-    @param impl The strand implementation.
-*/
-BOOST_CAPY_DECL
-void
-strand_unlock(strand_impl& impl);
-
-/** Check if the strand is currently executing.
-
-    @param impl The strand implementation.
-    @return true if a coroutine is running in the strand.
-*/
-BOOST_CAPY_DECL
-bool
-strand_running_in_this_thread(strand_impl& impl) noexcept;
-
-} // namespace detail
 
 //----------------------------------------------------------
 
@@ -120,8 +74,8 @@ strand_running_in_this_thread(strand_impl& impl) noexcept;
 template<typename Executor>
 class strand
 {
-    Executor ex_;
     detail::strand_impl* impl_;
+    post_dispatcher<Executor> post_;
 
 public:
     /** The type of the underlying executor.
@@ -136,13 +90,20 @@ public:
 
         @param ex The inner executor to wrap. Coroutines will
             ultimately be dispatched through this executor.
+
+        @note This constructor is disabled if the argument is a
+            strand type, to prevent strand-of-strand wrapping.
     */
+    template<typename Executor1,
+        typename = std::enable_if_t<
+            !std::is_same_v<std::decay_t<Executor1>, strand> &&
+            !detail::is_strand<std::decay_t<Executor1>>::value &&
+            std::is_convertible_v<Executor1, Executor>>>
     explicit
-    strand(Executor ex)
-        : ex_(std::move(ex))
-        , impl_(ex_.context()
-            .template use_service<detail::strand_service>()
+    strand(Executor1&& ex)
+        : impl_(detail::get_strand_service(ex.context())
             .get_implementation())
+        , post_(std::forward<Executor1>(ex))
     {
     }
 
@@ -173,7 +134,7 @@ public:
     Executor const&
     get_inner_executor() const noexcept
     {
-        return ex_;
+        return post_.get_inner_executor();
     }
 
     /** Return the underlying execution context.
@@ -184,7 +145,7 @@ public:
     auto&
     context() const noexcept
     {
-        return ex_.context();
+        return post_.get_inner_executor().context();
     }
 
     /** Notify that work has started.
@@ -195,7 +156,7 @@ public:
     void
     on_work_started() const noexcept
     {
-        ex_.on_work_started();
+        post_.get_inner_executor().on_work_started();
     }
 
     /** Notify that work has finished.
@@ -206,21 +167,18 @@ public:
     void
     on_work_finished() const noexcept
     {
-        ex_.on_work_finished();
+        post_.get_inner_executor().on_work_finished();
     }
 
     /** Determine whether the strand is running in the current thread.
 
-        @return true if a coroutine is currently executing within
-            this strand's serialization context.
-
-        @note This is an approximation based on the strand's lock
-            state rather than true thread-local tracking.
+        @return true if the current thread is executing a coroutine
+            within this strand's dispatch loop.
     */
     bool
     running_in_this_thread() const noexcept
     {
-        return detail::strand_running_in_this_thread(*impl_);
+        return detail::strand_service::running_in_this_thread(*impl_);
     }
 
     /** Compare two strands for equality.
@@ -240,46 +198,44 @@ public:
 
     /** Dispatch a coroutine through the strand.
 
-        If no coroutine is currently running in the strand, the
-        coroutine is executed immediately along with any other
-        pending coroutines. Otherwise, it is queued for later
-        execution when the current holder releases the strand.
+        If the calling thread is already executing within this strand,
+        the coroutine is resumed immediately via symmetric transfer,
+        bypassing the queue. This provides optimal performance but
+        means the coroutine may execute before previously queued work.
+
+        Otherwise, the coroutine is queued and will execute in FIFO
+        order relative to other queued coroutines.
+
+        @par Ordering
+        Callers requiring strict FIFO ordering should use post()
+        instead, which always queues the coroutine.
 
         @param h The coroutine handle to dispatch.
-        @return A coroutine handle for symmetric transfer. Returns
-            `noop_coroutine()` if the work was queued.
+        @return A coroutine handle for symmetric transfer.
     */
+    // TODO: measure before deciding to split strand_impl for inlining fast-path check
     any_coro
     dispatch(any_coro h) const
     {
-        bool should_run = false;
-        detail::strand_enqueue(*impl_, h, should_run);
-        if(should_run)
-        {
-            detail::strand_dispatch_pending(*impl_);
-            detail::strand_unlock(*impl_);
-        }
-        return std::noop_coroutine();
+        return detail::strand_service::dispatch(*impl_, any_dispatcher(post_), h);
     }
 
     /** Post a coroutine to the strand.
 
-        The coroutine is queued for execution. If this is the first
-        work item queued (strand was idle), all pending coroutines
-        are dispatched immediately on the current thread.
+        The coroutine is always queued for execution, never resumed
+        immediately. When the strand becomes available, queued
+        coroutines execute in FIFO order on the underlying executor.
+
+        @par Ordering
+        Guarantees strict FIFO ordering relative to other post() calls.
+        Use this instead of dispatch() when ordering matters.
 
         @param h The coroutine handle to post.
     */
     void
     post(any_coro h) const
     {
-        bool should_run = false;
-        detail::strand_enqueue(*impl_, h, should_run);
-        if(should_run)
-        {
-            detail::strand_dispatch_pending(*impl_);
-            detail::strand_unlock(*impl_);
-        }
+        detail::strand_service::post(*impl_, any_dispatcher(post_), h);
     }
 
     /** Defer a coroutine to the strand.
@@ -310,6 +266,10 @@ public:
         return dispatch(h);
     }
 };
+
+// Deduction guide
+template<typename Executor>
+strand(Executor) -> strand<Executor>;
 
 } // namespace capy
 } // namespace boost

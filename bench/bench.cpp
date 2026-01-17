@@ -67,10 +67,34 @@ public:
         return ctx_ == other.ctx_;
     }
 
+    void on_work_started() const noexcept
+    {
+    }
+
+    void on_work_finished() const noexcept
+    {
+    }
+
     // Dispatcher interface - dispatch inline
     any_coro operator()(any_coro h) const
     {
         return h;
+    }
+
+    any_coro dispatch(any_coro h) const
+    {
+        return h;
+    }
+
+    // Post interface - resume inline for benchmarking
+    void post(any_coro h) const
+    {
+        h.resume();
+    }
+
+    void defer(any_coro h) const
+    {
+        h.resume();
     }
 };
 

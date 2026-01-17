@@ -205,6 +205,9 @@ public:
         Coroutines resumed during dispatch may push new
         handles, which will also be processed in the same
         dispatch call.
+
+        @warning Not thread-safe. Do not call while another
+            thread may be calling push().
     */
     void
     dispatch()
@@ -220,6 +223,57 @@ public:
             h.resume();
             h.destroy();
         }
+    }
+
+    /** Batch of taken items for thread-safe dispatch. */
+    struct taken_batch
+    {
+        promise_type* head = nullptr;
+        promise_type* tail = nullptr;
+    };
+
+    /** Take all pending items atomically.
+
+        Removes all items from the queue and returns them
+        as a batch. The queue is left empty.
+
+        @return The batch of taken items.
+    */
+    taken_batch
+    take_all() noexcept
+    {
+        taken_batch batch{head_, tail_};
+        head_ = tail_ = nullptr;
+        return batch;
+    }
+
+    /** Dispatch a batch of taken items.
+
+        @param batch The batch to dispatch.
+
+        @note This is thread-safe w.r.t. push() because it doesn't
+            access the queue's free_list_. Frames are deleted directly
+            rather than recycled.
+    */
+    static
+    void
+    dispatch_batch(taken_batch& batch)
+    {
+        while(batch.head)
+        {
+            promise_type* p = batch.head;
+            batch.head = p->next;
+
+            auto h = std::coroutine_handle<promise_type>::from_promise(*p);
+            h.resume();
+            // Don't use h.destroy() - it would call operator delete which
+            // accesses the queue's free_list_ (race with push).
+            // Instead, manually free the frame without recycling.
+            // h.address() returns the frame base (what operator new returned).
+            frame_prefix* prefix = static_cast<frame_prefix*>(h.address()) - 1;
+            ::operator delete(prefix);
+        }
+        batch.tail = nullptr;
     }
 };
 

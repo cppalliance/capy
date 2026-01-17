@@ -13,9 +13,11 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/ex/any_coro.hpp>
 #include <boost/capy/concept/dispatcher.hpp>
+#include <boost/capy/concept/executor.hpp>
 
 #include <concepts>
 #include <type_traits>
+#include <utility>
 
 namespace boost {
 namespace capy {
@@ -130,6 +132,65 @@ public:
         return f_(d_, h);
     }
 };
+
+//------------------------------------------------------------------------------
+
+/** A dispatcher that calls executor::post().
+
+    Adapts an executor's post() operation to the dispatcher
+    interface. When invoked, posts the coroutine and returns
+    noop_coroutine for the caller to transfer to.
+
+    @tparam Executor The executor type.
+*/
+template<executor Executor>
+class post_dispatcher
+{
+    Executor ex_;
+
+public:
+    explicit post_dispatcher(Executor ex) noexcept
+        : ex_(std::move(ex))
+    {}
+
+    Executor const& get_inner_executor() const noexcept { return ex_; }
+
+    any_coro operator()(any_coro h) const
+    {
+        ex_.post(h);
+        return std::noop_coroutine();
+    }
+};
+
+/** A dispatcher that calls executor::defer().
+
+    Adapts an executor's defer() operation to the dispatcher
+    interface. When invoked, defers the coroutine and returns
+    noop_coroutine for the caller to transfer to.
+
+    @tparam Executor The executor type.
+*/
+template<executor Executor>
+class defer_dispatcher
+{
+    Executor ex_;
+
+public:
+    explicit defer_dispatcher(Executor ex) noexcept
+        : ex_(std::move(ex))
+    {}
+
+    Executor const& get_inner_executor() const noexcept { return ex_; }
+
+    any_coro operator()(any_coro h) const
+    {
+        ex_.defer(h);
+        return std::noop_coroutine();
+    }
+};
+
+template<executor E> post_dispatcher(E) -> post_dispatcher<E>;
+template<executor E> defer_dispatcher(E) -> defer_dispatcher<E>;
 
 } // capy
 } // boost

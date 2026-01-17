@@ -11,16 +11,29 @@
 #define BOOST_CAPY_EX_DETAIL_STRAND_SERVICE_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/ex/any_coro.hpp>
+#include <boost/capy/ex/any_dispatcher.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
 #include <cstddef>
 
 namespace boost {
 namespace capy {
+
+// Forward declaration (strand lives in capy, not detail)
+template<typename Executor> class strand;
+
 namespace detail {
 
 // Forward declaration - full definition in src/
 struct strand_impl;
+
+/** Type trait to detect strand types. */
+template<typename T>
+struct is_strand : std::false_type {};
+
+template<typename E>
+struct is_strand<strand<E>> : std::true_type {};  // Uses forward decl from enclosing namespace
 
 //----------------------------------------------------------
 
@@ -36,20 +49,10 @@ struct strand_impl;
 class BOOST_CAPY_DECL strand_service
     : public execution_context::service
 {
-    class impl;
-    impl* impl_;
-
 public:
-    /** Construct the strand service.
-
-        @param ctx The owning execution context.
-    */
-    explicit
-    strand_service(execution_context& ctx);
-
     /** Destructor.
     */
-    ~strand_service();
+    virtual ~strand_service();
 
     /** Return a pointer to a pooled implementation.
 
@@ -59,17 +62,33 @@ public:
 
         @return Pointer to a strand_impl from the pool.
     */
-    strand_impl*
-    get_implementation();
+    virtual strand_impl*
+    get_implementation() = 0;
+
+    /** Check if THIS thread is currently executing in the strand. */
+    static bool
+    running_in_this_thread(strand_impl& impl) noexcept;
+
+    /** Dispatch through strand, returns handle for symmetric transfer. */
+    static any_coro
+    dispatch(strand_impl& impl, any_dispatcher d, any_coro h);
+
+    /** Post to strand queue. */
+    static void
+    post(strand_impl& impl, any_dispatcher d, any_coro h);
 
 protected:
-    /** Shut down the service.
-
-        Called when the owning execution context shuts down.
-    */
-    void
-    shutdown() override;
+    strand_service();
 };
+
+/** Return a reference to the strand service, creating it if needed.
+
+    @param ctx The execution context.
+    @return Reference to the strand service.
+*/
+BOOST_CAPY_DECL
+strand_service&
+get_strand_service(execution_context& ctx);
 
 } // namespace detail
 } // namespace capy

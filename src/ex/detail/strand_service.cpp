@@ -7,98 +7,248 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#include "strand_service.hpp"
+#include "src/ex/detail/strand_queue.hpp"
+#include <boost/capy/ex/detail/strand_service.hpp>
 #include <boost/capy/ex/any_coro.hpp>
+
+#include <atomic>
+#include <coroutine>
+#include <mutex>
+#include <thread>
+#include <utility>
 
 namespace boost {
 namespace capy {
 namespace detail {
 
-strand_service::
-strand_service(execution_context& ctx)
-    : service()
-    , impl_(new impl)
+//----------------------------------------------------------
+
+/** Implementation state for a strand.
+
+    Each strand_impl provides serialization for coroutines
+    dispatched through strands that share it.
+*/
+struct strand_impl
 {
-    (void)ctx;
-}
-
-strand_service::
-~strand_service()
-{
-    delete impl_;
-}
-
-strand_impl*
-strand_service::
-get_implementation()
-{
-    std::lock_guard<std::mutex> lock(impl_->mutex_);
-
-    // Hash the salt to select an impl from the pool
-    std::size_t index = impl_->salt_++;
-    index = index % impl::num_impls;
-
-    return &impl_->impls_[index];
-}
-
-void
-strand_service::
-shutdown()
-{
-    // Clear pending operations from all impls
-    for(std::size_t i = 0; i < impl::num_impls; ++i)
-    {
-        std::lock_guard<std::mutex> lock(impl_->impls_[i].mutex_);
-        // Mark as locked to prevent new work
-        impl_->impls_[i].locked_ = true;
-    }
-}
+    std::mutex mutex_;
+    strand_queue pending_;
+    bool locked_ = false;
+    std::atomic<std::thread::id> dispatch_thread_{};
+    void* cached_frame_ = nullptr;
+};
 
 //----------------------------------------------------------
 
-BOOST_CAPY_DECL
-void
-strand_enqueue(
-    strand_impl& impl,
-    any_coro h,
-    bool& should_run)
+/** Invoker coroutine for strand dispatch.
+
+    Uses custom allocator to recycle frame - one allocation
+    per strand_impl lifetime, stored in trailer for recovery.
+*/
+struct strand_invoker
 {
-    std::lock_guard<std::mutex> lock(impl.mutex_);
-
-    impl.pending_.push(h);
-
-    if(!impl.locked_)
+    struct promise_type
     {
-        impl.locked_ = true;
-        should_run = true;
-    }
-    else
+        void* operator new(std::size_t n, strand_impl& impl)
+        {
+            constexpr auto A = alignof(strand_impl*);
+            std::size_t padded = (n + A - 1) & ~(A - 1);
+            std::size_t total = padded + sizeof(strand_impl*);
+
+            void* p = impl.cached_frame_
+                ? std::exchange(impl.cached_frame_, nullptr)
+                : ::operator new(total);
+
+            // Trailer lets delete recover impl
+            *reinterpret_cast<strand_impl**>(
+                static_cast<char*>(p) + padded) = &impl;
+            return p;
+        }
+
+        void operator delete(void* p, std::size_t n) noexcept
+        {
+            constexpr auto A = alignof(strand_impl*);
+            std::size_t padded = (n + A - 1) & ~(A - 1);
+
+            auto* impl = *reinterpret_cast<strand_impl**>(
+                static_cast<char*>(p) + padded);
+
+            if (!impl->cached_frame_)
+                impl->cached_frame_ = p;
+            else
+                ::operator delete(p);
+        }
+
+        strand_invoker get_return_object() noexcept
+        { return {std::coroutine_handle<promise_type>::from_promise(*this)}; }
+
+        std::suspend_always initial_suspend() noexcept { return {}; }
+        std::suspend_never final_suspend() noexcept { return {}; }
+        void return_void() noexcept {}
+        void unhandled_exception() { std::terminate(); }
+    };
+
+    std::coroutine_handle<promise_type> h_;
+};
+
+//----------------------------------------------------------
+
+/** Concrete implementation of strand_service.
+
+    Holds the fixed pool of strand_impl objects.
+*/
+class strand_service_impl : public strand_service
+{
+    static constexpr std::size_t num_impls = 211;
+
+    strand_impl impls_[num_impls];
+    std::size_t salt_ = 0;
+    std::mutex mutex_;
+
+public:
+    explicit
+    strand_service_impl(execution_context&)
     {
-        should_run = false;
     }
-}
 
-BOOST_CAPY_DECL
-void
-strand_dispatch_pending(strand_impl& impl)
+    strand_impl*
+    get_implementation() override
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::size_t index = salt_++;
+        index = index % num_impls;
+        return &impls_[index];
+    }
+
+protected:
+    void
+    shutdown() override
+    {
+        for(std::size_t i = 0; i < num_impls; ++i)
+        {
+            std::lock_guard<std::mutex> lock(impls_[i].mutex_);
+            impls_[i].locked_ = true;
+
+            if(impls_[i].cached_frame_)
+            {
+                ::operator delete(impls_[i].cached_frame_);
+                impls_[i].cached_frame_ = nullptr;
+            }
+        }
+    }
+
+private:
+    static bool
+    enqueue(strand_impl& impl, any_coro h)
+    {
+        std::lock_guard<std::mutex> lock(impl.mutex_);
+        impl.pending_.push(h);
+        if(!impl.locked_)
+        {
+            impl.locked_ = true;
+            return true;
+        }
+        return false;
+    }
+
+    static void
+    dispatch_pending(strand_impl& impl)
+    {
+        strand_queue::taken_batch batch;
+        {
+            std::lock_guard<std::mutex> lock(impl.mutex_);
+            batch = impl.pending_.take_all();
+        }
+        impl.pending_.dispatch_batch(batch);
+    }
+
+    static bool
+    try_unlock(strand_impl& impl)
+    {
+        std::lock_guard<std::mutex> lock(impl.mutex_);
+        if(impl.pending_.empty())
+        {
+            impl.locked_ = false;
+            return true;
+        }
+        return false;
+    }
+
+    static void
+    set_dispatch_thread(strand_impl& impl) noexcept
+    {
+        impl.dispatch_thread_.store(std::this_thread::get_id());
+    }
+
+    static void
+    clear_dispatch_thread(strand_impl& impl) noexcept
+    {
+        impl.dispatch_thread_.store(std::thread::id{});
+    }
+
+    // Loops until queue empty (aggressive). Alternative: per-batch fairness
+    // (repost after each batch to let other work run) - explore if starvation observed.
+    static strand_invoker
+    make_invoker(strand_impl& impl)
+    {
+        strand_impl* p = &impl;
+        for(;;)
+        {
+            set_dispatch_thread(*p);
+            dispatch_pending(*p);
+            if(try_unlock(*p))
+            {
+                clear_dispatch_thread(*p);
+                co_return;
+            }
+        }
+    }
+
+    friend class strand_service;
+};
+
+//----------------------------------------------------------
+
+strand_service::
+strand_service()
+    : service()
 {
-    impl.pending_.dispatch();
 }
 
-BOOST_CAPY_DECL
-void
-strand_unlock(strand_impl& impl)
-{
-    std::lock_guard<std::mutex> lock(impl.mutex_);
-    impl.locked_ = false;
-}
+strand_service::
+~strand_service() = default;
 
-BOOST_CAPY_DECL
 bool
-strand_running_in_this_thread(strand_impl& impl) noexcept
+strand_service::
+running_in_this_thread(strand_impl& impl) noexcept
 {
-    std::lock_guard<std::mutex> lock(impl.mutex_);
-    return impl.locked_;
+    return impl.dispatch_thread_.load() == std::this_thread::get_id();
+}
+
+any_coro
+strand_service::
+dispatch(strand_impl& impl, any_dispatcher d, any_coro h)
+{
+    if(running_in_this_thread(impl))
+        return h;
+
+    if(strand_service_impl::enqueue(impl, h))
+        d(strand_service_impl::make_invoker(impl).h_);
+
+    return std::noop_coroutine();
+}
+
+void
+strand_service::
+post(strand_impl& impl, any_dispatcher d, any_coro h)
+{
+    if(strand_service_impl::enqueue(impl, h))
+        d(strand_service_impl::make_invoker(impl).h_);
+}
+
+strand_service&
+get_strand_service(execution_context& ctx)
+{
+    return ctx.use_service<strand_service_impl>();
 }
 
 } // namespace detail
