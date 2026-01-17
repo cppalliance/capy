@@ -180,7 +180,7 @@ task<int> switch_c4()
 }
 
 template<typename D>
-task<int> switch_c3(D ex2, foreign_awaitable& f)
+task<int> switch_c3(D /*ex2*/, foreign_awaitable& f)
 {
     co_await f;                     // foreign context
     co_return co_await switch_c4();

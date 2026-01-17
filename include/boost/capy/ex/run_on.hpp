@@ -79,7 +79,7 @@ struct [[nodiscard]] run_on_awaitable
         h_.promise().ex_ = d_;
         h_.promise().caller_ex_ = caller_ex;
         h_.promise().continuation_ = continuation;
-        h_.promise().stop_token_ = token;
+        h_.promise().set_stop_token(token);
         h_.promise().needs_dispatch_ = true;
         return h_;
     }

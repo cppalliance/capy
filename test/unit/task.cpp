@@ -16,6 +16,7 @@
 #include "test_suite.hpp"
 
 #include <atomic>
+#include <queue>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -81,6 +82,22 @@ struct tracking_dispatcher
 };
 
 static_assert(dispatcher<tracking_dispatcher>);
+
+/** Queuing dispatcher that queues coroutines for manual execution control.
+    Returns noop_coroutine so the caller doesn't resume immediately.
+*/
+struct queuing_dispatcher
+{
+    std::queue<any_coro>* queue_;
+
+    any_coro operator()(any_coro h) const
+    {
+        queue_->push(h);
+        return std::noop_coroutine();
+    }
+};
+
+static_assert(dispatcher<queuing_dispatcher>);
 
 /** Run a task to completion by manually stepping through it.
 
@@ -1496,6 +1513,198 @@ struct task_test
         // This guarantees the pointer in Frame #1's wrapper to Frame #2's embedder is always valid
     }
 
+    //------------------------------------------------------
+    // get_stop_token() tests
+    //------------------------------------------------------
+
+#if BOOST_CAPY_HAS_STOP_TOKEN
+    static task<bool>
+    task_checks_stop_token()
+    {
+        auto token = co_await get_stop_token();
+        co_return token.stop_requested();
+    }
+
+    static task<bool>
+    task_checks_stop_possible()
+    {
+        auto token = co_await get_stop_token();
+        co_return token.stop_possible();
+    }
+
+    void
+    testGetStopTokenBasic()
+    {
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool stop_possible = true;
+
+        async_run(d)(task_checks_stop_possible(),
+            [&](bool v) { stop_possible = v; },
+            [](std::exception_ptr) {});
+
+        BOOST_TEST(!stop_possible);
+    }
+
+    void
+    testGetStopTokenWithSource()
+    {
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        std::stop_source source;
+        bool stop_requested = true;
+
+        auto outer = []() -> task<bool> {
+            auto token = co_await get_stop_token();
+            co_return token.stop_requested();
+        };
+
+        async_run(d)(outer(),
+            [&](bool v) { stop_requested = v; },
+            [](std::exception_ptr) {});
+
+        BOOST_TEST(!stop_requested);
+    }
+
+    static task<std::stop_token>
+    inner_task_returns_token()
+    {
+        co_return co_await get_stop_token();
+    }
+
+    static task<bool>
+    outer_task_propagates_token()
+    {
+        auto outer_token = co_await get_stop_token();
+        auto inner_token = co_await inner_task_returns_token();
+        co_return outer_token.stop_possible() == inner_token.stop_possible();
+    }
+
+    void
+    testGetStopTokenPropagation()
+    {
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool tokens_match = false;
+
+        async_run(d)(outer_task_propagates_token(),
+            [&](bool v) { tokens_match = v; },
+            [](std::exception_ptr) {});
+
+        BOOST_TEST(tokens_match);
+    }
+
+    static task<int>
+    task_with_cancellation_check()
+    {
+        auto token = co_await get_stop_token();
+        int count = 0;
+
+        for (int i = 0; i < 100; ++i)
+        {
+            if (token.stop_requested())
+                co_return count;
+            ++count;
+        }
+
+        co_return count;
+    }
+
+    void
+    testGetStopTokenInLoop()
+    {
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        int result = 0;
+
+        async_run(d)(task_with_cancellation_check(),
+            [&](int v) { result = v; },
+            [](std::exception_ptr) {});
+
+        BOOST_TEST_EQ(result, 100);
+    }
+
+    static task<bool>
+    task_get_token_multiple_times()
+    {
+        auto t1 = co_await get_stop_token();
+        auto t2 = co_await get_stop_token();
+        auto t3 = co_await get_stop_token();
+
+        co_return t1.stop_possible() == t2.stop_possible() &&
+                  t2.stop_possible() == t3.stop_possible();
+    }
+
+    void
+    testGetStopTokenMultipleCalls()
+    {
+        int dispatch_count = 0;
+        test_dispatcher d(dispatch_count);
+        bool all_same = false;
+
+        async_run(d)(task_get_token_multiple_times(),
+            [&](bool v) { all_same = v; },
+            [](std::exception_ptr) {});
+
+        BOOST_TEST(all_same);
+    }
+
+    void
+    testStopTokenReceivesStopSignal()
+    {
+        // This test manually sets up a task to demonstrate stop token propagation.
+        // We use a queuing dispatcher for precise control over execution ordering.
+        std::queue<any_coro> pending;
+        queuing_dispatcher d{&pending};
+        std::stop_source source;
+
+        bool was_stoppable = false;
+        std::vector<bool> checkpoints;
+
+        auto checkpoint_task = [&]() -> task<void> {
+            auto token = co_await get_stop_token();
+            was_stoppable = token.stop_possible();
+            checkpoints.push_back(token.stop_requested());  // Checkpoint 0: before stop
+
+            co_await async_op_immediate(0);  // Yields control
+
+            checkpoints.push_back(token.stop_requested());  // Checkpoint 1: after stop
+        };
+
+        // Create task and manually configure its promise
+        auto t = checkpoint_task();
+        auto h = t.release();
+        h.promise().set_stop_token(source.get_token());
+        h.promise().ex_ = d;
+        h.promise().caller_ex_ = d;
+        h.promise().needs_dispatch_ = false;
+
+        // Start task - runs until async_op suspends, then queues continuation
+        h.resume();
+
+        // Verify checkpoint 0 was captured
+        BOOST_TEST_EQ(checkpoints.size(), 1u);
+        BOOST_TEST(!checkpoints[0]);  // Not stopped yet
+
+        // Signal stop while task is suspended
+        source.request_stop();
+
+        // Resume task via queued continuation
+        BOOST_TEST(!pending.empty());
+        pending.front().resume();
+        pending.pop();
+
+        // Verify task saw the stop signal
+        BOOST_TEST_EQ(checkpoints.size(), 2u);
+        BOOST_TEST(checkpoints[1]);  // Now stopped
+
+        BOOST_TEST(was_stoppable);
+
+        // Clean up - task completed, destroy the handle
+        h.destroy();
+    }
+#endif // BOOST_CAPY_HAS_STOP_TOKEN
+
     void
     run()
     {
@@ -1552,6 +1761,16 @@ struct task_test
         testAllocatorWithMixedTasksAndAsyncOps();
         testDeallocationCount();
         testFrameAllocationOrder();
+
+#if BOOST_CAPY_HAS_STOP_TOKEN
+        // get_stop_token() tests
+        testGetStopTokenBasic();
+        testGetStopTokenWithSource();
+        testGetStopTokenPropagation();
+        testGetStopTokenInLoop();
+        testGetStopTokenMultipleCalls();
+        testStopTokenReceivesStopSignal();
+#endif
     }
 };
 

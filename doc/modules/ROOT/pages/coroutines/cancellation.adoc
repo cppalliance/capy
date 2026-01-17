@@ -136,16 +136,18 @@ Key points:
 
 == Checking Cancellation Status
 
-Within a coroutine, you can check if cancellation was requested:
+Within a coroutine, use `co_await get_stop_token()` to retrieve the current
+stop token and check if cancellation was requested:
 
 [source,cpp]
 ----
 task<void> long_running_work()
 {
+    auto token = co_await get_stop_token();
+
     for (int i = 0; i < 1000; ++i)
     {
-        // Periodically check for cancellation
-        if (/* stop requested */)
+        if (token.stop_requested())
             co_return;  // Exit gracefully
 
         co_await process_chunk(i);
@@ -153,7 +155,73 @@ task<void> long_running_work()
 }
 ----
 
-The mechanism for accessing the stop token depends on your task implementation.
+The `get_stop_token()` function returns a tag that the promise intercepts via
+`await_transform`. This operation never suspends—`await_ready()` always
+returns `true`.
+
+If no stop token was propagated to this coroutine, the returned token has
+`stop_possible() == false`.
+
+== Supporting get_stop_token in Custom Coroutines
+
+If you define your own coroutine type and want to support `get_stop_token()`,
+inherit your promise type from `stop_token_support`:
+
+[source,cpp]
+----
+struct my_task
+{
+    struct promise_type : stop_token_support<promise_type>
+    {
+        my_task get_return_object();
+        std::suspend_always initial_suspend() noexcept;
+        std::suspend_always final_suspend() noexcept;
+        void return_void();
+        void unhandled_exception();
+    };
+
+    std::coroutine_handle<promise_type> h_;
+
+    // ... awaitable interface ...
+};
+----
+
+The mixin provides:
+
+* Storage for the stop token (private)
+* `set_stop_token(token)` — call from your stoppable `await_suspend`
+* `stop_token()` — getter for internal use
+* `await_transform` — intercepts `get_stop_token()` calls
+
+If you need custom awaitable transformation, override `transform_awaitable`
+instead of `await_transform`:
+
+[source,cpp]
+----
+struct promise_type : stop_token_support<promise_type>
+{
+    any_dispatcher ex_;
+
+    template<typename A>
+    auto transform_awaitable(A&& a)
+    {
+        return make_affine(std::forward<A>(a), ex_);
+    }
+};
+----
+
+To make your coroutine type satisfy `stoppable_awaitable` (receive tokens when
+awaited), implement the stoppable `await_suspend` overload:
+
+[source,cpp]
+----
+template<dispatcher D>
+any_coro await_suspend(any_coro cont, D const& d, std::stop_token token)
+{
+    h_.promise().set_stop_token(token);
+    // ... rest of suspend logic ...
+}
+----
 
 == When NOT to Use Cancellation
 
@@ -180,6 +248,12 @@ Do NOT use cancellation when:
 
 | Automatic propagation
 | Tokens flow through `co_await` chains
+
+| `get_stop_token()`
+| Retrieve the current stop token inside a coroutine
+
+| `stop_token_support`
+| CRTP mixin for custom coroutines to support `get_stop_token()`
 
 | `stoppable_awaitable`
 | Concept for awaitables that support cancellation

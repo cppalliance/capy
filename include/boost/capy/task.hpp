@@ -15,11 +15,12 @@
 #include <boost/capy/concept/affine_awaitable.hpp>
 #include <boost/capy/concept/stoppable_awaitable.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
+#include <boost/capy/ex/get_stop_token.hpp>
 #include <boost/capy/ex/make_affine.hpp>
+#include <boost/capy/ex/stop_token_support.hpp>
 
 #include <exception>
 #include <optional>
-#include <stop_token>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -78,15 +79,15 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 {
     struct promise_type
         : frame_allocating_base
+#if BOOST_CAPY_HAS_STOP_TOKEN
+        , stop_token_support<promise_type>
+#endif
         , detail::task_return_base<T>
     {
         any_dispatcher ex_;
         any_dispatcher caller_ex_;
         any_coro continuation_;
         std::exception_ptr ep_;
-#if BOOST_CAPY_HAS_STOP_TOKEN
-        std::stop_token stop_token_;
-#endif
         detail::frame_allocator_base* alloc_ = nullptr;
         bool needs_dispatch_ = false;
 
@@ -184,7 +185,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 #if BOOST_CAPY_HAS_STOP_TOKEN
                 using A = std::decay_t<Awaitable>;
                 if constexpr (stoppable_awaitable<A, any_dispatcher>)
-                    return a_.await_suspend(h, p_->ex_, p_->stop_token_);
+                    return a_.await_suspend(h, p_->ex_, p_->stop_token());
                 else
 #endif
                     return a_.await_suspend(h, p_->ex_);
@@ -192,7 +193,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         };
 
         template<class Awaitable>
-        auto await_transform(Awaitable&& a)
+        auto transform_awaitable(Awaitable&& a)
         {
             using A = std::decay_t<Awaitable>;
             if constexpr (affine_awaitable<A, any_dispatcher>)
@@ -207,6 +208,15 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                 return make_affine(std::forward<Awaitable>(a), ex_);
             }
         }
+
+#if !BOOST_CAPY_HAS_STOP_TOKEN
+        // Without stop token support, provide await_transform directly
+        template<class Awaitable>
+        auto await_transform(Awaitable&& a)
+        {
+            return transform_awaitable(std::forward<Awaitable>(a));
+        }
+#endif
     };
 
     std::coroutine_handle<promise_type> h_;
@@ -251,7 +261,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         h_.promise().caller_ex_ = caller_ex;
         h_.promise().continuation_ = continuation;
         h_.promise().ex_ = caller_ex;
-        h_.promise().stop_token_ = token;
+        h_.promise().set_stop_token(token);
         h_.promise().needs_dispatch_ = false;
         return h_;
     }

@@ -17,6 +17,10 @@
 
 #include <coroutine>
 #include <exception>
+#include <optional>
+#if BOOST_CAPY_HAS_STOP_TOKEN
+#include <stop_token>
+#endif
 #include <utility>
 
 namespace boost {
@@ -85,6 +89,9 @@ class async_runner
     Dispatcher d_;
     frame_allocator_wrapper<Allocator> wrapper_;
     frame_allocator_base* saved_allocator_;
+#if BOOST_CAPY_HAS_STOP_TOKEN
+    std::stop_token stop_token_;
+#endif
 
 public:
     /** Construct an async_runner with dispatcher and allocator.
@@ -94,8 +101,19 @@ public:
         restoration on destruction (supports nested async_run calls).
 
         @param d The dispatcher for scheduling coroutine resumption.
+        @param token The stop token for cancellation support.
         @param a The allocator for coroutine frame allocation.
     */
+#if BOOST_CAPY_HAS_STOP_TOKEN
+    explicit async_runner(Dispatcher d, std::stop_token token, Allocator a = {})
+        : d_(std::move(d))
+        , wrapper_(std::move(a))
+        , saved_allocator_(frame_allocating_base::get_frame_allocator())
+        , stop_token_(std::move(token))
+    {
+        frame_allocating_base::set_frame_allocator(wrapper_);
+    }
+#else
     explicit async_runner(Dispatcher d, Allocator a = {})
         : d_(std::move(d))
         , wrapper_(std::move(a))
@@ -103,6 +121,7 @@ public:
     {
         frame_allocating_base::set_frame_allocator(wrapper_);
     }
+#endif
 
     /** Destructor restores previous thread-local storage value.
     */
@@ -186,6 +205,9 @@ private:
         inner_handle.promise().ex_ = d_;
         inner_handle.promise().caller_ex_ = d_;
         inner_handle.promise().needs_dispatch_ = false;
+#if BOOST_CAPY_HAS_STOP_TOKEN
+        inner_handle.promise().set_stop_token(stop_token_);
+#endif
 
         // Run synchronously
         d_(any_coro{inner_handle}).resume();
@@ -246,7 +268,32 @@ private:
         [](std::exception_ptr) { std::cout << "Error!\n"; });
     @endcode
 
+    @par Cancellation Support
+    Pass a stop_token to enable cooperative cancellation:
+    @code
+    std::stop_source source;
+
+    // Launch with cancellation support
+    async_run(ex, source.get_token())(cancellable_task());
+
+    // Later, request cancellation
+    source.request_stop();
+    @endcode
+
+    The task can check for cancellation via `co_await get_stop_token()`:
+    @code
+    task<void> cancellable_task()
+    {
+        auto token = co_await get_stop_token();
+        while (!token.stop_requested())
+        {
+            co_await do_work();
+        }
+    }
+    @endcode
+
     @param d The dispatcher that schedules and resumes the task.
+    @param token The stop token for cancellation (default: empty token).
     @param alloc The frame allocator (default: recycling_frame_allocator).
 
     @return An async_runner with operator() to launch tasks.
@@ -254,7 +301,29 @@ private:
     @see async_runner
     @see task
     @see dispatcher
+    @see get_stop_token
 */
+#if BOOST_CAPY_HAS_STOP_TOKEN
+template<
+    dispatcher Dispatcher,
+    frame_allocator Allocator = detail::recycling_frame_allocator>
+detail::async_runner<Dispatcher, Allocator>
+async_run(Dispatcher d, std::stop_token token, Allocator alloc = {})
+{
+    return detail::async_runner<Dispatcher, Allocator>(
+        std::move(d), std::move(token), std::move(alloc));
+}
+
+template<
+    dispatcher Dispatcher,
+    frame_allocator Allocator = detail::recycling_frame_allocator>
+detail::async_runner<Dispatcher, Allocator>
+async_run(Dispatcher d, Allocator alloc = {})
+{
+    return detail::async_runner<Dispatcher, Allocator>(
+        std::move(d), std::stop_token{}, std::move(alloc));
+}
+#else
 template<
     dispatcher Dispatcher,
     frame_allocator Allocator = detail::recycling_frame_allocator>
@@ -264,6 +333,7 @@ async_run(Dispatcher d, Allocator alloc = {})
     return detail::async_runner<Dispatcher, Allocator>(
         std::move(d), std::move(alloc));
 }
+#endif
 
 } // namespace capy
 } // namespace boost
