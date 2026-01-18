@@ -14,8 +14,6 @@
 ** xref:buffers/index.adoc[Buffer Types]
 ** xref:buffers/sequences.adoc[Buffer Sequences]
 ** xref:buffers/dynamic.adoc[Dynamic Buffers]
-* Cryptography
-** xref:cryptography/bcrypt.adoc[BCrypt Password Hashing]
 * Compression
 ** xref:compression/brotli.adoc[Brotli]
 ** xref:compression/zlib.adoc[ZLib]

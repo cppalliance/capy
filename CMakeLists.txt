@@ -155,7 +155,6 @@ endfunction()
 if (BOOST_CAPY_MRDOCS_BUILD)
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/mrdocs.cpp"
         "#include <boost/capy.hpp>\n"
-        "#include <boost/capy/bcrypt.hpp>\n"
         "#include <boost/capy/zlib.hpp>\n"
         "#include <boost/capy/brotli.hpp>\n")
     add_library(boost_capy_mrdocs "${CMAKE_CURRENT_BINARY_DIR}/mrdocs.cpp")
@@ -170,13 +169,6 @@ endif()
 add_library(boost_capy include/boost/capy.hpp build/Jamfile ${BOOST_CAPY_HEADERS} ${BOOST_CAPY_SOURCES})
 add_library(Boost::capy ALIAS boost_capy)
 boost_capy_setup_properties(boost_capy)
-
-# bcrypt requires platform-specific libraries
-if (WIN32)
-    target_link_libraries(boost_capy PRIVATE bcrypt)
-elseif (APPLE)
-    target_link_libraries(boost_capy PRIVATE "-framework Security")
-endif ()
 
 # Zlib
 find_package(ZLIB)
