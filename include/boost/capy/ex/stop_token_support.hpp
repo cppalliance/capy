@@ -15,15 +15,11 @@
 #include <boost/capy/ex/get_stop_token.hpp>
 
 #include <coroutine>
-#if BOOST_CAPY_HAS_STOP_TOKEN
 #include <stop_token>
-#endif
 #include <type_traits>
 
 namespace boost {
 namespace capy {
-
-#if BOOST_CAPY_HAS_STOP_TOKEN
 
 /** CRTP mixin that adds stop token support to a promise type.
 
@@ -203,8 +199,6 @@ public:
         }
     }
 };
-
-#endif // BOOST_CAPY_HAS_STOP_TOKEN
 
 } // namespace capy
 } // namespace boost

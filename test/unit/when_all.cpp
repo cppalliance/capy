@@ -741,7 +741,6 @@ struct when_all_test
     // Stoppable awaitable protocol tests
     //----------------------------------------------------------
 
-#if BOOST_CAPY_HAS_STOP_TOKEN
     // Test: when_all returns task which satisfies IoAwaitable concept
     void
     testIoAwaitableConcept()
@@ -797,7 +796,6 @@ struct when_all_test
 
         BOOST_TEST(caught_exception);
     }
-#endif
 
     void
     run()
@@ -835,10 +833,8 @@ struct when_all_test
         testDeferredAwait();
 
         // Stoppable awaitable protocol
-#if BOOST_CAPY_HAS_STOP_TOKEN
         testIoAwaitableConcept();
         testNestedWhenAllStopPropagation();
-#endif
 
         // Frame allocator tests - skipped: allocator is currently ignored per design
         // testWhenAllUsesAllocator();

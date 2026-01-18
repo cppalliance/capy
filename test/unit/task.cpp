@@ -1583,7 +1583,6 @@ struct task_test
     // get_stop_token() tests
     //------------------------------------------------------
 
-#if BOOST_CAPY_HAS_STOP_TOKEN
     static task<bool>
     task_checks_stop_token()
     {
@@ -1769,7 +1768,6 @@ struct task_test
         // Clean up - task completed, destroy the handle
         h.destroy();
     }
-#endif // BOOST_CAPY_HAS_STOP_TOKEN
 
     void
     run()
@@ -1828,7 +1826,6 @@ struct task_test
         // testDeallocationCount();
         // testFrameAllocationOrder();
 
-#if BOOST_CAPY_HAS_STOP_TOKEN
         // get_stop_token() tests
         testGetStopTokenBasic();
         testGetStopTokenWithSource();
@@ -1836,7 +1833,6 @@ struct task_test
         testGetStopTokenInLoop();
         testGetStopTokenMultipleCalls();
         testStopTokenReceivesStopSignal();
-#endif
     }
 };
 

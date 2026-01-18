@@ -69,11 +69,7 @@ struct [[nodiscard]] run_on_awaitable
         h_.promise().ex_ = ex_;
         h_.promise().caller_ex_ = caller_ex;
         h_.promise().continuation_ = continuation;
-#if BOOST_CAPY_HAS_STOP_TOKEN
         h_.promise().set_stop_token(token);
-#else
-        (void)token;
-#endif
         h_.promise().needs_dispatch_ = true;
         return h_;
     }

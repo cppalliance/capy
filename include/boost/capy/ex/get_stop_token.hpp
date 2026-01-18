@@ -15,8 +15,6 @@
 namespace boost {
 namespace capy {
 
-#if BOOST_CAPY_HAS_STOP_TOKEN
-
 /** Tag type for coroutine stop token retrieval.
 
     This tag is returned by @ref get_stop_token and intercepted by a
@@ -65,8 +63,6 @@ inline get_stop_token_tag get_stop_token() noexcept
 {
     return {};
 }
-
-#endif // BOOST_CAPY_HAS_STOP_TOKEN
 
 } // namespace capy
 } // namespace boost

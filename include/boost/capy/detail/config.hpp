@@ -16,15 +16,6 @@
 # include <version>
 #endif
 
-// Detect std::stop_token availability (C++20 jthread facility)
-#if !defined(BOOST_CAPY_HAS_STOP_TOKEN)
-# if defined(__cpp_lib_jthread) && __cpp_lib_jthread >= 201911L
-#  define BOOST_CAPY_HAS_STOP_TOKEN 1
-# else
-#  define BOOST_CAPY_HAS_STOP_TOKEN 0
-# endif
-#endif
-
 // Detect thread-local storage mechanism
 // Cascade: compiler keyword > thread_local > OS API
 #if !defined(BOOST_CAPY_TLS_KEYWORD)

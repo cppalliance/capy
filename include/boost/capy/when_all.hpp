@@ -22,9 +22,7 @@
 #include <atomic>
 #include <exception>
 #include <optional>
-#if BOOST_CAPY_HAS_STOP_TOKEN
 #include <stop_token>
-#endif
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -94,7 +92,6 @@ struct when_all_state
     std::atomic<bool> has_exception_{false};
     std::exception_ptr first_exception_;
 
-#if BOOST_CAPY_HAS_STOP_TOKEN
     // Stop propagation - on error, request stop for siblings
     std::stop_source stop_source_;
 
@@ -106,7 +103,6 @@ struct when_all_state
     };
     using stop_callback_t = std::stop_callback<stop_callback_fn>;
     std::optional<stop_callback_t> parent_stop_callback_;
-#endif
 
     // Parent resumption
     any_coro continuation_;
@@ -160,9 +156,7 @@ struct when_all_runner
     {
         when_all_state<Ts...>* state_ = nullptr;
         any_executor_ref ex_;
-#if BOOST_CAPY_HAS_STOP_TOKEN
         std::stop_token stop_token_;
-#endif
 
         when_all_runner get_return_object()
         {
@@ -205,10 +199,8 @@ struct when_all_runner
         void unhandled_exception()
         {
             state_->capture_exception(std::current_exception());
-#if BOOST_CAPY_HAS_STOP_TOKEN
             // Request stop for sibling tasks
             state_->stop_source_.request_stop();
-#endif
         }
 
         template<class Awaitable>
@@ -230,11 +222,7 @@ struct when_all_runner
             template<class Promise>
             auto await_suspend(std::coroutine_handle<Promise> h)
             {
-#if BOOST_CAPY_HAS_STOP_TOKEN
                 return a_.await_suspend(h, p_->ex_, p_->stop_token_);
-#else
-                return a_.await_suspend(h, p_->ex_, std::stop_token{});
-#endif
             }
         };
 
@@ -323,7 +311,6 @@ public:
         return sizeof...(Ts) == 0;
     }
 
-#if BOOST_CAPY_HAS_STOP_TOKEN
     template<typename Ex>
     any_coro await_suspend(any_coro continuation, Ex const& caller_ex, std::stop_token parent_token = {})
     {
@@ -350,22 +337,6 @@ public:
         // Let signal_completion() handle resumption
         return std::noop_coroutine();
     }
-#else
-    template<typename Ex>
-    any_coro await_suspend(any_coro continuation, Ex const& caller_ex)
-    {
-        state_->continuation_ = continuation;
-        state_->caller_ex_ = caller_ex;
-
-        // Launch all tasks concurrently
-        [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            (..., launch_one<Is>(caller_ex));
-        }(std::index_sequence_for<Ts...>{});
-
-        // Let signal_completion() handle resumption
-        return std::noop_coroutine();
-    }
-#endif
 
     void await_resume() const noexcept
     {
@@ -373,7 +344,6 @@ public:
     }
 
 private:
-#if BOOST_CAPY_HAS_STOP_TOKEN
     template<std::size_t I, typename Ex>
     void launch_one(Ex const& caller_ex, std::stop_token token)
     {
@@ -389,22 +359,6 @@ private:
         state_->runner_handles_[I] = ch;
         caller_ex.dispatch(ch).resume();
     }
-#else
-    template<std::size_t I, typename Ex>
-    void launch_one(Ex const& caller_ex)
-    {
-        auto runner = make_when_all_runner<I>(
-            std::move(std::get<I>(*tasks_)), state_);
-
-        auto h = runner.release();
-        h.promise().state_ = state_;
-        h.promise().ex_ = caller_ex;
-
-        any_coro ch{h};
-        state_->runner_handles_[I] = ch;
-        caller_ex.dispatch(ch).resume();
-    }
-#endif
 };
 
 /** Compute the result type for when_all.

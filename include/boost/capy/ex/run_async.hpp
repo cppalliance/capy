@@ -344,9 +344,7 @@ public:
         task_h.promise().continuation_ = tr_.h_;
         task_h.promise().caller_ex_ = ex_;
         task_h.promise().ex_ = ex_;  // Used by awaited async_ops
-#if BOOST_CAPY_HAS_STOP_TOKEN
         task_h.promise().set_stop_token(st_);
-#endif
 
         // Resume task through executor
         // The executor returns a handle for symmetric transfer;

@@ -323,7 +323,6 @@ struct run_async_test
     // Stop Token
     //----------------------------------------------------------
 
-#if BOOST_CAPY_HAS_STOP_TOKEN
     static task<bool>
     check_stop_requested()
     {
@@ -362,7 +361,6 @@ struct run_async_test
 
         BOOST_TEST(result);
     }
-#endif
 
     //----------------------------------------------------------
     // Sync Dispatcher
@@ -577,10 +575,8 @@ struct run_async_test
         testOverloadedHandlerException();
 
         // Stop Token
-#if BOOST_CAPY_HAS_STOP_TOKEN
         testStopTokenPropagation();
         testCancellationVisible();
-#endif
 
         // Sync Dispatcher
         testSyncDispatcherBasic();

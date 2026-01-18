@@ -19,8 +19,6 @@
 namespace boost {
 namespace capy {
 
-#if BOOST_CAPY_HAS_STOP_TOKEN
-
 struct test_coro
 {
     struct promise_type : stop_token_support<promise_type>
@@ -198,8 +196,6 @@ struct stop_token_support_test
 TEST_SUITE(
     stop_token_support_test,
     "boost.capy.ex.stop_token_support");
-
-#endif // BOOST_CAPY_HAS_STOP_TOKEN
 
 } // namespace capy
 } // namespace boost

@@ -15,8 +15,6 @@
 namespace boost {
 namespace capy {
 
-#if BOOST_CAPY_HAS_STOP_TOKEN
-
 struct get_stop_token_test
 {
     void
@@ -49,8 +47,6 @@ struct get_stop_token_test
 TEST_SUITE(
     get_stop_token_test,
     "boost.capy.ex.get_stop_token");
-
-#endif // BOOST_CAPY_HAS_STOP_TOKEN
 
 } // namespace capy
 } // namespace boost
