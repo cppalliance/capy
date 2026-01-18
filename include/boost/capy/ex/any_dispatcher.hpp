@@ -192,6 +192,188 @@ public:
 template<executor E> post_dispatcher(E) -> post_dispatcher<E>;
 template<executor E> defer_dispatcher(E) -> defer_dispatcher<E>;
 
+//------------------------------------------------------------------------------
+
+/** A type-erased dispatcher that calls executor::post().
+
+    This class type-erases the executor while implementing the `dispatcher`
+    concept. It stores a pointer to the original executor and a function
+    pointer to invoke its `post()` operation, allowing executors of different
+    types to be used uniformly for posting coroutines.
+
+    @par Thread Safety
+    The `any_post_dispatcher` itself is not thread-safe for concurrent
+    modification, but `operator()` is const and safe to call concurrently
+    if the underlying executor supports concurrent post operations.
+
+    @par Lifetime
+    The `any_post_dispatcher` stores a pointer to the original executor object.
+    The caller must ensure the referenced executor outlives the
+    `any_post_dispatcher` instance. This is typically satisfied when the
+    executor is stored in a derived class or coroutine frame.
+
+    @see executor, dispatcher
+*/
+class any_post_dispatcher
+{
+    void const* ex_ = nullptr;
+    void(*post_fn_)(void const*, any_coro) = nullptr;
+
+public:
+    /** Default constructor.
+
+        Constructs an empty `any_post_dispatcher`. Calling `operator()` on a
+        default-constructed instance results in undefined behavior.
+    */
+    any_post_dispatcher() = default;
+
+    /** Copy constructor. */
+    any_post_dispatcher(any_post_dispatcher const&) = default;
+
+    /** Copy assignment operator. */
+    any_post_dispatcher& operator=(any_post_dispatcher const&) = default;
+
+    /** Constructs from any executor type.
+
+        Captures a reference to the given executor and stores a type-erased
+        function to invoke its `post()` operation. The executor must remain
+        valid for the lifetime of this `any_post_dispatcher` instance.
+
+        @param ex The executor to wrap. Must satisfy the `executor` concept.
+                  A pointer to this object is stored internally; the executor
+                  must outlive this wrapper.
+    */
+    template<class E>
+        requires (!std::same_as<std::decay_t<E>, any_post_dispatcher>) && executor<E>
+    any_post_dispatcher(E const& ex) noexcept
+        : ex_(&ex)
+        , post_fn_([](void const* p, any_coro h) {
+                static_cast<E const*>(p)->post(h);
+            })
+    {
+    }
+
+    /** Returns true if this instance holds a valid executor.
+
+        @return `true` if constructed with an executor, `false` if
+                default-constructed.
+    */
+    explicit operator bool() const noexcept
+    {
+        return ex_ != nullptr;
+    }
+
+    /** Dispatches a coroutine handle by posting to the wrapped executor.
+
+        Posts the coroutine handle to the executor for later execution
+        and returns `noop_coroutine()` for the caller to transfer to.
+
+        @param h The coroutine handle to post for resumption.
+
+        @return `std::noop_coroutine()` since the work is posted for
+                later execution.
+
+        @pre This instance was constructed with a valid executor
+             (not default-constructed).
+    */
+    any_coro operator()(any_coro h) const
+    {
+        post_fn_(ex_, h);
+        return std::noop_coroutine();
+    }
+};
+
+//------------------------------------------------------------------------------
+
+/** A type-erased dispatcher that calls executor::defer().
+
+    This class type-erases the executor while implementing the `dispatcher`
+    concept. It stores a pointer to the original executor and a function
+    pointer to invoke its `defer()` operation, allowing executors of different
+    types to be used uniformly for deferring coroutines.
+
+    @par Thread Safety
+    The `any_defer_dispatcher` itself is not thread-safe for concurrent
+    modification, but `operator()` is const and safe to call concurrently
+    if the underlying executor supports concurrent defer operations.
+
+    @par Lifetime
+    The `any_defer_dispatcher` stores a pointer to the original executor object.
+    The caller must ensure the referenced executor outlives the
+    `any_defer_dispatcher` instance. This is typically satisfied when the
+    executor is stored in a derived class or coroutine frame.
+
+    @see executor, dispatcher
+*/
+class any_defer_dispatcher
+{
+    void const* ex_ = nullptr;
+    void(*defer_fn_)(void const*, any_coro) = nullptr;
+
+public:
+    /** Default constructor.
+
+        Constructs an empty `any_defer_dispatcher`. Calling `operator()` on a
+        default-constructed instance results in undefined behavior.
+    */
+    any_defer_dispatcher() = default;
+
+    /** Copy constructor. */
+    any_defer_dispatcher(any_defer_dispatcher const&) = default;
+
+    /** Copy assignment operator. */
+    any_defer_dispatcher& operator=(any_defer_dispatcher const&) = default;
+
+    /** Constructs from any executor type.
+
+        Captures a reference to the given executor and stores a type-erased
+        function to invoke its `defer()` operation. The executor must remain
+        valid for the lifetime of this `any_defer_dispatcher` instance.
+
+        @param ex The executor to wrap. Must satisfy the `executor` concept.
+                  A pointer to this object is stored internally; the executor
+                  must outlive this wrapper.
+    */
+    template<class E>
+        requires (!std::same_as<std::decay_t<E>, any_defer_dispatcher>) && executor<E>
+    any_defer_dispatcher(E const& ex) noexcept
+        : ex_(&ex)
+        , defer_fn_([](void const* p, any_coro h) {
+                static_cast<E const*>(p)->defer(h);
+            })
+    {
+    }
+
+    /** Returns true if this instance holds a valid executor.
+
+        @return `true` if constructed with an executor, `false` if
+                default-constructed.
+    */
+    explicit operator bool() const noexcept
+    {
+        return ex_ != nullptr;
+    }
+
+    /** Dispatches a coroutine handle by deferring to the wrapped executor.
+
+        Defers the coroutine handle to the executor for later execution
+        and returns `noop_coroutine()` for the caller to transfer to.
+
+        @param h The coroutine handle to defer for resumption.
+
+        @return `std::noop_coroutine()` since the work is deferred for
+                later execution.
+
+        @pre This instance was constructed with a valid executor
+             (not default-constructed).
+    */
+    any_coro operator()(any_coro h) const
+    {
+        defer_fn_(ex_, h);
+        return std::noop_coroutine();
+    }
+};
+
 } // capy
 } // boost
 
