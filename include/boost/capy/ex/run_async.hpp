@@ -295,8 +295,8 @@ template<Executor Ex, class Handlers>
 class [[nodiscard]] run_async_wrapper
 {
     detail::trampoline<Handlers> tr_;
-    Ex ex_;
     std::stop_token st_;
+    Ex ex_;
 
 public:
     /// Construct wrapper with executor, stop token, and handlers.
@@ -305,8 +305,8 @@ public:
         std::stop_token st,
         Handlers h)
         : tr_(detail::make_trampoline<Handlers>())
-        , ex_(std::move(ex))
         , st_(std::move(st))
+        , ex_(std::move(ex))
     {
         // Store handlers in the trampoline's promise
         tr_.h_.promise().handlers_.emplace(std::move(h));
@@ -349,7 +349,7 @@ public:
         // Resume task through executor
         // The executor returns a handle for symmetric transfer;
         // from non-coroutine code we must explicitly resume it
-        ex_.dispatch(task_h)();
+        ex_.dispatch(task_h).resume();
     }
 };
 
