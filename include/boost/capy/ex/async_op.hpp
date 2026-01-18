@@ -17,6 +17,7 @@
 #include <exception>
 #include <functional>
 #include <memory>
+#include <stop_token>
 #include <variant>
 
 namespace boost {
@@ -182,20 +183,21 @@ public:
         impl_->start([h]{ h.resume(); });
     }
 
-    /** Suspend the caller with scheduler affinity.
+    /** Suspend the caller with scheduler affinity (IoAwaitable protocol).
 
         Initiates the asynchronous operation and arranges for
-        the caller to be resumed through the dispatcher when
+        the caller to be resumed through the executor when
         it completes, maintaining scheduler affinity.
 
         @param h The coroutine handle of the awaiting coroutine.
-        @param dispatcher The dispatcher to resume through.
+        @param ex The executor to resume through.
+        @param token The stop token for cancellation (currently unused).
     */
-    template<typename Dispatcher>
+    template<typename Ex>
     void
-    await_suspend(std::coroutine_handle<> h, Dispatcher const& dispatcher)
+    await_suspend(std::coroutine_handle<> h, Ex const& ex, std::stop_token = {})
     {
-        impl_->start([h, &dispatcher]{ dispatcher(h).resume(); });
+        impl_->start([h, &ex]{ ex.dispatch(h).resume(); });
     }
 
     /** Return the result after completion.
@@ -292,20 +294,21 @@ public:
         impl_->start([h]{ h.resume(); });
     }
 
-    /** Suspend the caller with scheduler affinity.
+    /** Suspend the caller with scheduler affinity (IoAwaitable protocol).
 
         Initiates the asynchronous operation and arranges for
-        the caller to be resumed through the dispatcher when
+        the caller to be resumed through the executor when
         it completes, maintaining scheduler affinity.
 
         @param h The coroutine handle of the awaiting coroutine.
-        @param dispatcher The dispatcher to resume through.
+        @param ex The executor to resume through.
+        @param token The stop token for cancellation (currently unused).
     */
-    template<typename Dispatcher>
+    template<typename Ex>
     void
-    await_suspend(std::coroutine_handle<> h, Dispatcher const& dispatcher)
+    await_suspend(std::coroutine_handle<> h, Ex const& ex, std::stop_token = {})
     {
-        impl_->start([h, &dispatcher]{ dispatcher(h).resume(); });
+        impl_->start([h, &ex]{ ex.dispatch(h).resume(); });
     }
 
     /** Complete the await and check for exceptions.

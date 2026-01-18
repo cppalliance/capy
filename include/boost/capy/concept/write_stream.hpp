@@ -11,9 +11,9 @@
 #define BOOST_CAPY_CONCEPT_WRITE_STREAM_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/concept/affine_awaitable.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/system/error_code.hpp>
 
 #include <concepts>
@@ -25,25 +25,25 @@ namespace capy {
 
 /** Concept for types that provide awaitable write operations.
 
-    A type satisfies `write_stream` if it provides an affine awaitable
+    A type satisfies `WriteStream` if it provides an I/O awaitable
     `write_some` member function that writes data from a const
     buffer sequence.
 
     @tparam T The stream type.
-    @tparam ConstBufferSequence The buffer sequence type, must satisfy
-        `const_buffer_sequence`.
+    @tparam CB The buffer sequence type, must satisfy
+        `ConstBufferSequence`.
 
     @par Requirements
-    @li `ConstBufferSequence` must satisfy `const_buffer_sequence`
+    @li `CB` must satisfy `ConstBufferSequence`
     @li `T` must provide a templated `write_some` member function
-    @li `write_some` must accept a `ConstBufferSequence const&`
+    @li `write_some` must accept a `CB const&`
     @li The awaitable returned by `write_some` must satisfy
-        `capy::affine_awaitable<capy::any_dispatcher>`
+        `capy::IoAwaitable<capy::any_executor_ref>`
     @li The awaitable must resolve to `std::pair<system::error_code, std::size_t>`
 
     @par Example
     @code
-    template<write_stream<const_buffer> Stream>
+    template<WriteStream<const_buffer> Stream>
     capy::task<void> write_all(Stream& s, char const* buf, std::size_t size)
     {
         std::size_t total = 0;
@@ -58,13 +58,13 @@ namespace capy {
     }
     @endcode
 */
-template<typename T, typename ConstBufferSequence>
-concept write_stream =
-    const_buffer_sequence<ConstBufferSequence> &&
-    requires(T& stream, ConstBufferSequence const& buffers)
+template<typename T, typename CB>
+concept WriteStream =
+    ConstBufferSequence<CB> &&
+    requires(T& stream, CB const& buffers)
     {
         { stream.write_some(buffers) } ->
-            capy::affine_awaitable<capy::any_dispatcher>;
+            capy::IoAwaitable<capy::any_executor_ref>;
     };
 
 } // namespace capy

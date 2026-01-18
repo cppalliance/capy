@@ -27,9 +27,9 @@ namespace capy {
 
 namespace {
 
-// Verify executor concept at compile time
-static_assert(executor<strand<thread_pool::executor_type>>,
-    "strand must satisfy executor concept");
+// Verify Executor concept at compile time
+static_assert(Executor<strand<thread_pool::executor_type>>,
+    "strand must satisfy Executor concept");
 
 // Verify is_strand trait
 static_assert(detail::is_strand<strand<thread_pool::executor_type>>::value,
@@ -354,7 +354,7 @@ struct strand_test
         std::atomic<int> counter{0};
 
         auto coro = make_counter_coro(counter);
-        s(coro.handle());
+        s.dispatch(coro.handle());
         coro.release();
 
         // Wait for work to complete
@@ -380,7 +380,7 @@ struct strand_test
     }
 
     void
-    testDefer()
+    testDispatchMethod()
     {
         thread_pool pool(1);
         auto s = strand(pool.get_executor());
@@ -388,24 +388,7 @@ struct strand_test
         std::atomic<int> counter{0};
 
         auto coro = make_counter_coro(counter);
-        s.defer(coro.handle());
-        coro.release();
-
-        // Wait for work to complete
-        BOOST_TEST(wait_for([&]{ return counter.load() >= 1; }));
-        BOOST_TEST_EQ(counter.load(), 1);
-    }
-
-    void
-    testOperatorCall()
-    {
-        thread_pool pool(1);
-        auto s = strand(pool.get_executor());
-
-        std::atomic<int> counter{0};
-
-        auto coro = make_counter_coro(counter);
-        s(coro.handle());
+        s.dispatch(coro.handle());
         coro.release();
 
         // Wait for work to complete
@@ -550,7 +533,7 @@ struct strand_test
 
         std::atomic<int> counter{0};
         auto coro = make_counter_coro(counter);
-        s(coro.handle());
+        s.dispatch(coro.handle());
         coro.release();
 
         BOOST_TEST(wait_for([&]{ return counter.load() >= 1; }));
@@ -595,8 +578,7 @@ struct strand_test
         testEquality();
         testDispatch();
         testPost();
-        testDefer();
-        testOperatorCall();
+        testDispatchMethod();
         testMultipleWork();
         testConcurrentPost();
         testServiceCreation();

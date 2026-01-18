@@ -11,9 +11,11 @@
 #define BOOST_CAPY_ASYNC_MUTEX_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
+#include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/any_coro.hpp>
-#include <boost/capy/concept/dispatcher.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
+
+#include <stop_token>
 
 #include <coroutine>
 #include <utility>
@@ -75,7 +77,7 @@ public:
         async_mutex* m_;
         lock_awaiter* next_ = nullptr;
         std::coroutine_handle<> h_;
-        any_dispatcher d_;
+        any_executor_ref ex_;
 
     public:
         explicit lock_awaiter(async_mutex* m) noexcept
@@ -96,7 +98,7 @@ public:
         bool await_suspend(std::coroutine_handle<> h) noexcept
         {
             h_ = h;
-            d_ = {};
+            ex_ = {};
             if(m_->tail_)
                 m_->tail_->next_ = this;
             else
@@ -105,14 +107,15 @@ public:
             return true;
         }
 
-        /** Affine awaitable protocol overload. */
-        template<dispatcher Dispatcher>
+        /** IoAwaitable protocol overload. */
+        template<Executor Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d) noexcept -> std::coroutine_handle<>
+            Ex const& ex,
+            std::stop_token = {}) noexcept -> std::coroutine_handle<>
         {
             h_ = h;
-            d_ = d;
+            ex_ = ex;
             if(m_->tail_)
                 m_->tail_->next_ = this;
             else
@@ -192,13 +195,14 @@ public:
             return inner_.await_suspend(h);
         }
 
-        /** Affine awaitable protocol overload. */
-        template<dispatcher Dispatcher>
+        /** IoAwaitable protocol overload. */
+        template<Executor Ex>
         auto await_suspend(
             std::coroutine_handle<> h,
-            Dispatcher const& d) noexcept -> std::coroutine_handle<>
+            Ex const& ex,
+            std::stop_token token = {}) noexcept -> std::coroutine_handle<>
         {
-            return inner_.await_suspend(h, d);
+            return inner_.await_suspend(h, ex, token);
         }
 
         lock_guard await_resume() noexcept
@@ -246,8 +250,8 @@ public:
             if(!head_)
                 tail_ = nullptr;
             // Lock ownership transfers to next waiter
-            if(waiter->d_)
-                waiter->d_(any_coro{waiter->h_}).resume();
+            if(waiter->ex_)
+                waiter->ex_.dispatch(any_coro{waiter->h_}).resume();
             else
                 waiter->h_.resume();
         }

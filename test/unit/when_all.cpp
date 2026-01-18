@@ -10,6 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/when_all.hpp>
 
+#include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -61,30 +62,53 @@ static_assert(std::is_void_v<
     when_all_result_type<void, void, void>>);
 
 // Verify when_all returns task which satisfies awaitable protocols
-static_assert(affine_awaitable<task<std::tuple<int, int>>, any_dispatcher>);
-#if BOOST_CAPY_HAS_STOP_TOKEN
-static_assert(stoppable_awaitable<task<std::tuple<int, int>>, any_dispatcher>);
-#endif
+static_assert(IoAwaitable<task<std::tuple<int, int>>, any_executor_ref>);
 
-/** Simple synchronous dispatcher for testing.
+// Minimal test context
+class test_context : public execution_context
+{
+};
+
+static test_context default_test_ctx_;
+
+/** Simple synchronous executor for testing.
 */
-struct test_dispatcher
+struct test_executor
 {
     int* dispatch_count_;
+    test_context* ctx_ = nullptr;
 
-    explicit test_dispatcher(int& count)
+    explicit test_executor(int& count)
         : dispatch_count_(&count)
     {
     }
 
-    any_coro operator()(any_coro h) const
+    bool operator==(test_executor const& other) const noexcept
+    {
+        return dispatch_count_ == other.dispatch_count_;
+    }
+
+    execution_context& context() const noexcept
+    {
+        return ctx_ ? *ctx_ : default_test_ctx_;
+    }
+
+    void on_work_started() const noexcept {}
+    void on_work_finished() const noexcept {}
+
+    any_coro dispatch(any_coro h) const
     {
         ++(*dispatch_count_);
         return h;
     }
+
+    void post(any_coro h) const
+    {
+        h.resume();
+    }
 };
 
-static_assert(dispatcher<test_dispatcher>);
+static_assert(Executor<test_executor>);
 
 struct test_exception : std::runtime_error
 {
@@ -140,11 +164,11 @@ struct when_all_test
     testAllSucceed()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool completed = false;
         int result = 0;
 
-        run_async(d,
+        run_async(ex,
             [&](std::tuple<int, int> t) {
                 auto [a, b] = t;
                 completed = true;
@@ -162,11 +186,11 @@ struct when_all_test
     testThreeTasksSucceed()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool completed = false;
         int result = 0;
 
-        run_async(d,
+        run_async(ex,
             [&](std::tuple<int, int, int> t) {
                 auto [a, b, c] = t;
                 completed = true;
@@ -184,12 +208,12 @@ struct when_all_test
     testMixedTypes()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool completed = false;
         std::string result;
 
         // void_task() doesn't contribute to result tuple
-        run_async(d,
+        run_async(ex,
             [&](std::tuple<int, std::string> t) {
                 auto [a, b] = t;
                 completed = true;
@@ -207,11 +231,11 @@ struct when_all_test
     testSingleTask()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool completed = false;
         int result = 0;
 
-        run_async(d,
+        run_async(ex,
             [&](std::tuple<int> t) {
                 auto [a] = t;
                 completed = true;
@@ -229,12 +253,12 @@ struct when_all_test
     testFirstException()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool completed = false;
         bool caught_exception = false;
         std::string error_msg;
 
-        run_async(d,
+        run_async(ex,
             [&](std::tuple<int, int>) { completed = true; },
             [&](std::exception_ptr ep) {
                 try {
@@ -255,11 +279,11 @@ struct when_all_test
     testMultipleFailuresFirstWins()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool caught_exception = false;
         std::string error_msg;
 
-        run_async(d,
+        run_async(ex,
             [](std::tuple<int, int, int>) {},
             [&](std::exception_ptr ep) {
                 try {
@@ -285,11 +309,11 @@ struct when_all_test
     testVoidTaskException()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool caught_exception = false;
         std::string error_msg;
 
-        run_async(d,
+        run_async(ex,
             [](std::tuple<int>) {},
             [&](std::exception_ptr ep) {
                 try {
@@ -309,7 +333,7 @@ struct when_all_test
     testNestedWhenAll()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool completed = false;
         int result = 0;
 
@@ -324,7 +348,7 @@ struct when_all_test
             co_return a + b;
         };
 
-        run_async(d,
+        run_async(ex,
             [&](std::tuple<int, int> t) {
                 auto [x, y] = t;
                 completed = true;
@@ -342,11 +366,11 @@ struct when_all_test
     testAllVoidTasks()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool completed = false;
 
         // All void tasks return void, not std::tuple<>
-        run_async(d,
+        run_async(ex,
             [&]() { completed = true; },
             [](std::exception_ptr) {})(
             when_all(void_task(), void_task(), void_task()));
@@ -399,10 +423,10 @@ struct when_all_test
     testStopRequestedOnError()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool caught_exception = false;
 
-        run_async(d,
+        run_async(ex,
             [](std::tuple<int, int>) {},
             [&](std::exception_ptr) {
                 caught_exception = true;
@@ -417,7 +441,7 @@ struct when_all_test
     testAllTasksCompleteAfterStop()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         std::atomic<int> completion_count{0};
         bool caught_exception = false;
 
@@ -432,7 +456,7 @@ struct when_all_test
             co_return 0;
         };
 
-        run_async(d,
+        run_async(ex,
             [](std::tuple<int, int, int>) {},
             [&](std::exception_ptr) {
                 caught_exception = true;
@@ -455,11 +479,11 @@ struct when_all_test
     testManyTasks()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool completed = false;
         int result = 0;
 
-        run_async(d,
+        run_async(ex,
             [&](auto t) {
                 auto [a, b, c, d, e, f, g, h] = t;
                 completed = true;
@@ -488,11 +512,11 @@ struct when_all_test
     testTasksWithMultipleSteps()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool completed = false;
         int result = 0;
 
-        run_async(d,
+        run_async(ex,
             [&](std::tuple<int, int> t) {
                 auto [a, b] = t;
                 completed = true;
@@ -526,11 +550,11 @@ struct when_all_test
     testDifferentExceptionTypes()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool caught_test = false;
         bool caught_other = false;
 
-        run_async(d,
+        run_async(ex,
             [](std::tuple<int, int>) {},
             [&](std::exception_ptr ep) {
                 try {
@@ -549,36 +573,56 @@ struct when_all_test
     }
 
     //----------------------------------------------------------
-    // Dispatcher propagation tests
+    // Executor propagation tests
     //----------------------------------------------------------
 
-    // Dispatcher that tracks which tasks were dispatched
-    struct tracking_dispatcher
+    // Executor that tracks which tasks were dispatched
+    struct tracking_executor
     {
         std::atomic<int>* dispatch_count_;
+        test_context* ctx_ = nullptr;
 
-        explicit tracking_dispatcher(std::atomic<int>& count)
+        explicit tracking_executor(std::atomic<int>& count)
             : dispatch_count_(&count)
         {
         }
 
-        any_coro operator()(any_coro h) const
+        bool operator==(tracking_executor const& other) const noexcept
+        {
+            return dispatch_count_ == other.dispatch_count_;
+        }
+
+        test_context& context() const noexcept
+        {
+            static test_context ctx;
+            return ctx_ ? *ctx_ : ctx;
+        }
+
+        void on_work_started() const noexcept {}
+        void on_work_finished() const noexcept {}
+
+        any_coro dispatch(any_coro h) const
         {
             ++(*dispatch_count_);
             return h;
         }
+
+        void post(any_coro h) const
+        {
+            h.resume();
+        }
     };
 
-    static_assert(dispatcher<tracking_dispatcher>);
+    static_assert(Executor<tracking_executor>);
 
     void
     testDispatcherUsedForAllTasks()
     {
         std::atomic<int> dispatch_count{0};
-        tracking_dispatcher d(dispatch_count);
+        tracking_executor tex(dispatch_count);
         bool completed = false;
 
-        run_async(d,
+        run_async(tex,
             [&](std::tuple<int, int, int> t) {
                 auto [a, b, c] = t;
                 completed = true;
@@ -604,10 +648,10 @@ struct when_all_test
     testResultsInInputOrder()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool completed = false;
 
-        run_async(d,
+        run_async(ex,
             [&](std::tuple<std::string, std::string, std::string> t) {
                 auto [first, second, third] = t;
                 BOOST_TEST_EQ(first, "first");
@@ -628,11 +672,11 @@ struct when_all_test
     testMixedVoidValueOrder()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool completed = false;
 
         // void at index 1, values at 0 and 2
-        run_async(d,
+        run_async(ex,
             [&](std::tuple<int, int> t) {
                 // a should be from index 0, b from index 2
                 auto [a, b] = t;
@@ -655,13 +699,13 @@ struct when_all_test
     testAwaitableMoveConstruction()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool completed = false;
 
         auto awaitable1 = when_all(returns_int(1), returns_int(2));
         auto awaitable2 = std::move(awaitable1);
 
-        run_async(d,
+        run_async(ex,
             [&](std::tuple<int, int> t) {
                 auto [a, b] = t;
                 completed = true;
@@ -677,12 +721,12 @@ struct when_all_test
     testDeferredAwait()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool completed = false;
 
         auto deferred = when_all(returns_int(10), returns_int(20));
         // Await later
-        run_async(d,
+        run_async(ex,
             [&](std::tuple<int, int> t) {
                 auto [a, b] = t;
                 completed = true;
@@ -698,22 +742,22 @@ struct when_all_test
     //----------------------------------------------------------
 
 #if BOOST_CAPY_HAS_STOP_TOKEN
-    // Test: when_all returns task which satisfies stoppable_awaitable concept
+    // Test: when_all returns task which satisfies IoAwaitable concept
     void
-    testStoppableAwaitableConcept()
+    testIoAwaitableConcept()
     {
         // when_all now returns task<T>, which satisfies the awaitable protocols
-        static_assert(stoppable_awaitable<
+        static_assert(IoAwaitable<
             task<std::tuple<int, int>>,
-            any_dispatcher>);
+            any_executor_ref>);
 
-        static_assert(stoppable_awaitable<
+        static_assert(IoAwaitable<
             task<std::tuple<int, std::string>>,
-            any_dispatcher>);
+            any_executor_ref>);
 
-        static_assert(stoppable_awaitable<
+        static_assert(IoAwaitable<
             task<void>,
-            any_dispatcher>);
+            any_executor_ref>);
     }
 
     // Test: Nested when_all propagates stop
@@ -721,7 +765,7 @@ struct when_all_test
     testNestedWhenAllStopPropagation()
     {
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool caught_exception = false;
 
         auto inner_failing = []() -> task<int> {
@@ -740,7 +784,7 @@ struct when_all_test
             co_return a + b;
         };
 
-        run_async(d,
+        run_async(ex,
             [](std::tuple<int, int>) {},
             [&](std::exception_ptr ep) {
                 caught_exception = true;
@@ -792,7 +836,7 @@ struct when_all_test
 
         // Stoppable awaitable protocol
 #if BOOST_CAPY_HAS_STOP_TOKEN
-        testStoppableAwaitableConcept();
+        testIoAwaitableConcept();
         testNestedWhenAllStopPropagation();
 #endif
 
@@ -834,7 +878,7 @@ struct when_all_test
     {
         // Verify that when_all() coroutines use the custom allocator
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool completed = false;
 
         int alloc_count = 0;
@@ -843,7 +887,7 @@ struct when_all_test
 
         tracking_frame_allocator alloc{1, &alloc_count, &dealloc_count, &alloc_log};
 
-        run_async(d, std::stop_token{}, alloc,
+        run_async(ex, std::stop_token{}, alloc,
             [&](std::tuple<int, int, int> t) {
                 auto [a, b, c] = t;
                 completed = true;
@@ -867,7 +911,7 @@ struct when_all_test
     {
         // Verify nested when_all calls also use the allocator
         int dispatch_count = 0;
-        test_dispatcher d(dispatch_count);
+        test_executor ex(dispatch_count);
         bool completed = false;
 
         int alloc_count = 0;
@@ -887,7 +931,7 @@ struct when_all_test
         };
 
         int result = 0;
-        run_async(d, std::stop_token{}, alloc,
+        run_async(ex, std::stop_token{}, alloc,
             [&](std::tuple<int, int> t) {
                 auto [x, y] = t;
                 completed = true;

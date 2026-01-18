@@ -1,0 +1,234 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie dot falco at gmail dot com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+#ifndef BOOST_CAPY_ANY_EXECUTOR_REF_HPP
+#define BOOST_CAPY_ANY_EXECUTOR_REF_HPP
+
+#include <boost/capy/detail/config.hpp>
+#include <boost/capy/ex/any_coro.hpp>
+
+#include <concepts>
+#include <coroutine>
+#include <type_traits>
+#include <utility>
+
+namespace boost {
+namespace capy {
+
+class execution_context;
+
+namespace detail {
+
+/** Virtual function table for type-erased executor operations. */
+struct executor_vtable
+{
+    execution_context& (*context)(void const*) noexcept;
+    void (*on_work_started)(void const*) noexcept;
+    void (*on_work_finished)(void const*) noexcept;
+    void (*post)(void const*, std::coroutine_handle<>);
+    std::coroutine_handle<> (*dispatch)(void const*, std::coroutine_handle<>);
+    bool (*equals)(void const*, void const*) noexcept;
+};
+
+/** Vtable instance for a specific executor type. */
+template<class Ex>
+inline constexpr executor_vtable vtable_for = {
+    // context
+    [](void const* p) noexcept -> execution_context& {
+        return const_cast<Ex*>(static_cast<Ex const*>(p))->context();
+    },
+    // on_work_started
+    [](void const* p) noexcept {
+        const_cast<Ex*>(static_cast<Ex const*>(p))->on_work_started();
+    },
+    // on_work_finished
+    [](void const* p) noexcept {
+        const_cast<Ex*>(static_cast<Ex const*>(p))->on_work_finished();
+    },
+    // post
+    [](void const* p, std::coroutine_handle<> h) {
+        static_cast<Ex const*>(p)->post(h);
+    },
+    // dispatch
+    [](void const* p, std::coroutine_handle<> h) -> std::coroutine_handle<> {
+        return static_cast<Ex const*>(p)->dispatch(h);
+    },
+    // equals
+    [](void const* a, void const* b) noexcept -> bool {
+        return *static_cast<Ex const*>(a) == *static_cast<Ex const*>(b);
+    }
+};
+
+} // detail
+
+/** A type-erased reference wrapper for executor objects.
+
+    This class provides type erasure for any executor type, enabling
+    runtime polymorphism without virtual functions or allocation.
+    It stores a pointer to the original executor and a pointer to a
+    static vtable, allowing executors of different types to be stored
+    uniformly while satisfying the full `Executor` concept.
+
+    @par Reference Semantics
+    This class has reference semantics: it does not allocate or own
+    the wrapped executor. Copy operations simply copy the internal
+    pointers. The caller must ensure the referenced executor outlives
+    all `any_executor_ref` instances that wrap it.
+
+    @par Thread Safety
+    The `any_executor_ref` itself is not thread-safe for concurrent
+    modification, but its executor operations are safe to call
+    concurrently if the underlying executor supports it.
+
+    @par Executor Concept
+    This class satisfies the `Executor` concept, making it usable
+    anywhere a concrete executor is expected.
+*/
+class any_executor_ref
+{
+    void const* ex_ = nullptr;
+    detail::executor_vtable const* vt_ = nullptr;
+
+public:
+    /** Default constructor.
+
+        Constructs an empty `any_executor_ref`. Calling any executor
+        operations on a default-constructed instance results in
+        undefined behavior.
+    */
+    any_executor_ref() = default;
+
+    /** Copy constructor.
+
+        Copies the internal pointers, preserving identity.
+        This enables the same-executor optimization when passing
+        any_executor_ref through coroutine chains.
+    */
+    any_executor_ref(any_executor_ref const&) = default;
+
+    /** Copy assignment operator. */
+    any_executor_ref& operator=(any_executor_ref const&) = default;
+
+    /** Constructs from any executor type.
+
+        Captures a reference to the given executor and stores a pointer
+        to the type-specific vtable. The executor must remain valid for
+        the lifetime of this `any_executor_ref` instance.
+
+        @param ex The executor to wrap. Must satisfy the `Executor`
+                  concept. A pointer to this object is stored
+                  internally; the executor must outlive this wrapper.
+    */
+    template<class Ex>
+        requires (!std::same_as<std::decay_t<Ex>, any_executor_ref>)
+    any_executor_ref(Ex const& ex) noexcept
+        : ex_(&ex)
+        , vt_(&detail::vtable_for<Ex>)
+    {
+    }
+
+    /** Returns true if this instance holds a valid executor.
+
+        @return `true` if constructed with an executor, `false` if
+                default-constructed.
+    */
+    explicit operator bool() const noexcept
+    {
+        return ex_ != nullptr;
+    }
+
+    /** Returns a reference to the associated execution context.
+
+        @return A reference to the execution context.
+
+        @pre This instance was constructed with a valid executor.
+    */
+    execution_context& context() const noexcept
+    {
+        return vt_->context(ex_);
+    }
+
+    /** Informs the executor that work is beginning.
+
+        Must be paired with a subsequent call to `on_work_finished()`.
+
+        @pre This instance was constructed with a valid executor.
+    */
+    void on_work_started() const noexcept
+    {
+        vt_->on_work_started(ex_);
+    }
+
+    /** Informs the executor that work has completed.
+
+        @pre A preceding call to `on_work_started()` was made.
+        @pre This instance was constructed with a valid executor.
+    */
+    void on_work_finished() const noexcept
+    {
+        vt_->on_work_finished(ex_);
+    }
+
+    /** Dispatches a coroutine handle through the wrapped executor.
+
+        Invokes the executor's `dispatch()` operation with the given
+        coroutine handle, returning a handle suitable for symmetric
+        transfer.
+
+        @param h The coroutine handle to dispatch for resumption.
+
+        @return A coroutine handle that the caller may use for symmetric
+                transfer, or `std::noop_coroutine()` if the executor
+                posted the work for later execution.
+
+        @pre This instance was constructed with a valid executor.
+    */
+    any_coro dispatch(any_coro h) const
+    {
+        return vt_->dispatch(ex_, h);
+    }
+
+    /** Posts a coroutine handle to the wrapped executor.
+
+        Posts the coroutine handle to the executor for later execution
+        and returns. The caller should transfer to `std::noop_coroutine()`
+        after calling this.
+
+        @param h The coroutine handle to post for resumption.
+
+        @pre This instance was constructed with a valid executor.
+    */
+    void post(any_coro h) const
+    {
+        vt_->post(ex_, h);
+    }
+
+    /** Compares two executor references for equality.
+
+        Two `any_executor_ref` instances are equal if they wrap
+        executors of the same type that compare equal.
+
+        @param other The executor reference to compare against.
+
+        @return `true` if both wrap equal executors of the same type.
+    */
+    bool operator==(any_executor_ref const& other) const noexcept
+    {
+        if (vt_ != other.vt_)
+            return false;
+        if (!vt_)
+            return true;
+        return vt_->equals(ex_, other.ex_);
+    }
+};
+
+} // capy
+} // boost
+
+#endif

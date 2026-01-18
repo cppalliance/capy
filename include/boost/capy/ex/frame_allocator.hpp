@@ -44,7 +44,7 @@ struct default_frame_allocator
     }
 };
 
-static_assert(frame_allocator<default_frame_allocator>);
+static_assert(FrameAllocator<default_frame_allocator>);
 
 //----------------------------------------------------------
 // Implementation details
@@ -89,9 +89,9 @@ public:
     All allocated frames have the layout: [frame | ptr]
     where ptr points back to this wrapper for deallocation.
 
-    @tparam Allocator The underlying allocator type satisfying frame_allocator.
+    @tparam Allocator The underlying allocator type satisfying FrameAllocator.
 */
-template<frame_allocator Allocator>
+template<FrameAllocator Allocator>
 class frame_allocator_wrapper : public frame_allocator_base
 {
     Allocator alloc_;

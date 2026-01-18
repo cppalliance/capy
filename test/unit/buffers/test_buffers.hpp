@@ -95,14 +95,13 @@ make_string(
 //------------------------------------------------
 
 // Check the behavior of iterators
-template<class ConstBufferSequence>
+template<ConstBufferSequence CB>
 void
 check_iterators(
-    ConstBufferSequence bs,
+    CB bs,
     core::string_view pat,
     std::string& s)
 {
-    static_assert(const_buffer_sequence<ConstBufferSequence>);
     BOOST_TEST_EQ(buffer_size(bs), pat.size());
 
     auto const& ct = bs;
@@ -366,12 +365,11 @@ check_slice(
 }
 
 // Test API and behavior of a BufferSequence
-template<class T>
+template<ConstBufferSequence CB>
 void
 check_sequence(
-    T const& t, core::string_view pat, bool deep = false)
+    CB const& t, core::string_view pat, bool deep = false)
 {
-    static_assert(const_buffer_sequence<T>);
 
     std::string tmp;
     check_iterators(t, pat, tmp);

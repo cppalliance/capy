@@ -21,7 +21,7 @@ namespace capy {
 /** Concept for types that model DynamicBuffer.
 */
 template<class T>
-concept dynamic_buffer =
+concept DynamicBuffer =
     requires(T& t, T const& ct, std::size_t n)
     {
         typename T::const_buffers_type;
@@ -34,8 +34,8 @@ concept dynamic_buffer =
         t.commit(n);
         t.consume(n);
     } &&
-    const_buffer_sequence<typename T::const_buffers_type> &&
-    mutable_buffer_sequence<typename T::mutable_buffers_type>;
+    ConstBufferSequence<typename T::const_buffers_type> &&
+    MutableBufferSequence<typename T::mutable_buffers_type>;
 
 } // capy
 } // boost

@@ -24,14 +24,14 @@ namespace capy {
 
     @par Constraints
     @code
-    const_buffer_sequence<ConstBufferSequence>
+    ConstBufferSequence<ConstBufferSequence>
     @endcode
 
     @param bs The buffer sequence
 
     @return A string holding the bytes from the buffer sequence
 */
-template<const_buffer_sequence ConstBufferSequence>
+template<ConstBufferSequence ConstBufferSequence>
 std::string
 to_string(ConstBufferSequence const& bs)
 {

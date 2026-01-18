@@ -21,7 +21,7 @@ namespace capy {
 */
 constexpr struct front_mrdocs_workaround_t
 {
-    template<mutable_buffer_sequence MutableBufferSequence>
+    template<MutableBufferSequence MutableBufferSequence>
     mutable_buffer
     operator()(
         MutableBufferSequence const& bs) const noexcept
@@ -32,8 +32,8 @@ constexpr struct front_mrdocs_workaround_t
         return {};
     }
 
-    template<const_buffer_sequence ConstBufferSequence>
-        requires (!mutable_buffer_sequence<ConstBufferSequence>)
+    template<ConstBufferSequence ConstBufferSequence>
+        requires (!MutableBufferSequence<ConstBufferSequence>)
     const_buffer
     operator()(
         ConstBufferSequence const& bs) const noexcept

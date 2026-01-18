@@ -23,10 +23,10 @@ struct buffer_sink
 {
     void size_hint( std::size_t size );
 
-    struct mutable_buffer_sequence;
+    struct MutableBufferSequence;
 
     auto prepare( std::size_t size )
-      -> mutable_buffer_sequence;
+      -> MutableBufferSequence;
 
     auto commit(
         std::size_t n,

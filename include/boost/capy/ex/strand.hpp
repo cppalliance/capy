@@ -44,12 +44,11 @@ namespace capy {
     and rare with 211 buckets.
 
     @par Executor Concept
-    This class satisfies the `executor` concept, providing:
+    This class satisfies the `Executor` concept, providing:
     - `context()` - Returns the underlying execution context
     - `on_work_started()` / `on_work_finished()` - Work tracking
-    - `operator()(h)` - May run immediately if strand is idle
+    - `dispatch(h)` - May run immediately if strand is idle
     - `post(h)` - Always queues for later execution
-    - `defer(h)` - Same as post (continuation hint)
 
     @par Thread Safety
     Distinct objects: Safe.
@@ -66,21 +65,21 @@ namespace capy {
     strand.post(coro3);
     @endcode
 
-    @tparam Executor The type of the underlying executor. Must
-        satisfy the `executor` concept.
+    @tparam E The type of the underlying executor. Must
+        satisfy the `Executor` concept.
 
-    @see make_strand, executor
+    @see make_strand, Executor
 */
-template<typename Executor>
+template<typename Ex>
 class strand
 {
     detail::strand_impl* impl_;
-    post_dispatcher<Executor> post_;
+    Ex ex_;
 
 public:
     /** The type of the underlying executor.
     */
-    using inner_executor_type = Executor;
+    using inner_executor_type = Ex;
 
     /** Construct a strand for the specified executor.
 
@@ -94,16 +93,16 @@ public:
         @note This constructor is disabled if the argument is a
             strand type, to prevent strand-of-strand wrapping.
     */
-    template<typename Executor1,
+    template<typename Ex1,
         typename = std::enable_if_t<
-            !std::is_same_v<std::decay_t<Executor1>, strand> &&
-            !detail::is_strand<std::decay_t<Executor1>>::value &&
-            std::is_convertible_v<Executor1, Executor>>>
+            !std::is_same_v<std::decay_t<Ex1>, strand> &&
+            !detail::is_strand<std::decay_t<Ex1>>::value &&
+            std::is_convertible_v<Ex1, Ex>>>
     explicit
-    strand(Executor1&& ex)
+    strand(Ex1&& ex)
         : impl_(detail::get_strand_service(ex.context())
             .get_implementation())
-        , post_(std::forward<Executor1>(ex))
+        , ex_(std::forward<Ex1>(ex))
     {
     }
 
@@ -131,10 +130,10 @@ public:
 
         @return A const reference to the inner executor.
     */
-    Executor const&
+    Ex const&
     get_inner_executor() const noexcept
     {
-        return post_.get_inner_executor();
+        return ex_;
     }
 
     /** Return the underlying execution context.
@@ -145,7 +144,7 @@ public:
     auto&
     context() const noexcept
     {
-        return post_.get_inner_executor().context();
+        return ex_.context();
     }
 
     /** Notify that work has started.
@@ -156,7 +155,7 @@ public:
     void
     on_work_started() const noexcept
     {
-        post_.get_inner_executor().on_work_started();
+        ex_.on_work_started();
     }
 
     /** Notify that work has finished.
@@ -167,7 +166,7 @@ public:
     void
     on_work_finished() const noexcept
     {
-        post_.get_inner_executor().on_work_finished();
+        ex_.on_work_finished();
     }
 
     /** Determine whether the strand is running in the current thread.
@@ -211,21 +210,7 @@ public:
     void
     post(any_coro h) const
     {
-        detail::strand_service::post(*impl_, any_dispatcher(post_), h);
-    }
-
-    /** Defer a coroutine to the strand.
-
-        Equivalent to `post()`. The defer hint indicates that the
-        coroutine is a continuation of the current execution context,
-        but strands treat this the same as post.
-
-        @param h The coroutine handle to defer.
-    */
-    void
-    defer(any_coro h) const
-    {
-        post(h);
+        detail::strand_service::post(*impl_, any_executor_ref(ex_), h);
     }
 
     /** Dispatch a coroutine through the strand.
@@ -245,17 +230,16 @@ public:
         @param h The coroutine handle to dispatch.
         @return A coroutine handle for symmetric transfer.
     */
-    // TODO: measure before deciding to split strand_impl for inlining fast-path check
     any_coro
-    operator()(any_coro h) const
+    dispatch(any_coro h) const
     {
-        return detail::strand_service::dispatch(*impl_, any_dispatcher(post_), h);
+        return detail::strand_service::dispatch(*impl_, any_executor_ref(ex_), h);
     }
 };
 
 // Deduction guide
-template<typename Executor>
-strand(Executor) -> strand<Executor>;
+template<typename Ex>
+strand(Ex) -> strand<Ex>;
 
 } // namespace capy
 } // namespace boost

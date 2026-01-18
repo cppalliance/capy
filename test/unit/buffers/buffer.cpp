@@ -26,35 +26,35 @@
 namespace boost {
 namespace capy {
 
-static_assert(  const_buffer_sequence<const_buffer>);
-static_assert(  const_buffer_sequence<mutable_buffer>);
-static_assert(! mutable_buffer_sequence<const_buffer>);
-static_assert(  mutable_buffer_sequence<mutable_buffer>);
+static_assert(  ConstBufferSequence<const_buffer>);
+static_assert(  ConstBufferSequence<mutable_buffer>);
+static_assert(! MutableBufferSequence<const_buffer>);
+static_assert(  MutableBufferSequence<mutable_buffer>);
 
-static_assert(  const_buffer_sequence<const_buffer const>);
-static_assert(  const_buffer_sequence<mutable_buffer const>);
-static_assert(! mutable_buffer_sequence<const_buffer const>);
-static_assert(  mutable_buffer_sequence<mutable_buffer const>);
+static_assert(  ConstBufferSequence<const_buffer const>);
+static_assert(  ConstBufferSequence<mutable_buffer const>);
+static_assert(! MutableBufferSequence<const_buffer const>);
+static_assert(  MutableBufferSequence<mutable_buffer const>);
 
-static_assert(  const_buffer_sequence<span<const_buffer>>);
-static_assert(  const_buffer_sequence<span<mutable_buffer>>);
-static_assert(! mutable_buffer_sequence<span<const_buffer>>);
-static_assert(  mutable_buffer_sequence<span<mutable_buffer>>);
+static_assert(  ConstBufferSequence<span<const_buffer>>);
+static_assert(  ConstBufferSequence<span<mutable_buffer>>);
+static_assert(! MutableBufferSequence<span<const_buffer>>);
+static_assert(  MutableBufferSequence<span<mutable_buffer>>);
 
-static_assert(  const_buffer_sequence<span<const_buffer const>>);
-static_assert(  const_buffer_sequence<span<mutable_buffer const>>);
-static_assert(! mutable_buffer_sequence<span<const_buffer const>>);
-static_assert(  mutable_buffer_sequence<span<mutable_buffer const>>);
+static_assert(  ConstBufferSequence<span<const_buffer const>>);
+static_assert(  ConstBufferSequence<span<mutable_buffer const>>);
+static_assert(! MutableBufferSequence<span<const_buffer const>>);
+static_assert(  MutableBufferSequence<span<mutable_buffer const>>);
 
-static_assert(  const_buffer_sequence<std::array<const_buffer const, 3>>);
-static_assert(  const_buffer_sequence<std::array<mutable_buffer const, 3>>);
-static_assert(! mutable_buffer_sequence<std::array<const_buffer const, 3>>);
-static_assert(  mutable_buffer_sequence<std::array<mutable_buffer const, 3>>);
+static_assert(  ConstBufferSequence<std::array<const_buffer const, 3>>);
+static_assert(  ConstBufferSequence<std::array<mutable_buffer const, 3>>);
+static_assert(! MutableBufferSequence<std::array<const_buffer const, 3>>);
+static_assert(  MutableBufferSequence<std::array<mutable_buffer const, 3>>);
 
-static_assert(  const_buffer_sequence<const_buffer[3]>);
-static_assert(  const_buffer_sequence<mutable_buffer[3]>);
-static_assert(! mutable_buffer_sequence<const_buffer[3]>);
-static_assert(  mutable_buffer_sequence<mutable_buffer[3]>);
+static_assert(  ConstBufferSequence<const_buffer[3]>);
+static_assert(  ConstBufferSequence<mutable_buffer[3]>);
+static_assert(! MutableBufferSequence<const_buffer[3]>);
+static_assert(  MutableBufferSequence<mutable_buffer[3]>);
 
 namespace {
 
@@ -306,7 +306,7 @@ struct buffer_test
         // std::span
         {
         #if HAVE_STD_SPAN
-            static_assert(const_buffer_sequence<
+            static_assert(ConstBufferSequence<
                 std::span<const_buffer const>>);
             const_buffer b[3] = {
                 const_buffer("123", 3),
@@ -374,7 +374,7 @@ struct buffer_test
         // std::span
         {
         #if HAVE_STD_SPAN
-            static_assert(const_buffer_sequence<
+            static_assert(ConstBufferSequence<
                 std::span<const_buffer const>>);
             const_buffer b[3] = {
                 const_buffer("123", 3),

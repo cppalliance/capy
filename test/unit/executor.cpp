@@ -19,8 +19,9 @@ namespace boost {
 namespace capy {
 
 // Minimal execution context for testing
-struct test_context
+class test_context : public execution_context
 {
+public:
     int id = 0;
 };
 
@@ -45,7 +46,7 @@ struct test_executor
     }
 
     // Execution context access
-    test_context&
+    execution_context&
     context() const noexcept
     {
         return *ctx_;
@@ -64,7 +65,7 @@ struct test_executor
 
     // Work submission
     std::coroutine_handle<>
-    operator()(std::coroutine_handle<> h) const
+    dispatch(std::coroutine_handle<> h) const
     {
         return h;
     }
@@ -73,15 +74,10 @@ struct test_executor
     post(std::coroutine_handle<>) const
     {
     }
-
-    void
-    defer(std::coroutine_handle<>) const
-    {
-    }
 };
 
-// Verify executor concept
-static_assert(executor<test_executor>);
+// Verify Executor concept
+static_assert(Executor<test_executor>);
 
 struct executor_test
 {

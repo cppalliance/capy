@@ -20,7 +20,7 @@ namespace capy {
 struct flat_buffer_test
 {
     BOOST_STATIC_ASSERT(
-        is_dynamic_buffer<
+        is_DynamicBuffer<
             flat_buffer>::value);
 
     void

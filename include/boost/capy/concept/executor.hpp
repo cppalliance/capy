@@ -37,25 +37,18 @@ namespace capy {
         completed. Precondition: a preceding call to
         `on_work_started()` on an equal executor.
 
-    @li `operator()(h)` - Execute a coroutine, potentially immediately
+    @li `dispatch(h)` - Execute a coroutine, potentially immediately
         if the executor determines it is safe to do so. The executor
         may block forward progress of the caller until execution
-        completes. This also serves as the dispatcher interface.
+        completes.
 
     @li `post(h)` - Queue a coroutine for later execution. The
         executor shall not block forward progress of the caller
         pending completion.
 
-    @li `defer(h)` - Queue a coroutine for later execution. The
-        executor shall not block forward progress of the caller
-        pending completion. Semantically identical to `post`, but
-        conveys a preference that the coroutine is a continuation
-        of the current call context. The executor may use this
-        information to optimize or otherwise adjust invocation.
-
     @par Synchronization
 
-    The invocation of `dispatch`, `post`, or `defer` synchronizes
+    The invocation of `dispatch` or `post` synchronizes
     with the invocation of the coroutine.
 
     @par No-Throw Guarantee
@@ -75,8 +68,8 @@ namespace capy {
     Let `ctx` be the execution context returned by `context()`.
     An executor becomes invalid when the first call to
     `ctx.shutdown()` returns. The effect of calling
-    `on_work_started`, `on_work_finished`, `dispatch`, `post`,
-    or `defer` on an invalid executor is undefined.
+    `on_work_started`, `on_work_finished`, `dispatch`, or `post`
+    on an invalid executor is undefined.
 
     @note The copy constructor, comparison operators, and `context()`
     remain valid until `ctx` is destroyed.
@@ -84,7 +77,7 @@ namespace capy {
     @tparam E The type to check for executor conformance.
 */
 template<class E>
-concept executor =
+concept Executor =
     std::copy_constructible<E> &&
     std::equality_comparable<E> &&
     requires(E& e, E const& ce, std::coroutine_handle<> h) {
@@ -96,9 +89,8 @@ concept executor =
         { ce.on_work_finished() } noexcept;
 
         // Work submission
-        { ce(h) } -> std::convertible_to<std::coroutine_handle<>>;
+        { ce.dispatch(h) } -> std::convertible_to<std::coroutine_handle<>>;
         { ce.post(h) };
-        { ce.defer(h) };
     };
 
 } // capy

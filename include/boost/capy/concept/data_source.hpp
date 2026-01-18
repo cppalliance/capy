@@ -31,14 +31,14 @@ namespace capy {
     };
     @endcode
 
-    Where `const_buffer_sequence<ConstBufferSequence>` is satisfied.
+    Where `ConstBufferSequence<T>` is satisfied.
 */
 template<class T>
-concept data_source =
+concept DataSource =
     std::is_nothrow_move_constructible_v<T> &&
     requires(T const& t)
     {
-        { t.data() } -> const_buffer_sequence;
+        { t.data() } -> ConstBufferSequence;
     };
 
 } // capy

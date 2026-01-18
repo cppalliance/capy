@@ -25,8 +25,8 @@ namespace capy {
 
     @par Constraints
     @code
-    mutable_buffer_sequence<decltype(dest)> &&
-    const_buffer_sequence<decltype(src)>
+    MutableBufferSequence<decltype(dest)> &&
+    ConstBufferSequence<decltype(src)>
     @endcode
 
     @return The number of bytes actually copied, which will be exactly equal to
@@ -39,8 +39,8 @@ namespace capy {
 constexpr struct copy_mrdocs_workaround_t
 {
     template<
-        mutable_buffer_sequence MutableBufferSequence,
-        const_buffer_sequence ConstBufferSequence>
+        MutableBufferSequence MutableBufferSequence,
+        ConstBufferSequence ConstBufferSequence>
     std::size_t
     operator()(
         MutableBufferSequence const& dest,

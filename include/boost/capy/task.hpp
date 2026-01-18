@@ -11,9 +11,9 @@
 #define BOOST_CAPY_TASK_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
-#include <boost/capy/concept/affine_awaitable.hpp>
-#include <boost/capy/concept/stoppable_awaitable.hpp>
+#include <boost/capy/concept/executor.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/get_stop_token.hpp>
 #include <boost/capy/ex/make_affine.hpp>
@@ -71,7 +71,7 @@ struct task_return_base<void>
     The task uses `[[clang::coro_await_elidable]]` (when available) to enable
     heap allocation elision optimization (HALO) for nested coroutine calls.
 
-    @see any_dispatcher
+    @see any_executor_ref
 */
 template<typename T = void>
 struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
@@ -84,8 +84,8 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 #endif
         , detail::task_return_base<T>
     {
-        any_dispatcher ex_;
-        any_dispatcher caller_ex_;
+        any_executor_ref ex_;
+        any_executor_ref caller_ex_;
         any_coro continuation_;
         std::exception_ptr ep_;
         detail::frame_allocator_base* alloc_ = nullptr;
@@ -138,10 +138,10 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                 {
                     if(p_->continuation_)
                     {
-                        // Same dispatcher: true symmetric transfer
+                        // Same executor: true symmetric transfer
                         if(!p_->needs_dispatch_)
                             return p_->continuation_;
-                        return p_->caller_ex_(p_->continuation_);
+                        return p_->caller_ex_.dispatch(p_->continuation_);
                     }
                     return std::noop_coroutine();
                 }
@@ -183,12 +183,10 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             auto await_suspend(std::coroutine_handle<Promise> h)
             {
 #if BOOST_CAPY_HAS_STOP_TOKEN
-                using A = std::decay_t<Awaitable>;
-                if constexpr (stoppable_awaitable<A, any_dispatcher>)
-                    return a_.await_suspend(h, p_->ex_, p_->stop_token());
-                else
+                return a_.await_suspend(h, p_->ex_, p_->stop_token());
+#else
+                return a_.await_suspend(h, p_->ex_, std::stop_token{});
 #endif
-                    return a_.await_suspend(h, p_->ex_);
             }
         };
 
@@ -196,9 +194,9 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         auto transform_awaitable(Awaitable&& a)
         {
             using A = std::decay_t<Awaitable>;
-            if constexpr (affine_awaitable<A, any_dispatcher>)
+            if constexpr (IoAwaitable<A, any_executor_ref>)
             {
-                // Zero-overhead path for affine awaitables
+                // Zero-overhead path for I/O awaitables
                 return transform_awaiter<Awaitable>{
                     std::forward<Awaitable>(a), this};
             }
@@ -242,30 +240,21 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             return;
     }
 
-    // Affine awaitable: receive caller's dispatcher for completion dispatch
-    template<dispatcher D>
-    any_coro await_suspend(any_coro continuation, D const& caller_ex)
+    // IoAwaitable: receive caller's executor and stop_token for completion dispatch
+    template<typename Ex>
+    any_coro await_suspend(any_coro continuation, Ex const& caller_ex, std::stop_token token)
     {
         h_.promise().caller_ex_ = caller_ex;
         h_.promise().continuation_ = continuation;
         h_.promise().ex_ = caller_ex;
-        h_.promise().needs_dispatch_ = false;
-        return h_;
-    }
-
 #if BOOST_CAPY_HAS_STOP_TOKEN
-    // Stoppable awaitable: receive caller's dispatcher and stop_token
-    template<dispatcher D>
-    any_coro await_suspend(any_coro continuation, D const& caller_ex, std::stop_token token)
-    {
-        h_.promise().caller_ex_ = caller_ex;
-        h_.promise().continuation_ = continuation;
-        h_.promise().ex_ = caller_ex;
         h_.promise().set_stop_token(token);
+#else
+        (void)token;
+#endif
         h_.promise().needs_dispatch_ = false;
         return h_;
     }
-#endif
 
     /** Release ownership of the coroutine handle.
 

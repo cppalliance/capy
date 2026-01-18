@@ -11,8 +11,10 @@
 #define BOOST_CAPY_WHEN_ALL_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/concept/affine_awaitable.hpp>
+#include <boost/capy/concept/executor.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/any_coro.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/task.hpp>
 
@@ -108,7 +110,7 @@ struct when_all_state
 
     // Parent resumption
     any_coro continuation_;
-    any_dispatcher caller_dispatcher_;
+    any_executor_ref caller_ex_;
 
     when_all_state()
         : remaining_count_(task_count)
@@ -140,7 +142,7 @@ struct when_all_state
     {
         auto remaining = remaining_count_.fetch_sub(1, std::memory_order_acq_rel);
         if(remaining == 1)
-            return caller_dispatcher_(continuation_);
+            return caller_ex_.dispatch(continuation_);
         return std::noop_coroutine();
     }
 
@@ -157,7 +159,7 @@ struct when_all_runner
     struct promise_type : frame_allocating_base
     {
         when_all_state<Ts...>* state_ = nullptr;
-        any_dispatcher ex_;
+        any_executor_ref ex_;
 #if BOOST_CAPY_HAS_STOP_TOKEN
         std::stop_token stop_token_;
 #endif
@@ -229,13 +231,10 @@ struct when_all_runner
             auto await_suspend(std::coroutine_handle<Promise> h)
             {
 #if BOOST_CAPY_HAS_STOP_TOKEN
-                using A = std::decay_t<Awaitable>;
-                // Propagate stop_token to nested awaitables
-                if constexpr (stoppable_awaitable<A, any_dispatcher>)
-                    return a_.await_suspend(h, p_->ex_, p_->stop_token_);
-                else
+                return a_.await_suspend(h, p_->ex_, p_->stop_token_);
+#else
+                return a_.await_suspend(h, p_->ex_, std::stop_token{});
 #endif
-                    return a_.await_suspend(h, p_->ex_);
             }
         };
 
@@ -243,7 +242,7 @@ struct when_all_runner
         auto await_transform(Awaitable&& a)
         {
             using A = std::decay_t<Awaitable>;
-            if constexpr (affine_awaitable<A, any_dispatcher>)
+            if constexpr (IoAwaitable<A, any_executor_ref>)
             {
                 return transform_awaiter<Awaitable>{
                     std::forward<Awaitable>(a), this};
@@ -325,11 +324,11 @@ public:
     }
 
 #if BOOST_CAPY_HAS_STOP_TOKEN
-    template<dispatcher D>
-    any_coro await_suspend(any_coro continuation, D const& caller_ex, std::stop_token parent_token = {})
+    template<typename Ex>
+    any_coro await_suspend(any_coro continuation, Ex const& caller_ex, std::stop_token parent_token = {})
     {
         state_->continuation_ = continuation;
-        state_->caller_dispatcher_ = caller_ex;
+        state_->caller_ex_ = caller_ex;
 
         // Forward parent's stop requests to children
         if(parent_token.stop_possible())
@@ -352,11 +351,11 @@ public:
         return std::noop_coroutine();
     }
 #else
-    template<dispatcher D>
-    any_coro await_suspend(any_coro continuation, D const& caller_ex)
+    template<typename Ex>
+    any_coro await_suspend(any_coro continuation, Ex const& caller_ex)
     {
         state_->continuation_ = continuation;
-        state_->caller_dispatcher_ = caller_ex;
+        state_->caller_ex_ = caller_ex;
 
         // Launch all tasks concurrently
         [&]<std::size_t... Is>(std::index_sequence<Is...>) {
@@ -375,8 +374,8 @@ public:
 
 private:
 #if BOOST_CAPY_HAS_STOP_TOKEN
-    template<std::size_t I, dispatcher D>
-    void launch_one(D const& caller_ex, std::stop_token token)
+    template<std::size_t I, typename Ex>
+    void launch_one(Ex const& caller_ex, std::stop_token token)
     {
         auto runner = make_when_all_runner<I>(
             std::move(std::get<I>(*tasks_)), state_);
@@ -388,11 +387,11 @@ private:
 
         any_coro ch{h};
         state_->runner_handles_[I] = ch;
-        caller_ex(ch).resume();
+        caller_ex.dispatch(ch).resume();
     }
 #else
-    template<std::size_t I, dispatcher D>
-    void launch_one(D const& caller_ex)
+    template<std::size_t I, typename Ex>
+    void launch_one(Ex const& caller_ex)
     {
         auto runner = make_when_all_runner<I>(
             std::move(std::get<I>(*tasks_)), state_);
@@ -403,7 +402,7 @@ private:
 
         any_coro ch{h};
         state_->runner_handles_[I] = ch;
-        caller_ex(ch).resume();
+        caller_ex.dispatch(ch).resume();
     }
 #endif
 };

@@ -61,7 +61,7 @@ struct guard_test_executor
     }
 
     std::coroutine_handle<>
-    operator()(std::coroutine_handle<> h) const
+    dispatch(std::coroutine_handle<> h) const
     {
         return h;
     }
@@ -70,15 +70,10 @@ struct guard_test_executor
     post(std::coroutine_handle<>) const
     {
     }
-
-    void
-    defer(std::coroutine_handle<>) const
-    {
-    }
 };
 
-// Verify executor concept
-static_assert(executor<guard_test_executor>);
+// Verify Executor concept
+static_assert(Executor<guard_test_executor>);
 
 struct executor_work_guard_test
 {

@@ -22,20 +22,20 @@ namespace capy {
 /** Metafunction to detect if a type is a dynamic buffer.
 */
 template<class T>
-struct is_dynamic_buffer
-    : std::bool_constant<dynamic_buffer<T>>
+struct is_DynamicBuffer
+    : std::bool_constant<DynamicBuffer<T>>
 {
 };
 
 /** An abstract, type-erased dynamic buffer.
 */
 struct BOOST_SYMBOL_VISIBLE
-    any_dynamic_buffer
+    any_DynamicBuffer
 {
     using const_buffers_type = span<const_buffer const>;
     using mutable_buffers_type = span<mutable_buffer const>;
 
-    virtual ~any_dynamic_buffer() = default;
+    virtual ~any_DynamicBuffer() = default;
     virtual std::size_t size() const = 0;
     virtual std::size_t max_size() const = 0;
     virtual std::size_t capacity() const = 0;
@@ -50,10 +50,10 @@ struct BOOST_SYMBOL_VISIBLE
 /** A type-erased dynamic buffer.
 */
 template<
-    dynamic_buffer DynamicBuffer,
+    DynamicBuffer DynamicBuffer,
     std::size_t N = 8>
-class any_dynamic_buffer_impl
-    : public any_dynamic_buffer
+class any_DynamicBuffer_impl
+    : public any_DynamicBuffer
 {
     DynamicBuffer b_;
     const_buffer data_[N];
@@ -61,7 +61,7 @@ class any_dynamic_buffer_impl
     std::size_t data_len_ = 0;
     std::size_t out_len_ = 0;
 
-    template<const_buffer_sequence ConstBufferSequence, class BufferType>
+    template<ConstBufferSequence ConstBufferSequence, class BufferType>
     static
     std::size_t
     unroll(
@@ -83,7 +83,7 @@ class any_dynamic_buffer_impl
 public:
     template<class DynamicBuffer_>
     explicit
-    any_dynamic_buffer_impl(
+    any_DynamicBuffer_impl(
         DynamicBuffer_&& b)
         : b_(std::forward<DynamicBuffer_>(b))
     {
@@ -156,12 +156,12 @@ public:
     }
 };
 
-template<dynamic_buffer DynamicBuffer>
+template<DynamicBuffer DynamicBuffer>
 auto
 make_any(DynamicBuffer&& b) ->
-    any_dynamic_buffer_impl<std::decay_t<DynamicBuffer>>
+    any_DynamicBuffer_impl<std::decay_t<DynamicBuffer>>
 {
-    return any_dynamic_buffer_impl<std::decay_t<DynamicBuffer>>(
+    return any_DynamicBuffer_impl<std::decay_t<DynamicBuffer>>(
             std::forward<DynamicBuffer>(b));
 }
 

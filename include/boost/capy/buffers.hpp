@@ -325,24 +325,24 @@ private:
 
 /** Concept for types that model ConstBufferSequence.
 
-    A type satisfies `const_buffer_sequence` if it is convertible
+    A type satisfies `ConstBufferSequence` if it is convertible
     to `const_buffer`, or if it is a bidirectional range whose
     value type is convertible to `const_buffer`.
 */
 template<typename T>
-concept const_buffer_sequence =
+concept ConstBufferSequence =
     std::is_convertible_v<T, const_buffer> || (
         std::ranges::bidirectional_range<T> &&
         std::is_convertible_v<std::ranges::range_value_t<T>, const_buffer>);
 
 /** Concept for types that model MutableBufferSequence.
 
-    A type satisfies `mutable_buffer_sequence` if it is convertible
+    A type satisfies `MutableBufferSequence` if it is convertible
     to `mutable_buffer`, or if it is a bidirectional range whose
     value type is convertible to `mutable_buffer`.
 */
 template<typename T>
-concept mutable_buffer_sequence =
+concept MutableBufferSequence =
     std::is_convertible_v<T, mutable_buffer> || (
         std::ranges::bidirectional_range<T> &&
         std::is_convertible_v<std::ranges::range_value_t<T>, mutable_buffer>);
@@ -369,16 +369,16 @@ constexpr struct begin_mrdocs_workaround_t
         return std::addressof(b);
     }
 
-    template<const_buffer_sequence BufferSequence>
-        requires (!std::convertible_to<BufferSequence, const_buffer>)
-    auto operator()(BufferSequence const& bs) const noexcept
+    template<ConstBufferSequence BS>
+        requires (!std::convertible_to<BS, const_buffer>)
+    auto operator()(BS const& bs) const noexcept
     {
         return std::ranges::begin(bs);
     }
 
-    template<const_buffer_sequence BufferSequence>
-        requires (!std::convertible_to<BufferSequence, const_buffer>)
-    auto operator()(BufferSequence& bs) const noexcept
+    template<ConstBufferSequence BS>
+        requires (!std::convertible_to<BS, const_buffer>)
+    auto operator()(BS& bs) const noexcept
     {
         return std::ranges::begin(bs);
     }
@@ -406,16 +406,16 @@ constexpr struct end_mrdocs_workaround_t
         return std::addressof(b) + 1;
     }
 
-    template<const_buffer_sequence BufferSequence>
-        requires (!std::convertible_to<BufferSequence, const_buffer>)
-    auto operator()(BufferSequence const& bs) const noexcept
+    template<ConstBufferSequence BS>
+        requires (!std::convertible_to<BS, const_buffer>)
+    auto operator()(BS const& bs) const noexcept
     {
         return std::ranges::end(bs);
     }
 
-    template<const_buffer_sequence BufferSequence>
-        requires (!std::convertible_to<BufferSequence, const_buffer>)
-    auto operator()(BufferSequence& bs) const noexcept
+    template<ConstBufferSequence BS>
+        requires (!std::convertible_to<BS, const_buffer>)
+    auto operator()(BS& bs) const noexcept
     {
         return std::ranges::end(bs);
     }
@@ -423,11 +423,11 @@ constexpr struct end_mrdocs_workaround_t
 
 //------------------------------------------------------------------------------
 
-template<const_buffer_sequence ConstBufferSequence>
+template<ConstBufferSequence CB>
 std::size_t
 tag_invoke(
     size_tag const&,
-    ConstBufferSequence const& bs) noexcept
+    CB const& bs) noexcept
 {
     std::size_t n = 0;
     auto const e = end(bs);
@@ -446,13 +446,13 @@ tag_invoke(
 
     @par Constraints
     @code
-    const_buffer_sequence<T>
+    ConstBufferSequence<T>
     @endcode
 
     @par Example
     @code
-    template<const_buffer_sequence ConstBufferSequence>
-    bool is_small( ConstBufferSequence const& bs ) noexcept
+    template<ConstBufferSequence CB>
+    bool is_small( CB const& bs ) noexcept
     {
         return buffer_size(bs) < 100;
     }
@@ -460,9 +460,9 @@ tag_invoke(
 */
 constexpr struct buffer_size_mrdocs_workaround_t
 {
-    template<const_buffer_sequence ConstBufferSequence>
+    template<ConstBufferSequence CB>
     constexpr std::size_t operator()(
-        ConstBufferSequence const& bs) const noexcept
+        CB const& bs) const noexcept
     {
         return tag_invoke(size_tag{}, bs);
     }
@@ -497,9 +497,9 @@ length_impl(It first, It last, long)
 
 /** Return the number of elements in a buffer sequence.
 */
-template<const_buffer_sequence ConstBufferSequence>
+template<ConstBufferSequence CB>
 std::size_t
-buffer_length(ConstBufferSequence const& bs)
+buffer_length(CB const& bs)
 {
     return detail::length_impl(
         begin(bs), end(bs), 0);
@@ -507,9 +507,9 @@ buffer_length(ConstBufferSequence const& bs)
 
 /** Alias for const_buffer or mutable_buffer depending on sequence type.
 */
-template<typename BufferSequence>
+template<typename BS>
 using buffer_type = std::conditional_t<
-    mutable_buffer_sequence<BufferSequence>,
+    MutableBufferSequence<BS>,
     mutable_buffer, const_buffer>;
 
 } // capy

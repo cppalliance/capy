@@ -11,9 +11,11 @@
 #define BOOST_CAPY_RUN_ON_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
+#include <boost/capy/concept/executor.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/task.hpp>
 
+#include <stop_token>
 #include <utility>
 
 namespace boost {
@@ -27,18 +29,18 @@ namespace detail {
     the duration of the operation.
 
     @tparam T The task's return type
-    @tparam E The executor type
+    @tparam Ex The executor type
 */
-template<typename T, dispatcher D>
+template<typename T, Executor Ex>
 struct [[nodiscard]] run_on_awaitable
 {
-    D d_;
+    Ex ex_;
     std::coroutine_handle<typename task<T>::promise_type> h_;
 
     run_on_awaitable(
-        D d,
+        Ex ex,
         std::coroutine_handle<typename task<T>::promise_type> h)
-        : d_(std::move(d))
+        : ex_(std::move(ex))
         , h_(h)
     {
     }
@@ -58,32 +60,23 @@ struct [[nodiscard]] run_on_awaitable
             return std::move(*h_.promise().result_);
     }
 
-    // Affine awaitable: receives caller's dispatcher for completion dispatch
-    template<dispatcher Caller>
-    any_coro await_suspend(any_coro continuation, Caller const& caller_ex)
-    {
-        // 'this' is kept alive by co_await until completion
-        // d_ is valid for the entire operation
-        h_.promise().ex_ = d_;
-        h_.promise().caller_ex_ = caller_ex;
-        h_.promise().continuation_ = continuation;
-        h_.promise().needs_dispatch_ = true;
-        return h_;
-    }
-
-#if BOOST_CAPY_HAS_STOP_TOKEN
-    // Stoppable awaitable: receives caller's dispatcher and stop_token
-    template<dispatcher Caller>
+    // IoAwaitable: receives caller's executor and stop_token for completion dispatch
+    template<typename Caller>
     any_coro await_suspend(any_coro continuation, Caller const& caller_ex, std::stop_token token)
     {
-        h_.promise().ex_ = d_;
+        // 'this' is kept alive by co_await until completion
+        // ex_ is valid for the entire operation
+        h_.promise().ex_ = ex_;
         h_.promise().caller_ex_ = caller_ex;
         h_.promise().continuation_ = continuation;
+#if BOOST_CAPY_HAS_STOP_TOKEN
         h_.promise().set_stop_token(token);
+#else
+        (void)token;
+#endif
         h_.promise().needs_dispatch_ = true;
         return h_;
     }
-#endif
 
     ~run_on_awaitable()
     {
@@ -97,7 +90,7 @@ struct [[nodiscard]] run_on_awaitable
 
     // Movable
     run_on_awaitable(run_on_awaitable&& other) noexcept
-        : d_(std::move(other.d_))
+        : ex_(std::move(other.ex_))
         , h_(std::exchange(other.h_, nullptr))
     {
     }
@@ -108,7 +101,7 @@ struct [[nodiscard]] run_on_awaitable
         {
             if(h_ && !h_.done())
                 h_.destroy();
-            d_ = std::move(other.d_);
+            ex_ = std::move(other.ex_);
             h_ = std::exchange(other.h_, nullptr);
         }
         return *this;
@@ -128,11 +121,11 @@ struct [[nodiscard]] run_on_awaitable
 
     @return An awaitable that runs t on the specified executor.
 */
-template<dispatcher D, typename T>
-[[nodiscard]] auto run_on(D d, task<T> t)
+template<Executor Ex, typename T>
+[[nodiscard]] auto run_on(Ex ex, task<T> t)
 {
-    return detail::run_on_awaitable<T, D>{
-        std::move(d), t.release()};
+    return detail::run_on_awaitable<T, Ex>{
+        std::move(ex), t.release()};
 }
 
 } // namespace capy

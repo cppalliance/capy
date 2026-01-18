@@ -12,6 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/ex/any_coro.hpp>
+#include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/task.hpp>
 
 #include <coroutine>
@@ -24,18 +25,37 @@ namespace capy {
 
 namespace detail {
 
-/** Trivial dispatcher for synchronous execution.
+/** Trivial execution context for synchronous execution. */
+class sync_context : public execution_context
+{
+};
+
+/** Trivial executor for synchronous execution.
 
     Returns the coroutine handle directly for symmetric transfer,
     enabling inline execution without scheduling.
 */
-struct sync_dispatcher
+struct sync_executor
 {
-    any_coro operator()(any_coro h) const
+    static sync_context ctx_;
+
+    bool operator==(sync_executor const&) const noexcept { return true; }
+    execution_context& context() const noexcept { return ctx_; }
+    void on_work_started() const noexcept {}
+    void on_work_finished() const noexcept {}
+
+    any_coro dispatch(any_coro h) const
     {
         return h;
     }
+
+    void post(any_coro h) const
+    {
+        h.resume();
+    }
 };
+
+inline sync_context sync_executor::ctx_;
 
 /** Synchronous task runner.
 
@@ -78,14 +98,14 @@ public:
     T operator()(task<T> t) &&
     {
         auto h = t.release();
-        sync_dispatcher d;
+        sync_executor ex;
 
         h.promise().continuation_ = std::noop_coroutine();
-        h.promise().ex_ = d;
-        h.promise().caller_ex_ = d;
+        h.promise().ex_ = ex;
+        h.promise().caller_ex_ = ex;
         h.promise().needs_dispatch_ = false;
 
-        d(any_coro{h}).resume();
+        ex.dispatch(any_coro{h}).resume();
 
         std::exception_ptr ep = h.promise().ep_;
 
@@ -136,7 +156,7 @@ public:
     @endcode
 
     @par Thread Safety
-    The task runs entirely on the calling thread. No dispatcher or
+    The task runs entirely on the calling thread. No executor or
     execution context is required.
 
     @return A runner object with `operator()(task<T>)` that returns `T`.

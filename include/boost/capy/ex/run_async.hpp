@@ -11,7 +11,7 @@
 #define BOOST_CAPY_RUN_ASYNC_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/concept/dispatcher.hpp>
+#include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/frame_allocator.hpp>
 #include <boost/capy/task.hpp>
 
@@ -265,19 +265,19 @@ make_trampoline()
 
 /** Wrapper returned by run_async that accepts a task for execution.
 
-    This wrapper holds the trampoline coroutine, dispatcher, stop token,
+    This wrapper holds the trampoline coroutine, executor, stop token,
     and handlers. The trampoline is allocated when the wrapper is constructed
     (before the task due to C++17 postfix evaluation order).
 
     The rvalue ref-qualifier on `operator()` ensures the wrapper can only
     be used as a temporary, preventing misuse that would violate LIFO ordering.
 
-    @tparam Dispatcher The dispatcher type satisfying the `dispatcher` concept.
+    @tparam Ex The executor type satisfying the `Executor` concept.
     @tparam Handlers The handler type (default_handler or handler_pair).
 
     @par Thread Safety
     The wrapper itself should only be used from one thread. The handlers
-    may be invoked from any thread where the dispatcher schedules work.
+    may be invoked from any thread where the executor schedules work.
 
     @par Example
     @code
@@ -291,17 +291,17 @@ make_trampoline()
 
     @see run_async
 */
-template<dispatcher Dispatcher, class Handlers>
+template<Executor Ex, class Handlers>
 class [[nodiscard]] run_async_wrapper
 {
     detail::trampoline<Handlers> tr_;
-    Dispatcher ex_;
+    Ex ex_;
     std::stop_token st_;
 
 public:
-    /// Construct wrapper with dispatcher, stop token, and handlers.
+    /// Construct wrapper with executor, stop token, and handlers.
     run_async_wrapper(
-        Dispatcher ex,
+        Ex ex,
         std::stop_token st,
         Handlers h)
         : tr_(detail::make_trampoline<Handlers>())
@@ -320,7 +320,7 @@ public:
 
     /** Launch the task for execution.
 
-        This operator accepts a task and launches it on the dispatcher.
+        This operator accepts a task and launches it on the executor.
         The rvalue ref-qualifier ensures the wrapper is consumed, enforcing
         correct LIFO destruction order.
 
@@ -348,10 +348,10 @@ public:
         task_h.promise().set_stop_token(st_);
 #endif
 
-        // Resume task through dispatcher
-        // The dispatcher returns a handle for symmetric transfer;
+        // Resume task through executor
+        // The executor returns a handle for symmetric transfer;
         // from non-coroutine code we must explicitly resume it
-        ex_(task_h)();
+        ex_.dispatch(task_h)();
     }
 };
 
@@ -361,9 +361,9 @@ public:
 //
 //----------------------------------------------------------
 
-// Dispatcher only
+// Executor only
 
-/** Asynchronously launch a lazy task on the given dispatcher.
+/** Asynchronously launch a lazy task on the given executor.
 
     Use this to start execution of a `task<T>` that was created lazily.
     The returned wrapper must be immediately invoked with the task;
@@ -373,25 +373,25 @@ public:
 
     @par Thread Safety
     The wrapper and handlers may be called from any thread where the
-    dispatcher schedules work.
+    executor schedules work.
 
     @par Example
     @code
     run_async(ioc.get_executor())(my_task());
     @endcode
 
-    @param ex The dispatcher to execute the task on.
+    @param ex The executor to execute the task on.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see dispatcher
+    @see executor
 */
-template<dispatcher Dispatcher>
+template<Executor Ex>
 [[nodiscard]] auto
-run_async(Dispatcher ex)
+run_async(Ex ex)
 {
-    return run_async_wrapper<Dispatcher, default_handler>(
+    return run_async_wrapper<Ex, default_handler>(
         std::move(ex),
         std::stop_token{},
         default_handler{});
@@ -404,7 +404,7 @@ run_async(Dispatcher ex)
     Otherwise, exceptions are rethrown.
 
     @par Thread Safety
-    The handler may be called from any thread where the dispatcher
+    The handler may be called from any thread where the executor
     schedules work.
 
     @par Example
@@ -421,19 +421,19 @@ run_async(Dispatcher ex)
     })(compute_value());
     @endcode
 
-    @param ex The dispatcher to execute the task on.
+    @param ex The executor to execute the task on.
     @param h1 The handler to invoke with the result (and optionally exception).
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see dispatcher
+    @see executor
 */
-template<dispatcher Dispatcher, class H1>
+template<Executor Ex, class H1>
 [[nodiscard]] auto
-run_async(Dispatcher ex, H1 h1)
+run_async(Ex ex, H1 h1)
 {
-    return run_async_wrapper<Dispatcher, handler_pair<H1, default_handler>>(
+    return run_async_wrapper<Ex, handler_pair<H1, default_handler>>(
         std::move(ex),
         std::stop_token{},
         handler_pair<H1, default_handler>{std::move(h1)});
@@ -445,7 +445,7 @@ run_async(Dispatcher ex, H1 h1)
     The handler `h2` is called with the exception_ptr on failure.
 
     @par Thread Safety
-    The handlers may be called from any thread where the dispatcher
+    The handlers may be called from any thread where the executor
     schedules work.
 
     @par Example
@@ -461,26 +461,26 @@ run_async(Dispatcher ex, H1 h1)
     )(compute_value());
     @endcode
 
-    @param ex The dispatcher to execute the task on.
+    @param ex The executor to execute the task on.
     @param h1 The handler to invoke with the result on success.
     @param h2 The handler to invoke with the exception on failure.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see dispatcher
+    @see executor
 */
-template<dispatcher Dispatcher, class H1, class H2>
+template<Executor Ex, class H1, class H2>
 [[nodiscard]] auto
-run_async(Dispatcher ex, H1 h1, H2 h2)
+run_async(Ex ex, H1 h1, H2 h2)
 {
-    return run_async_wrapper<Dispatcher, handler_pair<H1, H2>>(
+    return run_async_wrapper<Ex, handler_pair<H1, H2>>(
         std::move(ex),
         std::stop_token{},
         handler_pair<H1, H2>{std::move(h1), std::move(h2)});
 }
 
-// Dispatcher + stop_token
+// Ex + stop_token
 
 /** Asynchronously launch a lazy task with stop token support.
 
@@ -489,7 +489,7 @@ run_async(Dispatcher ex, H1 h1, H2 h2)
     exceptions are rethrown.
 
     @par Thread Safety
-    The wrapper may be called from any thread where the dispatcher
+    The wrapper may be called from any thread where the executor
     schedules work.
 
     @par Example
@@ -499,19 +499,19 @@ run_async(Dispatcher ex, H1 h1, H2 h2)
     // Later: source.request_stop();
     @endcode
 
-    @param ex The dispatcher to execute the task on.
+    @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see dispatcher
+    @see executor
 */
-template<dispatcher Dispatcher>
+template<Executor Ex>
 [[nodiscard]] auto
-run_async(Dispatcher ex, std::stop_token st)
+run_async(Ex ex, std::stop_token st)
 {
-    return run_async_wrapper<Dispatcher, default_handler>(
+    return run_async_wrapper<Ex, default_handler>(
         std::move(ex),
         std::move(st),
         default_handler{});
@@ -523,20 +523,20 @@ run_async(Dispatcher ex, std::stop_token st)
     The handler `h1` is called with the result on success, and optionally
     with exception_ptr if it accepts that type.
 
-    @param ex The dispatcher to execute the task on.
+    @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
     @param h1 The handler to invoke with the result (and optionally exception).
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see dispatcher
+    @see executor
 */
-template<dispatcher Dispatcher, class H1>
+template<Executor Ex, class H1>
 [[nodiscard]] auto
-run_async(Dispatcher ex, std::stop_token st, H1 h1)
+run_async(Ex ex, std::stop_token st, H1 h1)
 {
-    return run_async_wrapper<Dispatcher, handler_pair<H1, default_handler>>(
+    return run_async_wrapper<Ex, handler_pair<H1, default_handler>>(
         std::move(ex),
         std::move(st),
         handler_pair<H1, default_handler>{std::move(h1)});
@@ -547,7 +547,7 @@ run_async(Dispatcher ex, std::stop_token st, H1 h1)
     The stop token is propagated to the task for cooperative cancellation.
     The handler `h1` is called on success, `h2` on failure.
 
-    @param ex The dispatcher to execute the task on.
+    @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
     @param h1 The handler to invoke with the result on success.
     @param h2 The handler to invoke with the exception on failure.
@@ -555,41 +555,41 @@ run_async(Dispatcher ex, std::stop_token st, H1 h1)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see dispatcher
+    @see executor
 */
-template<dispatcher Dispatcher, class H1, class H2>
+template<Executor Ex, class H1, class H2>
 [[nodiscard]] auto
-run_async(Dispatcher ex, std::stop_token st, H1 h1, H2 h2)
+run_async(Ex ex, std::stop_token st, H1 h1, H2 h2)
 {
-    return run_async_wrapper<Dispatcher, handler_pair<H1, H2>>(
+    return run_async_wrapper<Ex, handler_pair<H1, H2>>(
         std::move(ex),
         std::move(st),
         handler_pair<H1, H2>{std::move(h1), std::move(h2)});
 }
 
-// Dispatcher + stop_token + allocator
+// Executor + stop_token + allocator
 
 /** Asynchronously launch a lazy task with stop token and allocator.
 
     The stop token is propagated to the task for cooperative cancellation.
     The allocator parameter is reserved for future use and currently ignored.
 
-    @param ex The dispatcher to execute the task on.
+    @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
     @param alloc The frame allocator (currently ignored).
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see dispatcher
+    @see executor
     @see frame_allocator
 */
-template<dispatcher Dispatcher, frame_allocator Allocator>
+template<Executor Ex, FrameAllocator FA>
 [[nodiscard]] auto
-run_async(Dispatcher ex, std::stop_token st, Allocator alloc)
+run_async(Ex ex, std::stop_token st, FA alloc)
 {
     (void)alloc; // Currently ignored
-    return run_async_wrapper<Dispatcher, default_handler>(
+    return run_async_wrapper<Ex, default_handler>(
         std::move(ex),
         std::move(st),
         default_handler{});
@@ -600,7 +600,7 @@ run_async(Dispatcher ex, std::stop_token st, Allocator alloc)
     The stop token is propagated to the task for cooperative cancellation.
     The allocator parameter is reserved for future use and currently ignored.
 
-    @param ex The dispatcher to execute the task on.
+    @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
     @param alloc The frame allocator (currently ignored).
     @param h1 The handler to invoke with the result (and optionally exception).
@@ -608,15 +608,15 @@ run_async(Dispatcher ex, std::stop_token st, Allocator alloc)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see dispatcher
+    @see executor
     @see frame_allocator
 */
-template<dispatcher Dispatcher, frame_allocator Allocator, class H1>
+template<Executor Ex, FrameAllocator FA, class H1>
 [[nodiscard]] auto
-run_async(Dispatcher ex, std::stop_token st, Allocator alloc, H1 h1)
+run_async(Ex ex, std::stop_token st, FA alloc, H1 h1)
 {
     (void)alloc; // Currently ignored
-    return run_async_wrapper<Dispatcher, handler_pair<H1, default_handler>>(
+    return run_async_wrapper<Ex, handler_pair<H1, default_handler>>(
         std::move(ex),
         std::move(st),
         handler_pair<H1, default_handler>{std::move(h1)});
@@ -627,7 +627,7 @@ run_async(Dispatcher ex, std::stop_token st, Allocator alloc, H1 h1)
     The stop token is propagated to the task for cooperative cancellation.
     The allocator parameter is reserved for future use and currently ignored.
 
-    @param ex The dispatcher to execute the task on.
+    @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
     @param alloc The frame allocator (currently ignored).
     @param h1 The handler to invoke with the result on success.
@@ -636,15 +636,15 @@ run_async(Dispatcher ex, std::stop_token st, Allocator alloc, H1 h1)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see dispatcher
+    @see executor
     @see frame_allocator
 */
-template<dispatcher Dispatcher, frame_allocator Allocator, class H1, class H2>
+template<Executor Ex, FrameAllocator FA, class H1, class H2>
 [[nodiscard]] auto
-run_async(Dispatcher ex, std::stop_token st, Allocator alloc, H1 h1, H2 h2)
+run_async(Ex ex, std::stop_token st, FA alloc, H1 h1, H2 h2)
 {
     (void)alloc; // Currently ignored
-    return run_async_wrapper<Dispatcher, handler_pair<H1, H2>>(
+    return run_async_wrapper<Ex, handler_pair<H1, H2>>(
         std::move(ex),
         std::move(st),
         handler_pair<H1, H2>{std::move(h1), std::move(h2)});

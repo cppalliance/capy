@@ -42,7 +42,7 @@ public:
 // Test Executor
 //
 // A minimal executor that satisfies the capy
-// dispatcher concept. Dispatches inline for
+// Executor concept. Dispatches inline for
 // benchmarking pure coroutine overhead.
 //
 //-----------------------------------------------
@@ -75,8 +75,8 @@ public:
     {
     }
 
-    // Dispatcher interface - dispatch inline
-    any_coro operator()(any_coro h) const
+    // Executor interface - dispatch inline
+    any_coro dispatch(any_coro h) const
     {
         return h;
     }

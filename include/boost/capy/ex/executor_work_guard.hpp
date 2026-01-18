@@ -60,19 +60,19 @@ namespace capy {
     t.join();
     @endcode
 
-    @tparam Executor A type satisfying the executor concept.
+    @tparam Ex A type satisfying the Executor concept.
 
-    @see make_work_guard, executor
+    @see make_work_guard, Executor
 */
-template<executor Executor>
+template<Executor Ex>
 class executor_work_guard
 {
-    Executor ex_;
+    Ex ex_;
     bool owns_;
 
 public:
     /** The underlying executor type. */
-    using executor_type = Executor;
+    using executor_type = Ex;
 
     /** Construct a work guard.
 
@@ -89,7 +89,7 @@ public:
         @param ex The executor to hold work on. Moved into the guard.
     */
     explicit
-    executor_work_guard(Executor ex) noexcept
+    executor_work_guard(Ex ex) noexcept
         : ex_(std::move(ex))
         , owns_(true)
     {
@@ -218,11 +218,11 @@ public:
 
     @see executor_work_guard
 */
-template<executor Executor>
-executor_work_guard<Executor>
-make_work_guard(Executor ex)
+template<Executor Ex>
+executor_work_guard<Ex>
+make_work_guard(Ex ex)
 {
-    return executor_work_guard<Executor>(std::move(ex));
+    return executor_work_guard<Ex>(std::move(ex));
 }
 
 } // capy

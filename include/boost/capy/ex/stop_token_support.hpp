@@ -71,7 +71,7 @@ namespace capy {
     @code
     struct promise_type : stop_token_support<promise_type>
     {
-        any_dispatcher ex_;
+        any_executor_ref ex_;
 
         template<typename A>
         auto transform_awaitable(A&& a)
@@ -89,7 +89,7 @@ namespace capy {
 
     The mixin handles the "inside the coroutine" part—accessing the token.
     To receive a token when your coroutine is awaited (satisfying
-    @ref stoppable_awaitable), implement the stoppable `await_suspend`
+    @ref IoAwaitable), implement the stoppable `await_suspend`
     overload on your coroutine return type:
 
     @code
@@ -100,8 +100,8 @@ namespace capy {
         std::coroutine_handle<promise_type> h_;
 
         // Stoppable await_suspend receives and stores the token
-        template<dispatcher D>
-        any_coro await_suspend(any_coro cont, D const& d, std::stop_token token)
+        template<class Ex>
+        any_coro await_suspend(any_coro cont, Ex const& ex, std::stop_token token)
         {
             h_.promise().set_stop_token(token);  // Store via mixin API
             // ... rest of suspend logic ...
@@ -116,7 +116,7 @@ namespace capy {
 
     @see get_stop_token
     @see get_stop_token_tag
-    @see stoppable_awaitable
+    @see IoAwaitable
 */
 template<typename Derived>
 class stop_token_support

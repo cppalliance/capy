@@ -11,9 +11,9 @@
 #define BOOST_CAPY_CONCEPT_READ_STREAM_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/concept/affine_awaitable.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/system/error_code.hpp>
 
 #include <concepts>
@@ -25,20 +25,20 @@ namespace capy {
 
 /** Concept for types that provide awaitable read operations.
 
-    A type satisfies `read_stream` if it provides an affine awaitable
+    A type satisfies `ReadStream` if it provides an I/O awaitable
     `read_some` member function that reads data into a mutable
     buffer sequence.
 
     @tparam T The stream type.
-    @tparam MutableBufferSequence The buffer sequence type, must satisfy
-        `mutable_buffer_sequence`.
+    @tparam MB The buffer sequence type, must satisfy
+        `MutableBufferSequence`.
 
     @par Requirements
-    @li `MutableBufferSequence` must satisfy `mutable_buffer_sequence`
+    @li `MB` must satisfy `MutableBufferSequence`
     @li `T` must provide a templated `read_some` member function
-    @li `read_some` must accept a `MutableBufferSequence const&`
+    @li `read_some` must accept a `MB const&`
     @li The awaitable returned by `read_some` must satisfy
-        `capy::affine_awaitable<capy::any_dispatcher>`
+        `capy::IoAwaitable<capy::any_executor_ref>`
     @li The awaitable must resolve to `std::pair<system::error_code, std::size_t>`
     @li When end-of-file is reached, `read_some` must return
         `capy::error::eof` as the error code. Check `ec == cond::eof`
@@ -46,7 +46,7 @@ namespace capy {
 
     @par Example
     @code
-    template<read_stream<mutable_buffer> Stream>
+    template<ReadStream<mutable_buffer> Stream>
     capy::task<void> read_all(Stream& s, char* buf, std::size_t size)
     {
         std::size_t total = 0;
@@ -61,13 +61,13 @@ namespace capy {
     }
     @endcode
 */
-template<typename T, typename MutableBufferSequence>
-concept read_stream =
-    mutable_buffer_sequence<MutableBufferSequence> &&
-    requires(T& stream, MutableBufferSequence const& buffers)
+template<typename T, typename MB>
+concept ReadStream =
+    MutableBufferSequence<MB> &&
+    requires(T& stream, MB const& buffers)
     {
         { stream.read_some(buffers) } ->
-            capy::affine_awaitable<capy::any_dispatcher>;
+            capy::IoAwaitable<capy::any_executor_ref>;
     };
 
 } // namespace capy

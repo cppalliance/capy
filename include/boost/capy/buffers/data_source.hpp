@@ -22,7 +22,7 @@ namespace capy {
 */
 template<class T>
 struct is_data_source
-    : std::bool_constant<data_source<T>>
+    : std::bool_constant<DataSource<T>>
 {
 };
 

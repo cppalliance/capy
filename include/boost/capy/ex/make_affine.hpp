@@ -2,7 +2,7 @@
 // make_affine.hpp
 //
 // Universal trampoline technique for providing scheduler affinity
-// to legacy awaitables that don't implement the affine awaitable protocol.
+// to legacy awaitables that don't implement the I/O awaitable protocol.
 //
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie dot falco at gmail dot com)
@@ -44,14 +44,14 @@ using awaitable_type = decltype(get_awaitable(std::declval<T>()));
 template<typename A>
 using await_result_t = decltype(std::declval<awaitable_type<A>>().await_resume());
 
-template<typename Dispatcher>
+template<typename E>
 struct dispatch_awaitable {
-    Dispatcher& dispatcher_;
+    E& ex_;
 
     bool await_ready() const noexcept { return false; }
 
     void await_suspend(std::coroutine_handle<> h) const {
-        dispatcher_(h);
+        ex_.dispatch(h);
     }
 
     void await_resume() const noexcept {}
@@ -198,13 +198,13 @@ public:
 /** Create an affinity trampoline for a legacy awaitable.
 
     This function wraps an awaitable in a trampoline coroutine
-    that ensures resumption occurs via the specified dispatcher.
+    that ensures resumption occurs via the specified executor.
     After the inner awaitable completes, the trampoline dispatches
-    the continuation to the dispatcher before transferring control
+    the continuation to the executor before transferring control
     back to the caller.
 
     This is the fallback path for awaitables that don't implement
-    the affine_awaitable protocol. Prefer implementing the protocol
+    the IoAwaitable protocol. Prefer implementing the protocol
     for zero-overhead affinity.
 
     @par Usage
@@ -215,47 +215,47 @@ public:
     {
         using A = std::remove_cvref_t<Awaitable>;
 
-        if constexpr (affine_awaitable<A, Dispatcher>) {
+        if constexpr (IoAwaitable<A, Executor>) {
             // Zero overhead path
-            return affine_awaiter{
-                std::forward<Awaitable>(a), &dispatcher_};
+            return io_awaiter{
+                std::forward<Awaitable>(a), &ex_};
         } else {
             // Trampoline fallback
             return make_affine(
-                std::forward<Awaitable>(a), dispatcher_);
+                std::forward<Awaitable>(a), ex_);
         }
     }
     @endcode
 
-    @par Dispatcher Requirements
-    The dispatcher must satisfy the dispatcher concept:
+    @par Executor Requirements
+    The executor must have a dispatch method:
     @code
-    struct Dispatcher
+    struct Executor
     {
-        void operator()(std::coroutine_handle<> h);
+        void dispatch(std::coroutine_handle<> h);
     };
     @endcode
 
     @param awaitable The awaitable to wrap.
-    @param dispatcher A callable used to dispatch the continuation.
+    @param ex An executor used to dispatch the continuation.
         Must remain valid until the awaitable completes.
 
     @return An awaitable that yields the same result as the wrapped
-        awaitable, with resumption occurring via the dispatcher.
+        awaitable, with resumption occurring via the executor.
 */
-template<typename Awaitable, typename Dispatcher>
-auto make_affine(Awaitable&& awaitable, Dispatcher& dispatcher)
+template<typename Awaitable, typename E>
+auto make_affine(Awaitable&& awaitable, E& ex)
     -> detail::affinity_trampoline<detail::await_result_t<Awaitable>>
 {
     using result_t = detail::await_result_t<Awaitable>;
 
     if constexpr (std::is_void_v<result_t>) {
         co_await detail::get_awaitable(std::forward<Awaitable>(awaitable));
-        co_await detail::dispatch_awaitable<Dispatcher>{dispatcher};
+        co_await detail::dispatch_awaitable<E>{ex};
     } else {
         auto result = co_await detail::get_awaitable(
             std::forward<Awaitable>(awaitable));
-        co_await detail::dispatch_awaitable<Dispatcher>{dispatcher};
+        co_await detail::dispatch_awaitable<E>{ex};
         co_return result;
     }
 }

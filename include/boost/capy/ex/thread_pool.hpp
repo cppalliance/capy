@@ -123,18 +123,18 @@ public:
     {
     }
 
-    /** Submit a coroutine for execution.
+    /** Dispatch a coroutine for execution.
 
         Posts the coroutine to the thread pool and returns
         immediately. The caller should suspend after calling
-        this function. Also serves as the dispatcher interface.
+        this function.
 
         @param h The coroutine handle to execute.
 
         @return A noop coroutine handle to resume.
     */
     any_coro
-    operator()(any_coro h) const
+    dispatch(any_coro h) const
     {
         post(h);
         return std::noop_coroutine();
@@ -150,18 +150,6 @@ public:
     BOOST_CAPY_DECL
     void
     post(any_coro h) const;
-
-    /** Defer a coroutine to the thread pool.
-
-        Equivalent to post() for thread pools.
-
-        @param h The coroutine handle to execute.
-    */
-    void
-    defer(any_coro h) const
-    {
-        post(h);
-    }
 
     /// Return true if two executors refer to the same thread pool.
     bool

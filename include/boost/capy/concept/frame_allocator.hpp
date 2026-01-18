@@ -38,7 +38,7 @@ namespace capy {
     @tparam A The type to check for frame allocator conformance.
 */
 template<class A>
-concept frame_allocator =
+concept FrameAllocator =
     std::copy_constructible<A> &&
     requires(A& a, void* p, std::size_t n) {
         { a.allocate(n) } -> std::same_as<void*>;

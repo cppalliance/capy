@@ -24,9 +24,9 @@ namespace capy {
 
 namespace {
 
-// Verify executor concept at compile time
-static_assert(executor<thread_pool::executor_type>,
-    "thread_pool::executor_type must satisfy executor concept");
+// Verify Executor concept at compile time
+static_assert(Executor<thread_pool::executor_type>,
+    "thread_pool::executor_type must satisfy Executor concept");
 
 // Simple service for testing inherited functionality
 struct test_service : execution_context::service
@@ -150,19 +150,9 @@ struct thread_pool_test
         thread_pool pool(1);
         auto ex = pool.get_executor();
 
-        // operator() returns noop_coroutine (always posts for thread_pool)
-        auto result = ex(std::noop_coroutine());
+        // dispatch() returns noop_coroutine (always posts for thread_pool)
+        auto result = ex.dispatch(std::noop_coroutine());
         BOOST_TEST(result == std::noop_coroutine());
-    }
-
-    void
-    testDefer()
-    {
-        thread_pool pool(1);
-        auto ex = pool.get_executor();
-
-        // defer is same as post for thread_pool, should not throw
-        ex.defer(std::noop_coroutine());
     }
 
     void
@@ -254,7 +244,6 @@ struct thread_pool_test
         testPostWork();
         testWorkCounting();
         testDispatch();
-        testDefer();
         testServiceManagement();
         testMakeService();
         testConcurrentPost();

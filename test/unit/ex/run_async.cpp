@@ -11,6 +11,7 @@
 #include <boost/capy/ex/run_async.hpp>
 
 #include <boost/capy/task.hpp>
+#include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/get_stop_token.hpp>
 
 #include "test_suite.hpp"
@@ -47,49 +48,98 @@ namespace boost {
 namespace capy {
 
 //----------------------------------------------------------
-// Test Dispatchers
+// Test Executors
 //----------------------------------------------------------
 
-/// Synchronous dispatcher - executes inline.
-struct sync_dispatcher
+/// Minimal test context.
+class test_context : public execution_context
+{
+};
+
+/// Synchronous executor - executes inline.
+struct sync_executor
 {
     int* dispatch_count_ = nullptr;
+    test_context* ctx_ = nullptr;
+    static test_context default_ctx_;
 
-    sync_dispatcher() = default;
+    sync_executor() = default;
 
-    explicit sync_dispatcher(int& count)
+    explicit sync_executor(int& count)
         : dispatch_count_(&count)
     {
     }
 
-    any_coro operator()(any_coro h) const
+    bool operator==(sync_executor const& other) const noexcept
+    {
+        return dispatch_count_ == other.dispatch_count_;
+    }
+
+    execution_context& context() const noexcept
+    {
+        return ctx_ ? *ctx_ : default_ctx_;
+    }
+
+    void on_work_started() const noexcept {}
+    void on_work_finished() const noexcept {}
+
+    any_coro dispatch(any_coro h) const
     {
         if(dispatch_count_)
             ++(*dispatch_count_);
         return h;
     }
+
+    void post(any_coro h) const
+    {
+        h.resume();
+    }
 };
 
-static_assert(dispatcher<sync_dispatcher>);
+test_context sync_executor::default_ctx_;
 
-/// Queuing dispatcher - queues for manual execution.
-struct queue_dispatcher
+static_assert(Executor<sync_executor>);
+
+/// Queuing executor - queues for manual execution.
+struct queue_executor
 {
     std::queue<any_coro>* queue_;
+    test_context* ctx_ = nullptr;
+    static test_context default_ctx_;
 
-    explicit queue_dispatcher(std::queue<any_coro>& q)
+    explicit queue_executor(std::queue<any_coro>& q)
         : queue_(&q)
     {
     }
 
-    any_coro operator()(any_coro h) const
+    bool operator==(queue_executor const& other) const noexcept
+    {
+        return queue_ == other.queue_;
+    }
+
+    execution_context& context() const noexcept
+    {
+        return ctx_ ? *ctx_ : default_ctx_;
+    }
+
+    void on_work_started() const noexcept {}
+    void on_work_finished() const noexcept {}
+
+    any_coro dispatch(any_coro h) const
     {
         queue_->push(h);
         return std::noop_coroutine();
     }
+
+    void post(any_coro h) const
+    {
+        queue_->push(h);
+    }
 };
 
-static_assert(dispatcher<queue_dispatcher>);
+test_context queue_executor::default_ctx_;
+
+static_assert(Executor<queue_executor>);
 
 /// Test exception type.
 struct test_exception : std::runtime_error
@@ -133,7 +183,7 @@ struct run_async_test
     {
         // Fire and forget - result discarded
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         
         run_async(d)(returns_int());
         BOOST_TEST_EQ(dispatch_count, 1);
@@ -143,7 +193,7 @@ struct run_async_test
     testResultHandler()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         int result = 0;
 
         run_async(d, [&](int v) { result = v; })(returns_int());
@@ -156,7 +206,7 @@ struct run_async_test
     testVoidTaskResultHandler()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         bool called = false;
 
         run_async(d, [&]() { called = true; })(returns_void());
@@ -169,7 +219,7 @@ struct run_async_test
     testDualHandlers()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         int result = 0;
         bool error_called = false;
 
@@ -186,7 +236,7 @@ struct run_async_test
     testOverloadedHandler()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         int result = 0;
         bool exception_handled = false;
 
@@ -231,7 +281,7 @@ struct run_async_test
     testErrorHandlerReceivesException()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         bool success_called = false;
         bool error_called = false;
 
@@ -251,7 +301,7 @@ struct run_async_test
     testOverloadedHandlerException()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         bool got_value = false;
         bool got_exception = false;
 
@@ -285,7 +335,7 @@ struct run_async_test
     testStopTokenPropagation()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         bool result = true;
 
         std::stop_source source;
@@ -301,7 +351,7 @@ struct run_async_test
     testCancellationVisible()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         bool result = false;
 
         std::stop_source source;
@@ -322,7 +372,7 @@ struct run_async_test
     testSyncDispatcherBasic()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         int result = 0;
 
         run_async(d, [&](int v) { result = v; })(returns_int());
@@ -342,7 +392,7 @@ struct run_async_test
     testSyncDispatcherNested()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         int result = 0;
 
         run_async(d, [&](int v) { result = v; })(nested_task());
@@ -354,7 +404,7 @@ struct run_async_test
     testSyncDispatcherException()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         bool error_called = false;
 
         run_async(d,
@@ -373,7 +423,7 @@ struct run_async_test
     testAsyncDispatcherBasic()
     {
         std::queue<any_coro> queue;
-        queue_dispatcher d(queue);
+        queue_executor d(queue);
         int result = 0;
 
         run_async(d, [&](int v) { result = v; })(returns_int());
@@ -397,7 +447,7 @@ struct run_async_test
     testAsyncDispatcherMultiple()
     {
         std::queue<any_coro> queue;
-        queue_dispatcher d(queue);
+        queue_executor d(queue);
         int sum = 0;
 
         run_async(d, [&](int v) { sum += v; })(returns_int());
@@ -432,7 +482,7 @@ struct run_async_test
     testLambdaHandlers()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         int result = 0;
 
         auto lambda = [&result](int v) { result = v; };
@@ -445,7 +495,7 @@ struct run_async_test
     testGenericLambda()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         int result = 0;
 
         run_async(d, [&result](auto v) {
@@ -460,7 +510,7 @@ struct run_async_test
     testStatefulHandlers()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         
         struct counter
         {
@@ -488,7 +538,7 @@ struct run_async_test
     testImmediateCompletion()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         int result = 0;
 
         run_async(d, [&](int v) { result = v; })(immediate_return());
@@ -500,7 +550,7 @@ struct run_async_test
     testEmptyStopToken()
     {
         int dispatch_count = 0;
-        sync_dispatcher d(dispatch_count);
+        sync_executor d(dispatch_count);
         int result = 0;
 
         // Default-constructed stop_token

@@ -18,7 +18,7 @@
 namespace boost {
 namespace capy {
 
-BOOST_STATIC_ASSERT(is_dynamic_buffer<string_buffer>::value);
+BOOST_STATIC_ASSERT(is_DynamicBuffer<string_buffer>::value);
 
 struct string_buffer_test
 {

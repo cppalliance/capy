@@ -226,23 +226,23 @@ running_in_this_thread(strand_impl& impl) noexcept
 
 any_coro
 strand_service::
-dispatch(strand_impl& impl, any_dispatcher d, any_coro h)
+dispatch(strand_impl& impl, any_executor_ref ex, any_coro h)
 {
     if(running_in_this_thread(impl))
         return h;
 
     if(strand_service_impl::enqueue(impl, h))
-        d(strand_service_impl::make_invoker(impl).h_);
+        ex.post(strand_service_impl::make_invoker(impl).h_);
 
     return std::noop_coroutine();
 }
 
 void
 strand_service::
-post(strand_impl& impl, any_dispatcher d, any_coro h)
+post(strand_impl& impl, any_executor_ref ex, any_coro h)
 {
     if(strand_service_impl::enqueue(impl, h))
-        d(strand_service_impl::make_invoker(impl).h_);
+        ex.post(strand_service_impl::make_invoker(impl).h_);
 }
 
 strand_service&

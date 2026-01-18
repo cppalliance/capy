@@ -12,7 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/ex/any_coro.hpp>
-#include <boost/capy/ex/any_dispatcher.hpp>
+#include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
 #include <cstddef>
@@ -71,11 +71,11 @@ public:
 
     /** Dispatch through strand, returns handle for symmetric transfer. */
     static any_coro
-    dispatch(strand_impl& impl, any_dispatcher d, any_coro h);
+    dispatch(strand_impl& impl, any_executor_ref ex, any_coro h);
 
     /** Post to strand queue. */
     static void
-    post(strand_impl& impl, any_dispatcher d, any_coro h);
+    post(strand_impl& impl, any_executor_ref ex, any_coro h);
 
 protected:
     strand_service();
