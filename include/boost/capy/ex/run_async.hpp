@@ -18,7 +18,6 @@
 #include <concepts>
 #include <coroutine>
 #include <exception>
-#include <optional>
 #include <stop_token>
 #include <type_traits>
 #include <utility>
@@ -184,19 +183,28 @@ struct get_promise_awaiter
     order) and serves as the task's continuation. When the task final_suspends,
     control returns to the trampoline which then invokes the appropriate handler.
 
+    @tparam Ex The executor type.
     @tparam Handlers The handler type (default_handler or handler_pair).
 */
-template<class Handlers>
+template<class Ex, class Handlers>
 struct trampoline
 {
-    using invoke_fn = void(*)(void*, std::optional<Handlers>&);
+    using invoke_fn = void(*)(void*, Handlers&);
 
     struct promise_type
     {
+        Ex ex_;
+        Handlers handlers_;
         invoke_fn invoke_ = nullptr;
         void* task_promise_ = nullptr;
-        std::optional<Handlers> handlers_;
         std::coroutine_handle<> task_h_;
+
+        // Constructor receives coroutine parameters by lvalue reference
+        promise_type(Ex ex, Handlers h)
+            : ex_(std::move(ex))
+            , handlers_(std::move(h))
+        {
+        }
 
         trampoline get_return_object() noexcept
         {
@@ -229,24 +237,27 @@ struct trampoline
 
     /// Type-erased invoke function instantiated per task<T>.
     template<class T>
-    static void invoke_impl(void* p, std::optional<Handlers>& h)
+    static void invoke_impl(void* p, Handlers& h)
     {
         auto& promise = *static_cast<typename task<T>::promise_type*>(p);
         if(promise.ep_)
-            (*h)(promise.ep_);
+            h(promise.ep_);
         else if constexpr(std::is_void_v<T>)
-            (*h)();
+            h();
         else
-            (*h)(std::move(*promise.result_));
+            h(std::move(*promise.result_));
     }
 };
 
 /// Coroutine body for trampoline - invokes handlers then destroys task.
-template<class Handlers>
-trampoline<Handlers>
-make_trampoline()
+template<class Ex, class Handlers>
+trampoline<Ex, Handlers>
+make_trampoline(Ex ex, Handlers h)
 {
-    auto& p = co_await get_promise_awaiter<typename trampoline<Handlers>::promise_type>{};
+    // Parameters are passed to promise_type constructor by coroutine machinery
+    (void)ex;
+    (void)h;
+    auto& p = co_await get_promise_awaiter<typename trampoline<Ex, Handlers>::promise_type>{};
     
     // Invoke the type-erased handler
     p.invoke_(p.task_promise_, p.handlers_);
@@ -294,9 +305,8 @@ make_trampoline()
 template<Executor Ex, class Handlers>
 class [[nodiscard]] run_async_wrapper
 {
-    detail::trampoline<Handlers> tr_;
+    detail::trampoline<Ex, Handlers> tr_;
     std::stop_token st_;
-    Ex ex_;
 
 public:
     /// Construct wrapper with executor, stop token, and handlers.
@@ -304,18 +314,16 @@ public:
         Ex ex,
         std::stop_token st,
         Handlers h)
-        : tr_(detail::make_trampoline<Handlers>())
+        : tr_(detail::make_trampoline<Ex, Handlers>(
+            std::move(ex), std::move(h)))
         , st_(std::move(st))
-        , ex_(std::move(ex))
     {
-        // Store handlers in the trampoline's promise
-        tr_.h_.promise().handlers_.emplace(std::move(h));
     }
 
     // Non-copyable, non-movable (must be used immediately)
     run_async_wrapper(run_async_wrapper const&) = delete;
-    run_async_wrapper& operator=(run_async_wrapper const&) = delete;
     run_async_wrapper(run_async_wrapper&&) = delete;
+    run_async_wrapper& operator=(run_async_wrapper const&) = delete;
     run_async_wrapper& operator=(run_async_wrapper&&) = delete;
 
     /** Launch the task for execution.
@@ -336,20 +344,21 @@ public:
         auto& p = tr_.h_.promise();
 
         // Inject T-specific invoke function
-        p.invoke_ = detail::trampoline<Handlers>::template invoke_impl<T>;
+        p.invoke_ = detail::trampoline<Ex, Handlers>::template invoke_impl<T>;
         p.task_promise_ = &task_h.promise();
         p.task_h_ = task_h;
 
         // Setup task's continuation to return to trampoline
+        // Executor lives in trampoline's promise, so reference is valid for task's lifetime
         task_h.promise().continuation_ = tr_.h_;
-        task_h.promise().caller_ex_ = ex_;
-        task_h.promise().ex_ = ex_;
+        task_h.promise().caller_ex_ = p.ex_;
+        task_h.promise().ex_ = p.ex_;
         task_h.promise().set_stop_token(st_);
 
         // Resume task through executor
         // The executor returns a handle for symmetric transfer;
         // from non-coroutine code we must explicitly resume it
-        ex_.dispatch(task_h).resume();
+        p.ex_.dispatch(task_h).resume();
     }
 };
 

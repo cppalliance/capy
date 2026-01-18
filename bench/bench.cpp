@@ -115,9 +115,9 @@ struct foreign_awaitable
     {
     }
 
-    // Affine awaitable protocol
+    // IoAwaitable protocol
     template<typename D>
-    any_coro await_suspend(any_coro h, D const&) const
+    any_coro await_suspend(any_coro h, D const&, std::stop_token) const
     {
         return h;
     }

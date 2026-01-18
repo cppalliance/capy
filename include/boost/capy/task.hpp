@@ -196,8 +196,11 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             }
             else
             {
+                static_assert("legacy tasks not supported");
+            #if 0
                 // Trampoline fallback for legacy awaitables
                 return make_affine(std::forward<Awaitable>(a), ex_);
+            #endif
             }
         }
     };
