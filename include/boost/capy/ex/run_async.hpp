@@ -343,7 +343,7 @@ public:
         // Setup task's continuation to return to trampoline
         task_h.promise().continuation_ = tr_.h_;
         task_h.promise().caller_ex_ = ex_;
-        task_h.promise().ex_ = ex_;  // Used by awaited async_ops
+        task_h.promise().ex_ = ex_;
         task_h.promise().set_stop_token(st_);
 
         // Resume task through executor

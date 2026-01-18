@@ -10,7 +10,6 @@
 // Test that header file is self-contained.
 #include <boost/capy/task.hpp>
 
-#include <boost/capy/ex/async_op.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 
@@ -392,79 +391,6 @@ struct task_test
         }
     }
 
-    static async_op<int>
-    async_returns_value()
-    {
-        return make_async_op<int>(
-            [](auto cb) {
-                cb(123);
-            });
-    }
-
-    static async_op<int>
-    async_with_delayed_completion()
-    {
-        return make_async_op<int>(
-            [](auto cb) {
-                cb(456);
-            });
-    }
-
-    static task<int>
-    task_awaits_async_op()
-    {
-        int v = co_await async_returns_value();
-        co_return v + 1;
-    }
-
-    static task<int>
-    task_awaits_multiple_async_ops()
-    {
-        int v1 = co_await async_returns_value();
-        int v2 = co_await async_with_delayed_completion();
-        co_return v1 + v2;
-    }
-
-    void
-    testTaskAwaitsAsyncResult()
-    {
-        // task awaits single async_op - needs run_async for executor
-        {
-            int dispatch_count = 0;
-            test_executor ex(dispatch_count);
-            int result = 0;
-            bool completed = false;
-
-            run_async(ex,
-                [&](int v) {
-                    result = v;
-                    completed = true;
-                },
-                [](std::exception_ptr) {})(task_awaits_async_op());
-
-            BOOST_TEST(completed);
-            BOOST_TEST_EQ(result, 124);
-        }
-
-        // task awaits multiple async_ops
-        if (false) {
-            int dispatch_count = 0;
-            test_executor ex(dispatch_count);
-            int result = 0;
-            bool completed = false;
-
-            run_async(ex,
-                [&](int v) {
-                    result = v;
-                    completed = true;
-                },
-                [](std::exception_ptr) {})(task_awaits_multiple_async_ops());
-
-            BOOST_TEST(completed);
-            BOOST_TEST_EQ(result, 579);
-        }
-    }
-
     void
     testAwaitReady()
     {
@@ -566,306 +492,12 @@ struct task_test
         h.destroy();
     }
 
-    static task<void>
-    void_task_awaits_async_op()
-    {
-        int v = co_await async_returns_value();
-        (void)v;
-        co_return;
-    }
-
-    void
-    testVoidTaskAwaitsAsyncResult()
-    {
-        // Needs run_async since void_task_awaits_async_op awaits an async_op
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(void_task_awaits_async_op());
-
-        BOOST_TEST(completed);
-    }
-
-    // Dispatcher tests using run_async
-
-    static async_op<int>
-    async_op_immediate(int value)
-    {
-        return make_async_op<int>(
-            [value](auto cb) {
-                cb(value);
-            });
-    }
-
-    static task<int>
-    task_with_async_for_affinity_test()
-    {
-        int v = co_await async_returns_value();
-        co_return v + 1;
-    }
-
-    void
-    testDispatcherUsedByAwait()
-    {
-        // Verify that executor is used when awaiting via run_async
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-        int result = 0;
-
-        run_async(ex,
-            [&](int v) {
-                result = v;
-                completed = true;
-            },
-            [](std::exception_ptr) {})(task_with_async_for_affinity_test());
-
-        BOOST_TEST(completed);
-        BOOST_TEST_EQ(result, 124);
-        // Work should have been dispatched
-        BOOST_TEST_GE(dispatch_count, 1);
-    }
-
-    static task<void>
-    void_task_with_async_for_affinity_test()
-    {
-        auto v = co_await async_returns_value();
-        (void)v;
-        co_return;
-    }
-
-    void
-    testVoidTaskDispatcherUsedByAwait()
-    {
-        // Verify that executor is used for void tasks
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(void_task_with_async_for_affinity_test());
-
-        BOOST_TEST(completed);
-        // Work should have been dispatched
-        BOOST_TEST_GE(dispatch_count, 1);
-    }
-
-    // Affinity propagation tests
-
-    static task<int>
-    inner_task_c()
-    {
-        co_return co_await async_returns_value();
-    }
-
-    static task<int>
-    middle_task_b()
-    {
-        int v = co_await inner_task_c();
-        co_return v + 1;
-    }
-
-    static task<int>
-    outer_task_a()
-    {
-        int v = co_await middle_task_b();
-        co_return v + 1;
-    }
-
-    void
-    testAffinityPropagation()
-    {
-        // Verify affinity propagates through task chain (ABC problem)
-        // The executor from run_async should be inherited by nested tasks
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-        int result = 0;
-
-        run_async(ex,
-            [&](int v) {
-                result = v;
-                completed = true;
-            },
-            [](std::exception_ptr) {})(outer_task_a());
-
-        BOOST_TEST(completed);
-        BOOST_TEST_EQ(result, 125);  // 123 + 1 + 1
-        // All async completions should dispatch through the executor
-        BOOST_TEST_GE(dispatch_count, 1);
-    }
-
-    static task<void>
-    inner_void_task_c()
-    {
-        co_await async_returns_value();
-        co_return;
-    }
-
-    static task<void>
-    middle_void_task_b()
-    {
-        co_await inner_void_task_c();
-        co_return;
-    }
-
-    static task<void>
-    outer_void_task_a()
-    {
-        co_await middle_void_task_b();
-        co_return;
-    }
-
-    void
-    testAffinityPropagationVoid()
-    {
-        // Verify affinity propagates through void task chain
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(outer_void_task_a());
-
-        BOOST_TEST(completed);
-        BOOST_TEST_GE(dispatch_count, 1);
-    }
-
     void
     testNoDispatcherRunsInline()
     {
         // Verify that simple tasks can run without run_async (manual stepping)
         // Note: Only works for tasks that don't await executor-aware awaitables
         BOOST_TEST_EQ(run_task(chained_tasks()), 25);
-    }
-
-    // Affinity preservation tests with tracking executor
-
-    void
-    testInheritedAffinityVerification()
-    {
-        // Test that child tasks actually use inherited affinity
-        // by checking that all resumptions go through the parent's executor
-        std::vector<int> log;
-        int dispatch_count = 0;
-        tracking_executor ex(1, dispatch_count, &log);
-
-        bool completed = false;
-        int result = 0;
-
-        // Chain: outer -> middle -> inner
-        auto inner = []() -> task<int> {
-            co_return co_await async_op_immediate(100);
-        };
-
-        auto middle = [inner]() -> task<int> {
-            int v = co_await inner();
-            co_return v + co_await async_op_immediate(10);
-        };
-
-        auto outer = [middle]() -> task<int> {
-            int v = co_await middle();
-            co_return v + co_await async_op_immediate(1);
-        };
-
-        run_async(ex,
-            [&](int v) {
-                result = v;
-                completed = true;
-            },
-            [](std::exception_ptr) {})(outer());
-
-        BOOST_TEST(completed);
-        BOOST_TEST_EQ(result, 111);
-        // All three async_ops should have resumed through executor 1
-        BOOST_TEST_GE(dispatch_count, 3);
-        for (int id : log)
-            BOOST_TEST_EQ(id, 1);
-    }
-
-    void
-    testAffinityPreservedAcrossMultipleAwaits()
-    {
-        // Test that affinity is preserved across multiple co_await expressions
-        std::vector<int> log;
-        int dispatch_count = 0;
-        tracking_executor ex(1, dispatch_count, &log);
-
-        bool completed = false;
-        int result = 0;
-
-        auto multi_await = []() -> task<int> {
-            int sum = 0;
-            sum += co_await async_op_immediate(1);
-            sum += co_await async_op_immediate(2);
-            sum += co_await async_op_immediate(3);
-            sum += co_await async_op_immediate(4);
-            sum += co_await async_op_immediate(5);
-            co_return sum;
-        };
-
-        run_async(ex,
-            [&](int v) {
-                result = v;
-                completed = true;
-            },
-            [](std::exception_ptr) {})(multi_await());
-
-        BOOST_TEST(completed);
-        BOOST_TEST_EQ(result, 15);
-        // 6 dispatches: 1 from run_async start + 5 from async_ops completing
-        BOOST_TEST_EQ(dispatch_count, 6);
-        BOOST_TEST_EQ(log.size(), 6u);
-        for (int id : log)
-            BOOST_TEST_EQ(id, 1);
-    }
-
-    void
-    testAffinityWithNestedVoidTasks()
-    {
-        // Test affinity propagation through void task nesting
-        std::vector<int> log;
-        int dispatch_count = 0;
-        tracking_executor ex(1, dispatch_count, &log);
-
-        std::atomic<int> counter{0};
-        bool completed = false;
-
-        auto leaf = [&counter]() -> task<void> {
-            co_await async_op_immediate(0);
-            ++counter;
-            co_return;
-        };
-
-        auto branch = [leaf, &counter]() -> task<void> {
-            co_await leaf();
-            co_await async_op_immediate(0);
-            ++counter;
-            co_return;
-        };
-
-        auto root = [branch, &counter]() -> task<void> {
-            co_await branch();
-            co_await async_op_immediate(0);
-            ++counter;
-            co_return;
-        };
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(root());
-
-        BOOST_TEST(completed);
-        BOOST_TEST_EQ(counter.load(), 3);
-        // All async_ops should dispatch through the executor
-        BOOST_TEST_GE(dispatch_count, 3);
-        for (int id : log)
-            BOOST_TEST_EQ(id, 1);
     }
 
     void
@@ -1035,64 +667,6 @@ struct task_test
     }
 
     void
-    testAsyncRunWithAsyncOp()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-        int result = 0;
-
-        auto task_with_async = []() -> task<int> {
-            int v = co_await async_op_immediate(100);
-            co_return v + 1;
-        };
-
-        run_async(ex,
-            [&](int v) {
-                result = v;
-                completed = true;
-            },
-            [](std::exception_ptr) {})(task_with_async());
-
-        BOOST_TEST(completed);
-        BOOST_TEST_EQ(result, 101);
-        BOOST_TEST_GE(dispatch_count, 1);
-    }
-
-    void
-    testAsyncRunAffinityPropagation()
-    {
-        std::vector<int> log;
-        int dispatch_count = 0;
-        tracking_executor ex(1, dispatch_count, &log);
-        bool completed = false;
-        int result = 0;
-
-        auto inner = []() -> task<int> {
-            co_return co_await async_op_immediate(50);
-        };
-
-        auto outer = [inner]() -> task<int> {
-            int v = co_await inner();
-            v += co_await async_op_immediate(5);
-            co_return v;
-        };
-
-        run_async(ex,
-            [&](int v) {
-                result = v;
-                completed = true;
-            },
-            [](std::exception_ptr) {})(outer());
-
-        BOOST_TEST(completed);
-        BOOST_TEST_EQ(result, 55);
-        BOOST_TEST_GE(dispatch_count, 2);
-        for (int id : log)
-            BOOST_TEST_EQ(id, 1);
-    }
-
-    void
     testAsyncRunChained()
     {
         int dispatch_count = 0;
@@ -1136,40 +710,6 @@ struct task_test
 
         BOOST_TEST(caught);
         BOOST_TEST_EQ(error_msg, "specific error");
-    }
-
-    void
-    testAsyncRunDeeplyNested()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-        int result = 0;
-
-        auto level3 = []() -> task<int> {
-            co_return co_await async_op_immediate(1);
-        };
-
-        auto level2 = [level3]() -> task<int> {
-            int v = co_await level3();
-            co_return v + co_await async_op_immediate(10);
-        };
-
-        auto level1 = [level2]() -> task<int> {
-            int v = co_await level2();
-            co_return v + co_await async_op_immediate(100);
-        };
-
-        run_async(ex,
-            [&](int v) {
-                result = v;
-                completed = true;
-            },
-            [](std::exception_ptr) {})(level1());
-
-        BOOST_TEST(completed);
-        BOOST_TEST_EQ(result, 111);
-        BOOST_TEST_GE(dispatch_count, 3);
     }
 
     void
@@ -1327,97 +867,6 @@ struct task_test
     }
 
     void
-    testAllocatorRestoredAfterAwait()
-    {
-        // Verify that TLS is restored after co_await,
-        // allowing child tasks created after await to use the correct allocator
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        int alloc_count = 0;
-        int dealloc_count = 0;
-        std::vector<int> alloc_log;
-
-        tracking_frame_allocator alloc{1, &alloc_count, &dealloc_count, &alloc_log};
-
-        // Create a task that awaits an async_op, then creates a child task
-        auto child_after_await = []() -> task<int> {
-            co_return 10;
-        };
-
-        auto parent = [child_after_await]() -> task<int> {
-            // First await an async_op (simulates I/O)
-            int v1 = co_await async_op_immediate(5);
-            // After resume, TLS should be restored, so this child
-            // should use the same allocator
-            int v2 = co_await child_after_await();
-            co_return v1 + v2;
-        };
-
-        int result = 0;
-        run_async(ex, std::stop_token{}, alloc,
-            [&](int v) {
-                result = v;
-                completed = true;
-            },
-            [](std::exception_ptr) {})(parent());
-
-        BOOST_TEST(completed);
-        BOOST_TEST_EQ(result, 15);
-        // At least one allocation should occur
-        BOOST_TEST_GE(alloc_count, 1);
-        // All allocations must use our allocator
-        for(int id : alloc_log)
-            BOOST_TEST_EQ(id, 1);
-    }
-
-    void
-    testAllocatorRestoredAcrossMultipleAwaits()
-    {
-        // Verify TLS restoration across multiple sequential awaits
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        int alloc_count = 0;
-        int dealloc_count = 0;
-        std::vector<int> alloc_log;
-
-        tracking_frame_allocator alloc{1, &alloc_count, &dealloc_count, &alloc_log};
-
-        auto make_child = [](int v) -> task<int> {
-            co_return v;
-        };
-
-        auto parent = [make_child]() -> task<int> {
-            int sum = 0;
-            // Each await should restore TLS before the next child creation
-            sum += co_await async_op_immediate(1);
-            sum += co_await make_child(10);
-            sum += co_await async_op_immediate(2);
-            sum += co_await make_child(20);
-            sum += co_await async_op_immediate(3);
-            sum += co_await make_child(30);
-            co_return sum;
-        };
-
-        int result = 0;
-        run_async(ex, std::stop_token{}, alloc,
-            [&](int v) {
-                result = v;
-                completed = true;
-            },
-            [](std::exception_ptr) {})(parent());
-
-        BOOST_TEST(completed);
-        BOOST_TEST_EQ(result, 66);  // 1+10+2+20+3+30
-        // All child tasks should use the same allocator
-        for(int id : alloc_log)
-            BOOST_TEST_EQ(id, 1);
-    }
-
-    void
     testDeeplyNestedAllocatorPropagation()
     {
         // Verify allocator propagates through deep task nesting
@@ -1462,50 +911,6 @@ struct task_test
         // At least some allocations should occur
         BOOST_TEST_GE(alloc_count, 1);
         // All allocations must use our allocator (HALO may reduce count)
-        for(int id : alloc_log)
-            BOOST_TEST_EQ(id, 1);
-    }
-
-    void
-    testAllocatorWithMixedTasksAndAsyncOps()
-    {
-        // Verify allocator works correctly with interleaved tasks and async_ops
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        int alloc_count = 0;
-        int dealloc_count = 0;
-        std::vector<int> alloc_log;
-
-        tracking_frame_allocator alloc{1, &alloc_count, &dealloc_count, &alloc_log};
-
-        auto compute = [](int x) -> task<int> {
-            co_return x * 2;
-        };
-
-        auto complex_task = [compute]() -> task<int> {
-            int v = 0;
-            // async_op -> task -> async_op -> task pattern
-            v += co_await async_op_immediate(1);
-            v += co_await compute(v);    // Creates child task after I/O
-            v += co_await async_op_immediate(10);
-            v += co_await compute(v);    // Creates another child after I/O
-            co_return v;
-        };
-
-        int result = 0;
-        run_async(ex, std::stop_token{}, alloc,
-            [&](int v) {
-                result = v;
-                completed = true;
-            },
-            [](std::exception_ptr) {})(complex_task());
-
-        BOOST_TEST(completed);
-        // v = 0 + 1 = 1, then v = 1 + 2 = 3, then v = 3 + 10 = 13, then v = 13 + 26 = 39
-        BOOST_TEST_EQ(result, 39);
-        // All allocations should use our allocator
         for(int id : alloc_log)
             BOOST_TEST_EQ(id, 1);
     }
@@ -1715,68 +1120,12 @@ struct task_test
     }
 
     void
-    testStopTokenReceivesStopSignal()
-    {
-        // This test manually sets up a task to demonstrate stop token propagation.
-        // We use a queuing executor for precise control over execution ordering.
-        std::queue<any_coro> pending;
-        queuing_executor ex(pending);
-        std::stop_source source;
-
-        bool was_stoppable = false;
-        std::vector<bool> checkpoints;
-
-        auto checkpoint_task = [&]() -> task<void> {
-            auto token = co_await get_stop_token();
-            was_stoppable = token.stop_possible();
-            checkpoints.push_back(token.stop_requested());  // Checkpoint 0: before stop
-
-            co_await async_op_immediate(0);  // Yields control
-
-            checkpoints.push_back(token.stop_requested());  // Checkpoint 1: after stop
-        };
-
-        // Create task and manually configure its promise
-        auto t = checkpoint_task();
-        auto h = t.release();
-        h.promise().set_stop_token(source.get_token());
-        h.promise().ex_ = ex;
-        h.promise().caller_ex_ = ex;
-        h.promise().needs_dispatch_ = false;
-
-        // Start task - runs until async_op suspends, then queues continuation
-        h.resume();
-
-        // Verify checkpoint 0 was captured
-        BOOST_TEST_EQ(checkpoints.size(), 1u);
-        BOOST_TEST(!checkpoints[0]);  // Not stopped yet
-
-        // Signal stop while task is suspended
-        source.request_stop();
-
-        // Resume task via queued continuation
-        BOOST_TEST(!pending.empty());
-        pending.front().resume();
-        pending.pop();
-
-        // Verify task saw the stop signal
-        BOOST_TEST_EQ(checkpoints.size(), 2u);
-        BOOST_TEST(checkpoints[1]);  // Now stopped
-
-        BOOST_TEST(was_stoppable);
-
-        // Clean up - task completed, destroy the handle
-        h.destroy();
-    }
-
-    void
     run()
     {
         testReturnValue();
         testException();
         testTaskAwaitsTask();
         testMoveOperations();
-        testTaskAwaitsAsyncResult();
         testAwaitReady();
 
         // task<void> tests
@@ -1785,21 +1134,9 @@ struct task_test
         testVoidTaskAwaits();
         testVoidTaskChain();
         testVoidTaskMove();
-        testVoidTaskAwaitsAsyncResult();
-
-        // executor tests (via run_async)
-        testDispatcherUsedByAwait();
-        testVoidTaskDispatcherUsedByAwait();
-
-        // affinity propagation tests (ABC problem)
-        testAffinityPropagation();
-        testAffinityPropagationVoid();
-        testNoDispatcherRunsInline();
 
         // affinity preservation tests
-        testInheritedAffinityVerification();
-        testAffinityPreservedAcrossMultipleAwaits();
-        testAffinityWithNestedVoidTasks();
+        testNoDispatcherRunsInline();
         testFinalSuspendUsesDispatcher();
 
         // run_async() function tests
@@ -1808,23 +1145,10 @@ struct task_test
         testAsyncRunTaskWithException();
         testAsyncRunVoidTaskWithException();
         testAsyncRunWithNestedAwaits();
-        testAsyncRunWithAsyncOp();
-        testAsyncRunAffinityPropagation();
         testAsyncRunChained();
         testAsyncRunErrorHandler();
-        testAsyncRunDeeplyNested();
         testAsyncRunFireAndForget();
         testAsyncRunSingleHandler();
-
-        // Memory allocation tests - skipped: allocator is currently ignored per design
-        // testAllocatorCapturedOnCreation();
-        // testAllocatorUsedByChildTasks();
-        // testAllocatorRestoredAfterAwait();
-        // testAllocatorRestoredAcrossMultipleAwaits();
-        // testDeeplyNestedAllocatorPropagation();
-        // testAllocatorWithMixedTasksAndAsyncOps();
-        // testDeallocationCount();
-        // testFrameAllocationOrder();
 
         // get_stop_token() tests
         testGetStopTokenBasic();
@@ -1832,7 +1156,6 @@ struct task_test
         testGetStopTokenPropagation();
         testGetStopTokenInLoop();
         testGetStopTokenMultipleCalls();
-        testStopTokenReceivesStopSignal();
     }
 };
 
