@@ -230,5 +230,6 @@ Do NOT use `run_on` when:
 
 == Next Steps
 
+* xref:when-all.adoc[Concurrent Composition] — Running multiple tasks in parallel
 * xref:cancellation.adoc[Cancellation] — Stop token propagation
-* xref:../execution/executors.adoc[Executors] — The execution model in depth
+* xref:../execution/strand.adoc[Strands] — Serializing coroutine execution

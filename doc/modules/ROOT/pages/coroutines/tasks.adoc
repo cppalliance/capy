@@ -170,7 +170,7 @@ Tasks are appropriate when:
 Tasks are NOT appropriate when:
 
 * The operation is purely synchronous — just use a regular function
-* You need parallel execution — tasks are sequential; use parallel composition
+* You need parallel execution — tasks are sequential; use `when_all` for concurrency
 * You need to detach and forget — tasks must be awaited or explicitly launched
 
 == Summary
@@ -197,4 +197,5 @@ Tasks are NOT appropriate when:
 Now that you understand tasks, learn how to run them:
 
 * xref:launching.adoc[Launching Tasks] — Start tasks with `run_async`
+* xref:when-all.adoc[Concurrent Composition] — Run tasks in parallel with `when_all`
 * xref:affinity.adoc[Executor Affinity] — Control where tasks execute

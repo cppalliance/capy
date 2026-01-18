@@ -315,5 +315,5 @@ Do NOT use `execution_context` directly when:
 == Next Steps
 
 * xref:thread-pool.adoc[Thread Pool] — Using the thread pool execution context
+* xref:strand.adoc[Strands] — Serializing coroutine execution
 * xref:frame-allocation.adoc[Frame Allocation] — Optimize coroutine memory
-* xref:reference:boost/capy.adoc[API Reference] — Full reference documentation

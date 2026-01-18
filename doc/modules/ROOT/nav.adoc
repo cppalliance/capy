@@ -3,13 +3,17 @@
 * Coroutines
 ** xref:coroutines/tasks.adoc[Tasks]
 ** xref:coroutines/launching.adoc[Launching Tasks]
+** xref:coroutines/when-all.adoc[Concurrent Composition]
 ** xref:coroutines/affinity.adoc[Executor Affinity]
 ** xref:coroutines/cancellation.adoc[Cancellation]
 * Execution
 ** xref:execution/thread-pool.adoc[Thread Pool]
 ** xref:execution/contexts.adoc[Execution Contexts]
 ** xref:execution/executors.adoc[Executors]
+** xref:execution/strand.adoc[Strands]
 ** xref:execution/frame-allocation.adoc[Frame Allocation]
+* Synchronization
+** xref:synchronization/async-mutex.adoc[Async Mutex]
 * Buffers
 ** xref:buffers/index.adoc[Buffer Types]
 ** xref:buffers/sequences.adoc[Buffer Sequences]

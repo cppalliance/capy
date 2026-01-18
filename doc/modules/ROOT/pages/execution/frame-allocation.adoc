@@ -208,4 +208,4 @@ Do NOT use custom allocators when:
 == Next Steps
 
 * xref:../utilities/containers.adoc[Containers] — Type-erased storage
-* xref:reference:boost/capy.adoc[API Reference] — Full reference documentation
+* xref:../performance-tuning/high-performance-allocators.adoc[High-Performance Allocators] — System-wide memory optimization

@@ -225,4 +225,4 @@ Do NOT use executors directly when:
 == Next Steps
 
 * xref:contexts.adoc[Execution Contexts] — Service management and thread pools
-* xref:reference:boost/capy.adoc[API Reference] — Full reference documentation
+* xref:strand.adoc[Strands] — Serializing coroutine execution

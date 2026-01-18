@@ -295,3 +295,4 @@ void process_batch()
 
 * xref:contexts.adoc[Execution Contexts] — Service management details
 * xref:executors.adoc[Executors] — Executor concepts in depth
+* xref:strand.adoc[Strands] — Serializing coroutine execution

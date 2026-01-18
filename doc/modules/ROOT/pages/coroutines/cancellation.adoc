@@ -264,5 +264,5 @@ Do NOT use cancellation when:
 
 == Next Steps
 
+* xref:when-all.adoc[Concurrent Composition] — Cancellation with `when_all`
 * xref:../execution/executors.adoc[Executors] — Understand the execution model
-* xref:reference:boost/capy.adoc[API Reference] — Full reference documentation

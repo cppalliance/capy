@@ -124,18 +124,20 @@ runner(make_task());          // Won't compile (deleted move)
 This design ensures the frame allocator is active when your task is created,
 enabling frame recycling optimization.
 
-== Custom Frame Allocators
+== Stop Token Support
 
-By default, `run_async` uses a recycling allocator that caches deallocated
-frames. For custom allocation strategies:
+Pass a stop token for cooperative cancellation:
 
 [source,cpp]
 ----
-my_pool_allocator alloc{pool};
-run_async(ex, alloc)(my_task());
+std::stop_source source;
+run_async(ex, source.get_token())(cancellable_task());
+
+// Later: request cancellation
+source.request_stop();
 ----
 
-The allocator is used for all coroutine frames in the launched call tree.
+See xref:cancellation.adoc[Cancellation] for details on stop token propagation.
 
 == When NOT to Use run_async
 
@@ -165,11 +167,12 @@ Do NOT use `run_async` when:
 | Success + error handlers
 | `run_async(ex)(task, on_success, on_error)`
 
-| Custom allocator
-| `run_async(ex, alloc)(task)`
+| With stop token
+| `run_async(ex, stop_token)(task)`
 |===
 
 == Next Steps
 
+* xref:when-all.adoc[Concurrent Composition] — Run multiple tasks in parallel
 * xref:affinity.adoc[Executor Affinity] — Control where coroutines execute
 * xref:../execution/frame-allocation.adoc[Frame Allocation] — Optimize memory usage
