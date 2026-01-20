@@ -71,10 +71,16 @@ public:
 
     /** Fill an array with buffers from the sequence.
 
+        Copies buffer descriptors from the sequence into the
+        destination array. If the total number of bytes across
+        all copied buffers is zero, returns 0 regardless of
+        how many buffer descriptors were copied.
+
         @param dest Pointer to array of mutable buffer descriptors.
         @param n Maximum number of buffers to copy.
 
-        @return The number of buffers actually copied.
+        @return The number of buffers actually copied, or 0 if
+            the total byte count is zero.
     */
     std::size_t
     copy_to(
@@ -97,10 +103,14 @@ private:
         auto const end_it = end(bs);
 
         std::size_t i = 0;
+        std::size_t bytes = 0;
         if constexpr (MutableBufferSequence<BS>)
         {
             for(; it != end_it && i < n; ++it, ++i)
+            {
                 dest[i] = *it;
+                bytes += dest[i].size();
+            }
         }
         else
         {
@@ -111,9 +121,11 @@ private:
                     const_cast<char*>(
                         static_cast<char const*>(buf.data())),
                     buf.size());
+                bytes += buf.size();
             }
         }
-        return i;
+        // Return 0 if total bytes is 0 (empty buffer sequence)
+        return bytes == 0 ? 0 : i;
     }
 
     using fn_t = std::size_t(*)(void const*,
