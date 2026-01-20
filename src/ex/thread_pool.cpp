@@ -11,6 +11,7 @@
 #include <boost/capy/core/intrusive_queue.hpp>
 #include <condition_variable>
 #include <mutex>
+#include <stop_token>
 #include <thread>
 #include <vector>
 
@@ -19,10 +20,8 @@ namespace capy {
 
 //------------------------------------------------------------------------------
 
-// Pimpl implementation hides threading details from the header
 class thread_pool::impl
 {
-    // Wraps a coroutine handle for queue storage
     struct work : intrusive_queue<work>::node
     {
         any_coro h_;
@@ -34,7 +33,6 @@ class thread_pool::impl
 
         void run()
         {
-            // delete before dispatch
             auto h = h_;
             delete this;
             h.resume();
@@ -47,46 +45,36 @@ class thread_pool::impl
     };
 
     std::mutex mutex_;
-    std::condition_variable cv_;
+    std::condition_variable_any cv_;
     intrusive_queue<work> q_;
-    std::vector<std::thread> threads_;
-    bool stop_;
+    std::vector<std::jthread> threads_;
+    std::size_t num_threads_;
+    std::once_flag start_flag_;
 
 public:
     ~impl()
     {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            stop_ = true;
-        }
-        cv_.notify_all();
+        stop();
+        threads_.clear();
 
-        for(auto& t : threads_)
-            t.join();
-
-        // Destroy any work items that were never executed
         while(auto* w = q_.pop())
             w->destroy();
     }
 
     explicit
     impl(std::size_t num_threads)
-        : stop_(false)
+        : num_threads_(num_threads)
     {
-        if( num_threads == 0)
-            num_threads = std::thread::hardware_concurrency();
-        // Fallback
-        if( num_threads == 0)
-            num_threads = 1;
-
-        threads_.reserve(num_threads);
-        for(std::size_t i = 0; i < num_threads; ++i)
-            threads_.emplace_back([this]{ run(); });
+        if(num_threads_ == 0)
+            num_threads_ = std::thread::hardware_concurrency();
+        if(num_threads_ == 0)
+            num_threads_ = 1;
     }
 
     void
     post(any_coro h)
     {
+        ensure_started();
         auto* w = new work(h);
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -95,26 +83,37 @@ public:
         cv_.notify_one();
     }
 
+    void
+    stop() noexcept
+    {
+        for (auto& t : threads_)
+            t.request_stop();
+        cv_.notify_all();
+    }
+
 private:
     void
-    run()
+    ensure_started()
+    {
+        std::call_once(start_flag_, [this]{
+            threads_.reserve(num_threads_);
+            for(std::size_t i = 0; i < num_threads_; ++i)
+                threads_.emplace_back([this](std::stop_token st){ run(st); });
+        });
+    }
+
+    void
+    run(std::stop_token st)
     {
         for(;;)
         {
             work* w = nullptr;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                cv_.wait(lock, [this]{
-                    return stop_ || !q_.empty();
-                });
-
-                // Only exit when stopped AND queue is drained
-                if(stop_ && q_.empty())
+                if(!cv_.wait(lock, st, [this]{ return !q_.empty(); }))
                     return;
-
                 w = q_.pop();
             }
-
             w->run();
         }
     }
@@ -125,16 +124,22 @@ private:
 thread_pool::
 ~thread_pool()
 {
-    // Order matters: shutdown services, then impl, then base
     shutdown();
-    delete impl_;
     destroy();
+    delete impl_;
 }
 
 thread_pool::
 thread_pool(std::size_t num_threads)
     : impl_(new impl(num_threads))
 {
+}
+
+void
+thread_pool::
+stop() noexcept
+{
+    impl_->stop();
 }
 
 //------------------------------------------------------------------------------

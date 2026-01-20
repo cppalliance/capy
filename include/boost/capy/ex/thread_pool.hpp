@@ -69,6 +69,15 @@ public:
     thread_pool(thread_pool const&) = delete;
     thread_pool& operator=(thread_pool const&) = delete;
 
+    /** Request all worker threads to stop.
+
+        Signals all threads to exit via stop token. Threads will
+        finish their current work item before exiting. Does not
+        wait for threads to exit.
+    */
+    void
+    stop() noexcept;
+
     /** Return an executor for this thread pool.
 
         @return An executor associated with this thread pool.
