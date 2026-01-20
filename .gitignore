@@ -1,8 +1,10 @@
 /.vscode/
 /.cache/
+/.clangd
 /build/*
 /build-*/
 !/build/Jamfile
 !/build/brotli.jam
 /out/
-CMakeUserPresets.json
+/CMakeUserPresets.json
+/tmpclaude-*-cwd
