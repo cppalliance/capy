@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_ANY_BUFREF_HPP
-#define BOOST_CAPY_ANY_BUFREF_HPP
+#ifndef BOOST_CAPY_BUFFERS_BUFFER_PARAM_HPP
+#define BOOST_CAPY_BUFFERS_BUFFER_PARAM_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
@@ -26,12 +26,27 @@ namespace capy {
     the buffer sequence parameter, avoiding the need to
     templatize the implementation.
 
+    @par Passing Convention
+
+    This type is designed to be passed by value. It contains only
+    two pointers (16 bytes on 64-bit systems), making copies trivial.
+    Pass-by-value is preferred as it clearly communicates the
+    lightweight, transient nature of this parameter type:
+
+    @code
+    // Preferred: pass by value
+    void process_buffers( buffer_param buffers );
+
+    // Also acceptable: pass by const reference
+    void process_buffers( buffer_param const& buffers );
+    @endcode
+
     @par Example
+
     The following shows the minimal form of an awaitable, templated on the
     buffer sequence type, with only an `await_suspend` method. The example
-    demonstrates that you can construct an `any_bufref` in the parameter
-    list when calling a virtual interface; there is no need to create a
-    separate variable if not desired.
+    demonstrates that you can pass buffers directly to a virtual interface
+    through implicit conversion.
 
     @code
     template<class Buffers>
@@ -41,12 +56,12 @@ namespace capy {
 
         void await_suspend( std::coroutine_handle<> )
         {
-            my_virtual_engine_submit( any_bufref( b ) );
+            my_virtual_engine_submit( b );
         }
     };
 
-    // Example virtual interface accepting any_bufref
-    void my_virtual_engine_submit( any_bufref p )
+    // Example virtual interface accepting buffer_param by value
+    void my_virtual_engine_submit( buffer_param p )
     {
         capy::mutable_buffer temp[8];
         std::size_t n = p.copy_to( temp, 8 );
@@ -54,7 +69,7 @@ namespace capy {
     }
     @endcode
 */
-class any_bufref
+class buffer_param
 {
 public:
     /** Construct from a const buffer sequence.
@@ -62,8 +77,7 @@ public:
         @param bs The buffer sequence to adapt.
     */
     template<ConstBufferSequence BS>
-    explicit
-    any_bufref(BS const& bs) noexcept
+    buffer_param(BS const& bs) noexcept
         : bs_(&bs)
         , fn_(&copy_impl<BS>)
     {
