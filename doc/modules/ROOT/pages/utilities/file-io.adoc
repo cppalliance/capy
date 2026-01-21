@@ -244,5 +244,3 @@ void log_message(char const* path, std::string_view msg)
 == Next Steps
 
 * xref:containers.adoc[Containers] — Type-erased containers
-* xref:../compression/brotli.adoc[Brotli] — High-ratio compression
-* xref:../compression/zlib.adoc[ZLib] — DEFLATE/gzip compression

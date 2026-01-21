@@ -14,7 +14,6 @@
 #include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/application.hpp>
 #include <boost/capy/ex/run_async.hpp>
-#include <boost/capy/brotli.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_pair.hpp>
 #include <boost/capy/buffers/circular_buffer.hpp>
@@ -52,6 +51,5 @@
 #include <boost/capy/core/thread_local_ptr.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/when_all.hpp>
-#include <boost/capy/zlib.hpp>
 
 #endif

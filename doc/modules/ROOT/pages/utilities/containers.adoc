@@ -70,7 +70,7 @@ ctx.emplace<my_service>();
 ctx.clear();  // Destroy all stored objects
 ----
 
-Commonly used as a service container for compression services.
+Commonly used as a service container.
 
 == application
 
@@ -245,5 +245,3 @@ in source code.
 == Next Steps
 
 * xref:file-io.adoc[File I/O] — Platform-independent file operations
-* xref:../compression/brotli.adoc[Brotli] — High-ratio compression
-* xref:../compression/zlib.adoc[ZLib] — DEFLATE/gzip compression

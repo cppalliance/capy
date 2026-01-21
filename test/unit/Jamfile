@@ -14,8 +14,6 @@ project
     : requirements
       $(c20-requires)
       <library>/boost/capy//boost_capy
-      [ ac.check-library /boost/capy//boost_capy_zlib : <library>/boost/capy//boost_capy_zlib : ]
-      [ ac.check-library /boost/capy//boost_capy_brotli : <library>/boost/capy//boost_capy_brotli : ]
       <source>../../../url/extra/test_suite/test_main.cpp
       <source>../../../url/extra/test_suite/test_suite.cpp
       <include>.

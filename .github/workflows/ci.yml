@@ -278,8 +278,6 @@ jobs:
           apt-get: >-
             ${{ matrix.install }}
             build-essential
-            zlib1g-dev libbrotli-dev
-            ${{ matrix.x86 && 'zlib1g-dev:i386 libbrotli-dev:i386' || '' }}
 
       - name: Clone Boost
         uses: alandefreitas/cpp-actions/boost-clone@v1.9.0
@@ -290,37 +288,6 @@ jobs:
           modules-exclude-paths: ''
           scan-modules-dir: capy-root
           scan-modules-ignore: capy
-
-      - name: Install Packages (Windows)
-        uses: alandefreitas/cpp-actions/package-install@v1.9.0
-        if: ${{ startsWith(matrix.runs-on, 'windows') }}
-        id: package-install-windows
-        with:
-          vcpkg: zlib brotli
-          vcpkg-dir: vcpkg-root
-          vcpkg-triplet: ${{ matrix.x86 && 'x86-windows-static' || 'x64-windows' }}
-
-      - name: Patch user-config.jam (Windows)
-        id: patch-user-config
-        shell: bash
-        if: ${{ startsWith(matrix.runs-on, 'windows') }}
-        run: |
-          set -xe
-          home=$(pwd)
-
-          triplet=${{ matrix.x86 && 'x86-windows-static' || 'x64-windows' }}
-          addrmdl=${{ matrix.x86 && '32' || '64' }}
-
-          # This is temporary until we move capy/build/brotli.jam to boost/tools/build
-          echo "import-search ${home}/boost-root/libs/capy/build ;" | sed 's/\/d\//D:\//g' >> user-config.jam
-
-          echo "using zlib   : : <include>\"${home}/vcpkg-root/installed/${triplet}/include\" <search>\"${home}/vcpkg-root/installed/${triplet}/lib\" <dll-path>\"${home}/vcpkg-root/installed/${triplet}/bin\" <name>zlib : <address-model>${addrmdl} ;" | sed 's/\/d\//D:\//g' >> user-config.jam
-          echo "using brotli : : <include>\"${home}/vcpkg-root/installed/${triplet}/include\" <search>\"${home}/vcpkg-root/installed/${triplet}/lib\" <dll-path>\"${home}/vcpkg-root/installed/${triplet}/bin\"            : <address-model>${addrmdl} ;" | sed 's/\/d\//D:\//g' >> user-config.jam
-
-          cat user-config.jam
-
-          toolchain=$(echo "$GITHUB_WORKSPACE/vcpkg-root/scripts/buildsystems/vcpkg.cmake" | sed 's/\/d\//D:\//g' )
-          echo "toolchain=${toolchain}" >> $GITHUB_OUTPUT
 
       - name: ASLR Fix
         if: ${{ startsWith(matrix.runs-on, 'ubuntu' )}}
@@ -377,7 +344,6 @@ jobs:
           shared: ${{ matrix.shared }}
           rtti: on
           cxxflags: ${{ (matrix.asan && '-fsanitize-address-use-after-scope -fsanitize=pointer-subtract') || '' }}
-          user-config: ${{ (startsWith(matrix.runs-on, 'windows') && !matrix.skip-zlib && format('{0}/user-config.jam', steps.patch.outputs.workspace_root)) || '' }}
           stop-on-error: true
           extra-args: ${{ (matrix.valgrind && 'testing.launcher=valgrind' || '' )}}
 
@@ -407,7 +373,6 @@ jobs:
           package: false
           package-artifact: false
           ref-source-dir: boost-root/libs/capy
-          toolchain: ${{ (startsWith(matrix.runs-on, 'windows') && steps.patch-user-config.outputs.toolchain) || '' }}
 
       - name: Set Path
         if: startsWith(matrix.runs-on, 'windows') && matrix.shared
@@ -483,7 +448,6 @@ jobs:
           package: false
           package-artifact: false
           ref-source-dir: boost-root
-          toolchain: ${{ (startsWith(matrix.runs-on, 'windows') && steps.patch-user-config.outputs.toolchain) || '' }}
 
       - name: FlameGraph
         uses: alandefreitas/cpp-actions/flamegraph@v1.9.0

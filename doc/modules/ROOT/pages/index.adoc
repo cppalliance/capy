@@ -11,7 +11,7 @@
 
 Boost.Capy is a lightweight C++20 coroutine framework that provides lazy tasks
 with automatic executor affinity propagation, along with buffer management
-and compression utilities.
+utilities.
 
 == What This Library Does
 
@@ -30,7 +30,6 @@ Capy provides:
 * **Strand** serialization for concurrent executor access
 * **Async mutex** for coroutine-friendly synchronization
 * **Buffer types** for efficient memory handling (`const_buffer`, `mutable_buffer`, sequences)
-* **Compression** support (Brotli and ZLib)
 
 == What This Library Does Not Do
 

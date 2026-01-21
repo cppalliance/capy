@@ -20,19 +20,13 @@ namespace capy {
 
     This class extends @ref polystore to provide a container
     for type-erased objects with an explicit clear operation.
-    It is commonly used as a service container for compression
-    and decompression services.
+    It is commonly used as a service container.
 
     @code
-    // Example: Using datastore with compression services
+    // Example: Using datastore with services
     boost::capy::datastore ctx;
 
-    // Install services
-    auto& deflate_svc = boost::capy::zlib::install_deflate_service(ctx);
-    auto& inflate_svc = boost::capy::zlib::install_inflate_service(ctx);
-    auto& brotli_enc = boost::capy::brotli::install_encode_service(ctx);
-
-    // Use services...
+    // Install services...
 
     // Clean up all services when done
     ctx.clear();

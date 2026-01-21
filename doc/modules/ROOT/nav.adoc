@@ -18,9 +18,6 @@
 ** xref:buffers/index.adoc[Buffer Types]
 ** xref:buffers/sequences.adoc[Buffer Sequences]
 ** xref:buffers/dynamic.adoc[Dynamic Buffers]
-* Compression
-** xref:compression/brotli.adoc[Brotli]
-** xref:compression/zlib.adoc[ZLib]
 * Utilities
 ** xref:utilities/containers.adoc[Containers]
 ** xref:utilities/file-io.adoc[File I/O]

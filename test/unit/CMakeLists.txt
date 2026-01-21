@@ -28,14 +28,6 @@ target_link_libraries(
 
 target_include_directories(boost_capy_tests PRIVATE . ../../)
 
-if (TARGET Boost::capy_zlib)
-    target_link_libraries(boost_capy_tests PRIVATE Boost::capy_zlib)
-endif ()
-
-if (TARGET Boost::capy_brotli)
-    target_link_libraries(boost_capy_tests PRIVATE Boost::capy_brotli)
-endif ()
-
 # Register individual tests with CTest
 boost_url_test_suite_discover_tests(boost_capy_tests)
 

@@ -36,37 +36,5 @@ lib boost_capy
      <include>../
   ;
 
-# Zlib
-using zlib ;
-
-alias capy_zlib_sources : [ glob-tree-ex src_zlib : *.cpp ] ;
-
-lib boost_capy_zlib
-  : capy_zlib_sources
-  : requirements
-    <library>/boost/capy//boost_capy
-    [ ac.check-library /zlib//zlib : <library>/zlib//zlib : <build>no ]
-  : usage-requirements
-    <library>/boost/capy//boost_capy
-    <define>BOOST_CAPY_HAS_ZLIB
-  ;
-
-# Brotli
-using brotli ;
-
-alias capy_brotli_sources : [ glob-tree-ex src_brotli : *.cpp ] ;
-
-lib boost_capy_brotli
-  : capy_brotli_sources
-  : requirements
-    <library>/boost/capy//boost_capy
-    [ ac.check-library /brotli//brotlicommon : <library>/brotli//brotlicommon : <build>no ]
-    [ ac.check-library /brotli//brotlidec : <library>/brotli//brotlidec : <build>no ]
-    [ ac.check-library /brotli//brotlienc : <library>/brotli//brotlienc : <build>no ]
-  : usage-requirements
-    <library>/boost/capy//boost_capy
-    <define>BOOST_CAPY_HAS_BROTLI
-  ;
-
-boost-install boost_capy boost_capy_zlib boost_capy_brotli ;
+boost-install boost_capy ;
 
