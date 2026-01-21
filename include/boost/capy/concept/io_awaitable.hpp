@@ -57,12 +57,12 @@ class executor_ref;
     };
     @endcode
 */
-template<typename A, typename Ex, typename P = void>
+template<typename A, typename P = void>
 concept IoAwaitable =
     requires(
         A a,
         std::coroutine_handle<P> h,
-        Ex ex,
+        executor_ref ex,
         std::stop_token token)
     {
         a.await_suspend(h, ex, token);
