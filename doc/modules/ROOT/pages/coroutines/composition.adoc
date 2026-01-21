@@ -137,26 +137,26 @@ task<> long_running()
 
 == when_any: First-to-Finish Wins
 
-`when_any` is not yet implemented in Capy, but its design is planned:
-
-* Launch multiple tasks concurrently
-* Return when the *first* task completes
-* Cancel remaining tasks via stop token
-* Return the winning task's result
-
-The pattern would look like:
+`when_any` launches multiple tasks concurrently and returns when the *first* one completes:
 
 [source,cpp]
 ----
-// Planned API (not yet available)
-task<std::variant<int, std::string>> example()
+#include <boost/capy/when_any.hpp>
+
+task<> example()
 {
-    co_return co_await when_any(
+    auto [index, result] = co_await when_any(
         fetch_int(),     // task<int>
         fetch_string()   // task<std::string>
     );
+    // index indicates which task won (0 or 1)
+    // result is std::variant<int, std::string>
 }
 ----
+
+The result is a pair containing the winner's index and a deduplicated variant of possible result types. When a winner is determined, stop is requested for all siblings. All tasks complete before `when_any` returns.
+
+For detailed coverage including error handling, cancellation, and the vector overload, see xref:when-any.adoc[Racing Tasks].
 
 == Practical Patterns
 
@@ -207,19 +207,25 @@ task<int> process_all(std::vector<item> const& items)
 
 === Timeout with Fallback
 
-Use when_any (when available) to implement timeout with fallback:
+Use `when_any` to implement timeout with fallback:
 
 [source,cpp]
 ----
-// Planned pattern
-task<result> fetch_with_fallback()
+task<Response> fetch_with_timeout(Request req)
 {
-    co_return co_await when_any(
-        fetch_from_primary(),
-        delay_then(std::chrono::seconds(5), fetch_from_backup())
+    auto [index, result] = co_await when_any(
+        fetch_data(req),
+        timeout_after<Response>(100ms)
     );
+
+    if (index == 1)
+        throw timeout_error{"Request timed out"};
+
+    co_return std::get<Response>(result);
 }
 ----
+
+The `timeout_after` helper waits for the specified duration then throws. If `fetch_data` completes first, its result is returned. If the timer wins, the timeout exception propagates.
 
 == Implementation Notes
 
@@ -250,6 +256,9 @@ This design ensures proper context propagation to all children.
 
 | `<boost/capy/when_all.hpp>`
 | Concurrent composition with when_all
+
+| `<boost/capy/when_any.hpp>`
+| First-completion racing with when_any
 |===
 
-You have now learned how to compose tasks concurrently with `when_all`. In the next section, you will learn about frame allocators for customizing coroutine memory allocation.
+You have now learned how to compose tasks concurrently with `when_all` and `when_any`. In the next section, you will learn about frame allocators for customizing coroutine memory allocation.

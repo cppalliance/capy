@@ -63,54 +63,8 @@ static_assert(std::is_void_v<
 // Verify when_all returns task which satisfies awaitable protocols
 static_assert(IoAwaitableTask<task<std::tuple<int, int>>>);
 
-struct test_exception : std::runtime_error
-{
-    explicit test_exception(const char* msg)
-        : std::runtime_error(msg)
-    {
-    }
-};
-
-[[noreturn]] inline void
-throw_test_exception(char const* msg)
-{
-    throw test_exception(msg);
-}
-
 struct when_all_test
 {
-    // Helper tasks
-    static task<int>
-    returns_int(int value)
-    {
-        co_return value;
-    }
-
-    static task<std::string>
-    returns_string(std::string value)
-    {
-        co_return value;
-    }
-
-    static task<void>
-    void_task()
-    {
-        co_return;
-    }
-
-    static task<int>
-    throws_exception(char const* msg)
-    {
-        throw_test_exception(msg);
-        co_return 0;
-    }
-
-    static task<void>
-    void_throws_exception(char const* msg)
-    {
-        throw_test_exception(msg);
-        co_return;
-    }
 
     // Test: Single task with when_all succeeds
     void

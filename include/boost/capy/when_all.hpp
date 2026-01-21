@@ -324,7 +324,11 @@ public:
                 state_->stop_source_.request_stop();
         }
 
-        // Launch all tasks concurrently
+        // CRITICAL: If the last task finishes synchronously then the parent
+        // coroutine resumes, destroying its frame, and destroying this object
+        // prior to the completion of await_suspend. Therefore, await_suspend
+        // must ensure `this` cannot be referenced after calling `launch_one`
+        // for the last time.
         auto token = state_->stop_source_.get_token();
         [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             (..., launch_one<Is>(caller_ex, token));

@@ -15,6 +15,7 @@
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/task.hpp>
 
 #include <optional>
 #include <stop_token>
@@ -23,6 +24,9 @@
 
 #include <chrono>
 #include <cstring>
+#include <queue>
+#include <stdexcept>
+#include <string>
 #include <thread>
 
 #if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__APPLE__)
@@ -264,6 +268,143 @@ struct stop_only_awaitable
     void await_resume() {}
 };
 
+//----------------------------------------------------------
+// Test Exception Types
+//----------------------------------------------------------
+
+/** Standard test exception type used across test files. */
+struct test_exception : std::runtime_error
+{
+    explicit test_exception(const char* msg)
+        : std::runtime_error(msg)
+    {
+    }
+};
+
+/** Helper to throw test_exception with a message. */
+[[noreturn]] inline void
+throw_test_exception(char const* msg)
+{
+    throw test_exception(msg);
+}
+
+//----------------------------------------------------------
+// Common Test Task Helpers
+//----------------------------------------------------------
+
+/** Returns a task that completes with an int value. */
+inline task<int>
+returns_int(int value)
+{
+    co_return value;
+}
+
+/** Returns a task that completes with a string value. */
+inline task<std::string>
+returns_string(std::string value)
+{
+    co_return value;
+}
+
+/** Returns a task that completes with void. */
+inline task<void>
+void_task()
+{
+    co_return;
+}
+
+/** Returns a task that throws an exception. */
+inline task<int>
+throws_exception(char const* msg)
+{
+    throw_test_exception(msg);
+    co_return 0;
+}
+
+/** Returns a void task that throws an exception. */
+inline task<void>
+void_throws_exception(char const* msg)
+{
+    throw_test_exception(msg);
+    co_return;
+}
+
+//----------------------------------------------------------
+// Queuing Executor
+//----------------------------------------------------------
+
+/** Queuing executor that allows controlled interleaving of tasks.
+
+    Unlike test_executor which runs tasks synchronously, this executor
+    queues work and runs it in FIFO order when manually resumed.
+    This allows tasks to observe stop requests between suspension points.
+*/
+struct queuing_executor
+{
+    std::queue<coro>* queue_;
+    test_io_context* ctx_ = nullptr;
+
+    explicit queuing_executor(std::queue<coro>& q)
+        : queue_(&q)
+    {
+    }
+
+    bool operator==(queuing_executor const& other) const noexcept
+    {
+        return queue_ == other.queue_;
+    }
+
+    test_io_context& context() const noexcept
+    {
+        return ctx_ ? *ctx_ : default_test_io_context();
+    }
+
+    void on_work_started() const noexcept {}
+    void on_work_finished() const noexcept {}
+
+    coro dispatch(coro h) const
+    {
+        queue_->push(h);
+        return std::noop_coroutine();
+    }
+
+    void post(coro h) const
+    {
+        queue_->push(h);
+    }
+};
+
+static_assert(Executor<queuing_executor>);
+
+//----------------------------------------------------------
+// Yield Awaitable
+//----------------------------------------------------------
+
+/** Awaitable that yields to the executor, allowing other tasks to run.
+
+    When awaited, this suspends the current coroutine and posts it back
+    to the executor's queue. This creates a yield point where the task
+    can be interleaved with other tasks.
+*/
+struct yield_awaitable
+{
+    bool await_ready() const noexcept
+    {
+        return false;
+    }
+
+    template<typename Ex>
+    coro await_suspend(coro h, Ex const& ex, std::stop_token)
+    {
+        // Post ourselves back to the queue
+        ex.post(h);
+        return std::noop_coroutine();
+    }
+
+    void await_resume() const noexcept
+    {
+    }
+};
 
 } // capy
 } // boost

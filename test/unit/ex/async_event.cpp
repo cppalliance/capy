@@ -26,44 +26,6 @@ static_assert(IoAwaitable<async_event::wait_awaiter>);
 
 namespace {
 
-/** Queuing executor that queues coroutines for manual execution control.
-*/
-struct queuing_executor
-{
-    std::queue<coro>* queue_;
-    test_io_context* ctx_ = nullptr;
-
-    explicit queuing_executor(std::queue<coro>& q)
-        : queue_(&q)
-    {
-    }
-
-    bool operator==(queuing_executor const& other) const noexcept
-    {
-        return queue_ == other.queue_;
-    }
-
-    execution_context& context() const noexcept
-    {
-        return ctx_ ? *ctx_ : default_test_io_context();
-    }
-
-    void on_work_started() const noexcept {}
-    void on_work_finished() const noexcept {}
-
-    void dispatch(coro h) const
-    {
-        queue_->push(h);
-    }
-
-    void post(coro h) const
-    {
-        queue_->push(h);
-    }
-};
-
-static_assert(Executor<queuing_executor>);
-
 /** Run a task to completion by manually stepping through it.
 */
 template<class T>

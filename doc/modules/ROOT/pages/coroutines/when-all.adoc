@@ -242,7 +242,7 @@ Use `when_all` when:
 Do NOT use `when_all` when:
 
 * Operations depend on each other — use sequential `co_await`
-* You need results as they complete — consider `when_any` (not yet available)
+* You need only the first result — use xref:when-any.adoc[when_any]
 * Memory is constrained — concurrent tasks consume more memory
 
 == Summary
@@ -269,6 +269,7 @@ Do NOT use `when_all` when:
 
 == Next Steps
 
+* xref:when-any.adoc[Racing Tasks] — Return first completion with `when_any`
 * xref:cancellation.adoc[Cancellation] — Stop token propagation
 * xref:../execution/thread-pool.adoc[Thread Pool] — Multi-threaded execution
 * xref:affinity.adoc[Executor Affinity] — Control where tasks run
