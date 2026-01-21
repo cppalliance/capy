@@ -32,7 +32,6 @@ else()
     compat
     variant2
     winapi
-    mp11
     predef
   )
 

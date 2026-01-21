@@ -11,7 +11,6 @@
 #define BOOST_CAPY_POLYSTORE_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/core/detail/call_traits.hpp>
 #include <boost/capy/detail/except.hpp>
 #include <boost/core/typeinfo.hpp>
 #include <boost/core/detail/static_assert.hpp>
@@ -91,6 +90,83 @@ namespace detail {
 using typeindex = std::type_index;
 
 #endif
+
+//------------------------------------------------
+//
+// call_traits
+//
+//------------------------------------------------
+
+template<class... Ts>
+struct type_list {};
+
+template<class T>
+struct call_traits : std::false_type {};
+
+template<class R, class... Args>
+struct call_traits<R(*)(Args...)> : std::true_type
+{
+    using return_type = R;
+    using arg_types = type_list<Args...>;
+};
+
+template<class R, class... Args>
+struct call_traits<R(&)(Args...)> : std::true_type
+{
+    using return_type = R;
+    using arg_types = type_list<Args...>;
+};
+
+template<class C, class R, class... Args>
+struct call_traits<R(C::*)(Args...)> : std::true_type
+{
+    using class_type = C;
+    using return_type = R;
+    using arg_types = type_list<Args...>;
+};
+
+template<class C, class R, class... Args>
+struct call_traits<R(C::*)(Args...) const> : std::true_type
+{
+    using class_type = C;
+    using return_type = R;
+    using arg_types = type_list<Args...>;
+};
+
+template<class R, class... Args>
+struct call_traits<R(*)(Args...) noexcept> : std::true_type
+{
+    using return_type = R;
+    using arg_types = type_list<Args...>;
+};
+
+template<class R, class... Args>
+struct call_traits<R(&)(Args...) noexcept> : std::true_type
+{
+    using return_type = R;
+    using arg_types = type_list<Args...>;
+};
+
+template<class C, class R, class... Args>
+struct call_traits<R(C::*)(Args...) noexcept> : std::true_type
+{
+    using class_type = C;
+    using return_type = R;
+    using arg_types = type_list<Args...>;
+};
+
+template<class C, class R, class... Args>
+struct call_traits<R(C::*)(Args...) const noexcept> : std::true_type
+{
+    using class_type = C;
+    using return_type = R;
+    using arg_types = type_list<Args...>;
+};
+
+template<class F>
+    requires requires { &F::operator(); } &&
+             std::is_member_function_pointer_v<decltype(&F::operator())>
+struct call_traits<F> : call_traits<decltype(&F::operator())> {};
 
 } // detail
 
@@ -700,9 +776,8 @@ template<class T> struct arg<T*>
 template<class F, class... Args>
 auto
 invoke(polystore& ps, F&& f,
-    mp11::mp_list<Args...> const&) ->
-        typename detail::call_traits<typename
-            std::decay<F>::type>::return_type
+    type_list<Args...> const&) ->
+        typename call_traits<std::decay_t<F>>::return_type
 {
     return std::forward<F>(f)(arg<Args>()(ps)...);
 }
@@ -729,12 +804,10 @@ invoke(polystore& ps, F&& f,
 template<class F>
 auto
 invoke(polystore& ps, F&& f) ->
-    typename detail::call_traits<
-        typename std::decay<F>::type>::return_type
+    typename detail::call_traits<std::decay_t<F>>::return_type
 {
     return detail::invoke(ps, std::forward<F>(f),
-        typename detail::call_traits< typename
-            std::decay<F>::type>::arg_types{});
+        typename detail::call_traits<std::decay_t<F>>::arg_types{});
 }
 
 } // capy
