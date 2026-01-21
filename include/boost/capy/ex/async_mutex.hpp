@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/any_coro.hpp>
-#include <boost/capy/ex/any_executor_ref.hpp>
+#include <boost/capy/ex/executor_ref.hpp>
 
 #include <stop_token>
 
@@ -77,7 +77,7 @@ public:
         async_mutex* m_;
         lock_awaiter* next_ = nullptr;
         std::coroutine_handle<> h_;
-        any_executor_ref ex_;
+        executor_ref ex_;
 
     public:
         explicit lock_awaiter(async_mutex* m) noexcept

@@ -210,7 +210,7 @@ public:
     void
     post(any_coro h) const
     {
-        detail::strand_service::post(*impl_, any_executor_ref(ex_), h);
+        detail::strand_service::post(*impl_, executor_ref(ex_), h);
     }
 
     /** Dispatch a coroutine through the strand.
@@ -233,7 +233,7 @@ public:
     any_coro
     dispatch(any_coro h) const
     {
-        return detail::strand_service::dispatch(*impl_, any_executor_ref(ex_), h);
+        return detail::strand_service::dispatch(*impl_, executor_ref(ex_), h);
     }
 };
 

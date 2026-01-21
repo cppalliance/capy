@@ -25,8 +25,8 @@
 namespace boost {
 namespace capy {
 
-static_assert(IoAwaitable<task<void>, any_executor_ref>);
-static_assert(IoAwaitable<task<int>, any_executor_ref>);
+static_assert(IoAwaitable<task<void>, executor_ref>);
+static_assert(IoAwaitable<task<int>, executor_ref>);
 
 // Minimal test context
 class test_context : public execution_context

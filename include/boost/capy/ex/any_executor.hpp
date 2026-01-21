@@ -58,7 +58,7 @@ class execution_context;
     This class satisfies the `Executor` concept, making it usable
     anywhere a concrete executor is expected.
 
-    @see any_executor_ref, Executor
+    @see executor_ref, Executor
 */
 class any_executor
 {

@@ -62,7 +62,7 @@ static_assert(std::is_void_v<
     when_all_result_type<void, void, void>>);
 
 // Verify when_all returns task which satisfies awaitable protocols
-static_assert(IoAwaitable<task<std::tuple<int, int>>, any_executor_ref>);
+static_assert(IoAwaitable<task<std::tuple<int, int>>, executor_ref>);
 
 // Minimal test context
 class test_context : public execution_context
@@ -748,15 +748,15 @@ struct when_all_test
         // when_all now returns task<T>, which satisfies the awaitable protocols
         static_assert(IoAwaitable<
             task<std::tuple<int, int>>,
-            any_executor_ref>);
+            executor_ref>);
 
         static_assert(IoAwaitable<
             task<std::tuple<int, std::string>>,
-            any_executor_ref>);
+            executor_ref>);
 
         static_assert(IoAwaitable<
             task<void>,
-            any_executor_ref>);
+            executor_ref>);
     }
 
     // Test: Nested when_all propagates stop

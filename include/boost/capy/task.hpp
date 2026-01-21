@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/ex/any_executor_ref.hpp>
+#include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/get_stop_token.hpp>
 #include <boost/capy/ex/stop_token_support.hpp>
@@ -70,7 +70,7 @@ struct task_return_base<void>
     The task uses `[[clang::coro_await_elidable]]` (when available) to enable
     heap allocation elision optimization (HALO) for nested coroutine calls.
 
-    @see any_executor_ref
+    @see executor_ref
 */
 template<typename T = void>
 struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
@@ -81,8 +81,8 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         , stop_token_support<promise_type>
         , detail::task_return_base<T>
     {
-        any_executor_ref ex_;
-        any_executor_ref caller_ex_;
+        executor_ref ex_;
+        executor_ref caller_ex_;
         any_coro continuation_;
         std::exception_ptr ep_;
         detail::frame_allocator_base* alloc_ = nullptr;
@@ -187,7 +187,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         auto transform_awaitable(Awaitable&& a)
         {
             using A = std::decay_t<Awaitable>;
-            if constexpr (IoAwaitable<A, any_executor_ref>)
+            if constexpr (IoAwaitable<A, executor_ref>)
             {
                 // Zero-overhead path for I/O awaitables
                 return transform_awaiter<Awaitable>{

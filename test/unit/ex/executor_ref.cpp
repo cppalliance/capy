@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/ex/any_executor_ref.hpp>
+#include <boost/capy/ex/executor_ref.hpp>
 
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
@@ -129,14 +129,14 @@ make_counter_coro(std::atomic<int>& counter)
 
 } // namespace
 
-struct any_executor_ref_test
+struct executor_ref_test
 {
     void
     testConstruct()
     {
         // Default construct
         {
-            any_executor_ref ex;
+            executor_ref ex;
             BOOST_TEST(!ex);
         }
 
@@ -144,7 +144,7 @@ struct any_executor_ref_test
         {
             thread_pool pool(1);
             auto executor = pool.get_executor();
-            any_executor_ref ex(executor);
+            executor_ref ex(executor);
             BOOST_TEST(static_cast<bool>(ex));
         }
     }
@@ -154,14 +154,14 @@ struct any_executor_ref_test
     {
         thread_pool pool(1);
         auto executor = pool.get_executor();
-        any_executor_ref ex1(executor);
+        executor_ref ex1(executor);
 
         // Copy construction
         auto ex2 = ex1;
         BOOST_TEST(ex1 == ex2);
 
         // Copy assignment
-        any_executor_ref ex3;
+        executor_ref ex3;
         ex3 = ex1;
         BOOST_TEST(ex1 == ex3);
     }
@@ -174,9 +174,9 @@ struct any_executor_ref_test
         auto executor1 = pool1.get_executor();
         auto executor2 = pool2.get_executor();
 
-        any_executor_ref ex1(executor1);
-        any_executor_ref ex2(executor1);  // Same underlying executor
-        any_executor_ref ex3(executor2);  // Different underlying executor
+        executor_ref ex1(executor1);
+        executor_ref ex2(executor1);  // Same underlying executor
+        executor_ref ex3(executor2);  // Different underlying executor
 
         BOOST_TEST(ex1 == ex2);
         BOOST_TEST(!(ex1 == ex3));
@@ -187,7 +187,7 @@ struct any_executor_ref_test
     {
         thread_pool pool(1);
         auto executor = pool.get_executor();
-        any_executor_ref ex(executor);
+        executor_ref ex(executor);
 
         std::atomic<int> counter{0};
         auto coro = make_counter_coro(counter);
@@ -203,7 +203,7 @@ struct any_executor_ref_test
     {
         thread_pool pool(1);
         auto executor = pool.get_executor();
-        any_executor_ref ex(executor);
+        executor_ref ex(executor);
 
         std::atomic<int> counter{0};
         auto coro = make_counter_coro(counter);
@@ -219,7 +219,7 @@ struct any_executor_ref_test
     {
         thread_pool pool(2);
         auto executor = pool.get_executor();
-        any_executor_ref ex(executor);
+        executor_ref ex(executor);
 
         std::atomic<int> counter{0};
         constexpr int N = 10;
@@ -248,8 +248,8 @@ struct any_executor_ref_test
 };
 
 TEST_SUITE(
-    any_executor_ref_test,
-    "boost.capy.any_executor_ref");
+    executor_ref_test,
+    "boost.capy.executor_ref");
 
 } // capy
 } // boost

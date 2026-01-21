@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_ANY_EXECUTOR_REF_HPP
-#define BOOST_CAPY_ANY_EXECUTOR_REF_HPP
+#ifndef BOOST_CAPY_EXECUTOR_REF_HPP
+#define BOOST_CAPY_EXECUTOR_REF_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/ex/any_coro.hpp>
@@ -79,10 +79,10 @@ inline constexpr executor_vtable vtable_for = {
     This class has reference semantics: it does not allocate or own
     the wrapped executor. Copy operations simply copy the internal
     pointers. The caller must ensure the referenced executor outlives
-    all `any_executor_ref` instances that wrap it.
+    all `executor_ref` instances that wrap it.
 
     @par Thread Safety
-    The `any_executor_ref` itself is not thread-safe for concurrent
+    The `executor_ref` itself is not thread-safe for concurrent
     modification, but its executor operations are safe to call
     concurrently if the underlying executor supports it.
 
@@ -90,7 +90,7 @@ inline constexpr executor_vtable vtable_for = {
     This class satisfies the `Executor` concept, making it usable
     anywhere a concrete executor is expected.
 */
-class any_executor_ref
+class executor_ref
 {
     void const* ex_ = nullptr;
     detail::executor_vtable const* vt_ = nullptr;
@@ -98,36 +98,36 @@ class any_executor_ref
 public:
     /** Default constructor.
 
-        Constructs an empty `any_executor_ref`. Calling any executor
+        Constructs an empty `executor_ref`. Calling any executor
         operations on a default-constructed instance results in
         undefined behavior.
     */
-    any_executor_ref() = default;
+    executor_ref() = default;
 
     /** Copy constructor.
 
         Copies the internal pointers, preserving identity.
         This enables the same-executor optimization when passing
-        any_executor_ref through coroutine chains.
+        executor_ref through coroutine chains.
     */
-    any_executor_ref(any_executor_ref const&) = default;
+    executor_ref(executor_ref const&) = default;
 
     /** Copy assignment operator. */
-    any_executor_ref& operator=(any_executor_ref const&) = default;
+    executor_ref& operator=(executor_ref const&) = default;
 
     /** Constructs from any executor type.
 
         Captures a reference to the given executor and stores a pointer
         to the type-specific vtable. The executor must remain valid for
-        the lifetime of this `any_executor_ref` instance.
+        the lifetime of this `executor_ref` instance.
 
         @param ex The executor to wrap. Must satisfy the `Executor`
                   concept. A pointer to this object is stored
                   internally; the executor must outlive this wrapper.
     */
     template<class Ex>
-        requires (!std::same_as<std::decay_t<Ex>, any_executor_ref>)
-    any_executor_ref(Ex const& ex) noexcept
+        requires (!std::same_as<std::decay_t<Ex>, executor_ref>)
+    executor_ref(Ex const& ex) noexcept
         : ex_(&ex)
         , vt_(&detail::vtable_for<Ex>)
     {
@@ -211,14 +211,14 @@ public:
 
     /** Compares two executor references for equality.
 
-        Two `any_executor_ref` instances are equal if they wrap
+        Two `executor_ref` instances are equal if they wrap
         executors of the same type that compare equal.
 
         @param other The executor reference to compare against.
 
         @return `true` if both wrap equal executors of the same type.
     */
-    bool operator==(any_executor_ref const& other) const noexcept
+    bool operator==(executor_ref const& other) const noexcept
     {
         if (vt_ != other.vt_)
             return false;

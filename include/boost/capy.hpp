@@ -11,7 +11,7 @@
 #define BOOST_CAPY_HPP
 
 #include <boost/capy/ex/any_executor.hpp>
-#include <boost/capy/ex/any_executor_ref.hpp>
+#include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/application.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/buffers.hpp>

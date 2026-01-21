@@ -226,7 +226,7 @@ running_in_this_thread(strand_impl& impl) noexcept
 
 any_coro
 strand_service::
-dispatch(strand_impl& impl, any_executor_ref ex, any_coro h)
+dispatch(strand_impl& impl, executor_ref ex, any_coro h)
 {
     if(running_in_this_thread(impl))
         return h;
@@ -239,7 +239,7 @@ dispatch(strand_impl& impl, any_executor_ref ex, any_coro h)
 
 void
 strand_service::
-post(strand_impl& impl, any_executor_ref ex, any_coro h)
+post(strand_impl& impl, executor_ref ex, any_coro h)
 {
     if(strand_service_impl::enqueue(impl, h))
         ex.post(strand_service_impl::make_invoker(impl).h_);

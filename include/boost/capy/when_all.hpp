@@ -14,7 +14,7 @@
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/any_coro.hpp>
-#include <boost/capy/ex/any_executor_ref.hpp>
+#include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/task.hpp>
 
@@ -106,7 +106,7 @@ struct when_all_state
 
     // Parent resumption
     any_coro continuation_;
-    any_executor_ref caller_ex_;
+    executor_ref caller_ex_;
 
     when_all_state()
         : remaining_count_(task_count)
@@ -155,7 +155,7 @@ struct when_all_runner
     struct promise_type : frame_allocating_base
     {
         when_all_state<Ts...>* state_ = nullptr;
-        any_executor_ref ex_;
+        executor_ref ex_;
         std::stop_token stop_token_;
 
         when_all_runner get_return_object()
@@ -230,7 +230,7 @@ struct when_all_runner
         auto await_transform(Awaitable&& a)
         {
             using A = std::decay_t<Awaitable>;
-            if constexpr (IoAwaitable<A, any_executor_ref>)
+            if constexpr (IoAwaitable<A, executor_ref>)
             {
                 return transform_awaiter<Awaitable>{
                     std::forward<Awaitable>(a), this};

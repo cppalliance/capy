@@ -11,7 +11,7 @@
 #define BOOST_CAPY_CONCEPT_WRITE_STREAM_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/any_executor_ref.hpp>
+#include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/system/error_code.hpp>
@@ -38,7 +38,7 @@ namespace capy {
     @li `T` must provide a templated `write_some` member function
     @li `write_some` must accept a `CB const&`
     @li The awaitable returned by `write_some` must satisfy
-        `capy::IoAwaitable<capy::any_executor_ref>`
+        `capy::IoAwaitable<capy::executor_ref>`
     @li The awaitable must resolve to `std::pair<system::error_code, std::size_t>`
 
     @par Example
@@ -64,7 +64,7 @@ concept WriteStream =
     requires(T& stream, CB const& buffers)
     {
         { stream.write_some(buffers) } ->
-            capy::IoAwaitable<capy::any_executor_ref>;
+            capy::IoAwaitable<capy::executor_ref>;
     };
 
 } // namespace capy
