@@ -8,7 +8,7 @@
 //
 
 #include <boost/capy/ex/thread_pool.hpp>
-#include <boost/capy/core/intrusive_queue.hpp>
+#include <boost/capy/detail/intrusive.hpp>
 #include <condition_variable>
 #include <mutex>
 #include <stop_token>
@@ -22,7 +22,7 @@ namespace capy {
 
 class thread_pool::impl
 {
-    struct work : intrusive_queue<work>::node
+    struct work : detail::intrusive_queue<work>::node
     {
         any_coro h_;
 
@@ -46,7 +46,7 @@ class thread_pool::impl
 
     std::mutex mutex_;
     std::condition_variable_any cv_;
-    intrusive_queue<work> q_;
+    detail::intrusive_queue<work> q_;
     std::vector<std::jthread> threads_;
     std::size_t num_threads_;
     std::once_flag start_flag_;
