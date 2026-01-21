@@ -30,7 +30,7 @@
 
 ## Request for Endorsements
 
-I am proposing Boost.Capy as a candidate library and seeking endorsements for formal review.
+We are proposing Boost.Capy as a candidate library and seeking endorsements for formal review.
 
 Boost.Capy provides the foundation that {cpp}20 coroutines need to serve network I/O effectively. This is not a general-purpose coroutine framework. There are no generators for prime numbers, no GPU processing, no abstract sender/receiver machinery. Capy is purpose-built to give coroutines what they need most for networking.
 
@@ -40,7 +40,7 @@ Capy fills this gap. It is what `std::execution` could have been for networking,
 
 ## The Beman Way
 
-I am bringing Capy to Boost because this is what Boost was created for. The project exists to incubate high-quality libraries destined for standardization. Beman Dawes founded Boost on the principle that the best path to the standard is through proven practice: build it, ship it, let users depend on it, learn from real-world feedback, then propose standardization. Smart pointers, regular expressions, filesystem, threading primitives—all followed this path from Boost to the standard library.
+We are bringing Capy to Boost because this is what Boost was created for. The project exists to incubate high-quality libraries destined for standardization. Beman Dawes founded Boost on the principle that the best path to the standard is through proven practice: build it, ship it, let users depend on it, learn from real-world feedback, then propose standardization. Smart pointers, regular expressions, filesystem, threading primitives—all followed this path from Boost to the standard library.
 
 Capy represents Boost returning to its role as a leader in {cpp} standardization efforts. The library addresses a real gap in {cpp}26: there is no standard foundation for coroutine-based I/O. Rather than waiting for a committee to design something in the abstract, or adapting networking to a framework built for different requirements, Capy takes the proven approach. It exists. It works. It powers real networking code today. Now it needs the scrutiny and refinement that only the Boost review process can provide.
 
@@ -74,8 +74,6 @@ Capy is not speculation. It powers Boost.Corosio, a coroutine-first networking l
 
 The standardization strategy follows from this layering. Capy is the foundation piece that belongs in the standard: executor model, task types, buffer algorithms, cancellation integration. These are stable abstractions that networking libraries can build upon. Corosio, the networking piece, can remain outside the standard to mitigate risk: sockets and protocol implementations typically experience difficulty achieving consensus even after years of committee attention. Corosio can mature externally where it can evolve based on user feedback, while Capy provides the stable foundation that the standard library lacks.
 
-Welcome to the future of C++ networking.
-
 ## Resources
 
 - Design paper: "Coroutine-First I/O: A Type-Erased Affine Framework"
@@ -86,9 +84,9 @@ Welcome to the future of C++ networking.
 
 ## Call to Action
 
-I am requesting endorsements from Boost members to proceed with formal review. If you believe that Boost should provide a foundation for coroutine-based I/O—and that proven practice is the right path to standardization—I would welcome your endorsement.
+We are requesting endorsements from Boost members to proceed with formal review. If you believe that Boost should provide a foundation for coroutine-based I/O—and that proven practice is the right path to standardization, your endorsement would be welcomed.
 
-I also invite feedback on the design, the implementation, and the documentation. The library is ready for serious evaluation. Clone it, build it, write code against it, and tell me what works and what does not.
+The team is also happy to receive feedback on the design, the implementation, and the documentation. The library is ready for serious evaluation. Clone it, build it, write code against it, and tell us what works and what does not.
 
 This is Boost doing what Boost does best: building the libraries that {cpp} needs, proving them in practice, and paving the way for standardization.
 
