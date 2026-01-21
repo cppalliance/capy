@@ -172,6 +172,27 @@ void store_dispatcher(any_dispatcher d)
 `task<T>` uses `any_dispatcher` internally, enabling tasks to work with any
 executor type without templating everything.
 
+== Querying the Current Executor
+
+Within a coroutine, use `co_await get_executor()` to retrieve the current
+executor that this coroutine is bound to:
+
+[source,cpp]
+----
+task<void> example()
+{
+    executor_ref ex = co_await get_executor();
+    // ex is the executor this coroutine is bound to
+}
+----
+
+The `get_executor()` function returns a tag that the promise intercepts via
+`await_transform`. This operation never suspends—`await_ready()` always
+returns `true`.
+
+If no executor was set (e.g., in a default-constructed promise), the returned
+`executor_ref` will be empty (`operator bool()` returns `false`).
+
 == When NOT to Use run_on
 
 Use `run_on` when:
@@ -200,6 +221,9 @@ Do NOT use `run_on` when:
 
 | `run_on`
 | Explicitly binds a child to a different executor
+
+| `get_executor()`
+| Retrieve the current executor inside a coroutine
 
 | Symmetric transfer
 | Zero-overhead resumption when executor matches

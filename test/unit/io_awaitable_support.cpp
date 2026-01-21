@@ -8,7 +8,9 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/ex/stop_token_support.hpp>
+#include <boost/capy/io_awaitable.hpp>
+
+#include <boost/capy/ex/thread_pool.hpp>
 
 #include "test_suite.hpp"
 
@@ -21,7 +23,7 @@ namespace capy {
 
 struct test_coro
 {
-    struct promise_type : stop_token_support<promise_type>
+    struct promise_type : io_awaitable_support<promise_type>
     {
         test_coro get_return_object()
         {
@@ -60,7 +62,7 @@ private:
 
 struct custom_transform_coro
 {
-    struct promise_type : stop_token_support<promise_type>
+    struct promise_type : io_awaitable_support<promise_type>
     {
         int transform_count_ = 0;
 
@@ -106,7 +108,7 @@ private:
     }
 };
 
-struct stop_token_support_test
+struct io_awaitable_support_test
 {
     void
     testSetAndGetStopToken()
@@ -136,7 +138,7 @@ struct stop_token_support_test
     }
 
     void
-    testAwaitTransformInterceptsTag()
+    testAwaitTransformInterceptsStopTokenTag()
     {
         auto coro = []() -> test_coro { co_return; }();
 
@@ -170,6 +172,9 @@ struct stop_token_support_test
 
         coro.h_.promise().await_transform(get_stop_token());
         BOOST_TEST_EQ(coro.h_.promise().transform_count_, 1);
+
+        coro.h_.promise().await_transform(get_executor());
+        BOOST_TEST_EQ(coro.h_.promise().transform_count_, 1);
     }
 
     void
@@ -183,19 +188,74 @@ struct stop_token_support_test
     }
 
     void
+    testSetAndGetExecutor()
+    {
+        thread_pool pool(1);
+        auto executor = pool.get_executor();
+
+        auto coro = []() -> test_coro { co_return; }();
+        coro.h_.promise().set_executor(executor);
+
+        auto retrieved = coro.h_.promise().executor();
+        BOOST_TEST(static_cast<bool>(retrieved));
+        BOOST_TEST(retrieved == executor_ref(executor));
+    }
+
+    void
+    testDefaultExecutor()
+    {
+        auto coro = []() -> test_coro { co_return; }();
+        auto ex = coro.h_.promise().executor();
+
+        BOOST_TEST(!static_cast<bool>(ex));
+    }
+
+    void
+    testAwaitTransformInterceptsExecutorTag()
+    {
+        thread_pool pool(1);
+        auto executor = pool.get_executor();
+
+        auto coro = []() -> test_coro { co_return; }();
+        coro.h_.promise().set_executor(executor);
+
+        auto awaiter = coro.h_.promise().await_transform(get_executor());
+
+        BOOST_TEST(awaiter.await_ready());
+
+        auto ex = awaiter.await_resume();
+        BOOST_TEST(static_cast<bool>(ex));
+        BOOST_TEST(ex == executor_ref(executor));
+    }
+
+    void
+    testExecutorAwaiterNeverSuspends()
+    {
+        auto coro = []() -> test_coro { co_return; }();
+        auto awaiter = coro.h_.promise().await_transform(get_executor());
+
+        BOOST_TEST(awaiter.await_ready());
+        awaiter.await_suspend(any_coro{});
+    }
+
+    void
     run()
     {
         testSetAndGetStopToken();
         testDefaultStopToken();
-        testAwaitTransformInterceptsTag();
+        testAwaitTransformInterceptsStopTokenTag();
         testAwaitTransformDelegatesToTransformAwaitable();
         testStopTokenAwaiterNeverSuspends();
+        testSetAndGetExecutor();
+        testDefaultExecutor();
+        testAwaitTransformInterceptsExecutorTag();
+        testExecutorAwaiterNeverSuspends();
     }
 };
 
 TEST_SUITE(
-    stop_token_support_test,
-    "boost.capy.ex.stop_token_support");
+    io_awaitable_support_test,
+    "boost.capy.io_awaitable_support");
 
 } // namespace capy
 } // namespace boost

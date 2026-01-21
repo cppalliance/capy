@@ -1,9 +1,5 @@
-/.vscode/
-/.cache/
-/.clangd
-/build/*
 /build-*/
+/build/*
 !/build/Jamfile
 /out/
 /CMakeUserPresets.json
-/tmpclaude-*-cwd

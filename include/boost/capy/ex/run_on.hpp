@@ -67,7 +67,7 @@ struct [[nodiscard]]
     {
         // 'this' is kept alive by co_await until completion
         // ex_ is valid for the entire operation
-        h_.promise().ex_ = ex_;
+        h_.promise().set_executor(ex_);
         h_.promise().caller_ex_ = caller_ex;
         h_.promise().continuation_ = continuation;
         h_.promise().set_stop_token(token);

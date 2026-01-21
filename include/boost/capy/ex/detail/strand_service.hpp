@@ -20,20 +20,17 @@
 namespace boost {
 namespace capy {
 
-// Forward declaration (strand lives in capy, not detail)
 template<typename Executor> class strand;
 
 namespace detail {
 
-// Forward declaration - full definition in src/
 struct strand_impl;
 
-/** Type trait to detect strand types. */
 template<typename T>
 struct is_strand : std::false_type {};
 
 template<typename E>
-struct is_strand<strand<E>> : std::true_type {};  // Uses forward decl from enclosing namespace
+struct is_strand<strand<E>> : std::true_type {};
 
 //----------------------------------------------------------
 

@@ -15,25 +15,25 @@
 namespace boost {
 namespace capy {
 
-struct get_stop_token_test
+struct get_executor_test
 {
     void
     testTagType()
     {
-        get_stop_token_tag tag1;
-        get_stop_token_tag tag2{};
+        get_executor_tag tag1;
+        get_executor_tag tag2{};
         (void)tag1;
         (void)tag2;
 
-        static_assert(std::is_trivially_copyable_v<get_stop_token_tag>);
+        static_assert(std::is_trivially_copyable_v<get_executor_tag>);
     }
 
     void
     testFunction()
     {
-        auto tag = get_stop_token();
-        static_assert(std::is_same_v<decltype(tag), get_stop_token_tag>);
-        static_assert(noexcept(get_stop_token()));
+        auto tag = get_executor();
+        static_assert(std::is_same_v<decltype(tag), get_executor_tag>);
+        static_assert(noexcept(get_executor()));
     }
 
     void
@@ -45,8 +45,8 @@ struct get_stop_token_test
 };
 
 TEST_SUITE(
-    get_stop_token_test,
-    "boost.capy.ex.get_stop_token");
+    get_executor_test,
+    "boost.capy.ex.get_executor");
 
 } // namespace capy
 } // namespace boost

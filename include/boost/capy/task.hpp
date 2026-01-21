@@ -12,11 +12,9 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/io_awaitable.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-#include <boost/capy/ex/get_stop_token.hpp>
-#include <boost/capy/ex/stop_token_support.hpp>
 
 #include <exception>
 #include <optional>
@@ -78,10 +76,9 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 {
     struct promise_type
         : frame_allocating_base
-        , stop_token_support<promise_type>
+        , io_awaitable_support<promise_type>
         , detail::task_return_base<T>
     {
-        executor_ref ex_;
         executor_ref caller_ex_;
         any_coro continuation_;
         std::exception_ptr ep_;
@@ -179,7 +176,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             template<class Promise>
             auto await_suspend(std::coroutine_handle<Promise> h)
             {
-                return a_.await_suspend(h, p_->ex_, p_->stop_token());
+                return a_.await_suspend(h, p_->executor(), p_->stop_token());
             }
         };
 
@@ -229,7 +226,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     {
         h_.promise().caller_ex_ = caller_ex;
         h_.promise().continuation_ = continuation;
-        h_.promise().ex_ = caller_ex;
+        h_.promise().set_executor(caller_ex);
         h_.promise().set_stop_token(token);
         h_.promise().needs_dispatch_ = false;
         return h_;

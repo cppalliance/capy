@@ -12,7 +12,7 @@
 
 #include <boost/capy/task.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/ex/get_stop_token.hpp>
+#include <boost/capy/io_awaitable.hpp>
 
 #include "test_suite.hpp"
 

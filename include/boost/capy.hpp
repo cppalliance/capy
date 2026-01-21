@@ -31,7 +31,7 @@
 #include <boost/capy/concept/dynamic_buffer.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/frame_allocator.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/io_awaitable.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/ex/any_coro.hpp>
