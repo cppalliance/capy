@@ -67,13 +67,11 @@ namespace capy {
     @code
     struct promise_type : stop_token_support<promise_type>
     {
-        any_executor_ref ex_;
-
         template<typename A>
         auto transform_awaitable(A&& a)
         {
             // Your custom transformation logic
-            return make_affine(std::forward<A>(a), ex_);
+            return std::forward<A>(a);
         }
     };
     @endcode

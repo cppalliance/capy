@@ -16,7 +16,6 @@
 #include <boost/capy/ex/any_executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/get_stop_token.hpp>
-#include <boost/capy/ex/make_affine.hpp>
 #include <boost/capy/ex/stop_token_support.hpp>
 
 #include <exception>
@@ -196,11 +195,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             }
             else
             {
-                static_assert("legacy tasks not supported");
-            #if 0
-                // Trampoline fallback for legacy awaitables
-                return make_affine(std::forward<Awaitable>(a), ex_);
-            #endif
+                static_assert(sizeof(A) == 0, "requires IoAwaitable");
             }
         }
     };

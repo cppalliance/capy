@@ -237,7 +237,7 @@ struct when_all_runner
             }
             else
             {
-                return make_affine(std::forward<Awaitable>(a), ex_);
+                static_assert(sizeof(A) == 0, "requires IoAwaitable");
             }
         }
     };

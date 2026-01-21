@@ -172,26 +172,6 @@ void store_dispatcher(any_dispatcher d)
 `task<T>` uses `any_dispatcher` internally, enabling tasks to work with any
 executor type without templating everything.
 
-== Legacy Awaitable Compatibility
-
-Not all awaitables implement the affine protocol. For standard library
-awaitables or third-party types, Capy provides automatic compatibility through
-a trampoline coroutine.
-
-When `await_transform` encounters a non-affine awaitable, it wraps it:
-
-[source,cpp]
-----
-// Inside task's await_transform (simplified):
-if constexpr (affine_awaitable<A, any_dispatcher>)
-    return affine_path(a);  // Zero-overhead
-else
-    return make_affine(a, ex_);  // Trampoline fallback
-----
-
-The trampoline adds one extra coroutine frame but ensures correct affinity.
-Prefer implementing the affine protocol for performance-critical awaitables.
-
 == When NOT to Use run_on
 
 Use `run_on` when:

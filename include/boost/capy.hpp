@@ -42,7 +42,6 @@
 #include <boost/capy/file.hpp>
 #include <boost/capy/file_mode.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-#include <boost/capy/ex/make_affine.hpp>
 #include <boost/capy/core/polystore.hpp>
 #include <boost/capy/core/polystore_fwd.hpp>
 #include <boost/capy/ex/run_on.hpp>
