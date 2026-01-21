@@ -135,15 +135,6 @@ test_io_context queue_executor::default_ctx_;
 
 static_assert(Executor<queue_executor>);
 
-/// Test exception type.
-struct test_exception : std::runtime_error
-{
-    explicit test_exception(char const* msg)
-        : std::runtime_error(msg)
-    {
-    }
-};
-
 } // namespace capy
 } // namespace boost
 

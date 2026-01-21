@@ -29,6 +29,7 @@
 #include <boost/capy/read.hpp>
 #include <boost/capy/read_until.hpp>
 #include <boost/capy/when_all.hpp>
+#include <boost/capy/when_any.hpp>
 #include <boost/capy/write.hpp>
 
 // Buffers

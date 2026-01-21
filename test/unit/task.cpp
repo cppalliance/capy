@@ -77,45 +77,6 @@ struct tracking_executor
 
 static_assert(Executor<tracking_executor>);
 
-/** Queuing executor that queues coroutines for manual execution control.
-    Returns noop_coroutine so the caller doesn't resume immediately.
-*/
-struct queuing_executor
-{
-    std::queue<coro>* queue_;
-    test_io_context* ctx_ = nullptr;
-
-    explicit queuing_executor(std::queue<coro>& q)
-        : queue_(&q)
-    {
-    }
-
-    bool operator==(queuing_executor const& other) const noexcept
-    {
-        return queue_ == other.queue_;
-    }
-
-    execution_context& context() const noexcept
-    {
-        return ctx_ ? *ctx_ : default_test_io_context();
-    }
-
-    void on_work_started() const noexcept {}
-    void on_work_finished() const noexcept {}
-
-    void dispatch(coro h) const
-    {
-        queue_->push(h);
-    }
-
-    void post(coro h) const
-    {
-        queue_->push(h);
-    }
-};
-
-static_assert(Executor<queuing_executor>);
-
 /** Run a task to completion by manually stepping through it.
 
     Takes ownership of the task via release() and runs until done.
@@ -152,20 +113,6 @@ T run_task(task<T> t)
 inline void run_void_task(task<void> t)
 {
     run_task<void>(std::move(t));
-}
-
-struct test_exception : std::runtime_error
-{
-    explicit test_exception(const char* msg)
-        : std::runtime_error(msg)
-    {
-    }
-};
-
-[[noreturn]] inline void
-throw_test_exception(char const* msg)
-{
-    throw test_exception(msg);
 }
 
 struct task_test
@@ -1088,15 +1035,15 @@ struct task_test
         BOOST_TEST(all_same);
     }
 
-    struct tear_down_t 
+    struct tear_down_t
     {
         bool *torn_down;
         tear_down_t(bool &torn_down) : torn_down(&torn_down) {}
         tear_down_t(tear_down_t && rhs) noexcept : torn_down(std::exchange(rhs.torn_down, nullptr)) {}
-        ~tear_down_t() 
+        ~tear_down_t()
         {
             if (torn_down)
-                *torn_down = true; 
+                *torn_down = true;
         }
     };
 
@@ -1119,7 +1066,7 @@ struct task_test
     {
         bool td1 = false, td2 = false;
         {
-            auto l = []() -> capy::task<void> 
+            auto l = []() -> capy::task<void>
                     {
                         co_await self_destroy_awaitable{};
                     };
@@ -1141,15 +1088,15 @@ struct task_test
     {
 
         std::atomic<int> state = 0;
-        
-        auto l = [&]() -> capy::task<void> 
+
+        auto l = [&]() -> capy::task<void>
         {
             struct scope_check
             {
                 std::atomic<int> &state;
                 ~scope_check() { BOOST_TEST(state == 2);}
             } sc{state};
-            
+
             state = 1;
             co_await stop_only_awaitable{};
             state = 2;
