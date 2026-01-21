@@ -42,6 +42,7 @@ message(
     {
     case cond::eof: return "end of file";
     case cond::canceled: return "operation canceled";
+    case cond::stream_truncated: return "stream truncated";
     default:
         return "unknown";
     }
@@ -69,6 +70,9 @@ equivalent(
         if(ec == std::errc::operation_canceled)
             return true;
         return false;
+
+    case cond::stream_truncated:
+        return ec == capy::error::stream_truncated;
 
     default:
         return false;

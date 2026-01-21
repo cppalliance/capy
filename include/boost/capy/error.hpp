@@ -24,12 +24,16 @@ namespace capy {
 
     Return `error::canceled` when originating a cancellation error.
     Check `ec == cond::canceled` for portable comparison.
+
+    Return `error::stream_truncated` when peer closes without TLS shutdown.
+    Check `ec == cond::stream_truncated` for portable comparison.
 */
 enum class error
 {
     eof = 1,
     canceled,
-    test_failure
+    test_failure,
+    stream_truncated
 };
 
 //-----------------------------------------------

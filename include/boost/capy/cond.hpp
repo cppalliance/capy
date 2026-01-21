@@ -26,11 +26,15 @@ namespace capy {
 
   - Return the platform canceled error when originating canceled.
       Check `ec == cond::canceled` to portably test for cancellation.
+
+  - Return `error::stream_truncated` when peer closes without TLS shutdown.
+      Check `ec == cond::stream_truncated` to portably test for truncation.
 */
 enum class cond
 {
     eof = 1,
-    canceled = 2
+    canceled = 2,
+    stream_truncated = 3
 };
 
 //-----------------------------------------------
