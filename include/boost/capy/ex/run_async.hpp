@@ -14,11 +14,11 @@
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/frame_allocator.hpp>
 #include <boost/capy/task.hpp>
+#include <boost/capy/ex/stop_token.hpp>
 
 #include <concepts>
 #include <coroutine>
 #include <exception>
-#include <stop_token>
 #include <type_traits>
 #include <utility>
 
@@ -306,13 +306,13 @@ template<Executor Ex, class Handlers>
 class [[nodiscard]] run_async_wrapper
 {
     detail::trampoline<Ex, Handlers> tr_;
-    std::stop_token st_;
+    capy::stop_token st_;
 
 public:
     /// Construct wrapper with executor, stop token, and handlers.
     run_async_wrapper(
         Ex ex,
-        std::stop_token st,
+        capy::stop_token st,
         Handlers h)
         : tr_(detail::make_trampoline<Ex, Handlers>(
             std::move(ex), std::move(h)))
@@ -400,7 +400,7 @@ run_async(Ex ex)
 {
     return run_async_wrapper<Ex, default_handler>(
         std::move(ex),
-        std::stop_token{},
+        capy::stop_token{},
         default_handler{});
 }
 
@@ -442,7 +442,7 @@ run_async(Ex ex, H1 h1)
 {
     return run_async_wrapper<Ex, handler_pair<H1, default_handler>>(
         std::move(ex),
-        std::stop_token{},
+        capy::stop_token{},
         handler_pair<H1, default_handler>{std::move(h1)});
 }
 
@@ -483,7 +483,7 @@ run_async(Ex ex, H1 h1, H2 h2)
 {
     return run_async_wrapper<Ex, handler_pair<H1, H2>>(
         std::move(ex),
-        std::stop_token{},
+        capy::stop_token{},
         handler_pair<H1, H2>{std::move(h1), std::move(h2)});
 }
 
@@ -514,15 +514,15 @@ run_async(Ex ex, H1 h1, H2 h2)
     @see task
     @see executor
 */
-template<Executor Ex>
-[[nodiscard]] auto
-run_async(Ex ex, std::stop_token st)
-{
-    return run_async_wrapper<Ex, default_handler>(
-        std::move(ex),
-        std::move(st),
-        default_handler{});
-}
+    template<Executor Ex>
+    [[nodiscard]] auto
+    run_async(Ex ex, capy::stop_token st)
+    {
+        return run_async_wrapper<Ex, default_handler>(
+            std::move(ex),
+            std::move(st),
+            default_handler{});
+    }
 
 /** Asynchronously launch a lazy task with stop token and result handler.
 
@@ -541,7 +541,7 @@ run_async(Ex ex, std::stop_token st)
 */
 template<Executor Ex, class H1>
 [[nodiscard]] auto
-run_async(Ex ex, std::stop_token st, H1 h1)
+run_async(Ex ex, stop_token st, H1 h1)
 {
     return run_async_wrapper<Ex, handler_pair<H1, default_handler>>(
         std::move(ex),
@@ -564,9 +564,9 @@ run_async(Ex ex, std::stop_token st, H1 h1)
     @see task
     @see executor
 */
-template<Executor Ex, class H1, class H2>
-[[nodiscard]] auto
-run_async(Ex ex, std::stop_token st, H1 h1, H2 h2)
+    template<Executor Ex, class H1, class H2>
+    [[nodiscard]] auto
+    run_async(Ex ex, capy::stop_token st, H1 h1, H2 h2)
 {
     return run_async_wrapper<Ex, handler_pair<H1, H2>>(
         std::move(ex),
@@ -591,9 +591,9 @@ run_async(Ex ex, std::stop_token st, H1 h1, H2 h2)
     @see executor
     @see frame_allocator
 */
-template<Executor Ex, FrameAllocator FA>
-[[nodiscard]] auto
-run_async(Ex ex, std::stop_token st, FA alloc)
+    template<Executor Ex, FrameAllocator FA>
+    [[nodiscard]] auto
+    run_async(Ex ex, capy::stop_token st, FA alloc)
 {
     (void)alloc; // Currently ignored
     return run_async_wrapper<Ex, default_handler>(
@@ -618,9 +618,9 @@ run_async(Ex ex, std::stop_token st, FA alloc)
     @see executor
     @see frame_allocator
 */
-template<Executor Ex, FrameAllocator FA, class H1>
-[[nodiscard]] auto
-run_async(Ex ex, std::stop_token st, FA alloc, H1 h1)
+    template<Executor Ex, FrameAllocator FA, class H1>
+    [[nodiscard]] auto
+    run_async(Ex ex, capy::stop_token st, FA alloc, H1 h1)
 {
     (void)alloc; // Currently ignored
     return run_async_wrapper<Ex, handler_pair<H1, default_handler>>(
@@ -646,9 +646,9 @@ run_async(Ex ex, std::stop_token st, FA alloc, H1 h1)
     @see executor
     @see frame_allocator
 */
-template<Executor Ex, FrameAllocator FA, class H1, class H2>
-[[nodiscard]] auto
-run_async(Ex ex, std::stop_token st, FA alloc, H1 h1, H2 h2)
+    template<Executor Ex, FrameAllocator FA, class H1, class H2>
+    [[nodiscard]] auto
+    run_async(Ex ex, capy::stop_token st, FA alloc, H1 h1, H2 h2)
 {
     (void)alloc; // Currently ignored
     return run_async_wrapper<Ex, handler_pair<H1, H2>>(

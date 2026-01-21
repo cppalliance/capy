@@ -9,9 +9,9 @@
 
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/detail/intrusive.hpp>
+#include <atomic>
 #include <condition_variable>
 #include <mutex>
-#include <stop_token>
 #include <thread>
 #include <vector>
 
@@ -47,7 +47,8 @@ class thread_pool::impl
     std::mutex mutex_;
     std::condition_variable_any cv_;
     detail::intrusive_queue<work> q_;
-    std::vector<std::jthread> threads_;
+    std::vector<std::thread> threads_;
+    std::atomic<bool> stop_requested_{false};
     std::size_t num_threads_;
     std::once_flag start_flag_;
 
@@ -55,6 +56,9 @@ public:
     ~impl()
     {
         stop();
+        for (auto& t : threads_)
+            if (t.joinable())
+                t.join();
         threads_.clear();
 
         while(auto* w = q_.pop())
@@ -86,8 +90,7 @@ public:
     void
     stop() noexcept
     {
-        for (auto& t : threads_)
-            t.request_stop();
+        stop_requested_.store(true);
         cv_.notify_all();
     }
 
@@ -98,19 +101,20 @@ private:
         std::call_once(start_flag_, [this]{
             threads_.reserve(num_threads_);
             for(std::size_t i = 0; i < num_threads_; ++i)
-                threads_.emplace_back([this](std::stop_token st){ run(st); });
+                threads_.emplace_back([this]{ run(); });
         });
     }
 
     void
-    run(std::stop_token st)
+    run()
     {
         for(;;)
         {
             work* w = nullptr;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                if(!cv_.wait(lock, st, [this]{ return !q_.empty(); }))
+                cv_.wait(lock, [this]{ return !q_.empty() || stop_requested_.load(); });
+                if (stop_requested_.load() && q_.empty())
                     return;
                 w = q_.pop();
             }

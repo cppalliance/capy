@@ -14,8 +14,7 @@
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-
-#include <stop_token>
+#include <boost/capy/ex/stop_token.hpp>
 
 #include <coroutine>
 #include <utility>
@@ -112,7 +111,7 @@ public:
         auto await_suspend(
             std::coroutine_handle<> h,
             Ex const& ex,
-            std::stop_token = {}) noexcept -> std::coroutine_handle<>
+            capy::stop_token = {}) noexcept -> std::coroutine_handle<>
         {
             h_ = h;
             ex_ = ex;
@@ -200,7 +199,7 @@ public:
         auto await_suspend(
             std::coroutine_handle<> h,
             Ex const& ex,
-            std::stop_token token = {}) noexcept -> std::coroutine_handle<>
+            capy::stop_token token = {}) noexcept -> std::coroutine_handle<>
         {
             return inner_.await_suspend(h, ex, token);
         }

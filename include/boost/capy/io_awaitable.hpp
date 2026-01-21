@@ -13,25 +13,14 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/get_stop_token.hpp>
+#include <boost/capy/ex/stop_token.hpp>
 
 #include <coroutine>
-#include <stop_token>
 #include <type_traits>
 
 namespace boost {
 namespace capy {
-
-/** Tag type for coroutine stop token retrieval.
-
-    This tag is returned by @ref get_stop_token and intercepted by a
-    promise type's `await_transform` to yield the coroutine's current
-    stop token. The tag itself carries no data; it serves only as a
-    sentinel for compile-time dispatch.
-
-    @see get_stop_token
-    @see io_awaitable_support
-*/
-struct get_stop_token_tag {};
 
 /** Tag type for coroutine executor retrieval.
 
@@ -44,43 +33,6 @@ struct get_stop_token_tag {};
     @see io_awaitable_support
 */
 struct get_executor_tag {};
-
-/** Return a tag that yields the current stop token when awaited.
-
-    Use `co_await get_stop_token()` inside a coroutine whose promise
-    type supports stop token access (e.g., inherits from
-    @ref io_awaitable_support). The returned stop token reflects whatever
-    token was passed to this coroutine when it was awaited.
-
-    @par Example
-    @code
-    task<void> cancellable_work()
-    {
-        auto token = co_await get_stop_token();
-        for (int i = 0; i < 1000; ++i)
-        {
-            if (token.stop_requested())
-                co_return;  // Exit gracefully on cancellation
-            co_await process_chunk(i);
-        }
-    }
-    @endcode
-
-    @par Behavior
-    @li If no stop token was propagated, returns a default-constructed
-        `std::stop_token` (where `stop_possible()` returns `false`).
-    @li The returned token remains valid for the coroutine's lifetime.
-    @li This operation never suspends; `await_ready()` always returns `true`.
-
-    @return A tag that `await_transform` intercepts to return the stop token.
-
-    @see get_stop_token_tag
-    @see io_awaitable_support
-*/
-inline get_stop_token_tag get_stop_token() noexcept
-{
-    return {};
-}
 
 /** Return a tag that yields the current executor when awaited.
 
@@ -113,58 +65,11 @@ inline get_executor_tag get_executor() noexcept
     return {};
 }
 
-/** Concept for I/O awaitable types.
-
-    An awaitable is an I/O awaitable if it participates in the I/O awaitable
-    protocol by accepting an executor and a stop_token in its `await_suspend`
-    method. This enables zero-overhead scheduler affinity and cancellation
-    support.
-
-    @tparam A The awaitable type.
-    @tparam P The promise type (defaults to void).
-
-    @par Requirements
-    @li `A` must provide `await_suspend(std::coroutine_handle<P> h, Ex const& ex,
-        std::stop_token token)`
-    @li The awaitable must use the executor `ex` to resume the caller
-    @li The awaitable should use the stop_token to support cancellation
-
-    @par Example
-    @code
-    struct my_io_op
-    {
-        template<typename Executor>
-        auto await_suspend(std::coroutine_handle<> h, Executor const& ex,
-            std::stop_token token)
-        {
-            start_async([h, &ex, token] {
-                if (token.stop_requested()) {
-                    // Handle cancellation
-                }
-                ex.dispatch(h);  // Schedule resumption through executor
-            });
-            return std::noop_coroutine();
-        }
-        // ... await_ready, await_resume ...
-    };
-    @endcode
-*/
-template<typename A, typename P = void>
-concept IoAwaitable =
-    requires(
-        A a,
-        std::coroutine_handle<P> h,
-        executor_ref ex,
-        std::stop_token token)
-    {
-        a.await_suspend(h, ex, token);
-    };
-
 /** CRTP mixin that adds I/O awaitable support to a promise type.
 
     Inherit from this class to enable these capabilities in your coroutine:
 
-    1. **Stop token storage** — The mixin stores the `std::stop_token`
+    1. **Stop token storage** — The mixin stores the `capy::stop_token`
        that was passed when your coroutine was awaited.
 
     2. **Stop token access** — Coroutine code can retrieve the token via
@@ -242,7 +147,7 @@ concept IoAwaitable =
 
         // IoAwaitable await_suspend receives and stores the token and executor
         template<class Ex>
-        coro await_suspend(coro cont, Ex const& ex, std::stop_token token)
+        coro await_suspend(coro cont, Ex const& ex, capy::stop_token token)
         {
             h_.promise().set_stop_token(token);
             h_.promise().set_executor(ex);
@@ -264,7 +169,7 @@ concept IoAwaitable =
 template<typename Derived>
 class io_awaitable_support
 {
-    std::stop_token stop_token_;
+    capy::stop_token stop_token_;
     executor_ref ex_;
 
 public:
@@ -275,7 +180,7 @@ public:
 
         @param token The stop token to store.
     */
-    void set_stop_token(std::stop_token token) noexcept
+    void set_stop_token(capy::stop_token token) noexcept
     {
         stop_token_ = token;
     }
@@ -284,7 +189,7 @@ public:
 
         @return The stop token, or a default-constructed token if none was set.
     */
-    std::stop_token const& stop_token() const noexcept
+    capy::stop_token const& stop_token() const noexcept
     {
         return stop_token_;
     }
@@ -343,7 +248,7 @@ public:
         {
             struct awaiter
             {
-                std::stop_token token_;
+                capy::stop_token token_;
 
                 bool await_ready() const noexcept
                 {
@@ -354,7 +259,7 @@ public:
                 {
                 }
 
-                std::stop_token await_resume() const noexcept
+                capy::stop_token await_resume() const noexcept
                 {
                     return token_;
                 }

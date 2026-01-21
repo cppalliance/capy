@@ -337,7 +337,7 @@ struct run_async_test
         sync_executor d(dispatch_count);
         bool result = true;
 
-        std::stop_source source;
+        capy::stop_source source;
         // Don't request stop - token should not be in stopped state
         
         run_async(d, source.get_token(), [&](bool v) { result = v; })(
@@ -353,7 +353,7 @@ struct run_async_test
         sync_executor d(dispatch_count);
         bool result = false;
 
-        std::stop_source source;
+        capy::stop_source source;
         source.request_stop();
         
         run_async(d, source.get_token(), [&](bool v) { result = v; })(
@@ -552,7 +552,7 @@ struct run_async_test
         int result = 0;
 
         // Default-constructed stop_token
-        run_async(d, std::stop_token{}, [&](int v) { result = v; })(
+        run_async(d, capy::stop_token{}, [&](int v) { result = v; })(
             returns_int());
 
         BOOST_TEST_EQ(result, 42);

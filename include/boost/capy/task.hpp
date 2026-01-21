@@ -12,6 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/io_awaitable.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
@@ -222,7 +223,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
     // IoAwaitable: receive caller's executor and stop_token for completion dispatch
     template<typename Ex>
-    coro await_suspend(coro continuation, Ex const& caller_ex, std::stop_token token)
+    coro await_suspend(coro continuation, Ex const& caller_ex, capy::stop_token token)
     {
         h_.promise().caller_ex_ = caller_ex;
         h_.promise().continuation_ = continuation;

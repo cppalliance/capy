@@ -9,13 +9,13 @@
 
 = Cancellation
 
-This page explains how to cancel running coroutines using `std::stop_token`.
+This page explains how to cancel running coroutines using `capy::stop_token`.
 
 NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
 
 == Cooperative Cancellation
 
-Capy supports cooperative cancellation through `std::stop_token`. When a task
+Capy supports cooperative cancellation through `capy::stop_token`. When a task
 is launched with stop support, the token propagates through the entire call
 chain automatically.
 
@@ -52,7 +52,7 @@ template<typename Dispatcher>
 auto await_suspend(
     std::coroutine_handle<> h,
     Dispatcher const& d,
-    std::stop_token token)
+    capy::stop_token token)
 {
     if (token.stop_requested())
     {
@@ -101,7 +101,7 @@ struct stoppable_timer
     auto await_suspend(
         coro h,
         Dispatcher const& d,
-        std::stop_token token)
+        capy::stop_token token)
     {
         if (token.stop_requested())
         {
@@ -112,7 +112,7 @@ struct stoppable_timer
         auto timer_handle = start_timer(duration_, [h, &d] { d(h); });
 
         // Cancel timer if stop requested
-        std::stop_callback cb(token, [timer_handle] {
+        capy::stop_callback cb(token, [timer_handle] {
             cancel_timer(timer_handle);
         });
 
@@ -200,8 +200,25 @@ when awaited), implement the `await_suspend` overload:
 
 [source,cpp]
 ----
-template<class Ex>
-coro await_suspend(coro cont, Ex const& ex, std::stop_token token)
+struct promise_type : stop_token_support<promise_type>
+{
+    any_dispatcher ex_;
+
+    template<typename A>
+    auto transform_awaitable(A&& a)
+    {
+        return make_affine(std::forward<A>(a), ex_);
+    }
+};
+----
+
+To make your coroutine type satisfy `stoppable_awaitable` (receive tokens when
+awaited), implement the stoppable `await_suspend` overload:
+
+[source,cpp]
+----
+template<dispatcher D>
+any_coro await_suspend(any_coro cont, D const& d, capy::stop_token token)
 {
     h_.promise().set_stop_token(token);
     h_.promise().set_executor(ex);

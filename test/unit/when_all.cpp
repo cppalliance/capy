@@ -10,6 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/when_all.hpp>
 
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
@@ -883,7 +884,7 @@ struct when_all_test
 
         tracking_frame_allocator alloc{1, &alloc_count, &dealloc_count, &alloc_log};
 
-        run_async(ex, std::stop_token{}, alloc,
+        run_async(ex, capy::stop_token{}, alloc,
             [&](std::tuple<int, int, int> t) {
                 auto [a, b, c] = t;
                 completed = true;
@@ -927,7 +928,7 @@ struct when_all_test
         };
 
         int result = 0;
-        run_async(ex, std::stop_token{}, alloc,
+        run_async(ex, capy::stop_token{}, alloc,
             [&](std::tuple<int, int> t) {
                 auto [x, y] = t;
                 completed = true;

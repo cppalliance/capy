@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/io_awaitable.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/system/error_code.hpp>
 
 #include <concepts>

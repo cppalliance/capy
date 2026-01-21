@@ -10,6 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/ex/run_on.hpp>
 
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/io_awaitable.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 

@@ -159,7 +159,7 @@ Awaitables with cancellation support implement `stoppable_awaitable`:
 template<typename A, typename D, typename P = void>
 concept stoppable_awaitable =
     affine_awaitable<A, D, P> &&
-    requires(A a, std::coroutine_handle<P> h, D const& d, std::stop_token t) {
+    requires(A a, std::coroutine_handle<P> h, D const& d, capy::stop_token t) {
         a.await_suspend(h, d, t);
     };
 ----

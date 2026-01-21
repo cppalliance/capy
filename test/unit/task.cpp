@@ -10,6 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/task.hpp>
 
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 
@@ -813,7 +814,7 @@ struct task_test
             co_return;
         };
 
-        run_async(ex, std::stop_token{}, alloc,
+        run_async(ex, capy::stop_token{}, alloc,
             [&]() { completed = true; },
             [](std::exception_ptr) {})(simple());
 
@@ -850,7 +851,7 @@ struct task_test
         };
 
         int result = 0;
-        run_async(ex, std::stop_token{}, alloc,
+        run_async(ex, capy::stop_token{}, alloc,
             [&](int v) {
                 result = v;
                 completed = true;
@@ -899,7 +900,7 @@ struct task_test
         };
 
         int result = 0;
-        run_async(ex, std::stop_token{}, alloc,
+        run_async(ex, capy::stop_token{}, alloc,
             [&](int v) {
                 result = v;
                 completed = true;
@@ -936,7 +937,7 @@ struct task_test
             co_return co_await inner();
         };
 
-        run_async(ex, std::stop_token{}, alloc,
+        run_async(ex, capy::stop_token{}, alloc,
             [&](int) { completed = true; },
             [](std::exception_ptr) {})(outer());
 
@@ -963,7 +964,7 @@ struct task_test
             co_return;
         };
 
-        run_async(ex, std::stop_token{}, alloc,
+        run_async(ex, capy::stop_token{}, alloc,
             [&]() { completed = true; },
             [](std::exception_ptr) {})(simple());
 
@@ -1021,7 +1022,7 @@ struct task_test
     {
         int dispatch_count = 0;
         test_executor ex(dispatch_count);
-        std::stop_source source;
+        capy::stop_source source;
         bool stop_requested = true;
 
         auto outer = []() -> task<bool> {
@@ -1036,7 +1037,7 @@ struct task_test
         BOOST_TEST(!stop_requested);
     }
 
-    static task<std::stop_token>
+    static task<capy::stop_token>
     inner_task_returns_token()
     {
         co_return co_await get_stop_token();

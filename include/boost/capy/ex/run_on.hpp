@@ -13,9 +13,9 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/stop_token.hpp>
 #include <boost/capy/task.hpp>
 
-#include <stop_token>
 #include <utility>
 
 namespace boost {
@@ -63,7 +63,7 @@ struct [[nodiscard]]
 
     // IoAwaitable: receives caller's executor and stop_token for completion dispatch
     template<typename Caller>
-    coro await_suspend(coro continuation, Caller const& caller_ex, std::stop_token token)
+    coro await_suspend(coro continuation, Caller const& caller_ex, capy::stop_token token)
     {
         // 'this' is kept alive by co_await until completion
         // ex_ is valid for the entire operation

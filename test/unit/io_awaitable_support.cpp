@@ -113,7 +113,7 @@ struct io_awaitable_support_test
     void
     testSetAndGetStopToken()
     {
-        std::stop_source source;
+        capy::stop_source source;
         auto token = source.get_token();
 
         auto c = []() -> test_coro { co_return; }();
@@ -142,7 +142,7 @@ struct io_awaitable_support_test
     {
         auto c = []() -> test_coro { co_return; }();
 
-        std::stop_source source;
+        capy::stop_source source;
         c.h_.promise().set_stop_token(source.get_token());
 
         auto awaiter = c.h_.promise().await_transform(get_stop_token());

@@ -16,13 +16,13 @@
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
+#include <boost/capy/ex/stop_token.hpp>
 #include <boost/capy/task.hpp>
 
 #include <array>
 #include <atomic>
 #include <exception>
 #include <optional>
-#include <stop_token>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -93,15 +93,15 @@ struct when_all_state
     std::exception_ptr first_exception_;
 
     // Stop propagation - on error, request stop for siblings
-    std::stop_source stop_source_;
+    capy::stop_source stop_source_;
 
     // Connects parent's stop_token to our stop_source
     struct stop_callback_fn
     {
-        std::stop_source* source_;
+        capy::stop_source* source_;
         void operator()() const { source_->request_stop(); }
     };
-    using stop_callback_t = std::stop_callback<stop_callback_fn>;
+    using stop_callback_t = capy::stop_callback<stop_callback_fn>;
     std::optional<stop_callback_t> parent_stop_callback_;
 
     // Parent resumption
@@ -156,7 +156,7 @@ struct when_all_runner
     {
         when_all_state<Ts...>* state_ = nullptr;
         executor_ref ex_;
-        std::stop_token stop_token_;
+        capy::stop_token stop_token_;
 
         when_all_runner get_return_object()
         {
@@ -312,7 +312,7 @@ public:
     }
 
     template<typename Ex>
-    coro await_suspend(coro continuation, Ex const& caller_ex, std::stop_token parent_token = {})
+    coro await_suspend(coro continuation, Ex const& caller_ex, capy::stop_token parent_token = {})
     {
         state_->continuation_ = continuation;
         state_->caller_ex_ = caller_ex;
@@ -345,7 +345,7 @@ public:
 
 private:
     template<std::size_t I, typename Ex>
-    void launch_one(Ex const& caller_ex, std::stop_token token)
+    void launch_one(Ex const& caller_ex, capy::stop_token token)
     {
         auto runner = make_when_all_runner<I>(
             std::move(std::get<I>(*tasks_)), state_);
