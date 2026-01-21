@@ -16,6 +16,7 @@
 
 namespace boost {
 namespace capy {
+namespace detail {
 
 /** A thread-local pointer.
 
@@ -194,6 +195,7 @@ thread_local T* thread_local_ptr<T>::ptr_ = nullptr;
 
 #endif
 
+} // namespace detail
 } // namespace capy
 } // namespace boost
 

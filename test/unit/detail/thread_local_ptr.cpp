@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/core/thread_local_ptr.hpp>
+#include <boost/capy/detail/thread_local_ptr.hpp>
 
 #include <thread>
 
@@ -31,13 +31,13 @@ struct thread_local_ptr_test
     {
         // default state is nullptr
         {
-            thread_local_ptr<int> p;
+            detail::thread_local_ptr<int> p;
             BOOST_TEST(p.get() == nullptr);
         }
 
         // set and get with int*
         {
-            thread_local_ptr<int> p;
+            detail::thread_local_ptr<int> p;
             int x = 42;
             p.set(&x);
             BOOST_TEST(p.get() == &x);
@@ -50,7 +50,7 @@ struct thread_local_ptr_test
 
         // operator= for setting
         {
-            thread_local_ptr<int> p;
+            detail::thread_local_ptr<int> p;
             int x = 100;
             int* result = (p = &x);
             BOOST_TEST(result == &x);
@@ -59,7 +59,7 @@ struct thread_local_ptr_test
 
         // operator* dereference
         {
-            thread_local_ptr<int> p;
+            detail::thread_local_ptr<int> p;
             int x = 55;
             p = &x;
             BOOST_TEST(*p == 55);
@@ -70,7 +70,7 @@ struct thread_local_ptr_test
 
         // operator-> for class types
         {
-            thread_local_ptr<widget> p;
+            detail::thread_local_ptr<widget> p;
             widget w(123);
             p = &w;
             BOOST_TEST(p->value == 123);
@@ -80,8 +80,8 @@ struct thread_local_ptr_test
 
         // all instances of same type share slot
         {
-            thread_local_ptr<int> p1;
-            thread_local_ptr<int> p2;
+            detail::thread_local_ptr<int> p1;
+            detail::thread_local_ptr<int> p2;
 
             int a = 1;
 
@@ -95,7 +95,7 @@ struct thread_local_ptr_test
 
         // thread independence
         {
-            thread_local_ptr<long> p;
+            detail::thread_local_ptr<long> p;
             long main_val = 100;
             long thread_val = 200;
 
@@ -124,7 +124,7 @@ struct thread_local_ptr_test
 
         // multiple threads
         {
-            thread_local_ptr<widget> p;
+            detail::thread_local_ptr<widget> p;
 
             widget main_w(1);
             p = &main_w;
@@ -166,7 +166,7 @@ struct thread_local_ptr_test
 
 TEST_SUITE(
     thread_local_ptr_test,
-    "boost.capy.thread_local_ptr");
+    "boost.capy.detail.thread_local_ptr");
 
 } // capy
 } // boost
