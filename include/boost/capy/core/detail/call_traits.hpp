@@ -11,7 +11,6 @@
 #define BOOST_CAPY_DETAIL_CALL_TRAITS_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/core/detail/type_traits.hpp>
 #include <boost/mp11/list.hpp>
 #include <boost/mp11/algorithm.hpp>
 

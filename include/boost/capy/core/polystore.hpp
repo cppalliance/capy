@@ -13,7 +13,6 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/core/detail/call_traits.hpp>
 #include <boost/capy/detail/except.hpp>
-#include <boost/capy/core/detail/type_traits.hpp>
 #include <boost/core/typeinfo.hpp>
 #include <boost/core/detail/static_assert.hpp>
 #include <cstring>
@@ -358,8 +357,7 @@ public:
         typename std::enable_if<! get_key<T>::value, T&>::type
     {
         // T& must be convertible to each of Keys&
-        BOOST_CORE_STATIC_ASSERT(all_true<std::is_convertible<
-            T&, Keys&>::value...>::value);
+        BOOST_CORE_STATIC_ASSERT((std::is_convertible_v<T&, Keys&> && ...));
         auto p = make_any<T>(std::forward<Args>(args)...);
         keyset<T, Keys...> ks(*static_cast<T*>(p->get()));
         return *static_cast<T*>(insert_impl(
@@ -435,8 +433,7 @@ public:
         typename std::enable_if<! get_key<T>::value, T&>::type
     {
         // T& must be convertible to each of Keys&
-        BOOST_CORE_STATIC_ASSERT(all_true<std::is_convertible<
-            T&, Keys&>::value...>::value);
+        BOOST_CORE_STATIC_ASSERT((std::is_convertible_v<T&, Keys&> && ...));
         if(auto t = find<T>())
             return *t;
         auto p = make_any<T>(std::forward<Args>(args)...);
@@ -530,11 +527,6 @@ protected:
     get_elements() noexcept;
 
 private:
-    template<bool...> struct bool_pack {};
-    template<bool... Bs>
-    struct all_true : std::is_same<bool_pack<
-        true, Bs...>, bool_pack<Bs..., true>> {};
-
     template<class T, class = void>
     struct has_start : std::false_type {};
 
