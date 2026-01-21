@@ -264,8 +264,8 @@ concept IoAwaitable =
 template<typename Derived>
 class io_awaitable_support
 {
+    executor_ref executor_;
     std::stop_token stop_token_;
-    executor_ref ex_;
 
 public:
     /** Store a stop token for later retrieval.
@@ -298,7 +298,7 @@ public:
     */
     void set_executor(executor_ref ex) noexcept
     {
-        ex_ = ex;
+        executor_ = ex;
     }
 
     /** Return the stored executor.
@@ -307,7 +307,7 @@ public:
     */
     executor_ref executor() const noexcept
     {
-        return ex_;
+        return executor_;
     }
 
     /** Transform an awaitable before co_await.
@@ -365,7 +365,7 @@ public:
         {
             struct awaiter
             {
-                executor_ref ex_;
+                executor_ref executor_;
 
                 bool await_ready() const noexcept
                 {
@@ -378,10 +378,10 @@ public:
 
                 executor_ref await_resume() const noexcept
                 {
-                    return ex_;
+                    return executor_;
                 }
             };
-            return awaiter{ex_};
+            return awaiter{executor_};
         }
         else
         {
