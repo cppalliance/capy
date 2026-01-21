@@ -83,14 +83,14 @@ struct sync_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    any_coro dispatch(any_coro h) const
+    coro dispatch(coro h) const
     {
         if(dispatch_count_)
             ++(*dispatch_count_);
         return h;
     }
 
-    void post(any_coro h) const
+    void post(coro h) const
     {
         h.resume();
     }
@@ -103,11 +103,11 @@ static_assert(Executor<sync_executor>);
 /// Queuing executor - queues for manual execution.
 struct queue_executor
 {
-    std::queue<any_coro>* queue_;
+    std::queue<coro>* queue_;
     test_context* ctx_ = nullptr;
     static test_context default_ctx_;
 
-    explicit queue_executor(std::queue<any_coro>& q)
+    explicit queue_executor(std::queue<coro>& q)
         : queue_(&q)
     {
     }
@@ -125,13 +125,13 @@ struct queue_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    any_coro dispatch(any_coro h) const
+    coro dispatch(coro h) const
     {
         queue_->push(h);
         return std::noop_coroutine();
     }
 
-    void post(any_coro h) const
+    void post(coro h) const
     {
         queue_->push(h);
     }
@@ -420,7 +420,7 @@ struct run_async_test
     void
     testAsyncDispatcherBasic()
     {
-        std::queue<any_coro> queue;
+        std::queue<coro> queue;
         queue_executor d(queue);
         int result = 0;
 
@@ -444,7 +444,7 @@ struct run_async_test
     void
     testAsyncDispatcherMultiple()
     {
-        std::queue<any_coro> queue;
+        std::queue<coro> queue;
         queue_executor d(queue);
         int sum = 0;
 

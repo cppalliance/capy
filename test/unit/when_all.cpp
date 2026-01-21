@@ -96,13 +96,13 @@ struct test_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    any_coro dispatch(any_coro h) const
+    coro dispatch(coro h) const
     {
         ++(*dispatch_count_);
         return h;
     }
 
-    void post(any_coro h) const
+    void post(coro h) const
     {
         h.resume();
     }
@@ -601,13 +601,13 @@ struct when_all_test
         void on_work_started() const noexcept {}
         void on_work_finished() const noexcept {}
 
-        any_coro dispatch(any_coro h) const
+        coro dispatch(coro h) const
         {
             ++(*dispatch_count_);
             return h;
         }
 
-        void post(any_coro h) const
+        void post(coro h) const
         {
             h.resume();
         }

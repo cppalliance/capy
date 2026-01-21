@@ -80,7 +80,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         , detail::task_return_base<T>
     {
         executor_ref caller_ex_;
-        any_coro continuation_;
+        coro continuation_;
         std::exception_ptr ep_;
         detail::frame_allocator_base* alloc_ = nullptr;
         bool needs_dispatch_ = false;
@@ -101,7 +101,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                     return false;
                 }
 
-                void await_suspend(any_coro) const noexcept
+                void await_suspend(coro) const noexcept
                 {
                     // Capture TLS allocator while it's still valid
                     p_->alloc_ = get_frame_allocator();
@@ -128,7 +128,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                     return false;
                 }
 
-                any_coro await_suspend(any_coro) const noexcept
+                coro await_suspend(coro) const noexcept
                 {
                     if(p_->continuation_)
                     {
@@ -222,7 +222,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
     // IoAwaitable: receive caller's executor and stop_token for completion dispatch
     template<typename Ex>
-    any_coro await_suspend(any_coro continuation, Ex const& caller_ex, std::stop_token token)
+    coro await_suspend(coro continuation, Ex const& caller_ex, std::stop_token token)
     {
         h_.promise().caller_ex_ = caller_ex;
         h_.promise().continuation_ = continuation;

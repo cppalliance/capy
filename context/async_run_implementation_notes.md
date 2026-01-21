@@ -106,7 +106,7 @@ void run_with_handler(task<T> inner, Handler h, Dispatcher d)
     // Run synchronously to completion
     auto launcher = handle_;
     handle_ = nullptr;
-    d(any_coro{launcher}).resume();
+    d(coro{launcher}).resume();
 
     // Both frames have completed by now
     // Handler is invoked AFTER completion
@@ -174,7 +174,7 @@ struct launch_awaitable {
         // If not awaited, run fire-and-forget
         if(!started_ && launcher_) {
             // ... setup and run synchronously
-            d_(any_coro{launcher_}).resume();
+            d_(coro{launcher_}).resume();
             inner_.destroy();
             launcher_.destroy();
         }

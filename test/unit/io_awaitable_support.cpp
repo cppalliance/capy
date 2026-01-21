@@ -116,10 +116,10 @@ struct io_awaitable_support_test
         std::stop_source source;
         auto token = source.get_token();
 
-        auto coro = []() -> test_coro { co_return; }();
-        coro.h_.promise().set_stop_token(token);
+        auto c = []() -> test_coro { co_return; }();
+        c.h_.promise().set_stop_token(token);
 
-        auto retrieved = coro.h_.promise().stop_token();
+        auto retrieved = c.h_.promise().stop_token();
         BOOST_TEST(retrieved.stop_possible());
         BOOST_TEST(!retrieved.stop_requested());
 
@@ -130,8 +130,8 @@ struct io_awaitable_support_test
     void
     testDefaultStopToken()
     {
-        auto coro = []() -> test_coro { co_return; }();
-        auto token = coro.h_.promise().stop_token();
+        auto c = []() -> test_coro { co_return; }();
+        auto token = c.h_.promise().stop_token();
 
         BOOST_TEST(!token.stop_possible());
         BOOST_TEST(!token.stop_requested());
@@ -140,12 +140,12 @@ struct io_awaitable_support_test
     void
     testAwaitTransformInterceptsStopTokenTag()
     {
-        auto coro = []() -> test_coro { co_return; }();
+        auto c = []() -> test_coro { co_return; }();
 
         std::stop_source source;
-        coro.h_.promise().set_stop_token(source.get_token());
+        c.h_.promise().set_stop_token(source.get_token());
 
-        auto awaiter = coro.h_.promise().await_transform(get_stop_token());
+        auto awaiter = c.h_.promise().await_transform(get_stop_token());
 
         BOOST_TEST(awaiter.await_ready());
 
@@ -156,9 +156,9 @@ struct io_awaitable_support_test
     void
     testAwaitTransformDelegatesToTransformAwaitable()
     {
-        auto coro = []() -> custom_transform_coro { co_return; }();
+        auto c = []() -> custom_transform_coro { co_return; }();
 
-        BOOST_TEST_EQ(coro.h_.promise().transform_count_, 0);
+        BOOST_TEST_EQ(c.h_.promise().transform_count_, 0);
 
         struct dummy_awaitable
         {
@@ -167,24 +167,24 @@ struct io_awaitable_support_test
             void await_resume() {}
         };
 
-        coro.h_.promise().await_transform(dummy_awaitable{});
-        BOOST_TEST_EQ(coro.h_.promise().transform_count_, 1);
+        c.h_.promise().await_transform(dummy_awaitable{});
+        BOOST_TEST_EQ(c.h_.promise().transform_count_, 1);
 
-        coro.h_.promise().await_transform(get_stop_token());
-        BOOST_TEST_EQ(coro.h_.promise().transform_count_, 1);
+        c.h_.promise().await_transform(get_stop_token());
+        BOOST_TEST_EQ(c.h_.promise().transform_count_, 1);
 
-        coro.h_.promise().await_transform(get_executor());
-        BOOST_TEST_EQ(coro.h_.promise().transform_count_, 1);
+        c.h_.promise().await_transform(get_executor());
+        BOOST_TEST_EQ(c.h_.promise().transform_count_, 1);
     }
 
     void
     testStopTokenAwaiterNeverSuspends()
     {
-        auto coro = []() -> test_coro { co_return; }();
-        auto awaiter = coro.h_.promise().await_transform(get_stop_token());
+        auto c = []() -> test_coro { co_return; }();
+        auto awaiter = c.h_.promise().await_transform(get_stop_token());
 
         BOOST_TEST(awaiter.await_ready());
-        awaiter.await_suspend(any_coro{});
+        awaiter.await_suspend(c.h_);
     }
 
     void
@@ -193,10 +193,10 @@ struct io_awaitable_support_test
         thread_pool pool(1);
         auto executor = pool.get_executor();
 
-        auto coro = []() -> test_coro { co_return; }();
-        coro.h_.promise().set_executor(executor);
+        auto c = []() -> test_coro { co_return; }();
+        c.h_.promise().set_executor(executor);
 
-        auto retrieved = coro.h_.promise().executor();
+        auto retrieved = c.h_.promise().executor();
         BOOST_TEST(static_cast<bool>(retrieved));
         BOOST_TEST(retrieved == executor_ref(executor));
     }
@@ -204,8 +204,8 @@ struct io_awaitable_support_test
     void
     testDefaultExecutor()
     {
-        auto coro = []() -> test_coro { co_return; }();
-        auto ex = coro.h_.promise().executor();
+        auto c = []() -> test_coro { co_return; }();
+        auto ex = c.h_.promise().executor();
 
         BOOST_TEST(!static_cast<bool>(ex));
     }
@@ -216,10 +216,10 @@ struct io_awaitable_support_test
         thread_pool pool(1);
         auto executor = pool.get_executor();
 
-        auto coro = []() -> test_coro { co_return; }();
-        coro.h_.promise().set_executor(executor);
+        auto c = []() -> test_coro { co_return; }();
+        c.h_.promise().set_executor(executor);
 
-        auto awaiter = coro.h_.promise().await_transform(get_executor());
+        auto awaiter = c.h_.promise().await_transform(get_executor());
 
         BOOST_TEST(awaiter.await_ready());
 
@@ -231,11 +231,11 @@ struct io_awaitable_support_test
     void
     testExecutorAwaiterNeverSuspends()
     {
-        auto coro = []() -> test_coro { co_return; }();
-        auto awaiter = coro.h_.promise().await_transform(get_executor());
+        auto c = []() -> test_coro { co_return; }();
+        auto awaiter = c.h_.promise().await_transform(get_executor());
 
         BOOST_TEST(awaiter.await_ready());
-        awaiter.await_suspend(any_coro{});
+        awaiter.await_suspend(c.h_);
     }
 
     void

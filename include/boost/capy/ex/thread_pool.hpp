@@ -11,7 +11,7 @@
 #define BOOST_CAPY_EX_THREAD_POOL_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/any_coro.hpp>
+#include <boost/capy/coro.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <cstddef>
 
@@ -142,8 +142,8 @@ public:
 
         @return A noop coroutine handle to resume.
     */
-    any_coro
-    dispatch(any_coro h) const
+    coro
+    dispatch(coro h) const
     {
         post(h);
         return std::noop_coroutine();
@@ -158,7 +158,7 @@ public:
     */
     BOOST_CAPY_DECL
     void
-    post(any_coro h) const;
+    post(coro h) const;
 
     /// Return true if two executors refer to the same thread pool.
     bool

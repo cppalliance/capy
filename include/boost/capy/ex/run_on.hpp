@@ -63,7 +63,7 @@ struct [[nodiscard]]
 
     // IoAwaitable: receives caller's executor and stop_token for completion dispatch
     template<typename Caller>
-    any_coro await_suspend(any_coro continuation, Caller const& caller_ex, std::stop_token token)
+    coro await_suspend(coro continuation, Caller const& caller_ex, std::stop_token token)
     {
         // 'this' is kept alive by co_await until completion
         // ex_ is valid for the entire operation

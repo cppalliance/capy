@@ -11,7 +11,7 @@
 #define BOOST_CAPY_ANY_EXECUTOR_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/any_coro.hpp>
+#include <boost/capy/coro.hpp>
 
 #include <concepts>
 #include <coroutine>
@@ -234,7 +234,7 @@ public:
 
         @pre This instance holds a valid executor.
     */
-    any_coro dispatch(any_coro h) const
+    coro dispatch(coro h) const
     {
         return p_->dispatch(h);
     }
@@ -249,7 +249,7 @@ public:
 
         @pre This instance holds a valid executor.
     */
-    void post(any_coro h) const
+    void post(coro h) const
     {
         p_->post(h);
     }

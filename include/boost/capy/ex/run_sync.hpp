@@ -11,7 +11,7 @@
 #define BOOST_CAPY_RUN_SYNC_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/any_coro.hpp>
+#include <boost/capy/coro.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/task.hpp>
 
@@ -44,12 +44,12 @@ struct sync_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    any_coro dispatch(any_coro h) const
+    coro dispatch(coro h) const
     {
         return h;
     }
 
-    void post(any_coro h) const
+    void post(coro h) const
     {
         h.resume();
     }
@@ -105,7 +105,7 @@ public:
         h.promise().caller_ex_ = ex;
         h.promise().needs_dispatch_ = false;
 
-        ex.dispatch(any_coro{h}).resume();
+        ex.dispatch(coro{h}).resume();
 
         std::exception_ptr ep = h.promise().ep_;
 

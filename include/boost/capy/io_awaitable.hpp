@@ -11,7 +11,7 @@
 #define BOOST_CAPY_IO_AWAITABLE_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/any_coro.hpp>
+#include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 
 #include <coroutine>
@@ -242,7 +242,7 @@ concept IoAwaitable =
 
         // IoAwaitable await_suspend receives and stores the token and executor
         template<class Ex>
-        any_coro await_suspend(any_coro cont, Ex const& ex, std::stop_token token)
+        coro await_suspend(coro cont, Ex const& ex, std::stop_token token)
         {
             h_.promise().set_stop_token(token);
             h_.promise().set_executor(ex);
@@ -350,7 +350,7 @@ public:
                     return true;
                 }
 
-                void await_suspend(any_coro) const noexcept
+                void await_suspend(coro) const noexcept
                 {
                 }
 
@@ -372,7 +372,7 @@ public:
                     return true;
                 }
 
-                void await_suspend(any_coro) const noexcept
+                void await_suspend(coro) const noexcept
                 {
                 }
 

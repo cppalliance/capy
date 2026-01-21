@@ -42,7 +42,7 @@ A dispatcher is a callable that schedules coroutine resumption:
 ----
 template<typename D, typename P = void>
 concept dispatcher = requires(D const& d, std::coroutine_handle<P> h) {
-    { d(h) } -> std::convertible_to<any_coro>;
+    { d(h) } -> std::convertible_to<coro>;
 };
 ----
 
@@ -57,7 +57,7 @@ When invoked with a coroutine handle, the dispatcher:
 ----
 struct inline_dispatcher
 {
-    any_coro operator()(any_coro h) const
+    coro operator()(coro h) const
     {
         return h;  // Resume inline via symmetric transfer
     }
@@ -67,7 +67,7 @@ struct queuing_dispatcher
 {
     work_queue* queue_;
 
-    any_coro operator()(any_coro h) const
+    coro operator()(coro h) const
     {
         queue_->push(h);
         return std::noop_coroutine();  // Caller returns to event loop

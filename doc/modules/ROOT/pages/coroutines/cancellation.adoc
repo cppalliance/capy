@@ -90,7 +90,7 @@ struct stoppable_timer
 
     // Affine path (no cancellation)
     template<typename Dispatcher>
-    auto await_suspend(any_coro h, Dispatcher const& d)
+    auto await_suspend(coro h, Dispatcher const& d)
     {
         start_timer(duration_, [h, &d] { d(h); });
         return std::noop_coroutine();
@@ -99,7 +99,7 @@ struct stoppable_timer
     // Stoppable path (with cancellation)
     template<typename Dispatcher>
     auto await_suspend(
-        any_coro h,
+        coro h,
         Dispatcher const& d,
         std::stop_token token)
     {
@@ -201,7 +201,7 @@ when awaited), implement the `await_suspend` overload:
 [source,cpp]
 ----
 template<class Ex>
-any_coro await_suspend(any_coro cont, Ex const& ex, std::stop_token token)
+coro await_suspend(coro cont, Ex const& ex, std::stop_token token)
 {
     h_.promise().set_stop_token(token);
     h_.promise().set_executor(ex);

@@ -11,7 +11,7 @@
 #define BOOST_CAPY_EX_DETAIL_STRAND_SERVICE_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/any_coro.hpp>
+#include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
@@ -67,12 +67,12 @@ public:
     running_in_this_thread(strand_impl& impl) noexcept;
 
     /** Dispatch through strand, returns handle for symmetric transfer. */
-    static any_coro
-    dispatch(strand_impl& impl, executor_ref ex, any_coro h);
+    static coro
+    dispatch(strand_impl& impl, executor_ref ex, coro h);
 
     /** Post to strand queue. */
     static void
-    post(strand_impl& impl, executor_ref ex, any_coro h);
+    post(strand_impl& impl, executor_ref ex, coro h);
 
 protected:
     strand_service();

@@ -24,9 +24,9 @@ class thread_pool::impl
 {
     struct work : detail::intrusive_queue<work>::node
     {
-        any_coro h_;
+        coro h_;
 
-        explicit work(any_coro h) noexcept
+        explicit work(coro h) noexcept
             : h_(h)
         {
         }
@@ -72,7 +72,7 @@ public:
     }
 
     void
-    post(any_coro h)
+    post(coro h)
     {
         ensure_started();
         auto* w = new work(h);
@@ -146,7 +146,7 @@ stop() noexcept
 
 void
 thread_pool::executor_type::
-post(any_coro h) const
+post(coro h) const
 {
     pool_->impl_->post(h);
 }

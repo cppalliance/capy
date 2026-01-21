@@ -12,7 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/ex/any_coro.hpp>
+#include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 
 #include <stop_token>
@@ -251,7 +251,7 @@ public:
                 tail_ = nullptr;
             // Lock ownership transfers to next waiter
             if(waiter->ex_)
-                waiter->ex_.dispatch(any_coro{waiter->h_}).resume();
+                waiter->ex_.dispatch(coro{waiter->h_}).resume();
             else
                 waiter->h_.resume();
         }

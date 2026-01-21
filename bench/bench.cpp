@@ -76,18 +76,18 @@ public:
     }
 
     // Executor interface - dispatch inline
-    any_coro dispatch(any_coro h) const
+    coro dispatch(coro h) const
     {
         return h;
     }
 
     // Post interface - resume inline for benchmarking
-    void post(any_coro h) const
+    void post(coro h) const
     {
         h.resume();
     }
 
-    void defer(any_coro h) const
+    void defer(coro h) const
     {
         h.resume();
     }
@@ -117,7 +117,7 @@ struct foreign_awaitable
 
     // IoAwaitable protocol
     template<typename D>
-    any_coro await_suspend(any_coro h, D const&, std::stop_token) const
+    coro await_suspend(coro h, D const&, std::stop_token) const
     {
         return h;
     }

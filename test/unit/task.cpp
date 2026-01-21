@@ -64,13 +64,13 @@ struct test_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    any_coro dispatch(any_coro h) const
+    coro dispatch(coro h) const
     {
         ++(*dispatch_count_);
         return h;  // Inline execution for sync tests
     }
 
-    void post(any_coro h) const
+    void post(coro h) const
     {
         h.resume();
     }
@@ -108,7 +108,7 @@ struct tracking_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    any_coro dispatch(any_coro h) const
+    coro dispatch(coro h) const
     {
         ++(*dispatch_count_);
         if (dispatch_log)
@@ -116,7 +116,7 @@ struct tracking_executor
         return h;  // Inline execution
     }
 
-    void post(any_coro h) const
+    void post(coro h) const
     {
         h.resume();
     }
@@ -129,10 +129,10 @@ static_assert(Executor<tracking_executor>);
 */
 struct queuing_executor
 {
-    std::queue<any_coro>* queue_;
+    std::queue<coro>* queue_;
     test_context* ctx_ = nullptr;
 
-    explicit queuing_executor(std::queue<any_coro>& q)
+    explicit queuing_executor(std::queue<coro>& q)
         : queue_(&q)
     {
     }
@@ -150,13 +150,13 @@ struct queuing_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    any_coro dispatch(any_coro h) const
+    coro dispatch(coro h) const
     {
         queue_->push(h);
         return std::noop_coroutine();
     }
 
-    void post(any_coro h) const
+    void post(coro h) const
     {
         queue_->push(h);
     }

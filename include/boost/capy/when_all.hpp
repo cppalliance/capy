@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/io_awaitable.hpp>
-#include <boost/capy/ex/any_coro.hpp>
+#include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/task.hpp>
@@ -86,7 +86,7 @@ struct when_all_state
     std::tuple<result_holder<Ts>...> results_;
 
     // Runner handles - destroyed in await_resume while allocator is valid
-    std::array<any_coro, task_count> runner_handles_{};
+    std::array<coro, task_count> runner_handles_{};
 
     // Exception storage - first error wins, others discarded
     std::atomic<bool> has_exception_{false};
@@ -105,7 +105,7 @@ struct when_all_state
     std::optional<stop_callback_t> parent_stop_callback_;
 
     // Parent resumption
-    any_coro continuation_;
+    coro continuation_;
     executor_ref caller_ex_;
 
     when_all_state()
@@ -134,7 +134,7 @@ struct when_all_state
 
         The last child to complete triggers resumption of the parent.
     */
-    any_coro signal_completion()
+    coro signal_completion()
     {
         auto remaining = remaining_count_.fetch_sub(1, std::memory_order_acq_rel);
         if(remaining == 1)
@@ -179,7 +179,7 @@ struct when_all_runner
                     return false;
                 }
 
-                any_coro await_suspend(any_coro) noexcept
+                coro await_suspend(coro) noexcept
                 {
                     // Signal completion; last task resumes parent
                     return p_->state_->signal_completion();
@@ -312,7 +312,7 @@ public:
     }
 
     template<typename Ex>
-    any_coro await_suspend(any_coro continuation, Ex const& caller_ex, std::stop_token parent_token = {})
+    coro await_suspend(coro continuation, Ex const& caller_ex, std::stop_token parent_token = {})
     {
         state_->continuation_ = continuation;
         state_->caller_ex_ = caller_ex;
@@ -355,7 +355,7 @@ private:
         h.promise().ex_ = caller_ex;
         h.promise().stop_token_ = token;
 
-        any_coro ch{h};
+        coro ch{h};
         state_->runner_handles_[I] = ch;
         caller_ex.dispatch(ch).resume();
     }

@@ -9,7 +9,7 @@
 
 #include "src/ex/detail/strand_queue.hpp"
 #include <boost/capy/ex/detail/strand_service.hpp>
-#include <boost/capy/ex/any_coro.hpp>
+#include <boost/capy/coro.hpp>
 
 #include <atomic>
 #include <coroutine>
@@ -138,7 +138,7 @@ protected:
 
 private:
     static bool
-    enqueue(strand_impl& impl, any_coro h)
+    enqueue(strand_impl& impl, coro h)
     {
         std::lock_guard<std::mutex> lock(impl.mutex_);
         impl.pending_.push(h);
@@ -224,9 +224,9 @@ running_in_this_thread(strand_impl& impl) noexcept
     return impl.dispatch_thread_.load() == std::this_thread::get_id();
 }
 
-any_coro
+coro
 strand_service::
-dispatch(strand_impl& impl, executor_ref ex, any_coro h)
+dispatch(strand_impl& impl, executor_ref ex, coro h)
 {
     if(running_in_this_thread(impl))
         return h;
@@ -239,7 +239,7 @@ dispatch(strand_impl& impl, executor_ref ex, any_coro h)
 
 void
 strand_service::
-post(strand_impl& impl, executor_ref ex, any_coro h)
+post(strand_impl& impl, executor_ref ex, coro h)
 {
     if(strand_service_impl::enqueue(impl, h))
         ex.post(strand_service_impl::make_invoker(impl).h_);

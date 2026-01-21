@@ -45,7 +45,7 @@ class frame_allocator_wrapper {
 ```cpp
 void run_with_handler(task<T> inner, Handler h, Dispatcher d) {
     // ... setup ...
-    d(any_coro{launcher}).resume();
+    d(coro{launcher}).resume();
     // ... handler invocation ...
 
     inner_handle.destroy();   // ← Frame #1 destroyed FIRST
@@ -58,7 +58,7 @@ void run_with_handler(task<T> inner, Handler h, Dispatcher d) {
 ```cpp
 ~launch_awaitable() {
     if(!started_ && launcher_) {
-        d_(any_coro{launcher_}).resume();
+        d_(coro{launcher_}).resume();
 
         inner_.destroy();     // ← Frame #1 destroyed FIRST
         launcher_.destroy();  // ← Frame #2 destroyed SECOND
