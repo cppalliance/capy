@@ -30,6 +30,7 @@ else()
     # Secondary dependencies
 
     compat
+    mp11
     variant2
     winapi
     predef
