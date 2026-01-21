@@ -32,7 +32,8 @@ namespace detail {
     @tparam Ex The executor type
 */
 template<typename T, Executor Ex>
-struct [[nodiscard]] run_on_awaitable
+struct [[nodiscard]]
+    run_on_awaitable
 {
     Ex ex_;
     std::coroutine_handle<typename task<T>::promise_type> h_;

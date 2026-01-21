@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/ex/run_on.hpp>
+#include <boost/capy/ex/async_mutex.hpp>
 
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -16,8 +16,8 @@
 namespace boost {
 namespace capy {
 
-static_assert(IoAwaitable<detail::run_on_awaitable<void, executor_ref>, executor_ref>);
-static_assert(IoAwaitable<detail::run_on_awaitable<int, executor_ref>, executor_ref>);
+static_assert(IoAwaitable<async_mutex::lock_awaiter, executor_ref>);
+static_assert(IoAwaitable<async_mutex::lock_guard_awaiter, executor_ref>);
 
 } // capy
 } // boost

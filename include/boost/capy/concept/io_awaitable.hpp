@@ -18,6 +18,8 @@
 namespace boost {
 namespace capy {
 
+class executor_ref;
+
 /** Concept for I/O awaitable types.
 
     An awaitable is an I/O awaitable if it participates in the I/O awaitable
@@ -57,7 +59,12 @@ namespace capy {
 */
 template<typename A, typename Ex, typename P = void>
 concept IoAwaitable =
-    requires(A a, std::coroutine_handle<P> h, Ex const& ex, std::stop_token token) {
+    requires(
+        A a,
+        std::coroutine_handle<P> h,
+        Ex ex,
+        std::stop_token token)
+    {
         a.await_suspend(h, ex, token);
     };
 
