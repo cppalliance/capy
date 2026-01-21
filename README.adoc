@@ -24,11 +24,73 @@
 
 |===
 
-== Boost.Capy
+:cpp: C++
 
-Provides facilities for creating and accessing services during runtime.
+# Boost.Capy
 
-=== License
+## Request for Endorsements
+
+I am proposing Boost.Capy as a candidate library and seeking endorsements for formal review.
+
+Boost.Capy provides the foundation that {cpp}20 coroutines need to serve network I/O effectively. This is not a general-purpose coroutine framework. There are no generators for prime numbers, no GPU processing, no abstract sender/receiver machinery. Capy is purpose-built to give coroutines what they need most for networking.
+
+This is what the {cpp} standard has failed to provide. Users have demanded networking support for decades. We finally got coroutines, but without guidance or experience on using them for I/O. The execution model arriving in {cpp}26 evolved from GPU and parallel workloads. P3826, the paper fixing sender algorithm customization, contains over 100 references to GPU and parallel execution. It contains zero references to networking, sockets, or I/O patterns. The machinery it adds: domain queries, completion schedulers, sender transforms, solves entirely different problems. TCP servers do not run on GPUs. {cpp}26 offers things that networking does not need, and does not offer things that networking needs. Socket reads have one implementation per platform, not a menu of hardware backends.
+
+Capy fills this gap. It is what `std::execution` could have been for networking, a problem domain with greater evidence of need. Capy introduces the _IoAwaitable_ protocol: a compile-time contract that propagates execution context forward through `co_await` chains that may end with operating system interactions.
+
+## The Beman Way
+
+I am bringing Capy to Boost because this is what Boost was created for. The project exists to incubate high-quality libraries destined for standardization. Beman Dawes founded Boost on the principle that the best path to the standard is through proven practice: build it, ship it, let users depend on it, learn from real-world feedback, then propose standardization. Smart pointers, regular expressions, filesystem, threading primitives—all followed this path from Boost to the standard library.
+
+Capy represents Boost returning to its role as a leader in {cpp} standardization efforts. The library addresses a real gap in {cpp}26: there is no standard foundation for coroutine-based I/O. Rather than waiting for a committee to design something in the abstract, or adapting networking to a framework built for different requirements, Capy takes the proven approach. It exists. It works. It powers real networking code today. Now it needs the scrutiny and refinement that only the Boost review process can provide.
+
+## The Problem Capy Solves
+
+When an I/O operation completes, the operating system wakes up some thread, such as a completion port thread, an epoll reactor, or an io_uring worker. Without affinity tracking, your coroutine resumes on that arbitrary thread, forcing you to add synchronization everywhere or risk data races. This is the fundamental problem that coroutine-based networking must solve.
+
+Capy's answer is the _IoAwaitable_ protocol. When you launch a coroutine with a designated executor, every child coroutine inherits that executor affinity automatically. Execution context flows forward through `co_await` chains, not backward through P3826 queries, to ensure every coroutine in the chain runs in the same context. When I/O completes on some OS thread, the _IoAwaitable_ protocol ensures your coroutine resumes on its designated executor. The data flow is explicit and testable. There are no thread-local globals, no implicit context, no surprises. Capy's `task` type uses the compiler to enforce invariants.
+
+Cancellation follows the same forward-propagation model. Stop tokens flow forward from the launch of a coroutine chain alongside the execution context, to arrive at the platform API boundary, providing a uniform cancellation interface across all operations.
+
+Frame allocation is where coroutine overhead traditionally hurts performance. Capy addresses this with thread-local recycling pools that achieve zero steady-state allocations after warmup. The coroutine launch site controls allocation policy, enabling per-deployment customization: bounded pools for real-time systems, per-tenant budgets for multi-tenant servers, or tracking allocators for debugging.
+
+Buffer handling is essential for networking, and Asio's twenty five years of experience showed us how. Capy provides buffer sequence algorithms: think `std::ranges` but for buffers. These are the vocabulary types and operations that networking code needs: slicing, copying, concatenating, and iterating over discontiguous memory. One million scatter/gather buffers, if you will. The design is driven by real-world usage, not theoretical completeness.
+
+Capy is opinionated on the things that matter for I/O:
+
+- An executor model for coroutine affinity and completion dispatch
+- Stop token integration: uniform cancellation, always available
+- Allocator control over frame allocation with zero-overhead recycling
+- Forward propagation of the full context through every `co_await`
+- A `task` type that enforces the _IoAwaitable_ protocol at compile time
+- Composition primitives for launching and coordinating coroutines
+- A strand for safe concurrency without mutexes
+- Buffer sequences: `std::ranges` for untyped bytes
+- Type erasure by default: no combinatorial explosion of templates
+
+## Proven Through Boost.Corosio
+
+Capy is not speculation. It powers Boost.Corosio, a coroutine-first networking library that we are developing alongside Capy. Corosio provides real sockets, acceptors, TLS streams, timers, DNS resolution, and multiple implementations of SSL streams, all built on Capy's foundation. This is the successor library to the incredibly popular Boost.Asio. It demonstrates what networking could look like if designed for coroutines from the start rather than adapted from callback-based models.
+
+The standardization strategy follows from this layering. Capy is the foundation piece that belongs in the standard: executor model, task types, buffer algorithms, cancellation integration. These are stable abstractions that networking libraries can build upon. Corosio, the networking piece, can remain outside the standard to mitigate risk: sockets and protocol implementations typically experience difficulty achieving consensus even after years of committee attention. Corosio can mature externally where it can evolve based on user feedback, while Capy provides the stable foundation that the standard library lacks.
+
+Welcome to the future of C++ networking.
+
+## Resources
+
+- Design paper: "Coroutine-First I/O: A Type-Erased Affine Framework"
+- GitHub: https://github.com/cppalliance/capy
+- Documentation: https://develop.capy.cpp.al/
+- Boost.Corosio: https://github.com/cppalliance/corosio
+- P3826: https://wg21.link/p3826[Fix or Remove Sender Algorithm Customization]
+
+## Call to Action
+
+I am requesting endorsements from Boost members to proceed with formal review. If you believe that Boost should provide a foundation for coroutine-based I/O—and that proven practice is the right path to standardization—I would welcome your endorsement.
+
+I also invite feedback on the design, the implementation, and the documentation. The library is ready for serious evaluation. Clone it, build it, write code against it, and tell me what works and what does not.
+
+This is Boost doing what Boost does best: building the libraries that {cpp} needs, proving them in practice, and paving the way for standardization.
 
 Distributed under the Boost Software License, Version 1.0.
 (See accompanying file [LICENSE_1_0.txt](LICENSE_1_0.txt) or copy at
