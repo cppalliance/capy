@@ -230,7 +230,7 @@ struct when_all_runner
         auto await_transform(Awaitable&& a)
         {
             using A = std::decay_t<Awaitable>;
-            if constexpr (IoAwaitable<A>)
+            if constexpr (IoAwaitable<A, executor_ref>)
             {
                 return transform_awaiter<Awaitable>{
                     std::forward<Awaitable>(a), this};
@@ -312,6 +312,20 @@ public:
     }
 
     template<typename Ex>
+    /**
+     * @brief Launches all child runners, wires parent stop propagation, and defers parent resumption to the shared state.
+     *
+     * Stores the parent continuation and executor in the shared state, connects the optional parent stop_token
+     * to the state's stop_source (requesting stop immediately if the parent already requested stop), then
+     * launches a runner for each task with the state's stop token. Parent resumption is not performed here;
+     * the shared state will resume the parent when all children have completed.
+     *
+     * @tparam Ex Type of the caller executor.
+     * @param continuation The parent coroutine handle to be resumed once all tasks complete.
+     * @param caller_ex Executor on which child runners should be scheduled.
+     * @param parent_token Optional parent stop_token whose stop requests are forwarded to child runners.
+     * @return coro A no-op coroutine; actual resumption of the parent continuation is performed by the shared state.
+     */
     coro await_suspend(coro continuation, Ex const& caller_ex, std::stop_token parent_token = {})
     {
         state_->continuation_ = continuation;
@@ -328,7 +342,11 @@ public:
                 state_->stop_source_.request_stop();
         }
 
-        // Launch all tasks concurrently
+        // CRITICAL: If the last task finishes synchronously then the parent
+        // coroutine resumes, destroying its frame, and destroying this object
+        // prior to the completion of await_suspend. Therefore, await_suspend
+        // must ensure `this` cannot be referenced after calling `launch_one`
+        // for the last time.
         auto token = state_->stop_source_.get_token();
         [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             (..., launch_one<Is>(caller_ex, token));
