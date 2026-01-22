@@ -174,7 +174,7 @@ concept IoAwaitable =
 
 The key insight: `await_suspend` receives the executor and stop token as parameters, injected by the caller's `await_transform`. The allocator propagates via `thread_local` storage during a narrow execution window with specific guarantees, ensuring availability at frame allocation time.
 
-The related `IoAwaitableTask` concept formalizes the contract between launch functions (`run_async`, `run_on`) and task types:
+The related `IoAwaitableTask` concept extends `IoAwaitable` with the promise interface needed to both **receive** propagated context and **propagate** it to child coroutines:
 
 ```cpp
 template<typename T>
@@ -194,7 +194,42 @@ concept IoAwaitableTask =
     };
 ```
 
-Launch functions are the root of a coroutine chain—they must set context directly on the promise rather than going through `await_suspend`. The `IoAwaitableTask` concept ensures the promise provides the injection interface (`set_executor`, `set_stop_token`) and the retrieval interface (`executor`, `stop_token`). This separation allows launch functions to bootstrap context into a cold task before it begins execution, while regular `co_await` chains use the three-argument `await_suspend` for propagation.
+The `IoAwaitableTask` concept ensures the promise provides the injection interface (`set_executor`, `set_stop_token`) for receiving context when awaited, and the retrieval interface (`executor`, `stop_token`) for propagating context to children via `await_transform`. This bidirectional capability is what distinguishes a task from a simple awaitable—the task participates fully in the context propagation chain.
+
+The `IoLaunchableTask` concept further refines `IoAwaitableTask` with the interface needed by launch functions:
+
+```cpp
+template<typename T>
+concept IoLaunchableTask =
+    IoAwaitableTask<T> &&
+    requires(T& t, T const& ct, typename T::promise_type const& cp)
+    {
+        { ct.handle() } noexcept -> std::same_as<std::coroutine_handle<typename T::promise_type>>;
+        { t.release() } noexcept;
+        { cp.exception() } noexcept -> std::same_as<std::exception_ptr>;
+    } &&
+    (std::is_void_v<decltype(std::declval<T&>().await_resume())> ||
+     requires(typename T::promise_type& p) {
+         p.result();
+     });
+```
+
+Launch functions like `run_async` and `run_on` bootstrap context directly into a task—they call `set_executor` and `set_stop_token` on the promise rather than going through the three-argument `await_suspend`. The `IoLaunchableTask` concept adds the requirements these functions need: `handle()` and `release()` for lifetime management, plus `exception()` and `result()` for completion handling.
+
+- **`run_async`** is the root of a coroutine chain, launching from non-coroutine code
+- **`run_on`** performs executor hopping from within coroutine code, binding a child task to a different executor
+
+Because launch functions are constrained on the concept rather than a concrete type, they work with any conforming task:
+
+```cpp
+template< IoLaunchableTask Task >
+void run_async( executor_ref ex, Task task );
+
+template< IoLaunchableTask Task >
+auto run_on( executor_ref ex, Task task );
+```
+
+This decoupling enables library authors to write launch utilities that work with any conforming task type, and users to define custom task types that integrate seamlessly with existing launchers.
 
 Implementing `IoAwaitableTask` also gives coroutines the option to access their context from within the coroutine body. The `io_awaitable_support` mixin's `await_transform` intercepts the tag types returned by `get_executor()` and `get_stop_token()`, returning immediate awaiters that yield the stored values without suspending:
 
@@ -652,16 +687,21 @@ This section provides formal requirements for each participant in the _IoAwaitab
 
 ### 8.1 Coroutine Launch Function
 
-A launch function (e.g., `run_async`, `run_on`) bridges non-coroutine code into the coroutine world.
+A launch function (e.g., `run_async`, `run_on`) bridges non-coroutine code into the coroutine world or performs executor hopping within a coroutine chain. Launch functions should be constrained on `IoLaunchableTask` to work with any conforming task type:
+
+```cpp
+template<IoLaunchableTask T>
+void run_async(executor_ref ex, T&& task);
+```
 
 **Requirements:**
 
 1. Accept or provide an executor
 2. Accept or default a stop token
 3. Set thread-local allocator before invoking the child coroutine
-4. Create an initial awaitable wrapper or trampoline coroutine
-5. Call the child's `await_suspend(continuation, executor, stop_token)`
-6. Manage the trampoline lifetime (LIFO destruction order via C++17 evaluation guarantees)
+4. Bootstrap context via `set_executor` and `set_stop_token` on the promise
+5. Manage the task lifetime via `handle()` and `release()`
+6. Handle completion via `exception()` and `result()` on the promise
 
 ### 8.2 Awaitable Type
 
@@ -708,6 +748,15 @@ A coroutine return type whose awaitable form satisfies `IoAwaitable`. Task types
 3. All four methods must be `noexcept`
 
 The `IoAwaitableTask` requirements enable launch functions to bootstrap context into a task before it begins execution, without going through the awaitable machinery.
+
+**Additional requirements for `IoLaunchableTask`:**
+
+1. The task must provide `handle()` returning `std::coroutine_handle<promise_type>`
+2. The task must provide `release()` to transfer ownership without destroying the frame
+3. The promise must provide `exception()` returning any stored `std::exception_ptr`
+4. For non-void tasks, the promise must provide `result()` returning the stored value
+
+The `IoLaunchableTask` requirements enable launch functions like `run_async` and `run_on` to manage task lifetime and retrieve results. Because these functions are constrained on the concept rather than a concrete type, they work with any conforming task implementation.
 
 ### 8.4 I/O Object
 

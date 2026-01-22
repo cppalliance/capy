@@ -78,28 +78,34 @@ Key characteristics:
 
 ### 2.2 Boost.Cobalt
 
-Cobalt builds on Boost.Asio's executor model with coroutine-specific extensions:
+Cobalt builds on Boost.Asio's executor model with concept-based context propagation. Rather than requiring inheritance from specific base classes, Cobalt uses `if constexpr (requires {...})` patterns to detect capabilities:
 
 ```cpp
-template<typename Return>
-struct cobalt_promise
-    : promise_memory_resource_base,
-      promise_cancellation_base<asio::cancellation_slot, asio::enable_total_cancellation>,
-      promise_throw_if_cancelled_base,
-      enable_awaitables<cobalt_promise<Return>>,
-      enable_await_allocator<cobalt_promise<Return>>,
-      enable_await_executor<cobalt_promise<Return>>,
-      // ...
+template<typename Promise>
+std::coroutine_handle<void> await_suspend(std::coroutine_handle<Promise> h) {
+    // Concept-based member detection for cancellation
+    if constexpr (requires {h.promise().get_cancellation_slot();})
+        if ((cl = h.promise().get_cancellation_slot()).is_connected())
+            cl.emplace<forward_cancellation>(*self->cancel_signal);
+    
+    // Concept-based member detection for executor
+    if constexpr (requires {h.promise().get_executor();})
+        self->promise->exec.emplace(h.promise().get_executor());
+    else
+        self->promise->exec.emplace(this_thread::get_executor());
+    // ...
+}
 ```
 
 Key characteristics:
 
 - **Tightly coupled to Asio**: Requires Boost.Asio's `io_context`, executors, and cancellation model
 - **Single-threaded by design**: Coroutines cannot be resumed on a different thread than created on
+- **Concept-based context propagation**: Uses member detection via `requires` expressions
 - **Tagged argument injection**: `asio::executor_arg_t` and `std::allocator_arg_t` in coroutine parameters
 - **Thread-local defaults**: Persistent `this_thread::get_executor()` and `this_thread::get_default_resource()`
 - **Asio cancellation model**: `cancellation_signal` with type filtering
-- **Fixed task types**: `task`, `promise`, `generator`, `detached`
+- **Built-in task types**: `task`, `promise`, `generator`, `detached`
 
 ---
 
@@ -198,13 +204,22 @@ This enables a common pattern: I/O on dedicated threads, compute on worker pools
 
 ### 4.2 Cobalt Approach
 
-Cobalt provides `spawn` for cross-executor execution:
+Cobalt provides `spawn` for cross-executor execution, which can be awaited using `use_op`:
 
 ```cpp
-spawn(worker_executor, my_task(), asio::use_future);
+// Spawn task on another executor and await the result
+auto result = co_await spawn(worker_executor, compute_task(), use_op);
 ```
 
-However, there is no `run_on` equivalent for mid-chain executor switching. The single-threaded design means coroutines generally stay on their creation thread.
+This enables mid-chain cross-executor execution, but with key differences from IoAwaitable's `run_on`:
+
+| Aspect | IoAwaitable `run_on` | Cobalt `spawn(..., use_op)` |
+|--------|---------------------|----------------------------|
+| Task types | Any `IoLaunchableTask` | `cobalt::task<T>` only |
+| Mechanism | Same coroutine hops executors | Spawns child coroutine on target |
+| Return behavior | Parent resumes on original executor | Result delivered back to caller |
+
+The `spawn` function specifically requires `cobalt::task<T>`—foreign task types cannot be spawned onto other executors.
 
 ### 4.3 Comparison
 
@@ -212,7 +227,8 @@ However, there is no `run_on` equivalent for mid-chain executor switching. The s
 |--------|-------------|--------|
 | Entry point | `run_async(ex)(task)` | `co_main`, `run()` |
 | Cross-executor spawn | `run_async`, `spawn` | `spawn` |
-| Mid-chain executor switch | `run_on(ex, task)` | Not provided |
+| Mid-chain executor switch | `run_on(ex, task)` | `spawn(ex, task, use_op)` |
+| Task type constraint | Any `IoLaunchableTask` | `cobalt::task` only |
 | Allocator injection timing | Before task creation (C++17 ordering) | Via tagged argument |
 
 ---
@@ -264,25 +280,44 @@ Any type satisfying the concept participates in the protocol. This enables:
 - **Specialized tasks**: Domain-specific task types (e.g., `gpu_task`, `file_task`) can participate
 - **Gradual adoption**: Existing coroutine types can be adapted to satisfy `IoAwaitable`
 
-### 5.2 Cobalt: Fixed Task Types
+### 5.2 Cobalt: Concept-Based Context Propagation
 
-Cobalt provides a fixed set of task types:
+Cobalt provides built-in task types:
 
 - `task<T>` — Lazy coroutine
 - `promise<T>` — Eager coroutine
 - `generator<T>` — Async generator
 - `detached` — Fire-and-forget
 
-All share the same promise base classes. There is no concept-based extension point for third-party task types to participate in Cobalt's context propagation.
+However, context propagation during `co_await` uses **concept-based member detection**, allowing foreign awaitables to participate. When awaiting any type, Cobalt checks for optional members:
+
+```cpp
+// Cancellation propagation - works with any awaitable providing the member
+if constexpr (requires {h.promise().get_cancellation_slot();})
+    if ((cl = h.promise().get_cancellation_slot()).is_connected())
+        cl.emplace<forward_cancellation>(*self->cancel_signal);
+
+// Executor inheritance - works with any awaitable providing the member
+if constexpr (requires {h.promise().get_executor();})
+    self->promise->exec.emplace(h.promise().get_executor());
+```
+
+This means third-party awaitables CAN participate in Cobalt's context propagation by providing:
+- `get_cancellation_slot()` — for cancellation propagation
+- `get_executor()` — for executor inheritance
+- `begin_transaction()` — for transactional semantics (optional)
+
+**Important distinction**: While `co_await` works with foreign awaitables via concept-based detection, the `spawn()` function specifically requires `cobalt::task<T>`. Foreign task types cannot be spawned onto other executors.
 
 ### 5.3 Comparison
 
 | Aspect | IoAwaitable | Cobalt |
 |--------|-------------|--------|
-| Task definition | Concept-based protocol | Fixed concrete types |
-| Third-party tasks | Can satisfy `IoAwaitable` | Must use Cobalt types |
-| Heterogeneous composition | Supported | Not supported |
-| Extensibility | Open (satisfy concept) | Closed (use provided types) |
+| Task definition | Concept-based protocol | Built-in types + concept-based `co_await` |
+| Third-party awaitables | Can satisfy `IoAwaitable` | Participate via member detection |
+| Cross-executor spawn | Any `IoLaunchableTask` | `cobalt::task` only |
+| Heterogeneous composition | Supported | Supported for `co_await` |
+| Extensibility | Open (satisfy concept) | Open for awaiting; `spawn` requires `task` |
 
 ---
 
@@ -747,8 +782,8 @@ namespace this_thread {
 | **Single-thread performance** | Same as Cobalt (pointer comparison) | Symmetric transfer assumed safe |
 | **Multi-thread support** | Yes, via launch functions | No (except `spawn`) |
 | **Lock-free composition** | Opt-in via executor precondition | Always (baked in) |
-| **Executor hopping** | `run_on` for mid-chain switching | `spawn` only |
-| **Task extensibility** | Concept-based (open) | Fixed types (closed) |
+| **Executor hopping** | `run_on` for mid-chain switching | `spawn(ex, task, use_op)` |
+| **Task extensibility** | Concept-based (open) | Concept-based for `co_await`; `spawn` requires `task` |
 | **Executor propagation** | Forward via `await_suspend` params | Tagged args + awaiter inheritance + TLS |
 | **Executor type** | `executor_ref` | `asio::any_io_executor` |
 | **Allocator propagation** | Automatic via TLS | Manual via tagged args |
