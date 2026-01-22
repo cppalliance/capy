@@ -83,7 +83,6 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         coro continuation_;
         std::exception_ptr ep_;
         detail::frame_allocator_base* alloc_ = nullptr;
-        bool needs_dispatch_ = false;
 
         task get_return_object()
         {
@@ -132,8 +131,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                 {
                     if(p_->continuation_)
                     {
-                        // Same executor: true symmetric transfer
-                        if(!p_->needs_dispatch_)
+                        if(p_->executor() == p_->caller_ex_)
                             return p_->continuation_;
                         return p_->caller_ex_.dispatch(p_->continuation_);
                     }
@@ -228,7 +226,6 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         h_.promise().continuation_ = continuation;
         h_.promise().set_executor(caller_ex);
         h_.promise().set_stop_token(token);
-        h_.promise().needs_dispatch_ = false;
         return h_;
     }
 

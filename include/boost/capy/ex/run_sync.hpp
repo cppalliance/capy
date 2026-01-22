@@ -103,7 +103,6 @@ public:
         h.promise().continuation_ = std::noop_coroutine();
         h.promise().set_executor(ex);
         h.promise().caller_ex_ = ex;
-        h.promise().needs_dispatch_ = false;
 
         ex.dispatch(coro{h}).resume();
 
