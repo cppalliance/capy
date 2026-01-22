@@ -76,7 +76,7 @@ The standardization strategy follows from this layering. Capy is the foundation 
 
 ## Resources
 
-- Design paper: "Coroutine-First I/O: A Type-Erased Affine Framework"
+- Design paper: link:papers/io-awaitables.md[IoAwaitables: A Coroutines-First Execution Model]
 - GitHub: https://github.com/cppalliance/capy
 - Documentation: https://develop.capy.cpp.al/
 - Boost.Corosio: https://github.com/cppalliance/corosio
