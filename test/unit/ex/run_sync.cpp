@@ -9,7 +9,7 @@
 
 #include <boost/capy/task.hpp>
 
-#include "../detail/run_sync.hpp"
+#include <boost/capy/test/run_blocking.hpp>
 #include "test_suite.hpp"
 
 #include <stdexcept>
@@ -26,7 +26,7 @@ struct test_exception : std::runtime_error
     }
 };
 
-struct run_sync_test
+struct run_blocking_test
 {
     //----------------------------------------------------------
     // Return value tests
@@ -47,14 +47,16 @@ struct run_sync_test
     void
     testReturnInt()
     {
-        int result = detail::run_sync()(returns_int());
+        int result = 0;
+        test::run_blocking([&](int v) { result = v; })(returns_int());
         BOOST_TEST_EQ(result, 42);
     }
 
     void
     testReturnString()
     {
-        std::string result = detail::run_sync()(returns_string());
+        std::string result;
+        test::run_blocking([&](std::string v) { result = std::move(v); })(returns_string());
         BOOST_TEST_EQ(result, "hello");
     }
 
@@ -78,7 +80,7 @@ struct run_sync_test
     void
     testVoidTask()
     {
-        detail::run_sync()(void_task_basic());
+        test::run_blocking()(void_task_basic());
         // No exception means success
         BOOST_TEST(true);
     }
@@ -87,7 +89,7 @@ struct run_sync_test
     testVoidTaskSideEffect()
     {
         bool flag = false;
-        detail::run_sync()(void_task_with_side_effect(flag));
+        test::run_blocking()(void_task_with_side_effect(flag));
         BOOST_TEST(flag);
     }
 
@@ -119,19 +121,19 @@ struct run_sync_test
     void
     testExceptionPropagation()
     {
-        BOOST_TEST_THROWS(detail::run_sync()(throws_exception()), test_exception);
+        BOOST_TEST_THROWS(test::run_blocking()(throws_exception()), test_exception);
     }
 
     void
     testStdExceptionPropagation()
     {
-        BOOST_TEST_THROWS(detail::run_sync()(throws_std_exception()), std::runtime_error);
+        BOOST_TEST_THROWS(test::run_blocking()(throws_std_exception()), std::runtime_error);
     }
 
     void
     testVoidTaskException()
     {
-        BOOST_TEST_THROWS(detail::run_sync()(void_task_throws()), test_exception);
+        BOOST_TEST_THROWS(test::run_blocking()(void_task_throws()), test_exception);
     }
 
     //----------------------------------------------------------
@@ -182,20 +184,22 @@ struct run_sync_test
     void
     testNestedTaskValue()
     {
-        int result = detail::run_sync()(outer_awaits_inner());
+        int result = 0;
+        test::run_blocking([&](int v) { result = v; })(outer_awaits_inner());
         BOOST_TEST_EQ(result, 101);
     }
 
     void
     testNestedTaskException()
     {
-        BOOST_TEST_THROWS(detail::run_sync()(outer_awaits_throwing_inner()), test_exception);
+        BOOST_TEST_THROWS(test::run_blocking()(outer_awaits_throwing_inner()), test_exception);
     }
 
     void
     testNestedTaskCatchException()
     {
-        int result = detail::run_sync()(outer_catches_inner_exception());
+        int result = 0;
+        test::run_blocking([&](int v) { result = v; })(outer_catches_inner_exception());
         BOOST_TEST_EQ(result, 999);
     }
 
@@ -226,7 +230,8 @@ struct run_sync_test
     void
     testChainedTasks()
     {
-        int result = detail::run_sync()(level1());
+        int result = 0;
+        test::run_blocking([&](int v) { result = v; })(level1());
         BOOST_TEST_EQ(result, 111);
     }
 
@@ -243,7 +248,8 @@ struct run_sync_test
     void
     testDeeplyNestedTasks()
     {
-        int result = detail::run_sync()(deeply_nested());
+        int result = 0;
+        test::run_blocking([&](int v) { result = v; })(deeply_nested());
         BOOST_TEST_EQ(result, 1111);
     }
 
@@ -278,7 +284,7 @@ struct run_sync_test
     void
     testVoidTaskChain()
     {
-        detail::run_sync()(void_outer());
+        test::run_blocking()(void_outer());
         BOOST_TEST(true);
     }
 
@@ -286,7 +292,7 @@ struct run_sync_test
     testVoidTaskChainWithCounter()
     {
         int counter = 0;
-        detail::run_sync()(void_chain(counter));
+        test::run_blocking()(void_chain(counter));
         BOOST_TEST_EQ(counter, 3);
     }
 
@@ -312,14 +318,15 @@ struct run_sync_test
     void
     testVoidAwaitsValue()
     {
-        detail::run_sync()(void_awaits_value());
+        test::run_blocking()(void_awaits_value());
         BOOST_TEST(true);
     }
 
     void
     testValueAwaitsVoid()
     {
-        int result = detail::run_sync()(value_awaits_void());
+        int result = 0;
+        test::run_blocking([&](int v) { result = v; })(value_awaits_void());
         BOOST_TEST_EQ(result, 42);
     }
 
@@ -330,19 +337,24 @@ struct run_sync_test
     void
     testMultipleCalls()
     {
-        int a = detail::run_sync()(returns_int());
-        int b = detail::run_sync()(returns_int());
-        int c = detail::run_sync()(returns_int());
+        int a = 0, b = 0, c = 0;
+        test::run_blocking([&](int v) { a = v; })(returns_int());
+        test::run_blocking([&](int v) { b = v; })(returns_int());
+        test::run_blocking([&](int v) { c = v; })(returns_int());
         BOOST_TEST_EQ(a + b + c, 126);
     }
 
     void
     testMixedCalls()
     {
-        int a = detail::run_sync()(returns_int());
-        detail::run_sync()(void_task_basic());
-        std::string s = detail::run_sync()(returns_string());
-        int b = detail::run_sync()(outer_awaits_inner());
+        int a = 0;
+        std::string s;
+        int b = 0;
+
+        test::run_blocking([&](int v) { a = v; })(returns_int());
+        test::run_blocking()(void_task_basic());
+        test::run_blocking([&](std::string v) { s = std::move(v); })(returns_string());
+        test::run_blocking([&](int v) { b = v; })(outer_awaits_inner());
 
         BOOST_TEST_EQ(a, 42);
         BOOST_TEST_EQ(s, "hello");
@@ -391,8 +403,8 @@ struct run_sync_test
 };
 
 TEST_SUITE(
-    run_sync_test,
-    "boost.capy.ex.run_sync");
+    run_blocking_test,
+    "boost.capy.test.run_blocking");
 
 } // namespace capy
 } // namespace boost
