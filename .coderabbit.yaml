@@ -30,7 +30,7 @@ reviews:
     description:
       mode: warning # Options: off, warning, error
     docstrings:
-      mode: on
+      mode: warning
 
   path_filters:
     - "!**/bench/**"
