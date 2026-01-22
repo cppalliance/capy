@@ -12,6 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/buffers/consuming_buffers.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/system/error_code.hpp>
@@ -64,27 +65,23 @@ namespace capy {
 auto
 read(
     ReadStream auto& stream,
-    MutableBufferSequence const& buffers) ->
+    MutableBufferSequence auto const& buffers) ->
         task<std::pair<system::error_code, std::size_t>>
 {
-    std::size_t total = 0;
-    auto it = begin(buffers);
-    auto const last = end(buffers);
+    consuming_buffers consuming(buffers);
+    std::size_t const total_size = buffer_size(buffers);
+    std::size_t total_read = 0;
 
-    while(it != last)
+    while(total_read < total_size)
     {
-        mutable_buffer buf = *it;
-        while(buf.size() > 0)
-        {
-            auto [ec, n] = co_await stream.read_some(buf);
-            total += n;
-            if(ec)
-                co_return {ec, total};
-            buf += n;
-        }
-        ++it;
+        auto [ec, n] = co_await stream.read_some(consuming);
+        if(ec)
+            co_return {ec, total_read};
+        consuming.consume(n);
+        total_read += n;
     }
-    co_return {system::error_code{}, total};
+
+    co_return {{}, total_read};
 }
 
 } // namespace capy

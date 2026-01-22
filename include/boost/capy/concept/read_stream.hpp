@@ -47,6 +47,7 @@ struct mutable_buffer_archetype_
     mutable_buffer_archetype_& operator=(mutable_buffer_archetype_&&) = delete;
 
     operator mutable_buffer() const noexcept { return {}; }
+    operator const_buffer() const noexcept { return {}; }
 };
 
 #ifdef __clang__
