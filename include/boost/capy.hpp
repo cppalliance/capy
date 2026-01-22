@@ -12,7 +12,6 @@
 
 #include <boost/capy/ex/any_executor.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/application.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_pair.hpp>
@@ -35,15 +34,12 @@
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/coro.hpp>
-#include <boost/capy/datastore.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/executor_work_guard.hpp>
 #include <boost/capy/file.hpp>
 #include <boost/capy/file_mode.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-#include <boost/capy/core/polystore.hpp>
-#include <boost/capy/core/polystore_fwd.hpp>
 #include <boost/capy/ex/run_on.hpp>
 #include <boost/capy/ex/strand.hpp>
 #include <boost/capy/task.hpp>
