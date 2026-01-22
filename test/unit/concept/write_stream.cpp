@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/concept/read_stream.hpp>
+#include <boost/capy/concept/write_stream.hpp>
 
 #include <boost/system/error_code.hpp>
 
@@ -23,7 +23,7 @@ namespace capy {
 namespace {
 
 // Mock IoAwaitable returning std::pair
-struct mock_read_awaitable_pair
+struct mock_write_awaitable_pair
 {
     bool await_ready() const noexcept { return true; }
 
@@ -42,7 +42,7 @@ struct mock_read_awaitable_pair
 };
 
 // Mock IoAwaitable returning std::tuple
-struct mock_read_awaitable_tuple
+struct mock_write_awaitable_tuple
 {
     bool await_ready() const noexcept { return true; }
 
@@ -61,7 +61,7 @@ struct mock_read_awaitable_tuple
 };
 
 // Mock IoAwaitable with wrong return type
-struct mock_read_awaitable_wrong_type
+struct mock_write_awaitable_wrong_type
 {
     bool await_ready() const noexcept { return true; }
 
@@ -76,7 +76,7 @@ struct mock_read_awaitable_wrong_type
 };
 
 // Mock IoAwaitable with wrong decomposition order
-struct mock_read_awaitable_wrong_order
+struct mock_write_awaitable_wrong_order
 {
     bool await_ready() const noexcept { return true; }
 
@@ -95,7 +95,7 @@ struct mock_read_awaitable_wrong_order
 };
 
 // Mock awaitable missing IoAwaitable protocol
-struct mock_read_awaitable_not_io
+struct mock_write_awaitable_not_io
 {
     bool await_ready() const noexcept { return true; }
 
@@ -112,81 +112,81 @@ struct mock_read_awaitable_not_io
 // Mock stream types
 //----------------------------------------------------------
 
-// Valid ReadStream with std::pair return (templated)
-struct valid_read_stream_pair
+// Valid WriteStream with std::pair return (templated)
+struct valid_write_stream_pair
 {
-    template<MutableBufferSequence MB>
-    mock_read_awaitable_pair
-    read_some(MB const&)
+    template<ConstBufferSequence CB>
+    mock_write_awaitable_pair
+    write_some(CB const&)
     {
         return {};
     }
 };
 
-// Valid ReadStream with std::tuple return (templated)
-struct valid_read_stream_tuple
+// Valid WriteStream with std::tuple return (templated)
+struct valid_write_stream_tuple
 {
-    template<MutableBufferSequence MB>
-    mock_read_awaitable_tuple
-    read_some(MB const&)
+    template<ConstBufferSequence CB>
+    mock_write_awaitable_tuple
+    write_some(CB const&)
     {
         return {};
     }
 };
 
-// Valid: accepts mutable_buffer (workaround allows non-templated)
-struct valid_read_stream_not_templated
+// Valid: accepts const_buffer (workaround allows non-templated)
+struct valid_write_stream_not_templated
 {
-    mock_read_awaitable_pair
-    read_some(mutable_buffer const&)
+    mock_write_awaitable_pair
+    write_some(const_buffer const&)
     {
         return {};
     }
 };
 
 // Invalid: wrong return type
-struct invalid_read_stream_wrong_type
+struct invalid_write_stream_wrong_type
 {
-    template<MutableBufferSequence MB>
-    mock_read_awaitable_wrong_type
-    read_some(MB const&)
+    template<ConstBufferSequence CB>
+    mock_write_awaitable_wrong_type
+    write_some(CB const&)
     {
         return {};
     }
 };
 
 // Invalid: wrong decomposition order
-struct invalid_read_stream_wrong_order
+struct invalid_write_stream_wrong_order
 {
-    template<MutableBufferSequence MB>
-    mock_read_awaitable_wrong_order
-    read_some(MB const&)
+    template<ConstBufferSequence CB>
+    mock_write_awaitable_wrong_order
+    write_some(CB const&)
     {
         return {};
     }
 };
 
 // Invalid: not an IoAwaitable
-struct invalid_read_stream_not_io
+struct invalid_write_stream_not_io
 {
-    template<MutableBufferSequence MB>
-    mock_read_awaitable_not_io
-    read_some(MB const&)
+    template<ConstBufferSequence CB>
+    mock_write_awaitable_not_io
+    write_some(CB const&)
     {
         return {};
     }
 };
 
-// Invalid: missing read_some
-struct invalid_read_stream_no_read_some
+// Invalid: missing write_some
+struct invalid_write_stream_no_write_some
 {
 };
 
-// Invalid: read_some returns non-awaitable
-struct invalid_read_stream_returns_int
+// Invalid: write_some returns non-awaitable
+struct invalid_write_stream_returns_int
 {
-    template<MutableBufferSequence MB>
-    int read_some(MB const&) { return 0; }
+    template<ConstBufferSequence CB>
+    int write_some(CB const&) { return 0; }
 };
 
 } // namespace
@@ -195,27 +195,27 @@ struct invalid_read_stream_returns_int
 // Static assertions
 //----------------------------------------------------------
 
-// Valid streams satisfy ReadStream
-static_assert(ReadStream<valid_read_stream_pair>);
-static_assert(ReadStream<valid_read_stream_tuple>);
+// Valid streams satisfy WriteStream
+static_assert(WriteStream<valid_write_stream_pair>);
+static_assert(WriteStream<valid_write_stream_tuple>);
 
-// Non-templated read_some satisfies ReadStream (workaround)
-static_assert(ReadStream<valid_read_stream_not_templated>);
+// Non-templated write_some satisfies WriteStream (workaround)
+static_assert(WriteStream<valid_write_stream_not_templated>);
 
-// Wrong return type does not satisfy ReadStream
-static_assert(!ReadStream<invalid_read_stream_wrong_type>);
+// Wrong return type does not satisfy WriteStream
+static_assert(!WriteStream<invalid_write_stream_wrong_type>);
 
-// Wrong decomposition order does not satisfy ReadStream
-static_assert(!ReadStream<invalid_read_stream_wrong_order>);
+// Wrong decomposition order does not satisfy WriteStream
+static_assert(!WriteStream<invalid_write_stream_wrong_order>);
 
-// Non-IoAwaitable does not satisfy ReadStream
-static_assert(!ReadStream<invalid_read_stream_not_io>);
+// Non-IoAwaitable does not satisfy WriteStream
+static_assert(!WriteStream<invalid_write_stream_not_io>);
 
-// Missing read_some does not satisfy ReadStream
-static_assert(!ReadStream<invalid_read_stream_no_read_some>);
+// Missing write_some does not satisfy WriteStream
+static_assert(!WriteStream<invalid_write_stream_no_write_some>);
 
-// Non-awaitable return does not satisfy ReadStream
-static_assert(!ReadStream<invalid_read_stream_returns_int>);
+// Non-awaitable return does not satisfy WriteStream
+static_assert(!WriteStream<invalid_write_stream_returns_int>);
 
 } // namespace capy
 } // namespace boost

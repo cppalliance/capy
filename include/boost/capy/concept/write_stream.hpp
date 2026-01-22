@@ -11,40 +11,104 @@
 #define BOOST_CAPY_CONCEPT_WRITE_STREAM_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/io_awaitable.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/type_traits.hpp>
 #include <boost/system/error_code.hpp>
 
 #include <concepts>
 #include <cstddef>
-#include <utility>
 
 namespace boost {
 namespace capy {
 
-/** Concept for types that provide awaitable write operations.
+/** Archetype for ConstBufferSequence concept checking.
 
-    A type satisfies `WriteStream` if it provides an I/O awaitable
-    `write_some` member function that writes data from a const
-    buffer sequence.
-
-    @tparam T The stream type.
-    @tparam CB The buffer sequence type, must satisfy
-        `ConstBufferSequence`.
-
-    @par Requirements
-    @li `CB` must satisfy `ConstBufferSequence`
-    @li `T` must provide a templated `write_some` member function
-    @li `write_some` must accept a `CB const&`
-    @li The awaitable returned by `write_some` must satisfy
-        `capy::IoAwaitable`
-    @li The awaitable must resolve to `std::pair<system::error_code, std::size_t>`
+    This type satisfies @ref ConstBufferSequence but cannot be
+    instantiated. Use it in concept definitions to verify that
+    a function template accepts any ConstBufferSequence.
 
     @par Example
     @code
-    template<WriteStream<const_buffer> Stream>
-    capy::task<void> write_all(Stream& s, char const* buf, std::size_t size)
+    template<typename T>
+    concept MyWritable =
+        requires(T& stream, const_buffer_archetype buffers)
+        {
+            stream.write(buffers);
+        };
+    @endcode
+*/
+struct const_buffer_archetype_
+{
+    const_buffer_archetype_() = delete;
+    const_buffer_archetype_(const_buffer_archetype_ const&) = delete;
+    const_buffer_archetype_(const_buffer_archetype_&&) = delete;
+    const_buffer_archetype_& operator=(const_buffer_archetype_ const&) = delete;
+    const_buffer_archetype_& operator=(const_buffer_archetype_&&) = delete;
+
+    operator const_buffer() const noexcept { return {}; }
+};
+
+#ifdef __clang__
+// workaround: archetype crashes clang
+using const_buffer_archetype = const_buffer;
+#else
+using const_buffer_archetype = const_buffer_archetype_;
+#endif
+
+//------------------------------------------------
+
+/** Concept for types that provide awaitable write operations.
+
+    A type satisfies `WriteStream` if it provides a `write_some`
+    member function template that accepts any @ref ConstBufferSequence
+    and is an @ref IoAwaitable whose return value decomposes to
+    `(system::error_code, std::size_t)`.
+
+    @tparam T The stream type.
+
+    @par Syntactic Requirements
+
+    @li `T` must provide a `write_some` member function template
+        accepting any @ref ConstBufferSequence
+    @li The return type of `write_some` must satisfy @ref IoAwaitable
+    @li The awaitable's result must decompose to
+        `(system::error_code, std::size_t)` via structured bindings
+
+    @par Semantic Requirements
+
+    If `buffer_size(buffers) > 0`, the operation writes one or more
+    bytes of data to the stream from the buffer sequence:
+
+    @li On success: `!ec` is `true`, and `n` is the number of bytes
+        written.
+    @li On error: `!!ec` is `true`, and `n` is 0.
+
+    If `buffer_size(buffers) == 0`, the operation completes
+    immediately. `!ec` is `true`, and `n` is 0.
+
+    Buffers in the sequence are written completely before proceeding
+    to the next buffer.
+
+    @par Buffer Lifetime
+
+    The caller must ensure that the memory referenced by `buffers`
+    remains valid until the `co_await` expression returns.
+
+    @par Conforming Signatures
+
+    @code
+    // Templated for any ConstBufferSequence
+    template<ConstBufferSequence CB>
+    some_io_awaitable<std::pair<system::error_code, std::size_t>>
+    write_some(CB const& buffers);
+    @endcode
+
+    @par Example
+
+    @code
+    template<WriteStream Stream>
+    task<void> write_all(Stream& s, char const* buf, std::size_t size)
     {
         std::size_t total = 0;
         while (total < size)
@@ -57,14 +121,17 @@ namespace capy {
         }
     }
     @endcode
+
+    @see IoAwaitable, ConstBufferSequence, awaitable_decomposes_to
 */
-template<typename T, typename CB>
+template<typename T>
 concept WriteStream =
-    ConstBufferSequence<CB> &&
-    requires(T& stream, CB const& buffers)
+    requires(T& stream, const_buffer_archetype buffers)
     {
-        { stream.write_some(buffers) } ->
-            capy::IoAwaitable;
+        { stream.write_some(buffers) } -> IoAwaitable;
+        requires awaitable_decomposes_to<
+            decltype(stream.write_some(buffers)),
+            system::error_code, std::size_t>;
     };
 
 } // namespace capy

@@ -11,43 +11,105 @@
 #define BOOST_CAPY_CONCEPT_READ_STREAM_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/type_traits.hpp>
 #include <boost/system/error_code.hpp>
 
 #include <concepts>
 #include <cstddef>
-#include <utility>
 
 namespace boost {
 namespace capy {
 
-/** Concept for types that provide awaitable read operations.
+/** Archetype for MutableBufferSequence concept checking.
 
-    A type satisfies `ReadStream` if it provides an I/O awaitable
-    `read_some` member function that reads data into a mutable
-    buffer sequence.
-
-    @tparam T The stream type.
-    @tparam MB The buffer sequence type, must satisfy
-        `MutableBufferSequence`.
-
-    @par Requirements
-    @li `MB` must satisfy `MutableBufferSequence`
-    @li `T` must provide a templated `read_some` member function
-    @li `read_some` must accept a `MB const&`
-    @li The awaitable returned by `read_some` must satisfy
-        `capy::IoAwaitable`
-    @li The awaitable must resolve to `std::pair<system::error_code, std::size_t>`
-    @li When end-of-file is reached, `read_some` must return
-        `capy::error::eof` as the error code. Check `ec == cond::eof`
-        for portable comparison.
+    This type satisfies @ref MutableBufferSequence but cannot be
+    instantiated. Use it in concept definitions to verify that
+    a function template accepts any MutableBufferSequence.
 
     @par Example
     @code
-    template<ReadStream<mutable_buffer> Stream>
-    capy::task<void> read_all(Stream& s, char* buf, std::size_t size)
+    template<typename T>
+    concept MyReadable =
+        requires(T& stream, mutable_buffer_archetype buffers)
+        {
+            stream.read(buffers);
+        };
+    @endcode
+*/
+struct mutable_buffer_archetype_
+{
+    mutable_buffer_archetype_() = delete;
+    mutable_buffer_archetype_(mutable_buffer_archetype_ const&) = delete;
+    mutable_buffer_archetype_(mutable_buffer_archetype_&&) = delete;
+    mutable_buffer_archetype_& operator=(mutable_buffer_archetype_ const&) = delete;
+    mutable_buffer_archetype_& operator=(mutable_buffer_archetype_&&) = delete;
+
+    operator mutable_buffer() const noexcept { return {}; }
+};
+
+#ifdef __clang__
+// workaround: archetype crashes clang
+using mutable_buffer_archetype = mutable_buffer;
+#else
+using mutable_buffer_archetype = mutable_buffer_archetype_;
+#endif
+
+//------------------------------------------------
+
+/** Concept for types that provide awaitable read operations.
+
+    A type satisfies `ReadStream` if it provides a `read_some`
+    member function template that accepts any @ref MutableBufferSequence
+    and is an @ref IoAwaitable whose return value decomposes to
+    `(system::error_code, std::size_t)`.
+
+    @tparam T The stream type.
+
+    @par Syntactic Requirements
+
+    @li `T` must provide a `read_some` member function template
+        accepting any @ref MutableBufferSequence
+    @li The return type of `read_some` must satisfy @ref IoAwaitable
+    @li The awaitable's result must decompose to
+        `(system::error_code, std::size_t)` via structured bindings
+
+    @par Semantic Requirements
+
+    If `buffer_size(buffers) > 0`, the operation reads one or more
+    bytes from the stream into the buffer sequence:
+
+    @li On success: `!ec` is `true`, and `n` is the number of bytes
+        read (at least 1).
+    @li On error: `!!ec` is `true`, and `n` is 0.
+    @li On end-of-file: `ec == cond::eof` is `true`, and `n` is 0.
+
+    If `buffer_size(buffers) == 0`, the operation completes
+    immediately. `!ec` is `true`, and `n` is 0.
+
+    Buffers in the sequence are filled completely before proceeding
+    to the next buffer.
+
+    @par Buffer Lifetime
+
+    The caller must ensure that the memory referenced by `buffers`
+    remains valid until the `co_await` expression returns.
+
+    @par Conforming Signatures
+
+    @code
+    // Templated for any MutableBufferSequence
+    template<MutableBufferSequence MB>
+    some_io_awaitable<std::pair<system::error_code, std::size_t>>
+    read_some(MB const& buffers);
+    @endcode
+
+    @par Example
+
+    @code
+    template<ReadStream Stream>
+    task<void> read_all(Stream& s, char* buf, std::size_t size)
     {
         std::size_t total = 0;
         while (total < size)
@@ -60,14 +122,17 @@ namespace capy {
         }
     }
     @endcode
+
+    @see IoAwaitable, MutableBufferSequence, awaitable_decomposes_to
 */
-template<typename T, typename MB>
+template<typename T>
 concept ReadStream =
-    MutableBufferSequence<MB> &&
-    requires(T& stream, MB const& buffers)
+    requires(T& stream, mutable_buffer_archetype buffers)
     {
-        { stream.read_some(buffers) } ->
-            capy::IoAwaitable;
+        { stream.read_some(buffers) } -> IoAwaitable;
+        requires awaitable_decomposes_to<
+            decltype(stream.read_some(buffers)),
+            system::error_code, std::size_t>;
     };
 
 } // namespace capy

@@ -21,6 +21,18 @@
 namespace boost {
 namespace capy {
 
+/** Concept for types that support the tuple protocol.
+
+    A type satisfies `has_tuple_protocol` if `std::tuple_size<T>`
+    is a complete type with a `value` member.
+
+    @tparam T The type to check.
+*/
+template<typename T>
+concept has_tuple_protocol = requires {
+    std::tuple_size<std::remove_cvref_t<T>>::value;
+};
+
 namespace detail {
 
 template<typename T, std::size_t... Is>
@@ -28,6 +40,7 @@ auto decomposed_types_impl(std::index_sequence<Is...>)
     -> std::tuple<std::tuple_element_t<Is, std::remove_cvref_t<T>>...>;
 
 template<typename T>
+    requires has_tuple_protocol<T>
 using decomposed_types_t = decltype(
     decomposed_types_impl<T>(
         std::make_index_sequence<std::tuple_size_v<std::remove_cvref_t<T>>>{}
@@ -94,10 +107,12 @@ using awaitable_return_t = decltype(
         protocol to your type.
 */
 template<typename T, typename... Types>
-concept decomposes_to = std::same_as<
-    detail::decomposed_types_t<T>,
-    std::tuple<Types...>
->;
+concept decomposes_to =
+    has_tuple_protocol<T> &&
+    std::same_as<
+        detail::decomposed_types_t<T>,
+        std::tuple<Types...>
+    >;
 
 /** Concept for awaitables whose return type decomposes to a specific typelist.
 
