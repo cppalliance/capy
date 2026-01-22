@@ -42,6 +42,11 @@ We find that two operations suffice: `dispatch` for continuations and `post` for
 
 Execution context flows naturally *forward* through async operation chains. The executor, allocator, and stop token propagate from caller to callee at each suspension point—no backward queries, no completion scheduler inference, no domain transforms. This forward flow eliminates the late-binding problem that `std::execution` struggles to fix: context is known at launch site, not discovered through receiver queries after the work graph is built. Our goal is not to replace `std::execution` for GPU workloads—it is to demonstrate that networking deserves a purpose-built abstraction rather than adaptation to a framework optimized for different requirements.
 
+> **Convention.** Throughout this document we use the following type alias:
+> ```cpp
+> using coro = std::coroutine_handle<void>;
+> ```
+
 ---
 
 ## 2. What Networking Needs
@@ -155,11 +160,11 @@ For networking, the timing is wrong. Coroutine frame allocation happens *before*
 The IoAwaitable protocol associates a coroutine with three resources: executor, allocator, and stop token. Context flows **forward** from caller to callee—no backward queries, no late binding.
 
 ```cpp
-template<typename A, typename P = void>
+template<typename A>
 concept IoAwaitable =
     requires(
         A a,
-        std::coroutine_handle<P> h,
+        coro h,
         executor_ref ex,
         std::stop_token token)
     {
@@ -168,6 +173,47 @@ concept IoAwaitable =
 ```
 
 The key insight: `await_suspend` receives the executor and stop token as parameters, injected by the caller's `await_transform`. The allocator propagates via `thread_local` storage during a narrow execution window with specific guarantees, ensuring availability at frame allocation time.
+
+The related `IoAwaitableTask` concept formalizes the contract between launch functions (`run_async`, `run_on`) and task types:
+
+```cpp
+template<typename T>
+concept IoAwaitableTask =
+    IoAwaitable<T> &&
+    requires { typename T::promise_type; } &&
+    requires(
+        typename T::promise_type& p,
+        typename T::promise_type const& cp,
+        executor_ref ex,
+        std::stop_token st)
+    {
+        { p.set_executor(ex) } noexcept;
+        { p.set_stop_token(st) } noexcept;
+        { cp.executor() } noexcept -> std::same_as<executor_ref>;
+        { cp.stop_token() } noexcept -> std::same_as<std::stop_token const&>;
+    };
+```
+
+Launch functions are the root of a coroutine chain—they must set context directly on the promise rather than going through `await_suspend`. The `IoAwaitableTask` concept ensures the promise provides the injection interface (`set_executor`, `set_stop_token`) and the retrieval interface (`executor`, `stop_token`). This separation allows launch functions to bootstrap context into a cold task before it begins execution, while regular `co_await` chains use the three-argument `await_suspend` for propagation.
+
+Implementing `IoAwaitableTask` also gives coroutines the option to access their context from within the coroutine body. The `io_awaitable_support` mixin's `await_transform` intercepts the tag types returned by `get_executor()` and `get_stop_token()`, returning immediate awaiters that yield the stored values without suspending:
+
+```cpp
+task<void> cancellable_work()
+{
+    executor_ref ex = co_await get_executor();         // never suspends
+    std::stop_token token = co_await get_stop_token(); // never suspends
+    
+    for (int i = 0; i < 1000; ++i)
+    {
+        if (token.stop_requested())
+            co_return;  // Exit gracefully on cancellation
+        co_await process_chunk(ex, i);
+    }
+}
+```
+
+These accessors are compile-time dispatched via `if constexpr` in `await_transform`. Because `await_ready()` returns `true`, no actual suspension occurs—the coroutine continues immediately with the requested context value.
 
 ### 3.1 Implementing the Protocol
 
@@ -650,9 +696,9 @@ auto await_transform(A&& a) {
 
 ### 8.3 Task-like Type
 
-A coroutine return type whose awaitable form satisfies `IoAwaitable`.
+A coroutine return type whose awaitable form satisfies `IoAwaitable`. Task types that support direct context injection by launch functions satisfy the stronger `IoAwaitableTask` concept.
 
-**Requirements:**
+**Requirements for `IoAwaitable`:**
 
 1. Define a `promise_type` that inherits or implements context storage
 2. Provide `await_suspend(cont, ex, token)` that:
@@ -662,6 +708,14 @@ A coroutine return type whose awaitable form satisfies `IoAwaitable`.
 3. The promise's `await_transform` must intercept child awaitables and inject context
 4. Support `operator new` overloads for allocator propagation (inspect arguments or read TLS)
 5. On final suspend, resume the continuation via the stored executor's `dispatch`
+
+**Additional requirements for `IoAwaitableTask`:**
+
+1. The promise must provide `set_executor(executor_ref)` and `set_stop_token(std::stop_token)` for context injection
+2. The promise must provide `executor()` and `stop_token()` accessors for context retrieval
+3. All four methods must be `noexcept`
+
+The `IoAwaitableTask` requirements enable launch functions to bootstrap context into a task before it begins execution, without going through the awaitable machinery.
 
 ### 8.4 I/O Object
 

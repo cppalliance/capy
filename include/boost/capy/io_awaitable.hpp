@@ -121,10 +121,9 @@ inline get_executor_tag get_executor() noexcept
     support.
 
     @tparam A The awaitable type.
-    @tparam P The promise type (defaults to void).
 
     @par Requirements
-    @li `A` must provide `await_suspend(std::coroutine_handle<P> h, Ex const& ex,
+    @li `A` must provide `await_suspend(coro h, executor_ref const& ex,
         std::stop_token token)`
     @li The awaitable must use the executor `ex` to resume the caller
     @li The awaitable should use the stop_token to support cancellation
@@ -134,7 +133,7 @@ inline get_executor_tag get_executor() noexcept
     struct my_io_op
     {
         template<typename Executor>
-        auto await_suspend(std::coroutine_handle<> h, Executor const& ex,
+        auto await_suspend(coro h, Executor const& ex,
             std::stop_token token)
         {
             start_async([h, &ex, token] {
@@ -149,15 +148,87 @@ inline get_executor_tag get_executor() noexcept
     };
     @endcode
 */
-template<typename A, typename P = void>
+template<typename A>
 concept IoAwaitable =
     requires(
         A a,
-        std::coroutine_handle<P> h,
+        coro h,
         executor_ref ex,
         std::stop_token token)
     {
         a.await_suspend(h, ex, token);
+    };
+
+/** Concept for I/O awaitable task types.
+
+    A task is an I/O awaitable task if it satisfies @ref IoAwaitable and
+    its `promise_type` provides the interface for context injection:
+
+    @li `set_executor(executor_ref)` — stores the executor
+    @li `set_stop_token(std::stop_token)` — stores the stop token
+    @li `executor()` — retrieves the stored executor
+    @li `stop_token()` — retrieves the stored stop token
+
+    This concept formalizes the contract between launch functions
+    (`run_async`, `run_on`) and task types. Launch functions are the
+    root of a coroutine chain and must set context directly on the
+    promise rather than going through `await_suspend`.
+
+    @tparam T The task type.
+
+    @par Requirements
+    @li `T` must satisfy @ref IoAwaitable
+    @li `T::promise_type` must exist
+    @li The promise must provide `set_executor` and `set_stop_token`
+    @li The promise must provide `executor` and `stop_token` accessors
+
+    @par Example
+    @code
+    struct my_task
+    {
+        struct promise_type : io_awaitable_support<promise_type>
+        {
+            my_task get_return_object();
+            std::suspend_always initial_suspend() noexcept;
+            std::suspend_always final_suspend() noexcept;
+            void return_void();
+            void unhandled_exception();
+        };
+
+        std::coroutine_handle<promise_type> h_;
+
+        bool await_ready() const noexcept { return false; }
+
+        coro await_suspend(coro cont, executor_ref ex, std::stop_token token)
+        {
+            h_.promise().set_executor(ex);
+            h_.promise().set_stop_token(token);
+            // ... set continuation, return handle ...
+        }
+
+        void await_resume() {}
+    };
+
+    static_assert(IoAwaitableTask<my_task>);
+    @endcode
+
+    @see IoAwaitable
+    @see io_awaitable_support
+*/
+template<typename T>
+concept IoAwaitableTask =
+    IoAwaitable<T> &&
+    requires { typename T::promise_type; } &&
+    requires(
+        typename T::promise_type& p,
+        typename T::promise_type const& cp,
+        executor_ref ex,
+        std::stop_token st)
+    {
+        { p.set_executor(ex) } noexcept;
+        { p.set_stop_token(st) } noexcept;
+        { cp.executor() } noexcept -> std::same_as<executor_ref>;
+        { cp.stop_token() } noexcept -> std::same_as<std::stop_token const&>;
     };
 
 /** CRTP mixin that adds I/O awaitable support to a promise type.

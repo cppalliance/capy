@@ -230,7 +230,7 @@ struct when_all_runner
         auto await_transform(Awaitable&& a)
         {
             using A = std::decay_t<Awaitable>;
-            if constexpr (IoAwaitable<A, executor_ref>)
+            if constexpr (IoAwaitable<A>)
             {
                 return transform_awaiter<Awaitable>{
                     std::forward<Awaitable>(a), this};

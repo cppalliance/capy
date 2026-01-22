@@ -184,7 +184,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         auto transform_awaitable(Awaitable&& a)
         {
             using A = std::decay_t<Awaitable>;
-            if constexpr (IoAwaitable<A, executor_ref>)
+            if constexpr (IoAwaitable<A>)
             {
                 // Zero-overhead path for I/O awaitables
                 return transform_awaiter<Awaitable>{

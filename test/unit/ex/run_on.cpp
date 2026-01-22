@@ -16,8 +16,8 @@
 namespace boost {
 namespace capy {
 
-static_assert(IoAwaitable<detail::run_on_awaitable<void, executor_ref>, executor_ref>);
-static_assert(IoAwaitable<detail::run_on_awaitable<int, executor_ref>, executor_ref>);
+static_assert(IoAwaitable<detail::run_on_awaitable<void, executor_ref>>);
+static_assert(IoAwaitable<detail::run_on_awaitable<int, executor_ref>>);
 
 } // capy
 } // boost

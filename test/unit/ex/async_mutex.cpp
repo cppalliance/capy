@@ -16,8 +16,8 @@
 namespace boost {
 namespace capy {
 
-static_assert(IoAwaitable<async_mutex::lock_awaiter, executor_ref>);
-static_assert(IoAwaitable<async_mutex::lock_guard_awaiter, executor_ref>);
+static_assert(IoAwaitable<async_mutex::lock_awaiter>);
+static_assert(IoAwaitable<async_mutex::lock_guard_awaiter>);
 
 } // capy
 } // boost

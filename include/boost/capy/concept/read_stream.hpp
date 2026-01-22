@@ -38,7 +38,7 @@ namespace capy {
     @li `T` must provide a templated `read_some` member function
     @li `read_some` must accept a `MB const&`
     @li The awaitable returned by `read_some` must satisfy
-        `capy::IoAwaitable<capy::executor_ref>`
+        `capy::IoAwaitable`
     @li The awaitable must resolve to `std::pair<system::error_code, std::size_t>`
     @li When end-of-file is reached, `read_some` must return
         `capy::error::eof` as the error code. Check `ec == cond::eof`
@@ -67,7 +67,7 @@ concept ReadStream =
     requires(T& stream, MB const& buffers)
     {
         { stream.read_some(buffers) } ->
-            capy::IoAwaitable<capy::executor_ref>;
+            capy::IoAwaitable;
     };
 
 } // namespace capy

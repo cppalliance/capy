@@ -38,7 +38,7 @@ namespace capy {
     @li `T` must provide a templated `write_some` member function
     @li `write_some` must accept a `CB const&`
     @li The awaitable returned by `write_some` must satisfy
-        `capy::IoAwaitable<capy::executor_ref>`
+        `capy::IoAwaitable`
     @li The awaitable must resolve to `std::pair<system::error_code, std::size_t>`
 
     @par Example
@@ -64,7 +64,7 @@ concept WriteStream =
     requires(T& stream, CB const& buffers)
     {
         { stream.write_some(buffers) } ->
-            capy::IoAwaitable<capy::executor_ref>;
+            capy::IoAwaitable;
     };
 
 } // namespace capy
