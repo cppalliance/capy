@@ -244,15 +244,7 @@ Why the concrete `executor_ref`? Executors can and often are custom types, and o
 
 This three-argument `await_suspend` is the contract. The parent's `await_transform` calls it, passing the executor and stop token that flow forward into the child coroutine.
 
-### 3.2 Semantic Requirements
-
-| Requirement            | When                    | How                                        |
-| ---------------------- | ----------------------- | ------------------------------------------ |
-| Executor discovery     | At `co_await`           | `await_transform` injects from I/O object  |
-| Allocator discovery    | Before frame allocation | `promise_type::operator new` inspects args |
-| Stop token propagation | At suspension           | Forwarded through awaitable chain          |
-
-### 3.3 How Does a Coroutine Start?
+### 3.2 How Does a Coroutine Start?
 
 Two entry points bridge non-coroutine code into the coroutine world:
 
@@ -294,7 +286,7 @@ task<void> parent()
 
 The executor is stored by value in the awaitable, keeping it alive for the operation's duration.
 
-### 3.4 The C++26 Oversight
+### 3.3 The C++26 Oversight
 
 `std::execution` positions itself as a universal abstraction for asynchronous work, yet its backward query model fails networking's fundamental requirements. Coroutine frame allocation happens *before* the coroutine body executes—the allocator must be known at invocation, not discovered later through receiver queries. The backward flow that works for GPU dispatch (where the work graph is built first, then executed) is incompatible with I/O patterns where context must be present at the moment of creation. This is not a minor incompatibility to be papered over with adapters; it is a structural mismatch between the model's assumptions and networking's reality. Forward propagation—context flowing from caller to callee at each suspension point—is not an alternative design choice but the only design that respects coroutine allocation semantics.
 

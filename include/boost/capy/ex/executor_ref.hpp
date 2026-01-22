@@ -220,10 +220,10 @@ public:
     */
     bool operator==(executor_ref const& other) const noexcept
     {
+        if (ex_ == other.ex_)
+            return true;
         if (vt_ != other.vt_)
             return false;
-        if (!vt_)
-            return true;
         return vt_->equals(ex_, other.ex_);
     }
 };
