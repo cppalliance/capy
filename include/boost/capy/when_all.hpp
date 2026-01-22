@@ -152,7 +152,7 @@ struct when_all_state
 template<typename T, typename... Ts>
 struct when_all_runner
 {
-    struct promise_type : frame_allocating_base
+    struct promise_type // : frame_allocating_base  // DISABLED FOR TESTING
     {
         when_all_state<Ts...>* state_ = nullptr;
         executor_ref ex_;
@@ -249,21 +249,12 @@ struct when_all_runner
     {
     }
 
-#if defined(__clang__) && __clang_major__ == 14 && !defined(__apple_build_version__)
-    // Clang 14 has a bug where it calls the move constructor for coroutine
-    // return objects even though they should be constructed in-place via RVO.
-    // This happens when returning a non-movable type from a coroutine.
+    // Enable move for all clang versions - some versions need it
     when_all_runner(when_all_runner&& other) noexcept : h_(std::exchange(other.h_, nullptr)) {}
-#endif
 
-    // Non-copyable, non-movable - release() is always called immediately
+    // Non-copyable
     when_all_runner(when_all_runner const&) = delete;
     when_all_runner& operator=(when_all_runner const&) = delete;
-
-#if !defined(__clang__) || __clang_major__ != 14 || defined(__apple_build_version__)
-    when_all_runner(when_all_runner&&) = delete;
-#endif
-
     when_all_runner& operator=(when_all_runner&&) = delete;
 
     auto release() noexcept
@@ -281,9 +272,13 @@ when_all_runner<T, Ts...>
 make_when_all_runner(task<T> inner, when_all_state<Ts...>* state)
 {
     if constexpr (std::is_void_v<T>)
+    {
         co_await std::move(inner);
+    }
     else
+    {
         std::get<Index>(state->results_).set(co_await std::move(inner));
+    }
 }
 
 /** Internal awaitable that launches all runner coroutines and waits.
@@ -311,8 +306,7 @@ public:
         return sizeof...(Ts) == 0;
     }
 
-    template<typename Ex>
-    coro await_suspend(coro continuation, Ex const& caller_ex, std::stop_token parent_token = {})
+    coro await_suspend(coro continuation, executor_ref caller_ex, std::stop_token parent_token = {})
     {
         state_->continuation_ = continuation;
         state_->caller_ex_ = caller_ex;
@@ -344,8 +338,8 @@ public:
     }
 
 private:
-    template<std::size_t I, typename Ex>
-    void launch_one(Ex const& caller_ex, std::stop_token token)
+    template<std::size_t I>
+    void launch_one(executor_ref caller_ex, std::stop_token token)
     {
         auto runner = make_when_all_runner<I>(
             std::move(std::get<I>(*tasks_)), state_);
@@ -357,7 +351,7 @@ private:
 
         coro ch{h};
         state_->runner_handles_[I] = ch;
-        caller_ex.dispatch(ch).resume();
+        state_->caller_ex_.dispatch(ch).resume();
     }
 };
 

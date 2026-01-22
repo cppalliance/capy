@@ -150,6 +150,16 @@ struct test_exception : std::runtime_error
     }
 };
 
+} // namespace capy
+} // namespace boost
+
+#include "../custom_task.hpp"
+
+namespace boost {
+namespace capy {
+
+using test::custom_task;
+
 //----------------------------------------------------------
 // run_async Tests
 //----------------------------------------------------------
@@ -559,6 +569,50 @@ struct run_async_test
     }
 
     //----------------------------------------------------------
+    // Custom Task Type (proves IoLaunchableTask genericity)
+    //----------------------------------------------------------
+
+    static custom_task<int>
+    custom_returns_int()
+    {
+        co_return 123;
+    }
+
+    static custom_task<void>
+    custom_returns_void()
+    {
+        co_return;
+    }
+
+    void
+    testCustomTaskType()
+    {
+        // Proves run_async works with any IoLaunchableTask, not just capy::task
+        int dispatch_count = 0;
+        sync_executor d(dispatch_count);
+        int result = 0;
+
+        run_async(d, [&](int v) { result = v; })(custom_returns_int());
+
+        BOOST_TEST_EQ(result, 123);
+        BOOST_TEST_EQ(dispatch_count, 1);
+    }
+
+    void
+    testCustomTaskTypeVoid()
+    {
+        // Proves run_async works with void custom tasks
+        int dispatch_count = 0;
+        sync_executor d(dispatch_count);
+        bool called = false;
+
+        run_async(d, [&]() { called = true; })(custom_returns_void());
+
+        BOOST_TEST(called);
+        BOOST_TEST_EQ(dispatch_count, 1);
+    }
+
+    //----------------------------------------------------------
 
     void
     run()
@@ -595,6 +649,10 @@ struct run_async_test
         // Edge Cases
         testImmediateCompletion();
         testEmptyStopToken();
+
+        // Custom Task Type
+        testCustomTaskType();
+        testCustomTaskTypeVoid();
     }
 };
 

@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/frame_allocator.hpp>
-#include <boost/capy/task.hpp>
+#include <boost/capy/io_awaitable.hpp>
 
 #include <concepts>
 #include <coroutine>
@@ -235,17 +235,18 @@ struct trampoline
 
     std::coroutine_handle<promise_type> h_;
 
-    /// Type-erased invoke function instantiated per task<T>.
-    template<class T>
+    /// Type-erased invoke function instantiated per IoLaunchableTask.
+    template<IoLaunchableTask Task>
     static void invoke_impl(void* p, Handlers& h)
     {
-        auto& promise = *static_cast<typename task<T>::promise_type*>(p);
-        if(promise.ep_)
-            h(promise.ep_);
-        else if constexpr(std::is_void_v<T>)
+        using R = decltype(std::declval<Task&>().await_resume());
+        auto& promise = *static_cast<typename Task::promise_type*>(p);
+        if(promise.exception())
+            h(promise.exception());
+        else if constexpr(std::is_void_v<R>)
             h();
         else
-            h(std::move(*promise.result_));
+            h(std::move(promise.result()));
     }
 };
 
@@ -332,27 +333,30 @@ public:
         The rvalue ref-qualifier ensures the wrapper is consumed, enforcing
         correct LIFO destruction order.
 
-        @tparam T The task's return type.
+        @tparam Task The IoLaunchableTask type.
 
         @param t The task to execute. Ownership is transferred to the
                  trampoline which will destroy it after completion.
     */
-    template<class T>
-    void operator()(task<T> t) &&
+    template<IoLaunchableTask Task>
+    void operator()(Task t) &&
     {
-        auto task_h = t.release();
+        auto task_h = t.handle();
+        auto& task_promise = task_h.promise();
+        t.release();
+
         auto& p = tr_.h_.promise();
 
-        // Inject T-specific invoke function
-        p.invoke_ = detail::trampoline<Ex, Handlers>::template invoke_impl<T>;
-        p.task_promise_ = &task_h.promise();
+        // Inject Task-specific invoke function
+        p.invoke_ = detail::trampoline<Ex, Handlers>::template invoke_impl<Task>;
+        p.task_promise_ = &task_promise;
         p.task_h_ = task_h;
 
         // Setup task's continuation to return to trampoline
         // Executor lives in trampoline's promise, so reference is valid for task's lifetime
-        task_h.promise().set_continuation(tr_.h_, p.ex_);
-        task_h.promise().set_executor(p.ex_);
-        task_h.promise().set_stop_token(st_);
+        task_promise.set_continuation(tr_.h_, p.ex_);
+        task_promise.set_executor(p.ex_);
+        task_promise.set_stop_token(st_);
 
         // Resume task through executor
         // The executor returns a handle for symmetric transfer;

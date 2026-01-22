@@ -15,6 +15,7 @@
 #include <boost/capy/ex/executor_ref.hpp>
 
 #include <coroutine>
+#include <exception>
 #include <stop_token>
 #include <type_traits>
 
@@ -233,6 +234,47 @@ concept IoAwaitableTask =
         { cp.stop_token() } noexcept -> std::same_as<std::stop_token const&>;
         { cp.complete() } noexcept -> std::same_as<coro>;
     };
+
+/** Concept for launchable I/O task types.
+
+    A task satisfies `IoLaunchableTask` if it satisfies @ref IoAwaitableTask
+    and provides the additional interface needed by launch utilities like
+    `run_async` and `run_on`:
+
+    @li `handle()` — returns the typed coroutine handle
+    @li `release()` — releases ownership (task won't destroy frame)
+    @li `exception()` — returns stored exception_ptr from the promise
+    @li `result()` — returns stored result from the promise (non-void tasks)
+
+    This concept formalizes the contract for launching tasks from
+    non-coroutine contexts.
+
+    @tparam T The task type.
+
+    @par Requirements
+    @li `T` must satisfy @ref IoAwaitableTask
+    @li `T::handle()` returns `std::coroutine_handle<promise_type>`
+    @li `T::release()` releases ownership without returning the handle
+    @li `T::promise_type::exception()` returns the stored exception
+    @li `T::promise_type::result()` returns the result (for non-void tasks)
+
+    @see IoAwaitableTask
+    @see run_async
+    @see run_on
+*/
+template<typename T>
+concept IoLaunchableTask =
+    IoAwaitableTask<T> &&
+    requires(T& t, T const& ct, typename T::promise_type const& cp)
+    {
+        { ct.handle() } noexcept -> std::same_as<std::coroutine_handle<typename T::promise_type>>;
+        { t.release() } noexcept;
+        { cp.exception() } noexcept -> std::same_as<std::exception_ptr>;
+    } &&
+    (std::is_void_v<decltype(std::declval<T&>().await_resume())> ||
+     requires(typename T::promise_type& p) {
+         p.result();
+     });
 
 /** CRTP mixin that adds I/O awaitable support to a promise type.
 

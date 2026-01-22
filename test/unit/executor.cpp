@@ -9,75 +9,11 @@
 
 // Test that header file is self-contained.
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/ex/execution_context.hpp>
 
-#include <utility>
-
-#include "test_suite.hpp"
+#include "test_helpers.hpp"
 
 namespace boost {
 namespace capy {
-
-// Minimal execution context for testing
-class test_context : public execution_context
-{
-public:
-    int id = 0;
-};
-
-// Test executor that satisfies the concept
-struct test_executor
-{
-    test_context* ctx_ = nullptr;
-
-    test_executor() = default;
-
-    explicit
-    test_executor(test_context& ctx) noexcept
-        : ctx_(&ctx)
-    {
-    }
-
-    // Equality comparison (required by Networking TS)
-    bool
-    operator==(test_executor const& other) const noexcept
-    {
-        return ctx_ == other.ctx_;
-    }
-
-    // Execution context access
-    execution_context&
-    context() const noexcept
-    {
-        return *ctx_;
-    }
-
-    // Work tracking
-    void
-    on_work_started() const noexcept
-    {
-    }
-
-    void
-    on_work_finished() const noexcept
-    {
-    }
-
-    // Work submission
-    std::coroutine_handle<>
-    dispatch(std::coroutine_handle<> h) const
-    {
-        return h;
-    }
-
-    void
-    post(std::coroutine_handle<>) const
-    {
-    }
-};
-
-// Verify Executor concept
-static_assert(Executor<test_executor>);
 
 struct executor_test
 {

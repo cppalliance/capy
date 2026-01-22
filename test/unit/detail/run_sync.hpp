@@ -65,7 +65,8 @@ public:
     template<typename T>
     T operator()(task<T> t) &&
     {
-        auto h = t.release();
+        auto h = t.handle();
+        t.release();
         sync_executor ex;
 
         h.promise().set_continuation(std::noop_coroutine(), ex);
@@ -73,7 +74,7 @@ public:
 
         ex.dispatch(coro{h}).resume();
 
-        std::exception_ptr ep = h.promise().ep_;
+        std::exception_ptr ep = h.promise().exception();
 
         if constexpr (std::is_void_v<T>)
         {
@@ -88,9 +89,7 @@ public:
                 h.destroy();
                 std::rethrow_exception(ep);
             }
-            auto& result_base = static_cast<task_return_base<T>&>(
-                h.promise());
-            auto result = std::move(*result_base.result_);
+            auto result = std::move(h.promise().result());
             h.destroy();
             return result;
         }

@@ -10,10 +10,9 @@
 // Test that header file is self-contained.
 #include <boost/capy/task.hpp>
 
-#include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 
-#include "test_suite.hpp"
+#include "test_helpers.hpp"
 
 #include <atomic>
 #include <queue>
@@ -27,56 +26,8 @@ namespace capy {
 
 static_assert(IoAwaitableTask<task<void>>);
 static_assert(IoAwaitableTask<task<int>>);
-
-// Minimal test context
-class test_context : public execution_context
-{
-};
-
-static test_context default_test_ctx_;
-
-/** Simple synchronous executor for testing.
-
-    Satisfies the Executor concept.
-    Executes inline (returns the handle for symmetric transfer).
-    Uses a pointer to external counter to allow copying.
-*/
-struct test_executor
-{
-    int* dispatch_count_;
-    test_context* ctx_ = nullptr;
-
-    explicit test_executor(int& count)
-        : dispatch_count_(&count)
-    {
-    }
-
-    bool operator==(test_executor const& other) const noexcept
-    {
-        return dispatch_count_ == other.dispatch_count_;
-    }
-
-    execution_context& context() const noexcept
-    {
-        return ctx_ ? *ctx_ : default_test_ctx_;
-    }
-
-    void on_work_started() const noexcept {}
-    void on_work_finished() const noexcept {}
-
-    coro dispatch(coro h) const
-    {
-        ++(*dispatch_count_);
-        return h;  // Inline execution for sync tests
-    }
-
-    void post(coro h) const
-    {
-        h.resume();
-    }
-};
-
-static_assert(Executor<test_executor>);
+static_assert(IoLaunchableTask<task<void>>);
+static_assert(IoLaunchableTask<task<int>>);
 
 /** Tracking executor that logs dispatch calls with an ID.
     Uses pointers to external storage to allow copying.
@@ -102,7 +53,7 @@ struct tracking_executor
 
     execution_context& context() const noexcept
     {
-        return ctx_ ? *ctx_ : default_test_ctx_;
+        return ctx_ ? *ctx_ : default_test_context();
     }
 
     void on_work_started() const noexcept {}
@@ -144,7 +95,7 @@ struct queuing_executor
 
     execution_context& context() const noexcept
     {
-        return ctx_ ? *ctx_ : default_test_ctx_;
+        return ctx_ ? *ctx_ : default_test_context();
     }
 
     void on_work_started() const noexcept {}
@@ -171,7 +122,8 @@ static_assert(Executor<queuing_executor>);
 template<class T>
 T run_task(task<T> t)
 {
-    auto h = t.release();  // Take ownership
+    auto h = t.handle();
+    t.release();  // Take ownership
     while (!h.done())
         h.resume();
     auto& p = h.promise();
@@ -358,14 +310,15 @@ struct task_test
         // move constructor
         {
             auto t1 = returns_int();
-            auto h1 = t1.release();
+            auto h1 = t1.handle();
+            t1.release();
             BOOST_TEST(h1);
 
             // Re-wrap for move test
             task<int> t2(std::move(t1));
             // t1 is now moved-from, t2 should be empty since t1 was released
             // This test verifies move semantics
-            BOOST_TEST(!t2.release());  // t2 is empty
+            BOOST_TEST(!t2.handle());  // t2 is empty
 
             // Run the released handle
             while (!h1.done())
@@ -377,9 +330,10 @@ struct task_test
         // release()
         {
             auto t = returns_int();
-            auto h = t.release();
+            auto h = t.handle();
+            t.release();
             BOOST_TEST(h);
-            BOOST_TEST(!t.release());  // Already released
+            BOOST_TEST(!t.handle());  // Already released
 
             while (!h.done())
                 h.resume();
@@ -479,12 +433,13 @@ struct task_test
     testVoidTaskMove()
     {
         auto t1 = void_task_basic();
-        auto h = t1.release();
+        auto h = t1.handle();
+        t1.release();
         BOOST_TEST(h);
 
         task<void> t2(std::move(t1));
         // t1 was already released, t2 should be empty
-        BOOST_TEST(!t2.release());
+        BOOST_TEST(!t2.handle());
 
         // Clean up the handle
         while (!h.done())

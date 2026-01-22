@@ -37,6 +37,11 @@ struct task_return_base
     {
         result_ = std::move(value);
     }
+
+    T&& result() noexcept
+    {
+        return std::move(*result_);
+    }
 };
 
 template<>
@@ -81,6 +86,11 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     {
         std::exception_ptr ep_;
         detail::frame_allocator_base* alloc_ = nullptr;
+
+        std::exception_ptr exception() const noexcept
+        {
+            return ep_;
+        }
 
         task get_return_object()
         {
@@ -220,17 +230,23 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         return h_;
     }
 
+    /** Return the coroutine handle.
+
+        @return The coroutine handle.
+    */
+    std::coroutine_handle<promise_type> handle() const noexcept
+    {
+        return h_;
+    }
+
     /** Release ownership of the coroutine handle.
 
         After calling this, the task no longer owns the handle and will
         not destroy it. The caller is responsible for the handle's lifetime.
-
-        @return The coroutine handle, or nullptr if already released.
     */
-    auto release() noexcept ->
-        std::coroutine_handle<promise_type>
+    void release() noexcept
     {
-        return std::exchange(h_, nullptr);
+        h_ = nullptr;
     }
 
     // Non-copyable

@@ -31,7 +31,7 @@ namespace detail {
     @tparam Task The IoAwaitableTask type
     @tparam Ex The executor type
 */
-template<IoAwaitableTask Task, Executor Ex>
+template<IoLaunchableTask Task, Executor Ex>
 struct [[nodiscard]]
     run_on_awaitable
 {
@@ -58,11 +58,12 @@ struct [[nodiscard]]
     template<typename Caller>
     coro await_suspend(coro cont, Caller const& caller_ex, std::stop_token token)
     {
-        auto& p = inner_.h_.promise();
+        auto h = inner_.handle();
+        auto& p = h.promise();
         p.set_executor(ex_);
         p.set_continuation(cont, caller_ex);
         p.set_stop_token(token);
-        return inner_.h_;
+        return h;
     }
 
     // Non-copyable
@@ -100,7 +101,7 @@ struct [[nodiscard]]
 
     @return An awaitable that runs t on the specified executor.
 */
-template<Executor Ex, IoAwaitableTask Task>
+template<Executor Ex, IoLaunchableTask Task>
 [[nodiscard]] auto run_on(Ex ex, Task t)
 {
     return detail::run_on_awaitable<Task, Ex>{
