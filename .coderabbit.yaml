@@ -30,7 +30,7 @@ reviews:
     description:
       mode: warning # Options: off, warning, error
     docstrings:
-      mode: warning
+      mode: off # Disabled: cannot exclude detail namespaces from coverage
 
   path_filters:
     - "!**/bench/**"
@@ -50,5 +50,7 @@ reviews:
           which gives a high level overview of how the implementation works.
         - Single line // comments are to be used sparingly and judiciously
           which explain the why (not the what or how) when it is non-obvious.
-        - Docstrings should not be considered for any code within a detail
-          namespace.
+        - Docstrings are required for all classes in public headers in
+          non detail namespaces. They are used for generating the Documentation
+          website. Please give warnings for any class or function that does
+          not have a docstring or has an insufficient docstring.
