@@ -11,7 +11,8 @@
 #define BOOST_CAPY_CONCEPT_DYNAMIC_BUFFER_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/buffers.hpp>
+#include <boost/capy/concept/const_buffer_sequence.hpp>
+#include <boost/capy/concept/mutable_buffer_sequence.hpp>
 
 #include <cstddef>
 

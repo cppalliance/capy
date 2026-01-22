@@ -14,6 +14,10 @@
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 
+#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/io_awaitable_task.hpp>
+#include <boost/capy/concept/io_launchable_task.hpp>
+
 #include <coroutine>
 #include <exception>
 #include <stop_token>
@@ -113,168 +117,6 @@ inline get_executor_tag get_executor() noexcept
 {
     return {};
 }
-
-/** Concept for I/O awaitable types.
-
-    An awaitable is an I/O awaitable if it participates in the I/O awaitable
-    protocol by accepting an executor and a stop_token in its `await_suspend`
-    method. This enables zero-overhead scheduler affinity and cancellation
-    support.
-
-    @tparam A The awaitable type.
-
-    @par Requirements
-    @li `A` must provide `await_suspend(coro h, executor_ref const& ex,
-        std::stop_token token)`
-    @li The awaitable must use the executor `ex` to resume the caller
-    @li The awaitable should use the stop_token to support cancellation
-
-    @par Example
-    @code
-    struct my_io_op
-    {
-        template<typename Executor>
-        auto await_suspend(coro h, Executor const& ex,
-            std::stop_token token)
-        {
-            start_async([h, &ex, token] {
-                if (token.stop_requested()) {
-                    // Handle cancellation
-                }
-                ex.dispatch(h);  // Schedule resumption through executor
-            });
-            return std::noop_coroutine();
-        }
-        // ... await_ready, await_resume ...
-    };
-    @endcode
-*/
-template<typename A>
-concept IoAwaitable =
-    requires(
-        A a,
-        coro h,
-        executor_ref ex,
-        std::stop_token token)
-    {
-        a.await_suspend(h, ex, token);
-    };
-
-/** Concept for I/O awaitable task types.
-
-    A task is an I/O awaitable task if it satisfies @ref IoAwaitable and
-    its `promise_type` provides the interface for context injection:
-
-    @li `set_executor(executor_ref)` — stores the executor
-    @li `set_stop_token(std::stop_token)` — stores the stop token
-    @li `executor()` — retrieves the stored executor
-    @li `stop_token()` — retrieves the stored stop token
-
-    This concept formalizes the contract between launch functions
-    (`run_async`, `run_on`) and task types. Launch functions are the
-    root of a coroutine chain and must set context directly on the
-    promise rather than going through `await_suspend`.
-
-    @tparam T The task type.
-
-    @par Requirements
-    @li `T` must satisfy @ref IoAwaitable
-    @li `T::promise_type` must exist
-    @li The promise must provide `set_executor` and `set_stop_token`
-    @li The promise must provide `executor` and `stop_token` accessors
-
-    @par Example
-    @code
-    struct my_task
-    {
-        struct promise_type : io_awaitable_support<promise_type>
-        {
-            my_task get_return_object();
-            std::suspend_always initial_suspend() noexcept;
-            std::suspend_always final_suspend() noexcept;
-            void return_void();
-            void unhandled_exception();
-        };
-
-        std::coroutine_handle<promise_type> h_;
-
-        bool await_ready() const noexcept { return false; }
-
-        coro await_suspend(coro cont, executor_ref ex, std::stop_token token)
-        {
-            h_.promise().set_executor(ex);
-            h_.promise().set_stop_token(token);
-            // ... set continuation, return handle ...
-        }
-
-        void await_resume() {}
-    };
-
-    static_assert(IoAwaitableTask<my_task>);
-    @endcode
-
-    @see IoAwaitable
-    @see io_awaitable_support
-*/
-template<typename T>
-concept IoAwaitableTask =
-    IoAwaitable<T> &&
-    requires { typename T::promise_type; } &&
-    requires(
-        typename T::promise_type& p,
-        typename T::promise_type const& cp,
-        executor_ref ex,
-        std::stop_token st,
-        coro cont)
-    {
-        { p.set_executor(ex) } noexcept;
-        { p.set_stop_token(st) } noexcept;
-        { p.set_continuation(cont, ex) } noexcept;
-        { cp.executor() } noexcept -> std::same_as<executor_ref>;
-        { cp.stop_token() } noexcept -> std::same_as<std::stop_token const&>;
-        { cp.complete() } noexcept -> std::same_as<coro>;
-    };
-
-/** Concept for launchable I/O task types.
-
-    A task satisfies `IoLaunchableTask` if it satisfies @ref IoAwaitableTask
-    and provides the additional interface needed by launch utilities like
-    `run_async` and `run_on`:
-
-    @li `handle()` — returns the typed coroutine handle
-    @li `release()` — releases ownership (task won't destroy frame)
-    @li `exception()` — returns stored exception_ptr from the promise
-    @li `result()` — returns stored result from the promise (non-void tasks)
-
-    This concept formalizes the contract for launching tasks from
-    non-coroutine contexts.
-
-    @tparam T The task type.
-
-    @par Requirements
-    @li `T` must satisfy @ref IoAwaitableTask
-    @li `T::handle()` returns `std::coroutine_handle<promise_type>`
-    @li `T::release()` releases ownership without returning the handle
-    @li `T::promise_type::exception()` returns the stored exception
-    @li `T::promise_type::result()` returns the result (for non-void tasks)
-
-    @see IoAwaitableTask
-    @see run_async
-    @see run_on
-*/
-template<typename T>
-concept IoLaunchableTask =
-    IoAwaitableTask<T> &&
-    requires(T& t, T const& ct, typename T::promise_type const& cp)
-    {
-        { ct.handle() } noexcept -> std::same_as<std::coroutine_handle<typename T::promise_type>>;
-        { t.release() } noexcept;
-        { cp.exception() } noexcept -> std::same_as<std::exception_ptr>;
-    } &&
-    (std::is_void_v<decltype(std::declval<T&>().await_resume())> ||
-     requires(typename T::promise_type& p) {
-         p.result();
-     });
 
 /** CRTP mixin that adds I/O awaitable support to a promise type.
 
