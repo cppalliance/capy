@@ -7,10 +7,9 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_RUN_SYNC_HPP
-#define BOOST_CAPY_RUN_SYNC_HPP
+#ifndef BOOST_CAPY_TEST_RUN_SYNC_HPP
+#define BOOST_CAPY_TEST_RUN_SYNC_HPP
 
-#include <boost/capy/detail/config.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/task.hpp>
@@ -22,19 +21,14 @@
 
 namespace boost {
 namespace capy {
-
 namespace detail {
 
-/** Trivial execution context for synchronous execution. */
+// Trivial execution context for synchronous execution.
 class sync_context : public execution_context
 {
 };
 
-/** Trivial executor for synchronous execution.
-
-    Returns the coroutine handle directly for symmetric transfer,
-    enabling inline execution without scheduling.
-*/
+// Trivial executor for synchronous execution.
 struct sync_executor
 {
     static sync_context ctx_;
@@ -57,19 +51,7 @@ struct sync_executor
 
 inline sync_context sync_executor::ctx_;
 
-/** Synchronous task runner.
-
-    Runs a coroutine task to completion on the caller's thread,
-    returning the result directly or rethrowing any exception.
-
-    This class is not intended for direct use. Use the `run_sync()`
-    factory function instead.
-
-    @par Thread Safety
-    Not thread-safe. The task runs entirely on the calling thread.
-
-    @see run_sync
-*/
+// Synchronous task runner for tests.
 class sync_runner
 {
 public:
@@ -80,20 +62,6 @@ public:
     sync_runner(sync_runner&&) = default;
     sync_runner& operator=(sync_runner&&) = default;
 
-    /** Run a task to completion and return the result.
-
-        Executes the task synchronously on the calling thread. The task
-        runs to completion before this function returns.
-
-        @par Exception Safety
-        If the task throws an exception, it is rethrown to the caller.
-
-        @param t The task to execute.
-
-        @return The value returned by the task.
-
-        @throws Any exception thrown by the task.
-    */
     template<typename T>
     T operator()(task<T> t) &&
     {
@@ -121,7 +89,7 @@ public:
                 h.destroy();
                 std::rethrow_exception(ep);
             }
-            auto& result_base = static_cast<detail::task_return_base<T>&>(
+            auto& result_base = static_cast<task_return_base<T>&>(
                 h.promise());
             auto result = std::move(*result_base.result_);
             h.destroy();
@@ -130,47 +98,14 @@ public:
     }
 };
 
-} // namespace detail
-
-/** Create a synchronous task runner.
-
-    Returns a runner that executes a coroutine task to completion
-    on the caller's thread. The task completes before this function
-    returns, and the result is returned directly.
-
-    @par Usage
-    @code
-    // Run a task and get the result
-    int value = run_sync()(compute_value());
-
-    // Run a void task
-    run_sync()(do_work());
-
-    // Exceptions propagate normally
-    try {
-        run_sync()(failing_task());
-    } catch (std::exception const& e) {
-        // handle error
-    }
-    @endcode
-
-    @par Thread Safety
-    The task runs entirely on the calling thread. No executor or
-    execution context is required.
-
-    @return A runner object with `operator()(task<T>)` that returns `T`.
-
-    @see task
-    @see run_async
-    @see run_on
-*/
 inline
-detail::sync_runner
+sync_runner
 run_sync()
 {
-    return detail::sync_runner{};
+    return sync_runner{};
 }
 
+} // namespace detail
 } // namespace capy
 } // namespace boost
 
