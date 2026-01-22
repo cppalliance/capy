@@ -223,12 +223,15 @@ concept IoAwaitableTask =
         typename T::promise_type& p,
         typename T::promise_type const& cp,
         executor_ref ex,
-        std::stop_token st)
+        std::stop_token st,
+        coro cont)
     {
         { p.set_executor(ex) } noexcept;
         { p.set_stop_token(st) } noexcept;
+        { p.set_continuation(cont, ex) } noexcept;
         { cp.executor() } noexcept -> std::same_as<executor_ref>;
         { cp.stop_token() } noexcept -> std::same_as<std::stop_token const&>;
+        { cp.complete() } noexcept -> std::same_as<coro>;
     };
 
 /** CRTP mixin that adds I/O awaitable support to a promise type.
@@ -337,8 +340,46 @@ class io_awaitable_support
 {
     executor_ref executor_;
     std::stop_token stop_token_;
+    coro cont_;
+    executor_ref caller_ex_;
 
 public:
+    /** Store continuation and caller's executor for completion dispatch.
+
+        Call this from your coroutine type's `await_suspend` overload to
+        set up the completion path. On completion, the coroutine will
+        resume the continuation, dispatching through the caller's executor
+        if it differs from this coroutine's executor.
+
+        @param cont The continuation to resume on completion.
+        @param caller_ex The caller's executor for completion dispatch.
+    */
+    void set_continuation(coro cont, executor_ref caller_ex) noexcept
+    {
+        cont_ = cont;
+        caller_ex_ = caller_ex;
+    }
+
+    /** Return the handle to resume on completion with dispatch-awareness.
+
+        If no continuation was set, returns `std::noop_coroutine()`.
+        If the coroutine's executor matches the caller's executor, returns
+        the continuation directly for symmetric transfer.
+        Otherwise, dispatches through the caller's executor first.
+
+        Call this from your `final_suspend` awaiter's `await_suspend`.
+
+        @return A coroutine handle for symmetric transfer.
+    */
+    coro complete() const noexcept
+    {
+        if(!cont_)
+            return std::noop_coroutine();
+        if(executor_ == caller_ex_)
+            return cont_;
+        return caller_ex_.dispatch(cont_);
+    }
+
     /** Store a stop token for later retrieval.
 
         Call this from your coroutine type's `await_suspend`

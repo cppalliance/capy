@@ -12,12 +12,13 @@
 
 #include <boost/capy/io_awaitable.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/task.hpp>
 
 namespace boost {
 namespace capy {
 
-static_assert(IoAwaitable<detail::run_on_awaitable<void, executor_ref>>);
-static_assert(IoAwaitable<detail::run_on_awaitable<int, executor_ref>>);
+static_assert(IoAwaitable<detail::run_on_awaitable<task<void>, executor_ref>>);
+static_assert(IoAwaitable<detail::run_on_awaitable<task<int>, executor_ref>>);
 
 } // capy
 } // boost

@@ -68,9 +68,8 @@ public:
         auto h = t.release();
         sync_executor ex;
 
-        h.promise().continuation_ = std::noop_coroutine();
+        h.promise().set_continuation(std::noop_coroutine(), ex);
         h.promise().set_executor(ex);
-        h.promise().caller_ex_ = ex;
 
         ex.dispatch(coro{h}).resume();
 

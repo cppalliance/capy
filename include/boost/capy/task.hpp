@@ -79,8 +79,6 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         , io_awaitable_support<promise_type>
         , detail::task_return_base<T>
     {
-        executor_ref caller_ex_;
-        coro continuation_;
         std::exception_ptr ep_;
         detail::frame_allocator_base* alloc_ = nullptr;
 
@@ -129,13 +127,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
                 coro await_suspend(coro) const noexcept
                 {
-                    if(p_->continuation_)
-                    {
-                        if(p_->executor() == p_->caller_ex_)
-                            return p_->continuation_;
-                        return p_->caller_ex_.dispatch(p_->continuation_);
-                    }
-                    return std::noop_coroutine();
+                    return p_->complete();
                 }
 
                 void await_resume() const noexcept
@@ -220,10 +212,9 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
     // IoAwaitable: receive caller's executor and stop_token for completion dispatch
     template<typename Ex>
-    coro await_suspend(coro continuation, Ex const& caller_ex, std::stop_token token)
+    coro await_suspend(coro cont, Ex const& caller_ex, std::stop_token token)
     {
-        h_.promise().caller_ex_ = caller_ex;
-        h_.promise().continuation_ = continuation;
+        h_.promise().set_continuation(cont, caller_ex);
         h_.promise().set_executor(caller_ex);
         h_.promise().set_stop_token(token);
         return h_;

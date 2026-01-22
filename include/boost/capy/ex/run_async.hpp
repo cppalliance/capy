@@ -350,8 +350,7 @@ public:
 
         // Setup task's continuation to return to trampoline
         // Executor lives in trampoline's promise, so reference is valid for task's lifetime
-        task_h.promise().continuation_ = tr_.h_;
-        task_h.promise().caller_ex_ = p.ex_;
+        task_h.promise().set_continuation(tr_.h_, p.ex_);
         task_h.promise().set_executor(p.ex_);
         task_h.promise().set_stop_token(st_);
 

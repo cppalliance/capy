@@ -12,8 +12,8 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
+#include <boost/capy/io_awaitable.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/task.hpp>
 
 #include <stop_token>
 #include <utility>
@@ -22,62 +22,47 @@ namespace boost {
 namespace capy {
 namespace detail {
 
-/** Awaitable that binds a task to a specific executor.
+/** Awaitable that binds an IoAwaitableTask to a specific executor.
 
-    Stores the executor by value. When co_awaited, the co_await
-    expression's lifetime extension keeps the executor alive for
-    the duration of the operation.
+    Stores the executor and inner task by value. When co_awaited, the
+    co_await expression's lifetime extension keeps both alive for the
+    duration of the operation.
 
-    @tparam T The task's return type
+    @tparam Task The IoAwaitableTask type
     @tparam Ex The executor type
 */
-template<typename T, Executor Ex>
+template<IoAwaitableTask Task, Executor Ex>
 struct [[nodiscard]]
     run_on_awaitable
 {
     Ex ex_;
-    std::coroutine_handle<typename task<T>::promise_type> h_;
+    Task inner_;
 
-    run_on_awaitable(
-        Ex ex,
-        std::coroutine_handle<typename task<T>::promise_type> h)
+    run_on_awaitable(Ex ex, Task inner)
         : ex_(std::move(ex))
-        , h_(h)
+        , inner_(std::move(inner))
     {
     }
 
     bool await_ready() const noexcept
     {
-        return false;
+        return inner_.await_ready();
     }
 
     auto await_resume()
     {
-        if(h_.promise().ep_)
-            std::rethrow_exception(h_.promise().ep_);
-        if constexpr (std::is_void_v<T>)
-            return;
-        else
-            return std::move(*h_.promise().result_);
+        return inner_.await_resume();
     }
 
     // IoAwaitable: receives caller's executor and stop_token for completion dispatch
     template<typename Caller>
-    coro await_suspend(coro continuation, Caller const& caller_ex, std::stop_token token)
+    coro await_suspend(coro cont, Caller const& caller_ex, std::stop_token token)
     {
-        // 'this' is kept alive by co_await until completion
-        // ex_ is valid for the entire operation
-        h_.promise().set_executor(ex_);
-        h_.promise().caller_ex_ = caller_ex;
-        h_.promise().continuation_ = continuation;
-        h_.promise().set_stop_token(token);
-        return h_;
-    }
-
-    ~run_on_awaitable()
-    {
-        if(h_ && !h_.done())
-            h_.destroy();
+        auto& p = inner_.h_.promise();
+        p.set_executor(ex_);
+        p.set_continuation(cont, caller_ex);
+        p.set_stop_token(token);
+        return inner_.h_;
     }
 
     // Non-copyable
@@ -87,7 +72,7 @@ struct [[nodiscard]]
     // Movable
     run_on_awaitable(run_on_awaitable&& other) noexcept
         : ex_(std::move(other.ex_))
-        , h_(std::exchange(other.h_, nullptr))
+        , inner_(std::move(other.inner_))
     {
     }
 
@@ -95,10 +80,8 @@ struct [[nodiscard]]
     {
         if(this != &other)
         {
-            if(h_ && !h_.done())
-                h_.destroy();
             ex_ = std::move(other.ex_);
-            h_ = std::exchange(other.h_, nullptr);
+            inner_ = std::move(other.inner_);
         }
         return *this;
     }
@@ -113,15 +96,15 @@ struct [[nodiscard]]
     direct promise configuration.
 
     @param ex The executor on which the task should run (copied by value).
-    @param t The task to bind to the executor.
+    @param t The IoAwaitableTask to bind to the executor.
 
     @return An awaitable that runs t on the specified executor.
 */
-template<Executor Ex, typename T>
-[[nodiscard]] auto run_on(Ex ex, task<T> t)
+template<Executor Ex, IoAwaitableTask Task>
+[[nodiscard]] auto run_on(Ex ex, Task t)
 {
-    return detail::run_on_awaitable<T, Ex>{
-        std::move(ex), t.release()};
+    return detail::run_on_awaitable<Task, Ex>{
+        std::move(ex), std::move(t)};
 }
 
 } // namespace capy
