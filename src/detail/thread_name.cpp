@@ -92,6 +92,8 @@ set_current_thread_name(char const* name) noexcept
 
     // Ignore return value: thread naming is best-effort for debugging.
     (void)pthread_setname_np(pthread_self(), truncated);
+#else
+    (void)name;
 #endif
 }
 
