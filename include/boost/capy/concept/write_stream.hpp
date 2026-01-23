@@ -11,7 +11,7 @@
 #define BOOST_CAPY_CONCEPT_WRITE_STREAM_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/buffers.hpp>
+#include <boost/capy/concept/buffer_archetype.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/type_traits.hpp>
 #include <boost/system/error_code.hpp>
@@ -21,42 +21,6 @@
 
 namespace boost {
 namespace capy {
-
-/** Archetype for ConstBufferSequence concept checking.
-
-    This type satisfies @ref ConstBufferSequence but cannot be
-    instantiated. Use it in concept definitions to verify that
-    a function template accepts any ConstBufferSequence.
-
-    @par Example
-    @code
-    template<typename T>
-    concept MyWritable =
-        requires(T& stream, const_buffer_archetype buffers)
-        {
-            stream.write(buffers);
-        };
-    @endcode
-*/
-struct const_buffer_archetype_
-{
-    const_buffer_archetype_() = delete;
-    const_buffer_archetype_(const_buffer_archetype_ const&) = delete;
-    const_buffer_archetype_(const_buffer_archetype_&&) = delete;
-    const_buffer_archetype_& operator=(const_buffer_archetype_ const&) = delete;
-    const_buffer_archetype_& operator=(const_buffer_archetype_&&) = delete;
-
-    operator const_buffer() const noexcept { return {}; }
-};
-
-#ifdef __clang__
-// workaround: archetype crashes clang
-using const_buffer_archetype = const_buffer;
-#else
-using const_buffer_archetype = const_buffer_archetype_;
-#endif
-
-//------------------------------------------------
 
 /** Concept for types that provide awaitable write operations.
 

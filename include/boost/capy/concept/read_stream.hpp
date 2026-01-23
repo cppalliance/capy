@@ -11,7 +11,7 @@
 #define BOOST_CAPY_CONCEPT_READ_STREAM_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/buffers.hpp>
+#include <boost/capy/concept/buffer_archetype.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/type_traits.hpp>
 #include <boost/system/error_code.hpp>
@@ -21,43 +21,6 @@
 
 namespace boost {
 namespace capy {
-
-/** Archetype for MutableBufferSequence concept checking.
-
-    This type satisfies @ref MutableBufferSequence but cannot be
-    instantiated. Use it in concept definitions to verify that
-    a function template accepts any MutableBufferSequence.
-
-    @par Example
-    @code
-    template<typename T>
-    concept MyReadable =
-        requires(T& stream, mutable_buffer_archetype buffers)
-        {
-            stream.read(buffers);
-        };
-    @endcode
-*/
-struct mutable_buffer_archetype_
-{
-    mutable_buffer_archetype_() = delete;
-    mutable_buffer_archetype_(mutable_buffer_archetype_ const&) = delete;
-    mutable_buffer_archetype_(mutable_buffer_archetype_&&) = delete;
-    mutable_buffer_archetype_& operator=(mutable_buffer_archetype_ const&) = delete;
-    mutable_buffer_archetype_& operator=(mutable_buffer_archetype_&&) = delete;
-
-    operator mutable_buffer() const noexcept { return {}; }
-    operator const_buffer() const noexcept { return {}; }
-};
-
-#ifdef __clang__
-// workaround: archetype crashes clang
-using mutable_buffer_archetype = mutable_buffer;
-#else
-using mutable_buffer_archetype = mutable_buffer_archetype_;
-#endif
-
-//------------------------------------------------
 
 /** Concept for types that provide awaitable read operations.
 
