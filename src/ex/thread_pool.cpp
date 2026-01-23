@@ -18,6 +18,24 @@
 #include <thread>
 #include <vector>
 
+/*
+    Thread pool implementation using a shared work queue.
+
+    Work items are coroutine handles wrapped in intrusive list nodes, stored
+    in a single queue protected by a mutex. Worker threads wait on a
+    condition_variable_any that integrates with std::stop_token for clean
+    shutdown.
+
+    Threads are started lazily on first post() via std::call_once to avoid
+    spawning threads for pools that are constructed but never used. Each
+    thread is named with a configurable prefix plus index for debugger
+    visibility.
+
+    Shutdown sequence: stop() requests all threads to stop via their stop
+    tokens, then the destructor joins threads and destroys any remaining
+    queued work without executing it.
+*/
+
 namespace boost {
 namespace capy {
 
