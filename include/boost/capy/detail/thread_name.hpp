@@ -10,6 +10,8 @@
 #ifndef BOOST_CAPY_DETAIL_THREAD_NAME_HPP
 #define BOOST_CAPY_DETAIL_THREAD_NAME_HPP
 
+#include <boost/capy/detail/config.hpp>
+
 /*
     Thread naming abstraction for debugging purposes.
 
@@ -22,8 +24,6 @@
     - Linux/FreeBSD/NetBSD: pthread_setname_np (truncated to 15 chars)
     - Other platforms: no-op
 */
-
-#include <boost/capy/detail/config.hpp>
 
 namespace boost {
 namespace capy {
