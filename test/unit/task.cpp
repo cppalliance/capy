@@ -1087,6 +1087,67 @@ struct task_test
         BOOST_TEST(all_same);
     }
 
+    struct tear_down_t 
+    {
+        bool *torn_down;
+        tear_down_t(bool &torn_down) : torn_down(&torn_down) {}
+        tear_down_t(tear_down_t && rhs) noexcept : torn_down(std::exchange(rhs.torn_down, nullptr)) {}
+        ~tear_down_t() 
+        {
+            if (torn_down)
+                *torn_down = true; 
+        }
+    };
+
+    void testTearDown()
+    {
+        bool torn_down = false;
+
+
+        auto l =[](tear_down_t ) -> capy::task<void> {co_return ;};
+
+        {
+            auto t = l(torn_down);
+            BOOST_TEST(!torn_down);
+        }
+
+        BOOST_TEST(torn_down);
+    }
+
+    void testDelete()
+    {
+        bool td1 = false, td2 = false;
+        {
+            auto l = []() -> capy::task<void> 
+                    {
+                        struct self_destroy 
+                        {
+                            bool await_ready() {return false;}
+
+                            std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, capy::executor_ref, std::stop_token)
+                            {
+                                // one wouldn't expect this to happen, but it should not cause UB
+                                h.destroy();
+                                return std::noop_coroutine();
+                            }
+                            void await_resume() {}
+                        };
+                        co_await self_destroy{};
+                    };
+            int dispatch_count = 0;
+            test_executor ex(dispatch_count);
+
+            run_async(ex,
+                [t = tear_down_t(td1)] { BOOST_TEST(false); },
+                [t = tear_down_t(td2)](std::exception_ptr) {BOOST_TEST(false);})(l());
+
+            BOOST_TEST(dispatch_count == 1); // async_run dispatches once to start the test.
+        }
+        // CHECK if the handlers got destroyed - since we're doing a hard shutdown here, it's ok if they were to live on in the executor.
+        BOOST_TEST(td1 == true);
+        BOOST_TEST(td2 == true);
+    }
+
     void
     run()
     {
@@ -1124,6 +1185,9 @@ struct task_test
         testGetStopTokenPropagation();
         testGetStopTokenInLoop();
         testGetStopTokenMultipleCalls();
+
+        testTearDown();
+        testDelete();
     }
 };
 
