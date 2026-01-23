@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -14,6 +15,7 @@
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <cstddef>
+#include <string_view>
 
 namespace boost {
 namespace capy {
@@ -62,9 +64,16 @@ public:
 
         @param num_threads The number of worker threads, or zero
             for automatic selection.
+
+        @param thread_name_prefix The prefix for worker thread names.
+            Thread names appear as "{prefix}0", "{prefix}1", etc.
+            The prefix is truncated to 12 characters. Defaults to
+            "capy-pool-".
     */
     explicit
-    thread_pool(std::size_t num_threads = 0);
+    thread_pool(
+        std::size_t num_threads = 0,
+        std::string_view thread_name_prefix = "capy-pool-");
 
     thread_pool(thread_pool const&) = delete;
     thread_pool& operator=(thread_pool const&) = delete;

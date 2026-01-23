@@ -1,0 +1,72 @@
+//
+// Copyright (c) 2026 Michael Vandeberg
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+#include <boost/capy/detail/thread_name.hpp>
+
+#if defined(_WIN32)
+
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
+#elif defined(__APPLE__)
+
+#include <pthread.h>
+#include <cstring>
+
+#elif defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__)
+
+#include <pthread.h>
+#include <cstring>
+
+#endif
+
+namespace boost {
+namespace capy {
+namespace detail {
+
+void
+set_current_thread_name(char const* name) noexcept
+{
+#if defined(_WIN32)
+    // SetThreadDescription requires Windows 10 1607+. Older Windows versions
+    // are unsupported; the program may fail to link on those systems.
+    // Convert UTF-8 to wide string. Buffer sized for typical thread names.
+    wchar_t wname[128];
+    int len = MultiByteToWideChar(
+        CP_UTF8, 0, name, -1, wname, sizeof(wname) / sizeof(wname[0]));
+    if(len <= 0)
+        return;
+
+    // Ignore return value: thread naming is best-effort for debugging.
+    (void)SetThreadDescription(GetCurrentThread(), wname);
+#elif defined(__APPLE__)
+    // macOS pthread_setname_np takes only the name (no thread handle)
+    // and has a 64 char limit (63 + null terminator)
+    char truncated[64];
+    std::strncpy(truncated, name, 63);
+    truncated[63] = '\0';
+
+    // Ignore return value: thread naming is best-effort for debugging.
+    (void)pthread_setname_np(truncated);
+#elif defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__)
+    // pthread_setname_np has 16 char limit (15 + null terminator)
+    char truncated[16];
+    std::strncpy(truncated, name, 15);
+    truncated[15] = '\0';
+
+    // Ignore return value: thread naming is best-effort for debugging.
+    (void)pthread_setname_np(pthread_self(), truncated);
+#endif
+}
+
+} // detail
+} // capy
+} // boost

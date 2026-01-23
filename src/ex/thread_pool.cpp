@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -9,7 +10,9 @@
 
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/detail/intrusive.hpp>
+#include <boost/capy/detail/thread_name.hpp>
 #include <condition_variable>
+#include <cstdio>
 #include <mutex>
 #include <stop_token>
 #include <thread>
@@ -49,6 +52,7 @@ class thread_pool::impl
     detail::intrusive_queue<work> q_;
     std::vector<std::jthread> threads_;
     std::size_t num_threads_;
+    char thread_name_prefix_[13]{};  // 12 chars max + null terminator
     std::once_flag start_flag_;
 
 public:
@@ -61,14 +65,17 @@ public:
             w->destroy();
     }
 
-    explicit
-    impl(std::size_t num_threads)
+    impl(std::size_t num_threads, std::string_view thread_name_prefix)
         : num_threads_(num_threads)
     {
         if(num_threads_ == 0)
             num_threads_ = std::thread::hardware_concurrency();
         if(num_threads_ == 0)
             num_threads_ = 1;
+
+        // Truncate prefix to 12 chars, leaving room for up to 3-digit index.
+        auto n = thread_name_prefix.copy(thread_name_prefix_, 12);
+        thread_name_prefix_[n] = '\0';
     }
 
     void
@@ -98,13 +105,19 @@ private:
         std::call_once(start_flag_, [this]{
             threads_.reserve(num_threads_);
             for(std::size_t i = 0; i < num_threads_; ++i)
-                threads_.emplace_back([this](std::stop_token st){ run(st); });
+                threads_.emplace_back(
+                    [this, i](std::stop_token st){ run(st, i); });
         });
     }
 
     void
-    run(std::stop_token st)
+    run(std::stop_token st, std::size_t index)
     {
+        // Build name; set_current_thread_name truncates to platform limits.
+        char name[16];
+        std::snprintf(name, sizeof(name), "%s%zu", thread_name_prefix_, index);
+        detail::set_current_thread_name(name);
+
         for(;;)
         {
             work* w = nullptr;
@@ -130,8 +143,8 @@ thread_pool::
 }
 
 thread_pool::
-thread_pool(std::size_t num_threads)
-    : impl_(new impl(num_threads))
+thread_pool(std::size_t num_threads, std::string_view thread_name_prefix)
+    : impl_(new impl(num_threads, thread_name_prefix))
 {
 }
 
