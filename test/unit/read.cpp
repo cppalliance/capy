@@ -58,7 +58,7 @@ struct mock_read_awaitable
         if(remaining == 0)
             return {error::eof, 0};
 
-        std::size_t to_read = std::min({
+        std::size_t to_read = (std::min)({
             buf_.size(),
             chunk_size_,
             remaining});
