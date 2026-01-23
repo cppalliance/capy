@@ -15,6 +15,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <string>
 
 #elif defined(__APPLE__)
 
@@ -38,15 +39,28 @@ set_current_thread_name(char const* name) noexcept
 #if defined(_WIN32)
     // SetThreadDescription requires Windows 10 1607+. Older Windows versions
     // are unsupported; the program may fail to link on those systems.
-    // Convert UTF-8 to wide string. Buffer sized for typical thread names.
-    wchar_t wname[128];
-    int len = MultiByteToWideChar(
-        CP_UTF8, 0, name, -1, wname, sizeof(wname) / sizeof(wname[0]));
-    if(len <= 0)
+
+    // Query required buffer size for UTF-8 to wide conversion.
+    int required = MultiByteToWideChar(CP_UTF8, 0, name, -1, nullptr, 0);
+    if(required <= 0)
+        return;
+
+    // Allocate and convert; catch exceptions to maintain noexcept.
+    std::wstring wname;
+    try
+    {
+        wname.resize(static_cast<std::size_t>(required));
+    }
+    catch(...)
+    {
+        return;
+    }
+
+    if(MultiByteToWideChar(CP_UTF8, 0, name, -1, wname.data(), required) <= 0)
         return;
 
     // Ignore return value: thread naming is best-effort for debugging.
-    (void)SetThreadDescription(GetCurrentThread(), wname);
+    (void)SetThreadDescription(GetCurrentThread(), wname.c_str());
 #elif defined(__APPLE__)
     // macOS pthread_setname_np takes only the name (no thread handle)
     // and has a 64 char limit (63 + null terminator)
