@@ -9,20 +9,6 @@
 
 #include <boost/capy/detail/thread_name.hpp>
 
-/*
-    Platform-specific thread naming implementation.
-
-    Each platform has a different API and name length limit:
-    - Windows: SetThreadDescription with UTF-8 to UTF-16 conversion (no limit)
-    - macOS: pthread_setname_np(name) with 63-char limit
-    - Linux/BSD: pthread_setname_np(thread, name) with 15-char limit
-
-    All operations are best-effort and silently fail on error, since thread
-    naming is purely for debugging visibility and should never affect program
-    correctness. The noexcept guarantee is maintained by catching exceptions
-    from std::wstring allocation on Windows.
-*/
-
 #if defined(_WIN32)
 
 #ifndef NOMINMAX
@@ -42,6 +28,20 @@
 #include <cstring>
 
 #endif
+
+/*
+    Platform-specific thread naming implementation.
+
+    Each platform has a different API and name length limit:
+    - Windows: SetThreadDescription with UTF-8 to UTF-16 conversion (no limit)
+    - macOS: pthread_setname_np(name) with 63-char limit
+    - Linux/BSD: pthread_setname_np(thread, name) with 15-char limit
+
+    All operations are best-effort and silently fail on error, since thread
+    naming is purely for debugging visibility and should never affect program
+    correctness. The noexcept guarantee is maintained by catching exceptions
+    from std::wstring allocation on Windows.
+*/
 
 namespace boost {
 namespace capy {
