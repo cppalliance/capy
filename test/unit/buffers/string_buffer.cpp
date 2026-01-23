@@ -34,7 +34,7 @@ struct string_buffer_test
             BOOST_TEST(s.empty());
         }
 
-        // string_buffer
+        // string_buffer (move constructor)
         {
             std::string s0;
             {
@@ -45,6 +45,21 @@ struct string_buffer_test
                     make_buffer("12345", 5));
                 BOOST_TEST_EQ(n, 5);
                 b1.commit(5);
+            }
+            BOOST_TEST_EQ(s0, "12345");
+        }
+        {
+            // move transfers in_size_
+            std::string s0;
+            {
+                string_buffer b0(&s0);
+                copy(b0.prepare(5), make_buffer("12345", 5));
+                b0.commit(5);
+                BOOST_TEST_EQ(b0.size(), 5);
+                string_buffer b1(std::move(b0));
+                BOOST_TEST_EQ(b1.size(), 5);
+                BOOST_TEST_EQ(
+                    test::make_string(b1.data()), "12345");
             }
             BOOST_TEST_EQ(s0, "12345");
         }

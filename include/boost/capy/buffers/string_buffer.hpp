@@ -31,23 +31,16 @@ class basic_string_buffer
         CharT, Traits, Allocator>* s_;
     std::size_t max_size_;
 
-public:
-    using string_type = std::basic_string<
-        CharT, Traits, Allocator>;
-
-    unsigned char* data_ = nullptr;
     std::size_t in_size_ = 0;
     std::size_t out_size_ = 0;
 
 public:
+    using string_type = std::basic_string<
+        CharT, Traits, Allocator>;
     using const_buffers_type = const_buffer;
     using mutable_buffers_type = mutable_buffer;
 
-    ~basic_string_buffer()
-    {
-        if(s_)
-            s_->resize(in_size_);
-    }
+    ~basic_string_buffer() = default;
 
     /** Constructor.
     */
@@ -55,6 +48,8 @@ public:
         basic_string_buffer&& other) noexcept
         : s_(other.s_)
         , max_size_(other.max_size_)
+        , in_size_(other.in_size_)
+        , out_size_(other.out_size_)
     {
         other.s_ = nullptr;
     }
@@ -130,6 +125,7 @@ public:
         else
             in_size_ += out_size_;
         out_size_ = 0;
+        s_->resize(in_size_);
     }
 
     void consume(std::size_t n) noexcept
@@ -141,6 +137,7 @@ public:
         }
         else
         {
+            s_->clear();
             in_size_ = 0;
         }
         out_size_ = 0;

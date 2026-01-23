@@ -15,6 +15,7 @@
 #include <boost/capy/task.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/consuming_buffers.hpp>
+#include <boost/capy/concept/write_sink.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/system/error_code.hpp>
 
@@ -77,6 +78,59 @@ write(
     }
 
     co_return {{}, total_written};
+}
+
+/** Write data from a buffer sequence to a sink.
+
+    This function writes data from the buffer sequence to the sink.
+    The sink consumes all data from the provided buffers in a single
+    operation.
+
+    @note This function does not call `write_eof()` on the sink. The
+        caller is responsible for signaling end-of-data when appropriate.
+
+    @tparam Sink The sink type, must satisfy @ref WriteSink.
+    @tparam CB The buffer sequence type, must satisfy
+        @ref ConstBufferSequence.
+
+    @param sink The sink to write to.
+    @param buffers The buffer sequence to write from.
+
+    @return A task that yields `(system::error_code, std::size_t)`.
+        On success, `ec` is default-constructed (no error) and `n` is
+        `buffer_size(buffers)`. On error, `ec` contains the error code
+        and `n` is 0.
+
+    @par Example
+    @code
+    task<void> example(WriteSink auto& sink)
+    {
+        std::string data = "Hello, World!";
+        auto [ec, n] = co_await write(sink, const_buffer(data.data(), data.size()));
+        if (ec)
+        {
+            // Handle error
+        }
+        // n bytes were written (n == data.size() on success)
+
+        // Signal end of data when done
+        auto [ec2] = co_await sink.write_eof();
+    }
+    @endcode
+
+    @see WriteSink, ConstBufferSequence
+*/
+auto
+write(
+    WriteSink auto& sink,
+    ConstBufferSequence auto const& buffers) ->
+        task<io_result<std::size_t>>
+{
+    std::size_t const total_size = buffer_size(buffers);
+    auto [ec] = co_await sink.write(buffers);
+    if(ec.failed())
+        co_return {ec, 0};
+    co_return {{}, total_size};
 }
 
 } // namespace capy

@@ -10,8 +10,10 @@
 // Test that header file is self-contained.
 #include <boost/capy/write.hpp>
 
+#include <boost/capy/concept/write_sink.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/io_result.hpp>
 
 #include "test_helpers.hpp"
 
@@ -42,7 +44,7 @@ struct mock_write_awaitable
     {
     }
 
-    std::pair<system::error_code, std::size_t>
+    io_result<std::size_t>
     await_resume() noexcept
     {
         if(ec_)
@@ -99,7 +101,7 @@ struct mock_error_stream
             {
             }
 
-            std::pair<system::error_code, std::size_t>
+            io_result<std::size_t>
             await_resume() noexcept
             {
                 if(self_->written >= self_->error_after)
@@ -122,6 +124,89 @@ struct mock_error_stream
 };
 
 static_assert(WriteStream<mock_error_stream>);
+
+//----------------------------------------------------------
+// Mock WriteSink for testing
+//----------------------------------------------------------
+
+// Mock sink write awaitable that appends data to a string
+struct mock_sink_write_awaitable
+{
+    std::string* data_;
+    const_buffer buf_;
+    system::error_code ec_;
+
+    bool await_ready() const noexcept { return true; }
+
+    void await_suspend(
+        coro,
+        executor_ref,
+        std::stop_token) const noexcept
+    {
+    }
+
+    io_result<>
+    await_resume() noexcept
+    {
+        if(ec_)
+            return {ec_};
+
+        data_->append(
+            static_cast<char const*>(buf_.data()),
+            buf_.size());
+        return {{}};
+    }
+};
+
+// Mock sink write_eof awaitable
+struct mock_sink_eof_awaitable
+{
+    bool* finished_;
+    system::error_code ec_;
+
+    bool await_ready() const noexcept { return true; }
+
+    void await_suspend(
+        coro,
+        executor_ref,
+        std::stop_token) const noexcept
+    {
+    }
+
+    io_result<>
+    await_resume() noexcept
+    {
+        if(ec_)
+            return {ec_};
+        *finished_ = true;
+        return {{}};
+    }
+};
+
+// Mock sink that implements WriteSink concept
+struct mock_write_sink
+{
+    std::string data;
+    bool finished = false;
+    system::error_code write_error;
+    system::error_code eof_error;
+
+    template<ConstBufferSequence CB>
+    mock_sink_write_awaitable
+    write(CB const& buffers)
+    {
+        const_buffer buf = *begin(buffers);
+        return {&data, buf, write_error};
+    }
+
+    mock_sink_eof_awaitable
+    write_eof()
+    {
+        return {&finished, eof_error};
+    }
+};
+
+static_assert(WriteSink<mock_write_sink>);
 
 } // namespace
 
@@ -347,6 +432,147 @@ struct write_test
         BOOST_TEST(completed);
     }
 
+    //----------------------------------------------------------
+    // WriteSink tests
+    //----------------------------------------------------------
+
+    void
+    testSinkWriteSingleBuffer()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool completed = false;
+
+        auto do_test = []() -> task<void>
+        {
+            mock_write_sink sink;
+
+            std::string_view msg = "hello world";
+            auto [ec, n] = co_await write(sink, const_buffer(msg.data(), msg.size()));
+
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 11u);
+            BOOST_TEST_EQ(sink.data, "hello world");
+        };
+
+        run_async(ex,
+            [&]() { completed = true; },
+            [](std::exception_ptr) {})(do_test());
+
+        BOOST_TEST(completed);
+    }
+
+    void
+    testSinkWriteEmptyBuffer()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool completed = false;
+
+        auto do_test = []() -> task<void>
+        {
+            mock_write_sink sink;
+
+            auto [ec, n] = co_await write(sink, const_buffer(nullptr, 0));
+
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 0u);
+            BOOST_TEST(sink.data.empty());
+        };
+
+        run_async(ex,
+            [&]() { completed = true; },
+            [](std::exception_ptr) {})(do_test());
+
+        BOOST_TEST(completed);
+    }
+
+    void
+    testSinkWriteError()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool completed = false;
+
+        auto do_test = []() -> task<void>
+        {
+            mock_write_sink sink;
+            sink.write_error = make_error_code(system::errc::broken_pipe);
+
+            std::string_view msg = "data";
+            auto [ec, n] = co_await write(sink, const_buffer(msg.data(), msg.size()));
+
+            BOOST_TEST(ec == system::errc::broken_pipe);
+            BOOST_TEST_EQ(n, 0u);
+            BOOST_TEST(sink.data.empty());
+        };
+
+        run_async(ex,
+            [&]() { completed = true; },
+            [](std::exception_ptr) {})(do_test());
+
+        BOOST_TEST(completed);
+    }
+
+    void
+    testSinkWriteWithEof()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool completed = false;
+
+        auto do_test = []() -> task<void>
+        {
+            mock_write_sink sink;
+
+            std::string_view msg = "hello";
+            auto [ec, n] = co_await write(sink, const_buffer(msg.data(), msg.size()));
+
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 5u);
+            BOOST_TEST_EQ(sink.data, "hello");
+            BOOST_TEST(!sink.finished);
+
+            auto [ec2] = co_await sink.write_eof();
+
+            BOOST_TEST(!ec2);
+            BOOST_TEST(sink.finished);
+        };
+
+        run_async(ex,
+            [&]() { completed = true; },
+            [](std::exception_ptr) {})(do_test());
+
+        BOOST_TEST(completed);
+    }
+
+    void
+    testSinkWriteLargeData()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool completed = false;
+
+        auto do_test = []() -> task<void>
+        {
+            mock_write_sink sink;
+
+            std::string large_data(1000, 'x');
+            auto [ec, n] = co_await write(sink, const_buffer(large_data.data(), large_data.size()));
+
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 1000u);
+            BOOST_TEST_EQ(sink.data.size(), 1000u);
+            BOOST_TEST(sink.data == large_data);
+        };
+
+        run_async(ex,
+            [&]() { completed = true; },
+            [](std::exception_ptr) {})(do_test());
+
+        BOOST_TEST(completed);
+    }
+
     void
     run()
     {
@@ -358,6 +584,13 @@ struct write_test
         testWriteErrorMidway();
         testWriteImmediateError();
         testWriteLargeData();
+
+        // WriteSink tests
+        testSinkWriteSingleBuffer();
+        testSinkWriteEmptyBuffer();
+        testSinkWriteError();
+        testSinkWriteWithEof();
+        testSinkWriteLargeData();
     }
 };
 

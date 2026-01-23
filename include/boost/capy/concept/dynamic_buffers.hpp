@@ -30,6 +30,12 @@ namespace capy {
     - `prepare(n)` returns buffer sequence valid until `commit()` or next `prepare()`
     - Types may reference external storage; caller manages lifetime
 
+    @par Conforming Signatures
+    For non-coroutine functions, accept by lvalue reference:
+    @code
+    void fill( DynamicBuffers auto& buffers );
+    @endcode
+
     @par Example
     @code
     flat_buffers fb( storage, sizeof( storage ) );
@@ -70,6 +76,34 @@ concept DynamicBuffers =
     The distinction exists because some buffer types (like `flat_buffers`)
     store bookkeeping internally that would be lost if passed by rvalue,
     while adapters (like `string_buffers`) update external storage directly.
+
+    @par Conforming Signatures
+    For coroutine functions, use a forwarding reference:
+    @code
+    task<io_result<std::size_t>>
+    read( ReadSource auto& source, DynamicBuffersParam auto&& buffers );
+    @endcode
+
+    The forwarding reference is essential because the concept inspects
+    the value category to enforce the lvalue/rvalue rules. Using the
+    wrong reference type causes incorrect behavior:
+    @code
+    // WRONG: lvalue ref rejects valid rvalue adapters
+    void bad1( DynamicBuffersParam auto& buffers );
+    bad1( fb );                    // OK
+    bad1( string_buffers( s ) );   // compile error, but should work
+
+    // WRONG: const ref deduces non-reference, rejects non-adapters
+    void bad2( DynamicBuffersParam auto const& buffers );
+    bad2( fb );                    // compile error, but should work
+    bad2( string_buffers( s ) );   // OK (adapter only)
+
+    // CORRECT: forwarding ref enables proper checking
+    void good( DynamicBuffersParam auto&& buffers );
+    good( fb );                    // OK: lvalue
+    good( string_buffers( s ) );   // OK: adapter rvalue
+    good( flat_buffers( storage ) );  // compile error: non-adapter rvalue
+    @endcode
 
     @par Adapter Types
     Types safe to pass as rvalues define a nested tag:
