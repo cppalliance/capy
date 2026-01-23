@@ -20,32 +20,83 @@
 
 namespace boost {
 namespace capy {
-
-/** Concept for types that support the tuple protocol.
-
-    A type satisfies `has_tuple_protocol` if `std::tuple_size<T>`
-    is a complete type with a `value` member.
-
-    @tparam T The type to check.
-*/
-template<typename T>
-concept has_tuple_protocol = requires {
-    std::tuple_size<std::remove_cvref_t<T>>::value;
-};
-
 namespace detail {
 
-template<typename T, std::size_t... Is>
-auto decomposed_types_impl(std::index_sequence<Is...>)
-    -> std::tuple<std::tuple_element_t<Is, std::remove_cvref_t<T>>...>;
+struct any_type
+{
+    template <typename T>
+    constexpr operator T() const noexcept;
+};
 
-template<typename T>
-    requires has_tuple_protocol<T>
-using decomposed_types_t = decltype(
-    decomposed_types_impl<T>(
-        std::make_index_sequence<std::tuple_size_v<std::remove_cvref_t<T>>>{}
-    )
-);
+template <typename T, std::size_t N>
+concept is_tuple_n = requires {
+    std::tuple_size<std::remove_cvref_t<T>>::value;
+} && std::tuple_size<std::remove_cvref_t<T>>::value == N;
+
+// clang-format off
+template <typename T>
+concept is_decomposable_1 =
+    (std::is_aggregate_v<std::remove_cvref_t<T>> &&
+        requires { std::remove_cvref_t<T>{ any_type{} }; } &&
+        !requires { std::remove_cvref_t<T>{ any_type{}, any_type{} }; }
+    ) || is_tuple_n<T, 1>;
+
+template <typename T>
+concept is_decomposable_2 = 
+    (std::is_aggregate_v<std::remove_cvref_t<T>> &&
+        requires { std::remove_cvref_t<T>{ any_type{}, any_type{} }; } &&
+        !requires { std::remove_cvref_t<T>{ any_type{}, any_type{}, any_type{} }; }
+    ) || is_tuple_n<T, 2>;
+
+template <typename T>
+concept is_decomposable_3 = 
+    (std::is_aggregate_v<std::remove_cvref_t<T>> &&
+        requires { std::remove_cvref_t<T>{ any_type{}, any_type{}, any_type{} }; } &&
+        !requires { std::remove_cvref_t<T>{ any_type{}, any_type{}, any_type{}, any_type{} }; }
+    ) || is_tuple_n<T, 3>;
+
+template <typename T>
+concept is_decomposable_4 = 
+    (std::is_aggregate_v<std::remove_cvref_t<T>> &&
+        requires { std::remove_cvref_t<T>{ any_type{}, any_type{}, any_type{}, any_type{} }; } &&
+        !requires { std::remove_cvref_t<T>{ any_type{}, any_type{}, any_type{}, any_type{}, any_type{} }; }
+    ) || is_tuple_n<T, 4>;
+
+// clang-format on
+
+template <is_decomposable_1 T>
+auto decomposed_types(T&& t)
+{
+    auto [v0] = t;
+    return std::make_tuple(v0);
+}
+
+template <is_decomposable_2 T>
+auto decomposed_types(T&& t)
+{
+    auto [v0, v1] = t;
+    return std::make_tuple(v0, v1);
+}
+
+template <is_decomposable_3 T>
+auto decomposed_types(T&& t)
+{
+    auto [v0, v1, v2] = t;
+    return std::make_tuple(v0, v1, v2);
+}
+
+template <is_decomposable_4 T>
+auto decomposed_types(T&& t)
+{
+    auto [v0, v1, v2, v3] = t;
+    return std::make_tuple(v0, v1, v2, v3);
+}
+
+template <class T>
+std::tuple<> decomposed_types(T&&)
+{
+    return {};
+}
 
 template<typename T>
 auto get_awaiter(T&& t)
@@ -69,64 +120,25 @@ using awaitable_return_t = decltype(
     get_awaiter(std::declval<A>()).await_resume()
 );
 
+template <typename T, typename... Types>
+concept decomposes_to = requires(T&& t) {
+    { decomposed_types(std::forward<T>(t)) } -> std::same_as<std::tuple<Types...>>;
+};
+
 } // namespace detail
-
-/** Concept for types that decompose to a specific typelist.
-
-    A type satisfies `decomposes_to` if it supports structured bindings
-    via the tuple protocol and its element types match the specified
-    typelist exactly.
-
-    @tparam T The type to check.
-    @tparam Types The expected element types after decomposition.
-
-    @par Requirements
-    @li `T` must satisfy the tuple protocol (`std::tuple_size`,
-        `std::tuple_element`)
-    @li The number of elements must equal `sizeof...(Types)`
-    @li Each element type must match the corresponding type in `Types`
-
-    @par Example
-    @code
-    static_assert(decomposes_to<std::pair<int, double>, int, double>);
-    static_assert(decomposes_to<std::tuple<int, float, char>, int, float, char>);
-    static_assert(decomposes_to<std::array<int, 3>, int, int, int>);
-
-    // Constrain a function template
-    template<typename T>
-        requires decomposes_to<T, system::error_code, std::size_t>
-    void process_result(T&& result)
-    {
-        auto [ec, n] = std::forward<T>(result);
-        // ...
-    }
-    @endcode
-
-    @note Plain aggregates without the tuple protocol are not supported.
-        Use `std::pair`, `std::tuple`, `std::array`, or add the tuple
-        protocol to your type.
-*/
-template<typename T, typename... Types>
-concept decomposes_to =
-    has_tuple_protocol<T> &&
-    std::same_as<
-        detail::decomposed_types_t<T>,
-        std::tuple<Types...>
-    >;
 
 /** Concept for awaitables whose return type decomposes to a specific typelist.
 
     A type satisfies `awaitable_decomposes_to` if it is an awaitable
-    (has `await_resume`) and its return type satisfies @ref decomposes_to
-    with the specified typelist.
+    (has `await_resume`) and its return type decomposes to the
+    specified typelist.
 
     @tparam A The awaitable type.
     @tparam Types The expected element types after decomposition.
 
     @par Requirements
     @li `A` must be an awaitable (directly or via `operator co_await`)
-    @li The return type of `await_resume()` must satisfy @ref decomposes_to
-        with `Types...`
+    @li The return type of `await_resume()` must decompose to `Types...`
 
     @par Example
     @code
@@ -142,13 +154,11 @@ concept decomposes_to =
         // process n bytes...
     }
     @endcode
-
-    @see decomposes_to
 */
 template<typename A, typename... Types>
 concept awaitable_decomposes_to = requires {
     typename detail::awaitable_return_t<A>;
-} && decomposes_to<detail::awaitable_return_t<A>, Types...>;
+} && detail::decomposes_to<detail::awaitable_return_t<A>, Types...>;
 
 } // namespace capy
 } // namespace boost

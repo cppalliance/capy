@@ -11,8 +11,6 @@
 #include <boost/capy/io_result.hpp>
 
 #include <string>
-#include <tuple>
-#include <type_traits>
 
 #include "test_suite.hpp"
 
@@ -109,46 +107,12 @@ struct io_result_test
     }
 
     void
-    testTupleProtocol()
-    {
-        // Verify tuple_size
-        static_assert(std::tuple_size_v<io_result<>> == 1);
-        static_assert(std::tuple_size_v<io_result<std::size_t>> == 2);
-        static_assert(std::tuple_size_v<io_result<int>> == 2);
-        static_assert(std::tuple_size_v<io_result<int, double>> == 3);
-        static_assert(std::tuple_size_v<io_result<int, double, char>> == 4);
-
-        // Verify tuple_element
-        static_assert(std::is_same_v<
-            std::tuple_element_t<0, io_result<>>,
-            system::error_code>);
-
-        static_assert(std::is_same_v<
-            std::tuple_element_t<0, io_result<std::size_t>>,
-            system::error_code>);
-        static_assert(std::is_same_v<
-            std::tuple_element_t<1, io_result<std::size_t>>,
-            std::size_t>);
-
-        static_assert(std::is_same_v<
-            std::tuple_element_t<0, io_result<int, double>>,
-            system::error_code>);
-        static_assert(std::is_same_v<
-            std::tuple_element_t<1, io_result<int, double>>,
-            int>);
-        static_assert(std::is_same_v<
-            std::tuple_element_t<2, io_result<int, double>>,
-            double>);
-    }
-
-    void
     run()
     {
         testVoidResult();
         testSizeResult();
         testGenericSingleValue();
         testMultiValue();
-        testTupleProtocol();
     }
 };
 

@@ -13,10 +13,6 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/system/error_code.hpp>
 
-#include <cstddef>
-#include <tuple>
-#include <type_traits>
-
 namespace boost {
 namespace capy {
 
@@ -41,7 +37,7 @@ namespace capy {
 template<class... Args>
 struct io_result
 {
-    static_assert("io_result only supports upt to 3 template arguments");
+    static_assert("io_result only supports up to 3 template arguments");
 };
 
 /** Result type for void operations.
@@ -59,7 +55,7 @@ struct io_result
     @endcode
 */
 template<>
-struct io_result<>
+struct [[nodiscard]] io_result<>
 {
     /** The error code from the operation. */
     system::error_code ec;
@@ -80,14 +76,14 @@ struct io_result<>
     @endcode
 */
 template<typename T1>
-struct io_result<T1>
+struct [[nodiscard]] io_result<T1>
 {
     system::error_code ec;
     T1 t1{};
 };
 
 template<typename T1, typename T2>
-struct io_result<T1, T2>
+struct [[nodiscard]] io_result<T1, T2>
 {
     system::error_code ec;
     T1 t1{};
@@ -95,7 +91,7 @@ struct io_result<T1, T2>
 };
 
 template<typename T1, typename T2, typename T3>
-struct io_result<T1, T2, T3>
+struct [[nodiscard]] io_result<T1, T2, T3>
 {
     system::error_code ec;
     T1 t1{};
@@ -103,67 +99,7 @@ struct io_result<T1, T2, T3>
     T3 t3{};
 };
 
-//----------------------------------------------------------
-
-template<std::size_t I, class... Args>
-constexpr auto&
-get(io_result<Args...>& r) noexcept
-{
-    if constexpr(I == 0)
-        return r.ec;
-    else if constexpr(I == 1)
-        return r.t1;
-    else if constexpr(I == 2)
-        return r.t2;
-    else
-        return r.t3;
-}
-
-template<std::size_t I, class... Args>
-constexpr auto const&
-get(io_result<Args...> const& r) noexcept
-{
-    if constexpr(I == 0)
-        return r.ec;
-    else if constexpr(I == 1)
-        return r.t1;
-    else if constexpr(I == 2)
-        return r.t2;
-    else
-        return r.t3;
-}
-
-template<std::size_t I, class... Args>
-constexpr auto&&
-get(io_result<Args...>&& r) noexcept
-{
-    if constexpr(I == 0)
-        return std::move(r.ec);
-    else if constexpr(I == 1)
-        return std::move(r.t1);
-    else if constexpr(I == 2)
-        return std::move(r.t2);
-    else
-        return std::move(r.t3);
-}
-
 } // namespace capy
 } // namespace boost
-
-template<class... Args>
-struct std::tuple_size<boost::capy::io_result<Args...>>
-    : std::integral_constant<std::size_t, 1 + sizeof...(Args)> {};
-
-template<class... Args>
-struct std::tuple_element<0, boost::capy::io_result<Args...>>
-{
-    using type = boost::system::error_code;
-};
-
-template<std::size_t I, class... Args>
-struct std::tuple_element<I, boost::capy::io_result<Args...>>
-{
-    using type = std::tuple_element_t<I - 1, std::tuple<Args...>>;
-};
 
 #endif
