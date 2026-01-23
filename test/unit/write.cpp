@@ -10,6 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/write.hpp>
 
+#include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/concept/write_sink.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -224,7 +225,7 @@ struct write_test
             mock_write_stream stream;
 
             std::string_view msg = "hello world";
-            auto [ec, n] = co_await write(stream, const_buffer(msg.data(), msg.size()));
+            auto [ec, n] = co_await write(stream, make_buffer(msg));
 
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 11u);
@@ -250,7 +251,7 @@ struct write_test
             mock_write_stream stream;
 
             std::string_view msg = "exact";
-            auto [ec, n] = co_await write(stream, const_buffer(msg.data(), msg.size()));
+            auto [ec, n] = co_await write(stream, make_buffer(msg));
 
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 5u);
@@ -277,7 +278,7 @@ struct write_test
             stream.chunk_size = 3;
 
             std::string_view msg = "abcdefghij";
-            auto [ec, n] = co_await write(stream, const_buffer(msg.data(), msg.size()));
+            auto [ec, n] = co_await write(stream, make_buffer(msg));
 
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 10u);
@@ -302,7 +303,7 @@ struct write_test
         {
             mock_write_stream stream;
 
-            auto [ec, n] = co_await write(stream, const_buffer(nullptr, 0));
+            auto [ec, n] = co_await write(stream, const_buffer());
 
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 0u);
@@ -331,8 +332,8 @@ struct write_test
             std::string_view msg1 = "hello";
             std::string_view msg2 = "world";
             std::array<const_buffer, 2> buffers = {{
-                const_buffer(msg1.data(), msg1.size()),
-                const_buffer(msg2.data(), msg2.size())
+                make_buffer(msg1),
+                make_buffer(msg2)
             }};
 
             auto [ec, n] = co_await write(stream, buffers);
@@ -363,7 +364,7 @@ struct write_test
             stream.error_to_return = make_error_code(system::errc::io_error);
 
             std::string_view msg = "abcdefghij";
-            auto [ec, n] = co_await write(stream, const_buffer(msg.data(), msg.size()));
+            auto [ec, n] = co_await write(stream, make_buffer(msg));
 
             BOOST_TEST(ec == system::errc::io_error);
             BOOST_TEST_EQ(n, 5u);
@@ -390,7 +391,7 @@ struct write_test
             stream.forced_error = make_error_code(system::errc::broken_pipe);
 
             std::string_view msg = "data";
-            auto [ec, n] = co_await write(stream, const_buffer(msg.data(), msg.size()));
+            auto [ec, n] = co_await write(stream, make_buffer(msg));
 
             BOOST_TEST(ec == system::errc::broken_pipe);
             BOOST_TEST_EQ(n, 0u);
@@ -417,7 +418,7 @@ struct write_test
             stream.chunk_size = 100;
 
             std::string large_data(1000, 'x');
-            auto [ec, n] = co_await write(stream, const_buffer(large_data.data(), large_data.size()));
+            auto [ec, n] = co_await write(stream, make_buffer(large_data));
 
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 1000u);
@@ -448,7 +449,7 @@ struct write_test
             mock_write_sink sink;
 
             std::string_view msg = "hello world";
-            auto [ec, n] = co_await write(sink, const_buffer(msg.data(), msg.size()));
+            auto [ec, n] = co_await write(sink, make_buffer(msg));
 
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 11u);
@@ -473,7 +474,7 @@ struct write_test
         {
             mock_write_sink sink;
 
-            auto [ec, n] = co_await write(sink, const_buffer(nullptr, 0));
+            auto [ec, n] = co_await write(sink, const_buffer());
 
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 0u);
@@ -500,7 +501,7 @@ struct write_test
             sink.write_error = make_error_code(system::errc::broken_pipe);
 
             std::string_view msg = "data";
-            auto [ec, n] = co_await write(sink, const_buffer(msg.data(), msg.size()));
+            auto [ec, n] = co_await write(sink, make_buffer(msg));
 
             BOOST_TEST(ec == system::errc::broken_pipe);
             BOOST_TEST_EQ(n, 0u);
@@ -526,7 +527,7 @@ struct write_test
             mock_write_sink sink;
 
             std::string_view msg = "hello";
-            auto [ec, n] = co_await write(sink, const_buffer(msg.data(), msg.size()));
+            auto [ec, n] = co_await write(sink, make_buffer(msg));
 
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 5u);
@@ -558,7 +559,7 @@ struct write_test
             mock_write_sink sink;
 
             std::string large_data(1000, 'x');
-            auto [ec, n] = co_await write(sink, const_buffer(large_data.data(), large_data.size()));
+            auto [ec, n] = co_await write(sink, make_buffer(large_data));
 
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 1000u);

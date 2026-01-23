@@ -10,6 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/read.hpp>
 
+#include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/buffers/string_buffer.hpp>
 #include <boost/capy/concept/read_source.hpp>
 #include <boost/capy/cond.hpp>
@@ -220,7 +221,7 @@ struct read_test
             stream.data = "hello world";
 
             char buf[32] = {};
-            auto [ec, n] = co_await read(stream, mutable_buffer(buf, 11));
+            auto [ec, n] = co_await read(stream, make_buffer(buf, 11));
 
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 11u);
@@ -247,7 +248,7 @@ struct read_test
             stream.data = "exact";
 
             char buf[5] = {};
-            auto [ec, n] = co_await read(stream, mutable_buffer(buf, 5));
+            auto [ec, n] = co_await read(stream, make_buffer(buf));
 
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 5u);
@@ -275,7 +276,7 @@ struct read_test
             stream.chunk_size = 3;
 
             char buf[10] = {};
-            auto [ec, n] = co_await read(stream, mutable_buffer(buf, 10));
+            auto [ec, n] = co_await read(stream, make_buffer(buf));
 
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 10u);
@@ -302,7 +303,7 @@ struct read_test
             stream.data = "short";
 
             char buf[32] = {};
-            auto [ec, n] = co_await read(stream, mutable_buffer(buf, 32));
+            auto [ec, n] = co_await read(stream, make_buffer(buf));
 
             BOOST_TEST(ec == cond::eof);
             BOOST_TEST_EQ(n, 5u);
@@ -328,7 +329,7 @@ struct read_test
             mock_read_stream stream;
             stream.data = "data";
 
-            auto [ec, n] = co_await read(stream, mutable_buffer(nullptr, 0));
+            auto [ec, n] = co_await read(stream, mutable_buffer());
 
             BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 0u);
@@ -357,8 +358,8 @@ struct read_test
             char buf1[5] = {};
             char buf2[5] = {};
             std::array<mutable_buffer, 2> buffers = {{
-                mutable_buffer(buf1, 5),
-                mutable_buffer(buf2, 5)
+                make_buffer(buf1),
+                make_buffer(buf2)
             }};
 
             auto [ec, n] = co_await read(stream, buffers);
@@ -391,7 +392,7 @@ struct read_test
             stream.error_to_return = make_error_code(system::errc::io_error);
 
             char buf[10] = {};
-            auto [ec, n] = co_await read(stream, mutable_buffer(buf, 10));
+            auto [ec, n] = co_await read(stream, make_buffer(buf));
 
             BOOST_TEST(ec == system::errc::io_error);
             BOOST_TEST_EQ(n, 5u);
@@ -419,7 +420,7 @@ struct read_test
             stream.forced_error = make_error_code(system::errc::connection_reset);
 
             char buf[10] = {};
-            auto [ec, n] = co_await read(stream, mutable_buffer(buf, 10));
+            auto [ec, n] = co_await read(stream, make_buffer(buf));
 
             BOOST_TEST(ec == system::errc::connection_reset);
             BOOST_TEST_EQ(n, 0u);

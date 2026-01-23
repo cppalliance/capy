@@ -13,6 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/copy.hpp>
+#include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -188,7 +189,7 @@ public:
                     return {error::eof, 0};
 
                 std::size_t const avail = self_->data_.size() - self_->pos_;
-                const_buffer src(self_->data_.data() + self_->pos_, avail);
+                auto src = make_buffer(self_->data_.data() + self_->pos_, avail);
                 std::size_t const n = copy(buffers_, src);
                 self_->pos_ += n;
                 return {{}, n};

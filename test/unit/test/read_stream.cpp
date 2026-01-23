@@ -10,6 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/test/read_stream.hpp>
 
+#include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
@@ -79,7 +80,7 @@ public:
         auto do_test = [&]() -> task<void>
         {
             char buf[32] = {};
-            auto [ec, n] = co_await rs.read_some(mutable_buffer(buf, sizeof(buf)));
+            auto [ec, n] = co_await rs.read_some(make_buffer(buf));
             BOOST_TEST(!ec.failed());
             BOOST_TEST_EQ(n, 11u);
             BOOST_TEST_EQ(std::string_view(buf, n), "hello world");
@@ -106,7 +107,7 @@ public:
         auto do_test = [&]() -> task<void>
         {
             char buf[5] = {};
-            auto [ec, n] = co_await rs.read_some(mutable_buffer(buf, sizeof(buf)));
+            auto [ec, n] = co_await rs.read_some(make_buffer(buf));
             BOOST_TEST(!ec.failed());
             BOOST_TEST_EQ(n, 5u);
             BOOST_TEST_EQ(std::string_view(buf, n), "hello");
@@ -135,22 +136,22 @@ public:
         {
             char buf[3] = {};
 
-            auto [ec1, n1] = co_await rs.read_some(mutable_buffer(buf, sizeof(buf)));
+            auto [ec1, n1] = co_await rs.read_some(make_buffer(buf));
             BOOST_TEST(!ec1.failed());
             BOOST_TEST_EQ(n1, 3u);
             BOOST_TEST_EQ(std::string_view(buf, n1), "abc");
 
-            auto [ec2, n2] = co_await rs.read_some(mutable_buffer(buf, sizeof(buf)));
+            auto [ec2, n2] = co_await rs.read_some(make_buffer(buf));
             BOOST_TEST(!ec2.failed());
             BOOST_TEST_EQ(n2, 3u);
             BOOST_TEST_EQ(std::string_view(buf, n2), "def");
 
-            auto [ec3, n3] = co_await rs.read_some(mutable_buffer(buf, sizeof(buf)));
+            auto [ec3, n3] = co_await rs.read_some(make_buffer(buf));
             BOOST_TEST(!ec3.failed());
             BOOST_TEST_EQ(n3, 3u);
             BOOST_TEST_EQ(std::string_view(buf, n3), "ghi");
 
-            auto [ec4, n4] = co_await rs.read_some(mutable_buffer(buf, sizeof(buf)));
+            auto [ec4, n4] = co_await rs.read_some(make_buffer(buf));
             BOOST_TEST(!ec4.failed());
             BOOST_TEST_EQ(n4, 1u);
             BOOST_TEST_EQ(std::string_view(buf, n4), "j");
@@ -177,7 +178,7 @@ public:
         auto do_test = [&]() -> task<void>
         {
             char buf[32] = {};
-            auto [ec, n] = co_await rs.read_some(mutable_buffer(buf, sizeof(buf)));
+            auto [ec, n] = co_await rs.read_some(make_buffer(buf));
             BOOST_TEST(ec == cond::eof);
             BOOST_TEST_EQ(n, 0u);
         };
@@ -204,11 +205,11 @@ public:
         {
             char buf[32] = {};
 
-            auto [ec1, n1] = co_await rs.read_some(mutable_buffer(buf, sizeof(buf)));
+            auto [ec1, n1] = co_await rs.read_some(make_buffer(buf));
             BOOST_TEST(!ec1.failed());
             BOOST_TEST_EQ(n1, 1u);
 
-            auto [ec2, n2] = co_await rs.read_some(mutable_buffer(buf, sizeof(buf)));
+            auto [ec2, n2] = co_await rs.read_some(make_buffer(buf));
             BOOST_TEST(ec2 == cond::eof);
             BOOST_TEST_EQ(n2, 0u);
         };
@@ -236,8 +237,8 @@ public:
             char buf1[5] = {};
             char buf2[5] = {};
             std::array<mutable_buffer, 2> buffers = {{
-                mutable_buffer(buf1, 5),
-                mutable_buffer(buf2, 5)
+                make_buffer(buf1),
+                make_buffer(buf2)
             }};
 
             auto [ec, n] = co_await rs.read_some(buffers);
@@ -266,7 +267,7 @@ public:
 
         auto r = f.armed([&](fuse&) {
             char buf[32] = {};
-            auto result = rs.read_some(mutable_buffer(buf, sizeof(buf)));
+            auto result = rs.read_some(make_buffer(buf));
             auto [ec, n] = result.await_resume();
 
             if(ec.failed())
@@ -299,14 +300,14 @@ public:
         {
             char buf[32] = {};
 
-            auto [ec1, n1] = co_await rs.read_some(mutable_buffer(buf, sizeof(buf)));
+            auto [ec1, n1] = co_await rs.read_some(make_buffer(buf));
             BOOST_TEST(!ec1.failed());
             BOOST_TEST_EQ(std::string_view(buf, n1), "first");
 
             rs.clear();
             rs.provide("second");
 
-            auto [ec2, n2] = co_await rs.read_some(mutable_buffer(buf, sizeof(buf)));
+            auto [ec2, n2] = co_await rs.read_some(make_buffer(buf));
             BOOST_TEST(!ec2.failed());
             BOOST_TEST_EQ(std::string_view(buf, n2), "second");
         };
@@ -331,7 +332,7 @@ public:
 
         auto do_test = [&]() -> task<void>
         {
-            auto [ec, n] = co_await rs.read_some(mutable_buffer(nullptr, 0));
+            auto [ec, n] = co_await rs.read_some(mutable_buffer());
             BOOST_TEST(!ec.failed());
             BOOST_TEST_EQ(n, 0u);
             BOOST_TEST_EQ(rs.available(), 4u);
