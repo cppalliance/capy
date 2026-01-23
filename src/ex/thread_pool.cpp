@@ -10,7 +10,7 @@
 
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/detail/intrusive.hpp>
-#include <boost/capy/detail/thread_name.hpp>
+#include <boost/capy/test/thread_name.hpp>
 #include <atomic>
 #include <condition_variable>
 #include <cstdio>
@@ -134,7 +134,7 @@ private:
         // Build name; set_current_thread_name truncates to platform limits.
         char name[16];
         std::snprintf(name, sizeof(name), "%s%zu", thread_name_prefix_, index);
-        detail::set_current_thread_name(name);
+        set_current_thread_name(name);
 
         for(;;)
         {

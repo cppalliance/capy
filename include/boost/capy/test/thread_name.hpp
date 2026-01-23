@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_DETAIL_THREAD_NAME_HPP
-#define BOOST_CAPY_DETAIL_THREAD_NAME_HPP
+#ifndef BOOST_CAPY_TEST_THREAD_NAME_HPP
+#define BOOST_CAPY_TEST_THREAD_NAME_HPP
 
 #include <boost/capy/detail/config.hpp>
 
@@ -27,7 +27,6 @@
 
 namespace boost {
 namespace capy {
-namespace detail {
 
 /** Set the name of the current thread for debugging purposes.
 
@@ -42,7 +41,6 @@ BOOST_CAPY_DECL
 void
 set_current_thread_name(char const* name) noexcept;
 
-} // detail
 } // capy
 } // boost
 

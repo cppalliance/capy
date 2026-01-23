@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/detail/thread_name.hpp>
+#include <boost/capy/test/thread_name.hpp>
 
 #include "test_helpers.hpp"
 
@@ -21,14 +21,14 @@ struct thread_name_test
     testSetName()
     {
 #if defined(BOOST_CAPY_TEST_CAN_GET_THREAD_NAME)
-        detail::set_current_thread_name("test-thread");
+        set_current_thread_name("test-thread");
         BOOST_TEST(check_thread_name("test-thread"));
 
-        detail::set_current_thread_name("capy-pool-0");
+        set_current_thread_name("capy-pool-0");
         BOOST_TEST(check_thread_name("capy-pool-0"));
 
         // Long name is truncated to 15 chars on Linux/FreeBSD/NetBSD
-        detail::set_current_thread_name(
+        set_current_thread_name(
             "this-is-a-very-long-thread-name-that-exceeds-limits");
 #if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__)
         BOOST_TEST(check_thread_name("this-is-a-very-"));
@@ -43,7 +43,7 @@ struct thread_name_test
 #endif
 
         // Test macOS 63-char limit specifically
-        detail::set_current_thread_name(
+        set_current_thread_name(
             "0123456789012345678901234567890123456789012345678901234567890123456789");
 #if defined(__APPLE__)
         // Truncated to 63 chars
@@ -53,14 +53,14 @@ struct thread_name_test
 
 #if defined(_WIN32)
         // Windows UTF-8 support (simple ASCII subset)
-        detail::set_current_thread_name("worker-thread-1");
+        set_current_thread_name("worker-thread-1");
         BOOST_TEST(check_thread_name("worker-thread-1"));
 #endif
 #endif // BOOST_CAPY_TEST_CAN_GET_THREAD_NAME
 
         // Empty string should not crash (but we don't verify the result
         // since some platforms may not support clearing thread names)
-        detail::set_current_thread_name("");
+        set_current_thread_name("");
     }
 
     void

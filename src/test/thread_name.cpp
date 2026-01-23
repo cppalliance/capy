@@ -7,7 +7,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#include <boost/capy/detail/thread_name.hpp>
+#include <boost/capy/test/thread_name.hpp>
 
 #if defined(_WIN32)
 
@@ -45,7 +45,6 @@
 
 namespace boost {
 namespace capy {
-namespace detail {
 
 void
 set_current_thread_name(char const* name) noexcept
@@ -97,6 +96,5 @@ set_current_thread_name(char const* name) noexcept
 #endif
 }
 
-} // detail
 } // capy
 } // boost
