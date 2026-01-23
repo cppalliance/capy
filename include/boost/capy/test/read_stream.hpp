@@ -30,34 +30,32 @@ namespace test {
 
 /** A mock stream for testing read operations.
 
-    This class provides a controllable stream for unit testing.
-    Data is supplied via @ref provide and returned by @ref read_some.
-    Error injection is supported through the @ref fuse passed at
-    construction.
+    Use this to verify code that performs reads without needing
+    real I/O. Call @ref provide to supply data, then @ref read_some
+    to consume it. The associated @ref fuse enables error injection
+    at controlled points.
 
     @par Thread Safety
-
-    @b Not @b thread @b safe. Instances must not be accessed
-    from different logical threads of operation concurrently.
+    Not thread-safe.
 
     @par Example
-
     @code
     fuse f;
-    read_stream rs(f);
-    rs.provide("Hello, ");
-    rs.provide("World!");
+    read_stream rs( f );
+    rs.provide( "Hello, " );
+    rs.provide( "World!" );
 
-    auto r = f.armed([&](fuse&) -> task<void> {
+    auto r = f.armed( [&]( fuse& ) -> task<void> {
         char buf[32];
-        auto [ec, n] = co_await rs.read_some(mutable_buffer(buf, sizeof(buf)));
-        if(ec.failed())
+        auto [ec, n] = co_await rs.read_some(
+            mutable_buffer( buf, sizeof( buf ) ) );
+        if( ec.failed() )
             co_return;
         // buf contains "Hello, World!"
-    });
+    } );
     @endcode
 
-    @see fuse, ReadStream
+    @see fuse
 */
 class read_stream
 {
@@ -66,30 +64,20 @@ class read_stream
     std::size_t pos_ = 0;
 
 public:
-    /** Construct a read stream with a fuse for error injection.
+    /** Construct a read stream.
 
-        @param f The fuse to use for error injection during read operations.
+        @param f The fuse used to inject errors during reads.
     */
     explicit read_stream(fuse& f) noexcept
         : f_(f)
     {
     }
 
-    /** Provide data to be returned by subsequent reads.
+    /** Append data to be returned by subsequent reads.
 
-        Data is appended to an internal buffer. Multiple calls
-        accumulate data that will be returned by @ref read_some.
+        Multiple calls accumulate data that @ref read_some returns.
 
-        @param sv The data to make available for reading.
-
-        @par Example
-
-        @code
-        read_stream rs(f);
-        rs.provide("first chunk");
-        rs.provide("second chunk");
-        // read_some will return "first chunksecond chunk"
-        @endcode
+        @param sv The data to append.
     */
     void
     provide(std::string_view sv)
@@ -97,10 +85,7 @@ public:
         data_.append(sv);
     }
 
-    /** Clear all provided data and reset the read position.
-
-        @par Postconditions
-        The stream has no data available for reading.
+    /** Clear all data and reset the read position.
     */
     void
     clear() noexcept
@@ -109,56 +94,34 @@ public:
         pos_ = 0;
     }
 
-    /** Return the number of bytes available for reading.
-
-        @return The number of bytes that can be read before EOF.
-    */
+    /// Return the number of bytes available for reading.
     std::size_t
     available() const noexcept
     {
         return data_.size() - pos_;
     }
 
-    /** Read some data from the stream.
+    /** Asynchronously read data from the stream.
 
-        Reads up to `buffer_size(buffers)` bytes into the buffer
-        sequence. If no data is available, returns EOF. Error
-        injection occurs via the fuse before returning data.
+        Transfers up to `buffer_size( buffers )` bytes from the internal
+        buffer to the provided mutable buffer sequence. If no data remains,
+        returns `error::eof`. Before every read, the attached @ref fuse is
+        consulted to possibly inject an error for testing fault scenarios.
+        The returned `std::size_t` is the number of bytes transferred.
 
-        @tparam MB The buffer sequence type satisfying
-            @ref MutableBufferSequence.
+        @par Effects
+        On success, advances the internal read position by the number of
+        bytes copied. If an error is injected by the fuse, the read position
+        remains unchanged.
 
-        @param buffers The buffer sequence to read into.
+        @par Exception Safety
+        No-throw guarantee.
 
-        @return An awaitable that yields `(system::error_code, std::size_t)`.
-            On success, `ec` is default-constructed and `n` is the
-            number of bytes read. On EOF, `ec == cond::eof` and `n`
-            is 0. On injected error, `ec` contains the fuse's error
-            code and `n` is 0.
+        @param buffers The mutable buffer sequence to receive data.
 
-        @par Example
+        @return An awaitable yielding ( error_code, std::size_t ).
 
-        @code
-        read_stream rs(f);
-        rs.provide("test data");
-
-        task<void> example()
-        {
-            char buf[16];
-            auto [ec, n] = co_await rs.read_some(mutable_buffer(buf, sizeof(buf)));
-            if(ec == cond::eof)
-            {
-                // No more data
-            }
-            else if(ec.failed())
-            {
-                // Handle error
-            }
-            // n bytes were read into buf
-        }
-        @endcode
-
-        @see ReadStream
+        @see fuse
     */
     template<MutableBufferSequence MB>
     auto

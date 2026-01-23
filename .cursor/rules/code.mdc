@@ -1,0 +1,7 @@
+---
+description: code tests implementation
+globs: 
+alwaysApply: true
+---
+
+- test objects usually construct in fuse lambda
