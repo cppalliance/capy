@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -42,9 +43,12 @@ thread_pool pool2(4);
 
 // Single thread (useful for testing)
 thread_pool pool3(1);
+
+// Custom thread name prefix
+thread_pool pool4(4, "myapp-io-");  // Threads named myapp-io-0, myapp-io-1, etc.
 ----
 
-The thread count cannot be changed after construction.
+The thread count and thread name prefix cannot be changed after construction.
 
 == Getting an Executor
 
@@ -245,6 +249,38 @@ thread_pool compute_pool;
 // I/O pool: more threads for blocking operations
 thread_pool io_pool(16);
 ----
+
+== Thread Naming
+
+Worker threads are automatically named for debugging purposes:
+
+* Threads are named `capy-pool-0`, `capy-pool-1`, etc. by default
+* The prefix is configurable via the constructor's second parameter
+* Names appear in debuggers (GDB, LLDB, Visual Studio)
+* Names appear in system tools (`htop`, Process Explorer, `ps -L`)
+
+[source,cpp]
+----
+// Default naming: capy-pool-0, capy-pool-1, ...
+thread_pool pool1(4);
+
+// Custom naming: worker-0, worker-1, ...
+thread_pool pool2(4, "worker-");
+----
+
+This aids in identifying thread pool workers when debugging multi-threaded
+applications with multiple pools.
+
+=== Name Length Limits
+
+The thread name prefix is truncated to 12 characters, leaving room for up
+to 3-digit thread indices (0-999).
+
+For example, with prefix `"my-worker-"` and 100 threads, names would be
+`my-worker-0` through `my-worker-99`.
+
+NOTE: Thread naming is a best-effort feature. On unsupported platforms,
+names may not appear.
 
 == Common Patterns
 

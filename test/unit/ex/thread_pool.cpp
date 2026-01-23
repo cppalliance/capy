@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie dot falco at gmail dot com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -12,11 +13,9 @@
 
 #include <boost/capy/concept/executor.hpp>
 
-#include "test_suite.hpp"
+#include "test_helpers.hpp"
 
 #include <atomic>
-#include <chrono>
-#include <thread>
 #include <vector>
 
 namespace boost {
@@ -43,19 +42,53 @@ struct test_service : execution_context::service
     void shutdown() override {}
 };
 
-// Helper to wait for a condition with timeout
-template<class Pred>
-bool wait_for(Pred pred, std::chrono::milliseconds timeout = std::chrono::milliseconds(5000))
+#if defined(BOOST_CAPY_TEST_CAN_GET_THREAD_NAME)
+// Result storage for thread name check
+struct name_check_result
 {
-    auto start = std::chrono::steady_clock::now();
-    while(!pred())
+    std::atomic<bool> done{false};
+    std::atomic<bool> matches{false};
+};
+
+// Coroutine that checks thread name when resumed on pool thread.
+// Arguments are forwarded to promise_type constructor.
+struct name_checker
+{
+    struct promise_type
     {
-        if(std::chrono::steady_clock::now() - start > timeout)
-            return false;
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    return true;
+        name_check_result& result;
+        char const* prefix;
+
+        promise_type(name_check_result& r, char const* p)
+            : result(r), prefix(p) {}
+
+        name_checker get_return_object()
+        {
+            return {std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+        std::suspend_always initial_suspend() noexcept { return {}; }
+        std::suspend_never final_suspend() noexcept
+        {
+            result.matches.store(thread_name_starts_with(prefix));
+            result.done.store(true);
+            return {};
+        }
+        void return_void() {}
+        void unhandled_exception() {}
+    };
+
+    std::coroutine_handle<promise_type> h;
+    operator coro() const { return h; }
+};
+
+name_checker check_thread_name(name_check_result& result, char const* prefix)
+{
+    // Parameters forwarded to promise_type constructor, not used here.
+    (void)result;
+    (void)prefix;
+    co_return;
 }
+#endif
 
 } // namespace
 
@@ -235,6 +268,54 @@ struct thread_pool_test
     }
 
     void
+    testThreadNaming()
+    {
+        // Test custom naming prefix (construction only)
+        {
+            thread_pool pool(2, "test-worker-");
+            (void)pool.get_executor();
+        }
+
+        // Test empty prefix
+        {
+            thread_pool pool(1, "");
+            (void)pool.get_executor();
+        }
+
+#if defined(BOOST_CAPY_TEST_CAN_GET_THREAD_NAME)
+        // Verify default thread name from within pool thread
+        {
+            thread_pool pool(1);
+            name_check_result result;
+            pool.get_executor().post(check_thread_name(result, "capy-pool-"));
+
+            BOOST_TEST(wait_for([&]{ return result.done.load(); }));
+            BOOST_TEST(result.matches.load());
+        }
+
+        // Verify custom thread name from within pool thread
+        {
+            thread_pool pool(1, "mypool-");
+            name_check_result result;
+            pool.get_executor().post(check_thread_name(result, "mypool-"));
+
+            BOOST_TEST(wait_for([&]{ return result.done.load(); }));
+            BOOST_TEST(result.matches.load());
+        }
+
+        // Verify thread naming works with index suffix
+        {
+            thread_pool pool(1, "idx-");
+            name_check_result result;
+            pool.get_executor().post(check_thread_name(result, "idx-0"));
+
+            BOOST_TEST(wait_for([&]{ return result.done.load(); }));
+            BOOST_TEST(result.matches.load());
+        }
+#endif
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -248,6 +329,7 @@ struct thread_pool_test
         testMakeService();
         testConcurrentPost();
         testDefaultExecutor();
+        testThreadNaming();
     }
 };
 
