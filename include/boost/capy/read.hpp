@@ -11,14 +11,14 @@
 #define BOOST_CAPY_READ_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/io_result.hpp>
+#include <boost/capy/task.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/consuming_buffers.hpp>
 #include <boost/capy/concept/read_stream.hpp>
-#include <boost/capy/task.hpp>
 #include <boost/system/error_code.hpp>
 
 #include <cstddef>
-#include <utility>
 
 namespace boost {
 namespace capy {
@@ -66,7 +66,7 @@ auto
 read(
     ReadStream auto& stream,
     MutableBufferSequence auto const& buffers) ->
-        task<std::pair<system::error_code, std::size_t>>
+        task<io_result<std::size_t>>
 {
     consuming_buffers consuming(buffers);
     std::size_t const total_size = buffer_size(buffers);
