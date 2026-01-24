@@ -12,7 +12,6 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/range.hpp>
 
 namespace boost {
 namespace capy {

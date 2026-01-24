@@ -12,7 +12,6 @@
 
 #include <boost/capy/buffers/copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/buffers/range.hpp>
 #include <boost/capy/buffers/slice.hpp>
 #include <boost/core/detail/string_view.hpp>
 #include <boost/assert.hpp>

@@ -8,7 +8,7 @@
 //
 
 #include <boost/capy/buffers/circular_buffer.hpp>
-#include <boost/capy/buffers/detail/except.hpp>
+#include <boost/capy/detail/except.hpp>
 #include <boost/assert.hpp>
 
 namespace boost {

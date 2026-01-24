@@ -12,7 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/detail/except.hpp>
+#include <boost/capy/detail/except.hpp>
 #include <type_traits>
 #include <vector>
 

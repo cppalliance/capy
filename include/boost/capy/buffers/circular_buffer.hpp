@@ -12,7 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers/buffer_pair.hpp>
-#include <boost/capy/buffers/detail/except.hpp>
+#include <boost/capy/detail/except.hpp>
 
 namespace boost {
 namespace capy {

@@ -7,25 +7,23 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Test that header file is self-contained.
-#include <boost/capy/buffers/range.hpp>
+#ifndef BOOST_CAPY_DETAIL_SPAN_LIKE_HPP
+#define BOOST_CAPY_DETAIL_SPAN_LIKE_HPP
 
-#include "test_suite.hpp"
+#include <boost/capy/detail/config.hpp>
+#include <concepts>
+#include <cstddef>
 
 namespace boost {
 namespace capy {
 
-struct range_test
-{
-    void
-    run()
-    {
-    }
+/// A type with span-like subspan semantics
+template<class T>
+concept SpanLike = requires(T const& t) {
+    { t.subspan(std::size_t{}, std::size_t{}) };
 };
-
-TEST_SUITE(
-    range_test,
-    "boost.capy.buffers.range");
 
 } // capy
 } // boost
+
+#endif

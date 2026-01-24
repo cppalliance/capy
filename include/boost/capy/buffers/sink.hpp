@@ -11,7 +11,7 @@
 #define BOOST_CAPY_BUFFERS_SINK_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/buffers/detail/except.hpp>
+#include <boost/capy/detail/except.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/system/error_code.hpp>
 
