@@ -63,7 +63,7 @@ template<class T>
 struct fixt;
 
 // VFALCO This is a quick hack, need to fix make_buffer
-const_buffer buf(core::string_view s) noexcept
+const_buffer buf(std::string_view s) noexcept
 {
     return const_buffer(s.data(), s.size());
 }
@@ -72,7 +72,7 @@ template<>
 struct fixt<const_buffer>
 {
     const_buffer t;
-    fixt(core::string_view pat)
+    fixt(std::string_view pat)
         : t(pat.data(), pat.size())
     {
     }
@@ -83,7 +83,7 @@ struct fixt<mutable_buffer>
 {
     char data[64];
     mutable_buffer t;
-    fixt(core::string_view pat)
+    fixt(std::string_view pat)
         : t(data, pat.size())
     {
         BOOST_ASSERT(pat.size()<=sizeof(data));
@@ -95,7 +95,7 @@ template<>
 struct fixt<const_buffer_pair>
 {
     const_buffer_pair t;
-    fixt(core::string_view pat)
+    fixt(std::string_view pat)
         : t{{ {buf(pat.substr(0, 3))}, {buf(pat.substr(3))} }}
     {
     }
@@ -106,7 +106,7 @@ struct fixt<mutable_buffer_pair>
 {
     char data[64];
     mutable_buffer_pair t;
-    fixt(core::string_view pat)
+    fixt(std::string_view pat)
         : t{{{data,3}, {data+3, pat.size()-3}}}
     {
         BOOST_ASSERT(pat.size()>=3);
@@ -120,7 +120,7 @@ struct fixt<span<const_buffer,3>>
 {
     const_buffer a[3];
     span<const_buffer,3> t;
-    fixt(core::string_view pat)
+    fixt(std::string_view pat)
         : a{ buf(pat.substr(0, 3)),
              buf(pat.substr(3, pat.size()-8)),
              buf(pat.substr(pat.size()-5)) }
@@ -135,7 +135,7 @@ struct fixt<span<mutable_buffer,3>>
     char data[64];
     mutable_buffer a[3];
     span<mutable_buffer,3> t;
-    fixt(core::string_view pat)
+    fixt(std::string_view pat)
         : t([&]
             {
                 a[0] = { data+0, 3 };
@@ -154,7 +154,7 @@ template<>
 struct fixt<std::array<const_buffer,3>>
 {
     std::array<const_buffer,3> t;
-    fixt(core::string_view pat)
+    fixt(std::string_view pat)
         : t{{ buf(pat.substr(0, 3)),
               buf(pat.substr(3, pat.size()-8)),
               buf(pat.substr(pat.size()-5)) }}
@@ -167,7 +167,7 @@ struct fixt<std::array<mutable_buffer,3>>
 {
     char data[64];
     std::array<mutable_buffer,3> t;
-    fixt(core::string_view pat)
+    fixt(std::string_view pat)
         : t([&]
             {
                 return std::array<mutable_buffer,3>{{
@@ -186,7 +186,7 @@ template<>
 struct fixt<const_buffer[3]>
 {
     const_buffer t[3];
-    fixt(core::string_view pat)
+    fixt(std::string_view pat)
         : t{ buf(pat.substr(0, 3)),
              buf(pat.substr(3, pat.size()-8)),
              buf(pat.substr(pat.size()-5)) }
@@ -199,7 +199,7 @@ struct fixt<mutable_buffer[3]>
 {
     char data[64];
     mutable_buffer t[3];
-    fixt(core::string_view pat)
+    fixt(std::string_view pat)
         : t{ { data+0, 3 },
              { data+3, pat.size()-8 },
              { data+pat.size()-5, 5 }}
@@ -217,7 +217,7 @@ struct buffer_test
     template<class T>
     void testBuffer()
     {
-        core::string_view pat = "0123456789abcdef";
+        std::string_view pat = "0123456789abcdef";
 
         // buffer_size()
         {

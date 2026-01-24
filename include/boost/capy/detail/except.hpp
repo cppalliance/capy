@@ -12,7 +12,6 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/assert/source_location.hpp>
-#include <boost/core/detail/string_view.hpp>
 #include <boost/system/error_code.hpp>
 
 namespace boost {

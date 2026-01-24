@@ -13,9 +13,9 @@
 #include <boost/capy/buffers/buffer_pair.hpp>
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/core/detail/string_view.hpp>
 
 #include <array>
+#include <string_view>
 #include <vector>
 
 #include "test_buffers.hpp"
@@ -45,7 +45,7 @@ set(
     char const* p,
     Args const&... args)
 {
-    core::string_view sv(p);
+    std::string_view sv(p);
     v[I] = make_buffer(sv);
     s.append(sv.data(), sv.size());
     set<I+1>(s, v, args...);
@@ -102,7 +102,7 @@ struct slice_test
     void
     check(
         B const& b,
-        core::string_view s)
+        std::string_view s)
     {
         auto constexpr M = 1024;
         char buf[M];
@@ -114,7 +114,7 @@ struct slice_test
             mutable_buffer(buf, M), b);
         if(! BOOST_TEST_EQ(n, s.size()))
             return;
-        if(! BOOST_TEST_EQ(core::string_view(buf, n), s))
+        if(! BOOST_TEST_EQ(std::string_view(buf, n), s))
             return;
 
         std::string tmp;
@@ -127,7 +127,7 @@ struct slice_test
     void
     grind_back(
         slice_of<seq_type> const& bs0,
-        core::string_view pat0)
+        std::string_view pat0)
     {
         auto const n = buffer_size(bs0);
         if(! BOOST_TEST_EQ(n, pat0.size()))
@@ -152,7 +152,7 @@ struct slice_test
     void
     grind(
         slice_of<seq_type> const& bs0,
-        core::string_view pat0)
+        std::string_view pat0)
     {
         auto const n = buffer_size(bs0);
         if(! BOOST_TEST_EQ(n, pat0.size()))

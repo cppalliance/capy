@@ -13,10 +13,10 @@
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/buffers/slice.hpp>
-#include <boost/core/detail/string_view.hpp>
 #include <boost/assert.hpp>
 #include <boost/static_assert.hpp>
 #include <string>
+#include <string_view>
 
 // Trick boostdep into requiring URL
 // since we need it for the unit tests
@@ -36,9 +36,9 @@ namespace test {
 // these handle the case where n > size()
 
 inline
-core::string_view
+std::string_view
 trimmed_front(
-    core::string_view s,
+    std::string_view s,
     std::size_t n) noexcept
 {
     if(n > s.size())
@@ -47,9 +47,9 @@ trimmed_front(
 }
 
 inline
-core::string_view
+std::string_view
 trimmed_back(
-    core::string_view s,
+    std::string_view s,
     std::size_t n) noexcept
 {
     if(n > s.size())
@@ -58,9 +58,9 @@ trimmed_back(
 }
 
 inline
-core::string_view
+std::string_view
 kept_front(
-    core::string_view s,
+    std::string_view s,
     std::size_t n) noexcept
 {
     if(n >= s.size())
@@ -69,9 +69,9 @@ kept_front(
 }
 
 inline
-core::string_view
+std::string_view
 kept_back(
-    core::string_view s,
+    std::string_view s,
     std::size_t n) noexcept
 {
     if(n >= s.size())
@@ -81,7 +81,7 @@ kept_back(
 
 // Return a string representing the buffer sequence
 template<class ConstBufferSequence>
-core::string_view
+std::string_view
 make_string(
     ConstBufferSequence const& bs)
 {
@@ -98,7 +98,7 @@ template<ConstBufferSequence CB>
 void
 check_iterators(
     CB bs,
-    core::string_view pat,
+    std::string_view pat,
     std::string& s)
 {
     BOOST_TEST_EQ(buffer_size(bs), pat.size());
@@ -250,7 +250,7 @@ template<class ConstBufferSequence>
 void
 check_eq(
     ConstBufferSequence const& bs,
-    core::string_view pat)
+    std::string_view pat)
 {
     if(! BOOST_TEST_EQ(buffer_size(bs), pat.size()))
         return;
@@ -265,7 +265,7 @@ template<class ConstBufferSequence>
 void
 grind_front(
     ConstBufferSequence const& bs0,
-    core::string_view pat0,
+    std::string_view pat0,
     bool deep)
 {
     std::string tmp;
@@ -311,7 +311,7 @@ template<class ConstBufferSequence>
 void
 grind_back(
     ConstBufferSequence const& bs0,
-    core::string_view pat0,
+    std::string_view pat0,
     bool deep)
 {
     std::string tmp;
@@ -356,7 +356,7 @@ template<class ConstBufferSequence>
 void
 check_slice(
     ConstBufferSequence const& bs,
-    core::string_view pat,
+    std::string_view pat,
     bool deep)
 {
     grind_front(bs, pat, deep);
@@ -367,7 +367,7 @@ check_slice(
 template<ConstBufferSequence CB>
 void
 check_sequence(
-    CB const& t, core::string_view pat, bool deep = false)
+    CB const& t, std::string_view pat, bool deep = false)
 {
 
     std::string tmp;
