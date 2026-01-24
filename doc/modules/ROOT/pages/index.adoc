@@ -9,41 +9,46 @@
 
 = Boost.Capy
 
-Boost.Capy is a C++20 coroutine framework that solves the completion-context
-problem: when you `co_await` an I/O operation, where does your coroutine resume?
-With Capy, the answer is always "on the executor you designated"—automatically,
-through the entire call chain.
+Boost.Capy is the foundation that C++20 coroutines need for buffer-oriented I/O.
+It solves the completion-context problem: ensuring your coroutine always resumes
+on your designated executor in a single-threaded or multi-threaded environment,
+while providing buffer sequences, stream concepts, synchronization, and test
+mocks that I/O libraries require.
 
 == What This Library Does
 
-* **Lazy coroutine tasks** that propagate executor affinity and stop tokens
-* **Zero-overhead dispatcher protocol** for custom awaitables (`IoAwaitable`)
-* **Concurrent composition** via `when_all` with structured error propagation
-* **Frame allocation recycling** to minimize heap allocations
-* **Thread pool** execution context with service management
-* **Strand** serialization for safe concurrent access
-* **Async synchronization primitives** (`async_mutex`, `async_event`)
-* **Buffer types** for efficient I/O (`const_buffer`, `mutable_buffer`, `flat_dynamic_buffer`)
-* **Stream concepts** for generic read/write operations
-* **Testing utilities** including mock streams and error injection
+* **IoAwaitable protocol** — automatic executor affinity through every `co_await`
+* **Lazy coroutine tasks** with forward-propagating stop tokens and cancellation
+* **Buffer sequences** — `const_buffer`, `mutable_buffer`, dynamic buffers, and algorithms for scatter/gather I/O
+* **Stream concepts** — `ReadStream`, `WriteStream`, `ReadSource`, `WriteSink` for generic buffer-oriented operations
+* **Concurrent composition** via `when_all`, `when_any` with structured error propagation
+* **Execution contexts** — thread pool with service management
+* **Strand** for safe concurrent access without mutexes
+* **Async synchronization** — `async_mutex`, `async_event`
+* **Frame allocation recycling** for zero steady-state allocations
+* **Test utilities** — mock streams, mock sources/sinks, and error injection
 
 == What This Library Does Not Do
 
-* **Event loops or I/O polling** — integrate with io_uring, IOCP, or your platform's I/O framework
 * **Networking primitives** — no sockets, HTTP, or protocol implementations
-* **The sender/receiver model** — Capy uses the affine awaitable protocol, not P2300
-
-Capy is a coroutine composition layer. It provides the task types, propagation
-machinery, and utilities you need to build on top of existing I/O frameworks.
+* **Platform-specific event loops** — integrate with io_uring, IOCP, or your platform's I/O framework
+* **The sender/receiver model** — Capy uses the _IoAwaitable_ protocol, not `std::execution`
 
 == Target Audience
 
-Capy is designed for C++ developers who:
+**Library authors** — Use stream concepts (`ReadStream`, `WriteStream`,
+`ReadSource`, `WriteSink`), algorithms (`read`, `write`), buffer sequences,
+and the _IoAwaitable_ protocol to build composable I/O frameworks without
+being tied to a particular implementation.
 
-* Have experience with C++20 and are familiar with coroutine concepts
-* Need to write asynchronous code without callback spaghetti
-* Want automatic executor affinity without manual tracking
-* Are building on top of platform I/O (io_uring, IOCP, kqueue)
+**Application developers** — Program against `task<T>`, `when_all`, stream
+concepts, and buffer sequences. Test async logic with mock streams.
+
+**Migration from callbacks** — Coroutine-native model with explicit executor
+propagation. No thread-local state or intermediate adapters.
+
+**High-performance systems** — Frame allocation recycling (zero steady-state
+allocations), scatter/gather buffer sequences, type erasure only at boundaries.
 
 == Design Philosophy
 
@@ -67,24 +72,23 @@ are designed to compose cleanly rather than requiring deep class hierarchies.
 **Assumed Knowledge:**
 
 * C++20 language features (concepts, ranges, coroutines syntax)
-* Basic understanding of asynchronous programming
+* Basic understanding of concurrent programming
 * Familiarity with `system::error_code` error handling
 
 **Compiler Support:**
 
-* GCC 11+
-* Clang 14+
-* MSVC 19.29+ (Visual Studio 2019 16.10+)
+* GCC 13+
+* Clang 17+
+* MSVC 14.34+ (Visual Studio 2022 17+)
 
 **Dependencies:**
 
-* Boost (system::error_code, core::string_view)
-* C++ standard library with `<coroutine>` support
+* C++20 standards-compliant library with `<coroutine>` support.
+* Boost: Assert, Compat, Config, Core, Mp11, Predef, System, Throw_exception, Variant2, Winapi
 
 **Linking:**
 
-Capy is header-only except for `thread_pool`, which requires linking to
-Boost.System if used.
+Capy is a compiled library and needs to be linked against its other Boost dependencies, such as Boost.System.
 
 [NOTE]
 ====
