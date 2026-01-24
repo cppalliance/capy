@@ -26,7 +26,7 @@ task<void> long_operation()
 {
     for (int i = 0; i < 1000; ++i)
     {
-        auto token = co_await get_stop_token();
+        auto token = co_await this_coro::stop_token;
         if (token.stop_requested())
             co_return;  // Exit gracefully
 
@@ -107,7 +107,7 @@ Stop tokens flow forward through `co_await`, just like executors:
 task<void> child()
 {
     // Inherits parent's stop token
-    auto token = co_await get_stop_token();
+    auto token = co_await this_coro::stop_token;
     if (token.stop_requested())
         co_return;
 }
@@ -143,7 +143,7 @@ Inside a coroutine, retrieve the current stop token:
 ----
 task<void> cancellable_work()
 {
-    auto token = co_await get_stop_token();
+    auto token = co_await this_coro::stop_token;
 
     while (!token.stop_requested())
     {
@@ -156,7 +156,7 @@ task<void> cancellable_work()
 }
 ----
 
-`get_stop_token()` never suspends—it's intercepted by `await_transform` and
+`this_coro::stop_token` never suspends—it's intercepted by `await_transform` and
 returns immediately.
 
 == Implementing Stoppable Awaitables
@@ -260,7 +260,7 @@ Cancellation is not an error—it's an expected outcome:
 ----
 task<std::optional<result>> fetch_with_timeout()
 {
-    auto token = co_await get_stop_token();
+    auto token = co_await this_coro::stop_token;
 
     try {
         auto data = co_await fetch_data();
@@ -305,7 +305,7 @@ Do NOT use cancellation when:
 | `std::stop_callback`
 | Execute code when stop is requested
 
-| `get_stop_token()`
+| `this_coro::stop_token`
 | Query current token inside coroutine
 
 | `when_all` stop propagation

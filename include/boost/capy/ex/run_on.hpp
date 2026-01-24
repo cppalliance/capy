@@ -12,7 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/ex/io_awaitables.hpp>
+#include <boost/capy/concept/io_launchable_task.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 
 #include <stop_token>

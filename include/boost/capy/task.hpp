@@ -12,7 +12,8 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/ex/io_awaitables.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/ex/io_awaitable_support.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 

@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/ex/io_awaitables.hpp>
+#include <boost/capy/ex/io_awaitable_support.hpp>
 
 #include <boost/capy/ex/thread_pool.hpp>
 
@@ -108,7 +108,7 @@ private:
     }
 };
 
-struct io_awaitables_test
+struct io_awaitable_support_test
 {
     void
     testSetAndGetStopToken()
@@ -145,7 +145,7 @@ struct io_awaitables_test
         std::stop_source source;
         c.h_.promise().set_stop_token(source.get_token());
 
-        auto awaiter = c.h_.promise().await_transform(get_stop_token());
+        auto awaiter = c.h_.promise().await_transform(this_coro::stop_token);
 
         BOOST_TEST(awaiter.await_ready());
 
@@ -170,10 +170,10 @@ struct io_awaitables_test
         c.h_.promise().await_transform(dummy_awaitable{});
         BOOST_TEST_EQ(c.h_.promise().transform_count_, 1);
 
-        c.h_.promise().await_transform(get_stop_token());
+        c.h_.promise().await_transform(this_coro::stop_token);
         BOOST_TEST_EQ(c.h_.promise().transform_count_, 1);
 
-        c.h_.promise().await_transform(get_executor());
+        c.h_.promise().await_transform(this_coro::executor);
         BOOST_TEST_EQ(c.h_.promise().transform_count_, 1);
     }
 
@@ -181,7 +181,7 @@ struct io_awaitables_test
     testStopTokenAwaiterNeverSuspends()
     {
         auto c = []() -> test_coro { co_return; }();
-        auto awaiter = c.h_.promise().await_transform(get_stop_token());
+        auto awaiter = c.h_.promise().await_transform(this_coro::stop_token);
 
         BOOST_TEST(awaiter.await_ready());
         awaiter.await_suspend(c.h_);
@@ -219,7 +219,7 @@ struct io_awaitables_test
         auto c = []() -> test_coro { co_return; }();
         c.h_.promise().set_executor(executor);
 
-        auto awaiter = c.h_.promise().await_transform(get_executor());
+        auto awaiter = c.h_.promise().await_transform(this_coro::executor);
 
         BOOST_TEST(awaiter.await_ready());
 
@@ -232,7 +232,7 @@ struct io_awaitables_test
     testExecutorAwaiterNeverSuspends()
     {
         auto c = []() -> test_coro { co_return; }();
-        auto awaiter = c.h_.promise().await_transform(get_executor());
+        auto awaiter = c.h_.promise().await_transform(this_coro::executor);
 
         BOOST_TEST(awaiter.await_ready());
         awaiter.await_suspend(c.h_);
@@ -254,8 +254,8 @@ struct io_awaitables_test
 };
 
 TEST_SUITE(
-    io_awaitables_test,
-    "boost.capy.ex.io_awaitables");
+    io_awaitable_support_test,
+    "boost.capy.ex.io_awaitable_support");
 
 } // namespace capy
 } // namespace boost

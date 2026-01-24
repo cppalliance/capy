@@ -8,45 +8,46 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/ex/io_awaitables.hpp>
+#include <boost/capy/ex/this_coro.hpp>
 
 #include "test_suite.hpp"
 
 namespace boost {
 namespace capy {
 
-struct get_stop_token_test
+struct this_coro_stop_token_test
 {
     void
     testTagType()
     {
-        get_stop_token_tag tag1;
-        get_stop_token_tag tag2{};
+        this_coro::stop_token_tag tag1;
+        this_coro::stop_token_tag tag2{};
         (void)tag1;
         (void)tag2;
 
-        static_assert(std::is_trivially_copyable_v<get_stop_token_tag>);
+        static_assert(std::is_trivially_copyable_v<this_coro::stop_token_tag>);
     }
 
     void
-    testFunction()
+    testConstant()
     {
-        auto tag = get_stop_token();
-        static_assert(std::is_same_v<decltype(tag), get_stop_token_tag>);
-        static_assert(noexcept(get_stop_token()));
+        auto tag = this_coro::stop_token;
+        static_assert(std::is_same_v<
+            decltype(this_coro::stop_token), this_coro::stop_token_tag const>);
+        (void)tag;
     }
 
     void
     run()
     {
         testTagType();
-        testFunction();
+        testConstant();
     }
 };
 
 TEST_SUITE(
-    get_stop_token_test,
-    "boost.capy.ex.get_stop_token");
+    this_coro_stop_token_test,
+    "boost.capy.ex.this_coro.stop_token");
 
 } // namespace capy
 } // namespace boost

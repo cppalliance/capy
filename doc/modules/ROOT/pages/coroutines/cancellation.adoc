@@ -136,14 +136,14 @@ Key points:
 
 == Checking Cancellation Status
 
-Within a coroutine, use `co_await get_stop_token()` to retrieve the current
+Within a coroutine, use `co_await this_coro::stop_token` to retrieve the current
 stop token and check if cancellation was requested:
 
 [source,cpp]
 ----
 task<void> long_running_work()
 {
-    auto token = co_await get_stop_token();
+    auto token = co_await this_coro::stop_token;
 
     for (int i = 0; i < 1000; ++i)
     {
@@ -155,16 +155,16 @@ task<void> long_running_work()
 }
 ----
 
-The `get_stop_token()` function returns a tag that the promise intercepts via
+The `this_coro::stop_token` is a tag that the promise intercepts via
 `await_transform`. This operation never suspends—`await_ready()` always
 returns `true`.
 
 If no stop token was propagated to this coroutine, the returned token has
 `stop_possible() == false`.
 
-== Supporting get_stop_token in Custom Coroutines
+== Supporting this_coro::stop_token in Custom Coroutines
 
-If you define your own coroutine type and want to support `get_stop_token()`,
+If you define your own coroutine type and want to support `this_coro::stop_token`,
 inherit your promise type from `io_awaitable_support`:
 
 [source,cpp]
@@ -193,7 +193,7 @@ The mixin provides:
 * `stop_token()` — getter for internal use
 * `set_executor(ex)` — call from your `await_suspend`
 * `executor()` — getter for internal use
-* `await_transform` — intercepts `get_stop_token()` and `get_executor()` calls
+* `await_transform` — intercepts `this_coro::stop_token` and `this_coro::executor`
 
 To make your coroutine type satisfy `IoAwaitable` (receive tokens and executor
 when awaited), implement the `await_suspend` overload:
@@ -235,11 +235,11 @@ Do NOT use cancellation when:
 | Automatic propagation
 | Tokens flow through `co_await` chains
 
-| `get_stop_token()`
+| `this_coro::stop_token`
 | Retrieve the current stop token inside a coroutine
 
 | `io_awaitable_support`
-| CRTP mixin for custom coroutines to support `get_stop_token()` and `get_executor()`
+| CRTP mixin for custom coroutines to support `this_coro::stop_token` and `this_coro::executor`
 
 | `IoAwaitable`
 | Concept for awaitables that support cancellation and executor affinity

@@ -310,7 +310,7 @@ struct run_blocking_test
     static task<bool>
     check_stop_requested()
     {
-        auto token = co_await get_stop_token();
+        auto token = co_await this_coro::stop_token;
         co_return token.stop_requested();
     }
 

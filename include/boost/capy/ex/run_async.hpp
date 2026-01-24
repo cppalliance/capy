@@ -13,10 +13,10 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/run_callbacks.hpp>
 #include <boost/capy/concept/executor.hpp>
+#include <boost/capy/concept/io_launchable_task.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/recycling_memory_resource.hpp>
-#include <boost/capy/ex/io_awaitables.hpp>
 
 #include <coroutine>
 #include <memory_resource>

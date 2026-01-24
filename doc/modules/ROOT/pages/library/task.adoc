@@ -179,8 +179,8 @@ awaited:
 task<void> child()
 {
     // Inherits executor and stop token from parent
-    auto ex = co_await get_executor();
-    auto token = co_await get_stop_token();
+    auto ex = co_await this_coro::executor;
+    auto token = co_await this_coro::stop_token;
 }
 
 task<void> parent()  // Bound to pool's executor

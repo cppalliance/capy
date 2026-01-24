@@ -174,19 +174,19 @@ executor type without templating everything.
 
 == Querying the Current Executor
 
-Within a coroutine, use `co_await get_executor()` to retrieve the current
+Within a coroutine, use `co_await this_coro::executor` to retrieve the current
 executor that this coroutine is bound to:
 
 [source,cpp]
 ----
 task<void> example()
 {
-    executor_ref ex = co_await get_executor();
+    executor_ref ex = co_await this_coro::executor;
     // ex is the executor this coroutine is bound to
 }
 ----
 
-The `get_executor()` function returns a tag that the promise intercepts via
+The `this_coro::executor` is a tag that the promise intercepts via
 `await_transform`. This operation never suspends—`await_ready()` always
 returns `true`.
 
@@ -222,7 +222,7 @@ Do NOT use `run_on` when:
 | `run_on`
 | Explicitly binds a child to a different executor
 
-| `get_executor()`
+| `this_coro::executor`
 | Retrieve the current executor inside a coroutine
 
 | Symmetric transfer

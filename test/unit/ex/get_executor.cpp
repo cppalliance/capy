@@ -8,45 +8,46 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/ex/io_awaitables.hpp>
+#include <boost/capy/ex/this_coro.hpp>
 
 #include "test_suite.hpp"
 
 namespace boost {
 namespace capy {
 
-struct get_executor_test
+struct this_coro_executor_test
 {
     void
     testTagType()
     {
-        get_executor_tag tag1;
-        get_executor_tag tag2{};
+        this_coro::executor_tag tag1;
+        this_coro::executor_tag tag2{};
         (void)tag1;
         (void)tag2;
 
-        static_assert(std::is_trivially_copyable_v<get_executor_tag>);
+        static_assert(std::is_trivially_copyable_v<this_coro::executor_tag>);
     }
 
     void
-    testFunction()
+    testConstant()
     {
-        auto tag = get_executor();
-        static_assert(std::is_same_v<decltype(tag), get_executor_tag>);
-        static_assert(noexcept(get_executor()));
+        auto tag = this_coro::executor;
+        static_assert(std::is_same_v<
+            decltype(this_coro::executor), this_coro::executor_tag const>);
+        (void)tag;
     }
 
     void
     run()
     {
         testTagType();
-        testFunction();
+        testConstant();
     }
 };
 
 TEST_SUITE(
-    get_executor_test,
-    "boost.capy.ex.get_executor");
+    this_coro_executor_test,
+    "boost.capy.ex.this_coro.executor");
 
 } // namespace capy
 } // namespace boost

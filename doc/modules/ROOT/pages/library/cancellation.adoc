@@ -25,7 +25,7 @@ Capy supports cooperative cancellation through `std::stop_token`:
 ----
 task<void> cancellable_work()
 {
-    auto token = co_await get_stop_token();
+    auto token = co_await this_coro::stop_token;
     while (!token.stop_requested())
     {
         co_await do_chunk();
@@ -42,7 +42,7 @@ Stop tokens propagate through `co_await` chains:
 ----
 task<void> child()
 {
-    auto token = co_await get_stop_token();
+    auto token = co_await this_coro::stop_token;
     // token is from parent
 }
 
@@ -58,13 +58,13 @@ source.request_stop();  // Both parent and child see this
 
 == Checking Cancellation
 
-Use `get_stop_token()` to check status:
+Use `this_coro::stop_token` to check status:
 
 [source,cpp]
 ----
 task<void> long_running()
 {
-    auto token = co_await get_stop_token();
+    auto token = co_await this_coro::stop_token;
 
     for (int i = 0; i < 1000; ++i)
     {
@@ -79,7 +79,7 @@ task<void> long_running()
 }
 ----
 
-`get_stop_token()` never suspends—it returns immediately.
+`this_coro::stop_token` never suspends—it returns immediately.
 
 == Implementing Stoppable Operations
 
@@ -173,7 +173,7 @@ Handle cancellation gracefully:
 task<void> with_resource()
 {
     auto resource = acquire_resource();
-    auto token = co_await get_stop_token();
+    auto token = co_await this_coro::stop_token;
 
     try {
         while (!token.stop_requested())
@@ -194,7 +194,7 @@ Or use RAII:
 task<void> with_raii()
 {
     ResourceGuard guard(acquire_resource());
-    auto token = co_await get_stop_token();
+    auto token = co_await this_coro::stop_token;
 
     while (!token.stop_requested())
         co_await process(guard.get());
@@ -229,7 +229,7 @@ task<void> with_raii()
 | `std::stop_token`
 | Observer that checks if stop was requested
 
-| `get_stop_token()`
+| `this_coro::stop_token`
 | Query current token inside coroutine
 
 | `std::stop_callback`

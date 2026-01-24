@@ -125,7 +125,7 @@ that support cancellation can respond by exiting early:
 ----
 task<void> cancellable_work()
 {
-    auto token = co_await get_stop_token();
+    auto token = co_await this_coro::stop_token;
     for (int i = 0; i < 1000; ++i)
     {
         if (token.stop_requested())

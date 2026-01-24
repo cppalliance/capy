@@ -241,13 +241,13 @@ auto run_on( executor_ref ex, Task task );
 
 This decoupling enables library authors to write launch utilities that work with any conforming task type, and users to define custom task types that integrate seamlessly with existing launchers.
 
-Implementing _IoAwaitableTask_ also gives coroutines the option to access their context from within the coroutine body. The `io_awaitable_support` mixin's `await_transform` intercepts the tag types returned by `get_executor()` and `get_stop_token()`, returning immediate awaiters that yield the stored values without suspending:
+Implementing _IoAwaitableTask_ also gives coroutines the option to access their context from within the coroutine body. The `io_awaitable_support` mixin's `await_transform` intercepts the tag types `this_coro::executor` and `this_coro::stop_token`, returning immediate awaiters that yield the stored values without suspending:
 
 ```cpp
 task<void> cancellable_work()
 {
-    executor_ref ex = co_await get_executor();         // never suspends
-    std::stop_token token = co_await get_stop_token(); // never suspends
+    executor_ref ex = co_await this_coro::executor;         // never suspends
+    std::stop_token token = co_await this_coro::stop_token; // never suspends
     
     for (int i = 0; i < 1000; ++i)
     {
@@ -301,7 +301,7 @@ struct my_task
 
 This three-argument `await_suspend` is the contract. The parent's `await_transform` calls it, passing the executor and stop token that flow forward into the child coroutine.
 
-Why the concrete `executor_ref`? Callers who write `co_await get_executor()` always receive the same predictable type, regardless of what executor was originally bound at the launch site. Executors are often custom types, and our type-erasing wrapper erases any executor type at zero runtime cost. This drives all of our designs: the frame allocation we cannot avoid pays for the type erasure we need.
+Why the concrete `executor_ref`? Callers who write `co_await this_coro::executor` always receive the same predictable type, regardless of what executor was originally bound at the launch site. Executors are often custom types, and our type-erasing wrapper erases any executor type at zero runtime cost. This drives all of our designs: the frame allocation we cannot avoid pays for the type erasure we need.
 
 ### 3.2 Satisfying _IoAwaitableTask_
 
@@ -318,8 +318,8 @@ template<IoAwaitable A>
 auto await_transform( A&& awaitable ) {
     return awaitable_wrapper{
         std::forward<A>( awaitable ),
-        get_executor(),
-        get_stop_token()
+        this_coro::executor,
+        this_coro::stop_token
     };
 }
 ```
@@ -1153,6 +1153,14 @@ namespace std {
 
   template<executor Ex, io_launchable_task Task>
     unspecified run_on(Ex const& ex, Task task);
+
+  // [ioawait.thiscoro], namespace this_coro
+  namespace this_coro {
+    struct executor_tag {};
+    struct stop_token_tag {};
+    inline constexpr executor_tag executor{};
+    inline constexpr stop_token_tag stop_token{};
+  }
 }
 ```
 
@@ -1343,6 +1351,29 @@ template<executor Ex, io_launchable_task Task>
 ```
 *Returns:* An awaitable that, when `co_await`ed, executes `task` on `ex` and resumes the caller on its original executor upon completion.
 *Remarks:* The caller's executor is restored via `complete()` after `task` finishes.
+
+### 11.6 Namespace `this_coro` [ioawait.thiscoro]
+
+```cpp
+namespace std::this_coro {
+  struct executor_tag {};
+  struct stop_token_tag {};
+  inline constexpr executor_tag executor{};
+  inline constexpr stop_token_tag stop_token{};
+}
+```
+
+The `this_coro` namespace provides tag objects that can be awaited within a coroutine to retrieve execution context information.
+
+```cpp
+inline constexpr executor_tag executor;
+```
+*Remarks:* When awaited via `co_await this_coro::executor` inside a coroutine whose promise type supports executor access (e.g., inherits from `io_awaitable_support`), yields the `executor_ref` bound to that coroutine. This operation never suspends.
+
+```cpp
+inline constexpr stop_token_tag stop_token;
+```
+*Remarks:* When awaited via `co_await this_coro::stop_token` inside a coroutine whose promise type supports stop token access (e.g., inherits from `io_awaitable_support`), yields the `std::stop_token` propagated to that coroutine. This operation never suspends.
 
 ---
 

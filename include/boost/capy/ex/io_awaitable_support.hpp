@@ -7,119 +7,23 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_EX_IO_AWAITABLES_HPP
-#define BOOST_CAPY_EX_IO_AWAITABLES_HPP
+#ifndef BOOST_CAPY_EX_IO_AWAITABLE_SUPPORT_HPP
+#define BOOST_CAPY_EX_IO_AWAITABLE_SUPPORT_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-
-#include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/concept/io_awaitable_task.hpp>
-#include <boost/capy/concept/io_launchable_task.hpp>
+#include <boost/capy/ex/this_coro.hpp>
 
 #include <coroutine>
 #include <cstddef>
-#include <exception>
 #include <memory_resource>
 #include <stop_token>
 #include <type_traits>
 
 namespace boost {
 namespace capy {
-
-/** Tag type for coroutine stop token retrieval.
-
-    This tag is returned by @ref get_stop_token and intercepted by a
-    promise type's `await_transform` to yield the coroutine's current
-    stop token. The tag itself carries no data; it serves only as a
-    sentinel for compile-time dispatch.
-
-    @see get_stop_token
-    @see io_awaitable_support
-*/
-struct get_stop_token_tag {};
-
-/** Tag type for coroutine executor retrieval.
-
-    This tag is returned by @ref get_executor and intercepted by a
-    promise type's `await_transform` to yield the coroutine's current
-    executor. The tag itself carries no data; it serves only as a
-    sentinel for compile-time dispatch.
-
-    @see get_executor
-    @see io_awaitable_support
-*/
-struct get_executor_tag {};
-
-/** Return a tag that yields the current stop token when awaited.
-
-    Use `co_await get_stop_token()` inside a coroutine whose promise
-    type supports stop token access (e.g., inherits from
-    @ref io_awaitable_support). The returned stop token reflects whatever
-    token was passed to this coroutine when it was awaited.
-
-    @par Example
-    @code
-    task<void> cancellable_work()
-    {
-        auto token = co_await get_stop_token();
-        for (int i = 0; i < 1000; ++i)
-        {
-            if (token.stop_requested())
-                co_return;  // Exit gracefully on cancellation
-            co_await process_chunk(i);
-        }
-    }
-    @endcode
-
-    @par Behavior
-    @li If no stop token was propagated, returns a default-constructed
-        `std::stop_token` (where `stop_possible()` returns `false`).
-    @li The returned token remains valid for the coroutine's lifetime.
-    @li This operation never suspends; `await_ready()` always returns `true`.
-
-    @return A tag that `await_transform` intercepts to return the stop token.
-
-    @see get_stop_token_tag
-    @see io_awaitable_support
-*/
-inline get_stop_token_tag get_stop_token() noexcept
-{
-    return {};
-}
-
-/** Return a tag that yields the current executor when awaited.
-
-    Use `co_await get_executor()` inside a coroutine whose promise
-    type supports executor access (e.g., inherits from
-    @ref io_awaitable_support). The returned executor reflects the
-    executor this coroutine is bound to.
-
-    @par Example
-    @code
-    task<void> example()
-    {
-        executor_ref ex = co_await get_executor();
-        // ex is the executor this coroutine is bound to
-    }
-    @endcode
-
-    @par Behavior
-    @li If no executor was set, returns a default-constructed
-        `executor_ref` (where `operator bool()` returns `false`).
-    @li This operation never suspends; `await_ready()` always returns `true`.
-
-    @return A tag that `await_transform` intercepts to return the executor.
-
-    @see get_executor_tag
-    @see io_awaitable_support
-*/
-inline get_executor_tag get_executor() noexcept
-{
-    return {};
-}
 
 /** CRTP mixin that adds I/O awaitable support to a promise type.
 
@@ -135,13 +39,13 @@ inline get_executor_tag get_executor() noexcept
        that was passed when your coroutine was awaited.
 
     4. **Stop token access** — Coroutine code can retrieve the token via
-       `co_await get_stop_token()`.
+       `co_await this_coro::stop_token`.
 
     5. **Executor storage** — The mixin stores the `executor_ref`
        that this coroutine is bound to.
 
     6. **Executor access** — Coroutine code can retrieve the executor via
-       `co_await get_executor()`.
+       `co_await this_coro::executor`.
 
     @tparam Derived The derived promise type (CRTP pattern).
 
@@ -166,8 +70,8 @@ inline get_executor_tag get_executor() noexcept
 
     my_task example()
     {
-        auto token = co_await get_stop_token();
-        auto ex = co_await get_executor();
+        auto token = co_await this_coro::stop_token;
+        auto ex = co_await this_coro::executor;
         // Use token and ex...
     }
     @endcode
@@ -189,8 +93,8 @@ inline get_executor_tag get_executor() noexcept
     };
     @endcode
 
-    The mixin's `await_transform` intercepts @ref get_stop_token_tag and
-    @ref get_executor_tag, then delegates all other awaitables to your
+    The mixin's `await_transform` intercepts @ref this_coro::stop_token_tag and
+    @ref this_coro::executor_tag, then delegates all other awaitables to your
     `transform_awaitable`.
 
     @par Making Your Coroutine an IoAwaitable
@@ -219,12 +123,12 @@ inline get_executor_tag get_executor() noexcept
 
     @par Thread Safety
     The stop token and executor are stored during `await_suspend` and read
-    during `co_await get_stop_token()` or `co_await get_executor()`. These
-    occur on the same logical thread of execution, so no synchronization
+    during `co_await this_coro::stop_token` or `co_await this_coro::executor`.
+    These occur on the same logical thread of execution, so no synchronization
     is required.
 
-    @see get_stop_token
-    @see get_executor
+    @see this_coro::stop_token
+    @see this_coro::executor
     @see IoAwaitable
 */
 template<typename Derived>
@@ -362,7 +266,8 @@ public:
     /** Store a stop token for later retrieval.
 
         Call this from your coroutine type's `await_suspend`
-        overload to make the token available via `co_await get_stop_token()`.
+        overload to make the token available via
+        `co_await this_coro::stop_token`.
 
         @param token The stop token to store.
     */
@@ -383,7 +288,8 @@ public:
     /** Store an executor for later retrieval.
 
         Call this from your coroutine type's `await_suspend`
-        overload to make the executor available via `co_await get_executor()`.
+        overload to make the executor available via
+        `co_await this_coro::executor`.
 
         @param ex The executor to store.
     */
@@ -419,9 +325,10 @@ public:
 
     /** Intercept co_await expressions.
 
-        This function handles @ref get_stop_token_tag and @ref get_executor_tag
-        specially, returning an awaiter that yields the stored value. All other
-        awaitables are delegated to @ref transform_awaitable.
+        This function handles @ref this_coro::stop_token_tag and
+        @ref this_coro::executor_tag specially, returning an awaiter that
+        yields the stored value. All other awaitables are delegated to
+        @ref transform_awaitable.
 
         @param t The awaited expression.
 
@@ -430,7 +337,7 @@ public:
     template<typename T>
     auto await_transform(T&& t)
     {
-        if constexpr (std::is_same_v<std::decay_t<T>, get_stop_token_tag>)
+        if constexpr (std::is_same_v<std::decay_t<T>, this_coro::stop_token_tag>)
         {
             struct awaiter
             {
@@ -452,7 +359,7 @@ public:
             };
             return awaiter{stop_token_};
         }
-        else if constexpr (std::is_same_v<std::decay_t<T>, get_executor_tag>)
+        else if constexpr (std::is_same_v<std::decay_t<T>, this_coro::executor_tag>)
         {
             struct awaiter
             {

@@ -279,7 +279,7 @@ Inside a coroutine, retrieve the current executor:
 ----
 task<void> example()
 {
-    executor_ref ex = co_await get_executor();
+    executor_ref ex = co_await this_coro::executor;
 
     if (!ex)
     {
@@ -291,7 +291,7 @@ task<void> example()
 }
 ----
 
-`get_executor()` is a tag type that `await_transform` intercepts. It never
+`this_coro::executor` is a tag that `await_transform` intercepts. It never
 actually suspends—`await_ready()` returns `true`.
 
 == Summary
@@ -315,7 +315,7 @@ actually suspends—`await_ready()` returns `true`.
 | `run_on(ex, task)`
 | Override inherited executor for a subtask
 
-| `get_executor()`
+| `this_coro::executor`
 | Query current executor inside coroutine
 |===
 

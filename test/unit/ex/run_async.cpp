@@ -12,7 +12,7 @@
 
 #include <boost/capy/task.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/ex/io_awaitables.hpp>
+#include <boost/capy/ex/this_coro.hpp>
 
 #include "test_suite.hpp"
 
@@ -336,7 +336,7 @@ struct run_async_test
     static task<bool>
     check_stop_requested()
     {
-        auto token = co_await get_stop_token();
+        auto token = co_await this_coro::stop_token;
         co_return token.stop_requested();
     }
 

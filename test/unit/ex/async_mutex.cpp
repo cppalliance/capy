@@ -10,7 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/ex/async_mutex.hpp>
 
-#include <boost/capy/ex/io_awaitables.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 
 namespace boost {
