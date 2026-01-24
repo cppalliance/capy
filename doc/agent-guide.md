@@ -8,6 +8,7 @@ Boost.Capy specific instructions
 
 ## Introduction
 - Requirements: Familiarity with C++20 and C++20 coroutines
+- Notes: This library offers coroutine concepts and concrete types, buffer concepts and concrete types, stream concepts and concrete types, generic algorithms that work on buffers and streams, plus a thread pool and a strand executor along with a full suite of testing utilities that include mock objects and error generators
 
 ## Section: Introduction To C++20 Coroutines
 
