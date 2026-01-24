@@ -10,592 +10,480 @@
 // Test that header file is self-contained.
 #include <boost/capy/read.hpp>
 
+#include <boost/capy/buffers/buffer_pair.hpp>
+#include <boost/capy/buffers/circular_buffer.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/buffers/string_dynamic_buffer.hpp>
-#include <boost/capy/concept/read_source.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/io_result.hpp>
-#include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/test/fuse.hpp>
+#include <boost/capy/test/read_source.hpp>
+#include <boost/capy/test/read_stream.hpp>
 
-#include "test_helpers.hpp"
+#include "test_suite.hpp"
 
-#include <algorithm>
 #include <array>
 #include <cstring>
 #include <string>
-#include <vector>
 
 namespace boost {
 namespace capy {
 
 namespace {
 
-// Mock read awaitable that returns data from a string
-struct mock_read_awaitable
-{
-    std::string* data_;
-    std::size_t* pos_;
-    std::size_t chunk_size_;
-    mutable_buffer buf_;
-    system::error_code ec_;
-
-    bool await_ready() const noexcept { return true; }
-
-    void await_suspend(
-        coro,
-        executor_ref,
-        std::stop_token) const noexcept
-    {
-    }
-
-    io_result<std::size_t>
-    await_resume() noexcept
-    {
-        if(ec_)
-            return {ec_, 0};
-
-        std::size_t remaining = data_->size() - *pos_;
-        if(remaining == 0)
-            return {error::eof, 0};
-
-        std::size_t to_read = (std::min)({
-            buf_.size(),
-            chunk_size_,
-            remaining});
-
-        std::memcpy(buf_.data(), data_->data() + *pos_, to_read);
-        *pos_ += to_read;
-        return {{}, to_read};
-    }
-};
-
-// Mock stream that reads from a string
-struct mock_read_stream
-{
-    std::string data;
-    std::size_t pos = 0;
-    std::size_t chunk_size = 1024;
-    system::error_code forced_error;
-
-    template<MutableBufferSequence MB>
-    mock_read_awaitable
-    read_some(MB const& buffers)
-    {
-        mutable_buffer buf = *begin(buffers);
-        return {&data, &pos, chunk_size, buf, forced_error};
-    }
-};
-
-static_assert(ReadStream<mock_read_stream>);
-
-// Mock stream that returns error after N bytes
-struct mock_error_stream
-{
-    std::string data;
-    std::size_t pos = 0;
-    std::size_t error_after = 0;
-    system::error_code error_to_return;
-
-    template<MutableBufferSequence MB>
-    auto read_some(MB const& buffers)
-    {
-        struct awaitable
-        {
-            mock_error_stream* self_;
-            mutable_buffer buf_;
-
-            bool await_ready() const noexcept { return true; }
-
-            void await_suspend(
-                coro,
-                executor_ref,
-                std::stop_token) const noexcept
-            {
-            }
-
-            io_result<std::size_t>
-            await_resume() noexcept
-            {
-                if(self_->pos >= self_->error_after)
-                    return {self_->error_to_return, 0};
-
-                std::size_t remaining = self_->data.size() - self_->pos;
-                if(remaining == 0)
-                    return {error::eof, 0};
-
-                std::size_t can_read = self_->error_after - self_->pos;
-                std::size_t to_read = std::min({buf_.size(), remaining, can_read});
-
-                std::memcpy(buf_.data(), self_->data.data() + self_->pos, to_read);
-                self_->pos += to_read;
-                return {{}, to_read};
-            }
-        };
-
-        mutable_buffer buf = *begin(buffers);
-        return awaitable{this, buf};
-    }
-};
-
-static_assert(ReadStream<mock_error_stream>);
-
 //----------------------------------------------------------
-// Mock ReadSource for testing
+// Buffer Factories for ReadStream tests
 //----------------------------------------------------------
 
-// Mock source awaitable that returns data from a string
-struct mock_source_awaitable
+struct single_buffer_factory
 {
-    std::string* data_;
-    std::size_t* pos_;
-    mutable_buffer buf_;
-    system::error_code ec_;
+    char storage[1024];
+    std::size_t size;
 
-    bool await_ready() const noexcept { return true; }
-
-    void await_suspend(
-        coro,
-        executor_ref,
-        std::stop_token) const noexcept
+    explicit single_buffer_factory(std::size_t n)
+        : size(n)
     {
+        std::memset(storage, 0, sizeof(storage));
     }
 
-    io_result<std::size_t>
-    await_resume() noexcept
+    mutable_buffer
+    buffer()
     {
-        if(ec_)
-            return {ec_, 0};
+        return mutable_buffer(storage, size);
+    }
 
-        // Empty buffer completes immediately with success
-        if(buf_.size() == 0)
-            return {{}, 0};
-
-        std::size_t remaining = data_->size() - *pos_;
-        if(remaining == 0)
-            return {error::eof, 0};
-
-        std::size_t to_read = std::min(buf_.size(), remaining);
-        std::memcpy(buf_.data(), data_->data() + *pos_, to_read);
-        *pos_ += to_read;
-
-        if(*pos_ >= data_->size())
-            return {error::eof, to_read};
-
-        return {{}, to_read};
+    std::string_view
+    view() const
+    {
+        return std::string_view(storage, size);
     }
 };
 
-// Mock source that implements ReadSource concept
-struct mock_read_source
+struct buffer_array_factory
 {
-    std::string data;
-    std::size_t pos = 0;
-    system::error_code forced_error;
+    char storage1[512];
+    char storage2[512];
+    std::size_t size1;
+    std::size_t size2;
 
-    template<MutableBufferSequence MB>
-    mock_source_awaitable
-    read(MB const& buffers)
+    buffer_array_factory(std::size_t n1, std::size_t n2)
+        : size1(n1)
+        , size2(n2)
     {
-        mutable_buffer buf = *begin(buffers);
-        return {&data, &pos, buf, forced_error};
+        std::memset(storage1, 0, sizeof(storage1));
+        std::memset(storage2, 0, sizeof(storage2));
+    }
+
+    std::array<mutable_buffer, 2>
+    buffer()
+    {
+        return {{
+            mutable_buffer(storage1, size1),
+            mutable_buffer(storage2, size2)
+        }};
+    }
+
+    std::string
+    combined() const
+    {
+        std::string result;
+        result.append(storage1, size1);
+        result.append(storage2, size2);
+        return result;
     }
 };
 
-static_assert(ReadSource<mock_read_source>);
+struct buffer_pair_factory
+{
+    char storage1[512];
+    char storage2[512];
+    std::size_t size1;
+    std::size_t size2;
+
+    buffer_pair_factory(std::size_t n1, std::size_t n2)
+        : size1(n1)
+        , size2(n2)
+    {
+        std::memset(storage1, 0, sizeof(storage1));
+        std::memset(storage2, 0, sizeof(storage2));
+    }
+
+    mutable_buffer_pair
+    buffer()
+    {
+        return {{
+            mutable_buffer(storage1, size1),
+            mutable_buffer(storage2, size2)
+        }};
+    }
+
+    std::string
+    combined() const
+    {
+        std::string result;
+        result.append(storage1, size1);
+        result.append(storage2, size2);
+        return result;
+    }
+};
+
+//----------------------------------------------------------
+// Dynamic Buffer Factories for ReadSource tests
+//----------------------------------------------------------
+
+struct string_dynbuf_factory
+{
+    std::string str;
+
+    string_dynamic_buffer
+    buffer()
+    {
+        str.clear();
+        return string_dynamic_buffer(&str);
+    }
+
+    std::string const&
+    data() const
+    {
+        return str;
+    }
+};
+
+struct circular_buffer_factory
+{
+    char storage[4096];
+    circular_buffer cb;
+
+    circular_buffer_factory()
+        : cb(storage, sizeof(storage))
+    {
+    }
+
+    circular_buffer&
+    buffer()
+    {
+        cb = circular_buffer(storage, sizeof(storage));
+        return cb;
+    }
+
+    std::string
+    data() const
+    {
+        std::string result;
+        auto bufs = cb.data();
+        for(auto const& buf : bufs)
+            result.append(
+                static_cast<char const*>(buf.data()),
+                buf.size());
+        return result;
+    }
+};
 
 } // namespace
 
 struct read_test
 {
+    //----------------------------------------------------------
+    // ReadStream tests (MutableBufferSequence)
+    //----------------------------------------------------------
+
     void
     testReadSingleBuffer()
     {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // Read fills buffer completely
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_read_stream stream;
-            stream.data = "hello world";
+            test::read_stream rs(f);
+            rs.provide("hello world");
 
-            char buf[32] = {};
-            auto [ec, n] = co_await read(stream, make_buffer(buf, 11));
+            single_buffer_factory bf(11);
+            auto [ec, n] = co_await read(rs, bf.buffer());
+            if(ec.failed())
+                co_return;
 
-            BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 11u);
-            BOOST_TEST_EQ(std::string_view(buf, n), "hello world");
-        };
+            BOOST_TEST_EQ(bf.view(), "hello world");
+        }));
 
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testReadExactSize()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // Read exact size
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_read_stream stream;
-            stream.data = "exact";
+            test::read_stream rs(f);
+            rs.provide("exact");
 
-            char buf[5] = {};
-            auto [ec, n] = co_await read(stream, make_buffer(buf));
+            single_buffer_factory bf(5);
+            auto [ec, n] = co_await read(rs, bf.buffer());
+            if(ec.failed())
+                co_return;
 
-            BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 5u);
-            BOOST_TEST_EQ(std::string_view(buf, n), "exact");
-        };
+            BOOST_TEST_EQ(bf.view(), "exact");
+        }));
 
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testReadWithChunking()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // EOF before buffer full
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_read_stream stream;
-            stream.data = "abcdefghij";
-            stream.chunk_size = 3;
+            test::read_stream rs(f);
+            rs.provide("short");
 
-            char buf[10] = {};
-            auto [ec, n] = co_await read(stream, make_buffer(buf));
-
-            BOOST_TEST(!ec);
-            BOOST_TEST_EQ(n, 10u);
-            BOOST_TEST_EQ(std::string_view(buf, n), "abcdefghij");
-        };
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testReadEofBeforeFull()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
-        {
-            mock_read_stream stream;
-            stream.data = "short";
-
-            char buf[32] = {};
-            auto [ec, n] = co_await read(stream, make_buffer(buf));
+            single_buffer_factory bf(32);
+            auto [ec, n] = co_await read(rs, bf.buffer());
+            if(ec.failed())
+                co_return;
 
             BOOST_TEST(ec == cond::eof);
             BOOST_TEST_EQ(n, 5u);
-            BOOST_TEST_EQ(std::string_view(buf, n), "short");
-        };
+            BOOST_TEST_EQ(std::string_view(bf.storage, n), "short");
+        }));
 
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testReadEmptyBuffer()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // Empty buffer returns immediately
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_read_stream stream;
-            stream.data = "data";
+            test::read_stream rs(f);
+            rs.provide("data");
 
-            auto [ec, n] = co_await read(stream, mutable_buffer());
+            auto [ec, n] = co_await read(rs, mutable_buffer());
+            if(ec.failed())
+                co_return;
 
-            BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 0u);
-        };
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
+        }));
     }
 
     void
-    testReadBufferSequence()
+    testReadBufferArray()
     {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // Read fills buffer array completely
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_read_stream stream;
-            stream.data = "helloworld";
-            stream.chunk_size = 100;
+            test::read_stream rs(f);
+            rs.provide("helloworld");
 
-            char buf1[5] = {};
-            char buf2[5] = {};
-            std::array<mutable_buffer, 2> buffers = {{
-                make_buffer(buf1),
-                make_buffer(buf2)
-            }};
+            buffer_array_factory bf(5, 5);
+            auto [ec, n] = co_await read(rs, bf.buffer());
+            if(ec.failed())
+                co_return;
 
-            auto [ec, n] = co_await read(stream, buffers);
-
-            BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 10u);
-            BOOST_TEST_EQ(std::string_view(buf1, 5), "hello");
-            BOOST_TEST_EQ(std::string_view(buf2, 5), "world");
-        };
+            BOOST_TEST_EQ(std::string_view(bf.storage1, 5), "hello");
+            BOOST_TEST_EQ(std::string_view(bf.storage2, 5), "world");
+        }));
 
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testReadErrorMidway()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // EOF before buffer array full
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_error_stream stream;
-            stream.data = "abcdefghij";
-            stream.error_after = 5;
-            stream.error_to_return = make_error_code(system::errc::io_error);
+            test::read_stream rs(f);
+            rs.provide("short");
 
-            char buf[10] = {};
-            auto [ec, n] = co_await read(stream, make_buffer(buf));
+            buffer_array_factory bf(10, 10);
+            auto [ec, n] = co_await read(rs, bf.buffer());
+            if(ec.failed())
+                co_return;
 
-            BOOST_TEST(ec == system::errc::io_error);
+            BOOST_TEST(ec == cond::eof);
             BOOST_TEST_EQ(n, 5u);
-            BOOST_TEST_EQ(std::string_view(buf, n), "abcde");
-        };
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
+        }));
     }
 
     void
-    testReadImmediateError()
+    testReadBufferPair()
     {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // Read fills buffer pair completely
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_read_stream stream;
-            stream.data = "data";
-            stream.forced_error = make_error_code(system::errc::connection_reset);
+            test::read_stream rs(f);
+            rs.provide("helloworld");
 
-            char buf[10] = {};
-            auto [ec, n] = co_await read(stream, make_buffer(buf));
+            buffer_pair_factory bf(5, 5);
+            auto [ec, n] = co_await read(rs, bf.buffer());
+            if(ec.failed())
+                co_return;
 
-            BOOST_TEST(ec == system::errc::connection_reset);
-            BOOST_TEST_EQ(n, 0u);
-        };
+            BOOST_TEST_EQ(n, 10u);
+            BOOST_TEST_EQ(std::string_view(bf.storage1, 5), "hello");
+            BOOST_TEST_EQ(std::string_view(bf.storage2, 5), "world");
+        }));
 
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
+        // EOF before buffer pair full
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+            rs.provide("abc");
 
-        BOOST_TEST(completed);
+            buffer_pair_factory bf(5, 5);
+            auto [ec, n] = co_await read(rs, bf.buffer());
+            if(ec.failed())
+                co_return;
+
+            BOOST_TEST(ec == cond::eof);
+            BOOST_TEST_EQ(n, 3u);
+        }));
+    }
+
+    void
+    testReadStream()
+    {
+        testReadSingleBuffer();
+        testReadBufferArray();
+        testReadBufferPair();
     }
 
     //----------------------------------------------------------
-    // ReadSource tests (uses DynamicBuffer, reads until EOF)
+    // ReadSource tests (DynamicBuffer)
     //----------------------------------------------------------
 
     void
-    testSourceReadAll()
+    testSourceStringDynBuf()
     {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // Read all data until EOF
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_read_source source;
-            source.data = "hello world";
+            test::read_source rs(f);
+            rs.provide("hello world");
 
-            std::string result;
-            string_dynamic_buffer sb(&result);
-            auto [ec, n] = co_await read(source, sb);
+            string_dynbuf_factory df;
+            auto db = df.buffer();
+            auto [ec, n] = co_await read(rs, db);
+            if(ec.failed())
+                co_return;
 
-            BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 11u);
-            BOOST_TEST_EQ(result, "hello world");
-        };
+            BOOST_TEST_EQ(df.data(), "hello world");
+        }));
 
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testSourceReadLargeData()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // Read large data (tests growth strategy)
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_read_source source;
-            source.data = std::string(10000, 'x');
+            test::read_source rs(f);
+            std::string large_data(10000, 'x');
+            rs.provide(large_data);
 
-            std::string result;
-            string_dynamic_buffer sb(&result);
-            auto [ec, n] = co_await read(source, sb);
+            string_dynbuf_factory df;
+            auto db = df.buffer();
+            auto [ec, n] = co_await read(rs, db);
+            if(ec.failed())
+                co_return;
 
-            BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 10000u);
-            BOOST_TEST_EQ(result.size(), 10000u);
-            BOOST_TEST(result == std::string(10000, 'x'));
-        };
+            BOOST_TEST_EQ(df.data().size(), 10000u);
+            BOOST_TEST(df.data() == large_data);
+        }));
 
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testSourceReadError()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // Empty source
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_read_source source;
-            source.data = "data";
-            source.forced_error = make_error_code(system::errc::io_error);
+            test::read_source rs(f);
 
-            std::string result;
-            string_dynamic_buffer sb(&result);
-            auto [ec, n] = co_await read(source, sb);
+            string_dynbuf_factory df;
+            auto db = df.buffer();
+            auto [ec, n] = co_await read(rs, db);
+            if(ec.failed())
+                co_return;
 
-            BOOST_TEST(ec == system::errc::io_error);
             BOOST_TEST_EQ(n, 0u);
-        };
+            BOOST_TEST(df.data().empty());
+        }));
 
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testSourceReadEmpty()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // Custom initial_amount
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_read_source source;
-            source.data = "";
+            test::read_source rs(f);
+            rs.provide("small");
 
-            std::string result;
-            string_dynamic_buffer sb(&result);
-            auto [ec, n] = co_await read(source, sb);
+            string_dynbuf_factory df;
+            auto db = df.buffer();
+            auto [ec, n] = co_await read(rs, db, 64);
+            if(ec.failed())
+                co_return;
 
-            BOOST_TEST(!ec);
-            BOOST_TEST_EQ(n, 0u);
-            BOOST_TEST(result.empty());
-        };
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testSourceReadWithInitialAmount()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
-        {
-            mock_read_source source;
-            source.data = "small";
-
-            std::string result;
-            string_dynamic_buffer sb(&result);
-            auto [ec, n] = co_await read(source, sb, 64);
-
-            BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 5u);
-            BOOST_TEST_EQ(result, "small");
-        };
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
+            BOOST_TEST_EQ(df.data(), "small");
+        }));
     }
+
+    void
+    testSourceCircularBuffer()
+    {
+        // Read all data until EOF
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_source rs(f);
+            rs.provide("hello world");
+
+            circular_buffer_factory df;
+            auto& db = df.buffer();
+            auto [ec, n] = co_await read(rs, db);
+            if(ec.failed())
+                co_return;
+
+            BOOST_TEST_EQ(n, 11u);
+            BOOST_TEST_EQ(df.data(), "hello world");
+        }));
+
+        // Read larger data
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_source rs(f);
+            std::string data(1000, 'y');
+            rs.provide(data);
+
+            circular_buffer_factory df;
+            auto& db = df.buffer();
+            auto [ec, n] = co_await read(rs, db);
+            if(ec.failed())
+                co_return;
+
+            BOOST_TEST_EQ(n, 1000u);
+            BOOST_TEST_EQ(df.data().size(), 1000u);
+            BOOST_TEST(df.data() == data);
+        }));
+
+        // Empty source
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_source rs(f);
+
+            circular_buffer_factory df;
+            auto& db = df.buffer();
+            auto [ec, n] = co_await read(rs, db);
+            if(ec.failed())
+                co_return;
+
+            BOOST_TEST_EQ(n, 0u);
+            BOOST_TEST(df.data().empty());
+        }));
+
+        // Custom initial_amount
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_source rs(f);
+            rs.provide("tiny");
+
+            circular_buffer_factory df;
+            auto& db = df.buffer();
+            auto [ec, n] = co_await read(rs, db, 128);
+            if(ec.failed())
+                co_return;
+
+            BOOST_TEST_EQ(n, 4u);
+            BOOST_TEST_EQ(df.data(), "tiny");
+        }));
+    }
+
+    void
+    testReadSource()
+    {
+        testSourceStringDynBuf();
+        testSourceCircularBuffer();
+    }
+
+    //----------------------------------------------------------
 
     void
     run()
     {
-        testReadSingleBuffer();
-        testReadExactSize();
-        testReadWithChunking();
-        testReadEofBeforeFull();
-        testReadEmptyBuffer();
-        testReadBufferSequence();
-        testReadErrorMidway();
-        testReadImmediateError();
-
-        // ReadSource tests (DynamicBuffer)
-        testSourceReadAll();
-        testSourceReadLargeData();
-        testSourceReadError();
-        testSourceReadEmpty();
-        testSourceReadWithInitialAmount();
+        testReadStream();
+        testReadSource();
     }
 };
 
