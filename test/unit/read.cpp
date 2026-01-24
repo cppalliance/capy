@@ -11,7 +11,7 @@
 #include <boost/capy/read.hpp>
 
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/buffers/string_buffer.hpp>
+#include <boost/capy/buffers/string_dynamic_buffer.hpp>
 #include <boost/capy/concept/read_source.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
@@ -434,7 +434,7 @@ struct read_test
     }
 
     //----------------------------------------------------------
-    // ReadSource tests (uses DynamicBuffers, reads until EOF)
+    // ReadSource tests (uses DynamicBuffer, reads until EOF)
     //----------------------------------------------------------
 
     void
@@ -450,7 +450,7 @@ struct read_test
             source.data = "hello world";
 
             std::string result;
-            string_buffer sb(&result);
+            string_dynamic_buffer sb(&result);
             auto [ec, n] = co_await read(source, sb);
 
             BOOST_TEST(!ec);
@@ -478,7 +478,7 @@ struct read_test
             source.data = std::string(10000, 'x');
 
             std::string result;
-            string_buffer sb(&result);
+            string_dynamic_buffer sb(&result);
             auto [ec, n] = co_await read(source, sb);
 
             BOOST_TEST(!ec);
@@ -508,7 +508,7 @@ struct read_test
             source.forced_error = make_error_code(system::errc::io_error);
 
             std::string result;
-            string_buffer sb(&result);
+            string_dynamic_buffer sb(&result);
             auto [ec, n] = co_await read(source, sb);
 
             BOOST_TEST(ec == system::errc::io_error);
@@ -535,7 +535,7 @@ struct read_test
             source.data = "";
 
             std::string result;
-            string_buffer sb(&result);
+            string_dynamic_buffer sb(&result);
             auto [ec, n] = co_await read(source, sb);
 
             BOOST_TEST(!ec);
@@ -563,7 +563,7 @@ struct read_test
             source.data = "small";
 
             std::string result;
-            string_buffer sb(&result);
+            string_dynamic_buffer sb(&result);
             auto [ec, n] = co_await read(source, sb, 64);
 
             BOOST_TEST(!ec);
@@ -590,7 +590,7 @@ struct read_test
         testReadErrorMidway();
         testReadImmediateError();
 
-        // ReadSource tests (DynamicBuffers)
+        // ReadSource tests (DynamicBuffer)
         testSourceReadAll();
         testSourceReadLargeData();
         testSourceReadError();

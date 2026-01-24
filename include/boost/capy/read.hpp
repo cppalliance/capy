@@ -16,7 +16,7 @@
 #include <boost/capy/task.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/consuming_buffers.hpp>
-#include <boost/capy/concept/dynamic_buffers.hpp>
+#include <boost/capy/concept/dynamic_buffer.hpp>
 #include <boost/capy/concept/read_source.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/system/error_code.hpp>
@@ -122,12 +122,12 @@ read(
     }
     @endcode
 
-    @see ReadSource, DynamicBuffersParam
+    @see ReadSource, DynamicBufferParam
 */
 auto
 read(
     ReadSource auto& source,
-    DynamicBuffersParam auto&& buffers,
+    DynamicBufferParam auto&& buffers,
     std::size_t initial_amount = 2048) ->
         task<io_result<std::size_t>>
 {

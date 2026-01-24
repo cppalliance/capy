@@ -22,6 +22,30 @@
 #include <source_location>
 #include <type_traits>
 
+/*
+    LLM/AI Instructions for fuse-based test patterns:
+
+    When f.armed() runs a test, it injects errors at successive points
+    via maybe_fail(). Operations like read_stream::read_some() and
+    write_stream::write_some() call maybe_fail() internally.
+
+    CORRECT pattern - early return on injected error:
+
+        auto [ec, n] = co_await rs.read_some(buf);
+        if(ec.failed())
+            co_return;  // fuse injected error, exit gracefully
+        // ... continue with success path
+
+    WRONG pattern - asserting success unconditionally:
+
+        auto [ec, n] = co_await rs.read_some(buf);
+        BOOST_TEST(! ec.failed());  // FAILS when fuse injects error!
+
+    The fuse mechanism tests error handling by failing at each point
+    in sequence. Tests must handle injected errors by returning early,
+    not by asserting that operations always succeed.
+*/
+
 namespace boost {
 namespace capy {
 namespace test {

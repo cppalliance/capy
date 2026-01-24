@@ -17,7 +17,7 @@
 #include <boost/capy/test/read_stream.hpp>
 #include <boost/capy/test/write_stream.hpp>
 
-#include "../test_helpers.hpp"
+#include "test/unit/test_helpers.hpp"
 
 #include <array>
 #include <string>

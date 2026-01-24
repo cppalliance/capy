@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_BUFFERS_STRING_BUFFER_HPP
-#define BOOST_CAPY_BUFFERS_STRING_BUFFER_HPP
+#ifndef BOOST_CAPY_BUFFERS_STRING_DYNAMIC_BUFFER_HPP
+#define BOOST_CAPY_BUFFERS_STRING_DYNAMIC_BUFFER_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
@@ -25,7 +25,7 @@ template<
     class CharT,
     class Traits = std::char_traits<CharT>,
     class Allocator = std::allocator<CharT>>
-class basic_string_buffer
+class basic_string_dynamic_buffer
 {
     std::basic_string<
         CharT, Traits, Allocator>* s_;
@@ -35,17 +35,18 @@ class basic_string_buffer
     std::size_t out_size_ = 0;
 
 public:
+    using is_dynamic_buffer_adapter = void;
     using string_type = std::basic_string<
         CharT, Traits, Allocator>;
     using const_buffers_type = const_buffer;
     using mutable_buffers_type = mutable_buffer;
 
-    ~basic_string_buffer() = default;
+    ~basic_string_dynamic_buffer() = default;
 
     /** Constructor.
     */
-    basic_string_buffer(
-        basic_string_buffer&& other) noexcept
+    basic_string_dynamic_buffer(
+        basic_string_dynamic_buffer&& other) noexcept
         : s_(other.s_)
         , max_size_(other.max_size_)
         , in_size_(other.in_size_)
@@ -57,7 +58,7 @@ public:
     /** Constructor.
     */
     explicit
-    basic_string_buffer(
+    basic_string_dynamic_buffer(
         string_type* s,
         std::size_t max_size =
             std::size_t(-1)) noexcept
@@ -74,8 +75,8 @@ public:
 
     /** Assignment.
     */
-    basic_string_buffer& operator=(
-        basic_string_buffer const&) = delete;
+    basic_string_dynamic_buffer& operator=(
+        basic_string_dynamic_buffer const&) = delete;
 
     std::size_t
     size() const noexcept
@@ -144,7 +145,7 @@ public:
     }
 };
 
-using string_buffer = basic_string_buffer<char>;
+using string_dynamic_buffer = basic_string_dynamic_buffer<char>;
 
 } // capy
 } // boost

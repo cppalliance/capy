@@ -153,7 +153,7 @@ struct test_exception : std::runtime_error
 } // namespace capy
 } // namespace boost
 
-#include "../custom_task.hpp"
+#include "test/unit/custom_task.hpp"
 
 namespace boost {
 namespace capy {

@@ -143,14 +143,14 @@ const_buffer_pair readable = buf.data();
 std::size_t total = buffer_size(readable);
 ----
 
-== string_buffer
+== string_dynamic_buffer
 
-A `string_buffer` adapts a `std::string` as a dynamic buffer:
+A `string_dynamic_buffer` adapts a `std::string` as a dynamic buffer:
 
 [source,cpp]
 ----
 std::string str;
-string_buffer buf(&str);
+string_dynamic_buffer buf(&str);
 
 // Write data
 auto out = buf.prepare(100);
@@ -174,21 +174,21 @@ buf.commit(5);
 std::string str;
 
 // Basic usage
-string_buffer buf1(&str);
+string_dynamic_buffer buf1(&str);
 
 // With maximum size limit
-string_buffer buf2(&str, 1024);  // Will not grow past 1024 bytes
+string_dynamic_buffer buf2(&str, 1024);  // Will not grow past 1024 bytes
 ----
 
 === Lifetime
 
-The `string_buffer` must not outlive the string it wraps:
+The `string_dynamic_buffer` must not outlive the string it wraps:
 
 [source,cpp]
 ----
 std::string str;
 {
-    string_buffer buf(&str);
+    string_dynamic_buffer buf(&str);
     // Use buffer...
     buf.prepare(100);
     buf.commit(50);
@@ -211,7 +211,7 @@ std::string str;
 | Continuous streaming
 | Two-element sequences add complexity
 
-| `string_buffer`
+| `string_dynamic_buffer`
 | Building strings incrementally
 | Requires external string ownership
 |===
@@ -251,7 +251,7 @@ while (!done)
 | `circular_buffer`
 | Ring buffer, two-element sequences, no fragmentation
 
-| `string_buffer`
+| `string_dynamic_buffer`
 | Adapts `std::string`, growable, move-only
 |===
 

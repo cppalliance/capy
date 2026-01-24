@@ -10,7 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/detail/file_stdio.hpp>
 
-#include "../file_test.hpp"
+#include "test/unit/file_test.hpp"
 
 namespace boost {
 namespace capy {

@@ -14,7 +14,7 @@
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/task.hpp>
 
-#include "../test_helpers.hpp"
+#include "test/unit/test_helpers.hpp"
 
 #include <queue>
 #include <vector>

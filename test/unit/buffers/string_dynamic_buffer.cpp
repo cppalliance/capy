@@ -8,38 +8,38 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/buffers/string_buffer.hpp>
+#include <boost/capy/buffers/string_dynamic_buffer.hpp>
 
 #include <boost/capy/buffers/dynamic_buffer.hpp>
-#include <boost/static_assert.hpp>
 
+#include "test/unit/test_dynamic_buffer.hpp"
 #include "test_buffers.hpp"
 
 namespace boost {
 namespace capy {
 
-BOOST_STATIC_ASSERT(is_DynamicBuffer<string_buffer>::value);
+static_assert(is_DynamicBuffer<string_dynamic_buffer>::value);
 
-struct string_buffer_test
+struct string_dynamic_buffer_test
 {
     void
     testMembers()
     {
         std::string s;
 
-        // ~string_buffer
+        // ~string_dynamic_buffer
         {
             s = "";
-            string_buffer b(&s);
+            string_dynamic_buffer b(&s);
             BOOST_TEST(s.empty());
         }
 
-        // string_buffer (move constructor)
+        // string_dynamic_buffer (move constructor)
         {
             std::string s0;
             {
-                string_buffer b0(&s0);
-                string_buffer b1(std::move(b0));
+                string_dynamic_buffer b0(&s0);
+                string_dynamic_buffer b1(std::move(b0));
                 auto n = copy(
                     b1.prepare(5),
                     make_buffer("12345", 5));
@@ -52,11 +52,11 @@ struct string_buffer_test
             // move transfers in_size_
             std::string s0;
             {
-                string_buffer b0(&s0);
+                string_dynamic_buffer b0(&s0);
                 copy(b0.prepare(5), make_buffer("12345", 5));
                 b0.commit(5);
                 BOOST_TEST_EQ(b0.size(), 5);
-                string_buffer b1(std::move(b0));
+                string_dynamic_buffer b1(std::move(b0));
                 BOOST_TEST_EQ(b1.size(), 5);
                 BOOST_TEST_EQ(
                     test::make_string(b1.data()), "12345");
@@ -64,26 +64,26 @@ struct string_buffer_test
             BOOST_TEST_EQ(s0, "12345");
         }
 
-        // string_buffer(std::string)
+        // string_dynamic_buffer(std::string)
         {
             s = "";
-            string_buffer b(&s);
+            string_dynamic_buffer b(&s);
             BOOST_TEST_EQ(
                 b.max_size(), s.max_size());
         }
 
-        // string_buffer(std::string, std::size_t)
+        // string_dynamic_buffer(std::string, std::size_t)
         // max_size()
         {
             s = "";
-            string_buffer b(&s, 20);
+            string_dynamic_buffer b(&s, 20);
             BOOST_TEST_EQ(b.max_size(), 20);
         }
 
         // size()
         {
             s = "1234";
-            string_buffer b(&s);
+            string_dynamic_buffer b(&s);
             BOOST_TEST_EQ(b.size(), 4);
         }
 
@@ -92,13 +92,13 @@ struct string_buffer_test
             {
                 s = "";
                 s.reserve(30);
-                string_buffer b(&s);
+                string_dynamic_buffer b(&s);
                 BOOST_TEST_GE(b.capacity(), 30);
             }
             {
                 s = "";
                 s.reserve(30);
-                string_buffer b(&s, 10);
+                string_dynamic_buffer b(&s, 10);
                 BOOST_TEST_GE(b.capacity(), 10);
             }
         }
@@ -106,7 +106,7 @@ struct string_buffer_test
         // data()
         {
             s = "1234";
-            string_buffer b(&s);
+            string_dynamic_buffer b(&s);
             BOOST_TEST_EQ(
                 test::make_string(b.data()),
                 "1234");
@@ -115,21 +115,21 @@ struct string_buffer_test
         // prepare()
         {
             {
-                string_buffer b(&s, 3);
+                string_dynamic_buffer b(&s, 3);
                 BOOST_TEST_THROWS(
                     b.prepare(5),
                     std::invalid_argument);
             }
             {
                 s = std::string();
-                string_buffer b(&s);
+                string_dynamic_buffer b(&s);
                 auto dest = b.prepare(10);
                 BOOST_TEST_GE(s.capacity(),
                     buffer_size(dest));
             }
             {
                 s = std::string();
-                string_buffer b(&s);
+                string_dynamic_buffer b(&s);
                 b.prepare(10);
                 auto dest = b.prepare(10);
                 BOOST_TEST_EQ(
@@ -142,7 +142,7 @@ struct string_buffer_test
         {
             s = "";
             {
-                string_buffer b(&s);
+                string_dynamic_buffer b(&s);
                 auto n = copy(
                     b.prepare(5),
                     make_buffer("12345", 5));
@@ -158,7 +158,7 @@ struct string_buffer_test
             {
                 s = "12345";
                 {
-                    string_buffer b(&s);
+                    string_dynamic_buffer b(&s);
                     b.consume(2);
                 }
                 BOOST_TEST_EQ(s, "345");
@@ -166,7 +166,7 @@ struct string_buffer_test
             {
                 s = "12345";
                 {
-                    string_buffer b(&s);
+                    string_dynamic_buffer b(&s);
                     b.consume(5);
                     BOOST_TEST_EQ(
                         buffer_size(b.data()), 0);
@@ -177,15 +177,27 @@ struct string_buffer_test
     }
 
     void
+    testGrind()
+    {
+        std::string s;
+        auto r = test::grind_dynamic_buffer([&] {
+            s.clear();
+            return string_dynamic_buffer(&s);
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
     run()
     {
         testMembers();
+        testGrind();
     }
 };
 
 TEST_SUITE(
-    string_buffer_test,
-    "boost.capy.buffers.string_buffer");
+    string_dynamic_buffer_test,
+    "boost.capy.buffers.string_dynamic_buffer");
 
 } // capy
 } // boost

@@ -15,8 +15,8 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
-#include "../custom_task.hpp"
-#include "../test_helpers.hpp"
+#include "test/unit/custom_task.hpp"
+#include "test/unit/test_helpers.hpp"
 
 namespace boost {
 namespace capy {

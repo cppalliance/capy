@@ -25,9 +25,8 @@
 #include <boost/capy/buffers/range.hpp>
 #include <boost/capy/buffers/read_source.hpp>
 #include <boost/capy/buffers/slice.hpp>
-#include <boost/capy/buffers/string_buffer.hpp>
+#include <boost/capy/buffers/string_dynamic_buffer.hpp>
 #include <boost/capy/buffers/to_string.hpp>
-#include <boost/capy/concept/dynamic_buffer.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/frame_allocator.hpp>
 #include <boost/capy/io_awaitable.hpp>

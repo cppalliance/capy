@@ -14,7 +14,6 @@
 #include <boost/capy/buffers/copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/core/detail/string_view.hpp>
-#include <boost/static_assert.hpp>
 
 #include <array>
 #include <vector>
@@ -83,19 +82,19 @@ struct slice_test
     {
         using T = slice_of<const_buffer_pair>;
 
-        BOOST_STATIC_ASSERT(std::is_default_constructible<T>::value);
-        BOOST_STATIC_ASSERT(std::is_copy_constructible<T>::value);
-        BOOST_STATIC_ASSERT(std::is_move_constructible<T>::value);
-        BOOST_STATIC_ASSERT(std::is_copy_assignable<T>::value);
-        BOOST_STATIC_ASSERT(std::is_move_assignable<T>::value);
+        static_assert(std::is_default_constructible<T>::value);
+        static_assert(std::is_copy_constructible<T>::value);
+        static_assert(std::is_move_constructible<T>::value);
+        static_assert(std::is_copy_assignable<T>::value);
+        static_assert(std::is_move_assignable<T>::value);
 
         using U = T::const_iterator;
 
-        BOOST_STATIC_ASSERT(std::is_default_constructible<U>::value);
-        BOOST_STATIC_ASSERT(std::is_copy_constructible<U>::value);
-        BOOST_STATIC_ASSERT(std::is_move_constructible<U>::value);
-        BOOST_STATIC_ASSERT(std::is_copy_assignable<U>::value);
-        BOOST_STATIC_ASSERT(std::is_move_assignable<U>::value);
+        static_assert(std::is_default_constructible<U>::value);
+        static_assert(std::is_copy_constructible<U>::value);
+        static_assert(std::is_move_constructible<U>::value);
+        static_assert(std::is_copy_assignable<U>::value);
+        static_assert(std::is_move_assignable<U>::value);
     }
 
     template<class B>

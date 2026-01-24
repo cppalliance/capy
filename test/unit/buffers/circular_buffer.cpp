@@ -17,7 +17,7 @@
 namespace boost {
 namespace capy {
 
-BOOST_STATIC_ASSERT(is_DynamicBuffer<circular_buffer>::value);
+static_assert(is_DynamicBuffer<circular_buffer>::value);
 
 struct circular_buffer_test
 {

@@ -50,12 +50,12 @@ struct BOOST_SYMBOL_VISIBLE
 /** A type-erased dynamic buffer.
 */
 template<
-    DynamicBuffer DynamicBuffer,
+    DynamicBuffer DB,
     std::size_t N = 8>
 class any_DynamicBuffer_impl
     : public any_DynamicBuffer
 {
-    DynamicBuffer b_;
+    DB b_;
     const_buffer data_[N];
     mutable_buffer out_[N];
     std::size_t data_len_ = 0;
@@ -89,13 +89,13 @@ public:
     {
     }
 
-    DynamicBuffer&
+    DB&
     buffer() noexcept
     {
         return b_;
     }
 
-    DynamicBuffer const&
+    DB const&
     buffer() const noexcept
     {
         return b_;
@@ -156,13 +156,13 @@ public:
     }
 };
 
-template<DynamicBuffer DynamicBuffer>
+template<DynamicBuffer DB>
 auto
-make_any(DynamicBuffer&& b) ->
-    any_DynamicBuffer_impl<std::decay_t<DynamicBuffer>>
+make_any(DB&& b) ->
+    any_DynamicBuffer_impl<std::decay_t<DB>>
 {
-    return any_DynamicBuffer_impl<std::decay_t<DynamicBuffer>>(
-            std::forward<DynamicBuffer>(b));
+    return any_DynamicBuffer_impl<std::decay_t<DB>>(
+            std::forward<DB>(b));
 }
 
 } // capy

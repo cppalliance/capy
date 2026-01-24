@@ -11,7 +11,7 @@
 #include <boost/capy/buffers/flat_buffer.hpp>
 
 #include <boost/capy/buffers/dynamic_buffer.hpp>
-#include <boost/static_assert.hpp>
+
 #include "test_buffers.hpp"
 
 namespace boost {
@@ -19,7 +19,7 @@ namespace capy {
 
 struct flat_buffer_test
 {
-    BOOST_STATIC_ASSERT(
+    static_assert(
         is_DynamicBuffer<
             flat_buffer>::value);
 

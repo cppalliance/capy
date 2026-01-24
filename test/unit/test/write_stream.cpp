@@ -14,7 +14,7 @@
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/task.hpp>
 
-#include "../test_helpers.hpp"
+#include "test/unit/test_helpers.hpp"
 
 #include <array>
 #include <string_view>

@@ -16,7 +16,6 @@
 #include <boost/filesystem/path.hpp>
 #include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/fstream.hpp>
-#include <boost/static_assert.hpp>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
@@ -37,9 +36,9 @@ template<class File, bool append_unicode_suffix = false>
 void
 test_file()
 {
-    BOOST_STATIC_ASSERT(
+    static_assert(
         ! std::is_copy_constructible<File>::value);
-    BOOST_STATIC_ASSERT(
+    static_assert(
         ! std::is_copy_assignable<File>::value);
 
     namespace fs = boost::filesystem;
