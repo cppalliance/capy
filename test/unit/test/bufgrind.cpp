@@ -10,10 +10,9 @@
 // Test that header file is self-contained.
 #include <boost/capy/test/bufgrind.hpp>
 
-#include <boost/capy/buffers/copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/buffers/to_string.hpp>
 #include <boost/capy/task.hpp>
+#include <boost/capy/test/buffer_to_string.hpp>
 #include <boost/capy/test/fuse.hpp>
 #include <boost/capy/test/read_stream.hpp>
 #include <boost/capy/test/write_stream.hpp>
@@ -108,17 +107,9 @@ public:
             while(bg) {
                 auto [b1, b2] = co_await bg.next();
 
-                // Concatenate b1 + b2
-                std::string result;
-                result.resize(buffer_size(b1) + buffer_size(b2));
-                auto dest = make_buffer(result);
-                auto n1 = copy(dest, b1);
-                dest += n1;
-                copy(dest, b2);
-
-                BOOST_TEST_EQ(result, data);
-                BOOST_TEST_EQ(buffer_size(b1), static_cast<std::size_t>(count));
-                BOOST_TEST_EQ(buffer_size(b2), data.size() - count);
+                BOOST_TEST_EQ(buffer_to_string(b1, b2), data);
+                BOOST_TEST_EQ(b1.size(), static_cast<std::size_t>(count));
+                BOOST_TEST_EQ(b2.size(), data.size() - count);
                 ++count;
             }
             BOOST_TEST_EQ(count, 6);
@@ -284,8 +275,8 @@ public:
             while(bg) {
                 auto [b1, b2] = co_await bg.next();
 
-                // Verify total size is preserved
-                BOOST_TEST_EQ(buffer_size(b1) + buffer_size(b2), 6u);
+                // Verify concatenation reconstructs original
+                BOOST_TEST_EQ(buffer_to_string(b1, b2), "abcdef");
                 ++count;
             }
             BOOST_TEST_EQ(count, 7);
@@ -338,24 +329,23 @@ public:
             while(bg) {
                 auto [b1, b2] = co_await bg.next();
 
-                // Write b1 to stream, expect b2 content after
+                // Write b1 then b2 to stream
                 write_stream ws(f);
 
-                if(buffer_size(b1) > 0) {
+                if(b1.size() > 0) {
                     auto [ec1, n1] = co_await ws.write_some(b1);
                     BOOST_TEST(! ec1.failed());
-                    BOOST_TEST_EQ(n1, buffer_size(b1));
+                    BOOST_TEST_EQ(n1, b1.size());
                 }
 
-                if(buffer_size(b2) > 0) {
+                if(b2.size() > 0) {
                     auto [ec2, n2] = co_await ws.write_some(b2);
                     BOOST_TEST(! ec2.failed());
-                    BOOST_TEST_EQ(n2, buffer_size(b2));
+                    BOOST_TEST_EQ(n2, b2.size());
                 }
 
                 // Verify total written equals original
-                BOOST_TEST_EQ(ws.size(), data.size());
-                BOOST_TEST_EQ(ws.data(), data);
+                BOOST_TEST_EQ(ws.data(), buffer_to_string(b1, b2));
             }
         });
         BOOST_TEST(r.success);
@@ -365,6 +355,7 @@ public:
     testSplitIntegrity()
     {
         // Comprehensive test that b1 + b2 always reconstructs original
+        // via write_stream to exercise the stream for each split
         fuse f;
         auto r = f.inert([&](fuse&) -> task<> {
             std::string original = "The quick brown fox";
@@ -376,16 +367,18 @@ public:
                 while(bg) {
                     auto [b1, b2] = co_await bg.next();
 
+                    // Write both parts through stream
                     write_stream ws(f);
-                    if(buffer_size(b1) > 0) {
+                    if(b1.size() > 0) {
                         auto [ec, n] = co_await ws.write_some(b1);
                         BOOST_TEST(! ec.failed());
                     }
-                    if(buffer_size(b2) > 0) {
+                    if(b2.size() > 0) {
                         auto [ec, n] = co_await ws.write_some(b2);
                         BOOST_TEST(! ec.failed());
                     }
 
+                    BOOST_TEST_EQ(ws.data(), buffer_to_string(b1, b2));
                     BOOST_TEST_EQ(ws.data(), original);
                 }
             }
