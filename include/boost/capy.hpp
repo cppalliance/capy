@@ -48,6 +48,7 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/run_on.hpp>
 #include <boost/capy/ex/strand.hpp>
+#include <boost/capy/ex/system_context.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 #include <boost/capy/io_result.hpp>
