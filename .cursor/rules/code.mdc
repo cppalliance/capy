@@ -5,3 +5,4 @@ alwaysApply: true
 ---
 
 - test objects usually construct in fuse lambda
+- `task<>` for `task<void>`

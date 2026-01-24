@@ -11,13 +11,16 @@
 #define BOOST_CAPY_TEST_FUSE_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/concept/io_launchable_task.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/capy/test/run_blocking.hpp>
 #include <boost/system/system_error.hpp>
 #include <cstddef>
 #include <exception>
 #include <limits>
 #include <memory>
 #include <source_location>
+#include <type_traits>
 
 namespace boost {
 namespace capy {
@@ -584,6 +587,125 @@ public:
         return r;
     }
 
+    /** Run a coroutine test function with systematic failure injection.
+
+        Repeatedly invokes the provided coroutine function, failing at
+        successive points until the function completes without
+        encountering a failure. First runs the complete loop
+        using error codes, then runs using exceptions.
+
+        This overload handles lambdas that return an @ref IoLaunchableTask
+        (such as `task<void>`), executing them synchronously via
+        @ref run_blocking.
+
+        @par Example
+
+        @code
+        fuse f;
+        auto r = f.armed([&](fuse&) -> task<void> {
+            auto ec = f.maybe_fail();
+            if(ec.failed())
+                co_return;
+
+            ec = f.maybe_fail();
+            if(ec.failed())
+                co_return;
+        });
+
+        if(!r)
+        {
+            std::cerr << "Failure at "
+                << r.loc.file_name() << ":"
+                << r.loc.line() << "\n";
+        }
+        @endcode
+
+        @param fn The coroutine test function to invoke. It receives
+        a reference to the fuse and should call @ref maybe_fail
+        at each potential failure point.
+
+        @return A @ref result indicating success or failure.
+        On failure, `result::loc` contains the source location
+        of the last @ref maybe_fail or @ref fail call.
+    */
+    template<class F>
+        requires IoLaunchableTask<std::invoke_result_t<F, fuse&>>
+    result
+    armed(F&& fn)
+    {
+        result r;
+
+        // Phase 1: error code mode
+        p_->throws = false;
+        p_->inert = false;
+        p_->n = (std::numeric_limits<std::size_t>::max)();
+        while(*this)
+        {
+            try
+            {
+                run_blocking()(fn(*this));
+            }
+            catch(...)
+            {
+                r.success = false;
+                r.loc = p_->loc;
+                r.ep = p_->ep;
+                p_->inert = true;
+                return r;
+            }
+            if(p_->stopped)
+            {
+                r.success = false;
+                r.loc = p_->loc;
+                r.ep = p_->ep;
+                p_->inert = true;
+                return r;
+            }
+        }
+
+        // Phase 2: exception mode
+        p_->throws = true;
+        p_->n = (std::numeric_limits<std::size_t>::max)();
+        p_->i = 0;
+        p_->triggered = false;
+        while(*this)
+        {
+            try
+            {
+                run_blocking()(fn(*this));
+            }
+            catch(system::system_error const& ex)
+            {
+                if(ex.code() != p_->ec)
+                {
+                    r.success = false;
+                    r.loc = p_->loc;
+                    r.ep = p_->ep;
+                    p_->inert = true;
+                    return r;
+                }
+            }
+            catch(...)
+            {
+                r.success = false;
+                r.loc = p_->loc;
+                r.ep = p_->ep;
+                p_->inert = true;
+                return r;
+            }
+            if(p_->stopped)
+            {
+                r.success = false;
+                r.loc = p_->loc;
+                r.ep = p_->ep;
+                p_->inert = true;
+                return r;
+            }
+        }
+        p_->inert = true;
+        return r;
+    }
+
     /** Alias for @ref armed.
 
         Allows the fuse to be invoked directly as a function
@@ -608,6 +730,18 @@ public:
         @see armed
     */
     template<class F>
+    result
+    operator()(F&& fn)
+    {
+        return armed(std::forward<F>(fn));
+    }
+
+    /** Alias for @ref armed (coroutine overload).
+
+        @see armed
+    */
+    template<class F>
+        requires IoLaunchableTask<std::invoke_result_t<F, fuse&>>
     result
     operator()(F&& fn)
     {
@@ -666,6 +800,72 @@ public:
         try
         {
             fn(*this);
+        }
+        catch(...)
+        {
+            r.success = false;
+            r.loc = p_->loc;
+            r.ep = std::current_exception();
+            return r;
+        }
+        if(p_->stopped)
+        {
+            r.success = false;
+            r.loc = p_->loc;
+            r.ep = p_->ep;
+        }
+        return r;
+    }
+
+    /** Run a coroutine test function once without failure injection.
+
+        Invokes the provided coroutine function exactly once using
+        @ref run_blocking. Calls to @ref maybe_fail always return
+        an empty error code and never throw. Only explicit calls
+        to @ref fail can signal a test failure.
+
+        @par Example
+
+        @code
+        fuse f;
+        auto r = f.inert([](fuse& f) -> task<void> {
+            auto ec = f.maybe_fail();  // Always succeeds
+            assert(!ec.failed());
+
+            // Only way to signal failure:
+            if(some_condition)
+            {
+                f.fail();
+                co_return;
+            }
+        });
+
+        if(!r)
+        {
+            std::cerr << "Test failed at "
+                << r.loc.file_name() << ":"
+                << r.loc.line() << "\n";
+        }
+        @endcode
+
+        @param fn The coroutine test function to invoke. It receives
+        a reference to the fuse. Calls to @ref maybe_fail
+        will always succeed.
+
+        @return A @ref result indicating success or failure.
+        On failure, `result::loc` contains the source location
+        of the @ref fail call.
+    */
+    template<class F>
+        requires IoLaunchableTask<std::invoke_result_t<F, fuse&>>
+    result
+    inert(F&& fn)
+    {
+        result r;
+        p_->inert = true;
+        try
+        {
+            run_blocking()(fn(*this));
         }
         catch(...)
         {

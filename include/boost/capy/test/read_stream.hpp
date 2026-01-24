@@ -85,8 +85,7 @@ public:
         data_.append(sv);
     }
 
-    /** Clear all data and reset the read position.
-    */
+    /// Clear all data and reset the read position.
     void
     clear() noexcept
     {
