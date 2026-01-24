@@ -11,7 +11,7 @@
 #define BOOST_CAPY_SYSTEM_CONTEXT_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/ex/thread_pool.hpp>
 
 namespace boost {
 namespace capy {
@@ -27,7 +27,7 @@ namespace capy {
     @return Reference to the system execution context singleton.
 */
 BOOST_CAPY_DECL auto
-get_system_context() -> execution_context&;
+get_system_context() -> thread_pool&;
 
 } // capy
 } // boost

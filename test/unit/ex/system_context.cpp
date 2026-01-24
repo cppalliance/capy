@@ -61,9 +61,9 @@ struct system_context_test
     {
         auto& ctx = get_system_context();
 
-        // Frame allocator is null_memory_resource (no-op)
+        // Frame allocator uses a standard allocator wrapper
         auto* mr = ctx.get_frame_allocator();
-        BOOST_TEST_EQ(mr, std::pmr::null_memory_resource());
+        BOOST_TEST_NE(mr, nullptr);
     }
 
     void

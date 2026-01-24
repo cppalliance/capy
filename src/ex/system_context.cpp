@@ -12,30 +12,13 @@
 namespace boost {
 namespace capy {
 
-namespace {
-
-// Singleton context with no-op frame allocator
-class system_context_impl : public execution_context
-{
-public:
-    system_context_impl()
-    {
-        set_frame_allocator(std::pmr::null_memory_resource());
-    }
-
-    ~system_context_impl()
-    {
-        shutdown();
-        destroy();
-    }
-};
-
-} // namespace
-
 auto
-get_system_context() -> execution_context&
+get_system_context() -> thread_pool&
 {
-    static system_context_impl ctx;
+    static thread_pool ctx;
+    // We use a plain allocator here since we do
+    // not expect high throughput work submitted.
+    ctx.set_frame_allocator(std::allocator<char>{});
     return ctx;
 }
 
