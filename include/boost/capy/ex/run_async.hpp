@@ -19,6 +19,7 @@
 
 #include <coroutine>
 #include <memory_resource>
+#include <new>
 #include <stop_token>
 #include <type_traits>
 
@@ -43,8 +44,8 @@ void dealloc_impl(void* raw, std::size_t total)
     using byte_alloc = typename std::allocator_traits<Alloc>
         ::template rebind_alloc<std::byte>;
 
-    auto* a = reinterpret_cast<Alloc*>(
-        static_cast<char*>(raw) + total - sizeof(Alloc));
+    auto* a = std::launder(reinterpret_cast<Alloc*>(
+        static_cast<char*>(raw) + total - sizeof(Alloc)));
 
     byte_alloc ba(*a);
     a->~Alloc();
@@ -208,6 +209,22 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
             , handlers_(std::move(h))
             , mr_(mr)
         {
+        }
+
+        static void* operator new(std::size_t size, Ex, Handlers, std::pmr::memory_resource* mr)
+        {
+            auto total = size + sizeof(mr);
+            void* raw = mr->allocate(total, alignof(std::max_align_t));
+            *reinterpret_cast<std::pmr::memory_resource**>(
+                static_cast<char*>(raw) + size) = mr;
+            return raw;
+        }
+
+        static void operator delete(void* ptr, std::size_t size)
+        {
+            auto* mr = *reinterpret_cast<std::pmr::memory_resource**>(
+                static_cast<char*>(ptr) + size);
+            mr->deallocate(ptr, size + sizeof(mr), alignof(std::max_align_t));
         }
 
         std::pmr::memory_resource* get_resource() noexcept
