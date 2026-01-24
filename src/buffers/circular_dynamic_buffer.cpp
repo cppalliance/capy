@@ -7,7 +7,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#include <boost/capy/buffers/circular_buffer.hpp>
+#include <boost/capy/buffers/circular_dynamic_buffer.hpp>
 #include <boost/capy/detail/except.hpp>
 #include <boost/assert.hpp>
 
@@ -15,7 +15,7 @@ namespace boost {
 namespace capy {
 
 auto
-circular_buffer::
+circular_dynamic_buffer::
 data() const noexcept ->
     const_buffers_type
 {
@@ -29,7 +29,7 @@ data() const noexcept ->
 }
 
 auto
-circular_buffer::
+circular_dynamic_buffer::
 prepare(std::size_t n) ->
     mutable_buffers_type
 {
@@ -50,7 +50,7 @@ prepare(std::size_t n) ->
 }
 
 void
-circular_buffer::
+circular_dynamic_buffer::
 commit(
     std::size_t n) noexcept
 {
@@ -62,7 +62,7 @@ commit(
 }
 
 void
-circular_buffer::
+circular_dynamic_buffer::
 consume(
     std::size_t n) noexcept
 {

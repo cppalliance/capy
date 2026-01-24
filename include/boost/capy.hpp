@@ -15,7 +15,7 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_pair.hpp>
-#include <boost/capy/buffers/circular_buffer.hpp>
+#include <boost/capy/buffers/circular_dynamic_buffer.hpp>
 #include <boost/capy/buffers/copy.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/buffers/flat_buffer.hpp>

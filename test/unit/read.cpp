@@ -11,7 +11,7 @@
 #include <boost/capy/read.hpp>
 
 #include <boost/capy/buffers/buffer_pair.hpp>
-#include <boost/capy/buffers/circular_buffer.hpp>
+#include <boost/capy/buffers/circular_dynamic_buffer.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/buffers/string_dynamic_buffer.hpp>
 #include <boost/capy/cond.hpp>
@@ -149,20 +149,20 @@ struct string_dynbuf_factory
     }
 };
 
-struct circular_buffer_factory
+struct circular_dynamic_buffer_factory
 {
     char storage[4096];
-    circular_buffer cb;
+    circular_dynamic_buffer cb;
 
-    circular_buffer_factory()
+    circular_dynamic_buffer_factory()
         : cb(storage, sizeof(storage))
     {
     }
 
-    circular_buffer&
+    circular_dynamic_buffer&
     buffer()
     {
-        cb = circular_buffer(storage, sizeof(storage));
+        cb = circular_dynamic_buffer(storage, sizeof(storage));
         return cb;
     }
 
@@ -410,7 +410,7 @@ struct read_test
             test::read_source rs(f);
             rs.provide("hello world");
 
-            circular_buffer_factory df;
+            circular_dynamic_buffer_factory df;
             auto& db = df.buffer();
             auto [ec, n] = co_await read(rs, db);
             if(ec.failed())
@@ -427,7 +427,7 @@ struct read_test
             std::string data(1000, 'y');
             rs.provide(data);
 
-            circular_buffer_factory df;
+            circular_dynamic_buffer_factory df;
             auto& db = df.buffer();
             auto [ec, n] = co_await read(rs, db);
             if(ec.failed())
@@ -443,7 +443,7 @@ struct read_test
         {
             test::read_source rs(f);
 
-            circular_buffer_factory df;
+            circular_dynamic_buffer_factory df;
             auto& db = df.buffer();
             auto [ec, n] = co_await read(rs, db);
             if(ec.failed())
@@ -459,7 +459,7 @@ struct read_test
             test::read_source rs(f);
             rs.provide("tiny");
 
-            circular_buffer_factory df;
+            circular_dynamic_buffer_factory df;
             auto& db = df.buffer();
             auto [ec, n] = co_await read(rs, db, 128);
             if(ec.failed())

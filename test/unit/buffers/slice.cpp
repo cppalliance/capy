@@ -46,7 +46,7 @@ set(
     Args const&... args)
 {
     core::string_view sv(p);
-    v[I] = const_buffer(sv.data(), sv.size());
+    v[I] = make_buffer(sv);
     s.append(sv.data(), sv.size());
     set<I+1>(s, v, args...);
 }

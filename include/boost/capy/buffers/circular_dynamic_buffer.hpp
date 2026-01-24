@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_BUFFERS_CIRCULAR_BUFFER_HPP
-#define BOOST_CAPY_BUFFERS_CIRCULAR_BUFFER_HPP
+#ifndef BOOST_CAPY_BUFFERS_CIRCULAR_DYNAMIC_BUFFER_HPP
+#define BOOST_CAPY_BUFFERS_CIRCULAR_DYNAMIC_BUFFER_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers/buffer_pair.hpp>
@@ -30,7 +30,7 @@ namespace capy {
     @par Example
     @code
     char storage[1024];
-    circular_buffer cb( storage, sizeof( storage ) );
+    circular_dynamic_buffer cb( storage, sizeof( storage ) );
 
     // Write data
     auto mb = cb.prepare( 100 );
@@ -49,7 +49,7 @@ namespace capy {
 
     @see flat_buffer, string_dynamic_buffer
 */
-class circular_buffer
+class circular_dynamic_buffer
 {
     unsigned char* base_ = nullptr;
     std::size_t cap_ = 0;
@@ -68,18 +68,18 @@ public:
     using mutable_buffers_type = mutable_buffer_pair;
 
     /// Construct an empty circular buffer with zero capacity.
-    circular_buffer() = default;
+    circular_dynamic_buffer() = default;
 
     /// Copy constructor.
-    circular_buffer(
-        circular_buffer const&) = default;
+    circular_dynamic_buffer(
+        circular_dynamic_buffer const&) = default;
 
     /** Construct a circular buffer over existing storage.
 
         @param base Pointer to the storage.
         @param capacity Size of the storage in bytes.
     */
-    circular_buffer(
+    circular_dynamic_buffer(
         void* base,
         std::size_t capacity) noexcept
         : base_(static_cast<
@@ -97,7 +97,7 @@ public:
 
         @throws std::invalid_argument if initial_size > capacity.
     */
-    circular_buffer(
+    circular_dynamic_buffer(
         void* base,
         std::size_t capacity,
         std::size_t initial_size)
@@ -111,8 +111,8 @@ public:
     }
 
     /// Copy assignment.
-    circular_buffer& operator=(
-        circular_buffer const&) = default;
+    circular_dynamic_buffer& operator=(
+        circular_dynamic_buffer const&) = default;
 
     /// Return the number of readable bytes.
     std::size_t

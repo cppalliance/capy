@@ -9,7 +9,7 @@
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_pair.hpp>
-#include <boost/capy/buffers/circular_buffer.hpp>
+#include <boost/capy/buffers/circular_dynamic_buffer.hpp>
 #include <boost/capy/buffers/copy.hpp>
 #include <boost/capy/buffers/flat_buffer.hpp>
 #include <boost/core/span.hpp>
@@ -65,19 +65,19 @@ static_assert(  MutableBufferSequence<span<mutable_buffer const>>);
 // satisfy asio metafunctions
 BOOST_CORE_STATIC_ASSERT(  asio::is_const_buffer_sequence<   const_buffer>::value);
 BOOST_CORE_STATIC_ASSERT(  asio::is_const_buffer_sequence<   const_buffer_pair>::value);
-BOOST_CORE_STATIC_ASSERT(  asio::is_const_buffer_sequence<   circular_buffer::const_buffers_type>::value);
+BOOST_CORE_STATIC_ASSERT(  asio::is_const_buffer_sequence<   circular_dynamic_buffer::const_buffers_type>::value);
 BOOST_CORE_STATIC_ASSERT(  asio::is_const_buffer_sequence<   flat_buffer::const_buffers_type>::value);
 BOOST_CORE_STATIC_ASSERT(  asio::is_const_buffer_sequence<   mutable_buffer>::value);
 BOOST_CORE_STATIC_ASSERT(  asio::is_const_buffer_sequence<   mutable_buffer_pair>::value);
-BOOST_CORE_STATIC_ASSERT(  asio::is_const_buffer_sequence<   circular_buffer::mutable_buffers_type>::value);
+BOOST_CORE_STATIC_ASSERT(  asio::is_const_buffer_sequence<   circular_dynamic_buffer::mutable_buffers_type>::value);
 BOOST_CORE_STATIC_ASSERT(  asio::is_const_buffer_sequence<   flat_buffer::mutable_buffers_type>::value);
 BOOST_CORE_STATIC_ASSERT(! asio::is_mutable_buffer_sequence< const_buffer>::value);
 BOOST_CORE_STATIC_ASSERT(! asio::is_mutable_buffer_sequence< const_buffer_pair>::value);
-BOOST_CORE_STATIC_ASSERT(! asio::is_mutable_buffer_sequence< circular_buffer::const_buffers_type>::value);
+BOOST_CORE_STATIC_ASSERT(! asio::is_mutable_buffer_sequence< circular_dynamic_buffer::const_buffers_type>::value);
 BOOST_CORE_STATIC_ASSERT(! asio::is_mutable_buffer_sequence< flat_buffer::const_buffers_type>::value);
 BOOST_CORE_STATIC_ASSERT(  asio::is_mutable_buffer_sequence< mutable_buffer>::value);
 BOOST_CORE_STATIC_ASSERT(  asio::is_mutable_buffer_sequence< mutable_buffer_pair>::value);
-BOOST_CORE_STATIC_ASSERT(  asio::is_mutable_buffer_sequence< circular_buffer::mutable_buffers_type>::value);
+BOOST_CORE_STATIC_ASSERT(  asio::is_mutable_buffer_sequence< circular_dynamic_buffer::mutable_buffers_type>::value);
 BOOST_CORE_STATIC_ASSERT(  asio::is_mutable_buffer_sequence< flat_buffer::mutable_buffers_type>::value);
 
 struct asio_test

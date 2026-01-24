@@ -54,7 +54,7 @@ namespace capy {
     @tparam T The element type. Must be fundamental with sizeof 1.
     @tparam Allocator The allocator type for the vector.
 
-    @see flat_buffer, circular_buffer, string_dynamic_buffer
+    @see flat_buffer, circular_dynamic_buffer, string_dynamic_buffer
 */
 template<
     class T,

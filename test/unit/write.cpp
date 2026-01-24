@@ -43,7 +43,7 @@ struct single_buffer_factory
     const_buffer
     buffer() const
     {
-        return const_buffer(data.data(), data.size());
+        return make_buffer(data);
     }
 
     std::size_t

@@ -105,14 +105,14 @@ flat_buffer buf2(storage, capacity);
 flat_buffer buf3(storage, capacity, initial_size);
 ----
 
-== circular_buffer
+== circular_dynamic_buffer
 
-A `circular_buffer` uses a ring buffer that wraps around:
+A `circular_dynamic_buffer` uses a ring buffer that wraps around:
 
 [source,cpp]
 ----
 char storage[1024];
-circular_buffer buf(storage, sizeof(storage));
+circular_dynamic_buffer buf(storage, sizeof(storage));
 
 // Same interface as flat_buffer
 auto out = buf.prepare(100);  // May return two-element sequence
@@ -207,7 +207,7 @@ std::string str;
 | Simple linear data flow
 | May waste space after consume
 
-| `circular_buffer`
+| `circular_dynamic_buffer`
 | Continuous streaming
 | Two-element sequences add complexity
 
@@ -221,7 +221,7 @@ std::string str;
 [source,cpp]
 ----
 char storage[4096];
-circular_buffer buf(storage, sizeof(storage));
+circular_dynamic_buffer buf(storage, sizeof(storage));
 
 while (!done)
 {
@@ -248,7 +248,7 @@ while (!done)
 | `flat_buffer`
 | Single contiguous region, simple sequences
 
-| `circular_buffer`
+| `circular_dynamic_buffer`
 | Ring buffer, two-element sequences, no fragmentation
 
 | `string_dynamic_buffer`
