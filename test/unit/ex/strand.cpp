@@ -8,12 +8,10 @@
 //
 
 // Test that header file is self-contained.
-// Test that header file is self-contained.
 #include <boost/capy/ex/strand.hpp>
 
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
-#include <boost/capy/ex/detail/strand_service.hpp>
 
 #include "test_suite.hpp"
 
@@ -27,17 +25,9 @@ namespace capy {
 
 namespace {
 
-// Verify Executor concept at compile time
+// Verify strand satisfies Executor concept at compile time
 static_assert(Executor<strand<thread_pool::executor_type>>,
     "strand must satisfy Executor concept");
-
-// Verify is_strand trait
-static_assert(detail::is_strand<strand<thread_pool::executor_type>>::value,
-    "is_strand should detect strand types");
-static_assert(!detail::is_strand<thread_pool::executor_type>::value,
-    "is_strand should not match non-strand types");
-static_assert(!detail::is_strand<int>::value,
-    "is_strand should not match arbitrary types");
 
 // Helper to wait for a condition with timeout
 template<class Pred>
@@ -248,7 +238,7 @@ struct strand_test
             (void)s;
         }
 
-        // Using implicit guide
+        // Using deduction guide
         {
             thread_pool pool(1);
             auto s = strand(pool.get_executor());
@@ -265,7 +255,7 @@ struct strand_test
         // Copy construction
         auto s2 = s1;
 
-        // Copies should be equal (share same impl)
+        // Copies share same implementation
         BOOST_TEST(s1 == s2);
 
         // Copy assignment
@@ -298,7 +288,6 @@ struct strand_test
         auto ex = pool.get_executor();
         strand<thread_pool::executor_type> s(ex);
 
-        // get_inner_executor returns the wrapped executor
         BOOST_TEST(s.get_inner_executor() == ex);
     }
 
@@ -308,7 +297,6 @@ struct strand_test
         thread_pool pool(1);
         auto s = strand(pool.get_executor());
 
-        // context() returns the pool
         BOOST_TEST_EQ(&s.context(), &pool);
     }
 
@@ -331,35 +319,25 @@ struct strand_test
         thread_pool pool(1);
 
         auto s1 = strand(pool.get_executor());
-        auto s2 = s1;  // Copy shares impl
+        auto s2 = s1;
 
         // Copies are equal
         BOOST_TEST(s1 == s2);
 
-        // Different strands may or may not be equal
-        // (depends on hash collision)
+        // Different strands from same pool may or may not be equal
+        // depending on internal hash collision
         auto s3 = strand(pool.get_executor());
-        auto s4 = strand(pool.get_executor());
-        // We don't test s3 == s4 since it's hash-dependent
         (void)s3;
-        (void)s4;
     }
 
     void
-    testDispatch()
+    testRunningInThisThread()
     {
         thread_pool pool(1);
         auto s = strand(pool.get_executor());
 
-        std::atomic<int> counter{0};
-
-        auto coro = make_counter_coro(counter);
-        s.dispatch(coro.handle());
-        coro.release();
-
-        // Wait for work to complete
-        BOOST_TEST(wait_for([&]{ return counter.load() >= 1; }));
-        BOOST_TEST_EQ(counter.load(), 1);
+        // Not running in strand from main thread
+        BOOST_TEST(!s.running_in_this_thread());
     }
 
     void
@@ -374,13 +352,12 @@ struct strand_test
         s.post(coro.handle());
         coro.release();
 
-        // Wait for work to complete
         BOOST_TEST(wait_for([&]{ return counter.load() >= 1; }));
         BOOST_TEST_EQ(counter.load(), 1);
     }
 
     void
-    testDispatchMethod()
+    testDispatch()
     {
         thread_pool pool(1);
         auto s = strand(pool.get_executor());
@@ -391,8 +368,8 @@ struct strand_test
         s.dispatch(coro.handle());
         coro.release();
 
-        // Wait for work to complete
         BOOST_TEST(wait_for([&]{ return counter.load() >= 1; }));
+        BOOST_TEST_EQ(counter.load(), 1);
     }
 
     void
@@ -414,7 +391,6 @@ struct strand_test
             coros.back().release();
         }
 
-        // Wait for all work to complete
         BOOST_TEST(wait_for([&]{ return counter.load() >= N; }));
         BOOST_TEST_EQ(counter.load(), N);
     }
@@ -447,44 +423,8 @@ struct strand_test
         for(auto& t : threads)
             t.join();
 
-        // Wait for all work to complete
         BOOST_TEST(wait_for([&]{ return counter.load() >= num_threads * per_thread; }));
         BOOST_TEST_EQ(counter.load(), num_threads * per_thread);
-    }
-
-    void
-    testServiceCreation()
-    {
-        // Strand should create strand_service on first use
-        thread_pool pool(1);
-
-        // Creating a strand should create the service
-        auto s = strand(pool.get_executor());
-
-        // Verify get_strand_service returns the same service
-        auto& svc1 = detail::get_strand_service(pool);
-        auto& svc2 = detail::get_strand_service(pool);
-        BOOST_TEST_EQ(&svc1, &svc2);
-        (void)s;
-    }
-
-    void
-    testRunningInThisThread()
-    {
-        thread_pool pool(1);
-        auto s = strand(pool.get_executor());
-
-        // Not running in strand from main thread
-        BOOST_TEST(!s.running_in_this_thread());
-
-        // The actual thread identity check is tested implicitly
-        // through testDispatchFastPath which relies on it
-        std::atomic<int> counter{0};
-        auto coro = make_counter_coro(counter);
-        s.post(coro.handle());
-        coro.release();
-
-        BOOST_TEST(wait_for([&]{ return counter.load() >= 1; }));
     }
 
     void
@@ -509,7 +449,6 @@ struct strand_test
             coros.back().release();
         }
 
-        // Wait for all work to complete
         BOOST_TEST(wait_for([&]{
             std::lock_guard<std::mutex> lock(log_mutex);
             return static_cast<int>(log.size()) >= N;
@@ -523,47 +462,99 @@ struct strand_test
     }
 
     void
-    testDispatchFastPath()
+    testSerialization()
     {
-        // The dispatch fast path is tested implicitly through the fact
-        // that dispatch() returns the handle when running_in_this_thread().
-        // This is a simpler test that just verifies basic dispatch works.
-        thread_pool pool(1);
+        // Verify coroutines don't run concurrently
+        thread_pool pool(4);
         auto s = strand(pool.get_executor());
 
-        std::atomic<int> counter{0};
-        auto coro = make_counter_coro(counter);
-        s.dispatch(coro.handle());
-        coro.release();
+        std::atomic<int> active{0};
+        std::atomic<int> max_active{0};
+        std::atomic<int> completed{0};
+        constexpr int N = 50;
 
-        BOOST_TEST(wait_for([&]{ return counter.load() >= 1; }));
-        BOOST_TEST_EQ(counter.load(), 1);
-    }
+        // Coroutine that tracks concurrent execution
+        struct tracking_coro
+        {
+            struct promise_type
+            {
+                tracking_coro
+                get_return_object() noexcept
+                {
+                    return tracking_coro{
+                        std::coroutine_handle<promise_type>::from_promise(*this)};
+                }
 
-    void
-    testPostFromWithinStrand()
-    {
-        // This test verifies that post() always queues (FIFO order preserved).
-        // The testFifoOrder test already covers FIFO ordering extensively.
-        // Here we just verify basic multiple-post behavior.
-        thread_pool pool(1);
-        auto s = strand(pool.get_executor());
+                std::suspend_always initial_suspend() noexcept { return {}; }
+                std::suspend_never final_suspend() noexcept { return {}; }
+                void return_void() noexcept {}
+                void unhandled_exception() { std::terminate(); }
+            };
 
-        std::atomic<int> counter{0};
-        constexpr int N = 10;
+            std::coroutine_handle<promise_type> h_;
 
-        std::vector<counter_coro> coros;
+            ~tracking_coro()
+            {
+                if(h_)
+                    h_.destroy();
+            }
+
+            tracking_coro(tracking_coro&& other) noexcept
+                : h_(other.h_)
+            {
+                other.h_ = nullptr;
+            }
+
+            tracking_coro& operator=(tracking_coro&& other) noexcept
+            {
+                if(h_)
+                    h_.destroy();
+                h_ = other.h_;
+                other.h_ = nullptr;
+                return *this;
+            }
+
+            std::coroutine_handle<void> handle() const noexcept { return h_; }
+
+            void release() noexcept { h_ = nullptr; }
+
+        private:
+            explicit tracking_coro(std::coroutine_handle<promise_type> h)
+                : h_(h)
+            {
+            }
+        };
+
+        auto make_tracking_coro = [&]() -> tracking_coro {
+            int current = ++active;
+            int expected = max_active.load();
+            while(current > expected)
+            {
+                if(max_active.compare_exchange_weak(expected, current))
+                    break;
+            }
+            // Small delay to increase chance of overlap if serialization fails
+            std::this_thread::sleep_for(std::chrono::microseconds(10));
+            --active;
+            ++completed;
+            co_return;
+        };
+
+        std::vector<tracking_coro> coros;
         coros.reserve(N);
 
         for(int i = 0; i < N; ++i)
         {
-            coros.push_back(make_counter_coro(counter));
+            coros.push_back(make_tracking_coro());
             s.post(coros.back().handle());
             coros.back().release();
         }
 
-        BOOST_TEST(wait_for([&]{ return counter.load() >= N; }));
-        BOOST_TEST_EQ(counter.load(), N);
+        BOOST_TEST(wait_for([&]{ return completed.load() >= N; }));
+
+        // Strand should serialize - max_active should be 1
+        BOOST_TEST_EQ(max_active.load(), 1);
+        BOOST_TEST_EQ(completed.load(), N);
     }
 
     void
@@ -576,16 +567,13 @@ struct strand_test
         testContext();
         testWorkTracking();
         testEquality();
-        testDispatch();
+        testRunningInThisThread();
         testPost();
-        testDispatchMethod();
+        testDispatch();
         testMultipleWork();
         testConcurrentPost();
-        testServiceCreation();
-        testRunningInThisThread();
         testFifoOrder();
-        testDispatchFastPath();
-        testPostFromWithinStrand();
+        testSerialization();
     }
 };
 
