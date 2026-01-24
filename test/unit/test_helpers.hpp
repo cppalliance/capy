@@ -193,12 +193,12 @@ check_thread_name(char const* expected)
 
 /// Check if current thread name starts with given prefix.
 inline bool
-thread_name_starts_with(char const* prefix)
+thread_name_starts_with(char const* name_prefix)
 {
     char buffer[64] = {};
     if(!get_current_thread_name(buffer, sizeof(buffer)))
         return false;
-    return std::strncmp(buffer, prefix, std::strlen(prefix)) == 0;
+    return std::strncmp(buffer, name_prefix, std::strlen(name_prefix)) == 0;
 }
 
 #endif // BOOST_CAPY_TEST_CAN_GET_THREAD_NAME
