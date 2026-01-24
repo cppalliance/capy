@@ -123,13 +123,6 @@ Coroutines are continuously created—every `co_await` may spawn new frames. An 
 
 **The allocator must be present at invocation.** Coroutine frame allocation has a fundamental timing constraint: `operator new` executes before the coroutine body. When a coroutine is called, the compiler allocates the frame first, then begins execution. Any mechanism that injects context later—receiver connection, `await_transform`, explicit method calls—arrives too late.
 
-```cpp
-auto t = my_coro(sock);  // operator new called HERE
-co_await t;              // await_transform kicks in HERE (too late)
-
-spawn( my_coro(sock) );  // my_coro(sock) evaluated BEFORE calling spawn (too late)
-```
-
 P2762 acknowledges that the receiver-based model brings scheduler and operation together "rather late"—at `connect()` time, after the work graph is already built:
 
 > "When the scheduler is injected through the receiver the operation and used scheduler are brought together rather late, i.e., when `connect(sender, receiver)`ing and when the work graph is already built."
@@ -154,6 +147,8 @@ The critical architectural issue: the sender queries the receiver's environment 
 This is the **backward flow** we reference throughout this paper. Context flows from receiver back to sender—the consumer provides information that the producer queries. For GPU workloads, where the work graph is constructed before execution begins, this model works well. The entire computation is described, connected, and then started.
 
 For networking, the timing is wrong. Coroutine frame allocation happens *before* the coroutine body executes—the allocator must be known at invocation, not discovered through receiver queries after `connect()`. The backward flow that serves GPU dispatch is structurally incompatible with coroutine allocation semantics.
+
+The same timing problem applies to stop tokens. In `std::execution`, the token is discovered via `get_stop_token(get_env(receiver))`—available only after `connect()`. In our model, the token propagates forward alongside the executor via the same `await_suspend` signature, available from the moment the coroutine begins.
 
 ---
 
@@ -229,7 +224,7 @@ concept IoLaunchableTask =
      });
 ```
 
-Launch functions like `run_async` and `run_on` bootstrap context directly into a task—they call `set_executor` and `set_stop_token` on the promise rather than going through the three-argument `await_suspend`. The `IoLaunchableTask` concept adds the requirements these functions need: `handle()` and `release()` for lifetime management, plus `exception()` and `result()` for completion handling.
+Launch functions like `run_async` and `run_on` bootstrap context directly into a task—they call `set_executor` and `set_stop_token` on the promise rather than going through the three-argument `await_suspend`. The _IoLaunchableTask_ concept adds the requirements these functions need: `handle()` and `release()` for lifetime management, plus `exception()` and `result()` for completion handling.
 
 - **`run_async`** is the root of a coroutine chain, launching from non-coroutine code
 - **`run_on`** performs executor hopping from within coroutine code, binding a child task to a different executor
@@ -310,21 +305,22 @@ Why the concrete `executor_ref`? Callers who write `co_await get_executor()` alw
 
 ### 3.2 Satisfying _IoAwaitableTask_
 
-While `IoAwaitable` handles context *reception*, `IoAwaitableTask` adds the promise interface needed to *store and propagate* that context. The concept requires six additional promise methods:
+While _IoAwaitable_ handles context *reception*, the _IoAwaitableTask_ refinement adds the promise interface needed to *store and propagate* that context. The concept requires six additional promise methods:
 
 - `set_executor(executor_ref)` / `executor()` — injection and retrieval
 - `set_stop_token(std::stop_token)` / `stop_token()` — injection and retrieval
 - `set_continuation(coro, executor_ref)` / `complete()` — continuation management
 
-The task wrapper must implement a three-argument `await_suspend` that wires context into the promise:
+The executor and stop token share identical propagation mechanics—both injected via the same `await_suspend` signature and retrieved via symmetric accessors. These values flow through `await_transform`, which intercepts every `co_await` expression. When a coroutine awaits an _IoAwaitable_, the promise's `await_transform` injects the current executor and stop token:
 
 ```cpp
-coro await_suspend( coro cont, executor_ref ex, std::stop_token token )
-{
-    h_.promise().set_executor( ex );
-    h_.promise().set_stop_token( token );
-    h_.promise().set_continuation( cont, ex );  // Both args required
-    return h_;
+template<IoAwaitable A>
+auto await_transform( A&& awaitable ) {
+    return awaitable_wrapper{
+        std::forward<A>( awaitable ),
+        get_executor(),
+        get_stop_token()
+    };
 }
 ```
 
@@ -343,18 +339,19 @@ coro promise_type::complete() const noexcept
 
 When the child's executor matches the caller's, the continuation returns directly for symmetric transfer; otherwise, it dispatches through the caller's executor to ensure the parent resumes in its expected context.
 
-> **Non-normative note.** The `io_awaitable_support` CRTP mixin (§9.1) provides all six required methods and is offered as a convenience. It is not proposed for standardization and is not strictly necessary—implementors may write the boilerplate themselves.
+> **Non-normative note.** The `io_awaitable_support` CRTP mixin (§8.1) provides all six required methods and is offered as a convenience. It is not proposed for standardization and is not strictly necessary—implementors may write the boilerplate themselves.
+
 
 ### 3.3 Satisfying _IoLaunchableTask_
 
-The `IoLaunchableTask` concept extends `IoAwaitableTask` with the interface needed by launch functions like `run_async` and `run_on`. These functions bootstrap context directly into a task—they call `set_executor` and `set_stop_token` on the promise rather than going through the three-argument `await_suspend`. To do this, they need additional capabilities:
+The _IoLaunchableTask_ concept extends _IoAwaitableTask_ with the interface needed by launch functions like `run_async` and `run_on`. These functions bootstrap context directly into a task—they call `set_executor` and `set_stop_token` on the promise rather than going through the three-argument `await_suspend`. To do this, they need additional capabilities:
 
 - `handle()` on the task — returns the typed `std::coroutine_handle<promise_type >` for direct frame access
 - `release()` on the task — transfers ownership so the launch function can manage lifetime
 - `exception()` on the promise — returns the stored `std::exception_ptr` for error handling
 - `result()` on the promise — returns the stored value (required only for non-void tasks)
 
-A task type satisfies `IoLaunchableTask` by implementing these methods:
+A task type satisfies _IoLaunchableTask_ by implementing these methods:
 
 ```cpp
 template<typename T>
@@ -475,13 +472,13 @@ auto op = connect(sndr, receiver);   // Allocator available NOW—too late
 start(op);
 ```
 
-The coroutine frame is allocated at invocation, but the allocator isn't queryable until `connect`—after the allocation has already happened. This isn't a missing feature; it's a fundamental ordering constraint that the backward query model cannot satisfy.
+The coroutine frame is allocated at invocation, but the allocator isn't queryable until `connect`—after the allocation has already happened. No amount of query machinery can retroactively inject an allocator into an allocation that has already occurred. This isn't a missing feature; it's a fundamental ordering constraint that the backward query model cannot satisfy.
 
 ---
 
-## 4. The Executor
+## 4. Executor concept
 
-**Terminology note.** We use the term *executor* rather than *scheduler* intentionally. In `std::execution`, schedulers are designed for heterogeneous computing—selecting GPU vs CPU algorithms, managing completion domains, and dispatching to hardware accelerators. Networking has different needs: strand serialization, I/O completion contexts, and thread affinity. By using *executor*, we signal a distinct concept tailored to networking's requirements. This terminology also honors Christopher Kohlhoff's executor model in Boost.Asio, which established the foundation for modern C++ asynchronous I/O.
+**Terminology note.** We use the term _Executor_ rather than *scheduler* intentionally. In `std::execution`, schedulers are designed for heterogeneous computing—selecting GPU vs CPU algorithms, managing completion domains, and dispatching to hardware accelerators. Networking has different needs: strand serialization, I/O completion contexts, and thread affinity. By using *executor*, we signal a distinct concept tailored to networking's requirements. This terminology also honors Christopher Kohlhoff's executor model in Boost.Asio, which established the foundation for modern C++ asynchronous I/O.
 
 ```cpp
 template<class E>
@@ -505,6 +502,14 @@ concept Executor =
 
 Executors are lightweight, copyable handles to execution contexts. Users often provide custom executor types tailored to application needs—priority scheduling, per-connection strand serialization, or specialized logging and instrumentation. An execution model must respect these customizations. It must also support executor composition: wrapping one executor with another. The `strand` we provide, for example, wraps an I/O context's executor to add serialization guarantees without changing the underlying dispatch mechanism.
 
+C++20 coroutines provide type erasure *by construction*—but not through the handle type. `std::coroutine_handle<void>` and `std::coroutine_handle<promise_type>` are both just pointers with identical overhead. The erasure that matters is *structural*:
+
+1. **The frame is opaque**: Callers see only a handle, not the promise's layout
+2. **The return type is uniform**: All coroutines returning `task` have the same type, regardless of body
+3. **Suspension points are hidden**: The caller doesn't know where the coroutine may suspend
+
+This structural erasure is often lamented as overhead, but we recognize it as opportunity: *the allocation we cannot avoid can pay for the type erasure we need*. In our model, executor type-erasure happens late; only after the API has locked in the executor choice. Executor types are fully preserved at call sites even though they're type-erased internally. This enables zero-overhead composition at the API boundary while maintaining uniform internal representation.
+
 ### 4.1 Dispatch
 
 `dispatch` schedules a coroutine handle for resumption. If the caller is already in the executor's context, the implementation may resume inline; otherwise, the handle is queued. We use `std::coroutine_handle<>` rather than a templated callable because the coroutine frame is already allocated and the handle already type-erased—both come for free.
@@ -524,51 +529,61 @@ Use `post` for:
 - **Breaking call chains** to bound stack depth
 - **Safety under locks**—posting while holding a mutex avoids deadlock risk from inline execution
 
-### 4.3 Type Erasure
+### 4.3 The `execution_context`
 
-C++20 coroutines provide type erasure *by construction*—but not through the handle type. `std::coroutine_handle<void>` and `std::coroutine_handle<promise_type>` are both just pointers with identical overhead. The erasure that matters is *structural*:
-
-1. **The frame is opaque**: Callers see only a handle, not the promise's layout
-2. **The return type is uniform**: All coroutines returning `task` have the same type, regardless of body
-3. **Suspension points are hidden**: The caller doesn't know where the coroutine may suspend
-
-This structural erasure is often lamented as overhead, but we recognize it as opportunity: *the allocation we cannot avoid can pay for the type erasure we need*.
-
-Executor types are fully preserved at call sites even though they're type-erased internally. This enables zero-overhead composition at the API boundary while maintaining uniform internal representation.
-
-### 4.4 Forward Propagation
-
-The executor flows through `await_transform`, which intercepts every `co_await` expression. When a coroutine awaits an `IoAwaitable`, the promise's `await_transform` injects the current executor and stop token:
+An executor's `context()` function returns a reference to the `execution_context`, the proposed base class for any object that runs work (often containing the platform reactor or event loop). I/O objects coordinate global state here. Implementations install services—singletons with well-defined shutdown and destruction ordering for safe resource release. This design borrows heavily from Boost.Asio.
 
 ```cpp
-template<IoAwaitable A>
-auto await_transform(A&& awaitable) {
-    return awaitable_wrapper{
-        std::forward<A>(awaitable),
-        get_executor(),
-        get_stop_token()
+class execution_context
+{
+public:
+    class service
+    {
+    public:
+        virtual ~service() = default;
+    protected:
+        service() = default;
+        virtual void shutdown() = 0;
     };
-}
+
+    execution_context( execution_context const& ) = delete;
+    execution_context& operator=( execution_context const& ) = delete;
+    ~execution_context();
+    execution_context();
+
+    template<class T> bool has_service() const noexcept;
+    template<class T> T* find_service() const noexcept;
+    template<class T> T& use_service();
+    template<class T, class... Args> T& make_service( Args&&... args ;
+
+    std::pmr::memory_resource* get_frame_allocator() const noexcept;
+
+    void set_frame_allocator( std::pmr::memory_resource* mr ) noexcept;
+
+    template<class Allocator>
+        requires (!std::is_pointer_v<Allocator>)
+    void set_frame_allocator( Allocator const& a );
+
+protected:
+    void shutdown() noexcept;
+    void destroy() noexcept;
+};
 ```
 
-Resolution precedence for executor discovery:
-1. **Explicit**: If the awaitable carries its own executor (e.g., `run_on`), use that
-2. **I/O object**: If awaiting an I/O operation, use the I/O object's executor
-3. **Inherited**: Otherwise, inherit from the parent coroutine
-
-### 4.5 The `execution_context`
-
-The `context()` function returns a reference to the `execution_context`—the object containing the platform-specific reactor or event loop. This is where I/O objects coordinate their necessary global state.
-
-The execution context provides:
+Derived classes can provide:
 - **Platform reactor**: epoll, IOCP, io_uring, or kqueue integration
 - **Supporting singletons**: Timer queues, resolver services, signal handlers
 - **Orderly shutdown**: `stop()` and `join()` for graceful termination
 - **Work tracking**: `on_work_started()` / `on_work_finished()` for run-until-idle semantics
+- **Threads**: for example `thread_pool`.
 
-I/O objects hold a reference to their execution context, not just their executor. A socket needs the context to register with the reactor; the executor alone cannot provide this.
+I/O objects hold a reference to their execution context, and do not have an associated executor. A socket needs the context to register with the reactor; the executor alone cannot provide this.
 
-### 4.6 Comparison
+#### Frame Allocator
+
+The `execution_context` provides `set_frame_allocator` and `get_frame_allocator` as customization points for launchers when no allocator is specified at the launch site. Since every launcher requires an _Executor_, the execution context naturally coordinates frame allocation policy. The default allocator can optimize for speed using recycling with thread-local pools, or for economy on constrained platforms. Using `std::pmr::memory_resource*` allows implementations to change the default without breaking ABI. Applications can set a policy once via `set_frame_allocator`, and all coroutines launched with the default will use it—including those in foreign libraries, without propagating allocator template parameters or recompiling.
+
+### 4.4 Comparison
 
 | Aspect            | Executor                        | Scheduler (`std::execution`)    |
 | ----------------- | ------------------------------- | ------------------------------- |
@@ -582,7 +597,7 @@ I/O objects hold a reference to their execution context, not just their executor
 
 ## 5. The Allocator
 
-Allocator propagation presents a unique challenge for coroutines. Unlike executors and stop tokens, which can be injected at suspension points via `await_transform`, the allocator must be available *before* the coroutine frame exists. This section examines why standard approaches fail and presents our solution.
+Achieving high performance levels with coroutines demands allocator customization, yet allocator propagation presents a unique challenge. Unlike executors and stop tokens, which can be injected at suspension points via `await_transform`, the allocator must be available *before* the coroutine frame exists. This section examines why standard approaches fail and presents our solution.
 
 ### 5.1 The Timing Constraint
 
@@ -591,6 +606,8 @@ Coroutine frame allocation has a fundamental timing constraint: `operator new` e
 ```cpp
 auto t = my_coro(sock);  // operator new called HERE
 co_await t;              // await_transform kicks in HERE (too late)
+
+spawn( my_coro(sock) );  // my_coro(sock) evaluated BEFORE calling spawn (too late)
 ```
 
 ### 5.2 The Awkward Approach
@@ -599,12 +616,12 @@ C++ provides exactly one hook at the right time: **`promise_type::operator new`*
 
 ```cpp
 // Free function: allocator intrudes on the parameter list
-task<int> fetch_data(std::allocator_arg_t, MyAllocator alloc,
-                     socket& sock, buffer& buf) { ... }
+task<int> fetch_data( std::allocator_arg_t, MyAllocator alloc,
+                      socket& sock, buffer& buf ) { ... }
 
 // Member function: same intrusion
-task<void> Connection::process(std::allocator_arg_t, MyAllocator alloc,
-                               request const& req) { ... }
+task<void> Connection::process( std::allocator_arg_t, MyAllocator alloc,
+                                request const& req) { ... }
 ```
 
 The promise type must provide multiple `operator new` overloads to handle both cases:
@@ -612,15 +629,15 @@ The promise type must provide multiple `operator new` overloads to handle both c
 ```cpp
 struct promise_type {
     // For free functions
-    template<typename Alloc, typename... Args>
-    static void* operator new(std::size_t sz,
+    template< typename Alloc, typename... Args >
+    static void* operator new( std::size_t sz,
         std::allocator_arg_t, Alloc& a, Args&&...) {
         return a.allocate(sz);
     }
 
     // For member functions (this is first arg)
-    template<typename T, typename Alloc, typename... Args>
-    static void* operator new(std::size_t sz,
+    template< typename T, typename Alloc, typename... Args >
+    static void* operator new( std::size_t sz,
         T&, std::allocator_arg_t, Alloc& a, Args&&...) {
         return a.allocate(sz);
     }
@@ -635,21 +652,42 @@ Thread-local propagation is the only approach that maintains clean interfaces wh
 
 Our approach:
 
-1. **Receive the fully typed allocator at launch time.** The launch site (`run_async`, `run_on`) accepts any allocator type as a template parameter.
+1. **Receive the allocator at launch time.** The launch site (`run_async`, `run_on`) accepts a fully-typed _Allocator_ parameter, or a `std::pmr::memory_resource*` at the caller's discretion.
 
-2. **Type-erase it.** The allocator is stored as `std::pmr::memory_resource*`, providing a uniform interface for all downstream coroutines.
+2. **Type-erase it.** Typed allocators are stored as `std::pmr::memory_resource*`, providing a uniform interface for all downstream coroutines.
 
-3. **Maintain lifetime via frame extension.** The type-erased allocator lives in the launch coroutine's frame. Because coroutine parameter lifetimes extend until final suspension, the allocator remains valid for the entire operation chain.
+3. **Maintain lifetime via frame extension.** The allocator lives in the launch coroutine's frame. Because coroutine parameter lifetimes extend until final suspension, the allocator remains valid for the entire operation chain.
 
-4. **Propagate through thread-locals.** Before any child coroutine is invoked, the current allocator is set in TLS. The child's `promise_type::operator new` reads it.
+4. **Propagate through thread-locals.** Before any child coroutine is invoked, the current allocator is set in TLS. The child's `promise_type::operator new` reads it. This is an example implementation (non-normative):
 
 ```cpp
-inline thread_local std::pmr::memory_resource* current_allocator = 
-    std::pmr::get_default_resource();
+// Thread-local accessor (returns reference to enable setting)
+inline std::pmr::memory_resource*&
+current_frame_allocator() noexcept {
+    static thread_local std::pmr::memory_resource* mr = nullptr;
+    return mr;
+}
 
 // In promise_type::operator new
-static void* operator new(std::size_t size) {
-    return current_allocator->allocate(size, alignof(std::max_align_t));
+static void* operator new( std::size_t size ) {
+    auto* mr = current_frame_allocator();
+    if(!mr)
+        mr = std::pmr::get_default_resource();
+
+    // Store allocator pointer at end of frame for correct deallocation
+    std::size_t total = size + sizeof(std::pmr::memory_resource*);
+    void* raw = mr->allocate(total, alignof(std::max_align_t));
+    *reinterpret_cast<std::pmr::memory_resource**>(
+        static_cast<char*>(raw) + size) = mr;
+    return raw;
+}
+
+static void operator delete( void* ptr, std::size_t size ) {
+    // Read the allocator pointer from the end of the frame
+    auto* mr = *reinterpret_cast<std::pmr::memory_resource**>(
+        static_cast<char*>(ptr) + size);
+    std::size_t total = size + sizeof(std::pmr::memory_resource*);
+    mr->deallocate(ptr, total, alignof(std::max_align_t));
 }
 ```
 
@@ -674,16 +712,21 @@ When `child()` is called:
 
 The window is the period while the parent coroutine body executes. If `parent` sets TLS when it resumes and `child()` is called during that execution, `child`'s `operator new` sees the correct TLS value.
 
-The cleanest hook is `await_resume`—called right before the coroutine body continues:
+TLS remains valid between `await_suspend` and `await_resume`:
 
 ```cpp
 auto initial_suspend() noexcept {
     struct awaiter {
         promise_type* p_;
-        bool await_ready() { return false; }
-        void await_suspend(coro) {}
-        void await_resume() { 
-            tls::current_allocator = &p_->alloc_;  // Set when body starts
+        bool await_ready() const noexcept { return false; }
+        void await_suspend(coro) const noexcept {
+            // Capture TLS allocator while it's still valid
+            p_->set_frame_allocator( current_frame_allocator() );
+        }
+        void await_resume() const noexcept {
+            // Restore TLS when body starts executing
+            if( p_->frame_allocator() )
+                current_frame_allocator() = p_->frame_allocator();
         }
     };
     return awaiter{this};
@@ -714,78 +757,13 @@ This is safe because:
 - Single-threaded: only one coroutine runs at a time per thread
 - No dangling: the coroutine that set TLS is still on the stack when `operator new` reads it
 
-### 5.5 Comparison with std::execution
-
-The sender/receiver model cannot hook coroutine frame allocation in a safe, composable way. The timing is structural: `operator new` runs when the coroutine is called, but receiver connection happens later at `connect()` time. By then, the frame is already allocated. No amount of query machinery can retroactively inject an allocator into an allocation that has already occurred. This is not a missing feature to be added in a future revision—it is an architectural limitation inherent to backward-flow context discovery. Forward propagation, where context is present in the coroutine's arguments at invocation, is the only model that respects the compiler's allocation sequence.
-
 ---
 
-## 6. The Stop Token
-
-### 6.1 Cooperative Cancellation
-
-C++20 introduced `std::stop_token` as a cooperative cancellation mechanism. A `stop_source` owns the cancellation state; the token provides a read-only view that can be queried or used to register callbacks. When `stop_source::request_stop()` is called, all associated tokens observe the cancellation and registered callbacks fire.
-
-Cancellation flows downward. The application—not the I/O operation—decides when to stop. A timeout, user abort, or graceful shutdown originates at the application layer and propagates to pending operations.
-
-### 6.2 OS Integration
-
-Modern platforms provide cancellation at the kernel level:
-
-- **Windows IOCP**: `CancelIoEx` cancels pending overlapped operations on a specific handle
-- **Linux io_uring**: `IORING_OP_ASYNC_CANCEL` cancels a previously submitted operation by its user data
-- **POSIX**: `close()` on the file descriptor, though less graceful, interrupts blocking operations
-
-When the stop token signals cancellation, the I/O object registers a callback that invokes the appropriate OS primitive. The pending operation completes with an error—typically `operation_aborted`—and the coroutine chain unwinds normally through its error path.
-
-### 6.3 Propagation
-
-The stop token is injected at the coroutine launch site and propagated through the entire chain:
-
-```
-http_client → http_request → write → write_some → socket
-```
-
-The top-level caller provides a `stop_token`. Each coroutine in the chain receives it via `await_suspend` and passes it forward. At the end of the chain, the I/O object receives the token and can act on it.
-
-The propagation mechanism mirrors executor flow. When a parent coroutine awaits a child, `await_transform` intercepts the expression and wraps it:
-
-```cpp
-// In parent's promise_type
-template<IoAwaitable A>
-auto await_transform(A&& awaitable) {
-    return awaitable_wrapper{
-        std::forward<A>(awaitable),
-        get_executor(),
-        get_stop_token()  // Token from parent's context
-    };
-}
-```
-
-The wrapper's `await_suspend` then passes the token to the child:
-
-```cpp
-// In awaitable_wrapper
-auto await_suspend(std::coroutine_handle<> cont) {
-    return awaitable_.await_suspend(cont, ex_, token_);
-}
-```
-
-The child's `await_suspend` stores the token in its promise, making it available for further propagation or for registering cancellation callbacks with I/O objects.
-
-This design keeps cancellation cooperative and predictable. No operation is forcibly terminated mid-flight. The I/O layer requests cancellation; the OS acknowledges it; the operation completes with an error; the coroutine handles the error.
-
-### 6.4 Comparison
-
-The contrast with `std::execution` is clear. In the sender/receiver model, the stop token is discovered through a backward query—`get_stop_token(get_env(receiver))`—available only after `connect()` binds sender to receiver. In our model, the caller provides the token at launch, and it propagates forward via `await_suspend`, available immediately when the coroutine begins. OS integration follows naturally: the I/O object registers a cancellation callback directly with the token, invoking platform primitives like `CancelIoEx` or `IORING_OP_ASYNC_CANCEL` when stop is requested.
-
----
-
-## 7. Why Not `std::execution`?
+## 6. Why Not `std::execution`?
 
 If networking is required to integrate with `std::execution`, I/O libraries must pay a complexity tax regardless of whether they benefit from the framework's abstractions.
 
-### 7.1 The Implementation Burden
+### 6.1 The Implementation Burden
 
 To participate in the sender/receiver ecosystem, networking code must implement:
 
@@ -796,7 +774,7 @@ To participate in the sender/receiver ecosystem, networking code must implement:
 
 A socket returning `default_domain` still participates in the dispatch protocol. The P3826 machinery runs, finds no customization, and falls through to the default—overhead for nothing.
 
-### 7.2 Type Leakage Through connect_result_t
+### 6.2 Type Leakage Through connect_result_t
 
 The sender/receiver model solves a real problem: constructing a compile-time call graph for heterogeneous computation chains. When all types are visible at `connect()` time, the compiler can optimize across operation boundaries—inlining GPU kernel launches, eliminating intermediate buffers, and selecting optimal memory transfer strategies. For workloads where dispatch overhead is measured in nanoseconds and operations complete in microseconds, this visibility enables meaningful optimization.
 
@@ -822,9 +800,9 @@ struct _retry_op {
 };
 ```
 
-For networking, this creates the template tax we sought to avoid (§2.1)—N×M instantiations, compile time growth, implementation details exposed through every API boundary—without the optimization payoff that justifies it for GPU workloads. Our design achieves zero type leakage; composed algorithms expose only `task` return types.
+For networking, this creates the template tax we sought to avoid (§2.1)—N×M instantiations, compile time growth, implementation details exposed through every API boundary—without the optimization payoff that justifies it for GPU workloads. Our design achieves zero type leakage; composed algorithms expose only concrete _Task_ return types.
 
-### 7.3 The Core Question
+### 6.3 The Core Question
 
 The question is not whether P2300/P3826 break networking code. They don't—defaults work. The question is whether networking should pay for abstractions it doesn't use.
 
@@ -839,31 +817,13 @@ Our analysis suggests the cost is not justified when a simpler, networking-nativ
 
 ---
 
-## 8. The IoAwaitable Protocol Specification
+## 7. The IoAwaitable Protocol Specification
 
-This section provides formal requirements for each participant in the _IoAwaitable_ protocol. Implementors should follow these specifications to ensure interoperability across coroutine boundaries.
+This section provides formal requirements for each participant in the _IoAwaitable_ protocol. The concepts form a refinement hierarchy: _IoLaunchableTask_ refines _IoAwaitableTask_, which refines _IoAwaitable_. Implementors should follow these specifications to ensure interoperability across coroutine boundaries.
 
-### 8.1 Coroutine Launch Function
+### 7.1 Satisfying _IoAwaitable_
 
-A launch function (e.g., `run_async`, `run_on`) bridges non-coroutine code into the coroutine world or performs executor hopping within a coroutine chain. Launch functions should be constrained on `IoLaunchableTask` to work with any conforming task type:
-
-```cpp
-template<IoLaunchableTask T>
-void run_async(executor_ref ex, T&& task);
-```
-
-**Requirements:**
-
-1. Accept or provide an executor
-2. Accept or default a stop token
-3. Set thread-local allocator before invoking the child coroutine
-4. Bootstrap context via `set_executor` and `set_stop_token` on the promise
-5. Manage the task lifetime via `handle()` and `release()`
-6. Handle completion via `exception()` and `result()` on the promise
-
-### 8.2 Awaitable Type
-
-Any type that can be `co_await`ed and participates in context propagation.
+The _IoAwaitable_ concept is the foundation of the protocol. Any type that can be `co_await`ed and participates in context propagation must satisfy this concept.
 
 **Requirements:**
 
@@ -871,6 +831,28 @@ Any type that can be `co_await`ed and participates in context propagation.
 2. Store or forward the executor and stop token as needed
 3. Return a `std::coroutine_handle<>` for symmetric transfer (or `void`/`bool` per standard rules)
 4. Implement `await_ready()` and `await_resume()` per standard awaitable requirements
+
+**Example implementation:**
+
+```cpp
+struct my_awaitable
+{
+    bool await_ready() const noexcept { return false; }
+
+    // This signature satisfies IoAwaitable
+    coro await_suspend( coro cont, executor_ref ex, std::stop_token token )
+    {
+        // Store context for the operation
+        cont_ = cont;
+        ex_ = ex;
+        token_ = token;
+        start_async_operation();
+        return std::noop_coroutine();
+    }
+
+    T await_resume() { return result_; }
+};
+```
 
 **Non-normative note:** Implementors may wish to enforce protocol compliance at API boundaries. When a compliant coroutine's `await_transform` calls the three-argument `await_suspend`, a non-compliant awaitable (lacking this signature) will produce a compile error. Similarly, a compliant awaitable awaited from a non-compliant coroutine will fail to compile. This provides static checking that both sides of each suspension point participate in the protocol:
 
@@ -884,109 +866,238 @@ auto await_transform(A&& a) {
 }
 ```
 
-### 8.3 Task-like Type
+### 7.2 Satisfying _IoAwaitableTask_
 
-A coroutine return type whose awaitable form satisfies `IoAwaitable`. Task types that support direct context injection by launch functions satisfy the stronger `IoAwaitableTask` concept.
+The _IoAwaitableTask_ concept refines _IoAwaitable_ with the promise interface needed to both **receive** propagated context and **propagate** it to child coroutines. This is what distinguishes a task from a simple awaitable—the task participates fully in the context propagation chain.
 
-**Requirements for `IoAwaitable`:**
+**Additional requirements (beyond _IoAwaitable_):**
 
-1. Define a `promise_type` that inherits or implements context storage
-2. Provide `await_suspend(cont, ex, token)` that:
-   - Stores executor and stop token in the promise
-   - Sets the continuation handle
-   - Returns the task's coroutine handle (symmetric transfer)
-3. The promise's `await_transform` must intercept child awaitables and inject context
-4. Support `operator new` overloads for allocator propagation (inspect arguments or read TLS)
-5. On final suspend, resume the continuation via the stored executor's `dispatch`
+1. Define a nested `promise_type`
+2. The promise must provide injection methods:
+   - `set_executor(executor_ref)` — stores the executor (must be `noexcept`)
+   - `set_stop_token(std::stop_token)` — stores the stop token (must be `noexcept`)
+   - `set_continuation(coro, executor_ref)` — stores the continuation handle and caller's executor (must be `noexcept`)
+3. The promise must provide retrieval methods:
+   - `executor()` — returns `executor_ref` (must be `noexcept`)
+   - `stop_token()` — returns `std::stop_token const&` (must be `noexcept`)
+   - `complete()` — returns a `coro` for `final_suspend` to use for symmetric transfer (must be `noexcept`)
+4. The promise's `await_transform` must intercept child awaitables and inject context
+5. Support `operator new` overloads for allocator propagation (inspect arguments or read TLS)
 
-**Additional requirements for `IoAwaitableTask`:**
+**Example implementation:**
 
-1. The promise must provide `set_executor(executor_ref)` and `set_stop_token(std::stop_token)` for context injection
-2. The promise must provide `executor()` and `stop_token()` accessors for context retrieval
-3. All four methods must be `noexcept`
+```cpp
+template<typename T>
+struct task
+{
+    struct promise_type : io_awaitable_support<promise_type>
+    {
+        executor_ref executor_;
+        executor_ref caller_ex_;
+        std::stop_token stop_token_;
+        coro cont_;
 
-The `IoAwaitableTask` requirements enable launch functions to bootstrap context into a task before it begins execution, without going through the awaitable machinery.
+        void set_executor( executor_ref ex ) noexcept { executor_ = ex; }
+        void set_stop_token( std::stop_token st ) noexcept { stop_token_ = st; }
+        void set_continuation( coro c, executor_ref ex ) noexcept
+        {
+            cont_ = c;
+            caller_ex_ = ex;
+        }
 
-**Additional requirements for `IoLaunchableTask`:**
+        executor_ref executor() const noexcept { return executor_; }
+        std::stop_token const& stop_token() const noexcept { return stop_token_; }
 
-1. The task must provide `handle()` returning `std::coroutine_handle<promise_type>`
-2. The task must provide `release()` to transfer ownership without destroying the frame
-3. The promise must provide `exception()` returning any stored `std::exception_ptr`
+        coro complete() const noexcept
+        {
+            if( ! cont_ )
+                return std::noop_coroutine();
+            if( executor_ == caller_ex_ )
+                return cont_;  // Same-executor optimization
+            return caller_ex_.dispatch( cont_ );
+        }
+        // ... result storage, initial/final suspend, etc.
+    };
+
+    std::coroutine_handle<promise_type> h_;
+
+    bool await_ready() const noexcept { return false; }
+    T await_resume() { return h_.promise().result(); }
+
+    // Satisfies IoAwaitable and enables IoAwaitableTask
+    coro await_suspend( coro cont, executor_ref ex, std::stop_token token )
+    {
+        h_.promise().set_executor( ex );
+        h_.promise().set_stop_token( token );
+        h_.promise().set_continuation( cont, ex );
+        return h_;  // Transfer to child coroutine
+    }
+};
+```
+
+Note that `set_continuation` receives *both* the continuation handle and the caller's executor. This enables the **same-executor optimization** in `complete()`: when the child's executor matches the caller's, the continuation returns directly for symmetric transfer; otherwise, it dispatches through the caller's executor to ensure the parent resumes in its expected context.
+
+> **Non-normative note.** The `io_awaitable_support` CRTP mixin (§8.1) provides all six required promise methods and is offered as a convenience. It is not proposed for standardization—implementors may write the boilerplate themselves.
+
+### 7.3 Satisfying _IoLaunchableTask_
+
+The _IoLaunchableTask_ concept refines _IoAwaitableTask_ with the interface needed by launch functions like `run_async` and `run_on`. These functions bootstrap context directly into a task—they call `set_executor` and `set_stop_token` on the promise rather than going through the three-argument `await_suspend`.
+
+**Additional requirements (beyond _IoAwaitableTask_):**
+
+1. The task must provide `handle()` returning `std::coroutine_handle<promise_type>` (must be `noexcept`)
+2. The task must provide `release()` to transfer ownership without destroying the frame (must be `noexcept`)
+3. The promise must provide `exception()` returning any stored `std::exception_ptr` (must be `noexcept`)
 4. For non-void tasks, the promise must provide `result()` returning the stored value
 
-The `IoLaunchableTask` requirements enable launch functions like `run_async` and `run_on` to manage task lifetime and retrieve results. Because these functions are constrained on the concept rather than a concrete type, they work with any conforming task implementation.
+**Example implementation:**
 
-### 8.4 I/O Object
+```cpp
+template<typename T>
+struct task
+{
+    struct promise_type : io_awaitable_support<promise_type>
+    {
+        std::exception_ptr ep_;
+        std::optional<T> result_;
 
-An I/O object (socket, timer, resolver) initiates OS-level async operations. It is not itself a coroutine—operating system APIs are not coroutines—but it returns an awaitable that bridges the coroutine world to the kernel.
+        std::exception_ptr exception() const noexcept { return ep_; }
+        T&& result() noexcept { return std::move(*result_); }
+
+        // ... plus all IoAwaitableTask requirements
+    };
+
+    std::coroutine_handle<promise_type> h_;
+
+    std::coroutine_handle<promise_type> handle() const noexcept
+    {
+        return h_;
+    }
+
+    void release() noexcept
+    {
+        h_ = nullptr;
+    }
+
+    // ... plus all IoAwaitableTask requirements
+};
+```
+
+The `handle()` method provides access to the typed coroutine handle, allowing launch functions to resume the coroutine and access the promise. The `release()` method transfers ownership—after calling it, the task wrapper no longer destroys the frame, leaving lifetime management to the launch function.
+
+For `task<void>`, the `result()` method is not required since there is no value to retrieve. The concept uses a disjunction to handle this:
+
+```cpp
+( std::is_void_v< decltype(std::declval<T&>().await_resume()) > ||
+  requires( typename T::promise_type& p ) { p.result(); } );
+```
+
+> **Non-normative note.** Unlike the `io_awaitable_support` mixin which provides promise methods, the `handle()` and `release()` methods are task-specific. The exception and result storage shown above is illustrative—implementations may use different strategies such as `std::variant` for result/exception storage.
+
+### 7.4 Implementing a Launcher
+
+A launch function (e.g., `run_async`, `run_on`) bridges non-coroutine code into the coroutine world or performs executor hopping within a coroutine chain. Launch functions are constrained on _IoLaunchableTask_ to work with any conforming task type:
+
+```cpp
+template<Executor Ex, IoLaunchableTask Task>
+void run_async( Ex const& ex, Task task );  // caller responsible for extending lifetime
+
+template<Executor Ex, IoLaunchableTask Task>
+auto run_on( Ex const& ex, Task task );     // caller responsible for extending lifetime
+```
 
 **Requirements:**
 
-1. Return an awaitable from async methods (e.g., `socket.async_read(buf)`)
-2. The awaitable's `await_suspend` must:
-   - Receive `(cont, ex, token)` from the calling coroutine
-   - Store the continuation handle and executor
-   - Optionally register a stop callback with the token for cancellation
-   - Initiate the OS operation (submit to IOCP, epoll, io_uring)
-3. On operation completion (from OS callback):
-   - Call `ex.dispatch(continuation)` to resume the suspended coroutine
-   - Store the result for retrieval via `await_resume()`
-4. The I/O object is owned by its execution context reference (for reactor registration)
+1. Accept or provide an executor
+2. Accept or default a stop token
+3. Set thread-local allocator before invoking the child coroutine
+4. Bootstrap context via `set_executor` and `set_stop_token` on the promise
+5. Manage the task lifetime via `handle()` and `release()`
+6. Handle completion via `exception()` and `result()` on the promise
+
+**Example implementation sketch:**
+
+```cpp
+template<Executor Ex, IoLaunchableTask Task>
+void run_async( Ex const& ex, std::stop_token token, Task task )
+{   // caller responsible for extending lifetime
+    auto& promise = task.handle().promise();
+
+    // Bootstrap context directly into the promise
+    promise.set_executor( ex );
+    promise.set_stop_token( token );
+    promise.set_continuation( /* completion handler */, ex );
+
+    // Transfer ownership and start execution
+    task.release();
+    ex.post( task.handle() );
+}
+```
+
+> **Non-normative note.** This simplified example has the allocator ordering problem described in §5.1: the task's frame is allocated before `run_async` is called, so any thread-local allocator setup would arrive too late. A correct implementation uses the two-call syntax shown in §3.4—`run_async(ex)(my_task())`—where the first call returns a wrapper that sets up the allocator before the task expression is evaluated. A complete implementation is beyond the scope of this example.
+
+Because launch functions are constrained on the concept rather than a concrete type, they work with any conforming task implementation. This decoupling enables library authors to write launch utilities that interoperate with user-defined task types.
 
 ---
 
-## 9. Miscellaneous
+## 8. Miscellaneous
 
 This section is non-normative and demonstrates some aspects which may be required by implementors.
 
-### 9.1 The `io_awaitable_support` Mixin
+### 8.1 The `io_awaitable_support` Mixin
 
-The `io_awaitable_support` CRTP mixin simplifies promise type implementation by providing the machinery for storing and retrieving execution context:
+This utility simplifies promise type implementation by providing all machinery required for _IoAwaitableTask_ compliance:
 
 ```cpp
 template<typename Derived>
-class io_awaitable_support {
+class io_awaitable_support
+{
     executor_ref executor_;
     std::stop_token stop_token_;
+    std::pmr::memory_resource* alloc_ = nullptr;
+    executor_ref caller_ex_;
+    coro cont_;
 
 public:
-    void set_executor(executor_ref ex) { executor_ = ex; }
-    void set_stop_token(std::stop_token st) { stop_token_ = st; }
-    
-    // Awaitables for retrieving context within the coroutine
-    auto await_transform(get_executor_t) {
-        struct awaitable {
-            executor_ref ex_;
-            bool await_ready() const noexcept { return true; }
-            void await_suspend(std::coroutine_handle<>) const noexcept {}
-            executor_ref await_resume() const noexcept { return ex_; }
-        };
-        return awaitable{executor_};
-    }
-    
-    auto await_transform(get_stop_token_t) {
-        struct awaitable {
-            std::stop_token st_;
-            bool await_ready() const noexcept { return true; }
-            void await_suspend(std::coroutine_handle<>) const noexcept {}
-            std::stop_token await_resume() const noexcept { return st_; }
-        };
-        return awaitable{stop_token_};
-    }
+    static void* operator new( std::size_t size );
+    static void operator delete( void* ptr, std::size_t size );
+
+    void set_frame_allocator( std::pmr::memory_resource* alloc ) noexcept;
+    std::pmr::memory_resource* frame_allocator() const noexcept;
+
+    void set_continuation( coro cont, executor_ref caller_ex ) noexcept;
+    coro complete() const noexcept;
+
+    void set_stop_token( std::stop_token token ) noexcept;
+    std::stop_token const& stop_token() const noexcept;
+
+    void set_executor( executor_ref ex ) noexcept;
+    executor_ref executor() const noexcept;
+
+    template<typename A>
+    decltype(auto) transform_awaitable( A&& a );
+
+    template<typename T>
+    auto await_transform( T&& t );
 };
 ```
 
 Promise types inherit from this mixin to gain:
 
-- Storage for executor and stop token received via `await_suspend`
-- `await_transform` overloads that enable `co_await get_executor()` and `co_await get_stop_token()` within the coroutine body
-- Consistent context propagation through the awaitable chain
+- **Frame allocation**: `operator new`/`delete` using the thread-local frame allocator, with the allocator pointer stored at the end of each frame for correct deallocation
+- **Frame allocator storage**: `set_frame_allocator`/`frame_allocator` for propagation to child tasks
+- **Continuation support**: `set_continuation`/`complete` implementing the same-executor optimization
+- **Stop token storage**: `set_stop_token`/`stop_token` for cancellation propagation
+- **Executor storage**: `set_executor`/`executor` for executor affinity
+- **Awaitable transformation**: `await_transform` intercepts `get_stop_token_tag` and `get_executor_tag`, delegating all other awaitables to `transform_awaitable`
 
-This mixin encapsulates the boilerplate that every IoAwaitable-compatible promise type would otherwise duplicate.
+The `await_transform` method uses `if constexpr` to dispatch tag types to immediate awaiters (where `await_ready()` returns `true`), enabling `co_await get_executor()` and `co_await get_stop_token()` without suspension. Other awaitables pass through to `transform_awaitable`, which derived classes can override to add custom transformation logic.
+
+This mixin encapsulates the boilerplate that every _IoLaunchableTask_-compatible promise type would otherwise duplicate.
 
 ---
 
-## 10. Conclusion
+## 9. Conclusion
 
 We have presented an execution model designed from the ground up for coroutine-driven asynchronous I/O:
 
@@ -994,27 +1105,244 @@ We have presented an execution model designed from the ground up for coroutine-d
 
 2. **Clear responsibility model**: The application decides execution, allocation, and stop policy.
 
-3. **Complete type hiding**: Executor types do not leak into public interfaces. Platform I/O types remain hidden in translation units. Composed algorithms expose only `task` return types. This directly enables ABI stability.
+3. **Complete type hiding**: Executor types do not leak into public interfaces. Platform I/O types remain hidden in translation units. Composed algorithms expose only concrete Task return types. This directly enables ABI stability.
 
-4. **Forward context propagation**: Execution context flows with control flow, not against it. No backward queries. _IoAwaitable_ protocol injects context through `await_transform`.
+4. **Forward context propagation**: Execution context flows with control flow, not against it. No backward queries. _IoAwaitableTask_ injects context through `await_transform`.
 
 5. **Conscious tradeoff**: One pointer indirection per I/O operation (~1-2 nanoseconds) buys encapsulation, ABI stability, and fast compilation. For I/O-bound workloads where operations take 10,000+ nanoseconds, this cost is negligible.
 
-The comparison with `std::execution` (§2.4, §7) is instructive: that framework's complexity serves GPU workloads, not networking. The relatively large number of related papers suggests a design that is not yet mature and still finding its footing. P3826 adds machinery to fix problems networking doesn't have: domain-based algorithm dispatch, completion scheduler queries, sender transforms. Our design sidesteps these issues entirely.
+6. **Borrows from existing practice**: Our design is heavily inspired by Boost.Asio. It gets most things right.
+
+The comparison with `std::execution` (§2.4, §6) is instructive: that framework's complexity serves GPU workloads, not networking. The relatively large number of related papers suggests a design that is not yet mature and still finding its footing. P3826 adds machinery to fix problems networking doesn't have: domain-based algorithm dispatch, completion scheduler queries, sender transforms. Our design sidesteps these issues entirely.
 
 This divergence suggests that **networking deserves first-class design consideration**, not adaptation to frameworks optimized for heterogeneous computing. The future of asynchronous C++ need not be a single universal abstraction—it may be purpose-built frameworks that excel at their primary use cases while remaining interoperable at the boundaries
 
 ---
 
-## References
+## 10. Closing Thoughts
 
-1. [N4242](https://wg21.link/n4242) — Executors and Asynchronous Operations, Revision 1 (2014)
-2. [N4482](https://wg21.link/n4482) — Some notes on executors and the Networking Library Proposal (2015)
-3. [P2300R10](https://wg21.link/p2300) — std::execution (Michał Dominiak, Georgy Evtushenko, Lewis Baker, Lucian Radu Teodorescu, Lee Howes, Kirk Shoop, Eric Niebler)
-4. [P2762R2](https://wg21.link/p2762) — Sender/Receiver Interface for Networking (Dietmar Kühl)
-5. [P3552R3](https://wg21.link/p3552) — Add a Coroutine Task Type (Dietmar Kühl, Maikel Nadolski)
-6. [P3826R2](https://wg21.link/p3826) — Fix or Remove Sender Algorithm Customization (Lewis Baker, Eric Niebler)
-7. [Boost.Asio](https://www.boost.org/doc/libs/release/doc/html/boost_asio.html) — Asynchronous I/O library (Chris Kohlhoff)
+A reference implementation of this protocol exists as a complete library: Boost.Capy. It is also the foundation for the Boost.Corosio library which offers sockets, timers, signals, DNS resolution, and integration on multiple platforms. These libraries arose from use-case-first driven development with a simple mandate: produce a networking library built only for coroutines. Every design decision: forward context propagation, type-erased executors, the thread-local allocation window, emerged from solving real problems in production I/O code.
+
+The future of C++ depends less on papers and more on practitioners who ship working code. Open source library authors are the true pioneers—they discover what works by building systems that people actually use. Standards should follow implementations, not the reverse. The _IoAwaitable_ protocol is offered in that spirit: not as a theoretical construct, but as a distillation of patterns proven in practice.
+
+---
+
+## 11. Wording
+
+> **Non-normative note.** The wording below is not primarily intended for standardization. Its purpose is to demonstrate how a networking-focused, use-case-first design produces a dramatically leaner specification footprint. Compare this compact specification against the machinery required by P2300/P3826—domains, completion schedulers, sender transforms, query protocols—and observe how much simpler an execution model becomes when designed specifically for I/O workloads.
+
+### 11.1 Header `<io_awaitable>` synopsis [ioawait.syn]
+
+```cpp
+namespace std {
+  // [ioawait.concepts], concepts
+  template<class A> concept io_awaitable = see-below;
+  template<class T> concept io_awaitable_task = see-below;
+  template<class T> concept io_launchable_task = see-below;
+  template<class E> concept executor = see-below;
+
+  // [ioawait.execref], class executor_ref
+  class executor_ref;
+
+  // [ioawait.execctx], class execution_context
+  class execution_context;
+
+  // [ioawait.launch], launch functions
+  template<executor Ex, class... Args>
+    unspecified run_async(Ex const& ex, Args&&... args);
+
+  template<executor Ex, io_launchable_task Task>
+    unspecified run_on(Ex const& ex, Task task);
+}
+```
+
+### 11.2 Concepts [ioawait.concepts]
+
+#### 11.2.1 Concept `io_awaitable` [ioawait.concepts.awaitable]
+
+```cpp
+template<class A>
+concept io_awaitable =
+  requires(A a, coroutine_handle<> h, executor_ref ex, stop_token token) {
+    a.await_suspend(h, ex, token);
+  };
+```
+
+*Remarks:* A type satisfying `io_awaitable` can receive execution context (executor and stop token) via the three-argument `await_suspend` signature.
+
+#### 11.2.2 Concept `io_awaitable_task` [ioawait.concepts.task]
+
+```cpp
+template<class T>
+concept io_awaitable_task =
+  io_awaitable<T> &&
+  requires { typename T::promise_type; } &&
+  requires(typename T::promise_type& p,
+           typename T::promise_type const& cp,
+           executor_ref ex, stop_token st, coroutine_handle<> cont) {
+    { p.set_executor(ex) } noexcept;
+    { p.set_stop_token(st) } noexcept;
+    { p.set_continuation(cont, ex) } noexcept;
+    { cp.executor() } noexcept -> same_as<executor_ref>;
+    { cp.stop_token() } noexcept -> same_as<stop_token const&>;
+    { cp.complete() } noexcept -> same_as<coroutine_handle<>>;
+  };
+```
+
+*Remarks:* A type satisfying `io_awaitable_task` can both receive and propagate execution context through a coroutine chain.
+
+#### 11.2.3 Concept `io_launchable_task` [ioawait.concepts.launch]
+
+```cpp
+template<class T>
+concept io_launchable_task =
+  io_awaitable_task<T> &&
+  requires(T& t, T const& ct, typename T::promise_type const& cp) {
+    { ct.handle() } noexcept -> same_as<coroutine_handle<typename T::promise_type>>;
+    { cp.exception() } noexcept -> same_as<exception_ptr>;
+    { t.release() } noexcept;
+  } &&
+  (is_void_v<decltype(declval<T&>().await_resume())> ||
+   requires(typename T::promise_type& p) { p.result(); });
+```
+
+*Remarks:* A type satisfying `io_launchable_task` provides the interface needed by launch functions to bootstrap context and manage task lifetime.
+
+#### 11.2.4 Concept `executor` [ioawait.concepts.executor]
+
+```cpp
+template<class E>
+concept executor =
+  copy_constructible<E> &&
+  equality_comparable<E> &&
+  requires(E& e, E const& ce, coroutine_handle<> h) {
+    { ce.context() } noexcept -> see-below;
+    { ce.on_work_started() } noexcept;
+    { ce.on_work_finished() } noexcept;
+    { ce.dispatch(h) } -> convertible_to<coroutine_handle<>>;
+    { ce.post(h) };
+  };
+```
+
+*Remarks:* The expression `ce.context()` shall return an lvalue reference to a type publicly derived from `execution_context`.
+
+### 11.3 Class `executor_ref` [ioawait.execref]
+
+```cpp
+namespace std {
+  class executor_ref {
+    void const* ex_ = nullptr;                    // exposition only
+    unspecified const* vt_ = nullptr;             // exposition only
+
+  public:
+    executor_ref() = default;
+    executor_ref(executor_ref const&) = default;
+    executor_ref& operator=(executor_ref const&) = default;
+
+    template<executor E>
+      executor_ref(E const& e) noexcept;
+
+    explicit operator bool() const noexcept;
+    bool operator==(executor_ref const&) const noexcept = default;
+
+    execution_context& context() const noexcept;
+    void on_work_started() const noexcept;
+    void on_work_finished() const noexcept;
+    coroutine_handle<> dispatch(coroutine_handle<> h) const;
+    void post(coroutine_handle<> h) const;
+  };
+}
+```
+
+```cpp
+template<executor E>
+  executor_ref(E const& e) noexcept;
+```
+*Effects:* Type-erases `e`. The referent must remain valid for the lifetime of `*this` and any copies.
+
+```cpp
+explicit operator bool() const noexcept;
+```
+*Returns:* `true` if `*this` refers to an executor, otherwise `false`.
+
+```cpp
+coroutine_handle<> dispatch(coroutine_handle<> h) const;
+```
+*Effects:* Equivalent to calling `dispatch(h)` on the referenced executor.
+*Returns:* A coroutine handle suitable for symmetric transfer.
+
+```cpp
+void post(coroutine_handle<> h) const;
+```
+*Effects:* Equivalent to calling `post(h)` on the referenced executor.
+
+### 11.4 Class `execution_context` [ioawait.execctx]
+
+```cpp
+namespace std {
+  class execution_context {
+  public:
+    class service;
+
+    execution_context();
+    execution_context(execution_context const&) = delete;
+    execution_context& operator=(execution_context const&) = delete;
+    ~execution_context();
+
+    template<class T> bool has_service() const noexcept;
+    template<class T> T* find_service() const noexcept;
+    template<class T> T& use_service();
+    template<class T, class... Args> T& make_service(Args&&... args);
+
+    pmr::memory_resource* get_frame_allocator() const noexcept;
+    void set_frame_allocator(pmr::memory_resource* mr) noexcept;
+
+  protected:
+    void shutdown() noexcept;
+    void destroy() noexcept;
+  };
+
+  class execution_context::service {
+  public:
+    virtual ~service() = default;
+  protected:
+    service() = default;
+    virtual void shutdown() = 0;
+  };
+}
+```
+
+```cpp
+template<class T> T& use_service();
+```
+*Effects:* If a service of type `T` exists, returns a reference to it. Otherwise, creates one via `make_service<T>()` and returns a reference to the new service.
+*Returns:* A reference to the service of type `T`.
+
+```cpp
+pmr::memory_resource* get_frame_allocator() const noexcept;
+```
+*Returns:* The memory resource used for coroutine frame allocation, or `pmr::get_default_resource()` if none was set.
+
+```cpp
+void set_frame_allocator(pmr::memory_resource* mr) noexcept;
+```
+*Effects:* Sets the memory resource used for coroutine frame allocation.
+
+### 11.5 Launch functions [ioawait.launch]
+
+```cpp
+template<executor Ex, class... Args>
+  unspecified run_async(Ex const& ex, Args&&... args);
+```
+*Returns:* A callable object `f` such that `f(task)` launches `task` with executor `ex`.
+*Remarks:* `Args` may include a `stop_token`, an allocator, and completion handlers. The two-call syntax ensures the allocator is established before `task` is evaluated.
+
+```cpp
+template<executor Ex, io_launchable_task Task>
+  unspecified run_on(Ex const& ex, Task task);
+```
+*Returns:* An awaitable that, when `co_await`ed, executes `task` on `ex` and resumes the caller on its original executor upon completion.
+*Remarks:* The caller's executor is restored via `complete()` after `task` finishes.
 
 ---
 
@@ -1032,8 +1360,12 @@ The analysis in this paper is not a critique of these authors' contributions, bu
 
 ---
 
-## 11. Closing Thoughts
+## References
 
-Reference implementations of this protocol exist in Boost.Capy (the executor and task primitives) and Boost.Corosio (the I/O objects and platform integration). These libraries arose from use-case-first driven development with a simple mandate: produce a networking library built for coroutines-only. Every design decision—forward context propagation, type-erased executors, the thread-local allocation window—emerged from solving real problems in production I/O code.
-
-The future of C++ depends less on papers and more on practitioners who ship working code. Open source library authors are the true pioneers—they discover what works by building systems that people actually use. Standards follow implementations, not the reverse. The IoAwaitable protocol is offered in that spirit: not as a theoretical construct, but as a distillation of patterns proven in practice.
+1. [N4242](https://wg21.link/n4242) — Executors and Asynchronous Operations, Revision 1 (2014)
+2. [N4482](https://wg21.link/n4482) — Some notes on executors and the Networking Library Proposal (2015)
+3. [P2300R10](https://wg21.link/p2300) — std::execution (Michał Dominiak, Georgy Evtushenko, Lewis Baker, Lucian Radu Teodorescu, Lee Howes, Kirk Shoop, Eric Niebler)
+4. [P2762R2](https://wg21.link/p2762) — Sender/Receiver Interface for Networking (Dietmar Kühl)
+5. [P3552R3](https://wg21.link/p3552) — Add a Coroutine Task Type (Dietmar Kühl, Maikel Nadolski)
+6. [P3826R2](https://wg21.link/p3826) — Fix or Remove Sender Algorithm Customization (Lewis Baker, Eric Niebler)
+7. [Boost.Asio](https://www.boost.org/doc/libs/release/doc/html/boost_asio.html) — Asynchronous I/O library (Chris Kohlhoff)
