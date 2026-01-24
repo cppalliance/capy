@@ -9,24 +9,28 @@
 
 = Buffer Sequences
 
-This page explains how to work with sequences of buffers.
+This page explains how to work with multiple buffers as a logical unit,
+enabling scatter/gather I/O without data copying.
 
 NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
 
 == What is a Buffer Sequence?
 
-A buffer sequence represents a logical contiguous byte stream that may be
-stored in multiple non-contiguous memory regions. This enables scatter/gather
-I/O and avoids copying when data spans multiple buffers.
+A buffer sequence represents a logical byte stream stored across multiple
+non-contiguous memory regions. Instead of copying data into a single buffer,
+you describe where the pieces are and let I/O operations handle them directly.
 
 [source,cpp]
 ----
-// A sequence of three buffers representing a single message
-std::array<const_buffer, 3> buffers = {
+// Three separate memory regions form one logical message
+std::array<const_buffer, 3> message = {
     const_buffer(header, header_size),
-    const_buffer(payload, payload_size),
-    const_buffer(trailer, trailer_size)
+    const_buffer(body, body_size),
+    const_buffer(footer, footer_size)
 };
+
+// Write all three as a single operation
+co_await write(stream, message);
 ----
 
 == Buffer Sequence Concepts
@@ -37,155 +41,242 @@ Capy defines two concepts for buffer sequences:
 |===
 | Concept | Description
 
-| `const_buffer_sequence`
-| A range of elements convertible to `const_buffer`
+| `ConstBufferSequence`
+| A range whose elements convert to `const_buffer`
 
-| `mutable_buffer_sequence`
-| A range of elements convertible to `mutable_buffer`
+| `MutableBufferSequence`
+| A range whose elements convert to `mutable_buffer`
 |===
 
-A type satisfies `const_buffer_sequence` if it is:
+A type satisfies these concepts if it is either:
 
-* Convertible to `const_buffer`, OR
-* A bidirectional range whose value type is convertible to `const_buffer`
+* Convertible to `const_buffer` or `mutable_buffer` directly, OR
+* A bidirectional range with buffer-convertible elements
 
-Single buffers are valid buffer sequences containing one element.
-
-== Iterating Buffer Sequences
-
-Use `begin` and `end` to iterate over a buffer sequence:
+This means single buffers are valid buffer sequences:
 
 [source,cpp]
 ----
-template<const_buffer_sequence Buffers>
-void process(Buffers const& buffers)
+// Single buffer works anywhere a buffer sequence is expected
+const_buffer single_buf(data, size);
+co_await write(stream, single_buf);  // OK
+----
+
+== Iterating Buffer Sequences
+
+Use `begin()` and `end()` to iterate uniformly over any buffer sequence:
+
+[source,cpp]
+----
+template<ConstBufferSequence Buffers>
+void dump_buffers(Buffers const& bufs)
 {
-    for (auto it = begin(buffers); it != end(buffers); ++it)
+    for (auto it = begin(bufs); it != end(bufs); ++it)
     {
-        const_buffer buf = *it;
-        // Process each contiguous region
+        const_buffer b = *it;
+        std::cout << "Buffer: " << b.size() << " bytes at "
+                  << b.data() << "\n";
     }
 }
 ----
 
-These functions work uniformly for both single buffers and ranges of buffers.
-
-== Buffer Size and Length
-
-Two functions measure buffer sequences differently:
-
-[cols="1,3"]
-|===
-| Function | Returns
-
-| `buffer_size(seq)`
-| Total bytes across all buffers in the sequence
-
-| `buffer_length(seq)`
-| Number of buffers in the sequence
-|===
-
-[source,cpp]
-----
-std::array<const_buffer, 3> buffers = {
-    const_buffer(a, 10),
-    const_buffer(b, 20),
-    const_buffer(c, 30)
-};
-
-std::size_t bytes = buffer_size(buffers);   // 60 (total bytes)
-std::size_t count = buffer_length(buffers); // 3 (number of buffers)
-----
+These functions handle both single buffers and ranges uniformly.
 
 == Buffer Pairs
 
-For sequences that always have exactly two elements, use `const_buffer_pair`
-or `mutable_buffer_pair`:
+For sequences with exactly two elements, `const_buffer_pair` and
+`mutable_buffer_pair` provide optimized storage:
 
 [source,cpp]
 ----
 const_buffer_pair pair(
-    const_buffer(first, first_size),
-    const_buffer(second, second_size)
+    const_buffer(part1, size1),
+    const_buffer(part2, size2)
 );
 
-// Access elements
-const_buffer& b0 = pair[0];
-const_buffer& b1 = pair[1];
+// Access by index
+const_buffer& first = pair[0];
+const_buffer& second = pair[1];
 
 // Iterate
 for (const_buffer const& buf : pair)
 {
-    // ...
+    process(buf);
 }
 ----
 
-Buffer pairs are useful for circular buffers where data wraps around.
+Buffer pairs are especially useful for circular buffers where data
+wraps around the end of storage.
+
+== Incremental Consumption with consuming_buffers
+
+When reading or writing in a loop, you need to track progress through the
+buffer sequence. The `consuming_buffers` wrapper handles this automatically.
+
+[source,cpp]
+----
+#include <boost/capy/buffers/consuming_buffers.hpp>
+
+template<WriteStream Stream, ConstBufferSequence Buffers>
+task<io_result<std::size_t>> write_all(Stream& stream, Buffers const& bufs)
+{
+    consuming_buffers consuming(bufs);
+    std::size_t total = 0;
+
+    while (buffer_size(consuming) > 0)
+    {
+        auto [ec, n] = co_await stream.write_some(consuming);
+        if (ec.failed())
+            co_return {ec, total};
+        consuming.consume(n);
+        total += n;
+    }
+
+    co_return {{}, total};
+}
+----
+
+=== How consuming_buffers Works
+
+The wrapper tracks the current position within the buffer sequence:
+
+[source,cpp]
+----
+std::array<const_buffer, 3> bufs = {
+    const_buffer(a, 100),
+    const_buffer(b, 200),
+    const_buffer(c, 150)
+};
+
+consuming_buffers cb(bufs);
+// cb iteration yields: [a, 100], [b, 200], [c, 150]
+
+cb.consume(50);
+// cb iteration yields: [a+50, 50], [b, 200], [c, 150]
+
+cb.consume(60);
+// cb iteration yields: [b+10, 190], [c, 150]
+----
+
+The original buffer sequence is not modified.
+
+== I/O Loop Patterns
+
+Understanding how the composed `read()` and `write()` functions work
+helps you implement custom I/O patterns.
+
+=== Complete Write Pattern
+
+The `write()` function loops until all data is written:
+
+[source,cpp]
+----
+// Simplified implementation of write()
+auto write(WriteStream auto& stream, ConstBufferSequence auto const& buffers)
+    -> task<io_result<std::size_t>>
+{
+    consuming_buffers consuming(buffers);
+    std::size_t total = 0;
+    std::size_t const goal = buffer_size(buffers);
+
+    while (total < goal)
+    {
+        auto [ec, n] = co_await stream.write_some(consuming);
+        if (ec.failed())
+            co_return {ec, total};
+        consuming.consume(n);
+        total += n;
+    }
+
+    co_return {{}, total};
+}
+----
+
+=== Complete Read Pattern
+
+The `read()` function fills buffers completely:
+
+[source,cpp]
+----
+// Simplified implementation of read()
+auto read(ReadStream auto& stream, MutableBufferSequence auto const& buffers)
+    -> task<io_result<std::size_t>>
+{
+    consuming_buffers consuming(buffers);
+    std::size_t total = 0;
+    std::size_t const goal = buffer_size(buffers);
+
+    while (total < goal)
+    {
+        auto [ec, n] = co_await stream.read_some(consuming);
+        if (ec.failed())
+            co_return {ec, total};
+        consuming.consume(n);
+        total += n;
+    }
+
+    co_return {{}, total};
+}
+----
 
 == Slicing Buffer Sequences
 
-The slicing algorithms adjust buffer sequences without copying data:
+The `tag_invoke` customization point enables slicing buffers:
 
 [source,cpp]
 ----
-// Remove bytes from front
-tag_invoke(slice_tag{}, buf, slice_how::remove_prefix, n);
+mutable_buffer buf(data, 100);
 
-// Keep only the first n bytes
-tag_invoke(slice_tag{}, buf, slice_how::keep_prefix, n);
-----
+// Remove first 20 bytes
+tag_invoke(slice_tag{}, buf, slice_how::remove_prefix, 20);
+// buf now points to data+20, size 80
 
-These modify the buffer in place.
-
-== Type Aliases
-
-[cols="1,3"]
-|===
-| Alias | Definition
-
-| `buffer_type<Seq>`
-| `mutable_buffer` if `Seq` is mutable, else `const_buffer`
-|===
-
-[source,cpp]
-----
-template<const_buffer_sequence Buffers>
-void process(Buffers const& buffers)
-{
-    using buf_t = buffer_type<Buffers>;  // const_buffer or mutable_buffer
-    // ...
-}
+// Keep only first 50 bytes
+mutable_buffer buf2(data, 100);
+tag_invoke(slice_tag{}, buf2, slice_how::keep_prefix, 50);
+// buf2 points to data, size 50
 ----
 
 == Common Patterns
 
-=== Scatter Read
-
-Read into multiple buffers in a single operation:
+=== Scatter Read: Protocol Header + Body
 
 [source,cpp]
 ----
-std::array<mutable_buffer, 2> buffers = {
-    mutable_buffer(header_buf, 16),
-    mutable_buffer(body_buf, 1024)
-};
+task<void> read_framed_message(ReadStream auto& stream)
+{
+    // Fixed header followed by variable body
+    char header[8];
+    char body[1024];
 
-std::size_t bytes_read = read_some(buffers);
+    std::array<mutable_buffer, 2> bufs = {
+        mutable_buffer(header, 8),
+        mutable_buffer(body, 1024)
+    };
+
+    auto [ec, n] = co_await stream.read_some(bufs);
+    // header filled first, then body
+}
 ----
 
-=== Gather Write
-
-Write from multiple buffers in a single operation:
+=== Gather Write: Multipart Response
 
 [source,cpp]
 ----
-std::array<const_buffer, 3> buffers = {
-    const_buffer(header, header_len),
-    const_buffer(body, body_len),
-    const_buffer(footer, footer_len)
-};
+task<void> send_http_response(
+    WriteStream auto& stream,
+    std::string_view status_line,
+    std::string_view headers,
+    std::string_view body)
+{
+    std::array<const_buffer, 3> parts = {
+        make_buffer(status_line),
+        make_buffer(headers),
+        make_buffer(body)
+    };
 
-std::size_t bytes_written = write_some(buffers);
+    co_await write(stream, parts);
+}
 ----
 
 == Summary
@@ -194,29 +285,26 @@ std::size_t bytes_written = write_some(buffers);
 |===
 | Component | Purpose
 
-| `const_buffer_sequence`
-| Concept for read-only buffer sequences
+| `ConstBufferSequence`
+| Concept for sequences of read-only buffers
 
-| `mutable_buffer_sequence`
-| Concept for writable buffer sequences
+| `MutableBufferSequence`
+| Concept for sequences of writable buffers
 
 | `begin`, `end`
-| Iterate buffer sequences uniformly
-
-| `buffer_size`
-| Total bytes in sequence
-
-| `buffer_length`
-| Number of buffers in sequence
+| Uniform iteration over any buffer sequence
 
 | `const_buffer_pair`
-| Two-element const buffer sequence
+| Optimized two-element const sequence
 
 | `mutable_buffer_pair`
-| Two-element mutable buffer sequence
+| Optimized two-element mutable sequence
+
+| `consuming_buffers`
+| Track progress through a buffer sequence
 |===
 
-== Next Steps
+== Navigation
 
-* xref:dynamic.adoc[Dynamic Buffers] — Growable buffer containers
-* xref:index.adoc[Buffer Types] — Basic buffer types
+[.text-center]
+xref:index.adoc[← Buffer Types] | xref:algorithms.adoc[Next: Buffer Algorithms →]

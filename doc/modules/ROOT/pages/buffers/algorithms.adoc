@@ -1,0 +1,266 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Buffer Algorithms
+
+This page covers the algorithms for measuring and copying buffer sequences.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== Measuring Buffers
+
+Three functions measure different properties of buffer sequences:
+
+[cols="1,3"]
+|===
+| Function | Returns
+
+| `buffer_size(seq)`
+| Total bytes across all buffers
+
+| `buffer_empty(seq)`
+| Whether total size is zero
+
+| `buffer_length(seq)`
+| Number of buffers (not bytes)
+|===
+
+=== buffer_size
+
+Returns the total number of bytes in a buffer sequence:
+
+[source,cpp]
+----
+#include <boost/capy/buffers.hpp>
+
+char a[100], b[200], c[50];
+std::array<const_buffer, 3> bufs = {
+    const_buffer(a, sizeof(a)),
+    const_buffer(b, sizeof(b)),
+    const_buffer(c, sizeof(c))
+};
+
+std::size_t total = buffer_size(bufs);  // 350
+----
+
+This is different from range size—it sums the byte counts:
+
+[source,cpp]
+----
+// buffer_size vs range size
+std::size_t bytes = buffer_size(bufs);    // 350 (total bytes)
+std::size_t count = std::ranges::size(bufs);  // 3 (number of buffers)
+----
+
+Single buffers work too:
+
+[source,cpp]
+----
+const_buffer single(data, 100);
+std::size_t n = buffer_size(single);  // 100
+----
+
+=== buffer_empty
+
+Checks if a buffer sequence contains no data:
+
+[source,cpp]
+----
+std::array<const_buffer, 2> bufs = {
+    const_buffer(nullptr, 0),
+    const_buffer(nullptr, 0)
+};
+
+bool empty = buffer_empty(bufs);  // true
+
+bufs[0] = const_buffer(data, 10);
+empty = buffer_empty(bufs);       // false
+----
+
+A sequence is empty if all its buffers have size zero, or if
+it contains no buffers at all.
+
+=== buffer_length
+
+Returns the number of buffers in a sequence:
+
+[source,cpp]
+----
+std::array<const_buffer, 3> bufs = { /* ... */ };
+std::size_t count = buffer_length(bufs);  // 3
+
+const_buffer single(data, 100);
+count = buffer_length(single);            // 1
+----
+
+== Copying Buffers
+
+The `buffer_copy` function copies data between buffer sequences
+without requiring contiguous storage.
+
+=== Basic Usage
+
+[source,cpp]
+----
+#include <boost/capy/buffers/buffer_copy.hpp>
+
+char src_data[] = "Hello, World!";
+char dst_data[32];
+
+const_buffer src(src_data, sizeof(src_data) - 1);
+mutable_buffer dst(dst_data, sizeof(dst_data));
+
+std::size_t copied = buffer_copy(dst, src);  // 13
+// dst_data now contains "Hello, World!"
+----
+
+=== With Multiple Buffers
+
+Copy between buffer sequences efficiently:
+
+[source,cpp]
+----
+// Source: three separate buffers
+std::array<const_buffer, 3> src = {
+    const_buffer("Hello", 5),
+    const_buffer(", ", 2),
+    const_buffer("World!", 6)
+};
+
+// Destination: two buffers
+char d1[8], d2[8];
+std::array<mutable_buffer, 2> dst = {
+    mutable_buffer(d1, sizeof(d1)),
+    mutable_buffer(d2, sizeof(d2))
+};
+
+std::size_t n = buffer_copy(dst, src);
+// n == 13
+// d1 contains "Hello, W"
+// d2 contains "orld!\0\0\0"
+----
+
+=== Limiting Copy Size
+
+The optional `at_most` parameter limits the copy:
+
+[source,cpp]
+----
+char large_src[1000];
+char small_dst[100];
+
+// Only copy up to 50 bytes
+std::size_t n = buffer_copy(
+    mutable_buffer(small_dst, sizeof(small_dst)),
+    const_buffer(large_src, sizeof(large_src)),
+    50);
+
+// n == 50
+----
+
+The copy stops at the minimum of:
+
+* Destination capacity
+* Source size
+* `at_most` parameter (if provided)
+
+== Real-World Examples
+
+=== Building a Packet
+
+[source,cpp]
+----
+struct packet_header {
+    std::uint16_t type;
+    std::uint16_t length;
+};
+
+task<void> send_packet(
+    WriteStream auto& stream,
+    std::uint16_t type,
+    std::span<char const> payload)
+{
+    packet_header hdr;
+    hdr.type = type;
+    hdr.length = static_cast<std::uint16_t>(payload.size());
+
+    std::array<const_buffer, 2> packet = {
+        const_buffer(&hdr, sizeof(hdr)),
+        const_buffer(payload.data(), payload.size())
+    };
+
+    auto total = buffer_size(packet);  // sizeof(hdr) + payload.size()
+    co_await write(stream, packet);
+}
+----
+
+=== Coalescing Buffers
+
+Sometimes you need contiguous data for parsing:
+
+[source,cpp]
+----
+template<ConstBufferSequence Buffers>
+std::vector<char> coalesce(Buffers const& bufs)
+{
+    std::vector<char> result(buffer_size(bufs));
+    buffer_copy(make_buffer(result), bufs);
+    return result;
+}
+----
+
+=== Progress Tracking
+
+[source,cpp]
+----
+template<WriteStream Stream>
+task<void> send_with_progress(
+    Stream& stream,
+    ConstBufferSequence auto const& data,
+    std::function<void(std::size_t, std::size_t)> on_progress)
+{
+    std::size_t const total = buffer_size(data);
+    std::size_t sent = 0;
+
+    consuming_buffers cb(data);
+    while (sent < total)
+    {
+        auto [ec, n] = co_await stream.write_some(cb);
+        if (ec.failed())
+            co_return;
+        cb.consume(n);
+        sent += n;
+        on_progress(sent, total);
+    }
+}
+----
+
+== Summary
+
+[cols="1,3"]
+|===
+| Function | Purpose
+
+| `buffer_size`
+| Total bytes across all buffers in a sequence
+
+| `buffer_empty`
+| Check if total byte count is zero
+
+| `buffer_length`
+| Number of buffers in a sequence
+
+| `buffer_copy`
+| Copy data between buffer sequences
+|===
+
+== Navigation
+
+[.text-center]
+xref:sequences.adoc[← Buffer Sequences] | xref:dynamic.adoc[Next: Dynamic Buffers →]

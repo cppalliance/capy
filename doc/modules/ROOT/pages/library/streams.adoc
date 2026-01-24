@@ -9,350 +9,312 @@
 
 = Stream Concepts
 
-This section explains Capy's stream concepts for generic I/O operations and
-the composed algorithms that work with them.
+This page explains Capy's stream concepts for generic I/O operations.
+Understanding the distinction between partial and complete operations
+is key to writing correct network code.
 
-== What Is a Stream?
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
 
-A stream is an object that can read or write bytes asynchronously. Capy
-defines four stream concepts based on capability:
+== Stream vs Source/Sink
 
-[cols="1,3"]
+Capy distinguishes between two levels of I/O abstraction:
+
+[cols="1,1,3"]
 |===
-| Concept | Capability
+| Level | Concepts | Behavior
 
-| `ReadStream`
-| Asynchronous read operations
+| **Partial**
+| `ReadStream`, `WriteStream`
+| Single operation, may transfer less than requested
 
-| `WriteStream`
-| Asynchronous write operations
-
-| `ReadSource`
-| Read some bytes into a buffer
-
-| `WriteSink`
-| Write some bytes from a buffer
+| **Complete**
+| `ReadSource`, `WriteSink`
+| Loops internally, fills/drains buffers completely
 |===
 
-== ReadSource
+The stream concepts (`read_some`/`write_some`) map closely to OS system calls.
+The source/sink concepts (`read`/`write`) build loops around partial operations.
 
-The most basic read concept. A `ReadSource` can read some bytes:
+== ReadStream
+
+A `ReadStream` provides partial read operations via `read_some()`:
 
 [source,cpp]
 ----
-template<typename S>
-concept ReadSource = requires(S& s, mutable_buffer buf)
+template<typename T>
+concept ReadStream = requires(T& stream, MutableBufferSequence auto buffers)
 {
-    { s.read_some(buf) } -> IoAwaitable;
-    // Returns io_result<std::size_t> with bytes read
+    { stream.read_some(buffers) } -> IoAwaitable;
+    // Returns io_result<std::size_t>
 };
 ----
 
-`read_some` reads _at least one byte_ (unless EOF or error) but may read
-fewer bytes than the buffer can hold.
+=== Behavior
+
+`read_some()` reads **at least one byte** (unless EOF or error) but may
+read fewer bytes than the buffer can hold:
 
 [source,cpp]
 ----
-char data[1024];
-mutable_buffer buf(data, sizeof(data));
+char buffer[1024];
+auto [ec, n] = co_await stream.read_some(mutable_buffer(buffer, 1024));
+// n might be 100, even though buffer holds 1024
+----
 
-auto [ec, n] = co_await source.read_some(buf);
-// n bytes were read into data (n <= 1024)
+This matches OS behavior—`recv()` returns whatever data is available.
+
+=== Return Values
+
+* **Success**: `!ec.failed()` is true, `n >= 1`
+* **EOF**: `ec == cond::eof`, `n == 0`
+* **Error**: `ec.failed()` is true, `n == 0`
+
+=== Example
+
+[source,cpp]
+----
+task<std::string> read_available(ReadStream auto& stream)
+{
+    char buffer[4096];
+    auto [ec, n] = co_await stream.read_some(make_buffer(buffer));
+    if (ec.failed())
+        co_return {};
+    co_return std::string(buffer, n);
+}
+----
+
+Reference: `<boost/capy/concept/read_stream.hpp>`
+
+== WriteStream
+
+A `WriteStream` provides partial write operations via `write_some()`:
+
+[source,cpp]
+----
+template<typename T>
+concept WriteStream = requires(T& stream, ConstBufferSequence auto buffers)
+{
+    { stream.write_some(buffers) } -> IoAwaitable;
+    // Returns io_result<std::size_t>
+};
+----
+
+=== Behavior
+
+`write_some()` writes **at least one byte** (unless error) but may write
+fewer bytes than provided:
+
+[source,cpp]
+----
+std::string data = /* 10000 bytes */;
+auto [ec, n] = co_await stream.write_some(make_buffer(data));
+// n might be 8192, even though data has 10000 bytes
+----
+
+This matches OS behavior—`send()` may accept only part of your data.
+
+=== Return Values
+
+* **Success**: `!ec.failed()` is true, `n >= 1`
+* **Error**: `ec.failed()` is true, `n == 0`
+
+=== Example
+
+[source,cpp]
+----
+task<void> write_chunk(WriteStream auto& stream, std::string_view data)
+{
+    auto [ec, n] = co_await stream.write_some(make_buffer(data));
+    if (ec.failed())
+        co_return;
+    // Only n bytes were written
+}
+----
+
+Reference: `<boost/capy/concept/write_stream.hpp>`
+
+== ReadSource
+
+A `ReadSource` provides complete read operations via `read()`:
+
+[source,cpp]
+----
+template<typename T>
+concept ReadSource = requires(T& source, MutableBufferSequence auto buffers)
+{
+    { source.read(buffers) } -> IoAwaitable;
+    // Returns io_result<std::size_t>
+};
+----
+
+=== Behavior
+
+`read()` fills the buffer **completely** before returning, looping as needed:
+
+[source,cpp]
+----
+char header[16];
+auto [ec, n] = co_await source.read(mutable_buffer(header, 16));
+// If successful: n == 16 (always fills completely)
+----
+
+=== Return Values
+
+* **Success**: `!ec.failed()` is true, `n == buffer_size(buffers)`
+* **EOF**: `ec == cond::eof`, `n` is bytes read before EOF
+* **Error**: `ec.failed()` is true, `n` is bytes read before error
+
+=== Example
+
+[source,cpp]
+----
+task<std::vector<char>> read_exact(ReadSource auto& source, std::size_t count)
+{
+    std::vector<char> result(count);
+    auto [ec, n] = co_await source.read(make_buffer(result));
+    if (ec.failed())
+        co_return {};
+    co_return result;
+}
 ----
 
 Reference: `<boost/capy/concept/read_source.hpp>`
 
 == WriteSink
 
-The basic write concept. A `WriteSink` can write some bytes:
+A `WriteSink` provides complete write operations with EOF signaling:
 
 [source,cpp]
 ----
-template<typename S>
-concept WriteSink = requires(S& s, const_buffer buf)
+template<typename T>
+concept WriteSink = requires(T& sink, ConstBufferSequence auto buffers, bool eof)
 {
-    { s.write_some(buf) } -> IoAwaitable;
-    // Returns io_result<std::size_t> with bytes written
+    { sink.write(buffers) } -> IoAwaitable;        // Write all bytes
+    { sink.write(buffers, eof) } -> IoAwaitable;   // Write + optional EOF
+    { sink.write_eof() } -> IoAwaitable;           // Signal end of data
 };
 ----
 
-`write_some` writes _at least one byte_ (unless error) but may write fewer
-bytes than provided.
+=== Behavior
+
+`write()` sends **all bytes** before returning:
 
 [source,cpp]
 ----
-char data[] = "Hello, World!";
-const_buffer buf(data, sizeof(data) - 1);
-
-auto [ec, n] = co_await sink.write_some(buf);
-// n bytes were written (n <= buffer size)
+std::string body = /* 10000 bytes */;
+auto [ec, n] = co_await sink.write(make_buffer(body));
+// If successful: n == 10000 (always writes completely)
 ----
+
+The EOF variants signal that no more data will follow:
+
+[source,cpp]
+----
+// Option 1: write then signal EOF
+co_await sink.write(make_buffer(data));
+co_await sink.write_eof();
+
+// Option 2: combined call
+co_await sink.write(make_buffer(data), true);
+----
+
+=== Return Values
+
+* **Success**: `!ec.failed()` is true, `n == buffer_size(buffers)`
+* **Error**: `ec.failed()` is true, `n` is bytes written before error
 
 Reference: `<boost/capy/concept/write_sink.hpp>`
 
-== ReadStream
+== Composed Algorithms
 
-A `ReadStream` is a `ReadSource` with position tracking:
+Capy provides `read()` and `write()` free functions that build complete
+operations from partial ones.
 
-[source,cpp]
-----
-template<typename S>
-concept ReadStream = ReadSource<S>;
-// May have additional requirements in future versions
-----
-
-Read streams are typically stateful—they track the current read position.
-Multiple calls to `read_some` read sequential data.
-
-Reference: `<boost/capy/concept/read_stream.hpp>`
-
-== WriteStream
-
-A `WriteStream` is a `WriteSink` with position tracking:
-
-[source,cpp]
-----
-template<typename S>
-concept WriteStream = WriteSink<S>;
-// May have additional requirements in future versions
-----
-
-Write streams track the current write position. Multiple calls to `write_some`
-write sequential data.
-
-Reference: `<boost/capy/concept/write_stream.hpp>`
-
-== Composed Read Operations
-
-The `read()` function performs complete reads:
+=== read() Function
 
 [source,cpp]
 ----
 #include <boost/capy/read.hpp>
 
-// Read exactly n bytes (or until EOF/error)
-auto [ec, n] = co_await read(stream, buffer);
+// Read into fixed buffers (loops read_some until full)
+auto [ec, n] = co_await read(stream, buffers);
+
+// Read into dynamic buffer (loops until EOF)
+auto [ec, n] = co_await read(source, dynamic_buffer);
 ----
 
-Unlike `read_some()`, `read()` loops internally until:
-
-* The buffer is full
-* EOF is reached
-* An error occurs
-
-=== read() with Dynamic Buffer
-
-[source,cpp]
-----
-flat_dynamic_buffer buf;
-auto [ec, n] = co_await read(stream, buf);
-// Reads until EOF, growing buffer as needed
-----
-
-=== read() with Size Limit
-
-[source,cpp]
-----
-flat_dynamic_buffer buf;
-auto [ec, n] = co_await read(stream, buf, 1024);
-// Reads at most 1024 bytes
-----
-
-== Composed Write Operations
-
-The `write()` function performs complete writes:
+=== write() Function
 
 [source,cpp]
 ----
 #include <boost/capy/write.hpp>
 
-// Write all data (or until error)
-auto [ec, n] = co_await write(stream, buffer);
-----
-
-Unlike `write_some()`, `write()` loops until all data is written.
-
-=== write() with Buffer Sequence
-
-[source,cpp]
-----
-std::array<const_buffer, 2> buffers = {
-    const_buffer("Hello, ", 7),
-    const_buffer("World!", 6)
-};
-
+// Write all data (loops write_some until empty)
 auto [ec, n] = co_await write(stream, buffers);
-// Writes all 13 bytes
 ----
 
-== Implementing a Stream
+== Choosing the Right Level
 
-To create a custom stream, implement the required methods:
+**Use stream concepts (`read_some`/`write_some`) when:**
+
+* You want to process data as it arrives
+* You're implementing a protocol with natural chunk boundaries
+* You need fine-grained control over I/O timing
+
+**Use source/sink concepts (`read`/`write`) when:**
+
+* You need exactly N bytes before proceeding
+* You're reading until EOF
+* You want simple "send this, receive that" semantics
+
+== Example: Echo Server
 
 [source,cpp]
 ----
-class my_stream
+// Using partial operations for streaming
+task<void> echo_streaming(ReadStream auto& in, WriteStream auto& out)
 {
-public:
-    // ReadSource requirement
-    auto read_some(mutable_buffer buf)
-    {
-        return make_read_awaitable([this, buf]() {
-            return do_read(buf);
-        });
-    }
-
-    // WriteSink requirement
-    auto write_some(const_buffer buf)
-    {
-        return make_write_awaitable([this, buf]() {
-            return do_write(buf);
-        });
-    }
-
-private:
-    io_result<std::size_t> do_read(mutable_buffer buf);
-    io_result<std::size_t> do_write(const_buffer buf);
-};
-----
-
-The stream must:
-
-* Return an `IoAwaitable` from `read_some`/`write_some`
-* The awaitable must yield `io_result<std::size_t>`
-* Handle EOF by returning `{error::end_of_stream, 0}`
-
-== Test Utilities
-
-Capy provides mock streams for testing:
-
-=== test::read_stream
-
-A mock read stream that yields predetermined data:
-
-[source,cpp]
-----
-#include <boost/capy/test/read_stream.hpp>
-
-std::string data = "Hello, World!";
-test::read_stream stream(data);
-
-auto [ec, n] = co_await stream.read_some(buffer);
-----
-
-=== test::write_stream
-
-A mock write stream that captures written data:
-
-[source,cpp]
-----
-#include <boost/capy/test/write_stream.hpp>
-
-test::write_stream stream;
-co_await write(stream, const_buffer("Hello", 5));
-
-assert(stream.data() == "Hello");
-----
-
-=== test::read_source / test::write_sink
-
-Stateless versions for testing algorithms:
-
-[source,cpp]
-----
-#include <boost/capy/test/read_source.hpp>
-#include <boost/capy/test/write_sink.hpp>
-
-// Use in tests that only need the concept requirements
-----
-
-== Stream Patterns
-
-=== Copy Stream to Stream
-
-[source,cpp]
-----
-task<io_result<std::size_t>> copy(ReadStream& src, WriteStream& dst)
-{
-    std::size_t total = 0;
     char buffer[4096];
-
-    while (true)
+    for (;;)
     {
-        auto [ec1, n1] = co_await src.read_some(mutable_buffer(buffer));
-        if (ec1 == error::end_of_stream)
-            co_return {{}, total};
+        auto [ec1, n] = co_await in.read_some(make_buffer(buffer));
+        if (ec1 == cond::eof)
+            break;
         if (ec1.failed())
-            co_return {ec1, total};
+            co_return;
 
-        auto [ec2, n2] = co_await write(dst, const_buffer(buffer, n1));
+        // Use write() to ensure all bytes are sent
+        auto [ec2, _] = co_await write(out, make_buffer(buffer, n));
         if (ec2.failed())
-            co_return {ec2, total};
-
-        total += n2;
-    }
-}
-----
-
-=== Buffered Reading
-
-[source,cpp]
-----
-task<io_result<std::string>> read_line(ReadStream& s, flat_dynamic_buffer& buf)
-{
-    while (true)
-    {
-        // Check buffer for newline
-        auto data = buf.data();
-        auto pos = std::find(data.begin(), data.end(), '\n');
-        if (pos != data.end())
-        {
-            std::string line(data.begin(), pos);
-            buf.consume(pos - data.begin() + 1);
-            co_return {{}, line};
-        }
-
-        // Read more data
-        auto [ec, n] = co_await s.read_some(buf.prepare(1024));
-        if (ec.failed())
-            co_return {ec, {}};
-        buf.commit(n);
+            co_return;
     }
 }
 ----
 
 == Summary
 
-[cols="1,3"]
+[cols="1,1,3"]
 |===
-| Concept | Purpose
-
-| `ReadSource`
-| Read some bytes (at least one)
-
-| `WriteSink`
-| Write some bytes (at least one)
+| Concept | Method | Behavior
 
 | `ReadStream`
-| Stateful read stream
+| `read_some(buffers)`
+| Read at least one byte (partial)
 
 | `WriteStream`
-| Stateful write stream
+| `write_some(buffers)`
+| Write at least one byte (partial)
 
-| `read()`
-| Complete read (loops until done)
+| `ReadSource`
+| `read(buffers)`
+| Fill buffers completely or EOF
 
-| `write()`
-| Complete write (loops until done)
-
-| `read_some()`
-| Single read operation
-
-| `write_some()`
-| Single write operation
+| `WriteSink`
+| `write(buffers)`, `write_eof()`
+| Write all bytes, signal EOF
 |===
 
-== Next Steps
+== Navigation
 
-* xref:buffers.adoc[Buffers] — Buffer types for stream I/O
-* xref:when-all.adoc[Concurrent Composition] — Parallel stream operations
+[.text-center]
+xref:../buffers/dynamic.adoc[← Dynamic Buffers] | xref:when-all.adoc[Next: Concurrent Composition →]

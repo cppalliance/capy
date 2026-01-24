@@ -14,11 +14,17 @@
 * Capy Library
 ** xref:library/task.adoc[The task<T> Type]
 ** xref:library/io-result.adoc[Error Handling with io_result]
-** xref:library/buffers.adoc[Buffers]
 ** xref:library/streams.adoc[Stream Concepts]
 ** xref:library/when-all.adoc[Concurrent Composition]
 ** xref:library/cancellation.adoc[Cancellation]
 ** xref:library/synchronization.adoc[Synchronization Primitives]
 ** xref:library/executors.adoc[Executors and Strands]
 ** xref:library/frame-allocators.adoc[Frame Allocators]
+* Buffers
+** xref:library/buffers.adoc[Overview]
+** xref:buffers/overview.adoc[Buffers and I/O]
+** xref:buffers/index.adoc[Buffer Types]
+** xref:buffers/sequences.adoc[Buffer Sequences]
+** xref:buffers/algorithms.adoc[Buffer Algorithms]
+** xref:buffers/dynamic.adoc[Dynamic Buffers]
 * xref:reference:boost/capy.adoc[Reference]

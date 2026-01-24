@@ -9,303 +9,67 @@
 
 = Buffers
 
-This section explains the buffer types for efficient I/O operations.
+Capy's buffer system enables efficient I/O operations through lightweight
+memory views, scatter/gather I/O, and growable storage containers.
 
-NOTE: Code examples assume `using namespace boost::capy;` is in effect.
+== Overview
 
-== Buffer Types
+Buffers are the foundation of all I/O in Capy. They represent regions of
+memory that can be read from or written to, enabling zero-copy data transfer
+and platform-agnostic I/O algorithms.
 
-Capy provides two fundamental buffer types:
+== Quick Example
+
+[source,cpp]
+----
+#include <boost/capy/buffers.hpp>
+#include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/read.hpp>
+#include <boost/capy/write.hpp>
+
+using namespace boost::capy;
+
+task<void> echo(ReadStream auto& in, WriteStream auto& out)
+{
+    char buffer[4096];
+    for (;;)
+    {
+        auto [ec1, n] = co_await in.read_some(make_buffer(buffer));
+        if (ec1 == cond::eof)
+            break;
+        if (ec1.failed())
+            co_return;
+
+        auto [ec2, _] = co_await write(out, make_buffer(buffer, n));
+        if (ec2.failed())
+            co_return;
+    }
+}
+----
+
+== Topics
 
 [cols="1,3"]
 |===
-| Type | Description
+| Topic | Description
 
-| `const_buffer`
-| View into read-only memory
+| xref:../buffers/overview.adoc[Buffers and I/O]
+| Why buffers exist and how they enable efficient I/O
 
-| `mutable_buffer`
-| View into writable memory
+| xref:../buffers/index.adoc[Buffer Types]
+| `const_buffer`, `mutable_buffer`, and `make_buffer`
+
+| xref:../buffers/sequences.adoc[Buffer Sequences]
+| Scatter/gather I/O with multiple buffers
+
+| xref:../buffers/algorithms.adoc[Buffer Algorithms]
+| `buffer_copy`, `buffer_size`, `buffer_empty`
+
+| xref:../buffers/dynamic.adoc[Dynamic Buffers]
+| Growable buffers with producer/consumer model
 |===
 
-Buffers do not own memory. They are lightweight handles (pointer + size)
-that refer to memory owned elsewhere.
-
-=== const_buffer
-
-A read-only view into contiguous bytes:
-
-[source,cpp]
-----
-char const data[] = "Hello, World!";
-const_buffer buf(data, sizeof(data) - 1);
-
-void const* p = buf.data();   // Pointer to first byte
-std::size_t n = buf.size();   // Number of bytes (13)
-----
-
-=== mutable_buffer
-
-A writable view into contiguous bytes:
-
-[source,cpp]
-----
-char data[1024];
-mutable_buffer buf(data, sizeof(data));
-
-void* p = buf.data();         // Pointer to first byte
-std::size_t n = buf.size();   // Number of bytes
-----
-
-=== Implicit Conversion
-
-`mutable_buffer` implicitly converts to `const_buffer`:
-
-[source,cpp]
-----
-mutable_buffer mbuf(ptr, size);
-const_buffer cbuf = mbuf;  // OK: read-only view of same memory
-----
-
-The reverse is not allowed—you can't write to read-only memory.
-
-== Buffer Operations
-
-=== Advancing Buffers
-
-Use `operator+=` to consume bytes from the front:
-
-[source,cpp]
-----
-const_buffer buf(data, 100);
-buf += 10;  // Now points to data+10, size is 90
-----
-
-This is useful for processing data incrementally.
-
-== Buffer Sequences
-
-A buffer sequence is a range of buffers for scatter/gather I/O:
-
-[source,cpp]
-----
-std::array<const_buffer, 2> buffers = {
-    const_buffer("Hello, ", 7),
-    const_buffer("World!", 6)
-};
-
-// Write both buffers in one operation
-auto [ec, n] = co_await write(stream, buffers);
-----
-
-Scatter/gather I/O avoids copying data into a single contiguous buffer.
-
-=== Buffer Sequence Concepts
-
-[source,cpp]
-----
-template<typename B>
-concept ConstBufferSequence = /* ... */;
-
-template<typename B>
-concept MutableBufferSequence = /* ... */;
-----
-
-Any type that provides `begin()` and `end()` returning iterators to
-`const_buffer` or `mutable_buffer` satisfies these concepts.
-
-== Dynamic Buffers
-
-Dynamic buffers grow to accommodate incoming data:
-
-[source,cpp]
-----
-flat_dynamic_buffer buf;
-auto [ec, n] = co_await read(stream, buf);
-// buf grew to hold all data
-----
-
-=== The DynamicBuffer Concept
-
-[source,cpp]
-----
-template<typename B>
-concept DynamicBuffer = requires(B& buf, std::size_t n)
-{
-    { buf.size() } -> std::same_as<std::size_t>;
-    { buf.max_size() } -> std::same_as<std::size_t>;
-    { buf.capacity() } -> std::same_as<std::size_t>;
-    { buf.data() } -> ConstBufferSequence;
-    { buf.prepare(n) } -> MutableBufferSequence;
-    buf.commit(n);
-    buf.consume(n);
-};
-----
-
-=== Dynamic Buffer Operations
-
-**`data()`** — Get read-only view of committed data:
-[source,cpp]
-----
-auto data = buf.data();  // What's been committed
-----
-
-**`prepare(n)`** — Get writable area for n bytes:
-[source,cpp]
-----
-auto area = buf.prepare(1024);  // Space to write into
-// ... write into area ...
-buf.commit(bytes_written);       // Make written bytes readable
-----
-
-**`commit(n)`** — Move bytes from prepared area to readable:
-[source,cpp]
-----
-buf.commit(n);  // n bytes now part of data()
-----
-
-**`consume(n)`** — Discard n bytes from the front:
-[source,cpp]
-----
-buf.consume(processed);  // Remove processed bytes
-----
-
-== Concrete Dynamic Buffers
-
-=== flat_dynamic_buffer
-
-Single contiguous allocation. Best for most use cases:
-
-[source,cpp]
-----
-#include <boost/capy/buffers/flat_dynamic_buffer.hpp>
-
-flat_dynamic_buffer buf;
-buf.prepare(1024);  // Ensure 1024 bytes available
-----
-
-Properties:
-
-* Data is always contiguous
-* May reallocate and copy on growth
-* Best for protocols requiring contiguous parsing
-
-=== circular_dynamic_buffer
-
-Circular buffer that avoids copying:
-
-[source,cpp]
-----
-#include <boost/capy/buffers/circular_dynamic_buffer.hpp>
-
-circular_dynamic_buffer buf(8192);  // Fixed capacity
-----
-
-Properties:
-
-* No copying on consume (just moves pointers)
-* Fixed maximum capacity
-* Data may wrap around—not contiguous
-* Best for streaming protocols
-
-=== string_dynamic_buffer
-
-Adapts `std::string` as a dynamic buffer:
-
-[source,cpp]
-----
-#include <boost/capy/buffers/string_dynamic_buffer.hpp>
-
-std::string s;
-string_dynamic_buffer buf(s);
-co_await read(stream, buf);
-// s now contains the data
-----
-
-=== vector_dynamic_buffer
-
-Adapts `std::vector<unsigned char>` as a dynamic buffer:
-
-[source,cpp]
-----
-#include <boost/capy/buffers/vector_dynamic_buffer.hpp>
-
-std::vector<unsigned char> v;
-vector_dynamic_buffer buf(v);
-co_await read(stream, buf);
-----
-
-== Buffer Utilities
-
-=== buffer_copy
-
-Copy between buffer sequences:
-
-[source,cpp]
-----
-#include <boost/capy/buffers/buffer_copy.hpp>
-
-std::size_t n = buffer_copy(dest_buffers, src_buffers);
-// Copies min(dest_size, src_size) bytes
-----
-
-=== buffer_size
-
-Calculate total size of a buffer sequence:
-
-[source,cpp]
-----
-auto total = buffer_size(buffers);
-----
-
-=== front
-
-Get the first buffer from a sequence:
-
-[source,cpp]
-----
-#include <boost/capy/buffers/front.hpp>
-
-const_buffer first = front(buffer_sequence);
-----
-
-== Common Patterns
-
-=== Read into Dynamic Buffer
-
-[source,cpp]
-----
-flat_dynamic_buffer buf;
-while (buf.size() < max_message_size)
-{
-    auto [ec, n] = co_await stream.read_some(buf.prepare(1024));
-    if (ec.failed())
-        co_return ec;
-    buf.commit(n);
-
-    if (is_complete_message(buf.data()))
-        break;
-}
-process_message(buf.data());
-buf.consume(message_size);
-----
-
-=== Write from Buffer Sequence
-
-[source,cpp]
-----
-std::string_view header = "HTTP/1.1 200 OK\r\n\r\n";
-std::string_view body = "Hello, World!";
-
-std::array<const_buffer, 2> buffers = {
-    const_buffer(header.data(), header.size()),
-    const_buffer(body.data(), body.size())
-};
-
-co_await write(stream, buffers);
-----
-
-== Summary
+== Key Types
 
 [cols="1,3"]
 |===
@@ -321,13 +85,66 @@ co_await write(stream, buffers);
 | Growable contiguous buffer
 
 | `circular_dynamic_buffer`
-| Fixed-capacity circular buffer
+| Ring buffer for streaming
 
-| Buffer sequences
-| Multiple buffers for scatter/gather I/O
+| `string_dynamic_buffer`
+| Adapter for `std::string`
+
+| `vector_dynamic_buffer`
+| Adapter for `std::vector<unsigned char>`
 |===
 
-== Next Steps
+== Key Concepts
 
-* xref:streams.adoc[Stream Concepts] — Use buffers with streams
-* xref:io-result.adoc[Error Handling] — Handle I/O errors
+[cols="1,3"]
+|===
+| Concept | Description
+
+| `ConstBufferSequence`
+| Range of read-only buffers
+
+| `MutableBufferSequence`
+| Range of writable buffers
+
+| `DynamicBuffer`
+| Resizable buffer with prepare/commit semantics
+
+| `DynamicBufferParam`
+| Safe parameter passing for coroutines
+|===
+
+== Headers
+
+[cols="1,3"]
+|===
+| Header | Contents
+
+| `<boost/capy/buffers.hpp>`
+| Core buffer types and concepts
+
+| `<boost/capy/buffers/make_buffer.hpp>`
+| `make_buffer` helper function
+
+| `<boost/capy/buffers/buffer_copy.hpp>`
+| `buffer_copy` algorithm
+
+| `<boost/capy/buffers/consuming_buffers.hpp>`
+| Incremental buffer consumption
+
+| `<boost/capy/buffers/flat_dynamic_buffer.hpp>`
+| Contiguous dynamic buffer
+
+| `<boost/capy/buffers/circular_dynamic_buffer.hpp>`
+| Ring buffer implementation
+
+| `<boost/capy/buffers/string_dynamic_buffer.hpp>`
+| String adapter
+
+| `<boost/capy/buffers/vector_dynamic_buffer.hpp>`
+| Vector adapter
+|===
+
+== Navigation
+
+[.text-center]
+xref:../buffers/overview.adoc[Next: Buffers and I/O →]

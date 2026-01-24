@@ -188,3 +188,128 @@ graph TD
    - Coroutine frame allocation
    - `frame_allocator` and recycling
    - HALO optimization support
+
+## Section: Buffers
+
+### Part I: Philosophy and Design
+
+1. **Platform-Agnostic I/O Algorithms**
+   - Generic `read()`, `write()`, stream algorithms work with any conforming type
+   - No dependency on platform I/O (IOCP, io_uring, epoll, kqueue)
+   - Algorithms implemented against concepts, not concrete types
+   - Same code works with real sockets, SSL streams, mock objects, or custom implementations
+   - Enables testing without actual network I/O
+
+2. **Why Buffers?**
+   - I/O operations work with contiguous memory regions
+   - The fundamental unit: `(pointer, size)` pair
+   - OS reads/writes bytes from/to linear addresses
+
+3. **Scatter/Gather I/O**
+   - Motivation: avoid copying when data isn't contiguous
+   - Real-world examples:
+     - HTTP message: headers + body written together
+     - WebSocket frame: frame header + payload
+   - `readv()`/`writev()` system calls (vectored I/O)
+   - Efficiency: fewer syscalls, zero-copy message assembly
+
+### Part II: Buffer Types
+
+4. **const_buffer and mutable_buffer**
+   - `const_buffer`: read-only view of contiguous bytes
+   - `mutable_buffer`: writable view of contiguous bytes
+   - Construction, accessors, prefix removal
+   - Reference: `<boost/capy/buffers.hpp>`
+
+5. **Creating Buffers with make_buffer**
+   - From pointer + size
+   - From C arrays, std::array, std::vector
+   - From std::string, std::string_view
+   - Reference: `<boost/capy/buffers/make_buffer.hpp>`
+
+### Part III: Buffer Sequences
+
+6. **What is a Buffer Sequence?**
+   - Bidirectional range with buffer-convertible value type
+   - Single buffers are degenerate sequences
+   - Reference: `ConstBufferSequence`, `MutableBufferSequence` concepts
+
+7. **Iterating Buffer Sequences**
+   - `begin()` and `end()` for uniform access
+   - `consuming_buffers` for incremental consumption
+   - Real I/O loop patterns from `read()` and `write()`
+   - Reference: `<boost/capy/buffers/consuming_buffers.hpp>`
+
+### Part IV: Buffer Algorithms
+
+8. **Measuring Buffers**
+   - `buffer_size`: total bytes across all buffers
+   - `buffer_empty`: check if total size is zero
+   - `buffer_length`: number of buffers (not bytes)
+
+9. **Copying Buffers**
+   - `buffer_copy`: copy between buffer sequences
+   - Optional `at_most` parameter
+   - Reference: `<boost/capy/buffers/buffer_copy.hpp>`
+
+### Part V: Dynamic Buffers
+
+10. **The Producer/Consumer Model**
+    - Dynamic buffers as intermediate storage between producer and consumer
+    - Producer: network I/O writes data into the buffer
+    - Consumer: application reads and processes the data
+    - Synchronization through prepare/commit/consume prevents overflow/underflow
+
+11. **The DynamicBuffer Concept**
+    - Producer side: `prepare(n)` -> write data -> `commit(n)`
+    - Consumer side: `data()` -> read data -> `consume(n)`
+    - Capacity management: `size()`, `max_size()`, `capacity()`
+    - Reference: `<boost/capy/concept/dynamic_buffer.hpp>`
+
+12. **DynamicBufferParam for Coroutines**
+    - Safe parameter passing rules
+    - Lvalue vs rvalue constraints
+    - The `is_dynamic_buffer_adapter` tag
+
+13. **Provided Implementations**
+    - `flat_dynamic_buffer`: linear, single-buffer sequences
+    - `circular_dynamic_buffer`: ring buffer (classic producer/consumer)
+    - `vector_dynamic_buffer`: growable, backed by std::vector
+    - `string_dynamic_buffer`: backed by std::string
+
+## Section: Streams
+
+### Part I: Stream Concepts
+
+1. **ReadStream**
+   - Partial read operations with `read_some(buffers)`
+   - Returns `(error_code, size_t)` - may transfer less than requested
+   - Reference: `<boost/capy/concept/read_stream.hpp>`
+
+2. **WriteStream**
+   - Partial write operations with `write_some(buffers)`
+   - Returns `(error_code, size_t)` - may transfer less than requested
+   - Reference: `<boost/capy/concept/write_stream.hpp>`
+
+### Part II: Source and Sink Concepts
+
+3. **ReadSource**
+   - Complete read operations with `read(buffers)`
+   - Fills buffers completely or returns EOF
+   - Reference: `<boost/capy/concept/read_source.hpp>`
+
+4. **WriteSink**
+   - Complete write with EOF signaling
+   - `write(buffers)`, `write(buffers, eof)`, `write_eof()`
+   - Reference: `<boost/capy/concept/write_sink.hpp>`
+
+### Part III: Composed Operations
+
+5. **read() Algorithm**
+   - `read(stream, buffers)` - loops `read_some` until buffer full
+   - `read(source, dynamic_buffer)` - loops until EOF into growable buffer
+   - Reference: `<boost/capy/read.hpp>`
+
+6. **write() Algorithm**
+   - `write(stream, buffers)` - loops `write_some` until all written
+   - Reference: `<boost/capy/write.hpp>`

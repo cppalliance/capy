@@ -1,0 +1,201 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Buffers and I/O
+
+This page explains why buffers exist and how they enable efficient I/O
+operations in network programming.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== Why Buffers?
+
+Every I/O operation ultimately moves bytes between memory and an external
+resource—a socket, file, or device. The operating system reads and writes
+bytes from contiguous memory regions. A buffer is simply a reference to
+such a region: a pointer and a size.
+
+[source,cpp]
+----
+// The fundamental pattern: pointer + size
+void const* data = ...;
+std::size_t size = ...;
+
+// This is what OS system calls need
+send(socket, data, size, flags);
+----
+
+Capy's buffer types wrap this pattern with type safety and convenience.
+
+== Platform-Agnostic I/O
+
+Capy's I/O algorithms work against concepts rather than concrete types.
+The `read()` and `write()` functions don't care whether you're using:
+
+* A real TCP socket
+* An SSL/TLS encrypted stream
+* A mock object for unit testing
+* A custom stream implementation
+
+[source,cpp]
+----
+// This function works with ANY stream type
+template<ReadStream Stream>
+task<std::string> read_message(Stream& stream)
+{
+    char header[4];
+    auto [ec, n] = co_await read(stream, mutable_buffer(header, 4));
+    if (ec.failed())
+        co_return {};
+
+    std::uint32_t len = decode_length(header);
+    std::string body(len, '\0');
+    auto [ec2, n2] = co_await read(stream, mutable_buffer(body.data(), len));
+    co_return body;
+}
+----
+
+This means you can test network code without network I/O:
+
+[source,cpp]
+----
+// In production: real socket
+task<> handle_client(tcp::socket& sock)
+{
+    auto msg = co_await read_message(sock);
+}
+
+// In tests: mock stream
+task<> test_read_message()
+{
+    test::read_stream mock("\\x00\\x00\\x00\\x05Hello");
+    auto msg = co_await read_message(mock);
+    assert(msg == "Hello");
+}
+----
+
+== Scatter/Gather I/O
+
+Real protocols rarely transmit data as a single contiguous block.
+Consider an HTTP response:
+
+[source,text]
+----
+HTTP/1.1 200 OK\r\n
+Content-Type: text/plain\r\n
+Content-Length: 13\r\n
+\r\n
+Hello, World!
+----
+
+The headers come from one place (perhaps formatted on the stack),
+while the body comes from another (perhaps a file or database).
+Copying everything into a single buffer wastes time and memory.
+
+Scatter/gather I/O solves this with multiple buffers in a single operation.
+
+=== Gather Write
+
+Write from multiple non-contiguous memory regions in one call:
+
+[source,cpp]
+----
+std::string headers = format_headers(status, content_type, body.size());
+std::string_view body = get_response_body();
+
+// Gather write: two buffers, one operation
+std::array<const_buffer, 2> buffers = {
+    const_buffer(headers.data(), headers.size()),
+    const_buffer(body.data(), body.size())
+};
+
+auto [ec, n] = co_await write(stream, buffers);
+----
+
+The stream writes both regions without copying them together first.
+
+=== Scatter Read
+
+Read into multiple buffers in one operation:
+
+[source,cpp]
+----
+// WebSocket frame: 2-byte header + up to 125-byte payload
+char header[2];
+char payload[125];
+
+std::array<mutable_buffer, 2> buffers = {
+    mutable_buffer(header, 2),
+    mutable_buffer(payload, 125)
+};
+
+auto [ec, n] = co_await stream.read_some(buffers);
+// Data filled header first, then payload
+----
+
+== Real-World Example: WebSocket Frame
+
+A WebSocket frame has a variable-length header followed by payload:
+
+[source,cpp]
+----
+task<io_result<std::size_t>> send_frame(
+    WriteStream auto& stream,
+    std::uint8_t opcode,
+    std::span<char const> payload)
+{
+    // Build the frame header
+    char header[2];
+    header[0] = 0x80 | opcode;  // FIN + opcode
+    header[1] = static_cast<char>(payload.size());
+
+    // Gather write: header + payload
+    std::array<const_buffer, 2> frame = {
+        const_buffer(header, 2),
+        const_buffer(payload.data(), payload.size())
+    };
+
+    co_return co_await write(stream, frame);
+}
+----
+
+No intermediate buffer, no copying—just efficient I/O.
+
+== The Buffer Abstraction Layers
+
+Capy provides buffers at multiple abstraction levels:
+
+[cols="1,3"]
+|===
+| Level | Types
+
+| Single buffers
+| `const_buffer`, `mutable_buffer`
+
+| Buffer sequences
+| Arrays, `const_buffer_pair`, any bidirectional range
+
+| Dynamic buffers
+| `flat_dynamic_buffer`, `circular_dynamic_buffer`
+|===
+
+As you move up the abstraction ladder, you trade some control for
+convenience. Start with the simplest tool that fits your needs.
+
+== Summary
+
+* Buffers represent contiguous memory regions for I/O
+* Buffer sequences enable scatter/gather I/O without copying
+* I/O algorithms work against concepts, not concrete types
+* The same code works with real streams, mock objects, and custom implementations
+
+== Navigation
+
+[.text-center]
+xref:../library/buffers.adoc[← Overview] | xref:index.adoc[Next: Buffer Types →]
