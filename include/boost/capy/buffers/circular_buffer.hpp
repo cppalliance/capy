@@ -17,12 +17,37 @@
 namespace boost {
 namespace capy {
 
-/** A circular buffer.
+/** A fixed-capacity circular buffer satisfying DynamicBuffer.
 
-    This implements a fixed-size, circular
-    buffer. Buffer sequences returned from
-    @ref prepare and @ref data always have
-    length two.
+    This class implements a circular ( ring ) buffer with
+    fixed capacity determined at construction. Unlike linear
+    buffers, data can wrap around from the end to the beginning,
+    enabling efficient FIFO operations without memory copies.
+
+    Buffer sequences returned from @ref data and @ref prepare
+    may contain up to two elements to represent wrapped regions.
+
+    @par Example
+    @code
+    char storage[1024];
+    circular_buffer cb( storage, sizeof( storage ) );
+
+    // Write data
+    auto mb = cb.prepare( 100 );
+    std::memcpy( mb.data(), "hello", 5 );
+    cb.commit( 5 );
+
+    // Read data
+    auto cb_data = cb.data();
+    // process cb_data...
+    cb.consume( 5 );
+    @endcode
+
+    @par Thread Safety
+    Distinct objects: Safe.
+    Shared objects: Unsafe.
+
+    @see flat_buffer, string_dynamic_buffer
 */
 class circular_buffer
 {
@@ -33,28 +58,26 @@ class circular_buffer
     std::size_t out_size_ = 0;
 
 public:
-    /** The ConstBufferSequence used to
-        represent the readable bytes.
-    */
-    using const_buffers_type =
-        const_buffer_pair;
+    /// Indicates this is a DynamicBuffer adapter over external storage.
+    using is_dynamic_buffer_adapter = void;
 
-    /** The MutableBufferSequence used to
-        represent the writable bytes.
-    */
-    using mutable_buffers_type =
-        mutable_buffer_pair;
+    /// The ConstBufferSequence type for readable bytes.
+    using const_buffers_type = const_buffer_pair;
 
-    /** Constructor.
-    */
+    /// The MutableBufferSequence type for writable bytes.
+    using mutable_buffers_type = mutable_buffer_pair;
+
+    /// Construct an empty circular buffer with zero capacity.
     circular_buffer() = default;
 
-    /** Constructor.
-    */
+    /// Copy constructor.
     circular_buffer(
         circular_buffer const&) = default;
 
-    /** Constructor.
+    /** Construct a circular buffer over existing storage.
+
+        @param base Pointer to the storage.
+        @param capacity Size of the storage in bytes.
     */
     circular_buffer(
         void* base,
@@ -65,7 +88,14 @@ public:
     {
     }
 
-    /** Constructor.
+    /** Construct a circular buffer with initial readable bytes.
+
+        @param base Pointer to the storage.
+        @param capacity Size of the storage in bytes.
+        @param initial_size Number of bytes already present as
+            readable. Must not exceed @p capacity.
+
+        @throws std::invalid_argument if initial_size > capacity.
     */
     circular_buffer(
         void* base,
@@ -80,98 +110,73 @@ public:
             detail::throw_invalid_argument();
     }
 
-    /** Assignment.
-    */
+    /// Copy assignment.
     circular_buffer& operator=(
         circular_buffer const&) = default;
 
-    /** Returns the number of readable bytes.
-    */
+    /// Return the number of readable bytes.
     std::size_t
     size() const noexcept
     {
         return in_len_;
     }
 
-    /** Returns the maximum sum of the input and
-        output sequence sizes.
-    */
+    /// Return the maximum number of bytes the buffer can hold.
     std::size_t
     max_size() const noexcept
     {
         return cap_;
     }
 
-    /** Returns the number of writable bytes.
-    */
+    /// Return the number of writable bytes without reallocation.
     std::size_t
     capacity() const noexcept
     {
         return cap_ - in_len_;
     }
 
-    /** Returns a constant buffer sequence representing
-        the readable bytes.
-    */
+    /// Return a buffer sequence representing the readable bytes.
     BOOST_CAPY_DECL
     const_buffers_type
     data() const noexcept;
 
-    /** Returns a mutable buffer sequence representing
-        the writable bytes.
+    /** Return a buffer sequence for writing.
 
-        All buffers sequences previously
-        obtained using @ref prepare become
-        invalid.
+        Invalidates buffer sequences previously obtained
+        from @ref prepare.
 
-        @param n The desired number of bytes in
-        the returned buffer sequence.
+        @param n The desired number of writable bytes.
 
-        @throw std::length_error if @ref size() + n
-        exceeds @ref max_size().
+        @return A mutable buffer sequence of size @p n.
+
+        @throws std::length_error if `size() + n > max_size()`.
     */
     BOOST_CAPY_DECL
     mutable_buffers_type
     prepare(std::size_t n);
 
-    /** Append writable bytes to the readable bytes.
+    /** Move bytes from the output to the input sequence.
 
-        Appends n bytes from the start of the
-        writable bytes to the end of the
-        readable bytes. The remainder of the
-        writable bytes are discarded. If n is
-        greater than the number of writable
-        bytes, all writable bytes are appended
-        to the readable bytes.
+        Invalidates buffer sequences previously obtained
+        from @ref prepare. Buffer sequences from @ref data
+        remain valid.
 
-        All buffer sequences previously obtained
-        using @ref prepare are invalidated.
-
-        Buffer sequences previously obtained
-        using @ref data remain valid.
-
-        @param n The number of bytes to append. If
-        this number is greater than the number
-        of writable bytes, all writable bytes
-        are appended.
+        @param n The number of bytes to commit. If greater
+            than the prepared size, all prepared bytes
+            are committed.
     */
     BOOST_CAPY_DECL
     void
     commit(std::size_t n) noexcept;
 
-    /** Remove bytes from beginning of the readable bytes.
+    /** Remove bytes from the beginning of the input sequence.
 
-        All buffers sequences previously
-        obtained using @ref data are
-        invalidated.
+        Invalidates buffer sequences previously obtained
+        from @ref data. Buffer sequences from @ref prepare
+        remain valid.
 
-        Buffer sequences previously obtained
-        using @ref prepare remain valid.
-
-        @param n The number of bytes to remove.
-        If this number is greater than the
-        number of readable bytes, all readable
-        bytes are removed.
+        @param n The number of bytes to consume. If greater
+            than @ref size(), all readable bytes are consumed.
     */
     BOOST_CAPY_DECL
     void

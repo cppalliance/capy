@@ -11,7 +11,6 @@
 #include <boost/capy/buffers/buffer_pair.hpp>
 #include <boost/capy/buffers/circular_buffer.hpp>
 #include <boost/capy/buffers/copy.hpp>
-#include <boost/capy/buffers/dynamic_buffer.hpp>
 #include <boost/capy/buffers/flat_buffer.hpp>
 #include <boost/core/span.hpp>
 #include <boost/asio/buffer.hpp>

@@ -7,50 +7,64 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_BUFFERS_FLAT_BUFFER_HPP
-#define BOOST_CAPY_BUFFERS_FLAT_BUFFER_HPP
+#ifndef BOOST_CAPY_BUFFERS_VECTOR_DYNAMIC_BUFFER_HPP
+#define BOOST_CAPY_BUFFERS_VECTOR_DYNAMIC_BUFFER_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/detail/except.hpp>
+#include <type_traits>
+#include <vector>
 
 namespace boost {
 namespace capy {
 
-/** A fixed-capacity linear buffer satisfying DynamicBuffer.
+/** A dynamic buffer using an underlying vector.
 
-    This class provides a contiguous buffer with fixed capacity
-    determined at construction. Buffer sequences returned from
-    @ref data and @ref prepare always contain exactly one element,
-    making it suitable for APIs requiring contiguous memory.
+    This class adapts a `std::vector` of byte-sized elements
+    to satisfy the DynamicBuffer concept. The vector provides
+    automatic memory management and growth.
+
+    @par Constraints
+
+    The element type `T` must be a fundamental type with
+    `sizeof( T ) == 1`. This includes `char`, `unsigned char`,
+    `signed char`, and similar byte-sized fundamental types.
 
     @par Example
     @code
-    char storage[1024];
-    flat_buffer fb( storage, sizeof( storage ) );
+    std::vector<unsigned char> v;
+    vector_dynamic_buffer vb( &v );
 
     // Write data
-    auto mb = fb.prepare( 100 );
+    auto mb = vb.prepare( 100 );
     std::memcpy( mb.data(), "hello", 5 );
-    fb.commit( 5 );
+    vb.commit( 5 );
 
     // Read data
-    auto data = fb.data();
+    auto data = vb.data();
     // process data...
-    fb.consume( 5 );
+    vb.consume( 5 );
     @endcode
 
     @par Thread Safety
     Distinct objects: Safe.
     Shared objects: Unsafe.
 
-    @see circular_buffer, string_dynamic_buffer
+    @tparam T The element type. Must be fundamental with sizeof 1.
+    @tparam Allocator The allocator type for the vector.
+
+    @see flat_buffer, circular_buffer, string_dynamic_buffer
 */
-class flat_buffer
+template<
+    class T,
+    class Allocator = std::allocator<T>>
+    requires std::is_fundamental_v<T> && (sizeof(T) == 1)
+class basic_vector_dynamic_buffer
 {
-    unsigned char* data_ = nullptr;
-    std::size_t cap_ = 0;
-    std::size_t in_pos_ = 0;
+    std::vector<T, Allocator>* v_;
+    std::size_t max_size_;
+
     std::size_t in_size_ = 0;
     std::size_t out_size_ = 0;
 
@@ -58,44 +72,54 @@ public:
     /// Indicates this is a DynamicBuffer adapter over external storage.
     using is_dynamic_buffer_adapter = void;
 
+    /// The underlying vector type.
+    using vector_type = std::vector<T, Allocator>;
+
     /// The ConstBufferSequence type for readable bytes.
     using const_buffers_type = const_buffer;
 
     /// The MutableBufferSequence type for writable bytes.
     using mutable_buffers_type = mutable_buffer;
 
-    /// Construct an empty flat buffer with zero capacity.
-    flat_buffer() = default;
+    ~basic_vector_dynamic_buffer() = default;
 
-    /** Construct a flat buffer over existing storage.
-
-        @param data Pointer to the storage.
-        @param capacity Size of the storage in bytes.
-        @param initial_size Number of bytes already present as
-            readable. Must not exceed @p capacity.
-
-        @throws std::invalid_argument if initial_size > capacity.
+    /** Move constructor.
     */
-    flat_buffer(
-        void* data,
-        std::size_t capacity,
-        std::size_t initial_size = 0)
-        : data_(static_cast<
-            unsigned char*>(data))
-        , cap_(capacity)
-        , in_size_(initial_size)
+    basic_vector_dynamic_buffer(
+        basic_vector_dynamic_buffer&& other) noexcept
+        : v_(other.v_)
+        , max_size_(other.max_size_)
+        , in_size_(other.in_size_)
+        , out_size_(other.out_size_)
     {
-        if(in_size_ > cap_)
-            detail::throw_invalid_argument();
+        other.v_ = nullptr;
     }
 
-    /// Copy constructor.
-    flat_buffer(
-        flat_buffer const&) = default;
+    /** Construct a dynamic buffer over a vector.
 
-    /// Copy assignment.
-    flat_buffer& operator=(
-        flat_buffer const&) = default;
+        @param v Pointer to the vector to use as storage.
+        @param max_size Optional maximum size limit. Defaults
+            to the vector's `max_size()`.
+    */
+    explicit
+    basic_vector_dynamic_buffer(
+        vector_type* v,
+        std::size_t max_size =
+            std::size_t(-1)) noexcept
+        : v_(v)
+        , max_size_(
+            max_size > v_->max_size()
+                ? v_->max_size()
+                : max_size)
+    {
+        if(v_->size() > max_size_)
+            v_->resize(max_size_);
+        in_size_ = v_->size();
+    }
+
+    /// Copy assignment is deleted.
+    basic_vector_dynamic_buffer& operator=(
+        basic_vector_dynamic_buffer const&) = delete;
 
     /// Return the number of readable bytes.
     std::size_t
@@ -108,14 +132,16 @@ public:
     std::size_t
     max_size() const noexcept
     {
-        return cap_;
+        return max_size_;
     }
 
     /// Return the number of writable bytes without reallocation.
     std::size_t
     capacity() const noexcept
     {
-        return cap_ - (in_pos_ + in_size_);
+        if(v_->capacity() <= max_size_)
+            return v_->capacity() - in_size_;
+        return max_size_ - in_size_;
     }
 
     /// Return a buffer sequence representing the readable bytes.
@@ -123,7 +149,7 @@ public:
     data() const noexcept
     {
         return const_buffers_type(
-            data_ + in_pos_, in_size_);
+            v_->data(), in_size_);
     }
 
     /** Return a buffer sequence for writing.
@@ -135,17 +161,19 @@ public:
 
         @return A mutable buffer sequence of size @p n.
 
-        @throws std::invalid_argument if `n > capacity()`.
+        @throws std::invalid_argument if `size() + n > max_size()`.
     */
     mutable_buffers_type
     prepare(std::size_t n)
     {
-        if( n > capacity() )
+        if(n > max_size_ - in_size_)
             detail::throw_invalid_argument();
 
+        if(v_->size() < in_size_ + n)
+            v_->resize(in_size_ + n);
         out_size_ = n;
         return mutable_buffers_type(
-            data_ + in_pos_ + in_size_, n);
+            v_->data() + in_size_, out_size_);
     }
 
     /** Move bytes from the output to the input sequence.
@@ -159,14 +187,14 @@ public:
             are committed.
     */
     void
-    commit(
-        std::size_t n) noexcept
+    commit(std::size_t n) noexcept
     {
         if(n < out_size_)
             in_size_ += n;
         else
             in_size_ += out_size_;
         out_size_ = 0;
+        v_->resize(in_size_);
     }
 
     /** Remove bytes from the beginning of the input sequence.
@@ -179,21 +207,25 @@ public:
             than @ref size(), all readable bytes are consumed.
     */
     void
-    consume(
-        std::size_t n) noexcept
+    consume(std::size_t n) noexcept
     {
         if(n < in_size_)
         {
-            in_pos_ += n;
+            v_->erase(v_->begin(), v_->begin() + n);
             in_size_ -= n;
         }
         else
         {
-            in_pos_ = 0;
+            v_->clear();
             in_size_ = 0;
         }
+        out_size_ = 0;
     }
 };
+
+/// A dynamic buffer using `std::vector<unsigned char>`.
+using vector_dynamic_buffer =
+    basic_vector_dynamic_buffer<unsigned char>;
 
 } // capy
 } // boost

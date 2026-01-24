@@ -10,14 +10,15 @@
 // Test that header file is self-contained.
 #include <boost/capy/buffers/circular_buffer.hpp>
 
-#include <boost/capy/buffers/dynamic_buffer.hpp>
+#include <boost/capy/concept/dynamic_buffer.hpp>
 
+#include "test/unit/test_dynamic_buffer.hpp"
 #include "test_buffers.hpp"
 
 namespace boost {
 namespace capy {
 
-static_assert(is_DynamicBuffer<circular_buffer>::value);
+static_assert(DynamicBuffer<circular_buffer>);
 
 struct circular_buffer_test
 {
@@ -32,18 +33,7 @@ struct circular_buffer_test
             BOOST_TEST_EQ(cb.size(), 0);
         }
 
-#if 0
-        // circular_buffer(mutable_buffer)
-        {
-            circular_buffer cb(
-                buffer(&pat[0], pat.size()));
-            BOOST_TEST_EQ(cb.size(), 0);
-            BOOST_TEST_EQ(cb.capacity(), pat.size());
-            BOOST_TEST_EQ(cb.max_size(), pat.size());
-        }
-#endif
-
-        // circular_buffer(void*, std::size_t)
+        // circular_buffer( void*, std::size_t )
         {
             circular_buffer cb(
                 &pat[0], pat.size());
@@ -52,8 +42,7 @@ struct circular_buffer_test
             BOOST_TEST_EQ(cb.max_size(), pat.size());
         }
 
-        // circular_buffer(
-        //  void*, std::size_t, std:size_t)
+        // circular_buffer( void*, std::size_t, std:size_t )
         {
             circular_buffer cb(
                 &pat[0], pat.size(), 6);
@@ -72,8 +61,7 @@ struct circular_buffer_test
                 std::exception);
         }
 
-        // circular_buffer(
-        //  circular_buffer const&)
+        // circular_buffer( circular_buffer const& )
         {
             circular_buffer cb0(&pat[0], pat.size());
             circular_buffer cb1(cb0);
@@ -82,8 +70,7 @@ struct circular_buffer_test
             BOOST_TEST_EQ(cb1.max_size(), cb0.max_size());
         }
 
-        // operator=(
-        //  circular_buffer const&)
+        // operator=( circular_buffer const& )
         {
             circular_buffer cb0(&pat[0], pat.size());
             circular_buffer cb1;
@@ -93,7 +80,7 @@ struct circular_buffer_test
             BOOST_TEST_EQ(cb1.max_size(), cb0.max_size());
         }
 
-        // prepare(std::size_t)
+        // prepare( std::size_t )
         {
             circular_buffer cb(&pat[0], pat.size());
             BOOST_TEST_THROWS(
@@ -101,7 +88,7 @@ struct circular_buffer_test
                 std::length_error);
         }
 
-        // commit(std::size_t)
+        // commit( std::size_t )
         {
             circular_buffer cb(&pat[0], pat.size());
             auto n = pat.size() / 2;
@@ -114,94 +101,21 @@ struct circular_buffer_test
     }
 
     void
-    testBuffer()
+    testGrind()
     {
-        auto const& pat = test_pattern();
-
-        for(std::size_t i = 0;
-            i <= pat.size(); ++i)
-        for(std::size_t j = 0;
-            j <=  pat.size(); ++j)
-        for(std::size_t k = 0;
-            k <= pat.size(); ++k)
-        {
-            std::string s(pat.size(), 0);
-            circular_buffer bs(
-                &s[0], s.size());
-            BOOST_TEST_EQ(
-                bs.capacity(), s.size());
-            if( j < pat.size() &&
-                i > 0)
-            {
-                bs.prepare(i);
-                bs.commit(i);
-                BOOST_TEST_EQ(
-                    bs.capacity(),
-                    bs.max_size() - bs.size());
-                bs.consume(i - 1);
-                bs.commit(copy(
-                    bs.prepare(j),
-                    make_buffer(
-                        pat.data(),
-                        pat.size())));
-                bs.consume(1);
-            }
-            else
-            {
-                bs.commit(copy(
-                    bs.prepare(j),
-                    make_buffer(
-                        pat.data(),
-                        pat.size())));
-                BOOST_TEST_EQ(
-                    bs.capacity(),
-                    bs.max_size() - bs.size());
-            }
-            bs.commit(copy(
-                bs.prepare(pat.size() - j),
-                make_buffer(
-                    pat.data() + j,
-                    pat.size() - j)));
-            BOOST_TEST_EQ(test::make_string(
-                bs.data()), pat);
-            test::check_sequence(bs.data(), pat);
-            bs.consume(k);
-            BOOST_TEST_EQ(test::make_string(
-                bs.data()), pat.substr(k));
-        }
-    }
-
-    void
-    testInterleavedReadWrite()
-    {
-        std::string pat = test_pattern();
-
-        for(std::size_t i = 0; i <= pat.size(); ++i)
-        {
-            circular_buffer cb(&pat[0], pat.size());
-            cb.prepare(i);
-            cb.commit(i);
-            BOOST_TEST_EQ(
-                test::make_string(cb.data()),
-                pat.substr(0, i));
-            // commit after consume
-            auto n = pat.size() - i;
-            cb.prepare(n);
-            cb.consume(i);
-            BOOST_TEST_EQ(cb.size(), 0);
-            cb.commit(n);
-            BOOST_TEST_EQ(
-                test::make_string(cb.data()),
-                pat.substr(i, n));
-        }
+        std::string storage(64, '\0');
+        auto r = test::grind_dynamic_buffer([&] {
+            std::fill(storage.begin(), storage.end(), '\0');
+            return circular_buffer(&storage[0], storage.size());
+        });
+        BOOST_TEST(r.success);
     }
 
     void
     run()
     {
         testMembers();
-        testBuffer();
-        testInterleavedReadWrite();
+        testGrind();
     }
 };
 
