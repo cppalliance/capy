@@ -280,6 +280,56 @@ public:
     }
 
     void
+    testMaxReadSize()
+    {
+        fuse f;
+        auto r = f.armed([&](fuse&) -> task<> {
+            read_stream rs(f, 3);
+            rs.provide("hello world");
+
+            char buf[32] = {};
+            auto [ec, n] = co_await rs.read_some(make_buffer(buf));
+            if(ec.failed())
+                co_return;
+            BOOST_TEST_EQ(n, 3u);
+            BOOST_TEST_EQ(std::string_view(buf, n), "hel");
+            BOOST_TEST_EQ(rs.available(), 8u);
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testMaxReadSizeMultiple()
+    {
+        fuse f;
+        auto r = f.armed([&](fuse&) -> task<> {
+            read_stream rs(f, 4);
+            rs.provide("abcdefghij");
+
+            char buf[32] = {};
+
+            auto [ec1, n1] = co_await rs.read_some(make_buffer(buf));
+            if(ec1.failed())
+                co_return;
+            BOOST_TEST_EQ(n1, 4u);
+            BOOST_TEST_EQ(std::string_view(buf, n1), "abcd");
+
+            auto [ec2, n2] = co_await rs.read_some(make_buffer(buf));
+            if(ec2.failed())
+                co_return;
+            BOOST_TEST_EQ(n2, 4u);
+            BOOST_TEST_EQ(std::string_view(buf, n2), "efgh");
+
+            auto [ec3, n3] = co_await rs.read_some(make_buffer(buf));
+            if(ec3.failed())
+                co_return;
+            BOOST_TEST_EQ(n3, 2u);
+            BOOST_TEST_EQ(std::string_view(buf, n3), "ij");
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -294,6 +344,8 @@ public:
         testReadSomeEmpty();
         testFuseErrorInjection();
         testClearAndReuse();
+        testMaxReadSize();
+        testMaxReadSizeMultiple();
     }
 };
 

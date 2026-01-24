@@ -34,7 +34,9 @@ namespace test {
     Use this to verify code that performs writes without needing
     real I/O. Call @ref write_some to write data, then @ref str
     or @ref data to retrieve what was written. The associated
-    @ref fuse enables error injection at controlled points.
+    @ref fuse enables error injection at controlled points. An
+    optional `max_write_size` constructor parameter limits bytes
+    per write to simulate chunked delivery.
 
     @par Thread Safety
     Not thread-safe.
@@ -60,6 +62,7 @@ class write_stream
     fuse& f_;
     std::string data_;
     std::string expect_;
+    std::size_t max_write_size_;
 
     system::error_code
     consume_match_() noexcept
@@ -79,9 +82,15 @@ public:
     /** Construct a write stream.
 
         @param f The fuse used to inject errors during writes.
+
+        @param max_write_size Maximum bytes transferred per write.
+        Use to simulate chunked network delivery.
     */
-    explicit write_stream(fuse& f) noexcept
+    explicit write_stream(
+        fuse& f,
+        std::size_t max_write_size = std::size_t(-1)) noexcept
         : f_(f)
+        , max_write_size_(max_write_size)
     {
     }
 
@@ -163,14 +172,15 @@ public:
                 if(ec.failed())
                     return {ec, 0};
 
-                std::size_t const n = buffer_size(buffers_);
+                std::size_t n = buffer_size(buffers_);
+                n = (std::min)(n, self_->max_write_size_);
                 if(n == 0)
                     return {{}, 0};
 
                 std::size_t const old_size = self_->data_.size();
                 self_->data_.resize(old_size + n);
                 buffer_copy(make_buffer(
-                    self_->data_.data() + old_size, n), buffers_);
+                    self_->data_.data() + old_size, n), buffers_, n);
 
                 ec = self_->consume_match_();
                 if(ec.failed())

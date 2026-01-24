@@ -33,7 +33,8 @@ namespace test {
     Use this to verify code that performs reads without needing
     real I/O. Call @ref provide to supply data, then @ref read_some
     to consume it. The associated @ref fuse enables error injection
-    at controlled points.
+    at controlled points. An optional `max_read_size` constructor
+    parameter limits bytes per read to simulate chunked delivery.
 
     @par Thread Safety
     Not thread-safe.
@@ -62,14 +63,21 @@ class read_stream
     fuse& f_;
     std::string data_;
     std::size_t pos_ = 0;
+    std::size_t max_read_size_;
 
 public:
     /** Construct a read stream.
 
         @param f The fuse used to inject errors during reads.
+
+        @param max_read_size Maximum bytes returned per read.
+        Use to simulate chunked network delivery.
     */
-    explicit read_stream(fuse& f) noexcept
+    explicit read_stream(
+        fuse& f,
+        std::size_t max_read_size = std::size_t(-1)) noexcept
         : f_(f)
+        , max_read_size_(max_read_size)
     {
     }
 
@@ -150,7 +158,9 @@ public:
                 if(self_->pos_ >= self_->data_.size())
                     return {error::eof, 0};
 
-                std::size_t const avail = self_->data_.size() - self_->pos_;
+                std::size_t avail = self_->data_.size() - self_->pos_;
+                if(avail > self_->max_read_size_)
+                    avail = self_->max_read_size_;
                 auto src = make_buffer(self_->data_.data() + self_->pos_, avail);
                 std::size_t const n = buffer_copy(buffers_, src);
                 self_->pos_ += n;

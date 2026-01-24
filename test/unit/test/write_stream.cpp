@@ -271,6 +271,54 @@ public:
     }
 
     void
+    testMaxWriteSize()
+    {
+        fuse f;
+        auto r = f.armed([&](fuse&) -> task<void> {
+            write_stream ws(f, 3);
+
+            auto [ec, n] = co_await ws.write_some(
+                make_buffer("hello world", 11));
+            if(ec.failed())
+                co_return;
+            BOOST_TEST_EQ(n, 3u);
+            BOOST_TEST_EQ(ws.data(), "hel");
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testMaxWriteSizeMultiple()
+    {
+        fuse f;
+        auto r = f.armed([&](fuse&) -> task<void> {
+            write_stream ws(f, 4);
+
+            auto [ec1, n1] = co_await ws.write_some(
+                make_buffer("abcdefghij", 10));
+            if(ec1.failed())
+                co_return;
+            BOOST_TEST_EQ(n1, 4u);
+            BOOST_TEST_EQ(ws.data(), "abcd");
+
+            auto [ec2, n2] = co_await ws.write_some(
+                make_buffer("efghij", 6));
+            if(ec2.failed())
+                co_return;
+            BOOST_TEST_EQ(n2, 4u);
+            BOOST_TEST_EQ(ws.data(), "abcdefgh");
+
+            auto [ec3, n3] = co_await ws.write_some(
+                make_buffer("ij", 2));
+            if(ec3.failed())
+                co_return;
+            BOOST_TEST_EQ(n3, 2u);
+            BOOST_TEST_EQ(ws.data(), "abcdefghij");
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -285,6 +333,8 @@ public:
         testExpectMismatchWithExistingData();
         testExpectPartialMatch();
         testExpectExcessData();
+        testMaxWriteSize();
+        testMaxWriteSizeMultiple();
     }
 };
 
