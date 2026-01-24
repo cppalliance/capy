@@ -40,7 +40,7 @@ struct vector_dynamic_buffer_test
             {
                 vector_dynamic_buffer b0(&v0);
                 vector_dynamic_buffer b1(std::move(b0));
-                auto n = copy(
+                auto n = buffer_copy(
                     b1.prepare(5),
                     make_buffer("12345", 5));
                 BOOST_TEST_EQ(n, 5);
@@ -55,7 +55,7 @@ struct vector_dynamic_buffer_test
             std::vector<unsigned char> v0;
             {
                 vector_dynamic_buffer b0(&v0);
-                copy(b0.prepare(5), make_buffer("12345", 5));
+                buffer_copy(b0.prepare(5), make_buffer("12345", 5));
                 b0.commit(5);
                 BOOST_TEST_EQ(b0.size(), 5);
                 vector_dynamic_buffer b1(std::move(b0));
@@ -146,7 +146,7 @@ struct vector_dynamic_buffer_test
             v.clear();
             {
                 vector_dynamic_buffer b(&v);
-                auto n = copy(
+                auto n = buffer_copy(
                     b.prepare(5),
                     make_buffer("12345", 5));
                 BOOST_TEST_EQ(n, 5);

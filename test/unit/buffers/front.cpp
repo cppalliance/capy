@@ -12,7 +12,7 @@
 
 #if 0
 
-#include <boost/capy/buffers/copy.hpp>
+#include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/buffer_pair.hpp>
 #include <boost/capy/buffers/prefix.hpp>
 #include <boost/capy/buffers/sans_prefix.hpp>
@@ -67,7 +67,7 @@ struct front_test
                             tmp, j),
                         mutable_buffer(
                             tmp + j, N - j));
-                    auto const n = copy(
+                    auto const n = buffer_copy(
                         p1, p0, k);
                     BOOST_TEST_LE(n, N);
                     BOOST_TEST_EQ(

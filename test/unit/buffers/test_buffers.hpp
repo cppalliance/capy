@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_BUFFERS_TEST_BUFFERS_HPP
 #define BOOST_CAPY_BUFFERS_TEST_BUFFERS_HPP
 
-#include <boost/capy/buffers/copy.hpp>
+#include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/buffers/slice.hpp>
 #include <boost/core/detail/string_view.hpp>
@@ -86,7 +86,7 @@ make_string(
     ConstBufferSequence const& bs)
 {
     static char tmp[128];
-    auto const n = copy(
+    auto const n = buffer_copy(
         mutable_buffer(tmp, sizeof(tmp)), bs);
     return { tmp, n };
 }

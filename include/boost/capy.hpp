@@ -15,7 +15,7 @@
 #include <boost/capy/buffers/buffer_param.hpp>
 #include <boost/capy/buffers/circular_dynamic_buffer.hpp>
 #include <boost/capy/buffers/consuming_buffers.hpp>
-#include <boost/capy/buffers/copy.hpp>
+#include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/flat_buffer.hpp>
 #include <boost/capy/buffers/front.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
@@ -24,6 +24,7 @@
 #include <boost/capy/buffers/string_dynamic_buffer.hpp>
 #include <boost/capy/buffers/vector_dynamic_buffer.hpp>
 #include <boost/capy/concept/const_buffer_sequence.hpp>
+#include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/dynamic_buffer.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/frame_allocator.hpp>
@@ -55,7 +56,6 @@
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/read.hpp>
 #include <boost/capy/task.hpp>
-#include <boost/capy/type_traits.hpp>
 #include <boost/capy/when_all.hpp>
 #include <boost/capy/write.hpp>
 

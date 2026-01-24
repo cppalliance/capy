@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_BUFFERS_COPY_HPP
-#define BOOST_CAPY_BUFFERS_COPY_HPP
+#ifndef BOOST_CAPY_BUFFERS_BUFFER_COPY_HPP
+#define BOOST_CAPY_BUFFERS_BUFFER_COPY_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
@@ -36,7 +36,7 @@ namespace capy {
 
     @param src The source buffer sequence
 */
-constexpr struct copy_mrdocs_workaround_t
+constexpr struct buffer_copy_mrdocs_workaround_t
 {
     template<
         MutableBufferSequence MutableBufferSequence,
@@ -100,7 +100,7 @@ constexpr struct copy_mrdocs_workaround_t
         }
         return total;
     }
-} copy {};
+} buffer_copy {};
 
 } // capy
 } // boost

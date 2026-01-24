@@ -230,7 +230,7 @@ struct buffer_test
             char data[64];
             mutable_buffer mb(data, sizeof(data));
             fixt<T> f(pat);
-            keep_prefix(mb, copy(mb, f.t));
+            keep_prefix(mb, buffer_copy(mb, f.t));
             BOOST_TEST_EQ(test::make_string(mb), pat);
         }
     }

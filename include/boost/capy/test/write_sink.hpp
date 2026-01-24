@@ -12,7 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/copy.hpp>
+#include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -193,7 +193,7 @@ public:
 
                 std::size_t const old_size = self_->data_.size();
                 self_->data_.resize(old_size + n);
-                copy(make_buffer(
+                buffer_copy(make_buffer(
                     self_->data_.data() + old_size, n), buffers_);
 
                 ec = self_->consume_match_();
@@ -261,7 +261,7 @@ public:
                 {
                     std::size_t const old_size = self_->data_.size();
                     self_->data_.resize(old_size + n);
-                    copy(make_buffer(
+                    buffer_copy(make_buffer(
                         self_->data_.data() + old_size, n), buffers_);
 
                     ec = self_->consume_match_();

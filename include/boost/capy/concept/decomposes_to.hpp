@@ -142,7 +142,7 @@ using awaitable_return_t = decltype(
 */
 template <typename T, typename... Types>
 concept decomposes_to = requires(T&& t) {
-    { decomposed_types(std::forward<T>(t)) } -> std::same_as<std::tuple<Types...>>;
+    { detail::decomposed_types(std::forward<T>(t)) } -> std::same_as<std::tuple<Types...>>;
 };
 
 /** Concept for awaitables whose return type decomposes to a specific typelist.
@@ -176,7 +176,7 @@ concept decomposes_to = requires(T&& t) {
 template<typename A, typename... Types>
 concept awaitable_decomposes_to = requires {
     typename detail::awaitable_return_t<A>;
-} && detail::decomposes_to<detail::awaitable_return_t<A>, Types...>;
+} && decomposes_to<detail::awaitable_return_t<A>, Types...>;
 
 } // namespace capy
 } // namespace boost

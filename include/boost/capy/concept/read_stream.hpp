@@ -12,8 +12,8 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/buffer_archetype.hpp>
+#include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/type_traits.hpp>
 #include <boost/system/error_code.hpp>
 
 #include <concepts>

@@ -11,7 +11,7 @@
 #include <boost/capy/buffers/slice.hpp>
 
 #include <boost/capy/buffers/buffer_pair.hpp>
-#include <boost/capy/buffers/copy.hpp>
+#include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/core/detail/string_view.hpp>
 
@@ -110,7 +110,7 @@ struct slice_test
             return;
         if(! BOOST_TEST_EQ(buffer_size(b), s.size()))
             return;
-        auto const n = copy(
+        auto const n = buffer_copy(
             mutable_buffer(buf, M), b);
         if(! BOOST_TEST_EQ(n, s.size()))
             return;
