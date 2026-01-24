@@ -11,10 +11,10 @@
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/detail/intrusive.hpp>
 #include <boost/capy/detail/thread_name.hpp>
+#include <atomic>
 #include <condition_variable>
 #include <cstdio>
 #include <mutex>
-#include <stop_token>
 #include <thread>
 #include <vector>
 
@@ -23,17 +23,16 @@
 
     Work items are coroutine handles wrapped in intrusive list nodes, stored
     in a single queue protected by a mutex. Worker threads wait on a
-    condition_variable_any that integrates with std::stop_token for clean
-    shutdown.
+    condition_variable until work is available or stop is requested.
 
     Threads are started lazily on first post() via std::call_once to avoid
     spawning threads for pools that are constructed but never used. Each
     thread is named with a configurable prefix plus index for debugger
     visibility.
 
-    Shutdown sequence: stop() requests all threads to stop via their stop
-    tokens, then the destructor joins threads and destroys any remaining
-    queued work without executing it.
+    Shutdown sequence: stop() sets the stop flag and notifies all threads,
+    then the destructor joins threads and destroys any remaining queued
+    work without executing it.
 */
 
 namespace boost {
@@ -66,9 +65,10 @@ class thread_pool::impl
     };
 
     std::mutex mutex_;
-    std::condition_variable_any cv_;
+    std::condition_variable cv_;
     detail::intrusive_queue<work> q_;
-    std::vector<std::jthread> threads_;
+    std::vector<std::thread> threads_;
+    std::atomic<bool> stop_{false};
     std::size_t num_threads_;
     char thread_name_prefix_[13]{};  // 12 chars max + null terminator
     std::once_flag start_flag_;
@@ -77,7 +77,9 @@ public:
     ~impl()
     {
         stop();
-        threads_.clear();
+        for(auto& t : threads_)
+            if(t.joinable())
+                t.join();
 
         while(auto* w = q_.pop())
             w->destroy();
@@ -111,8 +113,7 @@ public:
     void
     stop() noexcept
     {
-        for (auto& t : threads_)
-            t.request_stop();
+        stop_.store(true, std::memory_order_release);
         cv_.notify_all();
     }
 
@@ -123,13 +124,12 @@ private:
         std::call_once(start_flag_, [this]{
             threads_.reserve(num_threads_);
             for(std::size_t i = 0; i < num_threads_; ++i)
-                threads_.emplace_back(
-                    [this, i](std::stop_token st){ run(st, i); });
+                threads_.emplace_back([this, i]{ run(i); });
         });
     }
 
     void
-    run(std::stop_token st, std::size_t index)
+    run(std::size_t index)
     {
         // Build name; set_current_thread_name truncates to platform limits.
         char name[16];
@@ -141,11 +141,16 @@ private:
             work* w = nullptr;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                if(!cv_.wait(lock, st, [this]{ return !q_.empty(); }))
+                cv_.wait(lock, [this]{
+                    return !q_.empty() ||
+                        stop_.load(std::memory_order_acquire);
+                });
+                if(stop_.load(std::memory_order_acquire) && q_.empty())
                     return;
                 w = q_.pop();
             }
-            w->run();
+            if(w)
+                w->run();
         }
     }
 };

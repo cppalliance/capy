@@ -80,9 +80,9 @@ public:
 
     /** Request all worker threads to stop.
 
-        Signals all threads to exit via stop token. Threads will
-        finish their current work item before exiting. Does not
-        wait for threads to exit.
+        Signals all threads to exit. Threads will finish their
+        current work item before exiting. Does not wait for
+        threads to exit.
     */
     void
     stop() noexcept;
