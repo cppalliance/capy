@@ -9,6 +9,7 @@
 
 // Test that header file is self-contained.
 #include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/ex/recycling_memory_resource.hpp>
 
 #include "test_suite.hpp"
 
@@ -324,6 +325,53 @@ struct execution_context_test
     }
 
     void
+    testGetFrameAllocator()
+    {
+        test_context ctx;
+
+        // Default returns non-null (recycling allocator)
+        auto* mr = ctx.get_frame_allocator();
+        BOOST_TEST_NE(mr, nullptr);
+
+        // Should be the recycling allocator
+        BOOST_TEST_EQ(mr, get_recycling_memory_resource());
+    }
+
+    void
+    testSetFrameAllocatorRawPointer()
+    {
+        test_context ctx;
+
+        // Create a custom memory resource
+        std::pmr::monotonic_buffer_resource custom;
+
+        // Set it
+        ctx.set_frame_allocator(&custom);
+
+        // Get returns our custom resource
+        BOOST_TEST_EQ(ctx.get_frame_allocator(), &custom);
+    }
+
+    void
+    testSetFrameAllocatorTemplate()
+    {
+        test_context ctx;
+
+        // Get default allocator for comparison
+        auto* default_mr = ctx.get_frame_allocator();
+
+        // Set using std::allocator
+        ctx.set_frame_allocator(std::allocator<int>{});
+
+        // Get returns non-null
+        auto* new_mr = ctx.get_frame_allocator();
+        BOOST_TEST_NE(new_mr, nullptr);
+
+        // Should be different from default
+        BOOST_TEST_NE(new_mr, default_mr);
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -338,6 +386,9 @@ struct execution_context_test
         testMultipleServices();
         testNestedServiceCreation();
         testConcurrentAccess();
+        testGetFrameAllocator();
+        testSetFrameAllocatorRawPointer();
+        testSetFrameAllocatorTemplate();
     }
 };
 

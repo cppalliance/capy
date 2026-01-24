@@ -13,6 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/run_callbacks.hpp>
 #include <boost/capy/concept/executor.hpp>
+#include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/io_awaitable.hpp>
@@ -424,11 +425,12 @@ template<Executor Ex>
 [[nodiscard]] auto
 run_async(Ex ex)
 {
+    auto* mr = ex.context().get_frame_allocator();
     return run_async_wrapper<Ex, detail::default_handler, std::pmr::memory_resource*>(
         std::move(ex),
         std::stop_token{},
         detail::default_handler{},
-        get_recycling_memory_resource());
+        mr);
 }
 
 /** Asynchronously launch a lazy task with a result handler.
@@ -467,11 +469,12 @@ template<Executor Ex, class H1>
 [[nodiscard]] auto
 run_async(Ex ex, H1 h1)
 {
+    auto* mr = ex.context().get_frame_allocator();
     return run_async_wrapper<Ex, detail::handler_pair<H1, detail::default_handler>, std::pmr::memory_resource*>(
         std::move(ex),
         std::stop_token{},
         detail::handler_pair<H1, detail::default_handler>{std::move(h1)},
-        get_recycling_memory_resource());
+        mr);
 }
 
 /** Asynchronously launch a lazy task with separate result and error handlers.
@@ -509,11 +512,12 @@ template<Executor Ex, class H1, class H2>
 [[nodiscard]] auto
 run_async(Ex ex, H1 h1, H2 h2)
 {
+    auto* mr = ex.context().get_frame_allocator();
     return run_async_wrapper<Ex, detail::handler_pair<H1, H2>, std::pmr::memory_resource*>(
         std::move(ex),
         std::stop_token{},
         detail::handler_pair<H1, H2>{std::move(h1), std::move(h2)},
-        get_recycling_memory_resource());
+        mr);
 }
 
 // Ex + stop_token
@@ -547,11 +551,12 @@ template<Executor Ex>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st)
 {
+    auto* mr = ex.context().get_frame_allocator();
     return run_async_wrapper<Ex, detail::default_handler, std::pmr::memory_resource*>(
         std::move(ex),
         std::move(st),
         detail::default_handler{},
-        get_recycling_memory_resource());
+        mr);
 }
 
 /** Asynchronously launch a lazy task with stop token and result handler.
@@ -573,11 +578,12 @@ template<Executor Ex, class H1>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st, H1 h1)
 {
+    auto* mr = ex.context().get_frame_allocator();
     return run_async_wrapper<Ex, detail::handler_pair<H1, detail::default_handler>, std::pmr::memory_resource*>(
         std::move(ex),
         std::move(st),
         detail::handler_pair<H1, detail::default_handler>{std::move(h1)},
-        get_recycling_memory_resource());
+        mr);
 }
 
 /** Asynchronously launch a lazy task with stop token and separate handlers.
@@ -599,11 +605,12 @@ template<Executor Ex, class H1, class H2>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st, H1 h1, H2 h2)
 {
+    auto* mr = ex.context().get_frame_allocator();
     return run_async_wrapper<Ex, detail::handler_pair<H1, H2>, std::pmr::memory_resource*>(
         std::move(ex),
         std::move(st),
         detail::handler_pair<H1, H2>{std::move(h1), std::move(h2)},
-        get_recycling_memory_resource());
+        mr);
 }
 
 // Ex + memory_resource*

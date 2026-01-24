@@ -8,13 +8,17 @@
 //
 
 #include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/detail/except.hpp>
 
 namespace boost {
 namespace capy {
 
 execution_context::
-execution_context() = default;
+execution_context()
+    : frame_alloc_(get_recycling_memory_resource())
+{
+}
 
 execution_context::
 ~execution_context()

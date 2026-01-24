@@ -11,8 +11,11 @@
 #define BOOST_CAPY_EXECUTION_CONTEXT_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/detail/frame_memory_resource.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <concepts>
+#include <memory>
+#include <memory_resource>
 #include <mutex>
 #include <tuple>
 #include <type_traits>
@@ -336,6 +339,81 @@ public:
         return static_cast<T&>(make_service_impl(f));
     }
 
+    //------------------------------------------------
+
+    /** Return the memory resource used for coroutine frame allocation.
+
+        The returned pointer is valid for the lifetime of this context.
+        By default, this returns a pointer to the recycling memory
+        resource which pools frame allocations for reuse.
+
+        @return Pointer to the frame allocator.
+
+        @see set_frame_allocator
+    */
+    std::pmr::memory_resource*
+    get_frame_allocator() const noexcept
+    {
+        return frame_alloc_;
+    }
+
+    /** Set the memory resource used for coroutine frame allocation.
+
+        The caller is responsible for ensuring the memory resource
+        remains valid for the lifetime of all coroutines launched
+        using this context's executor.
+
+        @par Thread Safety
+        Not thread-safe. Must not be called while any thread may
+        be referencing this execution context or its executor.
+
+        @param mr Pointer to the memory resource.
+
+        @see get_frame_allocator
+    */
+    void
+    set_frame_allocator(std::pmr::memory_resource* mr) noexcept
+    {
+        owned_.reset();
+        frame_alloc_ = mr;
+    }
+
+    /** Set the frame allocator from a standard Allocator.
+
+        The allocator is wrapped in an internal memory resource
+        adapter owned by this context. The wrapper remains valid
+        for the lifetime of this context or until a subsequent
+        call to set_frame_allocator.
+
+        @par Thread Safety
+        Not thread-safe. Must not be called while any thread may
+        be referencing this execution context or its executor.
+
+        @tparam Allocator The allocator type satisfying the
+            standard Allocator requirements.
+
+        @param a The allocator to use.
+
+        @see get_frame_allocator
+    */
+    template<class Allocator>
+        requires (!std::is_pointer_v<Allocator>)
+    void
+    set_frame_allocator(Allocator const& a)
+    {
+        static_assert(
+            requires { typename std::allocator_traits<Allocator>::value_type; },
+            "Allocator must satisfy allocator requirements");
+        static_assert(
+            std::is_copy_constructible_v<Allocator>,
+            "Allocator must be copy constructible");
+
+        auto p = std::make_shared<
+            detail::frame_memory_resource<Allocator>>(a);
+        frame_alloc_ = p.get();
+        owned_ = std::move(p);
+    }
+
 protected:
     /** Shut down all services.
 
@@ -418,9 +496,11 @@ private:
 # pragma warning(disable: 4251)
 #endif
     mutable std::mutex mutex_;
+    std::shared_ptr<void> owned_;
 #ifdef _MSC_VER
 # pragma warning(pop)
 #endif
+    std::pmr::memory_resource* frame_alloc_ = nullptr;
     service* head_ = nullptr;
     bool shutdown_ = false;
 };
