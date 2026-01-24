@@ -221,8 +221,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     }
 
     // IoAwaitable: receive caller's executor and stop_token for completion dispatch
-    template<typename Ex>
-    coro await_suspend(coro cont, Ex const& caller_ex, std::stop_token token)
+    coro await_suspend(coro cont, executor_ref caller_ex, std::stop_token token)
     {
         h_.promise().set_continuation(cont, caller_ex);
         h_.promise().set_executor(caller_ex);

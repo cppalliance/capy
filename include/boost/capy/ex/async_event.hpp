@@ -98,11 +98,11 @@ public:
         }
 
         /** IoAwaitable protocol overload. */
-        template<Executor Ex>
-        auto await_suspend(
+        std::coroutine_handle<>
+        await_suspend(
             std::coroutine_handle<> h,
-            Ex const& ex,
-            std::stop_token = {}) noexcept -> std::coroutine_handle<>
+            executor_ref ex,
+            std::stop_token = {}) noexcept
         {
             h_ = h;
             ex_ = ex;

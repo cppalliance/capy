@@ -29,7 +29,7 @@ namespace capy {
     @tparam A The awaitable type.
 
     @par Requirements
-    @li `A` must provide `await_suspend(coro h, executor_ref const& ex,
+    @li `A` must provide `await_suspend(coro h, executor_ref ex,
         std::stop_token token)`
     @li The awaitable must use the executor `ex` to resume the caller
     @li The awaitable should use the stop_token to support cancellation
@@ -38,11 +38,10 @@ namespace capy {
     @code
     struct my_io_op
     {
-        template<typename Executor>
-        auto await_suspend(coro h, Executor const& ex,
+        auto await_suspend(coro h, executor_ref ex,
             std::stop_token token)
         {
-            start_async([h, &ex, token] {
+            start_async([h, ex, token] {
                 if (token.stop_requested()) {
                     // Handle cancellation
                 }

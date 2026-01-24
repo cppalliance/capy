@@ -131,7 +131,7 @@ public:
         bufgrind* self_;
 
         bool await_ready() const noexcept { return true; }
-        coro await_suspend(coro h, executor_ref const&, std::stop_token) const noexcept { return h; }
+        coro await_suspend(coro h, executor_ref, std::stop_token) const noexcept { return h; }
 
         split_type
         await_resume()
