@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_TYPE_TRAITS_HPP
-#define BOOST_CAPY_TYPE_TRAITS_HPP
+#ifndef BOOST_CAPY_DECOMPOSES_TO_HPP
+#define BOOST_CAPY_DECOMPOSES_TO_HPP
 
 #include <boost/capy/detail/config.hpp>
 
@@ -120,12 +120,30 @@ using awaitable_return_t = decltype(
     get_awaiter(std::declval<A>()).await_resume()
 );
 
+} // namespace detail
+
+/** Concept for types that decompose to a specific typelist.
+
+    A type satisfies `decomposes_to` if it can be decomposed via
+    structured bindings into the specified types. This includes
+    aggregates with matching member types and tuple-like types
+    with matching element types.
+
+    @tparam T The type to decompose.
+    @tparam Types The expected element types after decomposition.
+
+    @par Example
+    @code
+    struct result { int a; double b; };
+
+    static_assert(decomposes_to<result, int, double>);
+    static_assert(decomposes_to<std::tuple<int, double>, int, double>);
+    @endcode
+*/
 template <typename T, typename... Types>
 concept decomposes_to = requires(T&& t) {
     { decomposed_types(std::forward<T>(t)) } -> std::same_as<std::tuple<Types...>>;
 };
-
-} // namespace detail
 
 /** Concept for awaitables whose return type decomposes to a specific typelist.
 
