@@ -33,6 +33,24 @@ concept Allocator = requires(A a, std::size_t n) {
     { a.allocate(n) } -> std::same_as<typename A::value_type*>;
 };
 
+/// Function pointer type for type-erased frame deallocation.
+using dealloc_fn = void(*)(void*, std::size_t);
+
+/// Type-erased deallocator implementation for trampoline frames.
+template<class Alloc>
+void dealloc_impl(void* raw, std::size_t total)
+{
+    using byte_alloc = typename std::allocator_traits<Alloc>
+        ::template rebind_alloc<std::byte>;
+
+    auto* a = reinterpret_cast<Alloc*>(
+        static_cast<char*>(raw) + total - sizeof(Alloc));
+
+    byte_alloc ba(*a);
+    a->~Alloc();
+    ba.deallocate(static_cast<std::byte*>(raw), total);
+}
+
 /// Awaiter to access the promise from within the coroutine.
 template<class Promise>
 struct get_promise_awaiter
@@ -85,6 +103,40 @@ struct run_async_trampoline
             , handlers_(std::move(h))
             , resource_(std::move(a))
         {
+        }
+
+        static void* operator new(std::size_t size, Ex, Handlers, Alloc a)
+        {
+            using byte_alloc = typename std::allocator_traits<Alloc>
+                ::template rebind_alloc<std::byte>;
+
+            constexpr auto footer_align =
+                (std::max)(alignof(dealloc_fn), alignof(Alloc));
+            auto padded = (size + footer_align - 1) & ~(footer_align - 1);
+            auto total = padded + sizeof(dealloc_fn) + sizeof(Alloc);
+
+            byte_alloc ba(a);
+            void* raw = ba.allocate(total);
+
+            auto* fn_loc = reinterpret_cast<dealloc_fn*>(
+                static_cast<char*>(raw) + padded);
+            *fn_loc = &dealloc_impl<Alloc>;
+
+            new (fn_loc + 1) Alloc(std::move(a));
+
+            return raw;
+        }
+
+        static void operator delete(void* ptr, std::size_t size)
+        {
+            constexpr auto footer_align =
+                (std::max)(alignof(dealloc_fn), alignof(Alloc));
+            auto padded = (size + footer_align - 1) & ~(footer_align - 1);
+            auto total = padded + sizeof(dealloc_fn) + sizeof(Alloc);
+
+            auto* fn = reinterpret_cast<dealloc_fn*>(
+                static_cast<char*>(ptr) + padded);
+            (*fn)(ptr, total);
         }
 
         std::pmr::memory_resource* get_resource() noexcept
