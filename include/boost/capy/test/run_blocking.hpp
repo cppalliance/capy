@@ -150,7 +150,7 @@ template<class H1, class H2>
 struct blocking_handler_wrapper
 {
     blocking_state* state_;
-    handler_pair<H1, H2> handlers_;
+    detail::handler_pair<H1, H2> handlers_;
 
     /** Invoke the handler with non-void result and signal completion. */
     template<class T>
@@ -302,10 +302,10 @@ public:
         blocking_state state;
 
         auto make_handlers = [&]() {
-            if constexpr(std::is_same_v<H2, default_handler>)
-                return handler_pair<H1, H2>{std::move(h1_)};
+            if constexpr(std::is_same_v<H2, detail::default_handler>)
+                return detail::handler_pair<H1, H2>{std::move(h1_)};
             else
-                return handler_pair<H1, H2>{std::move(h1_), std::move(h2_)};
+                return detail::handler_pair<H1, H2>{std::move(h1_), std::move(h2_)};
         };
 
         run_async(
@@ -356,12 +356,12 @@ run_blocking()
 {
     return run_blocking_wrapper<
         inline_executor,
-        default_handler,
-        default_handler>(
+        detail::default_handler,
+        detail::default_handler>(
             inline_executor{},
             std::stop_token{},
-            default_handler{},
-            default_handler{});
+            detail::default_handler{},
+            detail::default_handler{});
 }
 
 /** Block until task completes and invoke handler with result.
@@ -399,11 +399,11 @@ run_blocking(H1 h1)
     return run_blocking_wrapper<
         inline_executor,
         H1,
-        default_handler>(
+        detail::default_handler>(
             inline_executor{},
             std::stop_token{},
             std::move(h1),
-            default_handler{});
+            detail::default_handler{});
 }
 
 /** Block until task completes with separate handlers.
@@ -482,12 +482,12 @@ run_blocking(Ex ex)
 {
     return run_blocking_wrapper<
         Ex,
-        default_handler,
-        default_handler>(
+        detail::default_handler,
+        detail::default_handler>(
             std::move(ex),
             std::stop_token{},
-            default_handler{},
-            default_handler{});
+            detail::default_handler{},
+            detail::default_handler{});
 }
 
 /** Block until task completes on executor with handler.
@@ -517,11 +517,11 @@ run_blocking(Ex ex, H1 h1)
     return run_blocking_wrapper<
         Ex,
         H1,
-        default_handler>(
+        detail::default_handler>(
             std::move(ex),
             std::stop_token{},
             std::move(h1),
-            default_handler{});
+            detail::default_handler{});
 }
 
 /** Block until task completes on executor with separate handlers.
@@ -584,12 +584,12 @@ run_blocking(std::stop_token st)
 {
     return run_blocking_wrapper<
         inline_executor,
-        default_handler,
-        default_handler>(
+        detail::default_handler,
+        detail::default_handler>(
             inline_executor{},
             std::move(st),
-            default_handler{},
-            default_handler{});
+            detail::default_handler{},
+            detail::default_handler{});
 }
 
 /** Block until task completes with stop token and handler.
@@ -608,11 +608,11 @@ run_blocking(std::stop_token st, H1 h1)
     return run_blocking_wrapper<
         inline_executor,
         H1,
-        default_handler>(
+        detail::default_handler>(
             inline_executor{},
             std::move(st),
             std::move(h1),
-            default_handler{});
+            detail::default_handler{});
 }
 
 /** Block until task completes with stop token and separate handlers.
@@ -656,12 +656,12 @@ run_blocking(Ex ex, std::stop_token st)
 {
     return run_blocking_wrapper<
         Ex,
-        default_handler,
-        default_handler>(
+        detail::default_handler,
+        detail::default_handler>(
             std::move(ex),
             std::move(st),
-            default_handler{},
-            default_handler{});
+            detail::default_handler{},
+            detail::default_handler{});
 }
 
 /** Block until task completes on executor with stop token and handler.
@@ -681,11 +681,11 @@ run_blocking(Ex ex, std::stop_token st, H1 h1)
     return run_blocking_wrapper<
         Ex,
         H1,
-        default_handler>(
+        detail::default_handler>(
             std::move(ex),
             std::move(st),
             std::move(h1),
-            default_handler{});
+            detail::default_handler{});
 }
 
 /** Block until task completes on executor with stop token and handlers.

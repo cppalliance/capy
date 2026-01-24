@@ -11,153 +11,20 @@
 #define BOOST_CAPY_RUN_ASYNC_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/detail/run_callbacks.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/io_awaitable.hpp>
 
-#include <concepts>
 #include <coroutine>
-#include <exception>
 #include <memory_resource>
 #include <stop_token>
 #include <type_traits>
-#include <utility>
 
 namespace boost {
 namespace capy {
-
-//----------------------------------------------------------
-//
-// Handler Types
-//
-//----------------------------------------------------------
-
-/** Default handler for run_async that discards results and rethrows exceptions.
-
-    This handler type is used when no user-provided handlers are specified.
-    On successful completion it discards the result value. On exception it
-    rethrows the exception from the exception_ptr.
-
-    @par Thread Safety
-    All member functions are thread-safe.
-
-    @see run_async
-    @see handler_pair
-*/
-struct default_handler
-{
-    /// Discard a non-void result value.
-    template<class T>
-    void operator()(T&&) const noexcept
-    {
-    }
-
-    /// Handle void result (no-op).
-    void operator()() const noexcept
-    {
-    }
-
-    /// Rethrow the captured exception.
-    void operator()(std::exception_ptr ep) const
-    {
-        if(ep)
-            std::rethrow_exception(ep);
-    }
-};
-
-/** Combines two handlers into one: h1 for success, h2 for exception.
-
-    This class template wraps a success handler and an error handler,
-    providing a unified callable interface for the trampoline coroutine.
-
-    @tparam H1 The success handler type. Must be invocable with `T&&` for
-               non-void tasks or with no arguments for void tasks.
-    @tparam H2 The error handler type. Must be invocable with `std::exception_ptr`.
-
-    @par Thread Safety
-    Thread safety depends on the contained handlers.
-
-    @see run_async
-    @see default_handler
-*/
-template<class H1, class H2>
-struct handler_pair
-{
-    H1 h1_;
-    H2 h2_;
-
-    /// Invoke success handler with non-void result.
-    template<class T>
-    void operator()(T&& v)
-    {
-        h1_(std::forward<T>(v));
-    }
-
-    /// Invoke success handler for void result.
-    void operator()()
-    {
-        h1_();
-    }
-
-    /// Invoke error handler with exception.
-    void operator()(std::exception_ptr ep)
-    {
-        h2_(ep);
-    }
-};
-
-/** Specialization for single handler that may handle both success and error.
-
-    When only one handler is provided to `run_async`, this specialization
-    checks at compile time whether the handler can accept `std::exception_ptr`.
-    If so, it routes exceptions to the handler. Otherwise, exceptions are
-    rethrown (the default behavior).
-
-    @tparam H1 The handler type. If invocable with `std::exception_ptr`,
-               it handles both success and error cases.
-
-    @par Thread Safety
-    Thread safety depends on the contained handler.
-
-    @see run_async
-    @see default_handler
-*/
-template<class H1>
-struct handler_pair<H1, default_handler>
-{
-    H1 h1_;
-
-    /// Invoke handler with non-void result.
-    template<class T>
-    void operator()(T&& v)
-    {
-        h1_(std::forward<T>(v));
-    }
-
-    /// Invoke handler for void result.
-    void operator()()
-    {
-        h1_();
-    }
-
-    /// Route exception to h1 if it accepts exception_ptr, otherwise rethrow.
-    void operator()(std::exception_ptr ep)
-    {
-        if constexpr(std::invocable<H1, std::exception_ptr>)
-            h1_(ep);
-        else
-            std::rethrow_exception(ep);
-    }
-};
-
 namespace detail {
-
-//----------------------------------------------------------
-//
-// Allocator Detection
-//
-//----------------------------------------------------------
 
 /// Concept for standard Allocator types.
 template<class A>
@@ -165,12 +32,6 @@ concept Allocator = requires(A a, std::size_t n) {
     typename A::value_type;
     { a.allocate(n) } -> std::same_as<typename A::value_type*>;
 };
-
-//----------------------------------------------------------
-//
-// Trampoline Coroutine
-//
-//----------------------------------------------------------
 
 /// Awaiter to access the promise from within the coroutine.
 template<class Promise>
@@ -192,13 +53,13 @@ struct get_promise_awaiter
     }
 };
 
-/** Internal trampoline coroutine for run_async.
+/** Internal run_async_trampoline coroutine for run_async.
 
-    The trampoline is allocated BEFORE the task (via C++17 postfix evaluation
+    The run_async_trampoline is allocated BEFORE the task (via C++17 postfix evaluation
     order) and serves as the task's continuation. When the task final_suspends,
-    control returns to the trampoline which then invokes the appropriate handler.
+    control returns to the run_async_trampoline which then invokes the appropriate handler.
 
-    For value-type allocators, the trampoline stores a frame_memory_resource
+    For value-type allocators, the run_async_trampoline stores a frame_memory_resource
     that wraps the allocator. For memory_resource*, it stores the pointer directly.
 
     @tparam Ex The executor type.
@@ -206,7 +67,7 @@ struct get_promise_awaiter
     @tparam Alloc The allocator type (value type or memory_resource*).
 */
 template<class Ex, class Handlers, class Alloc>
-struct trampoline
+struct run_async_trampoline
 {
     using invoke_fn = void(*)(void*, Handlers&);
 
@@ -231,9 +92,9 @@ struct trampoline
             return &resource_;
         }
 
-        trampoline get_return_object() noexcept
+        run_async_trampoline get_return_object() noexcept
         {
-            return trampoline{
+            return run_async_trampoline{
                 std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
@@ -277,7 +138,7 @@ struct trampoline
     This avoids double indirection when the user passes a memory_resource*.
 */
 template<class Ex, class Handlers>
-struct trampoline<Ex, Handlers, std::pmr::memory_resource*>
+struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
 {
     using invoke_fn = void(*)(void*, Handlers&);
 
@@ -302,9 +163,9 @@ struct trampoline<Ex, Handlers, std::pmr::memory_resource*>
             return mr_;
         }
 
-        trampoline get_return_object() noexcept
+        run_async_trampoline get_return_object() noexcept
         {
-            return trampoline{
+            return run_async_trampoline{
                 std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
@@ -343,16 +204,16 @@ struct trampoline<Ex, Handlers, std::pmr::memory_resource*>
     }
 };
 
-/// Coroutine body for trampoline - invokes handlers then destroys task.
+/// Coroutine body for run_async_trampoline - invokes handlers then destroys task.
 template<class Ex, class Handlers, class Alloc>
-trampoline<Ex, Handlers, Alloc>
+run_async_trampoline<Ex, Handlers, Alloc>
 make_trampoline(Ex ex, Handlers h, Alloc a)
 {
     (void)ex;
     (void)h;
     (void)a;
     auto& p = co_await get_promise_awaiter<
-        typename trampoline<Ex, Handlers, Alloc>::promise_type>{};
+        typename run_async_trampoline<Ex, Handlers, Alloc>::promise_type>{};
     
     p.invoke_(p.task_promise_, p.handlers_);
     p.task_h_.destroy();
@@ -368,8 +229,8 @@ make_trampoline(Ex ex, Handlers h, Alloc a)
 
 /** Wrapper returned by run_async that accepts a task for execution.
 
-    This wrapper holds the trampoline coroutine, executor, stop token,
-    and handlers. The trampoline is allocated when the wrapper is constructed
+    This wrapper holds the run_async_trampoline coroutine, executor, stop token,
+    and handlers. The run_async_trampoline is allocated when the wrapper is constructed
     (before the task due to C++17 postfix evaluation order).
 
     The rvalue ref-qualifier on `operator()` ensures the wrapper can only
@@ -398,7 +259,7 @@ make_trampoline(Ex ex, Handlers h, Alloc a)
 template<Executor Ex, class Handlers, class Alloc>
 class [[nodiscard]] run_async_wrapper
 {
-    detail::trampoline<Ex, Handlers, Alloc> tr_;
+    detail::run_async_trampoline<Ex, Handlers, Alloc> tr_;
     std::stop_token st_;
 
 public:
@@ -431,7 +292,7 @@ public:
         @tparam Task The IoLaunchableTask type.
 
         @param t The task to execute. Ownership is transferred to the
-                 trampoline which will destroy it after completion.
+                 run_async_trampoline which will destroy it after completion.
     */
     template<IoLaunchableTask Task>
     void operator()(Task t) &&
@@ -443,11 +304,11 @@ public:
         auto& p = tr_.h_.promise();
 
         // Inject Task-specific invoke function
-        p.invoke_ = detail::trampoline<Ex, Handlers, Alloc>::template invoke_impl<Task>;
+        p.invoke_ = detail::run_async_trampoline<Ex, Handlers, Alloc>::template invoke_impl<Task>;
         p.task_promise_ = &task_promise;
         p.task_h_ = task_h;
 
-        // Setup task's continuation to return to trampoline
+        // Setup task's continuation to return to run_async_trampoline
         task_promise.set_continuation(tr_.h_, p.ex_);
         task_promise.set_executor(p.ex_);
         task_promise.set_stop_token(st_);
@@ -494,10 +355,10 @@ template<Executor Ex>
 [[nodiscard]] auto
 run_async(Ex ex)
 {
-    return run_async_wrapper<Ex, default_handler, std::pmr::memory_resource*>(
+    return run_async_wrapper<Ex, detail::default_handler, std::pmr::memory_resource*>(
         std::move(ex),
         std::stop_token{},
-        default_handler{},
+        detail::default_handler{},
         get_recycling_memory_resource());
 }
 
@@ -537,10 +398,10 @@ template<Executor Ex, class H1>
 [[nodiscard]] auto
 run_async(Ex ex, H1 h1)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, default_handler>, std::pmr::memory_resource*>(
+    return run_async_wrapper<Ex, detail::handler_pair<H1, detail::default_handler>, std::pmr::memory_resource*>(
         std::move(ex),
         std::stop_token{},
-        handler_pair<H1, default_handler>{std::move(h1)},
+        detail::handler_pair<H1, detail::default_handler>{std::move(h1)},
         get_recycling_memory_resource());
 }
 
@@ -579,10 +440,10 @@ template<Executor Ex, class H1, class H2>
 [[nodiscard]] auto
 run_async(Ex ex, H1 h1, H2 h2)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, H2>, std::pmr::memory_resource*>(
+    return run_async_wrapper<Ex, detail::handler_pair<H1, H2>, std::pmr::memory_resource*>(
         std::move(ex),
         std::stop_token{},
-        handler_pair<H1, H2>{std::move(h1), std::move(h2)},
+        detail::handler_pair<H1, H2>{std::move(h1), std::move(h2)},
         get_recycling_memory_resource());
 }
 
@@ -617,10 +478,10 @@ template<Executor Ex>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st)
 {
-    return run_async_wrapper<Ex, default_handler, std::pmr::memory_resource*>(
+    return run_async_wrapper<Ex, detail::default_handler, std::pmr::memory_resource*>(
         std::move(ex),
         std::move(st),
-        default_handler{},
+        detail::default_handler{},
         get_recycling_memory_resource());
 }
 
@@ -643,10 +504,10 @@ template<Executor Ex, class H1>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st, H1 h1)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, default_handler>, std::pmr::memory_resource*>(
+    return run_async_wrapper<Ex, detail::handler_pair<H1, detail::default_handler>, std::pmr::memory_resource*>(
         std::move(ex),
         std::move(st),
-        handler_pair<H1, default_handler>{std::move(h1)},
+        detail::handler_pair<H1, detail::default_handler>{std::move(h1)},
         get_recycling_memory_resource());
 }
 
@@ -669,10 +530,10 @@ template<Executor Ex, class H1, class H2>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st, H1 h1, H2 h2)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, H2>, std::pmr::memory_resource*>(
+    return run_async_wrapper<Ex, detail::handler_pair<H1, H2>, std::pmr::memory_resource*>(
         std::move(ex),
         std::move(st),
-        handler_pair<H1, H2>{std::move(h1), std::move(h2)},
+        detail::handler_pair<H1, H2>{std::move(h1), std::move(h2)},
         get_recycling_memory_resource());
 }
 
@@ -695,10 +556,10 @@ template<Executor Ex>
 [[nodiscard]] auto
 run_async(Ex ex, std::pmr::memory_resource* mr)
 {
-    return run_async_wrapper<Ex, default_handler, std::pmr::memory_resource*>(
+    return run_async_wrapper<Ex, detail::default_handler, std::pmr::memory_resource*>(
         std::move(ex),
         std::stop_token{},
-        default_handler{},
+        detail::default_handler{},
         mr);
 }
 
@@ -717,10 +578,10 @@ template<Executor Ex, class H1>
 [[nodiscard]] auto
 run_async(Ex ex, std::pmr::memory_resource* mr, H1 h1)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, default_handler>, std::pmr::memory_resource*>(
+    return run_async_wrapper<Ex, detail::handler_pair<H1, detail::default_handler>, std::pmr::memory_resource*>(
         std::move(ex),
         std::stop_token{},
-        handler_pair<H1, default_handler>{std::move(h1)},
+        detail::handler_pair<H1, detail::default_handler>{std::move(h1)},
         mr);
 }
 
@@ -740,10 +601,10 @@ template<Executor Ex, class H1, class H2>
 [[nodiscard]] auto
 run_async(Ex ex, std::pmr::memory_resource* mr, H1 h1, H2 h2)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, H2>, std::pmr::memory_resource*>(
+    return run_async_wrapper<Ex, detail::handler_pair<H1, H2>, std::pmr::memory_resource*>(
         std::move(ex),
         std::stop_token{},
-        handler_pair<H1, H2>{std::move(h1), std::move(h2)},
+        detail::handler_pair<H1, H2>{std::move(h1), std::move(h2)},
         mr);
 }
 
@@ -764,10 +625,10 @@ template<Executor Ex>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr)
 {
-    return run_async_wrapper<Ex, default_handler, std::pmr::memory_resource*>(
+    return run_async_wrapper<Ex, detail::default_handler, std::pmr::memory_resource*>(
         std::move(ex),
         std::move(st),
-        default_handler{},
+        detail::default_handler{},
         mr);
 }
 
@@ -787,10 +648,10 @@ template<Executor Ex, class H1>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr, H1 h1)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, default_handler>, std::pmr::memory_resource*>(
+    return run_async_wrapper<Ex, detail::handler_pair<H1, detail::default_handler>, std::pmr::memory_resource*>(
         std::move(ex),
         std::move(st),
-        handler_pair<H1, default_handler>{std::move(h1)},
+        detail::handler_pair<H1, detail::default_handler>{std::move(h1)},
         mr);
 }
 
@@ -811,10 +672,10 @@ template<Executor Ex, class H1, class H2>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr, H1 h1, H2 h2)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, H2>, std::pmr::memory_resource*>(
+    return run_async_wrapper<Ex, detail::handler_pair<H1, H2>, std::pmr::memory_resource*>(
         std::move(ex),
         std::move(st),
-        handler_pair<H1, H2>{std::move(h1), std::move(h2)},
+        detail::handler_pair<H1, H2>{std::move(h1), std::move(h2)},
         mr);
 }
 
@@ -823,7 +684,7 @@ run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr, H1 h1, H2 h2
 /** Asynchronously launch a lazy task with custom allocator.
 
     The allocator is wrapped in a frame_memory_resource and stored in the
-    trampoline, ensuring it outlives all coroutine frames.
+    run_async_trampoline, ensuring it outlives all coroutine frames.
 
     @param ex The executor to execute the task on.
     @param alloc The allocator for frame allocation (copied and stored).
@@ -837,10 +698,10 @@ template<Executor Ex, detail::Allocator Alloc>
 [[nodiscard]] auto
 run_async(Ex ex, Alloc alloc)
 {
-    return run_async_wrapper<Ex, default_handler, Alloc>(
+    return run_async_wrapper<Ex, detail::default_handler, Alloc>(
         std::move(ex),
         std::stop_token{},
-        default_handler{},
+        detail::default_handler{},
         std::move(alloc));
 }
 
@@ -859,10 +720,10 @@ template<Executor Ex, detail::Allocator Alloc, class H1>
 [[nodiscard]] auto
 run_async(Ex ex, Alloc alloc, H1 h1)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, default_handler>, Alloc>(
+    return run_async_wrapper<Ex, detail::handler_pair<H1, detail::default_handler>, Alloc>(
         std::move(ex),
         std::stop_token{},
-        handler_pair<H1, default_handler>{std::move(h1)},
+        detail::handler_pair<H1, detail::default_handler>{std::move(h1)},
         std::move(alloc));
 }
 
@@ -882,10 +743,10 @@ template<Executor Ex, detail::Allocator Alloc, class H1, class H2>
 [[nodiscard]] auto
 run_async(Ex ex, Alloc alloc, H1 h1, H2 h2)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, H2>, Alloc>(
+    return run_async_wrapper<Ex, detail::handler_pair<H1, H2>, Alloc>(
         std::move(ex),
         std::stop_token{},
-        handler_pair<H1, H2>{std::move(h1), std::move(h2)},
+        detail::handler_pair<H1, H2>{std::move(h1), std::move(h2)},
         std::move(alloc));
 }
 
@@ -906,10 +767,10 @@ template<Executor Ex, detail::Allocator Alloc>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st, Alloc alloc)
 {
-    return run_async_wrapper<Ex, default_handler, Alloc>(
+    return run_async_wrapper<Ex, detail::default_handler, Alloc>(
         std::move(ex),
         std::move(st),
-        default_handler{},
+        detail::default_handler{},
         std::move(alloc));
 }
 
@@ -929,10 +790,10 @@ template<Executor Ex, detail::Allocator Alloc, class H1>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st, Alloc alloc, H1 h1)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, default_handler>, Alloc>(
+    return run_async_wrapper<Ex, detail::handler_pair<H1, detail::default_handler>, Alloc>(
         std::move(ex),
         std::move(st),
-        handler_pair<H1, default_handler>{std::move(h1)},
+        detail::handler_pair<H1, detail::default_handler>{std::move(h1)},
         std::move(alloc));
 }
 
@@ -953,10 +814,10 @@ template<Executor Ex, detail::Allocator Alloc, class H1, class H2>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st, Alloc alloc, H1 h1, H2 h2)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, H2>, Alloc>(
+    return run_async_wrapper<Ex, detail::handler_pair<H1, H2>, Alloc>(
         std::move(ex),
         std::move(st),
-        handler_pair<H1, H2>{std::move(h1), std::move(h2)},
+        detail::handler_pair<H1, H2>{std::move(h1), std::move(h2)},
         std::move(alloc));
 }
 
