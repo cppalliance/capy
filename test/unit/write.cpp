@@ -159,6 +159,40 @@ struct mock_sink_write_awaitable
     }
 };
 
+// Mock sink write awaitable with size (for write(buffers, eof))
+struct mock_sink_write_with_size_awaitable
+{
+    std::string* data_;
+    bool* finished_;
+    const_buffer buf_;
+    bool eof_;
+    system::error_code ec_;
+
+    bool await_ready() const noexcept { return true; }
+
+    void await_suspend(
+        coro,
+        executor_ref,
+        std::stop_token) const noexcept
+    {
+    }
+
+    io_result<std::size_t>
+    await_resume() noexcept
+    {
+        if(ec_)
+            return {ec_, 0};
+
+        std::size_t n = buf_.size();
+        data_->append(
+            static_cast<char const*>(buf_.data()),
+            n);
+        if(eof_)
+            *finished_ = true;
+        return {{}, n};
+    }
+};
+
 // Mock sink write_eof awaitable
 struct mock_sink_eof_awaitable
 {
@@ -198,6 +232,14 @@ struct mock_write_sink
     {
         const_buffer buf = *begin(buffers);
         return {&data, buf, write_error};
+    }
+
+    template<ConstBufferSequence CB>
+    mock_sink_write_with_size_awaitable
+    write(CB const& buffers, bool eof)
+    {
+        const_buffer buf = *begin(buffers);
+        return {&data, &finished, buf, eof, write_error};
     }
 
     mock_sink_eof_awaitable
