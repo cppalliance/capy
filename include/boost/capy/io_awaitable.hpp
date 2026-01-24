@@ -13,13 +13,16 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
 
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/io_awaitable_task.hpp>
 #include <boost/capy/concept/io_launchable_task.hpp>
 
 #include <coroutine>
+#include <cstddef>
 #include <exception>
+#include <memory_resource>
 #include <stop_token>
 #include <type_traits>
 
@@ -122,16 +125,22 @@ inline get_executor_tag get_executor() noexcept
 
     Inherit from this class to enable these capabilities in your coroutine:
 
-    1. **Stop token storage** — The mixin stores the `std::stop_token`
+    1. **Frame allocation** — The mixin provides `operator new/delete` that
+       use the thread-local frame allocator set by `run_async`.
+
+    2. **Frame allocator storage** — The mixin stores the allocator pointer
+       for propagation to child tasks.
+
+    3. **Stop token storage** — The mixin stores the `std::stop_token`
        that was passed when your coroutine was awaited.
 
-    2. **Stop token access** — Coroutine code can retrieve the token via
+    4. **Stop token access** — Coroutine code can retrieve the token via
        `co_await get_stop_token()`.
 
-    3. **Executor storage** — The mixin stores the `executor_ref`
+    5. **Executor storage** — The mixin stores the `executor_ref`
        that this coroutine is bound to.
 
-    4. **Executor access** — Coroutine code can retrieve the executor via
+    6. **Executor access** — Coroutine code can retrieve the executor via
        `co_await get_executor()`.
 
     @tparam Derived The derived promise type (CRTP pattern).
@@ -223,10 +232,97 @@ class io_awaitable_support
 {
     executor_ref executor_;
     std::stop_token stop_token_;
-    coro cont_;
+    std::pmr::memory_resource* alloc_ = nullptr;
     executor_ref caller_ex_;
+    coro cont_;
 
 public:
+    //----------------------------------------------------------
+    // Frame allocation support
+    //----------------------------------------------------------
+
+private:
+    static constexpr std::size_t ptr_alignment = alignof(void*);
+
+    static std::size_t
+    aligned_offset(std::size_t n) noexcept
+    {
+        return (n + ptr_alignment - 1) & ~(ptr_alignment - 1);
+    }
+
+public:
+    /** Allocate a coroutine frame.
+
+        Uses the thread-local frame allocator set by run_async.
+        Falls back to default memory resource if not set.
+        Stores the allocator pointer at the end of each frame for
+        correct deallocation even when TLS changes.
+    */
+    static void*
+    operator new(std::size_t size)
+    {
+        auto* mr = current_frame_allocator();
+        if(!mr)
+            mr = std::pmr::get_default_resource();
+
+        // Allocate extra space for memory_resource pointer
+        std::size_t ptr_offset = aligned_offset(size);
+        std::size_t total = ptr_offset + sizeof(std::pmr::memory_resource*);
+        void* raw = mr->allocate(total, alignof(std::max_align_t));
+
+        // Store the allocator pointer at the end
+        auto* ptr_loc = reinterpret_cast<std::pmr::memory_resource**>(
+            static_cast<char*>(raw) + ptr_offset);
+        *ptr_loc = mr;
+
+        return raw;
+    }
+
+    /** Deallocate a coroutine frame.
+
+        Reads the allocator pointer stored at the end of the frame
+        to ensure correct deallocation regardless of current TLS.
+    */
+    static void
+    operator delete(void* ptr, std::size_t size)
+    {
+        // Read the allocator pointer from the end of the frame
+        std::size_t ptr_offset = aligned_offset(size);
+        auto* ptr_loc = reinterpret_cast<std::pmr::memory_resource**>(
+            static_cast<char*>(ptr) + ptr_offset);
+        auto* mr = *ptr_loc;
+
+        std::size_t total = ptr_offset + sizeof(std::pmr::memory_resource*);
+        mr->deallocate(ptr, total, alignof(std::max_align_t));
+    }
+
+    /** Store a frame allocator for later retrieval.
+
+        Call this from initial_suspend to capture the current
+        TLS allocator for propagation to child tasks.
+
+        @param alloc The allocator to store.
+    */
+    void
+    set_frame_allocator(std::pmr::memory_resource* alloc) noexcept
+    {
+        alloc_ = alloc;
+    }
+
+    /** Return the stored frame allocator.
+
+        @return The allocator, or nullptr if none was set.
+    */
+    std::pmr::memory_resource*
+    frame_allocator() const noexcept
+    {
+        return alloc_;
+    }
+
+    //----------------------------------------------------------
+    // Continuation support
+    //----------------------------------------------------------
+
     /** Store continuation and caller's executor for completion dispatch.
 
         Call this from your coroutine type's `await_suspend` overload to

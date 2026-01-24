@@ -797,22 +797,35 @@ struct when_all_test
 
     /** Tracking frame allocator that logs allocation events.
     */
+    template<class T = std::byte>
     struct tracking_frame_allocator
     {
+        using value_type = T;
+
+        template<class U>
+        struct rebind { using other = tracking_frame_allocator<U>; };
+
         int id;
         int* alloc_count;
         int* dealloc_count;
         std::vector<int>* alloc_log;
 
-        void* allocate(std::size_t n)
+        tracking_frame_allocator(int id_, int* ac, int* dc, std::vector<int>* log)
+            : id(id_), alloc_count(ac), dealloc_count(dc), alloc_log(log) {}
+
+        template<class U>
+        tracking_frame_allocator(const tracking_frame_allocator<U>& o)
+            : id(o.id), alloc_count(o.alloc_count), dealloc_count(o.dealloc_count), alloc_log(o.alloc_log) {}
+
+        T* allocate(std::size_t n)
         {
             ++(*alloc_count);
             if(alloc_log)
                 alloc_log->push_back(id);
-            return ::operator new(n);
+            return static_cast<T*>(::operator new(n * sizeof(T)));
         }
 
-        void deallocate(void* p, std::size_t)
+        void deallocate(T* p, std::size_t)
         {
             ++(*dealloc_count);
             ::operator delete(p);
@@ -831,7 +844,7 @@ struct when_all_test
         int dealloc_count = 0;
         std::vector<int> alloc_log;
 
-        tracking_frame_allocator alloc{1, &alloc_count, &dealloc_count, &alloc_log};
+        tracking_frame_allocator<> alloc{1, &alloc_count, &dealloc_count, &alloc_log};
 
         run_async(ex, std::stop_token{}, alloc,
             [&](std::tuple<int, int, int> t) {
@@ -864,7 +877,7 @@ struct when_all_test
         int dealloc_count = 0;
         std::vector<int> alloc_log;
 
-        tracking_frame_allocator alloc{1, &alloc_count, &dealloc_count, &alloc_log};
+        tracking_frame_allocator<> alloc{1, &alloc_count, &dealloc_count, &alloc_log};
 
         auto inner1 = []() -> task<int> {
             auto [a, b] = co_await when_all(returns_int(1), returns_int(2));

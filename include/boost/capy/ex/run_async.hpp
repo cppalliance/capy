@@ -12,12 +12,14 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/concept/frame_allocator.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
+#include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/io_awaitable.hpp>
 
 #include <concepts>
 #include <coroutine>
 #include <exception>
+#include <memory_resource>
 #include <stop_token>
 #include <type_traits>
 #include <utility>
@@ -153,6 +155,19 @@ namespace detail {
 
 //----------------------------------------------------------
 //
+// Allocator Detection
+//
+//----------------------------------------------------------
+
+/// Concept for standard Allocator types.
+template<class A>
+concept Allocator = requires(A a, std::size_t n) {
+    typename A::value_type;
+    { a.allocate(n) } -> std::same_as<typename A::value_type*>;
+};
+
+//----------------------------------------------------------
+//
 // Trampoline Coroutine
 //
 //----------------------------------------------------------
@@ -183,10 +198,14 @@ struct get_promise_awaiter
     order) and serves as the task's continuation. When the task final_suspends,
     control returns to the trampoline which then invokes the appropriate handler.
 
+    For value-type allocators, the trampoline stores a frame_memory_resource
+    that wraps the allocator. For memory_resource*, it stores the pointer directly.
+
     @tparam Ex The executor type.
     @tparam Handlers The handler type (default_handler or handler_pair).
+    @tparam Alloc The allocator type (value type or memory_resource*).
 */
-template<class Ex, class Handlers>
+template<class Ex, class Handlers, class Alloc>
 struct trampoline
 {
     using invoke_fn = void(*)(void*, Handlers&);
@@ -195,15 +214,21 @@ struct trampoline
     {
         Ex ex_;
         Handlers handlers_;
+        frame_memory_resource<Alloc> resource_;
         invoke_fn invoke_ = nullptr;
         void* task_promise_ = nullptr;
         std::coroutine_handle<> task_h_;
 
-        // Constructor receives coroutine parameters by lvalue reference
-        promise_type(Ex ex, Handlers h)
+        promise_type(Ex ex, Handlers h, Alloc a)
             : ex_(std::move(ex))
             , handlers_(std::move(h))
+            , resource_(std::move(a))
         {
+        }
+
+        std::pmr::memory_resource* get_resource() noexcept
+        {
+            return &resource_;
         }
 
         trampoline get_return_object() noexcept
@@ -217,7 +242,6 @@ struct trampoline
             return {};
         }
 
-        // Self-destruct after invoking handlers
         std::suspend_never final_suspend() noexcept
         {
             return {};
@@ -229,13 +253,82 @@ struct trampoline
 
         void unhandled_exception() noexcept
         {
-            // Handler threw - this is undefined behavior if no error handler provided
         }
     };
 
     std::coroutine_handle<promise_type> h_;
 
-    /// Type-erased invoke function instantiated per IoLaunchableTask.
+    template<IoLaunchableTask Task>
+    static void invoke_impl(void* p, Handlers& h)
+    {
+        using R = decltype(std::declval<Task&>().await_resume());
+        auto& promise = *static_cast<typename Task::promise_type*>(p);
+        if(promise.exception())
+            h(promise.exception());
+        else if constexpr(std::is_void_v<R>)
+            h();
+        else
+            h(std::move(promise.result()));
+    }
+};
+
+/** Specialization for memory_resource* - stores pointer directly.
+
+    This avoids double indirection when the user passes a memory_resource*.
+*/
+template<class Ex, class Handlers>
+struct trampoline<Ex, Handlers, std::pmr::memory_resource*>
+{
+    using invoke_fn = void(*)(void*, Handlers&);
+
+    struct promise_type
+    {
+        Ex ex_;
+        Handlers handlers_;
+        std::pmr::memory_resource* mr_;
+        invoke_fn invoke_ = nullptr;
+        void* task_promise_ = nullptr;
+        std::coroutine_handle<> task_h_;
+
+        promise_type(Ex ex, Handlers h, std::pmr::memory_resource* mr)
+            : ex_(std::move(ex))
+            , handlers_(std::move(h))
+            , mr_(mr)
+        {
+        }
+
+        std::pmr::memory_resource* get_resource() noexcept
+        {
+            return mr_;
+        }
+
+        trampoline get_return_object() noexcept
+        {
+            return trampoline{
+                std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+
+        std::suspend_always initial_suspend() noexcept
+        {
+            return {};
+        }
+
+        std::suspend_never final_suspend() noexcept
+        {
+            return {};
+        }
+
+        void return_void() noexcept
+        {
+        }
+
+        void unhandled_exception() noexcept
+        {
+        }
+    };
+
+    std::coroutine_handle<promise_type> h_;
+
     template<IoLaunchableTask Task>
     static void invoke_impl(void* p, Handlers& h)
     {
@@ -251,19 +344,17 @@ struct trampoline
 };
 
 /// Coroutine body for trampoline - invokes handlers then destroys task.
-template<class Ex, class Handlers>
-trampoline<Ex, Handlers>
-make_trampoline(Ex ex, Handlers h)
+template<class Ex, class Handlers, class Alloc>
+trampoline<Ex, Handlers, Alloc>
+make_trampoline(Ex ex, Handlers h, Alloc a)
 {
-    // Parameters are passed to promise_type constructor by coroutine machinery
     (void)ex;
     (void)h;
-    auto& p = co_await get_promise_awaiter<typename trampoline<Ex, Handlers>::promise_type>{};
+    (void)a;
+    auto& p = co_await get_promise_awaiter<
+        typename trampoline<Ex, Handlers, Alloc>::promise_type>{};
     
-    // Invoke the type-erased handler
     p.invoke_(p.task_promise_, p.handlers_);
-    
-    // Destroy task (LIFO: task destroyed first, trampoline destroyed after)
     p.task_h_.destroy();
 }
 
@@ -286,6 +377,7 @@ make_trampoline(Ex ex, Handlers h)
 
     @tparam Ex The executor type satisfying the `Executor` concept.
     @tparam Handlers The handler type (default_handler or handler_pair).
+    @tparam Alloc The allocator type (value type or memory_resource*).
 
     @par Thread Safety
     The wrapper itself should only be used from one thread. The handlers
@@ -303,22 +395,25 @@ make_trampoline(Ex ex, Handlers h)
 
     @see run_async
 */
-template<Executor Ex, class Handlers>
+template<Executor Ex, class Handlers, class Alloc>
 class [[nodiscard]] run_async_wrapper
 {
-    detail::trampoline<Ex, Handlers> tr_;
+    detail::trampoline<Ex, Handlers, Alloc> tr_;
     std::stop_token st_;
 
 public:
-    /// Construct wrapper with executor, stop token, and handlers.
+    /// Construct wrapper with executor, stop token, handlers, and allocator.
     run_async_wrapper(
         Ex ex,
         std::stop_token st,
-        Handlers h)
-        : tr_(detail::make_trampoline<Ex, Handlers>(
-            std::move(ex), std::move(h)))
+        Handlers h,
+        Alloc a)
+        : tr_(detail::make_trampoline<Ex, Handlers, Alloc>(
+            std::move(ex), std::move(h), std::move(a)))
         , st_(std::move(st))
     {
+        // Set TLS before task argument is evaluated
+        current_frame_allocator() = tr_.h_.promise().get_resource();
     }
 
     // Non-copyable, non-movable (must be used immediately)
@@ -348,19 +443,16 @@ public:
         auto& p = tr_.h_.promise();
 
         // Inject Task-specific invoke function
-        p.invoke_ = detail::trampoline<Ex, Handlers>::template invoke_impl<Task>;
+        p.invoke_ = detail::trampoline<Ex, Handlers, Alloc>::template invoke_impl<Task>;
         p.task_promise_ = &task_promise;
         p.task_h_ = task_h;
 
         // Setup task's continuation to return to trampoline
-        // Executor lives in trampoline's promise, so reference is valid for task's lifetime
         task_promise.set_continuation(tr_.h_, p.ex_);
         task_promise.set_executor(p.ex_);
         task_promise.set_stop_token(st_);
 
         // Resume task through executor
-        // The executor returns a handle for symmetric transfer;
-        // from non-coroutine code we must explicitly resume it
         p.ex_.dispatch(task_h).resume();
     }
 };
@@ -371,7 +463,7 @@ public:
 //
 //----------------------------------------------------------
 
-// Executor only
+// Executor only (uses default recycling allocator)
 
 /** Asynchronously launch a lazy task on the given executor.
 
@@ -379,6 +471,7 @@ public:
     The returned wrapper must be immediately invoked with the task;
     storing the wrapper and calling it later violates LIFO ordering.
 
+    Uses the default recycling frame allocator for coroutine frames.
     With no handlers, the result is discarded and exceptions are rethrown.
 
     @par Thread Safety
@@ -401,10 +494,11 @@ template<Executor Ex>
 [[nodiscard]] auto
 run_async(Ex ex)
 {
-    return run_async_wrapper<Ex, default_handler>(
+    return run_async_wrapper<Ex, default_handler, std::pmr::memory_resource*>(
         std::move(ex),
         std::stop_token{},
-        default_handler{});
+        default_handler{},
+        get_recycling_memory_resource());
 }
 
 /** Asynchronously launch a lazy task with a result handler.
@@ -443,10 +537,11 @@ template<Executor Ex, class H1>
 [[nodiscard]] auto
 run_async(Ex ex, H1 h1)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, default_handler>>(
+    return run_async_wrapper<Ex, handler_pair<H1, default_handler>, std::pmr::memory_resource*>(
         std::move(ex),
         std::stop_token{},
-        handler_pair<H1, default_handler>{std::move(h1)});
+        handler_pair<H1, default_handler>{std::move(h1)},
+        get_recycling_memory_resource());
 }
 
 /** Asynchronously launch a lazy task with separate result and error handlers.
@@ -484,10 +579,11 @@ template<Executor Ex, class H1, class H2>
 [[nodiscard]] auto
 run_async(Ex ex, H1 h1, H2 h2)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, H2>>(
+    return run_async_wrapper<Ex, handler_pair<H1, H2>, std::pmr::memory_resource*>(
         std::move(ex),
         std::stop_token{},
-        handler_pair<H1, H2>{std::move(h1), std::move(h2)});
+        handler_pair<H1, H2>{std::move(h1), std::move(h2)},
+        get_recycling_memory_resource());
 }
 
 // Ex + stop_token
@@ -521,10 +617,11 @@ template<Executor Ex>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st)
 {
-    return run_async_wrapper<Ex, default_handler>(
+    return run_async_wrapper<Ex, default_handler, std::pmr::memory_resource*>(
         std::move(ex),
         std::move(st),
-        default_handler{});
+        default_handler{},
+        get_recycling_memory_resource());
 }
 
 /** Asynchronously launch a lazy task with stop token and result handler.
@@ -546,10 +643,11 @@ template<Executor Ex, class H1>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st, H1 h1)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, default_handler>>(
+    return run_async_wrapper<Ex, handler_pair<H1, default_handler>, std::pmr::memory_resource*>(
         std::move(ex),
         std::move(st),
-        handler_pair<H1, default_handler>{std::move(h1)});
+        handler_pair<H1, default_handler>{std::move(h1)},
+        get_recycling_memory_resource());
 }
 
 /** Asynchronously launch a lazy task with stop token and separate handlers.
@@ -571,75 +669,65 @@ template<Executor Ex, class H1, class H2>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st, H1 h1, H2 h2)
 {
-    return run_async_wrapper<Ex, handler_pair<H1, H2>>(
+    return run_async_wrapper<Ex, handler_pair<H1, H2>, std::pmr::memory_resource*>(
         std::move(ex),
         std::move(st),
-        handler_pair<H1, H2>{std::move(h1), std::move(h2)});
+        handler_pair<H1, H2>{std::move(h1), std::move(h2)},
+        get_recycling_memory_resource());
 }
 
-// Executor + stop_token + allocator
+// Ex + memory_resource*
 
-/** Asynchronously launch a lazy task with stop token and allocator.
+/** Asynchronously launch a lazy task with custom memory resource.
 
-    The stop token is propagated to the task for cooperative cancellation.
-    The allocator parameter is reserved for future use and currently ignored.
+    The memory resource is used for coroutine frame allocation. The caller
+    is responsible for ensuring the memory resource outlives all tasks.
 
     @param ex The executor to execute the task on.
-    @param st The stop token for cooperative cancellation.
-    @param alloc The frame allocator (currently ignored).
+    @param mr The memory resource for frame allocation.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
     @see executor
-    @see frame_allocator
 */
-template<Executor Ex, FrameAllocator FA>
+template<Executor Ex>
 [[nodiscard]] auto
-run_async(Ex ex, std::stop_token st, FA alloc)
+run_async(Ex ex, std::pmr::memory_resource* mr)
 {
-    (void)alloc; // Currently ignored
-    return run_async_wrapper<Ex, default_handler>(
+    return run_async_wrapper<Ex, default_handler, std::pmr::memory_resource*>(
         std::move(ex),
-        std::move(st),
-        default_handler{});
+        std::stop_token{},
+        default_handler{},
+        mr);
 }
 
-/** Asynchronously launch a lazy task with stop token, allocator, and handler.
-
-    The stop token is propagated to the task for cooperative cancellation.
-    The allocator parameter is reserved for future use and currently ignored.
+/** Asynchronously launch a lazy task with memory resource and handler.
 
     @param ex The executor to execute the task on.
-    @param st The stop token for cooperative cancellation.
-    @param alloc The frame allocator (currently ignored).
+    @param mr The memory resource for frame allocation.
     @param h1 The handler to invoke with the result (and optionally exception).
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
     @see executor
-    @see frame_allocator
 */
-template<Executor Ex, FrameAllocator FA, class H1>
+template<Executor Ex, class H1>
 [[nodiscard]] auto
-run_async(Ex ex, std::stop_token st, FA alloc, H1 h1)
+run_async(Ex ex, std::pmr::memory_resource* mr, H1 h1)
 {
-    (void)alloc; // Currently ignored
-    return run_async_wrapper<Ex, handler_pair<H1, default_handler>>(
+    return run_async_wrapper<Ex, handler_pair<H1, default_handler>, std::pmr::memory_resource*>(
         std::move(ex),
-        std::move(st),
-        handler_pair<H1, default_handler>{std::move(h1)});
+        std::stop_token{},
+        handler_pair<H1, default_handler>{std::move(h1)},
+        mr);
 }
 
-/** Asynchronously launch a lazy task with stop token, allocator, and handlers.
-
-    The stop token is propagated to the task for cooperative cancellation.
-    The allocator parameter is reserved for future use and currently ignored.
+/** Asynchronously launch a lazy task with memory resource and handlers.
 
     @param ex The executor to execute the task on.
-    @param st The stop token for cooperative cancellation.
-    @param alloc The frame allocator (currently ignored).
+    @param mr The memory resource for frame allocation.
     @param h1 The handler to invoke with the result on success.
     @param h2 The handler to invoke with the exception on failure.
 
@@ -647,17 +735,229 @@ run_async(Ex ex, std::stop_token st, FA alloc, H1 h1)
 
     @see task
     @see executor
-    @see frame_allocator
 */
-template<Executor Ex, FrameAllocator FA, class H1, class H2>
+template<Executor Ex, class H1, class H2>
 [[nodiscard]] auto
-run_async(Ex ex, std::stop_token st, FA alloc, H1 h1, H2 h2)
+run_async(Ex ex, std::pmr::memory_resource* mr, H1 h1, H2 h2)
 {
-    (void)alloc; // Currently ignored
-    return run_async_wrapper<Ex, handler_pair<H1, H2>>(
+    return run_async_wrapper<Ex, handler_pair<H1, H2>, std::pmr::memory_resource*>(
+        std::move(ex),
+        std::stop_token{},
+        handler_pair<H1, H2>{std::move(h1), std::move(h2)},
+        mr);
+}
+
+// Ex + stop_token + memory_resource*
+
+/** Asynchronously launch a lazy task with stop token and memory resource.
+
+    @param ex The executor to execute the task on.
+    @param st The stop token for cooperative cancellation.
+    @param mr The memory resource for frame allocation.
+
+    @return A wrapper that accepts a `task<T>` for immediate execution.
+
+    @see task
+    @see executor
+*/
+template<Executor Ex>
+[[nodiscard]] auto
+run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr)
+{
+    return run_async_wrapper<Ex, default_handler, std::pmr::memory_resource*>(
         std::move(ex),
         std::move(st),
-        handler_pair<H1, H2>{std::move(h1), std::move(h2)});
+        default_handler{},
+        mr);
+}
+
+/** Asynchronously launch a lazy task with stop token, memory resource, and handler.
+
+    @param ex The executor to execute the task on.
+    @param st The stop token for cooperative cancellation.
+    @param mr The memory resource for frame allocation.
+    @param h1 The handler to invoke with the result (and optionally exception).
+
+    @return A wrapper that accepts a `task<T>` for immediate execution.
+
+    @see task
+    @see executor
+*/
+template<Executor Ex, class H1>
+[[nodiscard]] auto
+run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr, H1 h1)
+{
+    return run_async_wrapper<Ex, handler_pair<H1, default_handler>, std::pmr::memory_resource*>(
+        std::move(ex),
+        std::move(st),
+        handler_pair<H1, default_handler>{std::move(h1)},
+        mr);
+}
+
+/** Asynchronously launch a lazy task with stop token, memory resource, and handlers.
+
+    @param ex The executor to execute the task on.
+    @param st The stop token for cooperative cancellation.
+    @param mr The memory resource for frame allocation.
+    @param h1 The handler to invoke with the result on success.
+    @param h2 The handler to invoke with the exception on failure.
+
+    @return A wrapper that accepts a `task<T>` for immediate execution.
+
+    @see task
+    @see executor
+*/
+template<Executor Ex, class H1, class H2>
+[[nodiscard]] auto
+run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr, H1 h1, H2 h2)
+{
+    return run_async_wrapper<Ex, handler_pair<H1, H2>, std::pmr::memory_resource*>(
+        std::move(ex),
+        std::move(st),
+        handler_pair<H1, H2>{std::move(h1), std::move(h2)},
+        mr);
+}
+
+// Ex + standard Allocator (value type)
+
+/** Asynchronously launch a lazy task with custom allocator.
+
+    The allocator is wrapped in a frame_memory_resource and stored in the
+    trampoline, ensuring it outlives all coroutine frames.
+
+    @param ex The executor to execute the task on.
+    @param alloc The allocator for frame allocation (copied and stored).
+
+    @return A wrapper that accepts a `task<T>` for immediate execution.
+
+    @see task
+    @see executor
+*/
+template<Executor Ex, detail::Allocator Alloc>
+[[nodiscard]] auto
+run_async(Ex ex, Alloc alloc)
+{
+    return run_async_wrapper<Ex, default_handler, Alloc>(
+        std::move(ex),
+        std::stop_token{},
+        default_handler{},
+        std::move(alloc));
+}
+
+/** Asynchronously launch a lazy task with allocator and handler.
+
+    @param ex The executor to execute the task on.
+    @param alloc The allocator for frame allocation (copied and stored).
+    @param h1 The handler to invoke with the result (and optionally exception).
+
+    @return A wrapper that accepts a `task<T>` for immediate execution.
+
+    @see task
+    @see executor
+*/
+template<Executor Ex, detail::Allocator Alloc, class H1>
+[[nodiscard]] auto
+run_async(Ex ex, Alloc alloc, H1 h1)
+{
+    return run_async_wrapper<Ex, handler_pair<H1, default_handler>, Alloc>(
+        std::move(ex),
+        std::stop_token{},
+        handler_pair<H1, default_handler>{std::move(h1)},
+        std::move(alloc));
+}
+
+/** Asynchronously launch a lazy task with allocator and handlers.
+
+    @param ex The executor to execute the task on.
+    @param alloc The allocator for frame allocation (copied and stored).
+    @param h1 The handler to invoke with the result on success.
+    @param h2 The handler to invoke with the exception on failure.
+
+    @return A wrapper that accepts a `task<T>` for immediate execution.
+
+    @see task
+    @see executor
+*/
+template<Executor Ex, detail::Allocator Alloc, class H1, class H2>
+[[nodiscard]] auto
+run_async(Ex ex, Alloc alloc, H1 h1, H2 h2)
+{
+    return run_async_wrapper<Ex, handler_pair<H1, H2>, Alloc>(
+        std::move(ex),
+        std::stop_token{},
+        handler_pair<H1, H2>{std::move(h1), std::move(h2)},
+        std::move(alloc));
+}
+
+// Ex + stop_token + standard Allocator
+
+/** Asynchronously launch a lazy task with stop token and allocator.
+
+    @param ex The executor to execute the task on.
+    @param st The stop token for cooperative cancellation.
+    @param alloc The allocator for frame allocation (copied and stored).
+
+    @return A wrapper that accepts a `task<T>` for immediate execution.
+
+    @see task
+    @see executor
+*/
+template<Executor Ex, detail::Allocator Alloc>
+[[nodiscard]] auto
+run_async(Ex ex, std::stop_token st, Alloc alloc)
+{
+    return run_async_wrapper<Ex, default_handler, Alloc>(
+        std::move(ex),
+        std::move(st),
+        default_handler{},
+        std::move(alloc));
+}
+
+/** Asynchronously launch a lazy task with stop token, allocator, and handler.
+
+    @param ex The executor to execute the task on.
+    @param st The stop token for cooperative cancellation.
+    @param alloc The allocator for frame allocation (copied and stored).
+    @param h1 The handler to invoke with the result (and optionally exception).
+
+    @return A wrapper that accepts a `task<T>` for immediate execution.
+
+    @see task
+    @see executor
+*/
+template<Executor Ex, detail::Allocator Alloc, class H1>
+[[nodiscard]] auto
+run_async(Ex ex, std::stop_token st, Alloc alloc, H1 h1)
+{
+    return run_async_wrapper<Ex, handler_pair<H1, default_handler>, Alloc>(
+        std::move(ex),
+        std::move(st),
+        handler_pair<H1, default_handler>{std::move(h1)},
+        std::move(alloc));
+}
+
+/** Asynchronously launch a lazy task with stop token, allocator, and handlers.
+
+    @param ex The executor to execute the task on.
+    @param st The stop token for cooperative cancellation.
+    @param alloc The allocator for frame allocation (copied and stored).
+    @param h1 The handler to invoke with the result on success.
+    @param h2 The handler to invoke with the exception on failure.
+
+    @return A wrapper that accepts a `task<T>` for immediate execution.
+
+    @see task
+    @see executor
+*/
+template<Executor Ex, detail::Allocator Alloc, class H1, class H2>
+[[nodiscard]] auto
+run_async(Ex ex, std::stop_token st, Alloc alloc, H1 h1, H2 h2)
+{
+    return run_async_wrapper<Ex, handler_pair<H1, H2>, Alloc>(
+        std::move(ex),
+        std::move(st),
+        handler_pair<H1, H2>{std::move(h1), std::move(h2)},
+        std::move(alloc));
 }
 
 } // namespace capy

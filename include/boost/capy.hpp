@@ -26,7 +26,6 @@
 #include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/dynamic_buffer.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/concept/frame_allocator.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/io_awaitable_task.hpp>
 #include <boost/capy/concept/io_launchable_task.hpp>
@@ -45,6 +44,7 @@
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/executor_work_guard.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
+#include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/run_on.hpp>
 #include <boost/capy/ex/strand.hpp>

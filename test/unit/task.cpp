@@ -728,22 +728,35 @@ struct task_test
 
     /** Tracking frame allocator that logs allocation/deallocation events.
     */
+    template<class T = std::byte>
     struct tracking_frame_allocator
     {
+        using value_type = T;
+
+        template<class U>
+        struct rebind { using other = tracking_frame_allocator<U>; };
+
         int id;
         int* alloc_count;
         int* dealloc_count;
         std::vector<int>* alloc_log;
 
-        void* allocate(std::size_t n)
+        tracking_frame_allocator(int id_, int* ac, int* dc, std::vector<int>* log)
+            : id(id_), alloc_count(ac), dealloc_count(dc), alloc_log(log) {}
+
+        template<class U>
+        tracking_frame_allocator(const tracking_frame_allocator<U>& o)
+            : id(o.id), alloc_count(o.alloc_count), dealloc_count(o.dealloc_count), alloc_log(o.alloc_log) {}
+
+        T* allocate(std::size_t n)
         {
             ++(*alloc_count);
             if(alloc_log)
                 alloc_log->push_back(id);
-            return ::operator new(n);
+            return static_cast<T*>(::operator new(n * sizeof(T)));
         }
 
-        void deallocate(void* p, std::size_t)
+        void deallocate(T* p, std::size_t)
         {
             ++(*dealloc_count);
             ::operator delete(p);
@@ -762,7 +775,7 @@ struct task_test
         int dealloc_count = 0;
         std::vector<int> alloc_log;
 
-        tracking_frame_allocator alloc{1, &alloc_count, &dealloc_count, &alloc_log};
+        tracking_frame_allocator<> alloc{1, &alloc_count, &dealloc_count, &alloc_log};
 
         auto simple = []() -> task<void> {
             co_return;
@@ -793,7 +806,7 @@ struct task_test
         int dealloc_count = 0;
         std::vector<int> alloc_log;
 
-        tracking_frame_allocator alloc{1, &alloc_count, &dealloc_count, &alloc_log};
+        tracking_frame_allocator<> alloc{1, &alloc_count, &dealloc_count, &alloc_log};
 
         auto inner = []() -> task<int> {
             co_return 42;
@@ -835,7 +848,7 @@ struct task_test
         int dealloc_count = 0;
         std::vector<int> alloc_log;
 
-        tracking_frame_allocator alloc{1, &alloc_count, &dealloc_count, &alloc_log};
+        tracking_frame_allocator<> alloc{1, &alloc_count, &dealloc_count, &alloc_log};
 
         auto level4 = []() -> task<int> {
             co_return 1;
@@ -912,7 +925,7 @@ struct task_test
 
         // Allocator ID 1 = launcher (Frame #2)
         // Allocator ID 2 = task (Frame #1)
-        tracking_frame_allocator alloc{1, &alloc_count, &dealloc_count, &alloc_log};
+        tracking_frame_allocator<> alloc{1, &alloc_count, &dealloc_count, &alloc_log};
 
         auto simple = []() -> task<void> {
             co_return;

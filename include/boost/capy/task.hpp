@@ -80,12 +80,10 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     task
 {
     struct promise_type
-        : frame_allocating_base
-        , io_awaitable_support<promise_type>
+        : io_awaitable_support<promise_type>
         , detail::task_return_base<T>
     {
         std::exception_ptr ep_;
-        detail::frame_allocator_base* alloc_ = nullptr;
 
         std::exception_ptr exception() const noexcept
         {
@@ -111,14 +109,14 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                 void await_suspend(coro) const noexcept
                 {
                     // Capture TLS allocator while it's still valid
-                    p_->alloc_ = get_frame_allocator();
+                    p_->set_frame_allocator(current_frame_allocator());
                 }
 
                 void await_resume() const noexcept
                 {
                     // Restore TLS when body starts executing
-                    if(p_->alloc_)
-                        set_frame_allocator(*p_->alloc_);
+                    if(p_->frame_allocator())
+                        current_frame_allocator() = p_->frame_allocator();
                 }
             };
             return awaiter{this};
@@ -147,8 +145,6 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             return awaiter{this};
         }
 
-        // return_void() or return_value() inherited from task_return_base
-
         void unhandled_exception()
         {
             ep_ = std::current_exception();
@@ -168,8 +164,8 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             auto await_resume()
             {
                 // Restore TLS before body resumes
-                if(p_->alloc_)
-                    set_frame_allocator(*p_->alloc_);
+                if(p_->frame_allocator())
+                    current_frame_allocator() = p_->frame_allocator();
                 return a_.await_resume();
             }
 
@@ -186,7 +182,6 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             using A = std::decay_t<Awaitable>;
             if constexpr (IoAwaitable<A>)
             {
-                // Zero-overhead path for I/O awaitables
                 return transform_awaiter<Awaitable>{
                     std::forward<Awaitable>(a), this};
             }
