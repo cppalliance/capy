@@ -9,38 +9,41 @@
 
 = Boost.Capy
 
-Boost.Capy is a lightweight C++20 coroutine framework that provides lazy tasks
-with automatic executor affinity propagation, along with buffer management
-utilities.
+Boost.Capy is a C++20 coroutine framework that solves the completion-context
+problem: when you `co_await` an I/O operation, where does your coroutine resume?
+With Capy, the answer is always "on the executor you designated"—automatically,
+through the entire call chain.
 
 == What This Library Does
 
-Capy solves a specific problem: when you `co_await` a child coroutine, where
-does it resume? Without affinity tracking, completions can arrive on arbitrary
-threads, forcing you to add synchronization everywhere.
-
-Capy provides:
-
-* **Lazy tasks** that do not start until awaited or explicitly launched
-* **Automatic affinity propagation** through coroutine call chains
-* **Concurrent composition** via `when_all` for parallel task execution
-* **Zero-overhead dispatcher protocol** for custom awaitables
-* **Frame allocation recycling** to minimize allocation overhead
+* **Lazy coroutine tasks** that propagate executor affinity and stop tokens
+* **Zero-overhead dispatcher protocol** for custom awaitables (`IoAwaitable`)
+* **Concurrent composition** via `when_all` with structured error propagation
+* **Frame allocation recycling** to minimize heap allocations
 * **Thread pool** execution context with service management
-* **Strand** serialization for concurrent executor access
-* **Async mutex** for coroutine-friendly synchronization
-* **Buffer types** for efficient memory handling (`const_buffer`, `mutable_buffer`, sequences)
+* **Strand** serialization for safe concurrent access
+* **Async synchronization primitives** (`async_mutex`, `async_event`)
+* **Buffer types** for efficient I/O (`const_buffer`, `mutable_buffer`, `flat_buffer`)
+* **Stream concepts** for generic read/write operations
+* **Testing utilities** including mock streams and error injection
 
 == What This Library Does Not Do
 
-Capy is not a general-purpose I/O framework. It does not include:
+* **Event loops or I/O polling** — integrate with io_uring, IOCP, or your platform's I/O framework
+* **Networking primitives** — no sockets, HTTP, or protocol implementations
+* **The sender/receiver model** — Capy uses the affine awaitable protocol, not P2300
 
-* Event loops or I/O polling (use io_uring wrappers, etc.)
-* Networking primitives (sockets, HTTP, etc.)
-* The sender/receiver execution model (P2300)
+Capy is a coroutine composition layer. It provides the task types, propagation
+machinery, and utilities you need to build on top of existing I/O frameworks.
 
-Capy integrates with existing I/O frameworks by wrapping their completion
-mechanisms in affine-aware awaitables.
+== Target Audience
+
+Capy is designed for C++ developers who:
+
+* Have experience with C++20 and are familiar with coroutine concepts
+* Need to write asynchronous code without callback spaghetti
+* Want automatic executor affinity without manual tracking
+* Are building on top of platform I/O (io_uring, IOCP, kqueue)
 
 == Design Philosophy
 
@@ -48,24 +51,52 @@ mechanisms in affine-aware awaitables.
 structured composition where parent coroutines naturally await their children.
 Eager execution is available through `run_async`.
 
-**Affinity through the protocol.** The dispatcher propagates through
+**Affinity through the protocol.** The executor propagates through
 `await_suspend` parameters, not through thread-local storage or global state.
 This makes the data flow explicit and testable.
 
-**Type erasure at boundaries.** Tasks use type-erased dispatchers (`any_dispatcher`)
+**Type erasure at boundaries.** Tasks use type-erased executors (`executor_ref`)
 internally, paying the indirection cost once rather than templating everything.
 For I/O-bound code, this cost is negligible.
 
+**Composition over inheritance.** Buffer types, stream concepts, and awaitables
+are designed to compose cleanly rather than requiring deep class hierarchies.
+
 == Requirements
 
-* C++20 compiler with coroutine support
-* Boost (for system::error_code, core::string_view)
+**Assumed Knowledge:**
 
-=== Tested Compilers
+* C++20 language features (concepts, ranges, coroutines syntax)
+* Basic understanding of asynchronous programming
+* Familiarity with `system::error_code` error handling
+
+**Compiler Support:**
 
 * GCC 11+
 * Clang 14+
 * MSVC 19.29+ (Visual Studio 2019 16.10+)
+
+**Dependencies:**
+
+* Boost (system::error_code, core::string_view)
+* C++ standard library with `<coroutine>` support
+
+**Linking:**
+
+Capy is header-only except for `thread_pool`, which requires linking to
+Boost.System if used.
+
+[NOTE]
+====
+**Code Convention:** Examples in this documentation assume these declarations
+are in effect unless otherwise noted:
+
+[source,cpp]
+----
+#include <boost/capy.hpp>
+using namespace boost::capy;
+----
+====
 
 == Quick Example
 
@@ -99,9 +130,12 @@ int main()
 }
 ----
 
+The key insight: both `run()` and `compute()` execute on the same executor
+because affinity propagated automatically through `co_await`.
+
 == Next Steps
 
 * xref:quick-start.adoc[Quick Start] — Get a working program in 5 minutes
-* xref:coroutines/tasks.adoc[Tasks] — Understand lazy coroutines
-* xref:coroutines/when-all.adoc[Concurrent Composition] — Run tasks in parallel with `when_all`
-* xref:execution/contexts.adoc[Execution Contexts] — Thread pools and services
+* xref:cpp20-coroutines/foundations.adoc[Introduction to C++20 Coroutines] — Understand the machinery
+* xref:io-awaitables/concepts.adoc[I/O Awaitables] — Learn the affinity protocol
+* xref:library/task.adoc[The task<T> Type] — Start using Capy

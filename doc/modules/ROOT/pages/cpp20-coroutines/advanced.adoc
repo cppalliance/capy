@@ -1,0 +1,473 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Part IV: Advanced Topics
+
+This section covers symmetric transfer, allocation strategies, and exception
+handling in coroutines.
+
+== Symmetric Transfer
+
+Consider what happens when a coroutine completes and needs to resume its
+caller:
+
+[source,cpp]
+----
+void final_awaiter::await_suspend(std::coroutine_handle<> h)
+{
+    auto continuation = h.promise().continuation_;
+    continuation.resume();  // Problem: this is a regular call
+}
+----
+
+Each `.resume()` is a function call that uses stack space. In deep coroutine
+chains, this can overflow the stack:
+
+----
+main() → task_a.resume() → task_b.resume() → task_c.resume() → ...
+                ↑ stack grows with each resume
+----
+
+=== The Solution: Return a Handle
+
+When `await_suspend` returns a `coroutine_handle<>`, the compiler uses a
+_tail call_ to resume that handle instead of a nested call:
+
+[source,cpp]
+----
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) noexcept
+{
+    return h.promise().continuation_;  // Tail call to continuation
+}
+----
+
+The compiler transforms this into:
+
+[source,cpp]
+----
+// Conceptual transformation
+while (true)
+{
+    handle = current_coroutine.await_suspend();
+    if (handle == noop_coroutine())
+        break;
+    current_coroutine = handle;
+    // Loop back—no stack growth
+}
+----
+
+This is called _symmetric transfer_ because control passes directly between
+coroutines without stack accumulation.
+
+=== Avoiding Stack Overflow
+
+Compare the stack usage:
+
+**Without symmetric transfer:**
+----
+main()
+  └─ coro_a.resume()
+       └─ coro_b.resume()
+            └─ coro_c.resume()
+                 └─ ... (stack overflow eventually)
+----
+
+**With symmetric transfer:**
+----
+main() → coro_a → coro_b → coro_c → ...
+         (tail call chain, constant stack)
+----
+
+=== When to Use noop_coroutine
+
+Return `std::noop_coroutine()` when there's nothing to resume:
+
+[source,cpp]
+----
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) noexcept
+{
+    save_for_later(h);
+    if (io_completed_sync_)
+        return h;  // Resume immediately
+    return std::noop_coroutine();  // Return to event loop
+}
+----
+
+`noop_coroutine()` returns a handle that does nothing when resumed—it's the
+signal to exit the symmetric transfer loop.
+
+=== Symmetric Transfer in Practice
+
+Here's a proper `final_suspend` using symmetric transfer:
+
+[source,cpp]
+----
+auto final_suspend() noexcept
+{
+    struct awaiter
+    {
+        std::coroutine_handle<> continuation_;
+
+        bool await_ready() noexcept { return false; }
+
+        std::coroutine_handle<> await_suspend(
+            std::coroutine_handle<>) noexcept
+        {
+            if (continuation_)
+                return continuation_;
+            return std::noop_coroutine();
+        }
+
+        void await_resume() noexcept {}
+    };
+
+    return awaiter{continuation_};
+}
+----
+
+== Coroutine Allocation
+
+By default, coroutine frames are allocated with `::operator new`. For
+performance-critical code, you may need to customize this.
+
+=== The Default: Heap Allocation
+
+[source,cpp]
+----
+task<int> compute()  // Frame allocated with new
+{
+    int x = 42;
+    co_return x;
+}
+----
+
+The frame includes:
+
+* Local variables
+* Promise object
+* Suspension state
+* Compiler-generated bookkeeping
+
+=== Heap Allocation eLision Optimization (HALO)
+
+Compilers can optimize away the allocation when:
+
+* The coroutine's lifetime is bounded by the caller
+* The compiler can prove the frame fits in the caller's frame
+* The coroutine isn't stored, passed around, or escaped
+
+[source,cpp]
+----
+task<int> leaf()
+{
+    co_return 42;
+}
+
+task<int> parent()
+{
+    // HALO may place leaf's frame in parent's frame
+    int x = co_await leaf();
+    co_return x;
+}
+----
+
+You can't force HALO, but you can enable it by:
+
+* Using `[[clang::coro_await_elidable]]` on task types (Clang)
+* Keeping coroutine lifetime scoped to the caller
+* Avoiding storing task objects in containers
+
+=== Custom Allocation via Promise
+
+Override `operator new` and `operator delete` in the promise type:
+
+[source,cpp]
+----
+struct promise_type
+{
+    void* operator new(std::size_t size)
+    {
+        return my_allocator::allocate(size);
+    }
+
+    void operator delete(void* ptr)
+    {
+        my_allocator::deallocate(ptr);
+    }
+
+    // Optional: receive coroutine parameters for allocation decisions
+    void* operator new(std::size_t size, int buffer_size, /* params */)
+    {
+        // Can use parameters to decide allocation strategy
+        return my_allocator::allocate(size);
+    }
+};
+----
+
+The compiler passes coroutine function parameters to `operator new` if a
+matching overload exists.
+
+=== Frame Recycling
+
+For high-throughput scenarios, recycle frames from a pool:
+
+[source,cpp]
+----
+thread_local frame_pool_type frame_pool;
+
+struct promise_type
+{
+    void* operator new(std::size_t size)
+    {
+        if (void* p = frame_pool.try_allocate(size))
+            return p;
+        return ::operator new(size);
+    }
+
+    void operator delete(void* ptr, std::size_t size)
+    {
+        if (!frame_pool.try_deallocate(ptr, size))
+            ::operator delete(ptr, size);
+    }
+};
+----
+
+Capy's `frame_allocator` provides this pattern with thread-local recycling.
+
+=== The Allocation Window Problem
+
+Custom allocation has a timing constraint: `operator new` runs before the
+coroutine body, so you can't use runtime state from inside the coroutine:
+
+[source,cpp]
+----
+task<void> work(allocator& alloc)
+{
+    // Problem: alloc isn't available during operator new!
+    co_return;
+}
+----
+
+Solutions:
+
+1. **Thread-local state:** Set up allocator before calling coroutine
+2. **Promise parameter overloads:** Pass allocator as function parameter
+3. **Launchers:** Use a launcher function that sets up thread-local state
+
+Capy uses the launcher pattern with `run_async`.
+
+== Exception Handling
+
+Exceptions in coroutines have unique characteristics because the coroutine
+frame outlives the call stack where the exception was thrown.
+
+=== Exception Flow
+
+When an exception escapes a coroutine body:
+
+1. `promise.unhandled_exception()` is called
+2. The coroutine proceeds to `final_suspend()`
+3. The exception is typically rethrown when someone accesses the result
+
+[source,cpp]
+----
+struct promise_type
+{
+    std::exception_ptr exception_;
+
+    void unhandled_exception()
+    {
+        exception_ = std::current_exception();
+    }
+};
+
+// In await_resume:
+T await_resume()
+{
+    if (promise().exception_)
+        std::rethrow_exception(promise().exception_);
+    return std::move(*promise().result_);
+}
+----
+
+=== unhandled_exception() Behavior
+
+You have choices in `unhandled_exception()`:
+
+[source,cpp]
+----
+// Store for later propagation
+void unhandled_exception()
+{
+    exception_ = std::current_exception();
+}
+
+// Terminate immediately
+void unhandled_exception()
+{
+    std::terminate();
+}
+
+// Log and ignore
+void unhandled_exception()
+{
+    try { throw; }
+    catch (std::exception const& e) {
+        log_error(e.what());
+    }
+}
+----
+
+Storing exceptions allows natural propagation through `co_await` chains.
+
+=== Exceptions and Symmetric Transfer
+
+When using symmetric transfer, exceptions can propagate across coroutine
+boundaries:
+
+[source,cpp]
+----
+task<int> child()
+{
+    throw std::runtime_error("oops");
+    co_return 0;
+}
+
+task<void> parent()
+{
+    try {
+        int x = co_await child();  // Exception rethrown here
+    } catch (std::exception const& e) {
+        std::cerr << "Caught: " << e.what() << "\n";
+    }
+}
+----
+
+The exception is:
+
+1. Thrown in `child`
+2. Captured by `child`'s `unhandled_exception()`
+3. `child` completes (reaching final_suspend)
+4. `parent` resumes via symmetric transfer
+5. `parent`'s `await_resume()` rethrows the exception
+6. `parent`'s catch block handles it
+
+=== Coroutine Destruction and Exceptions
+
+If a coroutine is destroyed without being fully executed, destructors run
+but no exception propagates:
+
+[source,cpp]
+----
+task<void> work()
+{
+    RAII_Guard guard;  // Constructor runs
+    co_await something();
+    // If task is destroyed here, guard's destructor runs
+}
+
+void cancel()
+{
+    task<void> t = work();
+    // t destroyed without completion—guard destructor runs
+    // No exception thrown to caller
+}
+----
+
+=== final_suspend Must Be noexcept
+
+The `final_suspend()` method must not throw:
+
+[source,cpp]
+----
+// Correct
+std::suspend_always final_suspend() noexcept { return {}; }
+
+// WRONG—undefined behavior if this throws
+std::suspend_always final_suspend() { return {}; }
+----
+
+If `final_suspend` could throw after `unhandled_exception` stored an
+exception, the program's behavior would be undefined.
+
+=== Practical Exception Patterns
+
+**Pattern 1: Propagate through await**
+[source,cpp]
+----
+// Exception propagates naturally
+task<void> pipeline()
+{
+    auto a = co_await step_a();  // Throws if step_a fails
+    auto b = co_await step_b(a);
+    co_return;
+}
+----
+
+**Pattern 2: Handle locally**
+[source,cpp]
+----
+task<result> safe_fetch()
+{
+    try {
+        co_return co_await risky_operation();
+    } catch (network_error const&) {
+        co_return default_result();
+    }
+}
+----
+
+**Pattern 3: Convert to error code**
+[source,cpp]
+----
+task<io_result<data>> fetch()
+{
+    try {
+        auto d = co_await do_fetch();
+        co_return {error_code{}, d};
+    } catch (std::exception const& e) {
+        co_return {make_error_code(errc::operation_failed), {}};
+    }
+}
+----
+
+== Summary
+
+[cols="1,3"]
+|===
+| Topic | Key Points
+
+| Symmetric transfer
+| Return `coroutine_handle` from `await_suspend` for O(1) stack usage
+
+| noop_coroutine
+| Signals "nothing to resume" in symmetric transfer
+
+| Frame allocation
+| Default heap; customize via promise `operator new`
+
+| HALO
+| Compiler may elide allocation for scoped coroutines
+
+| Frame recycling
+| Pool allocators for high-throughput scenarios
+
+| Exception handling
+| Stored in `unhandled_exception()`, rethrown in `await_resume()`
+
+| final_suspend
+| Must be `noexcept`—can't throw after exception capture
+|===
+
+== Next Steps
+
+You now understand C++20 coroutines. Learn how Capy builds on this foundation:
+
+* xref:../io-awaitables/concepts.adoc[I/O Awaitables] — The affine awaitable protocol
+* xref:../library/task.adoc[The task<T> Type] — Capy's implementation

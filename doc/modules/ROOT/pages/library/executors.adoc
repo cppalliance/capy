@@ -1,0 +1,296 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Executors and Strands
+
+This section explains execution contexts, executors, and strands.
+
+NOTE: Code examples assume `using namespace boost::capy;` is in effect.
+
+== Execution Context
+
+An execution context owns resources for executing work:
+
+[source,cpp]
+----
+#include <boost/capy/ex/thread_pool.hpp>
+
+thread_pool pool(4);  // Context with 4 worker threads
+----
+
+The context manages:
+
+* Worker threads
+* Work queues
+* Services (see below)
+
+== Executors
+
+An executor is a lightweight handle for submitting work to a context:
+
+[source,cpp]
+----
+auto ex = pool.get_executor();
+
+// Submit work
+ex.post(handle);     // Always queue
+ex.dispatch(handle); // Queue or run inline
+----
+
+Executors are cheap to copy and don't own the context.
+
+=== executor_ref
+
+Type-erased executor wrapper for tasks:
+
+[source,cpp]
+----
+#include <boost/capy/ex/executor_ref.hpp>
+
+executor_ref ex = pool.get_executor();
+// Works with any executor type
+----
+
+=== any_executor
+
+Heavyweight type-erased executor with ownership:
+
+[source,cpp]
+----
+#include <boost/capy/ex/any_executor.hpp>
+
+any_executor ex = pool.get_executor();
+// Keeps context alive (if supported)
+----
+
+== Thread Pool
+
+The primary execution context:
+
+[source,cpp]
+----
+#include <boost/capy/ex/thread_pool.hpp>
+
+// Default: hardware_concurrency() threads
+thread_pool pool1;
+
+// Explicit thread count
+thread_pool pool2(4);
+
+// Single thread (useful for testing)
+thread_pool pool3(1);
+
+// Custom thread name prefix
+thread_pool pool4(4, "worker-");
+----
+
+=== Lifetime
+
+The pool destructor waits for all work:
+
+[source,cpp]
+----
+{
+    thread_pool pool(4);
+    run_async(pool.get_executor())(long_task());
+}  // Destructor waits for long_task to complete
+----
+
+=== Sizing
+
+* **Compute-bound:** Use `hardware_concurrency()` (default)
+* **I/O-bound:** May benefit from more threads than cores
+* **Mixed:** Consider separate pools
+
+[source,cpp]
+----
+thread_pool compute_pool;       // CPU cores
+thread_pool io_pool(16);        // More for I/O blocking
+----
+
+== Strands
+
+A strand serializes execution—operations don't run concurrently:
+
+[source,cpp]
+----
+#include <boost/capy/ex/strand.hpp>
+
+thread_pool pool(4);
+strand s(pool.get_executor());
+
+// These never run concurrently, even on multi-threaded pool
+run_async(s)(task_a());
+run_async(s)(task_b());
+run_async(s)(task_c());
+----
+
+=== Why Strands?
+
+Without strands, concurrent access requires locking:
+
+[source,cpp]
+----
+async_mutex mtx;
+
+task<void> modify()
+{
+    auto lock = co_await mtx.lock();
+    shared_data.modify();
+}
+----
+
+With strands, the executor guarantees serialization:
+
+[source,cpp]
+----
+strand s(pool.get_executor());
+
+task<void> modify()
+{
+    // No locking needed—strand serializes
+    shared_data.modify();
+    co_return;
+}
+
+run_async(s)(modify());
+----
+
+=== Strand Properties
+
+* **Non-concurrent:** At most one operation runs at a time
+* **Ordered:** Operations complete in submission order
+* **Thread-agnostic:** May run on any pool thread
+
+----
+Time →
+Pool: [task_a on thread 1] → [task_b on thread 3] → [task_c on thread 1]
+                          ↑ serialized ↑          ↑ serialized ↑
+----
+
+=== Nested Strands
+
+Strands can wrap strands (but rarely needed):
+
+[source,cpp]
+----
+strand outer(pool.get_executor());
+strand inner(outer);
+// Both serialize; inner is redundant but harmless
+----
+
+== Services
+
+Execution contexts support services—singletons tied to the context lifetime:
+
+[source,cpp]
+----
+#include <boost/capy/ex/execution_context.hpp>
+
+class my_service : public execution_context::service
+{
+public:
+    using key_type = my_service;
+
+    explicit my_service(execution_context& ctx)
+        : service(ctx)
+    {}
+
+    void shutdown() override
+    {
+        // Called when context is destroyed
+    }
+};
+
+// Usage:
+thread_pool pool(4);
+pool.make_service<my_service>();
+my_service& svc = pool.use_service<my_service>();
+----
+
+Services are destroyed in reverse creation order when the context is destroyed.
+
+== Work Tracking
+
+The executor tracks outstanding work:
+
+[source,cpp]
+----
+auto ex = pool.get_executor();
+
+ex.on_work_started();   // Increment
+// ... work outstanding ...
+ex.on_work_finished();  // Decrement
+----
+
+Use `executor_work_guard` for RAII:
+
+[source,cpp]
+----
+#include <boost/capy/ex/executor_work_guard.hpp>
+
+{
+    executor_work_guard guard(ex);
+    // Work count incremented
+}  // Work count decremented
+----
+
+`run_async` handles work tracking automatically.
+
+== Choosing the Right Abstraction
+
+[cols="1,3"]
+|===
+| Need | Use
+
+| Run coroutines
+| `thread_pool` + `run_async`
+
+| Type-erased executor
+| `executor_ref` (lightweight)
+
+| Serialize access
+| `strand`
+
+| Explicit locking
+| `async_mutex`
+
+| Custom executor type
+| Implement `Executor` concept
+|===
+
+== Summary
+
+[cols="1,3"]
+|===
+| Component | Purpose
+
+| `thread_pool`
+| Execution context with worker threads
+
+| `executor_ref`
+| Type-erased executor wrapper
+
+| `strand`
+| Serialize operations
+
+| `dispatch(h)`
+| Resume inline if safe, queue otherwise
+
+| `post(h)`
+| Always queue
+
+| Services
+| Per-context singleton components
+|===
+
+== Next Steps
+
+* xref:frame-allocators.adoc[Frame Allocators] — Optimize coroutine allocation
+* xref:../io-awaitables/executor.adoc[The Executor] — Affinity details

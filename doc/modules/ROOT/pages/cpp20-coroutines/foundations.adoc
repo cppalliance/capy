@@ -1,0 +1,261 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Part I: Foundations
+
+This section builds intuition for coroutines by examining what makes them
+different from regular functions.
+
+== Functions and the Call Stack
+
+A regular function follows a strict discipline: when called, it runs to
+completion before control returns to the caller.
+
+[source,cpp]
+----
+void foo()
+{
+    int x = 1;    // Stack frame allocated
+    bar();        // Call bar, wait for it to return
+    x += 1;       // bar is done, continue
+}                 // Stack frame released
+----
+
+The call stack enforces this discipline. Each function call pushes a new
+_stack frame_ containing:
+
+* Local variables
+* Return address (where to resume the caller)
+* Saved registers
+
+When a function returns, its frame is popped and execution continues at the
+saved return address. The stack grows and shrinks in strict LIFO order.
+
+=== The Limitation: Run-to-Completion
+
+This model works well for synchronous code but creates problems for
+asynchronous operations:
+
+[source,cpp]
+----
+void read_file()
+{
+    auto result = start_async_read(file);  // Returns immediately
+    // But we can't return here—we need result!
+    process(result);  // result isn't ready yet
+}
+----
+
+Without coroutines, you're forced to restructure your code:
+
+* **Callbacks:** Break the logic across multiple functions
+* **State machines:** Manually track progress through states
+* **Blocking:** Hold up the thread waiting for I/O
+
+Each approach has costs. Callbacks scatter logic and complicate error handling.
+State machines are verbose. Blocking wastes threads.
+
+== What Is a Coroutine?
+
+A coroutine is a function that can _suspend_ its execution and later _resume_
+from where it left off. Unlike regular functions, coroutines don't require
+run-to-completion semantics.
+
+[source,cpp]
+----
+task<int> async_compute()
+{
+    int x = 1;
+    co_await some_operation();  // Suspend here
+    x += 1;                      // Resume here later
+    co_return x;
+}
+----
+
+When a coroutine suspends:
+
+1. Its local variables are preserved (not on the call stack)
+2. Control returns to whoever resumed the coroutine
+3. The coroutine can be resumed later, possibly on a different thread
+
+This is fundamentally different from a function call. A coroutine's state
+persists independently of the call stack.
+
+=== The Coroutine Frame
+
+Since local variables must survive suspension, they can't live on the stack.
+Instead, the compiler allocates a _coroutine frame_ (typically on the heap)
+that holds:
+
+* All local variables
+* The current suspension point
+* The promise object (more on this later)
+
+----
++-------------------+
+| Coroutine Frame   |
++-------------------+
+| locals: x, y      |
+| suspension point  |
+| promise object    |
++-------------------+
+----
+
+When you call a coroutine function, it returns immediately with a handle to
+this frame. The actual work happens when someone resumes the coroutine.
+
+=== Cooperative Multitasking
+
+Coroutines enable _cooperative multitasking_: multiple logical tasks can
+interleave their execution without preemptive thread switching.
+
+----
+Task A: [work] → suspend → [work] → suspend → [work] → done
+Task B:          [work] → suspend → [work] → done
+Task C:                    [work] → suspend → [work] → done
+----
+
+Each task voluntarily yields control at suspension points. This is cheaper
+than thread context switches and eliminates many concurrency hazards since
+tasks don't preempt each other mid-operation.
+
+== Why Coroutines?
+
+Coroutines address three categories of problems elegantly.
+
+=== Asynchronous Programming Without Callbacks
+
+Traditional async code scatters logic across callbacks:
+
+[source,cpp]
+----
+// Callback hell
+void fetch_data()
+{
+    http_get(url, [](response r1) {
+        parse(r1, [](data d) {
+            http_get(next_url(d), [](response r2) {
+                process(r2, [](result res) {
+                    complete(res);
+                });
+            });
+        });
+    });
+}
+----
+
+With coroutines, the same logic reads sequentially:
+
+[source,cpp]
+----
+task<void> fetch_data()
+{
+    auto r1 = co_await http_get(url);
+    auto d = co_await parse(r1);
+    auto r2 = co_await http_get(next_url(d));
+    auto res = co_await process(r2);
+    complete(res);
+}
+----
+
+Error handling becomes natural again—you can use try/catch instead of
+checking error codes in every callback.
+
+=== Generators and Lazy Sequences
+
+Coroutines can produce values on demand:
+
+[source,cpp]
+----
+generator<int> fibonacci()
+{
+    int a = 0, b = 1;
+    while (true)
+    {
+        co_yield a;
+        int next = a + b;
+        a = b;
+        b = next;
+    }
+}
+
+// Consume lazily
+for (int n : fibonacci())
+{
+    if (n > 1000) break;
+    std::cout << n << "\n";
+}
+----
+
+The generator produces values one at a time, suspending between each yield.
+No infinite vector is allocated—values are computed on demand.
+
+=== State Machines Made Simple
+
+Complex state machines become linear code:
+
+[source,cpp]
+----
+// HTTP request parser as a coroutine
+task<request> parse_http()
+{
+    auto method = co_await read_until(' ');
+    auto path = co_await read_until(' ');
+    auto version = co_await read_line();
+
+    headers_map headers;
+    while (true)
+    {
+        auto line = co_await read_line();
+        if (line.empty()) break;
+        headers.insert(parse_header(line));
+    }
+
+    std::string body;
+    if (auto len = headers.find("Content-Length"); len != headers.end())
+        body = co_await read_exactly(std::stoi(len->second));
+
+    co_return request{method, path, version, headers, body};
+}
+----
+
+Without coroutines, you'd need explicit state tracking:
+
+[source,cpp]
+----
+enum class State { METHOD, PATH, VERSION, HEADERS, BODY };
+State state_ = State::METHOD;
+std::string buffer_;
+// ... hundreds of lines of state machine code ...
+----
+
+== Summary
+
+[cols="1,3"]
+|===
+| Concept | Description
+
+| Call stack
+| LIFO structure that enforces run-to-completion
+
+| Coroutine
+| Function that can suspend and resume
+
+| Coroutine frame
+| Heap-allocated state that survives suspension
+
+| Cooperative multitasking
+| Tasks voluntarily yield, interleaving without preemption
+|===
+
+== Next Steps
+
+Now that you understand _why_ coroutines exist, learn the syntax:
+
+* xref:syntax.adoc[Part II: C++20 Syntax] — The three keywords and awaitables

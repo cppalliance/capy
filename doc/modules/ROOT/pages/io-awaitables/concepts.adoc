@@ -1,0 +1,322 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Concept Hierarchy
+
+This section explains Capy's awaitable concepts and how they enable automatic
+context propagation through coroutine chains.
+
+== The Problem: Lost Context
+
+Standard C++20 awaiters receive only a coroutine handle:
+
+[source,cpp]
+----
+void await_suspend(std::coroutine_handle<> h)
+{
+    // How do we know where to dispatch the completion?
+    // How do we check if cancellation was requested?
+    start_io([h]() { h.resume(); });  // Resumes on wrong thread!
+}
+----
+
+The awaiter has no way to know:
+
+* Which executor the coroutine is bound to
+* Whether cancellation was requested
+* Which allocator to use for internal state
+
+Without this context, I/O completions arrive on arbitrary threads, forcing
+synchronization everywhere.
+
+== The Solution: Extended await_suspend
+
+Capy awaitables receive context parameters in `await_suspend`:
+
+[source,cpp]
+----
+auto await_suspend(std::coroutine_handle<> h, executor_ref ex, std::stop_token token)
+{
+    // Now we know where to dispatch and can check cancellation
+    if (token.stop_requested())
+        return ex.dispatch(h);  // Resume on correct executor
+
+    start_io([h, ex]() {
+        ex.dispatch(h).resume();  // Completion on correct executor
+    });
+    return std::noop_coroutine();
+}
+----
+
+The promise passes executor and stop token to every awaitable through
+`await_transform`.
+
+== Concept Hierarchy
+
+Capy defines three progressively capable concepts:
+
+----
+IoAwaitable
+    │
+    ▼
+IoAwaitableTask
+    │
+    ▼
+IoLaunchableTask
+----
+
+=== IoAwaitable
+
+The base concept. An `IoAwaitable` can receive context when awaited:
+
+[source,cpp]
+----
+template<typename T>
+concept IoAwaitable = requires(T a, std::coroutine_handle<> h,
+                               executor_ref ex, std::stop_token token)
+{
+    { a.await_ready() } -> std::convertible_to<bool>;
+    { a.await_suspend(h, ex, token) };  // Three-argument form
+    a.await_resume();
+};
+----
+
+Key features:
+
+* Three-argument `await_suspend` receives executor and stop token
+* Works with any executor type (via `executor_ref`)
+* Enables automatic context propagation
+
+Reference: `<boost/capy/concept/io_awaitable.hpp>`
+
+=== IoAwaitableTask
+
+An `IoAwaitableTask` is an `IoAwaitable` that also has a promise with
+context storage:
+
+[source,cpp]
+----
+template<typename T>
+concept IoAwaitableTask = IoAwaitable<T> && requires
+{
+    typename T::promise_type;
+    requires requires(typename T::promise_type& p, executor_ref ex,
+                     std::stop_token token)
+    {
+        p.set_executor(ex);
+        { p.executor() } -> std::same_as<executor_ref>;
+        p.set_stop_token(token);
+        { p.stop_token() } -> std::same_as<std::stop_token>;
+    };
+};
+----
+
+Key features:
+
+* Stores executor and stop token in the promise
+* Can propagate context to child awaitables
+* Bidirectional: receives context _and_ provides it to children
+
+This is what `task<T>` implements.
+
+Reference: `<boost/capy/concept/io_awaitable_task.hpp>`
+
+=== IoLaunchableTask
+
+An `IoLaunchableTask` adds introspection for launchers:
+
+[source,cpp]
+----
+template<typename T>
+concept IoLaunchableTask = IoAwaitableTask<T> && requires(T t)
+{
+    { t.handle() } -> std::same_as<std::coroutine_handle<typename T::promise_type>>;
+    t.release();  // Transfer ownership
+    { t.handle().promise().exception() } -> std::same_as<std::exception_ptr>;
+};
+----
+
+Key features:
+
+* `handle()` returns the raw coroutine handle
+* `release()` transfers ownership out of the task
+* Access to stored exception via promise
+* Required for `run_async` and similar launchers
+
+Reference: `<boost/capy/concept/io_launchable_task.hpp>`
+
+== How Context Flows
+
+Let's trace context flow through a coroutine chain:
+
+[source,cpp]
+----
+task<void> child()
+{
+    co_await io_operation();  // Receives context from parent
+}
+
+task<void> parent()
+{
+    co_await child();  // Passes context to child
+}
+
+// Launch with executor
+run_async(pool.get_executor())(parent());
+----
+
+The flow:
+
+----
+run_async
+    │ sets executor, stop_token
+    ▼
+parent's promise
+    │ stores in promise
+    │ await_transform wraps child
+    ▼
+child's await_suspend(h, ex, token)
+    │ receives context
+    │ passes to its children
+    ▼
+io_operation's await_suspend(h, ex, token)
+    │ uses executor for completion dispatch
+    │ checks stop_token for cancellation
+----
+
+== Forward vs Backward Propagation
+
+=== Forward Propagation (Capy's Approach)
+
+Context flows _forward_ through `await_suspend` parameters:
+
+[source,cpp]
+----
+// Parent passes context to child
+child.await_suspend(handle, executor, stop_token);
+----
+
+Benefits:
+
+* Explicit data flow
+* No hidden state
+* Testable in isolation
+
+=== Backward Queries (Alternative Approach)
+
+Some systems query the awaiting coroutine's promise:
+
+[source,cpp]
+----
+// Child queries parent for context
+template<typename Promise>
+void await_suspend(std::coroutine_handle<Promise> h)
+{
+    auto ex = h.promise().get_executor();  // Query up the chain
+}
+----
+
+Drawbacks:
+
+* Requires knowing the promise type
+* Type erasure is complicated
+* Hidden coupling between types
+
+Capy uses forward propagation for clarity and composability.
+
+== The Promise Support Mixin
+
+To implement `IoAwaitableTask`, use the `io_awaitable_support` CRTP mixin:
+
+[source,cpp]
+----
+struct my_task
+{
+    struct promise_type : io_awaitable_support<promise_type>
+    {
+        my_task get_return_object();
+        std::suspend_always initial_suspend();
+        std::suspend_always final_suspend() noexcept;
+        void return_void();
+        void unhandled_exception();
+    };
+
+    // Awaitable interface with three-arg await_suspend
+    // ...
+};
+----
+
+The mixin provides:
+
+* `set_executor(ex)` / `executor()` — executor storage
+* `set_stop_token(token)` / `stop_token()` — stop token storage
+* `await_transform()` — intercepts awaitables and injects context
+* `set_continuation(h, ex)` / `complete()` — completion handling
+
+== Using await_transform
+
+The promise's `await_transform` wraps awaitables to inject context:
+
+[source,cpp]
+----
+template<typename Awaitable>
+auto await_transform(Awaitable&& a)
+{
+    return transform_awaiter<Awaitable>{
+        std::forward<Awaitable>(a),
+        this  // Promise pointer for context access
+    };
+}
+
+template<typename Awaitable>
+struct transform_awaiter
+{
+    Awaitable a_;
+    promise_type* p_;
+
+    bool await_ready() { return a_.await_ready(); }
+
+    auto await_suspend(std::coroutine_handle<> h)
+    {
+        // Inject context from promise
+        return a_.await_suspend(h, p_->executor(), p_->stop_token());
+    }
+
+    auto await_resume() { return a_.await_resume(); }
+};
+----
+
+Every `co_await` in a task automatically receives context.
+
+== Summary
+
+[cols="1,3"]
+|===
+| Concept | Capability
+
+| `IoAwaitable`
+| Receives executor and stop token in `await_suspend`
+
+| `IoAwaitableTask`
+| Stores context in promise, propagates to children
+
+| `IoLaunchableTask`
+| Adds introspection for launchers (`handle()`, `release()`)
+
+| `io_awaitable_support`
+| CRTP mixin implementing context storage and propagation
+|===
+
+== Next Steps
+
+Understand the components of the context:
+
+* xref:executor.adoc[The Executor] — Where completions dispatch
+* xref:stop-token.adoc[The Stop Token] — Cancellation propagation
+* xref:allocator.adoc[The Allocator] — Frame allocation strategy

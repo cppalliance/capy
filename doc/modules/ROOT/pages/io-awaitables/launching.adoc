@@ -1,0 +1,325 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Launching Coroutines
+
+This section explains how to start coroutines from non-coroutine code using
+`run_async` and how to change executor affinity with `run_on`.
+
+== run_async
+
+The `run_async` function bridges synchronous and asynchronous code. It binds
+a task to an executor and starts execution:
+
+[source,cpp]
+----
+#include <boost/capy/ex/run_async.hpp>
+
+task<int> compute()
+{
+    co_return 42;
+}
+
+thread_pool pool(4);
+run_async(pool.get_executor())(compute());
+----
+
+=== The Two-Call Syntax
+
+`run_async` uses a two-call syntax:
+
+[source,cpp]
+----
+run_async(executor)(task);
+//        └── 1 ───┘└─ 2 ─┘
+----
+
+**Call 1:** Create a launcher bound to the executor. This also sets up
+thread-local state for frame allocation.
+
+**Call 2:** Launch the task. The task is created with the frame allocator
+active, then execution begins.
+
+This syntax ensures the allocation window is open when the task is created.
+
+=== Fire and Forget
+
+The simplest pattern discards the result:
+
+[source,cpp]
+----
+run_async(ex)(compute());  // Result ignored
+----
+
+If the task throws, the exception propagates to the executor's error handler
+(typically rethrown from the event loop).
+
+=== With Completion Handler
+
+Receive the task's result via callback:
+
+[source,cpp]
+----
+run_async(ex)(compute(), [](int result) {
+    std::cout << "Got: " << result << "\n";
+});
+----
+
+For `task<void>`, the handler takes no arguments:
+
+[source,cpp]
+----
+run_async(ex)(work(), []() {
+    std::cout << "Work complete\n";
+});
+----
+
+=== With Error Handler
+
+Handle both success and failure:
+
+[source,cpp]
+----
+run_async(ex)(compute(),
+    [](int result) {
+        std::cout << "Success: " << result << "\n";
+    },
+    [](std::exception_ptr ep) {
+        try {
+            if (ep) std::rethrow_exception(ep);
+        } catch (std::exception const& e) {
+            std::cerr << "Error: " << e.what() << "\n";
+        }
+    }
+);
+----
+
+The error handler receives `std::exception_ptr` if the task throws.
+
+=== With Stop Token
+
+Pass a stop token for cooperative cancellation:
+
+[source,cpp]
+----
+std::stop_source source;
+run_async(ex, source.get_token())(cancellable_task());
+
+// Later: request cancellation
+source.request_stop();
+----
+
+The stop token propagates to all child coroutines.
+
+=== Summary Table
+
+[cols="1,3"]
+|===
+| Pattern | Syntax
+
+| Fire and forget
+| `run_async(ex)(task)`
+
+| With result handler
+| `run_async(ex)(task, handler)`
+
+| With result + error handlers
+| `run_async(ex)(task, on_success, on_error)`
+
+| With stop token
+| `run_async(ex, token)(task)`
+
+| With allocator
+| `run_async(ex, allocator)(task)`
+|===
+
+== run_on
+
+The `run_on` function changes executor affinity for a subtask:
+
+[source,cpp]
+----
+#include <boost/capy/ex/run_on.hpp>
+
+task<void> io_work()
+{
+    // Running on io_executor
+
+    // Switch to compute_executor for CPU work
+    co_await run_on(compute_executor, cpu_heavy_task());
+
+    // Back on io_executor
+}
+----
+
+=== Why run_on?
+
+By default, child tasks inherit the parent's executor. Sometimes you need
+a different executor:
+
+* **CPU-bound work:** Offload to a compute pool
+* **Specific thread requirements:** GUI updates on main thread
+* **Integration:** Library requires specific executor
+
+=== Usage
+
+[source,cpp]
+----
+co_await run_on(target_executor, child_task());
+----
+
+The child task:
+
+1. Runs on `target_executor`
+2. Completions dispatch through `target_executor`
+3. When done, the _parent_ resumes on its own executor
+
+The parent doesn't switch executors—only the child does.
+
+=== Flow Example
+
+[source,cpp]
+----
+task<data> fetch()
+{
+    co_return co_await http_get(url);
+}
+
+task<result> process(data d)
+{
+    co_return expensive_compute(d);
+}
+
+task<void> pipeline()  // On io_pool
+{
+    auto d = co_await fetch();  // fetch runs on io_pool
+
+    // process runs on compute_pool
+    auto r = co_await run_on(compute_pool.get_executor(), process(d));
+
+    // Back on io_pool
+    co_await save_result(r);
+}
+----
+
+=== Flow Diagram
+
+----
+pipeline (io_pool)
+    │
+    ▼ co_await fetch()
+fetch (io_pool, inherited)
+    │
+    ▼ completes
+pipeline resumes (io_pool)
+    │
+    ▼ co_await run_on(compute_pool, process(d))
+process (compute_pool, explicit binding)
+    │
+    ▼ completes
+pipeline resumes (io_pool)  ← Note: back on original executor
+    │
+    ▼ co_await save_result()
+save_result (io_pool, inherited)
+----
+
+== Choosing Between run_async and co_await
+
+**Use `run_async` when:**
+
+* Starting from synchronous code (`main()`, callbacks)
+* Need fire-and-forget semantics
+* Need completion callbacks
+
+**Use `co_await` directly when:**
+
+* Already inside a coroutine
+* Want structured parent-child relationship
+* Need the return value
+
+[source,cpp]
+----
+// From main():
+int main()
+{
+    thread_pool pool(4);
+    run_async(pool.get_executor())(my_task());  // Must use run_async
+}
+
+// Inside a coroutine:
+task<void> parent()
+{
+    int x = co_await child();  // Direct await—no need for run_async
+}
+----
+
+== Lifetime Considerations
+
+=== Task Lifetime
+
+Tasks launched with `run_async` are self-managing. The launcher takes
+ownership and ensures cleanup:
+
+[source,cpp]
+----
+void start_work()
+{
+    // Task lives until completion (or cancellation)
+    run_async(ex)(long_running_task());
+}  // start_work returns immediately; task continues running
+----
+
+=== Executor Lifetime
+
+The executor must outlive all tasks using it:
+
+[source,cpp]
+----
+void bad()
+{
+    thread_pool pool(4);
+    run_async(pool.get_executor())(task_that_takes_10_seconds());
+}  // DANGER: pool destroyed, but task still running!
+
+void good()
+{
+    thread_pool pool(4);
+    run_async(pool.get_executor())(task_that_takes_10_seconds());
+    // Pool destructor waits for all work to complete
+}
+----
+
+`thread_pool`'s destructor waits for pending work, but this isn't true of
+all executor types.
+
+== Summary
+
+[cols="1,3"]
+|===
+| Function | Purpose
+
+| `run_async(ex)(task)`
+| Start task from non-coroutine code
+
+| `run_async(ex, token)(task)`
+| Start with cancellation support
+
+| `run_on(ex, task)`
+| Change affinity for a subtask (use inside coroutines)
+
+| Two-call syntax
+| Ensures frame allocator is active during task creation
+|===
+
+== Next Steps
+
+Now that you understand the I/O awaitable protocol, learn the library:
+
+* xref:../library/task.adoc[The task<T> Type] — Capy's task implementation
+* xref:../library/when-all.adoc[Concurrent Composition] — Run tasks in parallel
