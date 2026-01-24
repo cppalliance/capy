@@ -10,6 +10,8 @@
 // Test that header file is self-contained.
 #include <boost/capy/ex/executor_work_guard.hpp>
 
+#include <boost/capy/ex/execution_context.hpp>
+
 #include <utility>
 
 #include "test_suite.hpp"
@@ -18,7 +20,7 @@ namespace boost {
 namespace capy {
 
 // Minimal execution context for testing
-struct guard_test_context
+struct guard_test_context : public execution_context
 {
     int work_count = 0;
 };

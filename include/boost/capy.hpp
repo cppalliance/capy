@@ -49,7 +49,7 @@
 #include <boost/capy/ex/run_on.hpp>
 #include <boost/capy/ex/strand.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
-#include <boost/capy/io_awaitable.hpp>
+#include <boost/capy/ex/io_awaitables.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/read.hpp>
 #include <boost/capy/task.hpp>

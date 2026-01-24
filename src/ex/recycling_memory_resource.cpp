@@ -7,17 +7,17 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Test that header file is self-contained.
-#include <boost/capy/ex/async_mutex.hpp>
-
-#include <boost/capy/ex/io_awaitables.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/recycling_memory_resource.hpp>
 
 namespace boost {
 namespace capy {
 
-static_assert(IoAwaitable<async_mutex::lock_awaiter>);
-static_assert(IoAwaitable<async_mutex::lock_guard_awaiter>);
+std::pmr::memory_resource*
+get_recycling_memory_resource() noexcept
+{
+    static recycling_memory_resource instance;
+    return &instance;
+}
 
-} // capy
-} // boost
+} // namespace capy
+} // namespace boost

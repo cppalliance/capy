@@ -179,12 +179,9 @@ protected:
     @see recycling_memory_resource
     @see run_async
 */
-inline std::pmr::memory_resource*
-get_recycling_memory_resource() noexcept
-{
-    static recycling_memory_resource instance;
-    return &instance;
-}
+BOOST_CAPY_DECL
+std::pmr::memory_resource*
+get_recycling_memory_resource() noexcept;
 
 } // namespace capy
 } // namespace boost

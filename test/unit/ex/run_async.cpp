@@ -12,7 +12,7 @@
 
 #include <boost/capy/task.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/io_awaitable.hpp>
+#include <boost/capy/ex/io_awaitables.hpp>
 
 #include "test_suite.hpp"
 

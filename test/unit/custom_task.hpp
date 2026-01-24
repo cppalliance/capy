@@ -11,7 +11,7 @@
 #define BOOST_CAPY_TEST_CUSTOM_TASK_HPP
 
 #include <boost/capy/coro.hpp>
-#include <boost/capy/io_awaitable.hpp>
+#include <boost/capy/ex/io_awaitables.hpp>
 
 #include <coroutine>
 #include <exception>

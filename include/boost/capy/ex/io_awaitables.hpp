@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_IO_AWAITABLE_HPP
-#define BOOST_CAPY_IO_AWAITABLE_HPP
+#ifndef BOOST_CAPY_EX_IO_AWAITABLES_HPP
+#define BOOST_CAPY_EX_IO_AWAITABLES_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/coro.hpp>

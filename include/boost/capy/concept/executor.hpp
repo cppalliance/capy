@@ -14,9 +14,12 @@
 
 #include <concepts>
 #include <coroutine>
+#include <type_traits>
 
 namespace boost {
 namespace capy {
+
+class execution_context;
 
 /** Concept for executor types.
 
@@ -81,14 +84,14 @@ concept Executor =
     std::copy_constructible<E> &&
     std::equality_comparable<E> &&
     requires(E& e, E const& ce, std::coroutine_handle<> h) {
-        // Execution context access (must not throw)
-        { ce.context() } noexcept -> std::same_as<decltype(ce.context())&>;
-
-        // Work tracking (must not throw)
+        { ce.context() } noexcept;
+        requires std::is_lvalue_reference_v<decltype(ce.context())> &&
+            std::derived_from<
+                std::remove_reference_t<decltype(ce.context())>,
+                execution_context>;
         { ce.on_work_started() } noexcept;
         { ce.on_work_finished() } noexcept;
 
-        // Work submission
         { ce.dispatch(h) } -> std::convertible_to<std::coroutine_handle<>>;
         { ce.post(h) };
     };

@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/io_awaitable.hpp>
+#include <boost/capy/ex/io_awaitables.hpp>
 
 #include <boost/capy/ex/thread_pool.hpp>
 
@@ -108,7 +108,7 @@ private:
     }
 };
 
-struct io_awaitable_support_test
+struct io_awaitables_test
 {
     void
     testSetAndGetStopToken()
@@ -254,8 +254,8 @@ struct io_awaitable_support_test
 };
 
 TEST_SUITE(
-    io_awaitable_support_test,
-    "boost.capy.io_awaitable_support");
+    io_awaitables_test,
+    "boost.capy.ex.io_awaitables");
 
 } // namespace capy
 } // namespace boost

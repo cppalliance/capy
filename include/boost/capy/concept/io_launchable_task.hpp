@@ -53,8 +53,8 @@ concept IoLaunchableTask =
     requires(T& t, T const& ct, typename T::promise_type const& cp)
     {
         { ct.handle() } noexcept -> std::same_as<std::coroutine_handle<typename T::promise_type>>;
-        { t.release() } noexcept;
         { cp.exception() } noexcept -> std::same_as<std::exception_ptr>;
+        { t.release() } noexcept;
     } &&
     (std::is_void_v<decltype(std::declval<T&>().await_resume())> ||
      requires(typename T::promise_type& p) {

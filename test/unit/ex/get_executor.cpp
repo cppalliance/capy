@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/io_awaitable.hpp>
+#include <boost/capy/ex/io_awaitables.hpp>
 
 #include "test_suite.hpp"
 
