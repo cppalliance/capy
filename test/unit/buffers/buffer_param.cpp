@@ -12,6 +12,7 @@
 
 #include "test_buffers.hpp"
 
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -51,9 +52,10 @@ to_string(std::span<const_buffer> bufs)
     return result;
 }
 
-// Simulates a function taking const_buffer_param by value (slicing)
+// Helper to consume all data from a buffer_param
+template<ConstBufferSequence BS>
 std::string
-consume_all(const_buffer_param bp)
+consume_all(buffer_param<BS>& bp)
 {
     std::string result;
     while(true)
@@ -63,35 +65,6 @@ consume_all(const_buffer_param bp)
             break;
         result += to_string(bufs);
         bp.consume(total_size(bufs));
-    }
-    return result;
-}
-
-// Simulates partial consumption
-std::string
-consume_bytes(const_buffer_param bp, std::size_t n)
-{
-    std::string result;
-    while(n > 0)
-    {
-        auto bufs = bp.data();
-        if(bufs.empty())
-            break;
-        auto chunk = std::min(n, total_size(bufs));
-        // Copy only 'chunk' bytes
-        std::size_t copied = 0;
-        for(auto const& b : bufs)
-        {
-            auto take = std::min(b.size(), chunk - copied);
-            result.append(
-                static_cast<char const*>(b.data()),
-                take);
-            copied += take;
-            if(copied >= chunk)
-                break;
-        }
-        bp.consume(chunk);
-        n -= chunk;
     }
     return result;
 }
@@ -108,16 +81,16 @@ struct buffer_param_test
             std::string data = "Hello, World!";
             const_buffer buf(data.data(), data.size());
 
-            auto result = consume_all(
-                make_const_buffer_param(buf));
+            buffer_param bp(buf);
+            auto result = consume_all(bp);
             BOOST_TEST_EQ(result, data);
         }
 
         // Empty buffer
         {
             const_buffer buf;
-            auto result = consume_all(
-                make_const_buffer_param(buf));
+            buffer_param bp(buf);
+            auto result = consume_all(bp);
             BOOST_TEST(result.empty());
         }
     }
@@ -137,8 +110,8 @@ struct buffer_param_test
                 const_buffer(s3.data(), s3.size())
             };
 
-            auto result = consume_all(
-                make_const_buffer_param(bufs));
+            buffer_param bp(bufs);
+            auto result = consume_all(bp);
             BOOST_TEST_EQ(result, "Hello, World!");
         }
 
@@ -155,8 +128,8 @@ struct buffer_param_test
                 const_buffer()
             };
 
-            auto result = consume_all(
-                make_const_buffer_param(bufs));
+            buffer_param bp(bufs);
+            auto result = consume_all(bp);
             BOOST_TEST_EQ(result, "ABCD");
         }
     }
@@ -169,8 +142,7 @@ struct buffer_param_test
 
         // Consume 3 bytes at a time
         {
-            auto bp = make_const_buffer_param(buf);
-            std::string result;
+            buffer_param bp(buf);
 
             auto bufs = bp.data();
             BOOST_TEST_EQ(total_size(bufs), 10u);
@@ -215,8 +187,8 @@ struct buffer_param_test
         for(auto const& s : strings)
             bufs.emplace_back(s.data(), s.size());
 
-        auto result = consume_all(
-            make_const_buffer_param(bufs));
+        buffer_param bp(bufs);
+        auto result = consume_all(bp);
         BOOST_TEST_EQ(result, expected);
     }
 
@@ -228,7 +200,7 @@ struct buffer_param_test
             char data[32] = {};
             mutable_buffer buf(data, sizeof(data));
 
-            auto bp = make_buffer_param(buf);
+            buffer_param bp(buf);
             auto bufs = bp.data();
 
             BOOST_TEST_EQ(bufs.size(), 1u);
@@ -262,7 +234,7 @@ struct buffer_param_test
             mutable_buffer(buf3, sizeof(buf3))
         };
 
-        auto bp = make_buffer_param(bufs);
+        buffer_param bp(bufs);
 
         // Fill all buffers through the param
         std::size_t total = 0;
@@ -291,16 +263,23 @@ struct buffer_param_test
     }
 
     void
-    testSlicingBehavior()
+    testBufferType()
     {
-        // Test that slicing works correctly when passing to function
-        std::string data = "SlicingTest";
-        const_buffer buf(data.data(), data.size());
+        // Verify buffer_type is correct for const sequences
+        {
+            std::vector<const_buffer> bufs;
+            buffer_param bp(bufs);
+            static_assert(std::is_same_v<
+                decltype(bp)::buffer_type, const_buffer>);
+        }
 
-        // The key test: make_const_buffer_param returns impl,
-        // but consume_all takes const_buffer_param by value (slices)
-        auto result = consume_all(make_const_buffer_param(buf));
-        BOOST_TEST_EQ(result, data);
+        // Verify buffer_type is correct for mutable sequences
+        {
+            std::vector<mutable_buffer> bufs;
+            buffer_param bp(bufs);
+            static_assert(std::is_same_v<
+                decltype(bp)::buffer_type, mutable_buffer>);
+        }
     }
 
     void
@@ -309,9 +288,32 @@ struct buffer_param_test
         std::string data = "ABCDEFGHIJ";
         const_buffer buf(data.data(), data.size());
 
-        // Consume byte by byte
-        auto result = consume_bytes(
-            make_const_buffer_param(buf), 5);
+        buffer_param bp(buf);
+        std::string result;
+        std::size_t n = 5;
+
+        while(n > 0)
+        {
+            auto bufs = bp.data();
+            if(bufs.empty())
+                break;
+            auto chunk = (std::min)(n, total_size(bufs));
+            // Copy only 'chunk' bytes
+            std::size_t copied = 0;
+            for(auto const& b : bufs)
+            {
+                auto take = (std::min)(b.size(), chunk - copied);
+                result.append(
+                    static_cast<char const*>(b.data()),
+                    take);
+                copied += take;
+                if(copied >= chunk)
+                    break;
+            }
+            bp.consume(chunk);
+            n -= chunk;
+        }
+
         BOOST_TEST_EQ(result, "ABCDE");
     }
 
@@ -324,7 +326,7 @@ struct buffer_param_test
         testConstLargeSequence();
         testMutableSingleBuffer();
         testMutableMultipleBuffers();
-        testSlicingBehavior();
+        testBufferType();
         testPartialByteConsumption();
     }
 };
