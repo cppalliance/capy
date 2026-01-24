@@ -111,7 +111,7 @@ struct mock_sink_awaitable_with_size_not_io
 struct valid_write_sink
 {
     template<ConstBufferSequence CB>
-    mock_sink_awaitable
+    mock_sink_awaitable_with_size
     write(CB const&)
     {
         return {};
@@ -134,7 +134,7 @@ struct valid_write_sink
 // Valid WriteSink accepting const_buffer directly (non-templated)
 struct valid_write_sink_not_templated
 {
-    mock_sink_awaitable
+    mock_sink_awaitable_with_size
     write(const_buffer const&)
     {
         return {};
@@ -153,11 +153,11 @@ struct valid_write_sink_not_templated
     }
 };
 
-// Invalid: write returns wrong type (ec, size_t instead of ec)
+// Invalid: write returns wrong type (ec instead of ec, size_t)
 struct invalid_write_sink_wrong_write_type
 {
     template<ConstBufferSequence CB>
-    mock_sink_awaitable_with_size
+    mock_sink_awaitable
     write(CB const&)
     {
         return {};

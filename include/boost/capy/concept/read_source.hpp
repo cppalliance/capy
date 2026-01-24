@@ -26,7 +26,7 @@ namespace capy {
 
     A type satisfies `ReadSource` if it provides a `read` member function
     that accepts any @ref MutableBufferSequence and is an @ref IoAwaitable
-    whose return value decomposes to `( system::error_code, std::size_t )`.
+    whose return value decomposes to `(error_code, std::size_t)`.
 
     Use this concept when you need to produce data asynchronously, such
     as reading HTTP request bodies, streaming file contents, or generating
@@ -39,20 +39,21 @@ namespace capy {
     @li `T` must provide a `read` member function template accepting
         any @ref MutableBufferSequence
     @li The return type must satisfy @ref IoAwaitable
-    @li The awaitable must decompose to `( system::error_code, std::size_t )`
+    @li The awaitable must decompose to `(error_code, std::size_t)`
         via structured bindings
 
     @par Semantic Requirements
 
     The `read` operation fills data into the buffer sequence:
 
-    @li On success: `!ec` is `true`, and `n` is the number of bytes
+    @li On success: `!ec.failed()` is `true`, and `n` is the number of bytes
         read (at least 1).
-    @li On error: `!!ec` is `true`, and `n` is 0.
+    @li On error: `ec.failed()` is `true`, and `n` is 0.
     @li On end-of-file: `ec == cond::eof` is `true`, and `n` is 0.
+        This is typically satisfied by returning `error::eof`.
 
     If `buffer_size( buffers ) == 0`, the operation completes
-    immediately. `!ec` is `true`, and `n` is 0.
+    immediately. `!ec.failed()` is `true`, and `n` is 0.
 
     Buffers in the sequence are filled completely before proceeding
     to the next buffer.
@@ -83,7 +84,7 @@ namespace capy {
             auto [ec, n] = co_await source.read( mutable_buffer( buf ) );
             if( ec == cond::eof )
                 break;
-            if( ec )
+            if( ec.failed() )
                 co_return {};
             result.append( buf, n );
         }

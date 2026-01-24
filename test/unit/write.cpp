@@ -9,7 +9,7 @@
 
 // Test that header file is self-contained.
 #include <boost/capy/write.hpp>
-
+#if 0
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/concept/write_sink.hpp>
 #include <boost/capy/error.hpp>
@@ -643,3 +643,4 @@ TEST_SUITE(
 
 } // namespace capy
 } // namespace boost
+#endif

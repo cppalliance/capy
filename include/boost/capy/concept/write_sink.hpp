@@ -38,7 +38,7 @@ namespace capy {
 
     @li `T` must provide a `write` member function template accepting
         any @ref ConstBufferSequence, returning an awaitable that
-        decomposes to `( system::error_code )`
+        decomposes to `( system::error_code, std::size_t )`
     @li `T` must provide a `write` member function template accepting
         any @ref ConstBufferSequence and a `bool eof` parameter,
         returning an awaitable that decomposes to
@@ -84,7 +84,7 @@ namespace capy {
 
     @code
     template<ConstBufferSequence CB>
-    some_io_awaitable<io_result<>>
+    some_io_awaitable<io_result<std::size_t>>
     write( CB const& buffers );
 
     template<ConstBufferSequence CB>
@@ -101,7 +101,7 @@ namespace capy {
     template<WriteSink Sink>
     task<void> send_body( Sink& sink, std::string_view data )
     {
-        auto [ec] = co_await sink.write( make_buffer( data ) );
+        auto [ec, n] = co_await sink.write( make_buffer( data ) );
         if( ec.failed() )
             co_return;
         auto [ec2] = co_await sink.write_eof();
@@ -124,7 +124,7 @@ concept WriteSink =
         { sink.write(buffers) } -> IoAwaitable;
         requires awaitable_decomposes_to<
             decltype(sink.write(buffers)),
-            system::error_code>;
+            system::error_code, std::size_t>;
         { sink.write(buffers, eof) } -> IoAwaitable;
         requires awaitable_decomposes_to<
             decltype(sink.write(buffers, eof)),
