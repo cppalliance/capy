@@ -47,7 +47,7 @@ namespace capy {
     Distinct objects: Safe.
     Shared objects: Unsafe.
 
-    @see flat_buffer, string_dynamic_buffer
+    @see flat_dynamic_buffer, string_dynamic_buffer
 */
 class circular_dynamic_buffer
 {

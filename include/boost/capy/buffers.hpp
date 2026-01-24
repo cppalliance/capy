@@ -470,6 +470,36 @@ constexpr struct buffer_size_mrdocs_workaround_t
 
 //-----------------------------------------------
 
+/** Check if a buffer sequence contains no data.
+
+    A buffer sequence is considered empty if all of its
+    constituent buffers have size zero, or if the sequence
+    contains no buffers.
+
+    @param bs The buffer sequence to check.
+
+    @return `true` if the total size of all buffers is zero.
+*/
+constexpr struct buffer_empty_mrdocs_workaround_t
+{
+    template<ConstBufferSequence CB>
+    constexpr bool operator()(
+        CB const& bs) const noexcept
+    {
+        auto it = begin(bs);
+        auto const end_ = end(bs);
+        while(it != end_)
+        {
+            const_buffer b(*it++);
+            if(b.size() != 0)
+                return false;
+        }
+        return true;
+    }
+} buffer_empty {};
+
+//-----------------------------------------------
+
 namespace detail {
 
 template<class It>

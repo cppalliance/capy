@@ -120,7 +120,7 @@ Dynamic buffers grow to accommodate incoming data:
 
 [source,cpp]
 ----
-flat_buffer buf;
+flat_dynamic_buffer buf;
 auto [ec, n] = co_await read(stream, buf);
 // buf grew to hold all data
 ----
@@ -172,15 +172,15 @@ buf.consume(processed);  // Remove processed bytes
 
 == Concrete Dynamic Buffers
 
-=== flat_buffer
+=== flat_dynamic_buffer
 
 Single contiguous allocation. Best for most use cases:
 
 [source,cpp]
 ----
-#include <boost/capy/buffers/flat_buffer.hpp>
+#include <boost/capy/buffers/flat_dynamic_buffer.hpp>
 
-flat_buffer buf;
+flat_dynamic_buffer buf;
 buf.prepare(1024);  // Ensure 1024 bytes available
 ----
 
@@ -275,7 +275,7 @@ const_buffer first = front(buffer_sequence);
 
 [source,cpp]
 ----
-flat_buffer buf;
+flat_dynamic_buffer buf;
 while (buf.size() < max_message_size)
 {
     auto [ec, n] = co_await stream.read_some(buf.prepare(1024));
@@ -317,7 +317,7 @@ co_await write(stream, buffers);
 | `mutable_buffer`
 | Writable view of contiguous bytes
 
-| `flat_buffer`
+| `flat_dynamic_buffer`
 | Growable contiguous buffer
 
 | `circular_dynamic_buffer`

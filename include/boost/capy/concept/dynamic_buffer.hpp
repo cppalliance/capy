@@ -38,7 +38,7 @@ namespace capy {
 
     @par Example
     @code
-    flat_buffers fb( storage, sizeof( storage ) );
+    flat_dynamic_buffer fb( storage, sizeof( storage ) );
     auto mb = fb.prepare( 100 );    // get writable region
     std::size_t n = read( sock, mb );
     fb.commit( n );                 // make n bytes readable
@@ -73,7 +73,7 @@ concept DynamicBuffer =
     - **Lvalues** of any DynamicBuffer (caller manages lifetime)
     - **Rvalues** only for types with `is_dynamic_buffer_adapter` tag
 
-    The distinction exists because some buffer types (like `flat_buffers`)
+    The distinction exists because some buffer types (like `flat_dynamic_buffer`)
     store bookkeeping internally that would be lost if passed by rvalue,
     while adapters (like `string_buffers`) update external storage directly.
 
@@ -102,7 +102,7 @@ concept DynamicBuffer =
     void good( DynamicBufferParam auto&& buffers );
     good( fb );                    // OK: lvalue
     good( string_buffers( s ) );   // OK: adapter rvalue
-    good( flat_buffers( storage ) );  // compile error: non-adapter rvalue
+    good( flat_dynamic_buffer( storage ) );  // compile error: non-adapter rvalue
     @endcode
 
     @par Adapter Types
@@ -118,7 +118,7 @@ concept DynamicBuffer =
     @par Example
     @code
     // OK: lvalue reference
-    flat_buffers fb( storage );
+    flat_dynamic_buffer fb( storage );
     co_await read( stream, fb );
 
     // OK: adapter as rvalue, string retains data
@@ -126,7 +126,7 @@ concept DynamicBuffer =
     co_await read( stream, string_dynamic_buffer( &s ) );
 
     // ERROR: non-adapter rvalue
-    co_await read( stream, flat_buffers( storage ) );  // compile error
+    co_await read( stream, flat_dynamic_buffer( storage ) );  // compile error
     @endcode
 
     @see DynamicBuffer

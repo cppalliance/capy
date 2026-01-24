@@ -156,7 +156,7 @@ graph TD
    - Propagating errors through `co_await`
 
 3. **Buffers**
-   - `flat_buffer` and `circular_dynamic_buffer`
+   - `flat_dynamic_buffer` and `circular_dynamic_buffer`
    - The DynamicBuffer concept
    - Buffer sequences and buffer views
 

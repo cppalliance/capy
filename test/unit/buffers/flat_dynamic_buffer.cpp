@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/buffers/flat_buffer.hpp>
+#include <boost/capy/buffers/flat_dynamic_buffer.hpp>
 
 #include <boost/capy/concept/dynamic_buffer.hpp>
 
@@ -18,36 +18,36 @@
 namespace boost {
 namespace capy {
 
-static_assert(DynamicBuffer<flat_buffer>);
+static_assert(DynamicBuffer<flat_dynamic_buffer>);
 
-struct flat_buffer_test
+struct flat_dynamic_buffer_test
 {
     void
     testMembers()
     {
         std::string pat = test_pattern();
 
-        // flat_buffer()
+        // flat_dynamic_buffer()
         {
-            flat_buffer fb;
+            flat_dynamic_buffer fb;
             BOOST_TEST_EQ(fb.size(), 0);
             BOOST_TEST_EQ(fb.max_size(), 0);
             BOOST_TEST_EQ(fb.capacity(), 0);
         }
 
-        // flat_buffer( void*, size_t )
+        // flat_dynamic_buffer( void*, size_t )
         {
             std::string s = pat;
-            flat_buffer fb(&s[0], s.size());
+            flat_dynamic_buffer fb(&s[0], s.size());
             BOOST_TEST_EQ(fb.size(), 0);
             BOOST_TEST_EQ(fb.max_size(), s.size());
             BOOST_TEST_EQ(fb.capacity(), s.size());
         }
 
-        // flat_buffer( void*, size_t, size_t )
+        // flat_dynamic_buffer( void*, size_t, size_t )
         {
             std::string s = pat;
-            flat_buffer fb(&s[0], s.size(), 6);
+            flat_dynamic_buffer fb(&s[0], s.size(), 6);
             BOOST_TEST_EQ(fb.size(), 6);
             BOOST_TEST_EQ(fb.max_size(), s.size());
             BOOST_TEST_EQ(fb.capacity(), s.size() - 6);
@@ -55,26 +55,26 @@ struct flat_buffer_test
         {
             std::string s = pat;
             BOOST_TEST_THROWS(
-                flat_buffer(&s[0], s.size(),
+                flat_dynamic_buffer(&s[0], s.size(),
                     s.size() + 1),
                 std::invalid_argument);
         }
 
-        // flat_buffer( flat_buffer const& )
+        // flat_dynamic_buffer( flat_dynamic_buffer const& )
         {
             std::string s = pat;
-            flat_buffer fb0(&s[0], s.size());
-            flat_buffer fb1(fb0);
+            flat_dynamic_buffer fb0(&s[0], s.size());
+            flat_dynamic_buffer fb1(fb0);
             BOOST_TEST_EQ(fb1.size(), fb0.size());
             BOOST_TEST_EQ(fb1.max_size(), fb0.max_size());
             BOOST_TEST_EQ(fb1.capacity(), fb0.capacity());
         }
 
-        // operator=( flat_buffer const& )
+        // operator=( flat_dynamic_buffer const& )
         {
             std::string s = pat;
-            flat_buffer fb0(&s[0], s.size());
-            flat_buffer fb1;
+            flat_dynamic_buffer fb0(&s[0], s.size());
+            flat_dynamic_buffer fb1;
             fb1 = fb0;
             BOOST_TEST_EQ(fb1.size(), fb0.size());
             BOOST_TEST_EQ(fb1.max_size(), fb0.max_size());
@@ -84,14 +84,14 @@ struct flat_buffer_test
         // prepare( std::size_t )
         {
             std::string s = pat;
-            flat_buffer fb(&s[0], s.size());
+            flat_dynamic_buffer fb(&s[0], s.size());
             BOOST_TEST_THROWS(
                 fb.prepare(s.size() + 1),
                 std::invalid_argument);
         }
         {
             std::string s = pat;
-            flat_buffer fb(&s[0], s.size(), 6);
+            flat_dynamic_buffer fb(&s[0], s.size(), 6);
             BOOST_TEST_THROWS(
                 fb.prepare(s.size() + 1),
                 std::invalid_argument);
@@ -108,7 +108,7 @@ struct flat_buffer_test
             for(std::size_t i = 0;
                 i <= pat.size(); ++i)
             {
-                flat_buffer fb(
+                flat_dynamic_buffer fb(
                     &s[0], s.size());
                 fb.prepare(s.size());
                 fb.commit(i);
@@ -121,7 +121,7 @@ struct flat_buffer_test
         // consume( std::size_t )
         {
             std::string s = pat;
-            flat_buffer fb(&s[0], s.size(), s.size());
+            flat_dynamic_buffer fb(&s[0], s.size(), s.size());
             BOOST_TEST_EQ(
                 test::make_string(fb.data()), pat);
 
@@ -140,7 +140,7 @@ struct flat_buffer_test
         }
         {
             std::string s = pat;
-            flat_buffer fb(&s[0], s.size(), 6);
+            flat_dynamic_buffer fb(&s[0], s.size(), 6);
 
             auto const cap = fb.capacity();
 
@@ -161,7 +161,7 @@ struct flat_buffer_test
         std::string storage(64, '\0');
         auto r = test::grind_dynamic_buffer([&] {
             std::fill(storage.begin(), storage.end(), '\0');
-            return flat_buffer(&storage[0], storage.size());
+            return flat_dynamic_buffer(&storage[0], storage.size());
         });
         BOOST_TEST(r.success);
     }
@@ -175,8 +175,8 @@ struct flat_buffer_test
 };
 
 TEST_SUITE(
-    flat_buffer_test,
-    "boost.capy.buffers.flat_buffer");
+    flat_dynamic_buffer_test,
+    "boost.capy.buffers.flat_dynamic_buffer");
 
 } // capy
 } // boost

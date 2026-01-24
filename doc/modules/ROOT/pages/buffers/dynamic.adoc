@@ -56,15 +56,15 @@ All dynamic buffers provide these operations:
 | Remove `n` bytes from readable region
 |===
 
-== flat_buffer
+== flat_dynamic_buffer
 
-A `flat_buffer` uses a single contiguous memory region:
+A `flat_dynamic_buffer` uses a single contiguous memory region:
 
 [source,cpp]
 ----
 // Fixed storage (stack or pre-allocated)
 char storage[1024];
-flat_buffer buf(storage, sizeof(storage));
+flat_dynamic_buffer buf(storage, sizeof(storage));
 
 // Prepare space for writing
 mutable_buffer out = buf.prepare(100);
@@ -96,13 +96,13 @@ buf.consume(5);
 [source,cpp]
 ----
 // Default (zero capacity)
-flat_buffer buf1;
+flat_dynamic_buffer buf1;
 
 // From storage with capacity
-flat_buffer buf2(storage, capacity);
+flat_dynamic_buffer buf2(storage, capacity);
 
 // From storage with initial readable size
-flat_buffer buf3(storage, capacity, initial_size);
+flat_dynamic_buffer buf3(storage, capacity, initial_size);
 ----
 
 == circular_dynamic_buffer
@@ -114,7 +114,7 @@ A `circular_dynamic_buffer` uses a ring buffer that wraps around:
 char storage[1024];
 circular_dynamic_buffer buf(storage, sizeof(storage));
 
-// Same interface as flat_buffer
+// Same interface as flat_dynamic_buffer
 auto out = buf.prepare(100);  // May return two-element sequence
 buf.commit(50);
 
@@ -203,7 +203,7 @@ std::string str;
 |===
 | Type | Best For | Trade-off
 
-| `flat_buffer`
+| `flat_dynamic_buffer`
 | Simple linear data flow
 | May waste space after consume
 
@@ -245,7 +245,7 @@ while (!done)
 |===
 | Type | Description
 
-| `flat_buffer`
+| `flat_dynamic_buffer`
 | Single contiguous region, simple sequences
 
 | `circular_dynamic_buffer`

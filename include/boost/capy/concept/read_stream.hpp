@@ -49,7 +49,7 @@ namespace capy {
     @li On error: `!!ec` is `true`, and `n` is 0.
     @li On end-of-file: `ec == cond::eof` is `true`, and `n` is 0.
 
-    If `buffer_size(buffers) == 0`, the operation completes
+    If `buffer_empty(buffers)` is `true`, the operation completes
     immediately. `!ec` is `true`, and `n` is 0.
 
     Buffers in the sequence are filled completely before proceeding

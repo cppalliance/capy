@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_BUFFERS_FLAT_BUFFER_HPP
-#define BOOST_CAPY_BUFFERS_FLAT_BUFFER_HPP
+#ifndef BOOST_CAPY_BUFFERS_FLAT_DYNAMIC_BUFFER_HPP
+#define BOOST_CAPY_BUFFERS_FLAT_DYNAMIC_BUFFER_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
@@ -27,7 +27,7 @@ namespace capy {
     @par Example
     @code
     char storage[1024];
-    flat_buffer fb( storage, sizeof( storage ) );
+    flat_dynamic_buffer fb( storage, sizeof( storage ) );
 
     // Write data
     auto mb = fb.prepare( 100 );
@@ -46,7 +46,7 @@ namespace capy {
 
     @see circular_dynamic_buffer, string_dynamic_buffer
 */
-class flat_buffer
+class flat_dynamic_buffer
 {
     unsigned char* data_ = nullptr;
     std::size_t cap_ = 0;
@@ -65,7 +65,7 @@ public:
     using mutable_buffers_type = mutable_buffer;
 
     /// Construct an empty flat buffer with zero capacity.
-    flat_buffer() = default;
+    flat_dynamic_buffer() = default;
 
     /** Construct a flat buffer over existing storage.
 
@@ -76,7 +76,7 @@ public:
 
         @throws std::invalid_argument if initial_size > capacity.
     */
-    flat_buffer(
+    flat_dynamic_buffer(
         void* data,
         std::size_t capacity,
         std::size_t initial_size = 0)
@@ -90,12 +90,12 @@ public:
     }
 
     /// Copy constructor.
-    flat_buffer(
-        flat_buffer const&) = default;
+    flat_dynamic_buffer(
+        flat_dynamic_buffer const&) = default;
 
     /// Copy assignment.
-    flat_buffer& operator=(
-        flat_buffer const&) = default;
+    flat_dynamic_buffer& operator=(
+        flat_dynamic_buffer const&) = default;
 
     /// Return the number of readable bytes.
     std::size_t

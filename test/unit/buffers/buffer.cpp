@@ -405,12 +405,89 @@ struct buffer_test
         }
     }
 
+    void testEmpty()
+    {
+        char data[9] = "12345678";
+
+        // empty const_buffer
+        BOOST_TEST(buffer_empty(const_buffer()));
+        BOOST_TEST(buffer_empty(const_buffer(data, 0)));
+
+        // non-empty const_buffer
+        BOOST_TEST(! buffer_empty(const_buffer(data, 1)));
+        BOOST_TEST(! buffer_empty(const_buffer(data, 5)));
+
+        // empty mutable_buffer
+        BOOST_TEST(buffer_empty(mutable_buffer()));
+        BOOST_TEST(buffer_empty(mutable_buffer(data, 0)));
+
+        // non-empty mutable_buffer
+        BOOST_TEST(! buffer_empty(mutable_buffer(data, 1)));
+        BOOST_TEST(! buffer_empty(mutable_buffer(data, 5)));
+
+        // empty buffer_pair (both empty)
+        {
+            const_buffer_pair cbp{{ {data, 0}, {data, 0} }};
+            BOOST_TEST(buffer_empty(cbp));
+        }
+
+        // non-empty buffer_pair (one non-empty)
+        {
+            const_buffer_pair cbp{{ {data, 0}, {data, 3} }};
+            BOOST_TEST(! buffer_empty(cbp));
+        }
+        {
+            const_buffer_pair cbp{{ {data, 3}, {data, 0} }};
+            BOOST_TEST(! buffer_empty(cbp));
+        }
+
+        // buffer sequence: all empty
+        {
+            const_buffer cb[3] = {
+                { data, 0 },
+                { data, 0 },
+                { data, 0 }
+            };
+            span<const_buffer const> s(cb, 3);
+            BOOST_TEST(buffer_empty(s));
+        }
+
+        // buffer sequence: some empty, one non-empty
+        {
+            const_buffer cb[3] = {
+                { data, 0 },
+                { data, 1 },
+                { data, 0 }
+            };
+            span<const_buffer const> s(cb, 3);
+            BOOST_TEST(! buffer_empty(s));
+        }
+
+        // buffer sequence: none empty
+        {
+            const_buffer cb[3] = {
+                { data, 1 },
+                { data, 2 },
+                { data, 3 }
+            };
+            span<const_buffer const> s(cb, 3);
+            BOOST_TEST(! buffer_empty(s));
+        }
+
+        // empty span (zero elements)
+        {
+            span<const_buffer const> s;
+            BOOST_TEST(buffer_empty(s));
+        }
+    }
+
     void run()
     {
         testBuffers();
         testConstBuffer();
         testMutableBuffer();
         testSize();
+        testEmpty();
     }
 };
 

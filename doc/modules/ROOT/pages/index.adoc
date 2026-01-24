@@ -23,7 +23,7 @@ through the entire call chain.
 * **Thread pool** execution context with service management
 * **Strand** serialization for safe concurrent access
 * **Async synchronization primitives** (`async_mutex`, `async_event`)
-* **Buffer types** for efficient I/O (`const_buffer`, `mutable_buffer`, `flat_buffer`)
+* **Buffer types** for efficient I/O (`const_buffer`, `mutable_buffer`, `flat_dynamic_buffer`)
 * **Stream concepts** for generic read/write operations
 * **Testing utilities** including mock streams and error injection
 

@@ -144,7 +144,7 @@ Unlike `read_some()`, `read()` loops internally until:
 
 [source,cpp]
 ----
-flat_buffer buf;
+flat_dynamic_buffer buf;
 auto [ec, n] = co_await read(stream, buf);
 // Reads until EOF, growing buffer as needed
 ----
@@ -153,7 +153,7 @@ auto [ec, n] = co_await read(stream, buf);
 
 [source,cpp]
 ----
-flat_buffer buf;
+flat_dynamic_buffer buf;
 auto [ec, n] = co_await read(stream, buf, 1024);
 // Reads at most 1024 bytes
 ----
@@ -298,7 +298,7 @@ task<io_result<std::size_t>> copy(ReadStream& src, WriteStream& dst)
 
 [source,cpp]
 ----
-task<io_result<std::string>> read_line(ReadStream& s, flat_buffer& buf)
+task<io_result<std::string>> read_line(ReadStream& s, flat_dynamic_buffer& buf)
 {
     while (true)
     {
