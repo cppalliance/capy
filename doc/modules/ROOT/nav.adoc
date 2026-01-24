@@ -27,4 +27,6 @@
 ** xref:buffers/sequences.adoc[Buffer Sequences]
 ** xref:buffers/algorithms.adoc[Buffer Algorithms]
 ** xref:buffers/dynamic.adoc[Dynamic Buffers]
+* Testing Facilities
+** xref:library/testing.adoc[Overview]
 * xref:reference:boost/capy.adoc[Reference]

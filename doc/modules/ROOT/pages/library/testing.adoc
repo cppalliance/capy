@@ -1,0 +1,640 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Testing Facilities
+
+Capy provides a complete testing toolkit for I/O code—mock streams,
+systematic error injection, and buffer utilities. Test your code
+without real network I/O.
+
+NOTE: Code examples assume `using namespace boost::capy;` and
+`using namespace boost::capy::test;` are in effect.
+
+== Why Test Utilities?
+
+Testing I/O code is hard:
+
+* Real network operations are slow and non-deterministic
+* Errors are difficult to trigger reliably
+* Buffer boundary conditions require careful testing
+
+Capy's test utilities solve these problems:
+
+* **Mock streams** eliminate real I/O
+* **`fuse`** injects errors at every possible point
+* **`bufgrind`** tests all buffer split points
+
+== run_blocking
+
+Execute coroutines synchronously for unit tests:
+
+[source,cpp]
+----
+#include <boost/capy/test/run_blocking.hpp>
+
+task<int> compute()
+{
+    co_return 42;
+}
+
+void test_compute()
+{
+    int result = 0;
+    run_blocking([&](int v) { result = v; })(compute());
+    BOOST_TEST(result == 42);
+}
+----
+
+=== How It Works
+
+`run_blocking` uses an `inline_executor` that executes work immediately
+on the calling thread. The calling thread blocks until the coroutine
+completes.
+
+=== Overloads
+
+[source,cpp]
+----
+// Discard result
+run_blocking()(my_task());
+
+// Capture result
+run_blocking([&](auto v) { result = v; })(my_task());
+
+// Separate success/error handlers
+run_blocking(
+    [&](auto v) { result = v; },
+    [](std::exception_ptr ep) { std::rethrow_exception(ep); }
+)(my_task());
+
+// With executor
+run_blocking(my_executor)(my_task());
+
+// With stop token
+run_blocking(stop_token)(my_task());
+----
+
+Reference: `<boost/capy/test/run_blocking.hpp>`
+
+== fuse
+
+Systematic error injection that tests every failure path:
+
+[source,cpp]
+----
+#include <boost/capy/test/fuse.hpp>
+
+fuse f;
+auto r = f.armed([](fuse& f) {
+    auto ec = f.maybe_fail();
+    if (ec.failed())
+        return;  // Exit on injected error
+
+    ec = f.maybe_fail();
+    if (ec.failed())
+        return;
+
+    // Success path
+});
+
+BOOST_TEST(r.success);
+----
+
+=== How It Works
+
+`armed()` runs your test function repeatedly, failing at successive
+`maybe_fail()` points:
+
+1. **Round 0**: Fail at first `maybe_fail()`
+2. **Round 1**: Fail at second `maybe_fail()`
+3. **Round N**: Continue until no failure triggered (success)
+
+Then it repeats the entire process in exception mode, where `maybe_fail()`
+throws instead of returning an error code.
+
+=== Error Handling Pattern
+
+Tests must handle injected errors by returning early:
+
+[source,cpp]
+----
+// CORRECT: early return on injected error
+auto [ec, n] = co_await rs.read_some(buf);
+if (ec.failed())
+    co_return;  // fuse injected error, exit gracefully
+
+// WRONG: asserting success unconditionally
+auto [ec, n] = co_await rs.read_some(buf);
+BOOST_TEST(!ec.failed());  // FAILS when fuse injects error!
+----
+
+=== Coroutine Support
+
+`fuse` works seamlessly with coroutines:
+
+[source,cpp]
+----
+fuse f;
+read_stream rs(f);
+rs.provide("test data");
+
+auto r = f.armed([&](fuse&) -> task<> {
+    char buf[32];
+    auto [ec, n] = co_await rs.read_some(make_buffer(buf));
+    if (ec.failed())
+        co_return;
+    // Process data...
+});
+
+BOOST_TEST(r.success);
+----
+
+=== inert Mode
+
+Run a test once without error injection:
+
+[source,cpp]
+----
+auto r = f.inert([](fuse& f) {
+    auto ec = f.maybe_fail();  // Always succeeds
+    // ...
+    if (some_condition)
+        f.fail();  // Explicit failure
+});
+----
+
+=== Dependency Injection
+
+`fuse` is a no-op when used outside `armed()`/`inert()`:
+
+[source,cpp]
+----
+class MyService
+{
+    fuse& f_;
+public:
+    explicit MyService(fuse& f) : f_(f) {}
+
+    system::error_code do_work()
+    {
+        auto ec = f_.maybe_fail();  // No-op in production
+        if (ec.failed())
+            return ec;
+        // ... actual work ...
+        return {};
+    }
+};
+
+// Production: fuse is inactive
+fuse f;
+MyService svc(f);
+svc.do_work();  // maybe_fail() returns {} always
+
+// Test: fuse is active
+auto r = f.armed([&](fuse&) {
+    svc.do_work();  // maybe_fail() injects failures
+});
+----
+
+=== Custom Error Code
+
+[source,cpp]
+----
+auto custom_ec = make_error_code(boost::system::errc::operation_canceled);
+fuse f(custom_ec);
+
+auto r = f.armed([](fuse& f) {
+    auto ec = f.maybe_fail();
+    // ec == custom_ec when failure is injected
+});
+----
+
+Reference: `<boost/capy/test/fuse.hpp>`
+
+== bufgrind
+
+Test all buffer sequence split points:
+
+[source,cpp]
+----
+#include <boost/capy/test/bufgrind.hpp>
+
+std::string data = "hello world";
+auto cb = make_buffer(data);
+
+fuse f;
+auto r = f.inert([&](fuse&) -> task<> {
+    bufgrind bg(cb);
+    while (bg) {
+        auto [b1, b2] = co_await bg.next();
+        // b1 = first N bytes
+        // b2 = remaining bytes
+        // concatenating b1 + b2 equals original
+        BOOST_TEST(buffer_to_string(b1, b2) == data);
+    }
+});
+----
+
+=== Iteration Pattern
+
+For an 11-byte buffer, `bufgrind` yields:
+
+----
+pos=0:  b1=""            b2="hello world"
+pos=1:  b1="h"           b2="ello world"
+pos=2:  b1="he"          b2="llo world"
+...
+pos=11: b1="hello world" b2=""
+----
+
+=== Step Size
+
+Speed up iteration by skipping positions:
+
+[source,cpp]
+----
+bufgrind bg(cb, 10);  // Step by 10 bytes
+while (bg) {
+    auto [b1, b2] = co_await bg.next();
+    // Visits positions 0, 10, and always the final size
+}
+----
+
+=== Preserves Mutability
+
+Mutable input yields mutable slices:
+
+[source,cpp]
+----
+char data[100];
+mutable_buffer mb(data, sizeof(data));
+
+bufgrind bg(mb);
+while (bg) {
+    auto [b1, b2] = co_await bg.next();
+    // b1, b2 yield mutable_buffer when iterated
+}
+----
+
+Reference: `<boost/capy/test/bufgrind.hpp>`
+
+== buffer_to_string
+
+Convert buffer sequences to strings for verification:
+
+[source,cpp]
+----
+#include <boost/capy/test/buffer_to_string.hpp>
+
+// Single buffer
+const_buffer cb("hello", 5);
+std::string s = buffer_to_string(cb);  // "hello"
+
+// Multiple buffers (concatenation)
+const_buffer b1("hello", 5);
+const_buffer b2(" world", 6);
+std::string s = buffer_to_string(b1, b2);  // "hello world"
+----
+
+=== With bufgrind
+
+[source,cpp]
+----
+bufgrind bg(cb);
+while (bg) {
+    auto [b1, b2] = co_await bg.next();
+    BOOST_TEST(buffer_to_string(b1, b2) == "hello");
+}
+----
+
+Reference: `<boost/capy/test/buffer_to_string.hpp>`
+
+== read_stream
+
+Mock `ReadStream` for testing read operations:
+
+[source,cpp]
+----
+#include <boost/capy/test/read_stream.hpp>
+
+fuse f;
+read_stream rs(f);
+rs.provide("Hello, ");
+rs.provide("World!");
+
+auto r = f.armed([&](fuse&) -> task<> {
+    char buf[32];
+    auto [ec, n] = co_await rs.read_some(make_buffer(buf));
+    if (ec.failed())
+        co_return;
+    // buf contains up to 13 bytes
+});
+----
+
+=== API
+
+[cols="1,2"]
+|===
+| Method | Description
+
+| `provide(sv)`
+| Append data for subsequent reads
+
+| `read_some(buffers)`
+| Partial read, returns `(error_code, size_t)`
+
+| `available()`
+| Bytes remaining to read
+
+| `clear()`
+| Reset all data and position
+|===
+
+=== Chunked Delivery
+
+Simulate network chunking with `max_read_size`:
+
+[source,cpp]
+----
+read_stream rs(f, 100);  // Max 100 bytes per read
+rs.provide(large_data);
+
+// Each read_some returns at most 100 bytes
+auto [ec, n] = co_await rs.read_some(make_buffer(buf));
+// n <= 100
+----
+
+=== EOF Behavior
+
+Returns `error::eof` when no data remains:
+
+[source,cpp]
+----
+read_stream rs(f);
+rs.provide("test");
+
+char buf[10];
+co_await rs.read_some(make_buffer(buf));  // Returns 4 bytes
+auto [ec, n] = co_await rs.read_some(make_buffer(buf));
+// ec == error::eof, n == 0
+----
+
+Reference: `<boost/capy/test/read_stream.hpp>`
+
+== write_stream
+
+Mock `WriteStream` for testing write operations:
+
+[source,cpp]
+----
+#include <boost/capy/test/write_stream.hpp>
+
+fuse f;
+write_stream ws(f);
+
+auto r = f.armed([&](fuse&) -> task<> {
+    auto [ec, n] = co_await ws.write_some(make_buffer("Hello"));
+    if (ec.failed())
+        co_return;
+});
+
+BOOST_TEST(ws.data() == "Hello");
+----
+
+=== API
+
+[cols="1,2"]
+|===
+| Method | Description
+
+| `write_some(buffers)`
+| Partial write, returns `(error_code, size_t)`
+
+| `data()`
+| Retrieve written data as string view
+
+| `size()`
+| Number of bytes written
+
+| `expect(sv)`
+| Set expected data, fails on mismatch
+|===
+
+=== Chunked Writes
+
+Simulate network chunking with `max_write_size`:
+
+[source,cpp]
+----
+write_stream ws(f, 100);  // Max 100 bytes per write
+
+auto [ec, n] = co_await ws.write_some(make_buffer(large_data));
+// n <= 100
+----
+
+=== Expected Data Verification
+
+[source,cpp]
+----
+write_stream ws(f);
+ws.expect("Hello World");
+
+co_await ws.write_some(make_buffer("Hello "));
+co_await ws.write_some(make_buffer("World"));
+// No error—written data matches expected
+----
+
+Reference: `<boost/capy/test/write_stream.hpp>`
+
+== read_source
+
+Mock `ReadSource` for complete read operations:
+
+[source,cpp]
+----
+#include <boost/capy/test/read_source.hpp>
+
+fuse f;
+read_source rs(f);
+rs.provide("Hello, World!");
+
+auto r = f.armed([&](fuse&) -> task<> {
+    char buf[32];
+    auto [ec, n] = co_await rs.read(make_buffer(buf));
+    if (ec.failed())
+        co_return;
+    // buf filled completely before returning
+});
+----
+
+Unlike `read_stream::read_some()`, `read_source::read()` fills the
+entire buffer before returning (looping internally if needed).
+
+=== API
+
+[cols="1,2"]
+|===
+| Method | Description
+
+| `provide(sv)`
+| Append data for subsequent reads
+
+| `read(buffers)`
+| Complete read, returns `(error_code, size_t)`
+
+| `available()`
+| Bytes remaining to read
+
+| `clear()`
+| Reset all data and position
+|===
+
+Reference: `<boost/capy/test/read_source.hpp>`
+
+== write_sink
+
+Mock `WriteSink` for complete write operations with EOF:
+
+[source,cpp]
+----
+#include <boost/capy/test/write_sink.hpp>
+
+fuse f;
+write_sink ws(f);
+
+auto r = f.armed([&](fuse&) -> task<> {
+    auto [ec, n] = co_await ws.write(make_buffer("Hello"));
+    if (ec.failed())
+        co_return;
+    auto [ec2] = co_await ws.write_eof();
+    if (ec2.failed())
+        co_return;
+});
+
+BOOST_TEST(ws.data() == "Hello");
+BOOST_TEST(ws.eof_called());
+----
+
+=== API
+
+[cols="1,2"]
+|===
+| Method | Description
+
+| `write(buffers)`
+| Complete write, returns `(error_code, size_t)`
+
+| `write(buffers, eof)`
+| Write with optional EOF signal
+
+| `write_eof()`
+| Signal end-of-stream, returns `(error_code)`
+
+| `data()`
+| Retrieve written data as string view
+
+| `eof_called()`
+| Check if EOF was signaled
+
+| `expect(sv)`
+| Set expected data, fails on mismatch
+
+| `clear()`
+| Reset all data and state
+|===
+
+Reference: `<boost/capy/test/write_sink.hpp>`
+
+== Complete Example
+
+Testing a protocol parser with full coverage:
+
+[source,cpp]
+----
+#include <boost/capy/test/fuse.hpp>
+#include <boost/capy/test/read_stream.hpp>
+#include <boost/capy/test/bufgrind.hpp>
+#include <boost/capy/test/buffer_to_string.hpp>
+
+void test_parser()
+{
+    std::string input = "GET / HTTP/1.1\r\n\r\n";
+    auto cb = make_buffer(input);
+
+    // Test all buffer split points
+    bufgrind bg(cb);
+    while (bg) {
+        fuse f;
+        read_stream rs(f);
+
+        // Provide data in two chunks
+        auto [b1, b2] = run_blocking()(
+            [&]() -> task<bufgrind<const_buffer>::split_type> {
+                co_return co_await bg.next();
+            }());
+
+        rs.provide(buffer_to_string(b1));
+        rs.provide(buffer_to_string(b2));
+
+        auto r = f.armed([&](fuse&) -> task<> {
+            http_request req;
+            auto [ec] = co_await parse_request(rs, req);
+            if (ec.failed())
+                co_return;
+            BOOST_TEST(req.method == "GET");
+            BOOST_TEST(req.target == "/");
+        });
+
+        BOOST_TEST(r.success);
+    }
+}
+----
+
+This test:
+
+1. Uses `bufgrind` to test every split point in the input
+2. Uses `fuse.armed()` to inject errors at every `maybe_fail()` call
+3. Uses `read_stream` to provide mock data
+4. Verifies all code paths handle errors correctly
+
+== Summary
+
+[cols="1,3"]
+|===
+| Component | Purpose
+
+| `run_blocking`
+| Execute coroutines synchronously for tests
+
+| `fuse`
+| Systematic error injection at all failure points
+
+| `bufgrind`
+| Iterate all buffer sequence split points
+
+| `buffer_to_string`
+| Convert buffers to strings for verification
+
+| `read_stream`
+| Mock `ReadStream` with partial reads
+
+| `write_stream`
+| Mock `WriteStream` with partial writes
+
+| `read_source`
+| Mock `ReadSource` with complete reads
+
+| `write_sink`
+| Mock `WriteSink` with complete writes and EOF
+|===
+
+== Navigation
+
+[.text-center]
+xref:../buffers/dynamic.adoc[← Dynamic Buffers] | xref:reference:boost/capy.adoc[Next: Reference →]

@@ -313,3 +313,82 @@ graph TD
 6. **write() Algorithm**
    - `write(stream, buffers)` - loops `write_some` until all written
    - Reference: `<boost/capy/write.hpp>`
+
+## Section: Testing Facilities
+
+### Part I: Test Execution
+
+1. **run_blocking**
+   - Execute coroutines synchronously for unit tests
+   - Uses `inline_executor` that executes inline via `dispatch()`
+   - Blocks the calling thread until the task completes
+   - Supports handlers for results and exceptions
+   - Supports `std::stop_token` for cancellation
+   - Reference: `<boost/capy/test/run_blocking.hpp>`
+
+2. **fuse**
+   - Systematic error injection at successive failure points
+   - Two phases: error code mode, then exception mode
+   - `armed()`: runs test repeatedly, failing at each `maybe_fail()` point
+   - `inert()`: runs test once, `maybe_fail()` always succeeds
+   - `fail()`: explicit test failure with source location tracking
+   - Dependency injection: no-op when used outside `armed()`/`inert()`
+   - Works with both regular functions and coroutines
+   - Reference: `<boost/capy/test/fuse.hpp>`
+
+### Part II: Buffer Testing
+
+3. **bufgrind**
+   - Iterates all split points of a buffer sequence
+   - Returns `(b1, b2)` pairs where concatenation equals original
+   - Configurable step size for faster iteration
+   - Preserves mutability: mutable input yields mutable slices
+   - Reference: `<boost/capy/test/bufgrind.hpp>`
+
+4. **buffer_to_string**
+   - Converts buffer sequences to `std::string`
+   - Variadic: concatenates multiple buffer sequences
+   - Useful for verifying buffer contents in tests
+   - Reference: `<boost/capy/test/buffer_to_string.hpp>`
+
+### Part III: Mock Streams
+
+5. **read_stream**
+   - Mock `ReadStream` for testing read operations
+   - `provide(sv)`: supply data for subsequent reads
+   - `read_some(buffers)`: partial read, returns `(error_code, size_t)`
+   - `max_read_size` constructor parameter simulates chunked delivery
+   - Integrated with `fuse` for error injection
+   - Returns `error::eof` when no data remains
+   - Reference: `<boost/capy/test/read_stream.hpp>`
+
+6. **write_stream**
+   - Mock `WriteStream` for testing write operations
+   - `write_some(buffers)`: partial write, returns `(error_code, size_t)`
+   - `data()`: retrieve written data as string view
+   - `expect(sv)`: set expected data, fails on mismatch
+   - `max_write_size` constructor parameter simulates chunked delivery
+   - Integrated with `fuse` for error injection
+   - Reference: `<boost/capy/test/write_stream.hpp>`
+
+### Part IV: Mock Sources and Sinks
+
+7. **read_source**
+   - Mock `ReadSource` for testing complete read operations
+   - `provide(sv)`: supply data for subsequent reads
+   - `read(buffers)`: complete read, fills buffers entirely
+   - Integrated with `fuse` for error injection
+   - Returns `error::eof` when no data remains
+   - Reference: `<boost/capy/test/read_source.hpp>`
+
+8. **write_sink**
+   - Mock `WriteSink` for testing complete write operations
+   - `write(buffers)`: complete write, returns `(error_code, size_t)`
+   - `write(buffers, eof)`: write with optional EOF signal
+   - `write_eof()`: signal end-of-stream, returns `(error_code)`
+   - `data()`: retrieve written data as string view
+   - `expect(sv)`: set expected data, fails on mismatch
+   - `eof_called()`: check if EOF was signaled
+   - Integrated with `fuse` for error injection
+   - Reference: `<boost/capy/test/write_sink.hpp>`
+
