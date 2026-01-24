@@ -33,7 +33,6 @@ for local f in [ glob-tree-ex . : file*.cpp ]
 {
     run $(f)
         : requirements
-          <library>/boost/filesystem//boost_filesystem
           <warnings>off <undefined-sanitizer>norecover:<link>static
         ;
 }
