@@ -9,631 +9,263 @@
 
 // Test that header file is self-contained.
 #include <boost/capy/write.hpp>
-#if 0
-#include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/concept/write_sink.hpp>
-#include <boost/capy/error.hpp>
-#include <boost/capy/ex/run_async.hpp>
-#include <boost/capy/io_result.hpp>
 
-#include "test_helpers.hpp"
+#include <boost/capy/buffers/buffer_pair.hpp>
+#include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/error.hpp>
+#include <boost/capy/test/fuse.hpp>
+#include <boost/capy/test/write_stream.hpp>
+
+#include "test_suite.hpp"
 
 #include <array>
-#include <cstring>
 #include <string>
-#include <vector>
+#include <string_view>
 
 namespace boost {
 namespace capy {
 
 namespace {
 
-// Mock write awaitable that appends data to a string
-struct mock_write_awaitable
-{
-    std::string* data_;
-    std::size_t chunk_size_;
-    const_buffer buf_;
-    system::error_code ec_;
-
-    bool await_ready() const noexcept { return true; }
-
-    void await_suspend(
-        coro,
-        executor_ref,
-        std::stop_token) const noexcept
-    {
-    }
-
-    io_result<std::size_t>
-    await_resume() noexcept
-    {
-        if(ec_)
-            return {ec_, 0};
-
-        std::size_t to_write = std::min(buf_.size(), chunk_size_);
-        data_->append(
-            static_cast<char const*>(buf_.data()),
-            to_write);
-        return {{}, to_write};
-    }
-};
-
-// Mock stream that writes to a string
-struct mock_write_stream
-{
-    std::string data;
-    std::size_t chunk_size = 1024;
-    system::error_code forced_error;
-
-    template<ConstBufferSequence CB>
-    mock_write_awaitable
-    write_some(CB const& buffers)
-    {
-        const_buffer buf = *begin(buffers);
-        return {&data, chunk_size, buf, forced_error};
-    }
-};
-
-static_assert(WriteStream<mock_write_stream>);
-
-// Mock stream that returns error after N bytes
-struct mock_error_stream
-{
-    std::string data;
-    std::size_t written = 0;
-    std::size_t error_after = 0;
-    system::error_code error_to_return;
-
-    template<ConstBufferSequence CB>
-    auto write_some(CB const& buffers)
-    {
-        struct awaitable
-        {
-            mock_error_stream* self_;
-            const_buffer buf_;
-
-            bool await_ready() const noexcept { return true; }
-
-            void await_suspend(
-                coro,
-                executor_ref,
-                std::stop_token) const noexcept
-            {
-            }
-
-            io_result<std::size_t>
-            await_resume() noexcept
-            {
-                if(self_->written >= self_->error_after)
-                    return {self_->error_to_return, 0};
-
-                std::size_t can_write = self_->error_after - self_->written;
-                std::size_t to_write = std::min(buf_.size(), can_write);
-
-                self_->data.append(
-                    static_cast<char const*>(buf_.data()),
-                    to_write);
-                self_->written += to_write;
-                return {{}, to_write};
-            }
-        };
-
-        const_buffer buf = *begin(buffers);
-        return awaitable{this, buf};
-    }
-};
-
-static_assert(WriteStream<mock_error_stream>);
-
 //----------------------------------------------------------
-// Mock WriteSink for testing
+// Buffer Factories for WriteStream tests
 //----------------------------------------------------------
 
-// Mock sink write awaitable that appends data to a string
-struct mock_sink_write_awaitable
-{
-    std::string* data_;
-    const_buffer buf_;
-    system::error_code ec_;
-
-    bool await_ready() const noexcept { return true; }
-
-    void await_suspend(
-        coro,
-        executor_ref,
-        std::stop_token) const noexcept
-    {
-    }
-
-    io_result<>
-    await_resume() noexcept
-    {
-        if(ec_)
-            return {ec_};
-
-        data_->append(
-            static_cast<char const*>(buf_.data()),
-            buf_.size());
-        return {{}};
-    }
-};
-
-// Mock sink write awaitable with size (for write(buffers, eof))
-struct mock_sink_write_with_size_awaitable
-{
-    std::string* data_;
-    bool* finished_;
-    const_buffer buf_;
-    bool eof_;
-    system::error_code ec_;
-
-    bool await_ready() const noexcept { return true; }
-
-    void await_suspend(
-        coro,
-        executor_ref,
-        std::stop_token) const noexcept
-    {
-    }
-
-    io_result<std::size_t>
-    await_resume() noexcept
-    {
-        if(ec_)
-            return {ec_, 0};
-
-        std::size_t n = buf_.size();
-        data_->append(
-            static_cast<char const*>(buf_.data()),
-            n);
-        if(eof_)
-            *finished_ = true;
-        return {{}, n};
-    }
-};
-
-// Mock sink write_eof awaitable
-struct mock_sink_eof_awaitable
-{
-    bool* finished_;
-    system::error_code ec_;
-
-    bool await_ready() const noexcept { return true; }
-
-    void await_suspend(
-        coro,
-        executor_ref,
-        std::stop_token) const noexcept
-    {
-    }
-
-    io_result<>
-    await_resume() noexcept
-    {
-        if(ec_)
-            return {ec_};
-        *finished_ = true;
-        return {{}};
-    }
-};
-
-// Mock sink that implements WriteSink concept
-struct mock_write_sink
+struct single_buffer_factory
 {
     std::string data;
-    bool finished = false;
-    system::error_code write_error;
-    system::error_code eof_error;
 
-    template<ConstBufferSequence CB>
-    mock_sink_write_awaitable
-    write(CB const& buffers)
+    explicit single_buffer_factory(std::string_view sv)
+        : data(sv)
     {
-        const_buffer buf = *begin(buffers);
-        return {&data, buf, write_error};
     }
 
-    template<ConstBufferSequence CB>
-    mock_sink_write_with_size_awaitable
-    write(CB const& buffers, bool eof)
+    const_buffer
+    buffer() const
     {
-        const_buffer buf = *begin(buffers);
-        return {&data, &finished, buf, eof, write_error};
+        return const_buffer(data.data(), data.size());
     }
 
-    mock_sink_eof_awaitable
-    write_eof()
+    std::size_t
+    size() const
     {
-        return {&finished, eof_error};
+        return data.size();
     }
 };
 
-static_assert(WriteSink<mock_write_sink>);
+struct buffer_array_factory
+{
+    std::string data1;
+    std::string data2;
+
+    buffer_array_factory(std::string_view sv1, std::string_view sv2)
+        : data1(sv1)
+        , data2(sv2)
+    {
+    }
+
+    std::array<const_buffer, 2>
+    buffer() const
+    {
+        return {{
+            const_buffer(data1.data(), data1.size()),
+            const_buffer(data2.data(), data2.size())
+        }};
+    }
+
+    std::size_t
+    size() const
+    {
+        return data1.size() + data2.size();
+    }
+
+    std::string
+    combined() const
+    {
+        return data1 + data2;
+    }
+};
+
+struct buffer_pair_factory
+{
+    std::string data1;
+    std::string data2;
+
+    buffer_pair_factory(std::string_view sv1, std::string_view sv2)
+        : data1(sv1)
+        , data2(sv2)
+    {
+    }
+
+    const_buffer_pair
+    buffer() const
+    {
+        return {{
+            const_buffer(data1.data(), data1.size()),
+            const_buffer(data2.data(), data2.size())
+        }};
+    }
+
+    std::size_t
+    size() const
+    {
+        return data1.size() + data2.size();
+    }
+
+    std::string
+    combined() const
+    {
+        return data1 + data2;
+    }
+};
 
 } // namespace
 
 struct write_test
 {
+    //----------------------------------------------------------
+    // WriteStream tests (ConstBufferSequence)
+    //----------------------------------------------------------
+
     void
     testWriteSingleBuffer()
     {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // Write single buffer completely
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_write_stream stream;
+            test::write_stream ws(f);
 
-            std::string_view msg = "hello world";
-            auto [ec, n] = co_await write(stream, make_buffer(msg));
+            single_buffer_factory bf("hello world");
+            auto [ec, n] = co_await write(ws, bf.buffer());
+            if(ec.failed())
+                co_return;
 
-            BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 11u);
-            BOOST_TEST_EQ(stream.data, "hello world");
-        };
+            BOOST_TEST_EQ(ws.data(), "hello world");
+        }));
 
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testWriteExactSize()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // Write exact size
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_write_stream stream;
+            test::write_stream ws(f);
 
-            std::string_view msg = "exact";
-            auto [ec, n] = co_await write(stream, make_buffer(msg));
+            single_buffer_factory bf("exact");
+            auto [ec, n] = co_await write(ws, bf.buffer());
+            if(ec.failed())
+                co_return;
 
-            BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 5u);
-            BOOST_TEST_EQ(stream.data, "exact");
-        };
+            BOOST_TEST_EQ(ws.data(), "exact");
+        }));
 
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testWriteWithChunking()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // Write empty buffer
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_write_stream stream;
-            stream.chunk_size = 3;
+            test::write_stream ws(f);
 
-            std::string_view msg = "abcdefghij";
-            auto [ec, n] = co_await write(stream, make_buffer(msg));
+            auto [ec, n] = co_await write(ws, const_buffer());
+            if(ec.failed())
+                co_return;
 
-            BOOST_TEST(!ec);
-            BOOST_TEST_EQ(n, 10u);
-            BOOST_TEST_EQ(stream.data, "abcdefghij");
-        };
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testWriteEmptyBuffer()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
-        {
-            mock_write_stream stream;
-
-            auto [ec, n] = co_await write(stream, const_buffer());
-
-            BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 0u);
-            BOOST_TEST(stream.data.empty());
-        };
+            BOOST_TEST(ws.data().empty());
+        }));
 
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
+        // Write large data
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::write_stream ws(f);
 
-        BOOST_TEST(completed);
+            std::string large_data(10000, 'x');
+            single_buffer_factory bf(large_data);
+            auto [ec, n] = co_await write(ws, bf.buffer());
+            if(ec.failed())
+                co_return;
+
+            BOOST_TEST_EQ(n, 10000u);
+            BOOST_TEST_EQ(ws.data().size(), 10000u);
+            BOOST_TEST(ws.data() == large_data);
+        }));
     }
 
     void
-    testWriteBufferSequence()
+    testWriteBufferArray()
     {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // Write buffer array completely
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_write_stream stream;
-            stream.chunk_size = 100;
+            test::write_stream ws(f);
 
-            std::string_view msg1 = "hello";
-            std::string_view msg2 = "world";
-            std::array<const_buffer, 2> buffers = {{
-                make_buffer(msg1),
-                make_buffer(msg2)
-            }};
+            buffer_array_factory bf("hello", "world");
+            auto [ec, n] = co_await write(ws, bf.buffer());
+            if(ec.failed())
+                co_return;
 
-            auto [ec, n] = co_await write(stream, buffers);
-
-            BOOST_TEST(!ec);
             BOOST_TEST_EQ(n, 10u);
-            BOOST_TEST_EQ(stream.data, "helloworld");
-        };
+            BOOST_TEST_EQ(ws.data(), "helloworld");
+        }));
 
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testWriteErrorMidway()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // Write buffer array with empty first buffer
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_error_stream stream;
-            stream.error_after = 5;
-            stream.error_to_return = make_error_code(system::errc::io_error);
+            test::write_stream ws(f);
 
-            std::string_view msg = "abcdefghij";
-            auto [ec, n] = co_await write(stream, make_buffer(msg));
+            buffer_array_factory bf("", "world");
+            auto [ec, n] = co_await write(ws, bf.buffer());
+            if(ec.failed())
+                co_return;
 
-            BOOST_TEST(ec == system::errc::io_error);
             BOOST_TEST_EQ(n, 5u);
-            BOOST_TEST_EQ(stream.data, "abcde");
-        };
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
+            BOOST_TEST_EQ(ws.data(), "world");
+        }));
     }
 
     void
-    testWriteImmediateError()
+    testWriteBufferPair()
     {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
+        // Write buffer pair completely
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
         {
-            mock_write_stream stream;
-            stream.forced_error = make_error_code(system::errc::broken_pipe);
+            test::write_stream ws(f);
 
-            std::string_view msg = "data";
-            auto [ec, n] = co_await write(stream, make_buffer(msg));
+            buffer_pair_factory bf("hello", "world");
+            auto [ec, n] = co_await write(ws, bf.buffer());
+            if(ec.failed())
+                co_return;
 
-            BOOST_TEST(ec == system::errc::broken_pipe);
-            BOOST_TEST_EQ(n, 0u);
-            BOOST_TEST(stream.data.empty());
-        };
+            BOOST_TEST_EQ(n, 10u);
+            BOOST_TEST_EQ(ws.data(), "helloworld");
+        }));
 
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
+        // Write buffer pair with uneven sizes
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::write_stream ws(f);
 
-        BOOST_TEST(completed);
+            buffer_pair_factory bf("ab", "cdefgh");
+            auto [ec, n] = co_await write(ws, bf.buffer());
+            if(ec.failed())
+                co_return;
+
+            BOOST_TEST_EQ(n, 8u);
+            BOOST_TEST_EQ(ws.data(), "abcdefgh");
+        }));
     }
 
     void
-    testWriteLargeData()
+    testWriteStream()
     {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
-        {
-            mock_write_stream stream;
-            stream.chunk_size = 100;
-
-            std::string large_data(1000, 'x');
-            auto [ec, n] = co_await write(stream, make_buffer(large_data));
-
-            BOOST_TEST(!ec);
-            BOOST_TEST_EQ(n, 1000u);
-            BOOST_TEST_EQ(stream.data.size(), 1000u);
-            BOOST_TEST(stream.data == large_data);
-        };
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
+        testWriteSingleBuffer();
+        testWriteBufferArray();
+        testWriteBufferPair();
     }
 
     //----------------------------------------------------------
-    // WriteSink tests
-    //----------------------------------------------------------
-
-    void
-    testSinkWriteSingleBuffer()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
-        {
-            mock_write_sink sink;
-
-            std::string_view msg = "hello world";
-            auto [ec, n] = co_await write(sink, make_buffer(msg));
-
-            BOOST_TEST(!ec);
-            BOOST_TEST_EQ(n, 11u);
-            BOOST_TEST_EQ(sink.data, "hello world");
-        };
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testSinkWriteEmptyBuffer()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
-        {
-            mock_write_sink sink;
-
-            auto [ec, n] = co_await write(sink, const_buffer());
-
-            BOOST_TEST(!ec);
-            BOOST_TEST_EQ(n, 0u);
-            BOOST_TEST(sink.data.empty());
-        };
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testSinkWriteError()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
-        {
-            mock_write_sink sink;
-            sink.write_error = make_error_code(system::errc::broken_pipe);
-
-            std::string_view msg = "data";
-            auto [ec, n] = co_await write(sink, make_buffer(msg));
-
-            BOOST_TEST(ec == system::errc::broken_pipe);
-            BOOST_TEST_EQ(n, 0u);
-            BOOST_TEST(sink.data.empty());
-        };
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testSinkWriteWithEof()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
-        {
-            mock_write_sink sink;
-
-            std::string_view msg = "hello";
-            auto [ec, n] = co_await write(sink, make_buffer(msg));
-
-            BOOST_TEST(!ec);
-            BOOST_TEST_EQ(n, 5u);
-            BOOST_TEST_EQ(sink.data, "hello");
-            BOOST_TEST(!sink.finished);
-
-            auto [ec2] = co_await sink.write_eof();
-
-            BOOST_TEST(!ec2);
-            BOOST_TEST(sink.finished);
-        };
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
-
-    void
-    testSinkWriteLargeData()
-    {
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        bool completed = false;
-
-        auto do_test = []() -> task<void>
-        {
-            mock_write_sink sink;
-
-            std::string large_data(1000, 'x');
-            auto [ec, n] = co_await write(sink, make_buffer(large_data));
-
-            BOOST_TEST(!ec);
-            BOOST_TEST_EQ(n, 1000u);
-            BOOST_TEST_EQ(sink.data.size(), 1000u);
-            BOOST_TEST(sink.data == large_data);
-        };
-
-        run_async(ex,
-            [&]() { completed = true; },
-            [](std::exception_ptr) {})(do_test());
-
-        BOOST_TEST(completed);
-    }
 
     void
     run()
     {
-        testWriteSingleBuffer();
-        testWriteExactSize();
-        testWriteWithChunking();
-        testWriteEmptyBuffer();
-        testWriteBufferSequence();
-        testWriteErrorMidway();
-        testWriteImmediateError();
-        testWriteLargeData();
-
-        // WriteSink tests
-        testSinkWriteSingleBuffer();
-        testSinkWriteEmptyBuffer();
-        testSinkWriteError();
-        testSinkWriteWithEof();
-        testSinkWriteLargeData();
+        testWriteStream();
     }
 };
 
@@ -643,4 +275,3 @@ TEST_SUITE(
 
 } // namespace capy
 } // namespace boost
-#endif
