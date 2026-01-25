@@ -376,6 +376,41 @@ public:
     }
 
     void
+    testWritePartial()
+    {
+        fuse f;
+        auto r = f.armed([&](fuse&) -> task<> {
+            write_sink ws(f, 5); // max 5 bytes per write
+
+            auto [ec, n] = co_await ws.write(
+                make_buffer("hello world", 11));
+            if(ec.failed())
+                co_return;
+            BOOST_TEST_EQ(n, 5u);
+            BOOST_TEST_EQ(ws.data(), "hello");
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testWriteWithEofPartial()
+    {
+        fuse f;
+        auto r = f.armed([&](fuse&) -> task<> {
+            write_sink ws(f, 5); // max 5 bytes per write
+
+            auto [ec, n] = co_await ws.write(
+                make_buffer("hello world", 11), true);
+            if(ec.failed())
+                co_return;
+            BOOST_TEST_EQ(n, 5u);
+            BOOST_TEST_EQ(ws.data(), "hello");
+            BOOST_TEST(ws.eof_called());
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -395,6 +430,8 @@ public:
         testExpectWithExistingData();
         testExpectMismatchWithExistingData();
         testClear();
+        testWritePartial();
+        testWriteWithEofPartial();
     }
 };
 

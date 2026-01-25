@@ -67,6 +67,7 @@ class write_sink
     fuse& f_;
     std::string data_;
     std::string expect_;
+    std::size_t max_write_size_;
     bool eof_called_ = false;
 
     system::error_code
@@ -87,9 +88,15 @@ public:
     /** Construct a write sink.
 
         @param f The fuse used to inject errors during writes.
+
+        @param max_write_size Maximum bytes transferred per write.
+        Use to simulate chunked delivery.
     */
-    explicit write_sink(fuse& f) noexcept
+    explicit write_sink(
+        fuse& f,
+        std::size_t max_write_size = std::size_t(-1)) noexcept
         : f_(f)
+        , max_write_size_(max_write_size)
     {
     }
 
@@ -187,14 +194,15 @@ public:
                 if(ec.failed())
                     return {ec, 0};
 
-                std::size_t const n = buffer_size(buffers_);
+                std::size_t n = buffer_size(buffers_);
+                n = (std::min)(n, self_->max_write_size_);
                 if(n == 0)
                     return {{}, 0};
 
                 std::size_t const old_size = self_->data_.size();
                 self_->data_.resize(old_size + n);
                 buffer_copy(make_buffer(
-                    self_->data_.data() + old_size, n), buffers_);
+                    self_->data_.data() + old_size, n), buffers_, n);
 
                 ec = self_->consume_match_();
                 if(ec.failed())
@@ -256,13 +264,14 @@ public:
                 if(ec.failed())
                     return {ec, 0};
 
-                std::size_t const n = buffer_size(buffers_);
+                std::size_t n = buffer_size(buffers_);
+                n = (std::min)(n, self_->max_write_size_);
                 if(n > 0)
                 {
                     std::size_t const old_size = self_->data_.size();
                     self_->data_.resize(old_size + n);
                     buffer_copy(make_buffer(
-                        self_->data_.data() + old_size, n), buffers_);
+                        self_->data_.data() + old_size, n), buffers_, n);
 
                     ec = self_->consume_match_();
                     if(ec.failed())

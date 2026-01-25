@@ -44,19 +44,26 @@ namespace capy {
 
     @par Semantic Requirements
 
-    The `read` operation fills data into the buffer sequence:
+    The `read` operation transfers data into the buffer sequence. On
+    return, exactly one of the following is true:
 
-    @li On success: `!ec.failed()` is `true`, and `n` is the number of bytes
-        read (at least 1).
-    @li On error: `ec.failed()` is `true`, and `n` is 0.
-    @li On end-of-file: `ec == cond::eof` is `true`, and `n` is 0.
-        This is typically satisfied by returning `error::eof`.
+    @li **Success**: `ec.failed()` is `false` and `n` equals
+        `buffer_size( buffers )`. The entire buffer sequence was filled.
+    @li **End-of-stream**: `ec == cond::eof` and `n` is 0. No more data
+        is available. Typically satisfied by returning `error::eof`.
+    @li **Error**: `ec.failed()` is `true` and `n` is 0. The operation
+        failed before completing.
 
-    If `buffer_empty(buffers)` is `true`, the operation completes
-    immediately. `!ec.failed()` is `true`, and `n` is 0.
+    If the source reaches end-of-stream before filling the buffer,
+    the operation returns with `ec.failed()` equal to `true`. Partial
+    reads are not permitted; either the entire buffer is filled or the
+    operation fails.
 
-    Buffers in the sequence are filled completely before proceeding
-    to the next buffer.
+    If `buffer_empty( buffers )` is `true`, the operation completes
+    immediately with `ec.failed()` equal to `false` and `n` equal to 0.
+
+    When the buffer sequence contains multiple buffers, each buffer is
+    filled completely before proceeding to the next.
 
     @par Buffer Lifetime
 
