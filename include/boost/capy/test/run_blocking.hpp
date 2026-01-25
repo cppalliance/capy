@@ -14,6 +14,7 @@
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/ex/system_context.hpp>
 
 #include <condition_variable>
 #include <exception>

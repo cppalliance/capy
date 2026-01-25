@@ -9,6 +9,8 @@
 
 #include <boost/capy/ex/system_context.hpp>
 
+#include <mutex>
+
 namespace boost {
 namespace capy {
 
@@ -16,9 +18,6 @@ auto
 get_system_context() -> thread_pool&
 {
     static thread_pool ctx;
-    // We use a plain allocator here since we do
-    // not expect high throughput work submitted.
-    ctx.set_frame_allocator(std::allocator<char>{});
     return ctx;
 }
 

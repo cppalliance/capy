@@ -169,6 +169,7 @@ thread_pool::
 thread_pool(std::size_t num_threads, std::string_view thread_name_prefix)
     : impl_(new impl(num_threads, thread_name_prefix))
 {
+    this->set_frame_allocator(std::allocator<void>{});
 }
 
 void
