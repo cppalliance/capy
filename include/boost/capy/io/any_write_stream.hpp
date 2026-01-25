@@ -12,6 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/buffers/buffer_param.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/coro.hpp>
@@ -209,17 +210,18 @@ public:
         completes when at least one byte has been written, or an error
         occurs.
 
-        @param buffers Span of const buffers containing data to write.
-            The caller provides the buffer array; this is just
-            a view (pointer + size).
+        @param buffers The buffer sequence containing data to write.
+            Passed by value to ensure the sequence lives in the
+            coroutine frame across suspension points.
 
-        @return An awaitable yielding `(error_code, std::size_t)`.
+        @return An awaitable yielding `(error_code,std::size_t)`.
 
         @par Preconditions
         The wrapper must contain a valid stream (`has_value() == true`).
     */
+    template<ConstBufferSequence CB>
     auto
-    write_some(std::span<const_buffer const> buffers);
+    write_some(CB buffers);
 };
 
 //----------------------------------------------------------
@@ -494,13 +496,14 @@ any_write_stream::do_write_impl(
 
 //----------------------------------------------------------
 
-inline auto
-any_write_stream::write_some(std::span<const_buffer const> buffers)
+template<ConstBufferSequence CB>
+auto
+any_write_stream::write_some(CB buffers)
 {
     struct awaitable
     {
         any_write_stream* self_;
-        std::span<const_buffer const> buffers_;
+        buffer_param<CB> bp_;
         system::error_code ec_;
         std::size_t n_ = 0;
 
@@ -516,7 +519,7 @@ any_write_stream::write_some(std::span<const_buffer const> buffers)
             return self_->vt_->do_write(
                 self_->stream_,
                 self_,
-                buffers_,
+                bp_.data(),
                 h,
                 ex,
                 token,
@@ -530,7 +533,7 @@ any_write_stream::write_some(std::span<const_buffer const> buffers)
             return {ec_, n_};
         }
     };
-    return awaitable{this, buffers, {}, 0};
+    return awaitable{this, buffer_param<CB>(buffers), {}, 0};
 }
 
 } // namespace capy

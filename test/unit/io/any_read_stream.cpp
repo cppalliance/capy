@@ -200,6 +200,58 @@ public:
     }
 
     void
+    testReadSomeSingleBuffer()
+    {
+        // Single buffer passed directly (not wrapped in span)
+        test::fuse f;
+        auto r = f.armed([&](test::fuse&) -> task<> {
+            test::read_stream rs(f);
+            rs.provide("hello world");
+
+            any_read_stream ars(rs);
+
+            char buf[32] = {};
+            mutable_buffer mb(buf, sizeof(buf));
+            auto [ec, n] = co_await ars.read_some(mb);
+            if(ec.failed())
+                co_return;
+
+            BOOST_TEST_EQ(n, 11u);
+            BOOST_TEST_EQ(std::string_view(buf, n), "hello world");
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testReadSomeArray()
+    {
+        // Array of buffers passed directly (not converted to span)
+        test::fuse f;
+        auto r = f.armed([&](test::fuse&) -> task<> {
+            test::read_stream rs(f);
+            rs.provide("helloworld");
+
+            any_read_stream ars(rs);
+
+            char buf1[5] = {};
+            char buf2[5] = {};
+            std::array<mutable_buffer, 2> buffers = {{
+                mutable_buffer(buf1, sizeof(buf1)),
+                mutable_buffer(buf2, sizeof(buf2))
+            }};
+
+            auto [ec, n] = co_await ars.read_some(buffers);
+            if(ec.failed())
+                co_return;
+
+            BOOST_TEST_EQ(n, 10u);
+            BOOST_TEST_EQ(std::string_view(buf1, 5), "hello");
+            BOOST_TEST_EQ(std::string_view(buf2, 5), "world");
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -209,6 +261,8 @@ public:
         testReadSomeMultiple();
         testReadSomeEof();
         testReadSomeBufferSequence();
+        testReadSomeSingleBuffer();
+        testReadSomeArray();
     }
 };
 

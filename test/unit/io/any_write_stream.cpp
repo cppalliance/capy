@@ -172,6 +172,55 @@ public:
     }
 
     void
+    testWriteSomeSingleBuffer()
+    {
+        // Single buffer passed directly (not wrapped in span)
+        test::fuse f;
+        auto r = f.armed([&](test::fuse&) -> task<> {
+            test::write_stream ws(f);
+
+            any_write_stream aws(ws);
+
+            char const data[] = "hello world";
+            const_buffer cb(data, 11);
+            auto [ec, n] = co_await aws.write_some(cb);
+            if(ec.failed())
+                co_return;
+
+            BOOST_TEST_EQ(n, 11u);
+            BOOST_TEST_EQ(ws.data(), "hello world");
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testWriteSomeArray()
+    {
+        // Array of buffers passed directly (not converted to span)
+        test::fuse f;
+        auto r = f.armed([&](test::fuse&) -> task<> {
+            test::write_stream ws(f);
+
+            any_write_stream aws(ws);
+
+            char const data1[] = "hello";
+            char const data2[] = "world";
+            std::array<const_buffer, 2> buffers = {{
+                const_buffer(data1, 5),
+                const_buffer(data2, 5)
+            }};
+
+            auto [ec, n] = co_await aws.write_some(buffers);
+            if(ec.failed())
+                co_return;
+
+            BOOST_TEST_EQ(n, 10u);
+            BOOST_TEST_EQ(ws.data(), "helloworld");
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -180,6 +229,8 @@ public:
         testWriteSomePartial();
         testWriteSomeMultiple();
         testWriteSomeBufferSequence();
+        testWriteSomeSingleBuffer();
+        testWriteSomeArray();
     }
 };
 

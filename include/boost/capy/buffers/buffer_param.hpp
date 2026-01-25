@@ -7,6 +7,23 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
+/*
+    COROUTINE BUFFER SEQUENCE LIFETIME REQUIREMENT
+    ===============================================
+    Buffer sequence parameters in coroutine APIs MUST be passed BY VALUE,
+    never by reference. When a coroutine suspends, reference parameters may
+    dangle if the caller's object goes out of scope before resumption.
+
+    CORRECT:   task<> read_some(MutableBufferSequence auto buffers)
+    WRONG:     task<> read_some(MutableBufferSequence auto& buffers)
+    WRONG:     task<> read_some(MutableBufferSequence auto const& buffers)
+
+    The buffer_param class works with this model: it takes a const& in its
+    constructor (for the non-coroutine scope) but the caller's template
+    function accepts the buffer sequence by value, ensuring the sequence
+    lives in the coroutine frame.
+*/
+
 #ifndef BOOST_CAPY_BUFFERS_BUFFER_PARAM_HPP
 #define BOOST_CAPY_BUFFERS_BUFFER_PARAM_HPP
 
@@ -25,6 +42,21 @@ namespace capy {
     descriptors. It handles both const and mutable buffer
     sequences automatically.
 
+    @par Coroutine Lifetime Requirement
+
+    When used in coroutine APIs, the outer template function
+    MUST accept the buffer sequence parameter BY VALUE:
+
+    @code
+    task<> write(ConstBufferSequence auto buffers);   // CORRECT
+    task<> write(ConstBufferSequence auto& buffers);  // WRONG - dangling reference
+    @endcode
+
+    Pass-by-value ensures the buffer sequence is copied into
+    the coroutine frame and remains valid across suspension
+    points. References would dangle when the caller's scope
+    exits before the coroutine resumes.
+
     @par Purpose
 
     When iterating through large buffer sequences, it is often
@@ -41,8 +73,7 @@ namespace capy {
     the sequence.
 
     @code
-    template<ConstBufferSequence Buffers>
-    void process(Buffers const& buffers)
+    task<> send(ConstBufferSequence auto buffers)
     {
         buffer_param bp(buffers);
         while(true)
@@ -50,7 +81,7 @@ namespace capy {
             auto bufs = bp.data();
             if(bufs.empty())
                 break;
-            auto n = do_something(bufs);
+            auto n = co_await do_something(bufs);
             bp.consume(n);
         }
     }
@@ -60,8 +91,8 @@ namespace capy {
 
     This class enables passing arbitrary buffer sequences through
     a virtual function boundary. The template function captures
-    the concrete type and drives the iteration, while the virtual
-    receives a simple span:
+    the buffer sequence by value and drives the iteration, while
+    the virtual function receives a simple span:
 
     @code
     class base

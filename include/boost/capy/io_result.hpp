@@ -26,12 +26,8 @@ namespace capy {
 
     @par Usage
     @code
-    // Error code path (default)
     auto [ec, n] = co_await s.read_some(buf);
     if (ec) { ... }
-
-    // Exception path (opt-in)
-    auto n = (co_await s.read_some(buf)).value();
     @endcode
 */
 template<class... Args>
@@ -49,9 +45,6 @@ struct io_result
     @code
     auto [ec] = co_await s.connect(ep);
     if (ec) { ... }
-
-    // Or with exceptions:
-    (co_await s.connect(ep)).value();
     @endcode
 */
 template<>
@@ -70,9 +63,6 @@ struct [[nodiscard]] io_result<>
     @code
     auto [ec, n] = co_await s.read_some(buf);
     if (ec) { ... }
-
-    // Or with exceptions:
-    auto n = (co_await s.read_some(buf)).value();
     @endcode
 */
 template<typename T1>

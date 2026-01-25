@@ -12,6 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/buffers/buffer_param.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/coro.hpp>
@@ -209,17 +210,18 @@ public:
         completes when at least one byte has been read, or an error
         occurs.
 
-        @param buffers Span of mutable buffers to read into.
-            The caller provides the buffer array; this is just
-            a view (pointer + size).
+        @param buffers The buffer sequence to read into. Passed by
+            value to ensure the sequence lives in the coroutine frame
+            across suspension points.
 
-        @return An awaitable yielding `(error_code, std::size_t)`.
+        @return An awaitable yielding `(error_code,std::size_t)`.
 
         @par Preconditions
         The wrapper must contain a valid stream (`has_value() == true`).
     */
+    template<MutableBufferSequence MB>
     auto
-    read_some(std::span<mutable_buffer const> buffers);
+    read_some(MB buffers);
 };
 
 //----------------------------------------------------------
@@ -494,13 +496,14 @@ any_read_stream::do_read_impl(
 
 //----------------------------------------------------------
 
-inline auto
-any_read_stream::read_some(std::span<mutable_buffer const> buffers)
+template<MutableBufferSequence MB>
+auto
+any_read_stream::read_some(MB buffers)
 {
     struct awaitable
     {
         any_read_stream* self_;
-        std::span<mutable_buffer const> buffers_;
+        buffer_param<MB> bp_;
         system::error_code ec_;
         std::size_t n_ = 0;
 
@@ -516,7 +519,7 @@ any_read_stream::read_some(std::span<mutable_buffer const> buffers)
             return self_->vt_->do_read(
                 self_->stream_,
                 self_,
-                buffers_,
+                bp_.data(),
                 h,
                 ex,
                 token,
@@ -530,7 +533,7 @@ any_read_stream::read_some(std::span<mutable_buffer const> buffers)
             return {ec_, n_};
         }
     };
-    return awaitable{this, buffers, {}, 0};
+    return awaitable{this, buffer_param<MB>(buffers), {}, 0};
 }
 
 } // namespace capy
