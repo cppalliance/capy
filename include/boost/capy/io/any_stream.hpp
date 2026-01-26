@@ -97,6 +97,24 @@ public:
     */
     any_stream(any_stream&& other) noexcept = default;
 
+    /** Rebinding move constructor.
+
+        Transfers the cached frames and vtables from `other`, but binds
+        to a new stream object. Used by owning wrappers when the owned
+        object moves to a new location.
+
+        @param other The wrapper to move state from.
+        @param new_stream The new stream to bind to. Must be the same
+            type as the original stream.
+    */
+    template<class S>
+        requires ReadStream<S> && WriteStream<S>
+    any_stream(any_stream&& other, S& new_stream) noexcept
+        : any_read_stream(std::move(static_cast<any_read_stream&>(other)), new_stream)
+        , any_write_stream(std::move(static_cast<any_write_stream&>(other)), new_stream)
+    {
+    }
+
     /** Move assignment operator.
 
         Releases existing resources and transfers ownership from both bases.
@@ -149,6 +167,28 @@ public:
     operator bool() const noexcept
     {
         return has_value();
+    }
+
+protected:
+    /** Rebind to a new stream after move.
+
+        Updates the internal pointers in both bases to reference a new
+        stream object. Used by owning wrappers after move assignment
+        when the owned object has moved to a new location.
+
+        @param new_stream The new stream to bind to. Must be the same
+            type as the original stream.
+
+        @note Terminates if called with a stream of different type
+            than the original.
+    */
+    template<class S>
+        requires ReadStream<S> && WriteStream<S>
+    void
+    rebind(S& new_stream) noexcept
+    {
+        any_read_stream::rebind(new_stream);
+        any_write_stream::rebind(new_stream);
     }
 };
 

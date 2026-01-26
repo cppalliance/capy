@@ -25,6 +25,7 @@
 #include <concepts>
 #include <coroutine>
 #include <cstddef>
+#include <exception>
 #include <span>
 #include <stop_token>
 #include <utility>
@@ -143,6 +144,25 @@ public:
     {
     }
 
+    /** Rebinding move constructor.
+
+        Transfers the cached frame and vtable from `other`, but binds
+        to a new source object. Used by owning wrappers when the owned
+        object moves to a new location.
+
+        @param other The wrapper to move state from.
+        @param new_source The new source to bind to. Must be the same
+            type as the original source.
+    */
+    template<ReadSource S>
+    any_read_source(any_read_source&& other, S& new_source) noexcept
+        : source_(&new_source)
+        , vt_(std::exchange(other.vt_, nullptr))
+        , cached_frame_(std::exchange(other.cached_frame_, nullptr))
+        , cached_size_(std::exchange(other.cached_size_, 0))
+    {
+    }
+
     /** Move assignment operator.
 
         Releases any existing cached frame, then transfers ownership
@@ -231,6 +251,28 @@ public:
     template<MutableBufferSequence MB>
     task<io_result<std::size_t>>
     read(MB buffers);
+
+protected:
+    /** Rebind to a new source after move.
+
+        Updates the internal pointer to reference a new source object.
+        Used by owning wrappers after move assignment when the owned
+        object has moved to a new location.
+
+        @param new_source The new source to bind to. Must be the same
+            type as the original source.
+
+        @note Terminates if called with a source of different type
+            than the original.
+    */
+    template<ReadSource S>
+    void
+    rebind(S& new_source) noexcept
+    {
+        if(vt_ != &vtable_for_impl<S>::value)
+            std::terminate();
+        source_ = &new_source;
+    }
 
 private:
     auto

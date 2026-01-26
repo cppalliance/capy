@@ -24,6 +24,7 @@
 #include <concepts>
 #include <coroutine>
 #include <cstddef>
+#include <exception>
 #include <span>
 #include <stop_token>
 #include <utility>
@@ -142,6 +143,25 @@ public:
     {
     }
 
+    /** Rebinding move constructor.
+
+        Transfers the cached frame and vtable from `other`, but binds
+        to a new stream object. Used by owning wrappers when the owned
+        object moves to a new location.
+
+        @param other The wrapper to move state from.
+        @param new_stream The new stream to bind to. Must be the same
+            type as the original stream.
+    */
+    template<WriteStream S>
+    any_write_stream(any_write_stream&& other, S& new_stream) noexcept
+        : stream_(&new_stream)
+        , vt_(std::exchange(other.vt_, nullptr))
+        , cached_frame_(std::exchange(other.cached_frame_, nullptr))
+        , cached_size_(std::exchange(other.cached_size_, 0))
+    {
+    }
+
     /** Move assignment operator.
 
         Releases any existing cached frame, then transfers ownership
@@ -222,6 +242,28 @@ public:
     template<ConstBufferSequence CB>
     auto
     write_some(CB buffers);
+
+protected:
+    /** Rebind to a new stream after move.
+
+        Updates the internal pointer to reference a new stream object.
+        Used by owning wrappers after move assignment when the owned
+        object has moved to a new location.
+
+        @param new_stream The new stream to bind to. Must be the same
+            type as the original stream.
+
+        @note Terminates if called with a stream of different type
+            than the original.
+    */
+    template<WriteStream S>
+    void
+    rebind(S& new_stream) noexcept
+    {
+        if(vt_ != &vtable_for_impl<S>::value)
+            std::terminate();
+        stream_ = &new_stream;
+    }
 };
 
 //----------------------------------------------------------

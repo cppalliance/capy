@@ -59,7 +59,7 @@ namespace test {
 */
 class write_stream
 {
-    fuse& f_;
+    fuse* f_;
     std::string data_;
     std::string expect_;
     std::size_t max_write_size_;
@@ -89,7 +89,7 @@ public:
     explicit write_stream(
         fuse& f,
         std::size_t max_write_size = std::size_t(-1)) noexcept
-        : f_(f)
+        : f_(&f)
         , max_write_size_(max_write_size)
     {
     }
@@ -168,7 +168,7 @@ public:
             io_result<std::size_t>
             await_resume()
             {
-                auto ec = self_->f_.maybe_fail();
+                auto ec = self_->f_->maybe_fail();
                 if(ec.failed())
                     return {ec, 0};
 

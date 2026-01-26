@@ -25,6 +25,7 @@
 #include <concepts>
 #include <coroutine>
 #include <cstddef>
+#include <exception>
 #include <span>
 #include <stop_token>
 #include <utility>
@@ -173,6 +174,25 @@ public:
     {
     }
 
+    /** Rebinding move constructor.
+
+        Transfers the cached frame and vtable from `other`, but binds
+        to a new sink object. Used by owning wrappers when the owned
+        object moves to a new location.
+
+        @param other The wrapper to move state from.
+        @param new_sink The new sink to bind to. Must be the same
+            type as the original sink.
+    */
+    template<WriteSink S>
+    any_write_sink(any_write_sink&& other, S& new_sink) noexcept
+        : sink_(&new_sink)
+        , vt_(std::exchange(other.vt_, nullptr))
+        , cached_frame_(std::exchange(other.cached_frame_, nullptr))
+        , cached_size_(std::exchange(other.cached_size_, 0))
+    {
+    }
+
     /** Move assignment operator.
 
         Releases any existing cached frame, then transfers ownership
@@ -293,6 +313,28 @@ public:
     */
     auto
     write_eof();
+
+protected:
+    /** Rebind to a new sink after move.
+
+        Updates the internal pointer to reference a new sink object.
+        Used by owning wrappers after move assignment when the owned
+        object has moved to a new location.
+
+        @param new_sink The new sink to bind to. Must be the same
+            type as the original sink.
+
+        @note Terminates if called with a sink of different type
+            than the original.
+    */
+    template<WriteSink S>
+    void
+    rebind(S& new_sink) noexcept
+    {
+        if(vt_ != &vtable_for_impl<S>::value)
+            std::terminate();
+        sink_ = &new_sink;
+    }
 
 private:
     auto
