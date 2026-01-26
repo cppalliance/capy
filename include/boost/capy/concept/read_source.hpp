@@ -49,15 +49,13 @@ namespace capy {
 
     @li **Success**: `ec.failed()` is `false` and `n` equals
         `buffer_size( buffers )`. The entire buffer sequence was filled.
-    @li **End-of-stream**: `ec == cond::eof` and `n` is 0. No more data
-        is available. Typically satisfied by returning `error::eof`.
-    @li **Error**: `ec.failed()` is `true` and `n` is 0. The operation
-        failed before completing.
+    @li **End-of-stream or Error**: `ec.failed()` is `true` and `n`
+        indicates the number of bytes transferred before the failure.
 
     If the source reaches end-of-stream before filling the buffer,
-    the operation returns with `ec.failed()` equal to `true`. Partial
-    reads are not permitted; either the entire buffer is filled or the
-    operation fails.
+    the operation returns with `ec.failed()` equal to `true`. Successful
+    partial reads are not permitted; either the entire buffer is filled
+    or the operation fails with any partial data reported in `n`.
 
     If `buffer_empty( buffers )` is `true`, the operation completes
     immediately with `ec.failed()` equal to `false` and `n` equal to 0.
@@ -76,7 +74,19 @@ namespace capy {
     template<MutableBufferSequence MB>
     some_io_awaitable<io_result<std::size_t>>
     read( MB const& buffers );
+
+    template<MutableBufferSequence MB>
+    some_io_awaitable<io_result<std::size_t>>
+    read( MB buffers );  // by-value also permitted
     @endcode
+
+    @warning **Coroutine Buffer Lifetime**: When implementing coroutine
+    member functions, prefer accepting buffer sequences **by value**
+    rather than by reference. Buffer sequences passed by reference may
+    become dangling if the caller's stack frame is destroyed before the
+    coroutine completes. Passing by value ensures the buffer sequence
+    is copied into the coroutine frame and remains valid across
+    suspension points.
 
     @par Example
 

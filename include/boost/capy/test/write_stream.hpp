@@ -149,12 +149,12 @@ public:
     */
     template<ConstBufferSequence CB>
     auto
-    write_some(CB const& buffers)
+    write_some(CB buffers)
     {
         struct awaitable
         {
             write_stream* self_;
-            CB const& buffers_;
+            CB buffers_;
 
             bool await_ready() const noexcept { return true; }
 

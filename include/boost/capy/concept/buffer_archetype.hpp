@@ -35,10 +35,10 @@ namespace capy {
 struct const_buffer_archetype_
 {
     const_buffer_archetype_() = delete;
-    const_buffer_archetype_(const_buffer_archetype_ const&) = delete;
-    const_buffer_archetype_(const_buffer_archetype_&&) = delete;
-    const_buffer_archetype_& operator=(const_buffer_archetype_ const&) = delete;
-    const_buffer_archetype_& operator=(const_buffer_archetype_&&) = delete;
+    const_buffer_archetype_(const_buffer_archetype_ const&) = default;
+    const_buffer_archetype_(const_buffer_archetype_&&) = default;
+    const_buffer_archetype_& operator=(const_buffer_archetype_ const&) = default;
+    const_buffer_archetype_& operator=(const_buffer_archetype_&&) = default;
 
     operator const_buffer() const noexcept { return {}; }
 };
@@ -71,10 +71,10 @@ using const_buffer_archetype = const_buffer_archetype_;
 struct mutable_buffer_archetype_
 {
     mutable_buffer_archetype_() = delete;
-    mutable_buffer_archetype_(mutable_buffer_archetype_ const&) = delete;
-    mutable_buffer_archetype_(mutable_buffer_archetype_&&) = delete;
-    mutable_buffer_archetype_& operator=(mutable_buffer_archetype_ const&) = delete;
-    mutable_buffer_archetype_& operator=(mutable_buffer_archetype_&&) = delete;
+    mutable_buffer_archetype_(mutable_buffer_archetype_ const&) = default;
+    mutable_buffer_archetype_(mutable_buffer_archetype_&&) = default;
+    mutable_buffer_archetype_& operator=(mutable_buffer_archetype_ const&) = default;
+    mutable_buffer_archetype_& operator=(mutable_buffer_archetype_&&) = default;
 
     operator mutable_buffer() const noexcept { return {}; }
     operator const_buffer() const noexcept { return {}; }

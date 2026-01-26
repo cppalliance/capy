@@ -164,7 +164,7 @@ public:
             if(ec.failed() && ec != cond::eof)
                 co_return; // fuse-injected error
             BOOST_TEST(ec == cond::eof);
-            BOOST_TEST_EQ(n, 0u);
+            BOOST_TEST_EQ(n, 2u); // 2 bytes read before EOF
         });
         BOOST_TEST(r.success);
     }

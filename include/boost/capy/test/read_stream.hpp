@@ -132,12 +132,12 @@ public:
     */
     template<MutableBufferSequence MB>
     auto
-    read_some(MB const& buffers)
+    read_some(MB buffers)
     {
         struct awaitable
         {
             read_stream* self_;
-            MB const& buffers_;
+            MB buffers_;
 
             bool await_ready() const noexcept { return true; }
 

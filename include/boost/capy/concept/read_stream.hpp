@@ -67,7 +67,19 @@ namespace capy {
     template<MutableBufferSequence MB>
     some_io_awaitable<std::pair<system::error_code, std::size_t>>
     read_some(MB const& buffers);
+
+    template<MutableBufferSequence MB>
+    some_io_awaitable<std::pair<system::error_code, std::size_t>>
+    read_some(MB buffers);  // by-value also permitted
     @endcode
+
+    @warning **Coroutine Buffer Lifetime**: When implementing coroutine
+    member functions, prefer accepting buffer sequences **by value**
+    rather than by reference. Buffer sequences passed by reference may
+    become dangling if the caller's stack frame is destroyed before the
+    coroutine completes. Passing by value ensures the buffer sequence
+    is copied into the coroutine frame and remains valid across
+    suspension points.
 
     @par Example
 

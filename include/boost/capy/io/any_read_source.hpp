@@ -222,10 +222,8 @@ public:
         Exactly one of the following is true on return:
         @li **Success**: `!ec.failed()` and `n == buffer_size(buffers)`.
             The entire buffer was filled.
-        @li **End-of-stream**: `ec == cond::eof` and `n == 0`.
-            No more data available.
-        @li **Error**: `ec.failed()` and `n == 0`.
-            The operation failed.
+        @li **End-of-stream or Error**: `ec.failed()` and `n` indicates
+            the number of bytes transferred before the failure.
 
         @par Preconditions
         The wrapper must contain a valid source (`has_value() == true`).
@@ -551,7 +549,7 @@ template<MutableBufferSequence MB>
 task<io_result<std::size_t>>
 any_read_source::read(MB buffers)
 {
-    buffer_param<MB> bp(buffers);
+    buffer_param<MB> bp(std::move(buffers));
     std::size_t total = 0;
 
     for(;;)
@@ -561,10 +559,10 @@ any_read_source::read(MB buffers)
             break;
 
         auto [ec, n] = co_await read_some_(bufs);
-        if(ec.failed())
-            co_return {ec, 0};
-        bp.consume(n);
         total += n;
+        if(ec.failed())
+            co_return {ec, total};
+        bp.consume(n);
     }
 
     co_return {{}, total};

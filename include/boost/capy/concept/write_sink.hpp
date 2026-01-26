@@ -89,11 +89,27 @@ namespace capy {
 
     template<ConstBufferSequence CB>
     some_io_awaitable<io_result<std::size_t>>
+    write( CB buffers );  // by-value also permitted
+
+    template<ConstBufferSequence CB>
+    some_io_awaitable<io_result<std::size_t>>
     write( CB const& buffers, bool eof );
+
+    template<ConstBufferSequence CB>
+    some_io_awaitable<io_result<std::size_t>>
+    write( CB buffers, bool eof );  // by-value also permitted
 
     some_io_awaitable<io_result<>>
     write_eof();
     @endcode
+
+    @warning **Coroutine Buffer Lifetime**: When implementing coroutine
+    member functions, prefer accepting buffer sequences **by value**
+    rather than by reference. Buffer sequences passed by reference may
+    become dangling if the caller's stack frame is destroyed before the
+    coroutine completes. Passing by value ensures the buffer sequence
+    is copied into the coroutine frame and remains valid across
+    suspension points.
 
     @par Example
 

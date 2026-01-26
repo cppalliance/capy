@@ -171,12 +171,12 @@ public:
     */
     template<ConstBufferSequence CB>
     auto
-    write(CB const& buffers)
+    write(CB buffers)
     {
         struct awaitable
         {
             write_sink* self_;
-            CB const& buffers_;
+            CB buffers_;
 
             bool await_ready() const noexcept { return true; }
 
@@ -240,12 +240,12 @@ public:
     */
     template<ConstBufferSequence CB>
     auto
-    write(CB const& buffers, bool eof)
+    write(CB buffers, bool eof)
     {
         struct awaitable
         {
             write_sink* self_;
-            CB const& buffers_;
+            CB buffers_;
             bool eof_;
 
             bool await_ready() const noexcept { return true; }

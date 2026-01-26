@@ -53,7 +53,7 @@ namespace capy {
     {
         template<ConstBufferSequence CB>
         immediate<io_result<std::size_t>>
-        write(CB const& buffers)
+        write(CB buffers)
         {
             auto n = process_sync(buffers);
             return {{{}, n}};
