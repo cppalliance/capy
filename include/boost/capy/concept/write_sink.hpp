@@ -26,7 +26,7 @@ namespace capy {
 
     A type satisfies `WriteSink` if it provides `write` and `write_eof`
     member functions that are @ref IoAwaitable and whose return values
-    decompose to `( system::error_code )` or `( system::error_code, std::size_t )`.
+    decompose to `(error_code)` or `(error_code,std::size_t)`.
 
     Use this concept when you need to consume data asynchronously, such
     as writing HTTP response bodies, streaming file contents, or piping
@@ -38,13 +38,12 @@ namespace capy {
 
     @li `T` must provide a `write` member function template accepting
         any @ref ConstBufferSequence, returning an awaitable that
-        decomposes to `( system::error_code, std::size_t )`
+        decomposes to `(error_code,std::size_t)`
     @li `T` must provide a `write` member function template accepting
         any @ref ConstBufferSequence and a `bool eof` parameter,
-        returning an awaitable that decomposes to
-        `( system::error_code, std::size_t )`
+        returning an awaitable that decomposes to `(error_code,std::size_t)`
     @li `T` must provide a `write_eof` member function taking no arguments,
-        returning an awaitable that decomposes to `( system::error_code )`
+        returning an awaitable that decomposes to `(error_code)`
     @li All return types must satisfy @ref IoAwaitable
 
     @par Semantic Requirements
@@ -83,24 +82,13 @@ namespace capy {
     @par Conforming Signatures
 
     @code
-    template<ConstBufferSequence CB>
-    some_io_awaitable<io_result<std::size_t>>
-    write( CB const& buffers );
+    template< ConstBufferSequence Buffers >
+    IoAwaitable auto write( Buffers buffers );
 
-    template<ConstBufferSequence CB>
-    some_io_awaitable<io_result<std::size_t>>
-    write( CB buffers );  // by-value also permitted
+    template< ConstBufferSequence Buffers >
+    IoAwaitable auto write( Buffers buffers, bool eof );
 
-    template<ConstBufferSequence CB>
-    some_io_awaitable<io_result<std::size_t>>
-    write( CB const& buffers, bool eof );
-
-    template<ConstBufferSequence CB>
-    some_io_awaitable<io_result<std::size_t>>
-    write( CB buffers, bool eof );  // by-value also permitted
-
-    some_io_awaitable<io_result<>>
-    write_eof();
+    IoAwaitable auto write_eof();
     @endcode
 
     @warning **Coroutine Buffer Lifetime**: When implementing coroutine
@@ -114,8 +102,8 @@ namespace capy {
     @par Example
 
     @code
-    template<WriteSink Sink>
-    task<void> send_body( Sink& sink, std::string_view data )
+    template< WriteSink Sink >
+    task<> send_body( Sink& sink, std::string_view data )
     {
         auto [ec, n] = co_await sink.write( make_buffer( data ) );
         if( ec.failed() )
@@ -124,8 +112,8 @@ namespace capy {
     }
 
     // Or equivalently using the combined overload:
-    template<WriteSink Sink>
-    task<void> send_body2( Sink& sink, std::string_view data )
+    template< WriteSink Sink >
+    task<> send_body2( Sink& sink, std::string_view data )
     {
         auto [ec, n] = co_await sink.write( make_buffer( data ), true );
     }

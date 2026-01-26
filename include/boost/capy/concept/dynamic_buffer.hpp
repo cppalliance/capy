@@ -16,6 +16,37 @@
 #include <cstddef>
 #include <type_traits>
 
+/*
+    LLM INSTRUCTION: Passing Dynamic Buffers Correctly
+
+    There are two kinds of dynamic buffer types:
+
+    1. VALUE TYPES (e.g., flat_dynamic_buffer)
+       - Store bookkeeping (size, capacity) internally
+       - MUST be passed by lvalue reference to preserve state
+       - Passing as rvalue loses bookkeeping on coroutine suspend
+
+    2. WRAPPER ADAPTERS (e.g., string_buffers)
+       - Reference external storage (std::string, std::vector)
+       - Safe to pass as rvalues; external object retains data
+       - Define `using is_dynamic_buffer_adapter = void;`
+
+    When writing functions:
+
+    - NON-COROUTINE: Use `DynamicBuffer auto&` (lvalue ref)
+        void fill(DynamicBuffer auto& buffers);
+
+    - COROUTINE: Use `DynamicBufferParam auto&&` (forwarding ref)
+        task<io_result<size_t>> read(DynamicBufferParam auto&& buffers);
+
+    DynamicBufferParam enforces safe passing at compile time:
+    accepts lvalues of any DynamicBuffer, but rvalues only for adapters.
+
+    WRONG patterns that compile but misbehave:
+    - Using DynamicBuffer in coroutines (allows dangerous rvalues)
+    - Using lvalue ref with DynamicBufferParam (rejects valid adapters)
+*/
+
 namespace boost {
 namespace capy {
 
@@ -30,10 +61,29 @@ namespace capy {
     - `prepare(n)` returns buffer sequence valid until `commit()` or next `prepare()`
     - Types may reference external storage; caller manages lifetime
 
+    @par Value Types vs Wrapper Adapters
+    Dynamic buffer types fall into two categories:
+
+    - **Value types** (e.g., `flat_dynamic_buffer`) store bookkeeping
+      internally. Passing as rvalue to a coroutine loses state on suspend.
+
+    - **Wrapper adapters** (e.g., `string_buffers`) reference external
+      storage and are safe as rvalues since the external object persists.
+
     @par Conforming Signatures
-    For non-coroutine functions, accept by lvalue reference:
+    For **non-coroutine** functions, use `DynamicBuffer auto&`:
     @code
     void fill( DynamicBuffer auto& buffers );
+    @endcode
+
+    For **coroutine** functions, use `DynamicBufferParam auto&&` instead.
+    This concept enforces lifetime safety: it accepts lvalues of any
+    DynamicBuffer, but restricts rvalues to adapter types only. Using
+    plain `DynamicBuffer` in coroutines allows dangerous rvalue passing
+    that compiles but silently loses data on suspend.
+    @code
+    task<io_result<std::size_t>>
+    read( ReadSource auto& src, DynamicBufferParam auto&& buffers );
     @endcode
 
     @par Example

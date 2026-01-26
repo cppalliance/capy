@@ -27,7 +27,7 @@ namespace capy {
     A type satisfies `WriteStream` if it provides a `write_some`
     member function template that accepts any @ref ConstBufferSequence
     and is an @ref IoAwaitable whose return value decomposes to
-    `(system::error_code, std::size_t)`.
+    `(error_code,std::size_t)`.
 
     @tparam T The stream type.
 
@@ -37,19 +37,19 @@ namespace capy {
         accepting any @ref ConstBufferSequence
     @li The return type of `write_some` must satisfy @ref IoAwaitable
     @li The awaitable's result must decompose to
-        `(system::error_code, std::size_t)` via structured bindings
+        `(error_code,std::size_t)` via structured bindings
 
     @par Semantic Requirements
 
-    If `buffer_size(buffers) > 0`, the operation writes one or more
+    If `buffer_size( buffers ) > 0`, the operation writes one or more
     bytes of data to the stream from the buffer sequence:
 
-    @li On success: `!ec` is `true`, and `n` is the number of bytes
+    @li On success: `!ec.failed()`, and `n` is the number of bytes
         written.
-    @li On error: `!!ec` is `true`, and `n` is 0.
+    @li On error: `ec.failed()`, and `n` is 0.
 
-    If `buffer_empty(buffers)` is `true`, the operation completes
-    immediately. `!ec` is `true`, and `n` is 0.
+    If `buffer_empty( buffers )` is `true`, the operation completes
+    immediately. `!ec.failed()`, and `n` is 0.
 
     Buffers in the sequence are written completely before proceeding
     to the next buffer.
@@ -62,14 +62,8 @@ namespace capy {
     @par Conforming Signatures
 
     @code
-    // Templated for any ConstBufferSequence
-    template<ConstBufferSequence CB>
-    some_io_awaitable<std::pair<system::error_code, std::size_t>>
-    write_some(CB const& buffers);
-
-    template<ConstBufferSequence CB>
-    some_io_awaitable<std::pair<system::error_code, std::size_t>>
-    write_some(CB buffers);  // by-value also permitted
+    template< ConstBufferSequence Buffers >
+    IoAwaitable auto write_some( Buffers buffers );
     @endcode
 
     @warning **Coroutine Buffer Lifetime**: When implementing coroutine
@@ -83,15 +77,15 @@ namespace capy {
     @par Example
 
     @code
-    template<WriteStream Stream>
-    task<void> write_all(Stream& s, char const* buf, std::size_t size)
+    template< WriteStream Stream >
+    task<> write_all( Stream& s, char const* buf, std::size_t size )
     {
         std::size_t total = 0;
-        while (total < size)
+        while( total < size )
         {
             auto [ec, n] = co_await s.write_some(
-                const_buffer(buf + total, size - total));
-            if (ec)
+                const_buffer( buf + total, size - total ) );
+            if( ec.failed() )
                 co_return;
             total += n;
         }

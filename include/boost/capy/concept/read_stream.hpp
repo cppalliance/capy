@@ -22,55 +22,46 @@
 namespace boost {
 namespace capy {
 
-/** Concept for types that provide awaitable read operations.
+/** Concept for types providing awaitable read operations.
 
     A type satisfies `ReadStream` if it provides a `read_some`
     member function template that accepts any @ref MutableBufferSequence
-    and is an @ref IoAwaitable whose return value decomposes to
-    `(system::error_code, std::size_t)`.
-
-    @tparam T The stream type.
+    and is an @ref IoAwaitable yielding `(error_code,std::size_t)`.
 
     @par Syntactic Requirements
-
     @li `T` must provide a `read_some` member function template
         accepting any @ref MutableBufferSequence
     @li The return type of `read_some` must satisfy @ref IoAwaitable
     @li The awaitable's result must decompose to
-        `(system::error_code, std::size_t)` via structured bindings
+        `(error_code,std::size_t)` via structured bindings
 
     @par Semantic Requirements
-
-    If `buffer_size(buffers) > 0`, the operation reads one or more
+    If `buffer_size( buffers ) > 0`, the operation reads one or more
     bytes from the stream into the buffer sequence:
 
-    @li On success: `!ec` is `true`, and `n` is the number of bytes
+    @li On success: `!ec.failed()`, and `n` is the number of bytes
         read (at least 1).
-    @li On error: `!!ec` is `true`, and `n` is 0.
-    @li On end-of-file: `ec == cond::eof` is `true`, and `n` is 0.
+    @li On error: `ec.failed()`, and `n` is 0.
+    @li On end-of-file: `ec == cond::eof`, and `n` is 0.
 
-    If `buffer_empty(buffers)` is `true`, the operation completes
-    immediately. `!ec` is `true`, and `n` is 0.
+    If `buffer_empty( buffers )` is `true`, the operation completes
+    immediately. `!ec.failed()`, and `n` is 0.
 
     Buffers in the sequence are filled completely before proceeding
     to the next buffer.
 
     @par Buffer Lifetime
-
     The caller must ensure that the memory referenced by `buffers`
     remains valid until the `co_await` expression returns.
 
     @par Conforming Signatures
-
     @code
     // Templated for any MutableBufferSequence
-    template<MutableBufferSequence MB>
-    some_io_awaitable<std::pair<system::error_code, std::size_t>>
-    read_some(MB const& buffers);
+    template< MutableBufferSequence MB >
+    IoAwaitable auto read_some( MB const& buffers );
 
-    template<MutableBufferSequence MB>
-    some_io_awaitable<std::pair<system::error_code, std::size_t>>
-    read_some(MB buffers);  // by-value also permitted
+    template< MutableBufferSequence MB >
+    IoAwaitable auto read_some( MB buffers );  // by-value also permitted
     @endcode
 
     @warning **Coroutine Buffer Lifetime**: When implementing coroutine
@@ -82,17 +73,16 @@ namespace capy {
     suspension points.
 
     @par Example
-
     @code
-    template<ReadStream Stream>
-    task<void> read_all(Stream& s, char* buf, std::size_t size)
+    template< ReadStream Stream >
+    task<> read_all( Stream& s, char* buf, std::size_t size )
     {
         std::size_t total = 0;
-        while (total < size)
+        while( total < size )
         {
             auto [ec, n] = co_await s.read_some(
-                mutable_buffer(buf + total, size - total));
-            if (ec)
+                mutable_buffer( buf + total, size - total ) );
+            if( ec.failed() )
                 co_return;
             total += n;
         }
