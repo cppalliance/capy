@@ -16,8 +16,8 @@
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/buffer_sink.hpp>
-#include <boost/capy/test/buffer_source.hpp>
 #include <boost/capy/test/read_source.hpp>
+#include <boost/capy/test/read_stream.hpp>
 
 #include "test/unit/test_helpers.hpp"
 
@@ -211,11 +211,11 @@ public:
     }
 
     void
-    testPullFrom()
+    testPullFromReadStream()
     {
         test::fuse f;
         auto r = f.armed([&](test::fuse&) -> task<> {
-            test::buffer_source src(f);
+            test::read_stream src(f);
             src.provide("hello world");
 
             test::buffer_sink sink(f);
@@ -232,11 +232,11 @@ public:
     }
 
     void
-    testPullFromTypeErased()
+    testPullFromReadStreamTypeErased()
     {
         test::fuse f;
         auto r = f.armed([&](test::fuse&) -> task<> {
-            test::buffer_source src(f);
+            test::read_stream src(f);
             src.provide("hello world");
 
             test::buffer_sink sink(f);
@@ -254,11 +254,11 @@ public:
     }
 
     void
-    testPullFromChunked()
+    testPullFromReadStreamChunked()
     {
         test::fuse f;
         auto r = f.armed([&](test::fuse&) -> task<> {
-            test::buffer_source src(f, 5); // max 5 bytes per pull
+            test::read_stream src(f, 5); // max 5 bytes per read
             src.provide("hello world");
 
             test::buffer_sink sink(f);
@@ -275,11 +275,11 @@ public:
     }
 
     void
-    testPullFromEmpty()
+    testPullFromReadStreamEmpty()
     {
         test::fuse f;
         auto r = f.armed([&](test::fuse&) -> task<> {
-            test::buffer_source src(f);
+            test::read_stream src(f);
             // No data provided
 
             test::buffer_sink sink(f);
@@ -390,10 +390,10 @@ public:
         testCommitEof();
         testMultipleCommits();
         testEmptyCommit();
-        testPullFrom();
-        testPullFromTypeErased();
-        testPullFromChunked();
-        testPullFromEmpty();
+        testPullFromReadStream();
+        testPullFromReadStreamTypeErased();
+        testPullFromReadStreamChunked();
+        testPullFromReadStreamEmpty();
         testPullFromReadSource();
         testPullFromReadSourceTypeErased();
         testPullFromReadSourceChunked();

@@ -7,35 +7,91 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-= Stream Concepts
+= I/O Streams
 
-This page explains Capy's stream concepts for generic I/O operations.
-Understanding the distinction between partial and complete operations
-is key to writing correct network code.
+This page explains Capy's I/O stream concepts for generic data transfer operations.
+Understanding the six concepts and their buffer ownership patterns is key to writing
+efficient, composable network code.
 
 NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
 
-== Stream vs Source/Sink
+== Part I: Overview and Philosophy
 
-Capy distinguishes between two levels of I/O abstraction:
+Capy provides six I/O concepts organized into three levels of abstraction,
+each with distinct buffer ownership semantics.
 
-[cols="1,1,3"]
+=== The Three Levels
+
+[cols="1,2,2,2"]
 |===
-| Level | Concepts | Behavior
+| Level | Read Side | Write Side | Characteristics
 
 | **Partial**
-| `ReadStream`, `WriteStream`
+| `ReadStream`
+| `WriteStream`
 | Single operation, may transfer less than requested
 
 | **Complete**
-| `ReadSource`, `WriteSink`
-| Loops internally, fills/drains buffers completely
+| `ReadSource`
+| `WriteSink`
+| Loops internally, fills/drains buffers completely, EOF signaling
+
+| **Buffer-Owned**
+| `BufferSource`
+| `BufferSink`
+| Callee owns buffers, enables zero-copy transfers
 |===
 
-The stream concepts (`read_some`/`write_some`) map closely to OS system calls.
-The source/sink concepts (`read`/`write`) build loops around partial operations.
+=== Buffer Ownership Patterns
 
-== ReadStream
+The concepts divide into two ownership models:
+
+**Caller-Owns-Buffers** (ReadStream, WriteStream, ReadSource, WriteSink)::
+The caller provides buffer memory. The I/O operation reads into or writes from
+the caller's buffers. This is the traditional model matching OS system calls.
+
+**Callee-Owns-Buffers** (BufferSource, BufferSink)::
+The I/O object owns the buffer memory. BufferSource provides `const_buffer`
+descriptors pointing to its internal storage. BufferSink provides writable
+`mutable_buffer` descriptors. This enables zero-copy data flow.
+
+=== Concept Relationships
+
+[mermaid]
+----
+flowchart TB
+    subgraph callerOwns [Caller Owns Buffers]
+        RS[ReadStream<br/>read_some]
+        WS[WriteStream<br/>write_some]
+        RSrc[ReadSource<br/>read]
+        WSink[WriteSink<br/>write + EOF]
+    end
+
+    subgraph calleeOwns [Callee Owns Buffers]
+        BSrc[BufferSource<br/>pull]
+        BSink[BufferSink<br/>prepare + commit]
+    end
+
+    RS -.->|loops to fill| RSrc
+    WS -.->|loops to drain| WSink
+
+    BSrc -->|push_to| WSink
+    BSrc -->|push_to| WS
+    RSrc -->|pull_from| BSink
+    RS -->|pull_from| BSink
+----
+
+The stream concepts (`read_some`/`write_some`) map directly to OS system calls.
+The source/sink concepts build loops around partial operations. The buffer
+concepts invert ownership for zero-copy efficiency.
+
+== Part II: Stream Concepts (Partial I/O)
+
+The stream concepts are modeled after Boost.Asio's `AsyncReadStream` and
+`AsyncWriteStream`. They provide single-operation semantics that may transfer
+fewer bytes than requested.
+
+=== ReadStream
 
 A `ReadStream` provides partial read operations via `read_some()`:
 
@@ -49,7 +105,7 @@ concept ReadStream = requires(T& stream, MutableBufferSequence auto buffers)
 };
 ----
 
-=== Behavior
+==== Behavior
 
 `read_some()` reads **at least one byte** (unless EOF or error) but may
 read fewer bytes than the buffer can hold:
@@ -61,15 +117,15 @@ auto [ec, n] = co_await stream.read_some(mutable_buffer(buffer, 1024));
 // n might be 100, even though buffer holds 1024
 ----
 
-This matches OS behavior—`recv()` returns whatever data is available.
+This matches OS behavior: `recv()` returns whatever data is currently available.
 
-=== Return Values
+==== Return Values
 
 * **Success**: `!ec.failed()` is true, `n >= 1`
 * **EOF**: `ec == cond::eof`, `n == 0`
 * **Error**: `ec.failed()` is true, `n == 0`
 
-=== Example
+==== Example
 
 [source,cpp]
 ----
@@ -85,7 +141,7 @@ task<std::string> read_available(ReadStream auto& stream)
 
 Reference: `<boost/capy/concept/read_stream.hpp>`
 
-== WriteStream
+=== WriteStream
 
 A `WriteStream` provides partial write operations via `write_some()`:
 
@@ -99,7 +155,7 @@ concept WriteStream = requires(T& stream, ConstBufferSequence auto buffers)
 };
 ----
 
-=== Behavior
+==== Behavior
 
 `write_some()` writes **at least one byte** (unless error) but may write
 fewer bytes than provided:
@@ -111,29 +167,35 @@ auto [ec, n] = co_await stream.write_some(make_buffer(data));
 // n might be 8192, even though data has 10000 bytes
 ----
 
-This matches OS behavior—`send()` may accept only part of your data.
+This matches OS behavior: `send()` may accept only part of your data when
+kernel buffers are constrained.
 
-=== Return Values
+==== Return Values
 
 * **Success**: `!ec.failed()` is true, `n >= 1`
 * **Error**: `ec.failed()` is true, `n == 0`
 
-=== Example
+==== Example
 
 [source,cpp]
 ----
-task<void> write_chunk(WriteStream auto& stream, std::string_view data)
+task<> write_chunk(WriteStream auto& stream, std::string_view data)
 {
     auto [ec, n] = co_await stream.write_some(make_buffer(data));
     if (ec.failed())
         co_return;
-    // Only n bytes were written
+    // Only n bytes were written; caller must handle remainder
 }
 ----
 
 Reference: `<boost/capy/concept/write_stream.hpp>`
 
-== ReadSource
+== Part III: Source/Sink Concepts (Complete I/O with EOF)
+
+Sources and sinks build on streams by looping internally until the operation
+completes. They also provide explicit EOF signaling for proper stream termination.
+
+=== ReadSource
 
 A `ReadSource` provides complete read operations via `read()`:
 
@@ -147,7 +209,7 @@ concept ReadSource = requires(T& source, MutableBufferSequence auto buffers)
 };
 ----
 
-=== Behavior
+==== Behavior
 
 `read()` fills the buffer **completely** before returning, looping as needed:
 
@@ -158,13 +220,13 @@ auto [ec, n] = co_await source.read(mutable_buffer(header, 16));
 // If successful: n == 16 (always fills completely)
 ----
 
-=== Return Values
+==== Return Values
 
 * **Success**: `!ec.failed()` is true, `n == buffer_size(buffers)`
 * **EOF**: `ec == cond::eof`, `n` is bytes read before EOF
 * **Error**: `ec.failed()` is true, `n` is bytes read before error
 
-=== Example
+==== Example
 
 [source,cpp]
 ----
@@ -180,9 +242,9 @@ task<std::vector<char>> read_exact(ReadSource auto& source, std::size_t count)
 
 Reference: `<boost/capy/concept/read_source.hpp>`
 
-== WriteSink
+=== WriteSink
 
-A `WriteSink` provides complete write operations with EOF signaling:
+A `WriteSink` provides complete write operations with explicit EOF signaling:
 
 [source,cpp]
 ----
@@ -195,7 +257,7 @@ concept WriteSink = requires(T& sink, ConstBufferSequence auto buffers, bool eof
 };
 ----
 
-=== Behavior
+==== Behavior
 
 `write()` sends **all bytes** before returning:
 
@@ -210,27 +272,185 @@ The EOF variants signal that no more data will follow:
 
 [source,cpp]
 ----
-// Option 1: write then signal EOF
+// Option 1: write then signal EOF separately
 co_await sink.write(make_buffer(data));
 co_await sink.write_eof();
 
-// Option 2: combined call
+// Option 2: combined call (more efficient)
 co_await sink.write(make_buffer(data), true);
 ----
 
-=== Return Values
+After successful `write_eof()` or `write(buffers, true)`, no further writes
+are permitted.
+
+==== Return Values
 
 * **Success**: `!ec.failed()` is true, `n == buffer_size(buffers)`
 * **Error**: `ec.failed()` is true, `n` is bytes written before error
 
 Reference: `<boost/capy/concept/write_sink.hpp>`
 
-== Composed Algorithms
+== Part IV: Buffer Concepts (Callee-Owns-Buffers)
 
-Capy provides `read()` and `write()` free functions that build complete
-operations from partial ones.
+The buffer concepts invert the traditional ownership model. Instead of the
+caller providing buffers, the I/O object owns the buffer memory and provides
+descriptors to it. This enables zero-copy data transfer.
 
-=== read() Function
+=== BufferSource
+
+A `BufferSource` produces data by providing `const_buffer` descriptors to
+its internal storage:
+
+[source,cpp]
+----
+template<typename T>
+concept BufferSource = requires(T& src, const_buffer* arr, std::size_t max_count)
+{
+    { src.pull(arr, max_count) } -> IoAwaitable;
+    // Returns io_result<std::size_t> where size_t is buffer count
+};
+----
+
+==== Behavior
+
+`pull()` fills the provided array with buffer descriptors:
+
+[source,cpp]
+----
+const_buffer arr[16];
+auto [ec, count] = co_await source.pull(arr, 16);
+// arr[0..count-1] now contain descriptors to source's internal data
+----
+
+==== Return Values
+
+* **Data available**: `!ec.failed()` is true, `count > 0`
+* **Source exhausted**: `!ec.failed()` is true, `count == 0`
+* **Error**: `ec.failed()` is true
+
+==== Buffer Lifetime
+
+The memory referenced by returned buffer descriptors remains valid until the
+next call to `pull()` or until the source is destroyed. The caller must
+consume all data before the next `pull()`.
+
+==== Example
+
+[source,cpp]
+----
+task<> consume_all(BufferSource auto& source)
+{
+    const_buffer arr[16];
+    for (;;)
+    {
+        auto [ec, count] = co_await source.pull(arr, 16);
+        if (ec.failed())
+            co_return;
+        if (count == 0)
+            break;  // Source exhausted
+
+        // Process arr[0..count-1]
+        for (std::size_t i = 0; i < count; ++i)
+            process(arr[i].data(), arr[i].size());
+    }
+}
+----
+
+Reference: `<boost/capy/concept/buffer_source.hpp>`
+
+=== BufferSink
+
+A `BufferSink` consumes data by providing writable `mutable_buffer` descriptors
+to its internal storage:
+
+[source,cpp]
+----
+template<typename T>
+concept BufferSink = requires(T& sink, mutable_buffer* arr, std::size_t max_count,
+                              std::size_t n, bool eof)
+{
+    { sink.prepare(arr, max_count) } -> std::convertible_to<std::size_t>;  // Sync
+    { sink.commit(n) } -> IoAwaitable;           // Commit n bytes
+    { sink.commit(n, eof) } -> IoAwaitable;      // Commit + optional EOF
+    { sink.commit_eof() } -> IoAwaitable;        // Signal end of data
+};
+----
+
+==== Behavior
+
+The sink provides a two-phase protocol:
+
+1. **prepare()** (synchronous): Get writable buffer descriptors
+2. **commit()** (asynchronous): Finalize written data
+
+[source,cpp]
+----
+mutable_buffer arr[16];
+std::size_t count = sink.prepare(arr, 16);
+// Write data into arr[0..count-1]
+std::size_t written = fill_buffers(arr, count);
+auto [ec] = co_await sink.commit(written);
+----
+
+==== Return Values
+
+* **prepare()**: Returns count of buffers filled (0 means no space available)
+* **commit()**: Returns `(error_code)` indicating success or failure
+
+==== Buffer Lifetime
+
+Buffers returned by `prepare()` remain valid until the next call to `prepare()`,
+`commit()`, `commit_eof()`, or destruction.
+
+==== Example
+
+[source,cpp]
+----
+task<> produce_data(BufferSink auto& sink, std::string_view data)
+{
+    mutable_buffer arr[16];
+    std::size_t offset = 0;
+
+    while (offset < data.size())
+    {
+        std::size_t count = sink.prepare(arr, 16);
+        if (count == 0)
+        {
+            // No space; flush and retry
+            auto [ec] = co_await sink.commit(0);
+            if (ec.failed())
+                co_return;
+            continue;
+        }
+
+        // Copy data into sink's buffers
+        std::size_t written = 0;
+        for (std::size_t i = 0; i < count && offset < data.size(); ++i)
+        {
+            std::size_t chunk = (std::min)(arr[i].size(), data.size() - offset);
+            std::memcpy(arr[i].data(), data.data() + offset, chunk);
+            offset += chunk;
+            written += chunk;
+        }
+
+        auto [ec] = co_await sink.commit(written);
+        if (ec.failed())
+            co_return;
+    }
+
+    co_await sink.commit_eof();
+}
+----
+
+Reference: `<boost/capy/concept/buffer_sink.hpp>`
+
+== Part V: Transfer Algorithms
+
+Capy provides algorithms that compose the concepts for common transfer patterns.
+
+=== Composed read() and write()
+
+Free functions build complete operations from partial ones:
 
 [source,cpp]
 ----
@@ -243,8 +463,6 @@ auto [ec, n] = co_await read(stream, buffers);
 auto [ec, n] = co_await read(source, dynamic_buffer);
 ----
 
-=== write() Function
-
 [source,cpp]
 ----
 #include <boost/capy/write.hpp>
@@ -253,68 +471,415 @@ auto [ec, n] = co_await read(source, dynamic_buffer);
 auto [ec, n] = co_await write(stream, buffers);
 ----
 
-== Choosing the Right Level
+=== push_to() - Source Provides Buffers
 
-**Use stream concepts (`read_some`/`write_some`) when:**
-
-* You want to process data as it arrives
-* You're implementing a protocol with natural chunk boundaries
-* You need fine-grained control over I/O timing
-
-**Use source/sink concepts (`read`/`write`) when:**
-
-* You need exactly N bytes before proceeding
-* You're reading until EOF
-* You want simple "send this, receive that" semantics
-
-== Example: Echo Server
+The `push_to` function transfers data from a `BufferSource` to a write destination.
+The source owns the buffers, enabling zero-copy when the destination can consume
+directly.
 
 [source,cpp]
 ----
-// Using partial operations for streaming
-task<void> echo_streaming(ReadStream auto& in, WriteStream auto& out)
+#include <boost/capy/io/push_to.hpp>
+
+// BufferSource to WriteSink (complete transfer with EOF)
+auto [ec, n] = co_await push_to(buffer_source, write_sink);
+
+// BufferSource to WriteStream (streaming transfer)
+auto [ec, n] = co_await push_to(buffer_source, write_stream);
+----
+
+**BufferSource -> WriteSink**: Transfers all data and calls `write_eof()` on completion.
+
+**BufferSource -> WriteStream**: Transfers all data using `write_some()` in a loop,
+handling partial writes.
+
+Reference: `<boost/capy/io/push_to.hpp>`
+
+=== pull_from() - Sink Provides Buffers
+
+The `pull_from` function transfers data from a read source directly into a
+`BufferSink`'s internal buffers. The sink owns the buffers, enabling zero-copy.
+
+[source,cpp]
+----
+#include <boost/capy/io/pull_from.hpp>
+
+// ReadSource to BufferSink (complete reads)
+auto [ec, n] = co_await pull_from(read_source, buffer_sink);
+
+// ReadStream to BufferSink (streaming with partial reads)
+auto [ec, n] = co_await pull_from(read_stream, buffer_sink);
+----
+
+**ReadSource -> BufferSink**: Reads complete buffer fills and commits to sink,
+calls `commit_eof()` on completion.
+
+**ReadStream -> BufferSink**: Uses `read_some()` for partial reads, committing
+data incrementally as it arrives.
+
+Reference: `<boost/capy/io/pull_from.hpp>`
+
+=== Choosing the Right Pairing
+
+[cols="1,1,2"]
+|===
+| Source Type | Sink Type | Function
+
+| BufferSource
+| WriteSink
+| `push_to` (complete with EOF)
+
+| BufferSource
+| WriteStream
+| `push_to` (streaming)
+
+| ReadSource
+| BufferSink
+| `pull_from` (complete with EOF)
+
+| ReadStream
+| BufferSink
+| `pull_from` (streaming)
+|===
+
+IMPORTANT: Never pair `BufferSource` with `BufferSink` directly. Both own their
+buffers, so transferring between them requires copying. Use the cross-ownership
+patterns above for zero-copy efficiency.
+
+[mermaid]
+----
+flowchart LR
+    subgraph srcOwns [Source Owns Buffers]
+        BSrc[BufferSource]
+    end
+
+    subgraph sinkOwns [Sink Owns Buffers]
+        BSink[BufferSink]
+    end
+
+    subgraph callerOwns [Caller Owns Buffers]
+        RSrc[ReadSource]
+        RS[ReadStream]
+        WSink[WriteSink]
+        WS[WriteStream]
+    end
+
+    BSrc -->|push_to| WSink
+    BSrc -->|push_to| WS
+    RSrc -->|pull_from| BSink
+    RS -->|pull_from| BSink
+----
+
+== Part VI: Type-Erasing Wrappers
+
+Capy provides type-erasing wrappers for each concept, enabling transport-independent
+APIs. Your code can accept `any_read_stream&` and work with any concrete stream
+type: TCP sockets, TLS streams, mock streams for testing, or custom transports.
+
+=== Available Wrappers
+
+[cols="1,2"]
+|===
+| Wrapper | Wraps
+
+| `any_read_stream`
+| Any `ReadStream`
+
+| `any_write_stream`
+| Any `WriteStream`
+
+| `any_stream`
+| Any type satisfying both `ReadStream` and `WriteStream`
+
+| `any_read_source`
+| Any `ReadSource`
+
+| `any_write_sink`
+| Any `WriteSink`
+
+| `any_buffer_source`
+| Any `BufferSource`
+
+| `any_buffer_sink`
+| Any `BufferSink`
+|===
+
+=== Characteristics
+
+**Reference Semantics**::
+Wrappers hold a reference to the wrapped object without taking ownership.
+The wrapped object must outlive the wrapper.
+
+**Frame Preallocation**::
+Constructors preallocate the internal coroutine frame. This reserves memory
+at server startup so usage can be measured up front, rather than allocating
+piecemeal as traffic arrives.
+
+**Move-Only**::
+Wrappers are non-copyable because the cached frame is per-instance. Move
+operations transfer the frame ownership.
+
+=== Example
+
+[source,cpp]
+----
+#include <boost/capy/io/any_stream.hpp>
+
+task<> echo(any_stream& stream)
 {
     char buffer[4096];
     for (;;)
     {
-        auto [ec1, n] = co_await in.read_some(make_buffer(buffer));
-        if (ec1 == cond::eof)
+        auto [ec, n] = co_await stream.read_some(make_buffer(buffer));
+        if (ec == cond::eof)
             break;
-        if (ec1.failed())
+        if (ec.failed())
             co_return;
 
-        // Use write() to ensure all bytes are sent
-        auto [ec2, _] = co_await write(out, make_buffer(buffer, n));
-        if (ec2.failed())
+        auto [wec, wn] = co_await write(stream, make_buffer(buffer, n));
+        if (wec.failed())
+            co_return;
+    }
+}
+
+// Works with any bidirectional stream
+task<> handle_tcp(tcp_socket& sock)
+{
+    any_stream stream(sock);
+    co_await echo(stream);
+}
+
+task<> handle_tls(tls_stream& tls)
+{
+    any_stream stream(tls);
+    co_await echo(stream);
+}
+----
+
+=== Reference Headers
+
+* `<boost/capy/io/any_read_stream.hpp>`
+* `<boost/capy/io/any_write_stream.hpp>`
+* `<boost/capy/io/any_stream.hpp>`
+* `<boost/capy/io/any_read_source.hpp>`
+* `<boost/capy/io/any_write_sink.hpp>`
+* `<boost/capy/io/any_buffer_source.hpp>`
+* `<boost/capy/io/any_buffer_sink.hpp>`
+
+== Part VII: The owning<> Wrapper
+
+The type-erasing wrappers have reference semantics. When you need a wrapper
+that owns its wrapped object, use the `owning<>` template.
+
+=== Usage
+
+[source,cpp]
+----
+#include <boost/capy/io/owning.hpp>
+
+// Create an owning wrapper
+owning<any_buffer_source, my_source> src(constructor_arg1, constructor_arg2);
+
+// src IS-A any_buffer_source
+any_buffer_source& ref = src;
+
+// Access the owned object
+my_source& s = src.get();
+----
+
+=== Characteristics
+
+**Inherits from Base**::
+`owning<Base, T>` inherits from `Base`, so it can be used anywhere `Base&`
+is accepted.
+
+**Owns Instance of T**::
+The wrapper constructs and owns an instance of `T`. Constructor arguments
+are forwarded to `T`'s constructor.
+
+**Move Semantics**::
+Move operations transfer both the owned object and the type eraser state.
+The base is automatically rebound to the new object location.
+
+**Non-Copyable**::
+Like the base wrappers, `owning<>` is non-copyable.
+
+=== Example
+
+[source,cpp]
+----
+// Factory function returning owned source
+owning<any_buffer_source, file_source> make_file_source(std::string_view path)
+{
+    return owning<any_buffer_source, file_source>(path);
+}
+
+task<> process_file(std::string_view path)
+{
+    auto src = make_file_source(path);
+
+    // Use as any_buffer_source
+    auto [ec, n] = co_await push_to(src, some_sink);
+}
+----
+
+Reference: `<boost/capy/io/owning.hpp>`
+
+== Part VIII: Practical Patterns
+
+=== Choosing the Right Abstraction
+
+[cols="1,3"]
+|===
+| Use Case | Recommended Concept
+
+| Process data as it arrives
+| `ReadStream` / `WriteStream`
+
+| Read exactly N bytes before proceeding
+| `ReadSource`
+
+| Send complete message with termination
+| `WriteSink`
+
+| Zero-copy from data producer
+| `BufferSource` with `push_to`
+
+| Zero-copy into data consumer
+| `BufferSink` with `pull_from`
+
+| Transport-independent API
+| Type-erasing wrappers (`any_*`)
+|===
+
+=== Pattern: Echo Server
+
+[source,cpp]
+----
+task<> echo_server(any_stream& stream)
+{
+    char buffer[4096];
+    for (;;)
+    {
+        // Partial read: get whatever is available
+        auto [ec, n] = co_await stream.read_some(make_buffer(buffer));
+        if (ec == cond::eof)
+            break;
+        if (ec.failed())
+            co_return;
+
+        // Complete write: send all bytes
+        auto [wec, _] = co_await write(stream, make_buffer(buffer, n));
+        if (wec.failed())
             co_return;
     }
 }
 ----
 
+=== Pattern: HTTP Body Transfer
+
+[source,cpp]
+----
+task<> send_response_body(any_write_sink& body, std::string_view content)
+{
+    // Write all content and signal EOF
+    auto [ec, n] = co_await body.write(make_buffer(content), true);
+    if (ec.failed())
+    {
+        // Handle error
+    }
+}
+----
+
+=== Pattern: Processing Chain
+
+Data can flow through a chain of transformations, each component implementing
+the appropriate concepts:
+
+[mermaid]
+----
+flowchart LR
+    Source[File<br/>BufferSource] --> Compress[Compressor<br/>BufferSource + WriteSink]
+    Compress --> Encrypt[Encryptor<br/>BufferSource + WriteSink]
+    Encrypt --> Socket[Socket<br/>WriteStream]
+----
+
+Each intermediate transform implements both a source concept (to provide data)
+and a sink concept (to receive data). The `push_to` and `pull_from` algorithms
+connect the chain.
+
+=== Pattern: Transport-Independent Library
+
+Type-erasing wrappers enable libraries that work with any transport:
+
+[source,cpp]
+----
+// Library code - transport independent
+class protocol_handler
+{
+    any_stream& stream_;
+
+public:
+    explicit protocol_handler(any_stream& s)
+        : stream_(s)
+    {
+    }
+
+    task<> run()
+    {
+        // Works with any stream type
+        auto [ec, n] = co_await stream_.read_some(/*...*/);
+        // ...
+    }
+};
+
+// Application code - concrete transport
+task<> handle_client(tcp_socket& sock)
+{
+    any_stream stream(sock);
+    protocol_handler handler(stream);
+    co_await handler.run();
+}
+----
+
 == Summary
 
-[cols="1,1,3"]
+[cols="1,1,2,1"]
 |===
-| Concept | Method | Behavior
+| Concept | Method | Behavior | Buffer Owner
 
 | `ReadStream`
 | `read_some(buffers)`
 | Read at least one byte (partial)
+| Caller
 
 | `WriteStream`
 | `write_some(buffers)`
 | Write at least one byte (partial)
+| Caller
 
 | `ReadSource`
 | `read(buffers)`
 | Fill buffers completely or EOF
+| Caller
 
 | `WriteSink`
 | `write(buffers)`, `write_eof()`
 | Write all bytes, signal EOF
+| Caller
+
+| `BufferSource`
+| `pull(arr, max)`
+| Provide buffer descriptors
+| Callee (source)
+
+| `BufferSink`
+| `prepare()`, `commit()`
+| Accept data into internal buffers
+| Callee (sink)
 |===
 
 == Navigation
 
 [.text-center]
-xref:../buffers/dynamic.adoc[← Dynamic Buffers] | xref:when-all.adoc[Next: Concurrent Composition →]
+xref:../buffers/dynamic.adoc[<- Dynamic Buffers] | xref:when-all.adoc[Next: Concurrent Composition ->]

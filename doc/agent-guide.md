@@ -277,42 +277,145 @@ graph TD
     - `vector_dynamic_buffer`: growable, backed by std::vector
     - `string_dynamic_buffer`: backed by std::string
 
-## Section: Streams
+## Section: I/O Streams
 
-### Part I: Stream Concepts
+I/O streams enable data to flow through different parts of a program, represented as buffer sequences. Six concepts define how data is produced and consumed: streams handle partial transfers, sources and sinks handle complete transfers with EOF signaling, and buffer sources/sinks use the callee-owns-buffers pattern for zero-copy efficiency. Type-erasing wrappers let you express APIs independent of the underlying transport.
+
+### Part I: Stream Concepts (Partial I/O)
+
+The stream concepts are intentionally modeled after the Boost.Asio concepts _AsyncReadStream_ and _AsyncWriteStream_.
 
 1. **ReadStream**
-   - Partial read operations with `read_some(buffers)`
+   - Provides `read_some(buffers)` for partial read operations
    - Returns `(error_code, size_t)` - may transfer less than requested
+   - Caller owns the buffers; stream fills as much as available
+   - On success: at least 1 byte read; on EOF: `ec == cond::eof`, `n == 0`
    - Reference: `<boost/capy/concept/read_stream.hpp>`
 
 2. **WriteStream**
-   - Partial write operations with `write_some(buffers)`
+   - Provides `write_some(buffers)` for partial write operations
    - Returns `(error_code, size_t)` - may transfer less than requested
+   - Caller owns the buffers
    - Reference: `<boost/capy/concept/write_stream.hpp>`
 
-### Part II: Source and Sink Concepts
+### Part II: Source/Sink Concepts (Complete I/O with EOF)
+
+Sources and sinks build on streams.
 
 3. **ReadSource**
-   - Complete read operations with `read(buffers)`
-   - Fills buffers completely or returns EOF
+   - Provides `read(buffers)` for complete read operations
+   - Fills entire buffer or returns EOF/error with partial count
+   - Caller owns the buffers
    - Reference: `<boost/capy/concept/read_source.hpp>`
 
 4. **WriteSink**
-   - Complete write with EOF signaling
-   - `write(buffers)`, `write(buffers, eof)`, `write_eof()`
+   - Provides `write(buffers)`, `write(buffers, eof)`, `write_eof()`
+   - Complete write with explicit EOF signaling
+   - Caller owns the buffers
+   - After successful `write_eof()` or `write(buffers, true)`, no further writes permitted
    - Reference: `<boost/capy/concept/write_sink.hpp>`
 
-### Part III: Composed Operations
+### Part III: Buffer Concepts (Callee-Owns-Buffers)
 
-5. **read() Algorithm**
-   - `read(stream, buffers)` - loops `read_some` until buffer full
+5. **BufferSource**
+   - Provides `pull(arr, max_count)` - fills array with `const_buffer` descriptors
+   - Returns `(error_code, count)` where `count == 0` means source exhausted
+   - Source owns the buffers; caller must consume all before next `pull()`
+   - Enables zero-copy: source provides pointers to its internal storage
+   - Reference: `<boost/capy/concept/buffer_source.hpp>`
+
+6. **BufferSink**
+   - Provides `prepare(arr, max_count)` - synchronous, returns writable buffer count
+   - Provides `commit(n)`, `commit(n, eof)`, `commit_eof()` - async finalization
+   - Sink owns the buffers; caller writes directly into sink's internal storage
+   - Enables zero-copy: no intermediate buffer needed
+   - Reference: `<boost/capy/concept/buffer_sink.hpp>`
+
+### Part IV: Transfer Algorithms
+
+7. **Composed Read/Write**
+   - `read(stream, buffers)` - loops `read_some` until buffer full or error
    - `read(source, dynamic_buffer)` - loops until EOF into growable buffer
-   - Reference: `<boost/capy/read.hpp>`
-
-6. **write() Algorithm**
    - `write(stream, buffers)` - loops `write_some` until all written
-   - Reference: `<boost/capy/write.hpp>`
+   - Reference: `<boost/capy/read.hpp>`, `<boost/capy/write.hpp>`
+
+8. **push_to (Caller Owns Buffers)**
+   - Source provides buffers via `pull()`, data is pushed to destination
+   - `push_to(BufferSource, WriteSink)` - complete transfer with EOF signaling
+   - `push_to(BufferSource, WriteStream)` - streaming with partial writes
+   - Reference: `<boost/capy/io/push_to.hpp>`
+
+9. **pull_from (Callee Owns Buffers)**
+   - Sink provides buffers via `prepare()`, data is pulled from source
+   - `pull_from(ReadSource, BufferSink)` - complete reads into sink's buffers
+   - `pull_from(ReadStream, BufferSink)` - streaming with partial reads
+   - Naming reflects buffer ownership; no buffer-to-buffer variant (would require redundant copying)
+   - Reference: `<boost/capy/io/pull_from.hpp>`
+
+### Part V: Type-Erasing Wrappers
+
+Each concept has a corresponding type-erasing wrapper in `<boost/capy/io/>`:
+
+10. **Stream Wrappers**
+    - `any_read_stream` - wraps any `ReadStream`
+    - `any_write_stream` - wraps any `WriteStream`
+    - `any_stream` - wraps bidirectional (both `ReadStream` and `WriteStream`)
+
+11. **Source/Sink Wrappers**
+    - `any_read_source` - wraps any `ReadSource`
+    - `any_write_sink` - wraps any `WriteSink`
+    - `any_buffer_source` - wraps any `BufferSource`
+    - `any_buffer_sink` - wraps any `BufferSink`
+
+12. **Wrapper Characteristics**
+    - Reference semantics: wrap existing objects without ownership
+    - Preallocate coroutine frame at construction for zero steady-state allocation
+    - Move-only (non-copyable); cached frame reused across operations
+    - Constructor takes reference to concrete type; wrapped object must outlive wrapper
+
+### Part VI: Owning Wrapper
+
+13. **owning<Base, T>**
+    - Creates owning version of any reference-based wrapper
+    - Inherits from `Base`, owns instance of `T`
+    - Example: `owning<any_buffer_source, my_source> src(args...)`
+    - Supports move with proper rebinding to new object location
+    - Access owned object via `get()` method
+    - Reference: `<boost/capy/io/owning.hpp>`
+
+### Part VII: Processing Chains
+
+14. **Composing Transformations**
+    - Data flows: Source -> Transform -> Transform -> Sink
+    - Each component satisfies a concept (e.g., `BufferSource`, `WriteSink`)
+    - Chain compression, decompression, encryption, framing, chunked encoding
+    - Intermediate transforms implement both source and sink concepts
+
+### Part VIII: Transport-Independent APIs
+
+15. **The Key Value Proposition**
+    - Type-erasing wrappers allow APIs independent of underlying transport
+    - Same code works with corosio sockets, Boost.Asio adaptors, TLS streams, mock streams
+    - Echo server example:
+      ```cpp
+      task<> handle_connection(any_stream& stream) {
+          char buf[1024];
+          for(;;) {
+              auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
+              if(ec == cond::eof) break;
+              if(ec.failed()) co_return;
+              auto [wec, wn] = co_await write(stream, const_buffer(buf, n));
+              if(wec.failed()) co_return;
+          }
+      }
+      ```
+    - HTTP body example:
+      ```cpp
+      task<> send_body(any_write_sink& body, std::string_view data) {
+          auto [ec, n] = co_await body.write(make_buffer(data), true);
+      }
+      ```
+    - The concrete transport is hidden; library code works with any conforming implementation
 
 ## Section: Testing Facilities
 
