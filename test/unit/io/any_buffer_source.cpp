@@ -83,8 +83,8 @@ public:
 
             any_buffer_source abs(bs);
 
-            const_buffer arr[16];
-            auto [ec, count] = co_await abs.pull(arr, 16);
+            const_buffer arr[detail::max_iovec_];
+            auto [ec, count] = co_await abs.pull(arr, detail::max_iovec_);
             if(ec.failed())
                 co_return;
 
@@ -105,10 +105,10 @@ public:
 
             any_buffer_source abs(bs);
 
-            const_buffer arr[16];
+            const_buffer arr[detail::max_iovec_];
 
             // First pull returns all data
-            auto [ec1, count1] = co_await abs.pull(arr, 16);
+            auto [ec1, count1] = co_await abs.pull(arr, detail::max_iovec_);
             if(ec1.failed())
                 co_return;
             BOOST_TEST_EQ(count1, 1u);
@@ -118,7 +118,7 @@ public:
             abs.consume(5);
 
             // Second pull returns remaining data
-            auto [ec2, count2] = co_await abs.pull(arr, 16);
+            auto [ec2, count2] = co_await abs.pull(arr, detail::max_iovec_);
             if(ec2.failed())
                 co_return;
             BOOST_TEST_EQ(count2, 1u);
@@ -128,7 +128,7 @@ public:
             abs.consume(6);
 
             // Third pull returns empty (exhausted)
-            auto [ec3, count3] = co_await abs.pull(arr, 16);
+            auto [ec3, count3] = co_await abs.pull(arr, detail::max_iovec_);
             if(ec3.failed())
                 co_return;
             BOOST_TEST_EQ(count3, 0u);
@@ -146,17 +146,17 @@ public:
 
             any_buffer_source abs(bs);
 
-            const_buffer arr[16];
+            const_buffer arr[detail::max_iovec_];
 
             // Pull returns data
-            auto [ec1, count1] = co_await abs.pull(arr, 16);
+            auto [ec1, count1] = co_await abs.pull(arr, detail::max_iovec_);
             if(ec1.failed())
                 co_return;
             BOOST_TEST_EQ(count1, 1u);
             BOOST_TEST_EQ(arr[0].size(), 4u);
 
             // Pull again without consume returns same data
-            auto [ec2, count2] = co_await abs.pull(arr, 16);
+            auto [ec2, count2] = co_await abs.pull(arr, detail::max_iovec_);
             if(ec2.failed())
                 co_return;
             BOOST_TEST_EQ(count2, 1u);
@@ -180,8 +180,8 @@ public:
             std::size_t total = 0;
             for(;;)
             {
-                const_buffer arr[16];
-                auto [ec, count] = co_await abs.pull(arr, 16);
+                const_buffer arr[detail::max_iovec_];
+                auto [ec, count] = co_await abs.pull(arr, detail::max_iovec_);
                 if(ec.failed())
                     co_return;
                 if(count == 0)
@@ -208,8 +208,8 @@ public:
 
             any_buffer_source abs(bs);
 
-            const_buffer arr[16];
-            auto [ec, count] = co_await abs.pull(arr, 16);
+            const_buffer arr[detail::max_iovec_];
+            auto [ec, count] = co_await abs.pull(arr, detail::max_iovec_);
             if(ec.failed())
                 co_return;
 

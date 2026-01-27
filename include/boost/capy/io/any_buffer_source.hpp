@@ -12,11 +12,16 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/buffers/buffer_copy.hpp>
+#include <boost/capy/buffers/slice.hpp>
 #include <boost/capy/concept/buffer_source.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/read_source.hpp>
 #include <boost/capy/coro.hpp>
+#include <boost/capy/error.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/io_result.hpp>
+#include <boost/capy/task.hpp>
 
 #include <boost/system/error_code.hpp>
 
@@ -24,6 +29,7 @@
 #include <coroutine>
 #include <cstddef>
 #include <exception>
+#include <span>
 #include <stop_token>
 #include <utility>
 
@@ -34,8 +40,15 @@ namespace capy {
 
     This class provides type erasure for any type satisfying the
     @ref BufferSource concept, enabling runtime polymorphism for
-    buffer pull operations. It uses a cached coroutine frame to achieve
-    zero steady-state allocation after construction.
+    buffer pull operations. The wrapper also satisfies @ref ReadSource,
+    allowing it to be used with code expecting either interface.
+    It uses a cached coroutine frame to achieve zero steady-state
+    allocation after construction.
+
+    The wrapper also satisfies @ref ReadSource through the templated
+    @ref read method. This method copies data from the source's
+    internal buffers into the caller's buffers, incurring one extra
+    buffer copy compared to using @ref pull and @ref consume directly.
 
     The wrapper has reference semantics - it wraps an existing
     source without taking ownership. The wrapped source must
@@ -60,7 +73,7 @@ namespace capy {
     auto [ec, count] = co_await abs.pull(arr, 16);
     @endcode
 
-    @see any_write_sink, BufferSource
+    @see any_write_sink, BufferSource, ReadSource
 */
 class any_buffer_source
 {
@@ -258,6 +271,32 @@ public:
     */
     auto
     pull(const_buffer* arr, std::size_t max_count);
+
+    /** Read data into a mutable buffer sequence.
+
+        Fills the provided buffer sequence by pulling data from the
+        underlying source and copying it into the caller's buffers.
+        This satisfies @ref ReadSource but incurs a copy; for zero-copy
+        access, use @ref pull and @ref consume instead.
+
+        @note This operation copies data from the source's internal
+        buffers into the caller's buffers. For zero-copy reads,
+        use @ref pull and @ref consume directly.
+
+        @param buffers The buffer sequence to fill.
+
+        @return An awaitable yielding `(error_code,std::size_t)`.
+            On success, `n == buffer_size(buffers)`.
+            On EOF, `ec == error::eof` and `n` is bytes transferred.
+
+        @par Preconditions
+        The wrapper must contain a valid source (`has_value() == true`).
+
+        @see pull, consume
+    */
+    template<MutableBufferSequence MB>
+    task<io_result<std::size_t>>
+    read(MB buffers);
 
 protected:
     /** Rebind to a new source after move.
@@ -610,6 +649,38 @@ any_buffer_source::pull(
     };
     return awaitable{this, arr, max_count, {}, 0};
 }
+
+template<MutableBufferSequence MB>
+task<io_result<std::size_t>>
+any_buffer_source::read(MB buffers)
+{
+    std::size_t total = 0;
+    auto dest = sans_prefix(buffers, 0);
+
+    while(!buffer_empty(dest))
+    {
+        const_buffer arr[detail::max_iovec_];
+        auto [ec, count] = co_await pull(arr, detail::max_iovec_);
+
+        if(ec.failed())
+            co_return {ec, total};
+
+        if(count == 0)
+            co_return {error::eof, total};
+
+        auto n = buffer_copy(dest, std::span(arr, count));
+        consume(n);
+        total += n;
+        dest = sans_prefix(dest, n);
+    }
+
+    co_return {{}, total};
+}
+
+//----------------------------------------------------------
+
+static_assert(BufferSource<any_buffer_source>);
+static_assert(ReadSource<any_buffer_source>);
 
 } // namespace capy
 } // namespace boost

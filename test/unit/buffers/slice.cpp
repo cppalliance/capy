@@ -176,6 +176,126 @@ struct slice_test
     }
 
     void
+    testSansPrefixSingleBuffer()
+    {
+        // Test sans_prefix with a single mutable_buffer
+        {
+            char data[] = "0123456789";
+            mutable_buffer buf(data, 10);
+
+            // sans_prefix(buf, 0) should return the full buffer
+            auto s0 = sans_prefix(buf, 0);
+            BOOST_TEST_EQ(buffer_size(s0), 10u);
+
+            // sans_prefix(buf, 3) should skip first 3 bytes
+            auto s3 = sans_prefix(buf, 3);
+            BOOST_TEST_EQ(buffer_size(s3), 7u);
+            BOOST_TEST_EQ(
+                static_cast<char const*>(
+                    const_buffer(s3).data())[0], '3');
+
+            // sans_prefix(buf, 10) should be empty
+            auto s10 = sans_prefix(buf, 10);
+            BOOST_TEST_EQ(buffer_size(s10), 0u);
+
+            // sans_prefix(buf, 100) should be empty
+            auto s100 = sans_prefix(buf, 100);
+            BOOST_TEST_EQ(buffer_size(s100), 0u);
+        }
+
+        // Test sans_prefix with a single const_buffer
+        {
+            char data[] = "Hello World";
+            const_buffer buf(data, 11);
+
+            auto s0 = sans_prefix(buf, 0);
+            BOOST_TEST_EQ(buffer_size(s0), 11u);
+
+            auto s6 = sans_prefix(buf, 6);
+            BOOST_TEST_EQ(buffer_size(s6), 5u);
+            BOOST_TEST_EQ(
+                static_cast<char const*>(s6.data())[0], 'W');
+        }
+    }
+
+    void
+    testSansPrefixBufferSequence()
+    {
+        // Test sans_prefix with a vector of buffers
+        std::string s1 = "ABCD";
+        std::string s2 = "EFGH";
+        std::string s3 = "IJKL";
+
+        std::vector<const_buffer> bufs = {
+            const_buffer(s1.data(), s1.size()),
+            const_buffer(s2.data(), s2.size()),
+            const_buffer(s3.data(), s3.size())
+        };
+
+        // sans_prefix removing nothing
+        {
+            auto result = sans_prefix(bufs, 0);
+            BOOST_TEST_EQ(buffer_size(result), 12u);
+        }
+
+        // sans_prefix removing 2 bytes (within first buffer)
+        {
+            auto result = sans_prefix(bufs, 2);
+            BOOST_TEST_EQ(buffer_size(result), 10u);
+        }
+
+        // sans_prefix removing 5 bytes (crosses buffer boundary)
+        {
+            auto result = sans_prefix(bufs, 5);
+            BOOST_TEST_EQ(buffer_size(result), 7u);
+        }
+
+        // sans_prefix removing all
+        {
+            auto result = sans_prefix(bufs, 12);
+            BOOST_TEST_EQ(buffer_size(result), 0u);
+        }
+    }
+
+    void
+    testBufferEmptyWithSlice()
+    {
+        // Verify buffer_empty works correctly with sliced buffers
+        {
+            char data[] = "test";
+            mutable_buffer buf(data, 4);
+
+            auto s0 = sans_prefix(buf, 0);
+            BOOST_TEST(!buffer_empty(s0));
+
+            auto s4 = sans_prefix(buf, 4);
+            BOOST_TEST(buffer_empty(s4));
+        }
+    }
+
+    void
+    testSansPrefixLoop()
+    {
+        // Test the pattern used in any_buffer_source::read()
+        char data[10] = {};
+        mutable_buffer buf(data, 10);
+
+        auto dest = sans_prefix(buf, 0);
+        BOOST_TEST_EQ(buffer_size(dest), 10u);
+        BOOST_TEST(!buffer_empty(dest));
+
+        // Simulate consuming 2 bytes
+        dest = sans_prefix(dest, 2);
+        BOOST_TEST_EQ(buffer_size(dest), 8u);
+        BOOST_TEST(!buffer_empty(dest));
+
+        // Consume remaining
+        dest = sans_prefix(dest, 8);
+        BOOST_TEST_EQ(buffer_size(dest), 0u);
+        BOOST_TEST(buffer_empty(dest));
+    }
+
+    void
     run()
     {
         std::string s;
@@ -184,6 +304,11 @@ struct slice_test
         test::check_sequence(bs, s, true);
         //check(bs, s);
         //grind(bs, s);
+
+        testSansPrefixSingleBuffer();
+        testSansPrefixBufferSequence();
+        testBufferEmptyWithSlice();
+        testSansPrefixLoop();
     }
 };
 

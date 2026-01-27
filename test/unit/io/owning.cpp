@@ -106,8 +106,8 @@ public:
             // Use through base class interface
             any_buffer_source& abs = src;
 
-            const_buffer arr[16];
-            auto [ec, count] = co_await abs.pull(arr, 16);
+            const_buffer arr[detail::max_iovec_];
+            auto [ec, count] = co_await abs.pull(arr, detail::max_iovec_);
             if(ec.failed())
                 co_return;
 
@@ -131,8 +131,8 @@ public:
             // Use through base class interface
             any_buffer_source& abs = src2;
 
-            const_buffer arr[16];
-            auto [ec, count] = co_await abs.pull(arr, 16);
+            const_buffer arr[detail::max_iovec_];
+            auto [ec, count] = co_await abs.pull(arr, detail::max_iovec_);
             if(ec.failed())
                 co_return;
 

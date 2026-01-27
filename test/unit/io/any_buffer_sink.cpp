@@ -83,8 +83,8 @@ public:
             test::buffer_sink bs(f);
             any_buffer_sink abs(bs);
 
-            mutable_buffer arr[16];
-            std::size_t count = abs.prepare(arr, 16);
+            mutable_buffer arr[detail::max_iovec_];
+            std::size_t count = abs.prepare(arr, detail::max_iovec_);
             BOOST_TEST_EQ(count, 1u);
             BOOST_TEST(arr[0].size() > 0);
 
@@ -108,8 +108,8 @@ public:
             test::buffer_sink bs(f);
             any_buffer_sink abs(bs);
 
-            mutable_buffer arr[16];
-            std::size_t count = abs.prepare(arr, 16);
+            mutable_buffer arr[detail::max_iovec_];
+            std::size_t count = abs.prepare(arr, detail::max_iovec_);
             BOOST_TEST_EQ(count, 1u);
 
             std::memcpy(arr[0].data(), "world", 5);
@@ -132,8 +132,8 @@ public:
             test::buffer_sink bs(f);
             any_buffer_sink abs(bs);
 
-            mutable_buffer arr[16];
-            std::size_t count = abs.prepare(arr, 16);
+            mutable_buffer arr[detail::max_iovec_];
+            std::size_t count = abs.prepare(arr, detail::max_iovec_);
             BOOST_TEST_EQ(count, 1u);
 
             std::memcpy(arr[0].data(), "data", 4);
@@ -162,8 +162,8 @@ public:
 
             // First write
             {
-                mutable_buffer arr[16];
-                std::size_t count = abs.prepare(arr, 16);
+                mutable_buffer arr[detail::max_iovec_];
+                std::size_t count = abs.prepare(arr, detail::max_iovec_);
                 BOOST_TEST_EQ(count, 1u);
 
                 std::memcpy(arr[0].data(), "hello ", 6);
@@ -175,8 +175,8 @@ public:
 
             // Second write
             {
-                mutable_buffer arr[16];
-                std::size_t count = abs.prepare(arr, 16);
+                mutable_buffer arr[detail::max_iovec_];
+                std::size_t count = abs.prepare(arr, detail::max_iovec_);
                 BOOST_TEST_EQ(count, 1u);
 
                 std::memcpy(arr[0].data(), "world", 5);

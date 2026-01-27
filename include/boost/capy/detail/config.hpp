@@ -12,6 +12,8 @@
 
 #include <boost/config.hpp>
 
+#include <cstddef>
+
 #if __has_include(<version>)
 # include <version>
 #endif
@@ -89,6 +91,10 @@ namespace capy {
     static constexpr auto loc ## __LINE__((BOOST_CURRENT_LOCATION)); \
     return ::boost::system::error_code((ev), &loc ## __LINE__)
 #endif
+
+namespace detail {
+inline constexpr std::size_t max_iovec_ = 16;
+} // detail
 
 } // capy
 } // boost

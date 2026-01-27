@@ -12,11 +12,15 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/buffers/buffer_copy.hpp>
+#include <boost/capy/buffers/buffer_param.hpp>
 #include <boost/capy/concept/buffer_sink.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/write_sink.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/io_result.hpp>
+#include <boost/capy/task.hpp>
 
 #include <boost/system/error_code.hpp>
 
@@ -36,6 +40,12 @@ namespace capy {
     @ref BufferSink concept, enabling runtime polymorphism for
     buffer sink operations. It uses a cached coroutine frame to achieve
     zero steady-state allocation after construction.
+
+    The wrapper also satisfies @ref WriteSink through templated
+    @ref write methods. These methods copy data from the caller's
+    buffers into the sink's internal storage, incurring one extra
+    buffer copy compared to using @ref prepare and @ref commit
+    directly.
 
     The wrapper has reference semantics - it wraps an existing
     sink without taking ownership. The wrapped sink must
@@ -63,7 +73,7 @@ namespace capy {
     auto [ec2] = co_await abs.commit_eof();
     @endcode
 
-    @see any_buffer_source, BufferSink
+    @see any_buffer_source, BufferSink, WriteSink
 */
 class any_buffer_sink
 {
@@ -323,6 +333,61 @@ public:
     */
     auto
     commit_eof();
+
+    /** Write data from a buffer sequence.
+
+        Writes all data from the buffer sequence to the underlying
+        sink. This method satisfies the @ref WriteSink concept.
+
+        @note This operation copies data from the caller's buffers
+        into the sink's internal buffers. For zero-copy writes,
+        use @ref prepare and @ref commit directly.
+
+        @param buffers The buffer sequence to write.
+
+        @return An awaitable yielding `(error_code,std::size_t)`.
+
+        @par Preconditions
+        The wrapper must contain a valid sink (`has_value() == true`).
+    */
+    template<ConstBufferSequence CB>
+    task<io_result<std::size_t>>
+    write(CB buffers);
+
+    /** Write data with optional end-of-stream.
+
+        Writes all data from the buffer sequence to the underlying
+        sink, optionally finalizing it afterwards. This method
+        satisfies the @ref WriteSink concept.
+
+        @note This operation copies data from the caller's buffers
+        into the sink's internal buffers. For zero-copy writes,
+        use @ref prepare and @ref commit directly.
+
+        @param buffers The buffer sequence to write.
+        @param eof If true, finalize the sink after writing.
+
+        @return An awaitable yielding `(error_code,std::size_t)`.
+
+        @par Preconditions
+        The wrapper must contain a valid sink (`has_value() == true`).
+    */
+    template<ConstBufferSequence CB>
+    task<io_result<std::size_t>>
+    write(CB buffers, bool eof);
+
+    /** Signal end-of-stream.
+
+        Indicates that no more data will be written to the sink.
+        This method satisfies the @ref WriteSink concept.
+
+        @return An awaitable yielding `(error_code)`.
+
+        @par Preconditions
+        The wrapper must contain a valid sink (`has_value() == true`).
+    */
+    auto
+    write_eof();
 
 protected:
     /** Rebind to a new sink after move.
@@ -820,6 +885,66 @@ any_buffer_sink::commit_eof()
     };
     return awaitable{this, {}};
 }
+
+//----------------------------------------------------------
+
+template<ConstBufferSequence CB>
+task<io_result<std::size_t>>
+any_buffer_sink::write(CB buffers)
+{
+    return write(buffers, false);
+}
+
+template<ConstBufferSequence CB>
+task<io_result<std::size_t>>
+any_buffer_sink::write(CB buffers, bool eof)
+{
+    buffer_param<CB> bp(buffers);
+    std::size_t total = 0;
+
+    for(;;)
+    {
+        auto src = bp.data();
+        if(src.empty())
+            break;
+
+        mutable_buffer arr[detail::max_iovec_];
+        std::size_t count = prepare(arr, detail::max_iovec_);
+        if(count == 0)
+        {
+            auto [ec] = co_await commit(0);
+            if(ec.failed())
+                co_return {ec, total};
+            continue;
+        }
+
+        auto n = buffer_copy(std::span(arr, count), src);
+        auto [ec] = co_await commit(n);
+        if(ec.failed())
+            co_return {ec, total};
+        bp.consume(n);
+        total += n;
+    }
+
+    if(eof)
+    {
+        auto [ec] = co_await commit_eof();
+        if(ec.failed())
+            co_return {ec, total};
+    }
+
+    co_return {{}, total};
+}
+
+inline auto
+any_buffer_sink::write_eof()
+{
+    return commit_eof();
+}
+
+//----------------------------------------------------------
+
+static_assert(WriteSink<any_buffer_sink>);
 
 } // namespace capy
 } // namespace boost
