@@ -176,7 +176,7 @@ graph TD
    - Cleanup on early exit
 
 7. **Synchronization Primitives**
-   - `async_mutex` for mutual exclusion
+   - `coro_lock` for mutual exclusion
    - `async_event` for signaling
 
 8. **Executors and Strands**

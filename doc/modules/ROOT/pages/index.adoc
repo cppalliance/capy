@@ -24,7 +24,7 @@ mocks that I/O libraries require.
 * **Concurrent composition** via `when_all`, `when_any` with structured error propagation
 * **Execution contexts** — thread pool with service management
 * **Strand** for safe concurrent access without mutexes
-* **Async synchronization** — `async_mutex`, `async_event`
+* **Async synchronization** — `coro_lock`, `async_event`
 * **Frame allocation recycling** for zero steady-state allocations
 * **Test utilities** — mock streams, mock sources/sinks, and error injection
 

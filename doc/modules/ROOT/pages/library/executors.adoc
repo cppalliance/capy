@@ -137,11 +137,11 @@ Without strands, concurrent access requires locking:
 
 [source,cpp]
 ----
-async_mutex mtx;
+coro_lock cm;
 
 task<void> modify()
 {
-    auto lock = co_await mtx.lock();
+    auto lock = co_await cm.lock();
     shared_data.modify();
 }
 ----
@@ -259,7 +259,7 @@ Use `executor_work_guard` for RAII:
 | `strand`
 
 | Explicit locking
-| `async_mutex`
+| `coro_lock`
 
 | Custom executor type
 | Implement `Executor` concept

@@ -32,28 +32,28 @@ Coroutine-aware primitives suspend the coroutine instead:
 
 [source,cpp]
 ----
-async_mutex mtx;
+coro_lock cm;
 
 task<void> good_example()
 {
-    auto lock = co_await mtx.lock();  // Suspends coroutine, not thread
+    auto lock = co_await cm.lock();  // Suspends coroutine, not thread
     co_await some_operation();
 }  // Other coroutines can run while we wait
 ----
 
-== async_mutex
+== coro_lock
 
 A mutex that suspends waiting coroutines instead of blocking threads:
 
 [source,cpp]
 ----
-#include <boost/capy/ex/async_mutex.hpp>
+#include <boost/capy/ex/coro_lock.hpp>
 
-async_mutex mtx;
+coro_lock cm;
 
 task<void> critical_section()
 {
-    auto lock = co_await mtx.lock();
+    auto lock = co_await cm.lock();
     // Exclusive access to protected resource
     modify_shared_data();
 }  // Lock released when lock goes out of scope
@@ -64,14 +64,14 @@ task<void> critical_section()
 **Acquire lock:**
 [source,cpp]
 ----
-auto lock = co_await mtx.lock();
+auto lock = co_await cm.lock();
 ----
 
 **RAII release:**
 [source,cpp]
 ----
 {
-    auto lock = co_await mtx.lock();
+    auto lock = co_await cm.lock();
     // ... protected region ...
 }  // Lock released here
 ----
@@ -79,7 +79,7 @@ auto lock = co_await mtx.lock();
 **Manual release:**
 [source,cpp]
 ----
-auto lock = co_await mtx.lock();
+auto lock = co_await cm.lock();
 // ...
 lock.unlock();  // Release early
 ----
@@ -90,7 +90,7 @@ Attempt to acquire without waiting:
 
 [source,cpp]
 ----
-if (auto lock = mtx.try_lock())
+if (auto lock = cm.try_lock())
 {
     // Got the lock
     use_resource();
@@ -103,7 +103,7 @@ else
 
 === Fair Queuing
 
-`async_mutex` uses FIFO ordering—waiters are granted the lock in order:
+`coro_lock` uses FIFO ordering—waiters are granted the lock in order:
 
 ----
 Time →
@@ -179,7 +179,7 @@ the signal.
 
 [source,cpp]
 ----
-async_mutex mtx;
+coro_lock cm;
 std::queue<item> queue;
 async_event not_empty;
 
@@ -189,7 +189,7 @@ task<void> producer()
     {
         auto item = co_await produce();
         {
-            auto lock = co_await mtx.lock();
+            auto lock = co_await cm.lock();
             queue.push(item);
         }
         not_empty.set();
@@ -203,7 +203,7 @@ task<void> consumer()
         co_await not_empty.wait();
         item i;
         {
-            auto lock = co_await mtx.lock();
+            auto lock = co_await cm.lock();
             if (!queue.empty())
             {
                 i = queue.front();
@@ -243,14 +243,14 @@ task<void> use_resource()
 [source,cpp]
 ----
 template<typename F>
-task<void> with_lock(async_mutex& mtx, F&& f)
+task<void> with_lock(coro_lock& cm, F&& f)
 {
-    auto lock = co_await mtx.lock();
+    auto lock = co_await cm.lock();
     co_await f();
 }
 
 // Usage:
-co_await with_lock(mtx, [&]() -> task<void> {
+co_await with_lock(cm, [&]() -> task<void> {
     co_await modify_shared_state();
 });
 ----
@@ -275,7 +275,7 @@ co_await with_lock(mtx, [&]() -> task<void> {
 |===
 | Primitive | Purpose
 
-| `async_mutex`
+| `coro_lock`
 | Mutual exclusion without blocking threads
 
 | `async_event`

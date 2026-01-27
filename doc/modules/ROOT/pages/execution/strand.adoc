@@ -240,7 +240,7 @@ Use strands when:
 
 Do NOT use strands when:
 
-* You need fine-grained locking (use `async_mutex` instead)
+* You need fine-grained locking (use `coro_lock` instead)
 * Operations are CPU-intensive — one long operation blocks others
 * You need cross-context synchronization — strands are per-executor
 

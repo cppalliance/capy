@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_ASYNC_MUTEX_HPP
-#define BOOST_CAPY_ASYNC_MUTEX_HPP
+#ifndef BOOST_CAPY_CORO_LOCK_HPP
+#define BOOST_CAPY_CORO_LOCK_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
@@ -42,23 +42,23 @@ namespace capy {
 
     @par Example
     @code
-    async_mutex mutex;
+    coro_lock cm;
 
     task<> protected_operation() {
-        co_await mutex.lock();
+        co_await cm.lock();
         // ... critical section ...
-        mutex.unlock();
+        cm.unlock();
     }
 
     // Or with RAII:
     task<> protected_operation() {
-        auto guard = co_await mutex.scoped_lock();
+        auto guard = co_await cm.scoped_lock();
         // ... critical section ...
         // unlocks automatically
     }
     @endcode
 */
-class async_mutex
+class coro_lock
 {
 public:
     class lock_awaiter;
@@ -72,15 +72,15 @@ public:
     */
     class lock_awaiter
     {
-        friend class async_mutex;
+        friend class coro_lock;
 
-        async_mutex* m_;
+        coro_lock* m_;
         lock_awaiter* next_ = nullptr;
         std::coroutine_handle<> h_;
         executor_ref ex_;
 
     public:
-        explicit lock_awaiter(async_mutex* m) noexcept
+        explicit lock_awaiter(coro_lock* m) noexcept
             : m_(m)
         {
         }
@@ -130,16 +130,16 @@ public:
         }
     };
 
-    /** RAII lock guard for async_mutex.
+    /** RAII lock guard for coro_lock.
 
         Automatically unlocks the mutex when destroyed.
     */
     class [[nodiscard]] lock_guard
     {
-        async_mutex* m_;
+        coro_lock* m_;
 
     public:
-        explicit lock_guard(async_mutex* m) noexcept
+        explicit lock_guard(coro_lock* m) noexcept
             : m_(m)
         {
         }
@@ -175,11 +175,11 @@ public:
     */
     class lock_guard_awaiter
     {
-        async_mutex* m_;
+        coro_lock* m_;
         lock_awaiter inner_;
 
     public:
-        explicit lock_guard_awaiter(async_mutex* m) noexcept
+        explicit lock_guard_awaiter(coro_lock* m) noexcept
             : m_(m)
             , inner_(m)
         {
@@ -211,11 +211,11 @@ public:
         }
     };
 
-    async_mutex() = default;
+    coro_lock() = default;
 
     // Non-copyable, non-movable
-    async_mutex(async_mutex const&) = delete;
-    async_mutex& operator=(async_mutex const&) = delete;
+    coro_lock(coro_lock const&) = delete;
+    coro_lock& operator=(coro_lock const&) = delete;
 
     /** Returns an awaiter that acquires the mutex.
 

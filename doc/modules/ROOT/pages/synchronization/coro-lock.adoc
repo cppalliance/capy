@@ -7,9 +7,9 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-= Async Mutex
+= Coro Lock
 
-This page explains how to use `async_mutex` for coroutine-friendly mutual exclusion.
+This page explains how to use `coro_lock` for coroutine-friendly mutual exclusion.
 
 NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
 
@@ -22,45 +22,45 @@ a mutex that _suspends_ the coroutine instead of blocking the thread.
 [source,cpp]
 ----
 // BAD: Blocks the thread
-std::mutex mtx;
+std::mutex m;
 
 task<void> bad_example()
 {
-    std::lock_guard lock(mtx);  // Thread blocked while waiting
+    std::lock_guard lock(m);  // Thread blocked while waiting
     // ... critical section ...
     co_return;
 }
 
 // GOOD: Suspends the coroutine
-async_mutex mtx;
+coro_lock cm;
 
 task<void> good_example()
 {
-    co_await mtx.lock();  // Coroutine suspends, thread is free
+    co_await cm.lock();  // Coroutine suspends, thread is free
     // ... critical section ...
-    mtx.unlock();
+    cm.unlock();
     co_return;
 }
 ----
 
-== What is async_mutex?
+== What is coro_lock?
 
-An `async_mutex` provides mutual exclusion for coroutines. When a coroutine
+A `coro_lock` provides mutual exclusion for coroutines. When a coroutine
 attempts to acquire a locked mutex, it suspends and joins a wait queue. When
 the holder unlocks, the next waiter is resumed.
 
 [source,cpp]
 ----
-#include <boost/capy/ex/async_mutex.hpp>
+#include <boost/capy/ex/coro_lock.hpp>
 
-async_mutex mtx;
+coro_lock cm;
 
 task<void> protected_operation()
 {
-    co_await mtx.lock();
+    co_await cm.lock();
     // Only one coroutine executes this section at a time
     do_work();
-    mtx.unlock();
+    cm.unlock();
 }
 ----
 
@@ -73,7 +73,7 @@ The queue node is stored in the awaiter, which lives on the coroutine frame:
 Coroutine Frame: [...state...] [awaiter with queue node]
 ----
 
-This makes `async_mutex` suitable for high-frequency locking scenarios.
+This makes `coro_lock` suitable for high-frequency locking scenarios.
 
 == Basic Usage
 
@@ -81,13 +81,13 @@ This makes `async_mutex` suitable for high-frequency locking scenarios.
 
 [source,cpp]
 ----
-async_mutex mtx;
+coro_lock cm;
 
 task<void> example()
 {
-    co_await mtx.lock();
+    co_await cm.lock();
     // Critical section
-    mtx.unlock();
+    cm.unlock();
 }
 ----
 
@@ -99,11 +99,11 @@ Use `scoped_lock()` for automatic unlocking:
 
 [source,cpp]
 ----
-async_mutex mtx;
+coro_lock cm;
 
 task<void> example()
 {
-    auto guard = co_await mtx.scoped_lock();
+    auto guard = co_await cm.scoped_lock();
     // Critical section
     // Guard unlocks automatically on scope exit
 }
@@ -117,10 +117,10 @@ The `lock_guard` class provides RAII semantics:
 
 [source,cpp]
 ----
-async_mutex::lock_guard guard = co_await mtx.scoped_lock();
+coro_lock::lock_guard guard = co_await cm.scoped_lock();
 
 // Move to extend lifetime
-async_mutex::lock_guard g2 = std::move(guard);
+coro_lock::lock_guard g2 = std::move(guard);
 
 // Guard unlocks in destructor
 ----
@@ -133,7 +133,7 @@ Check if the mutex is currently held:
 
 [source,cpp]
 ----
-if (mtx.is_locked())
+if (cm.is_locked())
 {
     // Someone holds the lock
 }
@@ -143,7 +143,7 @@ This is informational only—the state may change before you act on it.
 
 == Thread Safety
 
-IMPORTANT: `async_mutex` is NOT thread-safe. It is designed for single-threaded
+IMPORTANT: `coro_lock` is NOT thread-safe. It is designed for single-threaded
 use where multiple coroutines may contend for a resource.
 
 For multi-threaded scenarios, combine with a strand:
@@ -152,12 +152,12 @@ For multi-threaded scenarios, combine with a strand:
 ----
 // All access through the same strand
 strand s(pool.get_executor());
-async_mutex mtx;
+coro_lock cm;
 
 task<void> multi_threaded_safe()
 {
     co_await run_on(s, [&]() -> task<void> {
-        auto guard = co_await mtx.scoped_lock();
+        auto guard = co_await cm.scoped_lock();
         // Now safe: strand serializes, mutex excludes
         co_return;
     }());
@@ -170,19 +170,19 @@ task<void> multi_threaded_safe()
 ----
 class shared_counter
 {
-    async_mutex mtx_;
+    coro_lock cm_;
     int value_ = 0;
 
 public:
     task<void> increment()
     {
-        auto guard = co_await mtx_.scoped_lock();
+        auto guard = co_await cm_.scoped_lock();
         ++value_;
     }
 
     task<int> get()
     {
-        auto guard = co_await mtx_.scoped_lock();
+        auto guard = co_await cm_.scoped_lock();
         co_return value_;
     }
 };
@@ -194,7 +194,7 @@ public:
 ----
 class serial_writer
 {
-    async_mutex mtx_;
+    coro_lock cm_;
     file& file_;
 
 public:
@@ -202,20 +202,20 @@ public:
 
     task<void> write(std::string_view data)
     {
-        auto guard = co_await mtx_.scoped_lock();
+        auto guard = co_await cm_.scoped_lock();
         // Only one write at a time
         co_await file_.async_write(data);
     }
 };
 ----
 
-== async_mutex vs Strand
+== coro_lock vs Strand
 
 Both provide serialization, but differ in scope:
 
 [cols="1,2,2"]
 |===
-| Feature | async_mutex | Strand
+| Feature | coro_lock | Strand
 
 | Scope
 | Single resource
@@ -234,18 +234,18 @@ Both provide serialization, but differ in scope:
 | Multi-threaded safe
 |===
 
-Use `async_mutex` for protecting specific resources. Use strands for broader
+Use `coro_lock` for protecting specific resources. Use strands for broader
 serialization of all operations.
 
-== When NOT to Use async_mutex
+== When NOT to Use coro_lock
 
-Use `async_mutex` when:
+Use `coro_lock` when:
 
 * You need fine-grained mutual exclusion
 * Lock contention is expected
 * Critical sections are short
 
-Do NOT use `async_mutex` when:
+Do NOT use `coro_lock` when:
 
 * Operations are multi-threaded — combine with a strand
 * Critical sections are long — consider restructuring
@@ -258,7 +258,7 @@ Do NOT use `async_mutex` when:
 |===
 | Feature | Description
 
-| `async_mutex`
+| `coro_lock`
 | Non-blocking mutex for coroutines
 
 | `lock()`
