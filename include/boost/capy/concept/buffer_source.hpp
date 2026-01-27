@@ -25,7 +25,8 @@ namespace capy {
 
     A type satisfies `BufferSource` if it provides a `pull` member function
     that fills a caller-provided array of buffer descriptors and is an
-    @ref IoAwaitable whose return value decomposes to `(error_code,std::size_t)`.
+    @ref IoAwaitable whose return value decomposes to `(error_code,std::size_t)`,
+    plus a `consume` member function to indicate how many bytes were used.
 
     Use this concept when you need to produce data asynchronously for
     transfer to a sink, such as streaming HTTP request bodies or reading
@@ -40,11 +41,13 @@ namespace capy {
     @li The return type must satisfy @ref IoAwaitable
     @li The awaitable must decompose to `(error_code,std::size_t)`
         via structured bindings
+    @li `T` must provide a `consume` member function accepting a byte count
 
     @par Semantic Requirements
 
-    The `pull` operation fills the provided buffer array with data. On
-    return, exactly one of the following is true:
+    The `pull` operation fills the provided buffer array with data starting
+    from the current unconsumed position. On return, exactly one of the
+    following is true:
 
     @li **Data available**: `ec.failed()` is `false` and `count > 0`.
         The array contains `count` buffer descriptors.
@@ -52,27 +55,31 @@ namespace capy {
         No more data is available; the transfer is complete.
     @li **Error**: `ec.failed()` is `true`. An error occurred.
 
-    When `count > 0`, the caller is responsible for consuming all data
-    in the returned buffers before calling `pull` again. The source
-    assumes all previously returned data has been consumed.
+    Calling `pull` multiple times without intervening `consume` returns
+    the same unconsumed data. The `consume` operation advances the read
+    position by the specified number of bytes. The next `pull` returns
+    data starting after the consumed bytes.
 
     @par Buffer Lifetime
 
     The memory referenced by the returned buffer descriptors must remain
-    valid until the next call to `pull` or until the source is destroyed.
+    valid until the next call to `pull`, `consume`, or until the source
+    is destroyed.
 
     @par Conforming Signatures
 
     @code
     some_io_awaitable<io_result<std::size_t>>
     pull( const_buffer* arr, std::size_t max_count );
+
+    void consume( std::size_t n ) noexcept;
     @endcode
 
     @par Example
 
     @code
-    template<BufferSource Source, WriteSink Sink>
-    task<io_result<std::size_t>> transfer( Source& source, Sink& sink )
+    template<BufferSource Source, WriteStream Stream>
+    task<io_result<std::size_t>> transfer( Source& source, Stream& stream )
     {
         const_buffer arr[16];
         std::size_t total = 0;
@@ -82,14 +89,13 @@ namespace capy {
             if( ec.failed() )
                 co_return {ec, total};
             if( count == 0 )
-            {
-                auto [eof_ec] = co_await sink.write_eof();
-                co_return {eof_ec, total};
-            }
-            auto [write_ec, n] = co_await sink.write( std::span( arr, count ) );
-            total += n;
+                co_return {{}, total};
+            auto [write_ec, n] = co_await stream.write_some(
+                std::span( arr, count ) );
             if( write_ec.failed() )
                 co_return {write_ec, total};
+            source.consume( n );
+            total += n;
         }
     }
     @endcode
@@ -98,12 +104,13 @@ namespace capy {
 */
 template<typename T>
 concept BufferSource =
-    requires(T& src, const_buffer* arr, std::size_t max_count)
+    requires(T& src, const_buffer* arr, std::size_t max_count, std::size_t n)
     {
         { src.pull(arr, max_count) } -> IoAwaitable;
         requires awaitable_decomposes_to<
             decltype(src.pull(arr, max_count)),
             system::error_code, std::size_t>;
+        src.consume(n);
     };
 
 } // namespace capy

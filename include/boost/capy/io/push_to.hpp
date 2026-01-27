@@ -81,6 +81,7 @@ push_to(Src& source, Sink& sink)
         std::span<const_buffer const> bufs(arr, count);
         auto [write_ec, n] = co_await sink.write(bufs);
         total += n;
+        source.consume(n);
         if(write_ec.failed())
             co_return {write_ec, total};
     }
@@ -91,8 +92,7 @@ push_to(Src& source, Sink& sink)
     This function pulls data from the source and writes it to the
     stream until the source is exhausted or an error occurs. The
     stream uses `write_some()` which may perform partial writes,
-    so this function loops to ensure all data from each pull is
-    written before requesting more from the source.
+    so this function loops until all pulled data is consumed.
 
     Unlike the WriteSink overload, this function does not signal
     EOF explicitly since WriteStream does not provide a write_eof
@@ -135,60 +135,20 @@ push_to(Src& source, Stream& stream)
 
     for(;;)
     {
-        // Pull buffers from the source
         auto [ec, count] = co_await source.pull(arr, max_bufs);
         if(ec.failed())
             co_return {ec, total};
 
-        // If source is exhausted, we're done
         if(count == 0)
             co_return {{}, total};
 
-        // Write all data from this pull (handle partial writes)
         std::span<const_buffer const> bufs(arr, count);
-        std::size_t remaining = buffer_size(bufs);
-        std::size_t offset = 0;
+        auto [write_ec, n] = co_await stream.write_some(bufs);
+        if(write_ec.failed())
+            co_return {write_ec, total};
 
-        while(remaining > 0)
-        {
-            // WriteStream may accept less than provided
-            auto [write_ec, n] = co_await stream.write_some(bufs);
-            if(write_ec.failed())
-                co_return {write_ec, total};
-
-            total += n;
-            remaining -= n;
-            offset += n;
-
-            // Advance the buffer span past what was written
-            if(remaining > 0)
-            {
-                std::size_t to_consume = offset;
-                std::size_t buf_idx = 0;
-
-                // Find the starting point for the next write
-                while(buf_idx < count && to_consume > 0)
-                {
-                    std::size_t buf_size = bufs[buf_idx].size();
-                    if(to_consume >= buf_size)
-                    {
-                        to_consume -= buf_size;
-                        ++buf_idx;
-                    }
-                    else
-                    {
-                        // Partial consumption of current buffer
-                        arr[buf_idx] = const_buffer(
-                            static_cast<char const*>(arr[buf_idx].data()) + to_consume,
-                            arr[buf_idx].size() - to_consume);
-                        to_consume = 0;
-                    }
-                }
-
-                bufs = std::span<const_buffer const>(arr + buf_idx, count - buf_idx);
-                offset = 0;
-            }
-        }
+        total += n;
+        source.consume(n);
     }
 }
 

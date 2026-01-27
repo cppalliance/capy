@@ -85,6 +85,8 @@ struct valid_buffer_source
     {
         return {};
     }
+
+    void consume(std::size_t) noexcept {}
 };
 
 // Invalid: pull returns wrong type
@@ -127,6 +129,18 @@ struct invalid_buffer_source_wrong_sig
     {
         return {};
     }
+
+    void consume(std::size_t) noexcept {}
+};
+
+// Invalid: missing consume
+struct invalid_buffer_source_no_consume
+{
+    mock_source_awaitable
+    pull(const_buffer*, std::size_t)
+    {
+        return {};
+    }
 };
 
 } // namespace
@@ -152,6 +166,9 @@ static_assert(!BufferSource<invalid_buffer_source_returns_int>);
 
 // Wrong signature does not satisfy BufferSource
 static_assert(!BufferSource<invalid_buffer_source_wrong_sig>);
+
+// Missing consume does not satisfy BufferSource
+static_assert(!BufferSource<invalid_buffer_source_no_consume>);
 
 } // namespace capy
 } // namespace boost

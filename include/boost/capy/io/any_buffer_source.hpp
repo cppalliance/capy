@@ -225,6 +225,21 @@ public:
         return has_value();
     }
 
+    /** Consume bytes from the source.
+
+        Advances the internal read position of the underlying source
+        by the specified number of bytes. The next call to @ref pull
+        returns data starting after the consumed bytes.
+
+        @param n The number of bytes to consume. Must not exceed the
+        total size of buffers returned by the previous @ref pull.
+
+        @par Preconditions
+        The wrapper must contain a valid source (`has_value() == true`).
+    */
+    void
+    consume(std::size_t n) noexcept;
+
     /** Pull buffer data from the source.
 
         Fills the provided array with buffer descriptors from the
@@ -281,13 +296,21 @@ struct any_buffer_source::vtable
         std::stop_token token,
         system::error_code* ec,
         std::size_t* count);
+    void (*do_consume)(void* source, std::size_t n) noexcept;
 };
 
 template<BufferSource S>
 struct any_buffer_source::vtable_for_impl
 {
+    static void
+    do_consume_impl(void* source, std::size_t n) noexcept
+    {
+        static_cast<S*>(source)->consume(n);
+    }
+
     static constexpr vtable value = {
-        &any_buffer_source::do_pull_impl<S>
+        &any_buffer_source::do_pull_impl<S>,
+        &do_consume_impl
     };
 };
 
@@ -538,6 +561,12 @@ any_buffer_source::do_pull_impl(
 }
 
 //----------------------------------------------------------
+
+inline void
+any_buffer_source::consume(std::size_t n) noexcept
+{
+    vt_->do_consume(source_, n);
+}
 
 inline auto
 any_buffer_source::pull(

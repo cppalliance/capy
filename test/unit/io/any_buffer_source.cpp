@@ -90,6 +90,79 @@ public:
 
             BOOST_TEST_EQ(count, 1u);
             BOOST_TEST_EQ(arr[0].size(), 11u);
+            abs.consume(11);
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testConsume()
+    {
+        test::fuse f;
+        auto r = f.armed([&](test::fuse&) -> task<> {
+            test::buffer_source bs(f);
+            bs.provide("hello world");
+
+            any_buffer_source abs(bs);
+
+            const_buffer arr[16];
+
+            // First pull returns all data
+            auto [ec1, count1] = co_await abs.pull(arr, 16);
+            if(ec1.failed())
+                co_return;
+            BOOST_TEST_EQ(count1, 1u);
+            BOOST_TEST_EQ(arr[0].size(), 11u);
+
+            // Consume partial (5 bytes = "hello")
+            abs.consume(5);
+
+            // Second pull returns remaining data
+            auto [ec2, count2] = co_await abs.pull(arr, 16);
+            if(ec2.failed())
+                co_return;
+            BOOST_TEST_EQ(count2, 1u);
+            BOOST_TEST_EQ(arr[0].size(), 6u); // " world"
+
+            // Consume rest
+            abs.consume(6);
+
+            // Third pull returns empty (exhausted)
+            auto [ec3, count3] = co_await abs.pull(arr, 16);
+            if(ec3.failed())
+                co_return;
+            BOOST_TEST_EQ(count3, 0u);
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testPullWithoutConsume()
+    {
+        test::fuse f;
+        auto r = f.armed([&](test::fuse&) -> task<> {
+            test::buffer_source bs(f);
+            bs.provide("test");
+
+            any_buffer_source abs(bs);
+
+            const_buffer arr[16];
+
+            // Pull returns data
+            auto [ec1, count1] = co_await abs.pull(arr, 16);
+            if(ec1.failed())
+                co_return;
+            BOOST_TEST_EQ(count1, 1u);
+            BOOST_TEST_EQ(arr[0].size(), 4u);
+
+            // Pull again without consume returns same data
+            auto [ec2, count2] = co_await abs.pull(arr, 16);
+            if(ec2.failed())
+                co_return;
+            BOOST_TEST_EQ(count2, 1u);
+            BOOST_TEST_EQ(arr[0].size(), 4u);
+
+            abs.consume(4);
         });
         BOOST_TEST(r.success);
     }
@@ -114,7 +187,10 @@ public:
                 if(count == 0)
                     break;
                 for(std::size_t i = 0; i < count; ++i)
+                {
                     total += arr[i].size();
+                    abs.consume(arr[i].size());
+                }
             }
 
             BOOST_TEST_EQ(total, 11u);
@@ -234,6 +310,8 @@ public:
         testConstruct();
         testMove();
         testPull();
+        testConsume();
+        testPullWithoutConsume();
         testPullMultiple();
         testPullEmpty();
         testPushTo();

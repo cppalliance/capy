@@ -35,7 +35,8 @@ namespace test {
     @ref fuse enables error injection at controlled points.
 
     This class satisfies the @ref BufferSource concept by providing
-    a pull interface that fills an array of buffer descriptors.
+    a pull interface that fills an array of buffer descriptors and
+    a consume interface to indicate bytes used.
 
     @par Thread Safety
     Not thread-safe.
@@ -53,6 +54,8 @@ namespace test {
         if( ec.failed() )
             co_return;
         // arr[0..count) contains buffer descriptors
+        std::size_t n = buffer_size( std::span( arr, count ) );
+        bs.consume( n );
     } );
     @endcode
 
@@ -108,18 +111,38 @@ public:
         return data_.size() - pos_;
     }
 
+    /** Consume bytes from the source.
+
+        Advances the internal read position by the specified number
+        of bytes. The next call to @ref pull returns data starting
+        after the consumed bytes.
+
+        @param n The number of bytes to consume. Must not exceed the
+        total size of buffers returned by the previous @ref pull.
+    */
+    void
+    consume(std::size_t n) noexcept
+    {
+        pos_ += n;
+    }
+
     /** Pull buffer data from the source.
 
         Fills the provided array with buffer descriptors pointing to
-        internal data. Returns the number of buffers filled. When no
-        data remains, returns count=0 to signal completion.
+        internal data starting from the current unconsumed position.
+        Returns the number of buffers filled. When no data remains,
+        returns count=0 to signal completion.
+
+        Calling pull multiple times without intervening @ref consume
+        returns the same data. Use consume to advance past processed
+        bytes.
 
         @param arr Pointer to array of const_buffer to fill.
         @param max_count Maximum number of buffers to fill.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
 
-        @see fuse
+        @see consume, fuse
     */
     auto
     pull(const_buffer* arr, std::size_t max_count)
@@ -159,7 +182,6 @@ public:
                 arr_[0] = make_buffer(
                     self_->data_.data() + self_->pos_,
                     to_return);
-                self_->pos_ += to_return;
 
                 return {{}, 1};
             }
