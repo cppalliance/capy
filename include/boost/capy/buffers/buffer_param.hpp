@@ -132,13 +132,10 @@ public:
     /// The buffer type (const_buffer or mutable_buffer)
     using buffer_type = capy::buffer_type<BS>;
 
-    /// Maximum number of buffers in the window
-    static constexpr std::size_t max_size = 16;
-
 private:
     decltype(begin(std::declval<BS const&>())) it_;
     decltype(end(std::declval<BS const&>())) end_;
-    buffer_type arr_[max_size];
+    buffer_type arr_[detail::max_iovec_];
     std::size_t size_ = 0;
     std::size_t pos_ = 0;
 
@@ -147,7 +144,7 @@ private:
     {
         pos_ = 0;
         size_ = 0;
-        for(; it_ != end_ && size_ < max_size; ++it_)
+        for(; it_ != end_ && size_ < detail::max_iovec_; ++it_)
         {
             buffer_type buf(*it_);
             if(buf.size() > 0)

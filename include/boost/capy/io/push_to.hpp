@@ -62,13 +62,12 @@ template<BufferSource Src, WriteSink Sink>
 task<io_result<std::size_t>>
 push_to(Src& source, Sink& sink)
 {
-    static constexpr std::size_t max_bufs = 16;
-    const_buffer arr[max_bufs];
+    const_buffer arr[detail::max_iovec_];
     std::size_t total = 0;
 
     for(;;)
     {
-        auto [ec, count] = co_await source.pull(arr, max_bufs);
+        auto [ec, count] = co_await source.pull(arr, detail::max_iovec_);
         if(ec.failed())
             co_return {ec, total};
 
@@ -129,13 +128,12 @@ template<BufferSource Src, WriteStream Stream>
 task<io_result<std::size_t>>
 push_to(Src& source, Stream& stream)
 {
-    static constexpr std::size_t max_bufs = 16;
-    const_buffer arr[max_bufs];
+    const_buffer arr[detail::max_iovec_];
     std::size_t total = 0;
 
     for(;;)
     {
-        auto [ec, count] = co_await source.pull(arr, max_bufs);
+        auto [ec, count] = co_await source.pull(arr, detail::max_iovec_);
         if(ec.failed())
             co_return {ec, total};
 

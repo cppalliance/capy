@@ -64,13 +64,12 @@ template<ReadSource Src, BufferSink Sink>
 task<io_result<std::size_t>>
 pull_from(Src& source, Sink& sink)
 {
-    static constexpr std::size_t max_bufs = 16;
-    mutable_buffer dst_arr[max_bufs];
+    mutable_buffer dst_arr[detail::max_iovec_];
     std::size_t total = 0;
 
     for(;;)
     {
-        std::size_t dst_count = sink.prepare(dst_arr, max_bufs);
+        std::size_t dst_count = sink.prepare(dst_arr, detail::max_iovec_);
         if(dst_count == 0)
         {
             // No buffer space available; commit nothing to flush
@@ -146,14 +145,13 @@ template<ReadStream Src, BufferSink Sink>
 task<io_result<std::size_t>>
 pull_from(Src& source, Sink& sink)
 {
-    static constexpr std::size_t max_bufs = 16;
-    mutable_buffer dst_arr[max_bufs];
+    mutable_buffer dst_arr[detail::max_iovec_];
     std::size_t total = 0;
 
     for(;;)
     {
         // Prepare destination buffers from the sink
-        std::size_t dst_count = sink.prepare(dst_arr, max_bufs);
+        std::size_t dst_count = sink.prepare(dst_arr, detail::max_iovec_);
         if(dst_count == 0)
         {
             // No buffer space available; commit nothing to flush
