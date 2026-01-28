@@ -10,7 +10,6 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/except.hpp>
 #include <boost/system/system_error.hpp>
-#include <boost/throw_exception.hpp>
 #include <stdexcept>
 #include <typeinfo>
 
@@ -19,91 +18,70 @@ namespace capy {
 namespace detail {
 
 void
-throw_bad_typeid(
-    source_location const& loc)
+throw_bad_typeid()
 {
-    throw_exception(std::bad_typeid(), loc);
+    throw std::bad_typeid();
 }
 
 void
-throw_bad_alloc(
-    source_location const& loc)
+throw_bad_alloc()
 {
-    throw_exception(
-        std::bad_alloc(), loc);
+    throw std::bad_alloc();
 }
 
 void
-throw_invalid_argument(
-    source_location const& loc)
+throw_invalid_argument()
 {
-    throw_exception(
-        std::invalid_argument(
-            "invalid argument"),
-        loc);
+    throw std::invalid_argument(
+        "invalid argument");
 }
 
 void
 throw_invalid_argument(
-    char const* what,
-    source_location const& loc)
+    char const* what)
 {
-    throw_exception(
-        std::invalid_argument(what), loc);
+    throw std::invalid_argument(what);
+}
+
+void
+throw_length_error()
+{
+    throw std::length_error(
+        "length error");
 }
 
 void
 throw_length_error(
-    source_location const& loc)
+    char const* what)
 {
-    throw_exception(
-        std::length_error(
-            "length error"), loc);
+    throw std::length_error(what);
 }
 
 void
-throw_length_error(
-    char const* what,
-    source_location const& loc)
+throw_logic_error()
 {
-    throw_exception(
-        std::length_error(what), loc);
+    throw std::logic_error(
+        "logic error");
 }
 
 void
-throw_logic_error(
-    source_location const& loc)
+throw_out_of_range()
 {
-    throw_exception(
-        std::logic_error(
-            "logic error"),
-        loc);
-}
-
-void
-throw_out_of_range(
-    source_location const& loc)
-{
-    throw_exception(
-        std::out_of_range("out of range"), loc);
+    throw std::out_of_range("out of range");
 }
 
 void
 throw_runtime_error(
-    char const* what,
-    source_location const& loc)
+    char const* what)
 {
-    throw_exception(
-        std::runtime_error(what), loc);
+    throw std::runtime_error(what);
 }
 
 void
 throw_system_error(
-    system::error_code const& ec,
-    source_location const& loc)
+    system::error_code const& ec)
 {
-    throw_exception(
-        system::system_error(ec), loc);
+    throw system::system_error(ec);
 }
 
 } // detail

@@ -9,7 +9,6 @@
 
 #include <boost/capy/buffers/circular_dynamic_buffer.hpp>
 #include <boost/capy/detail/except.hpp>
-#include <boost/assert.hpp>
 
 namespace boost {
 namespace capy {

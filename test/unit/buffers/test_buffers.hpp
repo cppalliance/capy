@@ -13,8 +13,6 @@
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/buffers/slice.hpp>
-#include <boost/assert.hpp>
-#include <boost/static_assert.hpp>
 #include <string>
 #include <string_view>
 

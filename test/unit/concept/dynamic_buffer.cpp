@@ -10,9 +10,8 @@
 // Test that header file is self-contained.
 #include <boost/capy/concept/dynamic_buffer.hpp>
 
-#include <boost/core/span.hpp>
-
 #include <cstddef>
+#include <span>
 #include <vector>
 
 #include "test_suite.hpp"
@@ -28,8 +27,8 @@ namespace {
 
 struct valid_dynamic_buffer
 {
-    using const_buffers_type = span<const_buffer const>;
-    using mutable_buffers_type = span<mutable_buffer const>;
+    using const_buffers_type = std::span<const_buffer const>;
+    using mutable_buffers_type = std::span<mutable_buffer const>;
 
     std::size_t size() const { return 0; }
     std::size_t max_size() const { return 0; }
@@ -59,8 +58,8 @@ struct valid_dynamic_buffer_single
 struct valid_dynamic_buffer_adapter
 {
     using is_dynamic_buffer_adapter = void;
-    using const_buffers_type = span<const_buffer const>;
-    using mutable_buffers_type = span<mutable_buffer const>;
+    using const_buffers_type = std::span<const_buffer const>;
+    using mutable_buffers_type = std::span<mutable_buffer const>;
 
     std::size_t size() const { return 0; }
     std::size_t max_size() const { return 0; }
@@ -78,7 +77,7 @@ struct valid_dynamic_buffer_adapter
 // Invalid: missing const_buffers_type
 struct invalid_missing_const_buffers_type
 {
-    using mutable_buffers_type = span<mutable_buffer const>;
+    using mutable_buffers_type = std::span<mutable_buffer const>;
 
     std::size_t size() const { return 0; }
     std::size_t max_size() const { return 0; }
@@ -92,7 +91,7 @@ struct invalid_missing_const_buffers_type
 // Invalid: missing mutable_buffers_type
 struct invalid_missing_mutable_buffers_type
 {
-    using const_buffers_type = span<const_buffer const>;
+    using const_buffers_type = std::span<const_buffer const>;
 
     std::size_t size() const { return 0; }
     std::size_t max_size() const { return 0; }
@@ -106,8 +105,8 @@ struct invalid_missing_mutable_buffers_type
 // Invalid: missing size()
 struct invalid_missing_size
 {
-    using const_buffers_type = span<const_buffer const>;
-    using mutable_buffers_type = span<mutable_buffer const>;
+    using const_buffers_type = std::span<const_buffer const>;
+    using mutable_buffers_type = std::span<mutable_buffer const>;
 
     std::size_t max_size() const { return 0; }
     std::size_t capacity() const { return 0; }
@@ -120,8 +119,8 @@ struct invalid_missing_size
 // Invalid: missing max_size()
 struct invalid_missing_max_size
 {
-    using const_buffers_type = span<const_buffer const>;
-    using mutable_buffers_type = span<mutable_buffer const>;
+    using const_buffers_type = std::span<const_buffer const>;
+    using mutable_buffers_type = std::span<mutable_buffer const>;
 
     std::size_t size() const { return 0; }
     std::size_t capacity() const { return 0; }
@@ -134,8 +133,8 @@ struct invalid_missing_max_size
 // Invalid: missing capacity()
 struct invalid_missing_capacity
 {
-    using const_buffers_type = span<const_buffer const>;
-    using mutable_buffers_type = span<mutable_buffer const>;
+    using const_buffers_type = std::span<const_buffer const>;
+    using mutable_buffers_type = std::span<mutable_buffer const>;
 
     std::size_t size() const { return 0; }
     std::size_t max_size() const { return 0; }
@@ -148,8 +147,8 @@ struct invalid_missing_capacity
 // Invalid: missing data()
 struct invalid_missing_data
 {
-    using const_buffers_type = span<const_buffer const>;
-    using mutable_buffers_type = span<mutable_buffer const>;
+    using const_buffers_type = std::span<const_buffer const>;
+    using mutable_buffers_type = std::span<mutable_buffer const>;
 
     std::size_t size() const { return 0; }
     std::size_t max_size() const { return 0; }
@@ -162,8 +161,8 @@ struct invalid_missing_data
 // Invalid: missing prepare()
 struct invalid_missing_prepare
 {
-    using const_buffers_type = span<const_buffer const>;
-    using mutable_buffers_type = span<mutable_buffer const>;
+    using const_buffers_type = std::span<const_buffer const>;
+    using mutable_buffers_type = std::span<mutable_buffer const>;
 
     std::size_t size() const { return 0; }
     std::size_t max_size() const { return 0; }
@@ -176,8 +175,8 @@ struct invalid_missing_prepare
 // Invalid: missing commit()
 struct invalid_missing_commit
 {
-    using const_buffers_type = span<const_buffer const>;
-    using mutable_buffers_type = span<mutable_buffer const>;
+    using const_buffers_type = std::span<const_buffer const>;
+    using mutable_buffers_type = std::span<mutable_buffer const>;
 
     std::size_t size() const { return 0; }
     std::size_t max_size() const { return 0; }
@@ -190,8 +189,8 @@ struct invalid_missing_commit
 // Invalid: missing consume()
 struct invalid_missing_consume
 {
-    using const_buffers_type = span<const_buffer const>;
-    using mutable_buffers_type = span<mutable_buffer const>;
+    using const_buffers_type = std::span<const_buffer const>;
+    using mutable_buffers_type = std::span<mutable_buffer const>;
 
     std::size_t size() const { return 0; }
     std::size_t max_size() const { return 0; }
@@ -204,8 +203,8 @@ struct invalid_missing_consume
 // Invalid: data() returns wrong type
 struct invalid_data_wrong_type
 {
-    using const_buffers_type = span<const_buffer const>;
-    using mutable_buffers_type = span<mutable_buffer const>;
+    using const_buffers_type = std::span<const_buffer const>;
+    using mutable_buffers_type = std::span<mutable_buffer const>;
 
     std::size_t size() const { return 0; }
     std::size_t max_size() const { return 0; }
@@ -219,8 +218,8 @@ struct invalid_data_wrong_type
 // Invalid: prepare() returns wrong type
 struct invalid_prepare_wrong_type
 {
-    using const_buffers_type = span<const_buffer const>;
-    using mutable_buffers_type = span<mutable_buffer const>;
+    using const_buffers_type = std::span<const_buffer const>;
+    using mutable_buffers_type = std::span<mutable_buffer const>;
 
     std::size_t size() const { return 0; }
     std::size_t max_size() const { return 0; }
@@ -235,7 +234,7 @@ struct invalid_prepare_wrong_type
 struct invalid_const_buffers_not_sequence
 {
     using const_buffers_type = int;
-    using mutable_buffers_type = span<mutable_buffer const>;
+    using mutable_buffers_type = std::span<mutable_buffer const>;
 
     std::size_t size() const { return 0; }
     std::size_t max_size() const { return 0; }
@@ -249,7 +248,7 @@ struct invalid_const_buffers_not_sequence
 // Invalid: mutable_buffers_type not a MutableBufferSequence
 struct invalid_mutable_buffers_not_sequence
 {
-    using const_buffers_type = span<const_buffer const>;
+    using const_buffers_type = std::span<const_buffer const>;
     using mutable_buffers_type = int;
 
     std::size_t size() const { return 0; }

@@ -11,7 +11,7 @@
 #include <boost/capy/buffers/buffer_copy.hpp>
 
 #include <boost/capy/buffers/buffer_pair.hpp>
-#include <boost/core/span.hpp>
+#include <span>
 #include "test_buffers.hpp"
 
 namespace boost {
@@ -75,8 +75,8 @@ struct buffer_copy_test
                     { &s[j],
                         pat.size() - j } };
                 auto n = buffer_copy(
-                    span<mutable_buffer const>(mb, 2),
-                    span<const_buffer const>(cb, 2));
+                    std::span<mutable_buffer const>(mb, 2),
+                    std::span<const_buffer const>(cb, 2));
                 BOOST_TEST_EQ(n, pat.size());
                 BOOST_TEST_EQ(s, pat);
             }
@@ -97,8 +97,8 @@ struct buffer_copy_test
                         { &s[j],
                             pat.size() - j } };
                     auto n = buffer_copy(
-                        span<mutable_buffer const>(mb, 2),
-                        span<const_buffer const>(cb, 2), k);
+                        std::span<mutable_buffer const>(mb, 2),
+                        std::span<const_buffer const>(cb, 2), k);
                     s.resize(n);
                     BOOST_TEST_EQ(s,
                         pat.substr(0, k));

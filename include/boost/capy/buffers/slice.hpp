@@ -12,7 +12,6 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/assert.hpp>
 #include <array>
 #include <iterator>
 #include <type_traits>
@@ -159,7 +158,7 @@ public:
         const_iterator&
         operator++() noexcept
         {
-            BOOST_ASSERT(i_ < n_);
+            BOOST_CAPY_ASSERT(i_ < n_);
             ++it_;
             ++i_;
             return *this;
@@ -176,7 +175,7 @@ public:
         const_iterator&
         operator--() noexcept
         {
-            BOOST_ASSERT(i_ > 0);
+            BOOST_CAPY_ASSERT(i_ > 0);
             --it_;
             --i_;
             return *this;
@@ -297,10 +296,10 @@ private:
     {
         if(size_ == 0)
         {
-            BOOST_ASSERT(begin_ == end_);
+            BOOST_CAPY_ASSERT(begin_ == end_);
             return;
         }
-        BOOST_ASSERT(begin_ != end_);
+        BOOST_CAPY_ASSERT(begin_ != end_);
 
         if(n > size_)
             n = size_;

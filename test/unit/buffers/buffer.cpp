@@ -11,17 +11,10 @@
 #include <boost/capy/buffers.hpp>
 
 #include <boost/capy.hpp>
-#include <boost/core/span.hpp>
 #include <array>
+#include <span>
 
 #include "test_buffers.hpp"
-
-/*
-#if defined(__cpp_lib_span) && (__cpp_lib_span >= 202002L)
-#define HAVE_STD_SPAN 1
-#include <span>
-#endif
-*/
 
 namespace boost {
 namespace capy {
@@ -36,15 +29,15 @@ static_assert(  ConstBufferSequence<mutable_buffer const>);
 static_assert(! MutableBufferSequence<const_buffer const>);
 static_assert(  MutableBufferSequence<mutable_buffer const>);
 
-static_assert(  ConstBufferSequence<span<const_buffer>>);
-static_assert(  ConstBufferSequence<span<mutable_buffer>>);
-static_assert(! MutableBufferSequence<span<const_buffer>>);
-static_assert(  MutableBufferSequence<span<mutable_buffer>>);
+static_assert(  ConstBufferSequence<std::span<const_buffer>>);
+static_assert(  ConstBufferSequence<std::span<mutable_buffer>>);
+static_assert(! MutableBufferSequence<std::span<const_buffer>>);
+static_assert(  MutableBufferSequence<std::span<mutable_buffer>>);
 
-static_assert(  ConstBufferSequence<span<const_buffer const>>);
-static_assert(  ConstBufferSequence<span<mutable_buffer const>>);
-static_assert(! MutableBufferSequence<span<const_buffer const>>);
-static_assert(  MutableBufferSequence<span<mutable_buffer const>>);
+static_assert(  ConstBufferSequence<std::span<const_buffer const>>);
+static_assert(  ConstBufferSequence<std::span<mutable_buffer const>>);
+static_assert(! MutableBufferSequence<std::span<const_buffer const>>);
+static_assert(  MutableBufferSequence<std::span<mutable_buffer const>>);
 
 static_assert(  ConstBufferSequence<std::array<const_buffer const, 3>>);
 static_assert(  ConstBufferSequence<std::array<mutable_buffer const, 3>>);
@@ -86,7 +79,7 @@ struct fixt<mutable_buffer>
     fixt(std::string_view pat)
         : t(data, pat.size())
     {
-        BOOST_ASSERT(pat.size()<=sizeof(data));
+        BOOST_CAPY_ASSERT(pat.size()<=sizeof(data));
         pat.copy(data, pat.size());
     }
 };
@@ -109,17 +102,17 @@ struct fixt<mutable_buffer_pair>
     fixt(std::string_view pat)
         : t{{{data,3}, {data+3, pat.size()-3}}}
     {
-        BOOST_ASSERT(pat.size()>=3);
-        BOOST_ASSERT(pat.size()<=sizeof(data));
+        BOOST_CAPY_ASSERT(pat.size()>=3);
+        BOOST_CAPY_ASSERT(pat.size()<=sizeof(data));
         pat.copy(data, pat.size());
     }
 };
 
 template<>
-struct fixt<span<const_buffer,3>>
+struct fixt<std::span<const_buffer,3>>
 {
     const_buffer a[3];
-    span<const_buffer,3> t;
+    std::span<const_buffer,3> t;
     fixt(std::string_view pat)
         : a{ buf(pat.substr(0, 3)),
              buf(pat.substr(3, pat.size()-8)),
@@ -130,22 +123,22 @@ struct fixt<span<const_buffer,3>>
 };
 
 template<>
-struct fixt<span<mutable_buffer,3>>
+struct fixt<std::span<mutable_buffer,3>>
 {
     char data[64];
     mutable_buffer a[3];
-    span<mutable_buffer,3> t;
+    std::span<mutable_buffer,3> t;
     fixt(std::string_view pat)
         : t([&]
             {
                 a[0] = { data+0, 3 };
                 a[1] = { data+3, pat.size()-8 };
                 a[2] = { data+pat.size()-5, 5 };
-                return span<mutable_buffer,3>(a);
+                return std::span<mutable_buffer,3>(a);
             }())
     {
-        BOOST_ASSERT(pat.size()>=8);
-        BOOST_ASSERT(pat.size()<=sizeof(data));
+        BOOST_CAPY_ASSERT(pat.size()>=8);
+        BOOST_CAPY_ASSERT(pat.size()<=sizeof(data));
         pat.copy(data, pat.size());
     }
 };
@@ -176,8 +169,8 @@ struct fixt<std::array<mutable_buffer,3>>
                     { data+pat.size()-5, 5 }}};
             }())
     {
-        BOOST_ASSERT(pat.size()>=8);
-        BOOST_ASSERT(pat.size()<=sizeof(data));
+        BOOST_CAPY_ASSERT(pat.size()>=8);
+        BOOST_CAPY_ASSERT(pat.size()<=sizeof(data));
         pat.copy(data, pat.size());
     }
 };
@@ -204,8 +197,8 @@ struct fixt<mutable_buffer[3]>
              { data+3, pat.size()-8 },
              { data+pat.size()-5, 5 }}
     {
-        BOOST_ASSERT(pat.size()>=8);
-        BOOST_ASSERT(pat.size()<=sizeof(data));
+        BOOST_CAPY_ASSERT(pat.size()>=8);
+        BOOST_CAPY_ASSERT(pat.size()<=sizeof(data));
         pat.copy(data, pat.size());
     }
 };
@@ -241,8 +234,8 @@ struct buffer_test
         testBuffer<mutable_buffer>();
         testBuffer<const_buffer_pair>();
         testBuffer<mutable_buffer_pair>();
-        testBuffer<span<const_buffer,3>>();
-        testBuffer<span<mutable_buffer,3>>();
+        testBuffer<std::span<const_buffer,3>>();
+        testBuffer<std::span<mutable_buffer,3>>();
         testBuffer<std::array<const_buffer,3>>();
         testBuffer<std::array<mutable_buffer,3>>();
         testBuffer<const_buffer[3]>();
@@ -292,22 +285,8 @@ struct buffer_test
             BOOST_TEST_EQ(b.size(), 5);
         }
 
-        // boost::span
-        {
-            const_buffer b[3] = {
-                const_buffer("123", 3),
-                const_buffer("456", 3),
-                const_buffer("789", 3)
-            };
-            span<const_buffer const> bs(&b[0], 3);
-            test::check_sequence(bs, "123456789");
-        }
-
         // std::span
         {
-        #if HAVE_STD_SPAN
-            static_assert(ConstBufferSequence<
-                std::span<const_buffer const>>);
             const_buffer b[3] = {
                 const_buffer("123", 3),
                 const_buffer("456", 3),
@@ -315,7 +294,6 @@ struct buffer_test
             };
             std::span<const_buffer const> bs(&b[0], 3);
             test::check_sequence(bs, "123456789");
-        #endif
         }
     }
 
@@ -359,7 +337,7 @@ struct buffer_test
             BOOST_TEST_EQ(b.size(), 5);
         }
 
-        // boost::span
+        // std::span
         {
             char c[10] = "123456789";
             mutable_buffer b[3] = {
@@ -367,23 +345,8 @@ struct buffer_test
                 mutable_buffer(c+3, 3),
                 mutable_buffer(c+6, 3)
             };
-            span<mutable_buffer const> bs(&b[0], 3);
+            std::span<mutable_buffer const> bs(&b[0], 3);
             test::check_sequence(bs, "123456789");
-        }
-
-        // std::span
-        {
-        #if HAVE_STD_SPAN
-            static_assert(ConstBufferSequence<
-                std::span<const_buffer const>>);
-            const_buffer b[3] = {
-                const_buffer("123", 3),
-                const_buffer("456", 3),
-                const_buffer("789", 3)
-            };
-            std::span<const_buffer const> bs(&b[0], 3);
-            test::check_sequence(bs, "123456789");
-        #endif
         }
     }
 
@@ -399,7 +362,7 @@ struct buffer_test
                 { data + i, j },
                 { data + i + j, k }
             };
-            span<const_buffer const> s(cb, 3);
+            std::span<const_buffer const> s(cb, 3);
             BOOST_TEST_EQ(
                 buffer_size(s), i + j + k);
         }
@@ -448,7 +411,7 @@ struct buffer_test
                 { data, 0 },
                 { data, 0 }
             };
-            span<const_buffer const> s(cb, 3);
+            std::span<const_buffer const> s(cb, 3);
             BOOST_TEST(buffer_empty(s));
         }
 
@@ -459,7 +422,7 @@ struct buffer_test
                 { data, 1 },
                 { data, 0 }
             };
-            span<const_buffer const> s(cb, 3);
+            std::span<const_buffer const> s(cb, 3);
             BOOST_TEST(! buffer_empty(s));
         }
 
@@ -470,13 +433,13 @@ struct buffer_test
                 { data, 2 },
                 { data, 3 }
             };
-            span<const_buffer const> s(cb, 3);
+            std::span<const_buffer const> s(cb, 3);
             BOOST_TEST(! buffer_empty(s));
         }
 
         // empty span (zero elements)
         {
-            span<const_buffer const> s;
+            std::span<const_buffer const> s;
             BOOST_TEST(buffer_empty(s));
         }
     }
@@ -503,8 +466,8 @@ const_buffer
 mutable_buffer
 const_buffer_pair
 mutable_buffer_pair
-span<const_buffer,3>
-span<mutable_buffer,3>
+std::span<const_buffer,3>
+std::span<mutable_buffer,3>
 std::array<const_buffer,3>
 std::array<mutable_buffer,3>
 const_buffer[3]

@@ -21,16 +21,15 @@ else()
   set(deps
     # Primary dependencies
 
-    assert
     config
-    core
     system
-    throw_exception
 
     # Secondary dependencies
 
+    assert
     compat
     mp11
+    throw_exception
     variant2
     winapi
     predef

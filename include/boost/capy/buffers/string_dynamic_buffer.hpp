@@ -13,7 +13,6 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/detail/except.hpp>
-#include <boost/assert.hpp>
 #include <string>
 
 namespace boost {

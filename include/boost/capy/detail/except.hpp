@@ -11,46 +11,35 @@
 #define BOOST_CAPY_DETAIL_EXCEPT_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/assert/source_location.hpp>
 #include <boost/system/error_code.hpp>
 
 namespace boost {
 namespace capy {
 namespace detail {
 
-BOOST_CAPY_DECL void BOOST_NORETURN throw_bad_typeid(
-    source_location const& loc = BOOST_CURRENT_LOCATION);
+[[noreturn]] BOOST_CAPY_DECL void throw_bad_typeid();
 
-BOOST_CAPY_DECL void BOOST_NORETURN throw_bad_alloc(
-    source_location const& loc = BOOST_CURRENT_LOCATION);
+[[noreturn]] BOOST_CAPY_DECL void throw_bad_alloc();
 
-BOOST_CAPY_DECL void BOOST_NORETURN throw_invalid_argument(
-    source_location const& loc = BOOST_CURRENT_LOCATION);
+[[noreturn]] BOOST_CAPY_DECL void throw_invalid_argument();
 
-BOOST_CAPY_DECL void BOOST_NORETURN throw_invalid_argument(
-    char const* what,
-    source_location const& loc = BOOST_CURRENT_LOCATION);
+[[noreturn]] BOOST_CAPY_DECL void throw_invalid_argument(
+    char const* what);
 
-BOOST_CAPY_DECL void BOOST_NORETURN throw_length_error(
-    source_location const& loc = BOOST_CURRENT_LOCATION);
+[[noreturn]] BOOST_CAPY_DECL void throw_length_error();
 
-BOOST_CAPY_DECL void BOOST_NORETURN throw_length_error(
-    char const* what,
-    source_location const& loc = BOOST_CURRENT_LOCATION);
+[[noreturn]] BOOST_CAPY_DECL void throw_length_error(
+    char const* what);
 
-BOOST_CAPY_DECL void BOOST_NORETURN throw_logic_error(
-    source_location const& loc = BOOST_CURRENT_LOCATION);
+[[noreturn]] BOOST_CAPY_DECL void throw_logic_error();
 
-BOOST_CAPY_DECL void BOOST_NORETURN throw_out_of_range(
-    source_location const& loc = BOOST_CURRENT_LOCATION);
+[[noreturn]] BOOST_CAPY_DECL void throw_out_of_range();
 
-BOOST_CAPY_DECL void BOOST_NORETURN throw_runtime_error(
-    char const* what,
-    source_location const& loc = BOOST_CURRENT_LOCATION);
+[[noreturn]] BOOST_CAPY_DECL void throw_runtime_error(
+    char const* what);
 
-BOOST_CAPY_DECL void BOOST_NORETURN throw_system_error(
-    system::error_code const& ec,
-    source_location const& loc = BOOST_CURRENT_LOCATION);
+[[noreturn]] BOOST_CAPY_DECL void throw_system_error(
+    system::error_code const& ec);
 
 } // detail
 } // capy

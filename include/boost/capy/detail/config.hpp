@@ -12,7 +12,12 @@
 
 #include <boost/config.hpp>
 
+#include <cassert>
 #include <cstddef>
+
+#ifndef BOOST_CAPY_ASSERT
+# define BOOST_CAPY_ASSERT(expr) assert(expr)
+#endif
 
 #if __has_include(<version>)
 # include <version>
