@@ -40,7 +40,7 @@ public:
         {
             test::fuse f;
             test::write_sink ws(f);
-            any_write_sink aws(ws);
+            any_write_sink aws(&ws);
             BOOST_TEST(aws.has_value());
             BOOST_TEST(static_cast<bool>(aws));
         }
@@ -52,7 +52,7 @@ public:
         test::fuse f;
         test::write_sink ws(f);
 
-        any_write_sink aws1(ws);
+        any_write_sink aws1(&ws);
         BOOST_TEST(aws1.has_value());
 
         // Move construct
@@ -74,7 +74,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_sink ws(f, 5); // max 5 bytes per write
 
-            any_write_sink aws(ws);
+            any_write_sink aws(&ws);
 
             auto [ec, n] = co_await aws.write(
                 make_buffer("hello world", 11));
@@ -95,7 +95,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_sink ws(f);
 
-            any_write_sink aws(ws);
+            any_write_sink aws(&ws);
 
             auto [ec1, n1] = co_await aws.write(
                 make_buffer("hello", 5));
@@ -127,7 +127,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_sink ws(f);
 
-            any_write_sink aws(ws);
+            any_write_sink aws(&ws);
 
             std::array<const_buffer, 2> buffers = {{
                 make_buffer("hello", 5),
@@ -151,7 +151,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_sink ws(f);
 
-            any_write_sink aws(ws);
+            any_write_sink aws(&ws);
 
             auto [ec, n] = co_await aws.write(
                 make_buffer("hello world", 11));
@@ -171,7 +171,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_sink ws(f);
 
-            any_write_sink aws(ws);
+            any_write_sink aws(&ws);
 
             auto [ec, n] = co_await aws.write(
                 make_buffer("hello", 5), false);
@@ -192,7 +192,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_sink ws(f);
 
-            any_write_sink aws(ws);
+            any_write_sink aws(&ws);
 
             auto [ec, n] = co_await aws.write(
                 make_buffer("hello", 5), true);
@@ -213,7 +213,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_sink ws(f);
 
-            any_write_sink aws(ws);
+            any_write_sink aws(&ws);
 
             auto [ec, n] = co_await aws.write(const_buffer(), true);
             if(ec.failed())
@@ -233,7 +233,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_sink ws(f);
 
-            any_write_sink aws(ws);
+            any_write_sink aws(&ws);
 
             auto [ec] = co_await aws.write_eof();
             if(ec.failed())
@@ -251,7 +251,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_sink ws(f);
 
-            any_write_sink aws(ws);
+            any_write_sink aws(&ws);
 
             auto [ec1, n] = co_await aws.write(
                 make_buffer("hello", 5));
@@ -276,7 +276,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_sink ws(f);
 
-            any_write_sink aws(ws);
+            any_write_sink aws(&ws);
 
             std::array<const_buffer, 2> buffers = {{
                 make_buffer("hello", 5),
@@ -302,7 +302,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_sink ws(f, 5); // max 5 bytes per write
 
-            any_write_sink aws(ws);
+            any_write_sink aws(&ws);
 
             auto [ec, n] = co_await aws.write(
                 make_buffer("hello world", 11));
@@ -324,7 +324,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_sink ws(f, 5); // max 5 bytes per write
 
-            any_write_sink aws(ws);
+            any_write_sink aws(&ws);
 
             auto [ec, n] = co_await aws.write(
                 make_buffer("hello world", 11), true);

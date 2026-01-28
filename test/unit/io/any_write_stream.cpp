@@ -40,7 +40,7 @@ public:
         {
             test::fuse f;
             test::write_stream ws(f);
-            any_write_stream aws(ws);
+            any_write_stream aws(&ws);
             BOOST_TEST(aws.has_value());
             BOOST_TEST(static_cast<bool>(aws));
         }
@@ -52,7 +52,7 @@ public:
         test::fuse f;
         test::write_stream ws(f);
 
-        any_write_stream aws1(ws);
+        any_write_stream aws1(&ws);
         BOOST_TEST(aws1.has_value());
 
         // Move construct
@@ -74,7 +74,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_stream ws(f);
 
-            any_write_stream aws(ws);
+            any_write_stream aws(&ws);
 
             char const data[] = "hello world";
             const_buffer cb(data, 11);
@@ -95,7 +95,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_stream ws(f, 5); // max 5 bytes per write
 
-            any_write_stream aws(ws);
+            any_write_stream aws(&ws);
 
             char const data[] = "hello world";
             const_buffer cb(data, 11);
@@ -116,7 +116,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_stream ws(f);
 
-            any_write_stream aws(ws);
+            any_write_stream aws(&ws);
 
             char const data1[] = "hello";
             const_buffer cb1(data1, 5);
@@ -151,7 +151,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_stream ws(f);
 
-            any_write_stream aws(ws);
+            any_write_stream aws(&ws);
 
             char const data1[] = "hello";
             char const data2[] = "world";
@@ -179,7 +179,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_stream ws(f);
 
-            any_write_stream aws(ws);
+            any_write_stream aws(&ws);
 
             char const data[] = "hello world";
             const_buffer cb(data, 11);
@@ -201,7 +201,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::write_stream ws(f);
 
-            any_write_stream aws(ws);
+            any_write_stream aws(&ws);
 
             char const data1[] = "hello";
             char const data2[] = "world";

@@ -48,7 +48,7 @@ public:
         {
             test::fuse f;
             test::buffer_sink bs(f);
-            any_buffer_sink abs(bs);
+            any_buffer_sink abs(&bs);
             BOOST_TEST(abs.has_value());
             BOOST_TEST(static_cast<bool>(abs));
         }
@@ -60,7 +60,7 @@ public:
         test::fuse f;
         test::buffer_sink bs(f);
 
-        any_buffer_sink abs1(bs);
+        any_buffer_sink abs1(&bs);
         BOOST_TEST(abs1.has_value());
 
         // Move construct
@@ -81,7 +81,7 @@ public:
         test::fuse f;
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::buffer_sink bs(f);
-            any_buffer_sink abs(bs);
+            any_buffer_sink abs(&bs);
 
             mutable_buffer arr[detail::max_iovec_];
             std::size_t count = abs.prepare(arr, detail::max_iovec_);
@@ -106,7 +106,7 @@ public:
         test::fuse f;
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::buffer_sink bs(f);
-            any_buffer_sink abs(bs);
+            any_buffer_sink abs(&bs);
 
             mutable_buffer arr[detail::max_iovec_];
             std::size_t count = abs.prepare(arr, detail::max_iovec_);
@@ -130,7 +130,7 @@ public:
         test::fuse f;
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::buffer_sink bs(f);
-            any_buffer_sink abs(bs);
+            any_buffer_sink abs(&bs);
 
             mutable_buffer arr[detail::max_iovec_];
             std::size_t count = abs.prepare(arr, detail::max_iovec_);
@@ -158,7 +158,7 @@ public:
         test::fuse f;
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::buffer_sink bs(f);
-            any_buffer_sink abs(bs);
+            any_buffer_sink abs(&bs);
 
             // First write
             {
@@ -198,7 +198,7 @@ public:
         test::fuse f;
         auto r = f.armed([&](test::fuse&) -> task<> {
             test::buffer_sink bs(f);
-            any_buffer_sink abs(bs);
+            any_buffer_sink abs(&bs);
 
             auto [ec] = co_await abs.commit_eof();
             if(ec.failed())
@@ -240,7 +240,7 @@ public:
             src.provide("hello world");
 
             test::buffer_sink sink(f);
-            any_buffer_sink abs(sink);
+            any_buffer_sink abs(&sink);
 
             auto [ec, n] = co_await pull_from(src, abs);
             if(ec.failed())
@@ -325,7 +325,7 @@ public:
             src.provide("hello world");
 
             test::buffer_sink sink(f);
-            any_buffer_sink abs(sink);
+            any_buffer_sink abs(&sink);
 
             auto [ec, n] = co_await pull_from(src, abs);
             if(ec.failed())

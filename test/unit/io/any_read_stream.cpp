@@ -41,7 +41,7 @@ public:
         {
             test::fuse f;
             test::read_stream rs(f);
-            any_read_stream ars(rs);
+            any_read_stream ars(&rs);
             BOOST_TEST(ars.has_value());
             BOOST_TEST(static_cast<bool>(ars));
         }
@@ -53,7 +53,7 @@ public:
         test::fuse f;
         test::read_stream rs(f);
 
-        any_read_stream ars1(rs);
+        any_read_stream ars1(&rs);
         BOOST_TEST(ars1.has_value());
 
         // Move construct
@@ -77,7 +77,7 @@ public:
             test::read_stream rs(f);
             rs.provide("hello world");
 
-            any_read_stream ars(rs);
+            any_read_stream ars(&rs);
 
             char buf[32] = {};
             mutable_buffer mb(buf, sizeof(buf));
@@ -99,7 +99,7 @@ public:
             test::read_stream rs(f);
             rs.provide("hello world");
 
-            any_read_stream ars(rs);
+            any_read_stream ars(&rs);
 
             char buf[5] = {};
             mutable_buffer mb(buf, sizeof(buf));
@@ -122,7 +122,7 @@ public:
             test::read_stream rs(f);
             rs.provide("abcdefghij");
 
-            any_read_stream ars(rs);
+            any_read_stream ars(&rs);
 
             char buf[3] = {};
             mutable_buffer mb(buf, sizeof(buf));
@@ -156,7 +156,7 @@ public:
             test::read_stream rs(f);
             // No data provided - should get EOF
 
-            any_read_stream ars(rs);
+            any_read_stream ars(&rs);
 
             char buf[32] = {};
             mutable_buffer mb(buf, sizeof(buf));
@@ -178,7 +178,7 @@ public:
             test::read_stream rs(f);
             rs.provide("helloworld");
 
-            any_read_stream ars(rs);
+            any_read_stream ars(&rs);
 
             char buf1[5] = {};
             char buf2[5] = {};
@@ -208,7 +208,7 @@ public:
             test::read_stream rs(f);
             rs.provide("hello world");
 
-            any_read_stream ars(rs);
+            any_read_stream ars(&rs);
 
             char buf[32] = {};
             mutable_buffer mb(buf, sizeof(buf));
@@ -231,7 +231,7 @@ public:
             test::read_stream rs(f);
             rs.provide("helloworld");
 
-            any_read_stream ars(rs);
+            any_read_stream ars(&rs);
 
             char buf1[5] = {};
             char buf2[5] = {};

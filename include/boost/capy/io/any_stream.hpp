@@ -32,9 +32,11 @@ namespace capy {
     maintains its own cached coroutine frame, allowing concurrent
     read and write operations.
 
-    The wrapper has reference semantics - it wraps an existing
-    stream without taking ownership. The wrapped stream must
-    outlive this wrapper.
+    The wrapper supports two construction modes:
+    - **Owning**: Pass by value to transfer ownership. The wrapper
+      allocates storage and owns the stream.
+    - **Reference**: Pass a pointer to wrap without ownership. The
+      pointed-to stream must outlive this wrapper.
 
     @par Implicit Conversion
     This class implicitly converts to `any_read_stream&` or
@@ -50,8 +52,12 @@ namespace capy {
 
     @par Example
     @code
+    // Owning - takes ownership of the stream
+    any_stream stream(socket{ioc});
+
+    // Reference - wraps without ownership
     socket sock(ioc);
-    any_stream stream(sock);
+    any_stream stream(&sock);
 
     // Use read_some from any_read_stream base
     mutable_buffer rbuf(rdata, rsize);
@@ -74,7 +80,25 @@ class any_stream
     : public any_read_stream
     , public any_write_stream
 {
+    void* storage_ = nullptr;
+    void* stream_ptr_ = nullptr;
+    void (*destroy_)(void*) noexcept = nullptr;
+
 public:
+    /** Destructor.
+
+        Destroys the owned stream (if any). Base class destructors
+        handle their cached coroutine frames.
+    */
+    ~any_stream()
+    {
+        if(storage_)
+        {
+            destroy_(stream_ptr_);
+            ::operator delete(storage_);
+        }
+    }
+
     /** Default constructor.
 
         Constructs an empty wrapper. Operations on a default-constructed
@@ -91,55 +115,102 @@ public:
 
     /** Move constructor.
 
-        Transfers ownership from both bases.
+        Transfers ownership from both bases and the owned stream (if any).
 
         @param other The wrapper to move from.
     */
-    any_stream(any_stream&& other) noexcept = default;
-
-    /** Rebinding move constructor.
-
-        Transfers the cached frames and vtables from `other`, but binds
-        to a new stream object. Used by owning wrappers when the owned
-        object moves to a new location.
-
-        @param other The wrapper to move state from.
-        @param new_stream The new stream to bind to. Must be the same
-            type as the original stream.
-    */
-    template<class S>
-        requires ReadStream<S> && WriteStream<S>
-    any_stream(any_stream&& other, S& new_stream) noexcept
-        : any_read_stream(std::move(static_cast<any_read_stream&>(other)), new_stream)
-        , any_write_stream(std::move(static_cast<any_write_stream&>(other)), new_stream)
+    any_stream(any_stream&& other) noexcept
+        : any_read_stream(std::move(static_cast<any_read_stream&>(other)))
+        , any_write_stream(std::move(static_cast<any_write_stream&>(other)))
+        , storage_(std::exchange(other.storage_, nullptr))
+        , stream_ptr_(std::exchange(other.stream_ptr_, nullptr))
+        , destroy_(std::exchange(other.destroy_, nullptr))
     {
     }
 
     /** Move assignment operator.
 
-        Releases existing resources and transfers ownership from both bases.
+        Destroys any owned stream and releases existing resources,
+        then transfers ownership from `other`.
 
         @param other The wrapper to move from.
         @return Reference to this wrapper.
     */
-    any_stream& operator=(any_stream&& other) noexcept = default;
+    any_stream&
+    operator=(any_stream&& other) noexcept
+    {
+        if(this != &other)
+        {
+            if(storage_)
+            {
+                destroy_(stream_ptr_);
+                ::operator delete(storage_);
+            }
+            static_cast<any_read_stream&>(*this) =
+                std::move(static_cast<any_read_stream&>(other));
+            static_cast<any_write_stream&>(*this) =
+                std::move(static_cast<any_write_stream&>(other));
+            storage_ = std::exchange(other.storage_, nullptr);
+            stream_ptr_ = std::exchange(other.stream_ptr_, nullptr);
+            destroy_ = std::exchange(other.destroy_, nullptr);
+        }
+        return *this;
+    }
 
-    /** Construct from a bidirectional stream.
+    /** Construct by taking ownership of a bidirectional stream.
 
-        Wraps the given stream for both read and write operations.
-        Preallocates coroutine frames for both read and write paths.
-        The stream must remain valid for the lifetime of this wrapper.
+        Allocates storage and moves the stream into this wrapper.
+        The wrapper owns the stream and will destroy it.
 
-        @param s The stream to wrap. Must satisfy both ReadStream
-            and WriteStream concepts.
+        @param s The stream to take ownership of. Must satisfy both
+            ReadStream and WriteStream concepts.
     */
     template<class S>
         requires ReadStream<S> && WriteStream<S> &&
             (!std::same_as<std::decay_t<S>, any_stream>)
-    any_stream(S& s) noexcept
+    any_stream(S s)
+    {
+        struct guard {
+            any_stream* self;
+            void* ptr = nullptr;
+            bool committed = false;
+            ~guard() {
+                if(!committed && ptr) {
+                    static_cast<S*>(ptr)->~S();
+                    ::operator delete(self->storage_);
+                    self->storage_ = nullptr;
+                }
+            }
+        } g{this};
+
+        storage_ = ::operator new(sizeof(S));
+        S* ptr = ::new(storage_) S(std::move(s));
+        g.ptr = ptr;
+        stream_ptr_ = ptr;
+        destroy_ = +[](void* p) noexcept { static_cast<S*>(p)->~S(); };
+
+        // Initialize bases with pointer (reference semantics)
+        static_cast<any_read_stream&>(*this) = any_read_stream(ptr);
+        static_cast<any_write_stream&>(*this) = any_write_stream(ptr);
+
+        g.committed = true;
+    }
+
+    /** Construct by wrapping a bidirectional stream without ownership.
+
+        Wraps the given stream by pointer. The stream must remain
+        valid for the lifetime of this wrapper.
+
+        @param s Pointer to the stream to wrap. Must satisfy both
+            ReadStream and WriteStream concepts.
+    */
+    template<class S>
+        requires ReadStream<S> && WriteStream<S>
+    any_stream(S* s) noexcept
         : any_read_stream(s)
         , any_write_stream(s)
     {
+        // storage_ remains nullptr - no ownership
     }
 
     /** Check if the wrapper contains a valid stream.
@@ -167,28 +238,6 @@ public:
     operator bool() const noexcept
     {
         return has_value();
-    }
-
-protected:
-    /** Rebind to a new stream after move.
-
-        Updates the internal pointers in both bases to reference a new
-        stream object. Used by owning wrappers after move assignment
-        when the owned object has moved to a new location.
-
-        @param new_stream The new stream to bind to. Must be the same
-            type as the original stream.
-
-        @note Terminates if called with a stream of different type
-            than the original.
-    */
-    template<class S>
-        requires ReadStream<S> && WriteStream<S>
-    void
-    rebind(S& new_stream) noexcept
-    {
-        any_read_stream::rebind(new_stream);
-        any_write_stream::rebind(new_stream);
     }
 };
 

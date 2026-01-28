@@ -41,7 +41,7 @@ public:
         {
             test::fuse f;
             test::read_source rs(f);
-            any_read_source ars(rs);
+            any_read_source ars(&rs);
             BOOST_TEST(ars.has_value());
             BOOST_TEST(static_cast<bool>(ars));
         }
@@ -53,7 +53,7 @@ public:
         test::fuse f;
         test::read_source rs(f);
 
-        any_read_source ars1(rs);
+        any_read_source ars1(&rs);
         BOOST_TEST(ars1.has_value());
 
         // Move construct
@@ -77,7 +77,7 @@ public:
             test::read_source rs(f);
             rs.provide("hello world");
 
-            any_read_source ars(rs);
+            any_read_source ars(&rs);
 
             char buf[11] = {};
             auto [ec, n] = co_await ars.read(make_buffer(buf, 11));
@@ -99,7 +99,7 @@ public:
             test::read_source rs(f);
             rs.provide("hello world");
 
-            any_read_source ars(rs);
+            any_read_source ars(&rs);
 
             char buf[5] = {};
             auto [ec, n] = co_await ars.read(make_buffer(buf));
@@ -122,7 +122,7 @@ public:
             test::read_source rs(f);
             rs.provide("abcdefghi");
 
-            any_read_source ars(rs);
+            any_read_source ars(&rs);
 
             char buf[3] = {};
 
@@ -156,7 +156,7 @@ public:
             test::read_source rs(f);
             rs.provide("hi");
 
-            any_read_source ars(rs);
+            any_read_source ars(&rs);
 
             char buf[10] = {};
             auto [ec, n] = co_await ars.read(make_buffer(buf));
@@ -177,7 +177,7 @@ public:
             test::read_source rs(f);
             // No data provided - should get EOF
 
-            any_read_source ars(rs);
+            any_read_source ars(&rs);
 
             char buf[32] = {};
             auto [ec, n] = co_await ars.read(make_buffer(buf));
@@ -199,7 +199,7 @@ public:
             test::read_source rs(f);
             rs.provide("x");
 
-            any_read_source ars(rs);
+            any_read_source ars(&rs);
 
             char buf[1] = {};
 
@@ -226,7 +226,7 @@ public:
             test::read_source rs(f);
             rs.provide("helloworld");
 
-            any_read_source ars(rs);
+            any_read_source ars(&rs);
 
             char buf1[5] = {};
             char buf2[5] = {};
@@ -254,7 +254,7 @@ public:
             test::read_source rs(f);
             rs.provide("hello world");
 
-            any_read_source ars(rs);
+            any_read_source ars(&rs);
 
             char buf[11] = {};
             auto [ec, n] = co_await ars.read(make_buffer(buf));
@@ -275,7 +275,7 @@ public:
             test::read_source rs(f);
             rs.provide("helloworld");
 
-            any_read_source ars(rs);
+            any_read_source ars(&rs);
 
             char buf1[5] = {};
             char buf2[5] = {};
@@ -303,7 +303,7 @@ public:
             test::read_source rs(f);
             rs.provide("data");
 
-            any_read_source ars(rs);
+            any_read_source ars(&rs);
 
             auto [ec, n] = co_await ars.read(mutable_buffer());
             if(ec.failed())
@@ -325,7 +325,7 @@ public:
             test::read_source rs(f, 5); // max 5 bytes per read
             rs.provide("hello world");
 
-            any_read_source ars(rs);
+            any_read_source ars(&rs);
 
             char buf[11] = {};
             auto [ec, n] = co_await ars.read(make_buffer(buf));
@@ -348,7 +348,7 @@ public:
             test::read_source rs(f, 3); // max 3 bytes per read
             rs.provide("abcdefghij");
 
-            any_read_source ars(rs);
+            any_read_source ars(&rs);
 
             char buf[5] = {};
 

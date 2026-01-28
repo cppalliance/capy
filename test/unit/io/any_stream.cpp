@@ -152,7 +152,7 @@ public:
         {
             test::fuse f;
             mock_stream ms(f);
-            any_stream as(ms);
+            any_stream as(&ms);
             BOOST_TEST(as.has_value());
             BOOST_TEST(static_cast<bool>(as));
         }
@@ -164,7 +164,7 @@ public:
         test::fuse f;
         mock_stream ms(f);
 
-        any_stream as1(ms);
+        any_stream as1(&ms);
         BOOST_TEST(as1.has_value());
 
         // Move construct
@@ -203,7 +203,7 @@ public:
             mock_stream ms(f);
             ms.provide("hello");
 
-            any_stream as(ms);
+            any_stream as(&ms);
 
             // Read
             char rbuf[32] = {};
@@ -234,7 +234,7 @@ public:
             mock_stream ms(f);
             ms.provide("test data");
 
-            any_stream as(ms);
+            any_stream as(&ms);
             any_read_stream& reader = as;
 
             char buf[32] = {};
@@ -256,7 +256,7 @@ public:
         auto r = f.armed([&](test::fuse&) -> task<> {
             mock_stream ms(f);
 
-            any_stream as(ms);
+            any_stream as(&ms);
             any_write_stream& writer = as;
 
             char const data[] = "test output";

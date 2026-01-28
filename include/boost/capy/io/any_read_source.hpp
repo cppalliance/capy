@@ -40,9 +40,11 @@ namespace capy {
     source read operations. It uses a cached coroutine frame to achieve
     zero steady-state allocation after construction.
 
-    The wrapper has reference semantics - it wraps an existing
-    source without taking ownership. The wrapped source must
-    outlive this wrapper.
+    The wrapper supports two construction modes:
+    - **Owning**: Pass by value to transfer ownership. The wrapper
+      allocates storage and owns the source.
+    - **Reference**: Pass a pointer to wrap without ownership. The
+      pointed-to source must outlive this wrapper.
 
     @par Frame Preallocation
     The constructor preallocates the internal coroutine frame.
@@ -56,8 +58,12 @@ namespace capy {
 
     @par Example
     @code
+    // Owning - takes ownership of the source
+    any_read_source rs(some_source{args...});
+
+    // Reference - wraps without ownership
     some_source source;
-    any_read_source rs(source);
+    any_read_source rs(&source);
 
     mutable_buffer buf(data, size);
     auto [ec, n] = co_await rs.read(std::span(&buf, 1));
@@ -78,6 +84,7 @@ class any_read_source
     vtable const* vt_ = nullptr;
     void* cached_frame_ = nullptr;
     std::size_t cached_size_ = 0;
+    void* storage_ = nullptr;
 
     template<ReadSource S>
     static coro
@@ -106,13 +113,10 @@ class any_read_source
 public:
     /** Destructor.
 
-        Releases the cached coroutine frame if any.
+        Destroys the owned source (if any) and releases the cached
+        coroutine frame.
     */
-    ~any_read_source()
-    {
-        if(cached_frame_)
-            ::operator delete(cached_frame_);
-    }
+    ~any_read_source();
 
     /** Default constructor.
 
@@ -130,7 +134,7 @@ public:
 
     /** Move constructor.
 
-        Transfers ownership of the wrapped source reference and
+        Transfers ownership of the wrapped source (if owned) and
         cached frame from `other`. After the move, `other` is
         in a default-constructed state.
 
@@ -141,67 +145,46 @@ public:
         , vt_(std::exchange(other.vt_, nullptr))
         , cached_frame_(std::exchange(other.cached_frame_, nullptr))
         , cached_size_(std::exchange(other.cached_size_, 0))
-    {
-    }
-
-    /** Rebinding move constructor.
-
-        Transfers the cached frame and vtable from `other`, but binds
-        to a new source object. Used by owning wrappers when the owned
-        object moves to a new location.
-
-        @param other The wrapper to move state from.
-        @param new_source The new source to bind to. Must be the same
-            type as the original source.
-    */
-    template<ReadSource S>
-    any_read_source(any_read_source&& other, S& new_source) noexcept
-        : source_(&new_source)
-        , vt_(std::exchange(other.vt_, nullptr))
-        , cached_frame_(std::exchange(other.cached_frame_, nullptr))
-        , cached_size_(std::exchange(other.cached_size_, 0))
+        , storage_(std::exchange(other.storage_, nullptr))
     {
     }
 
     /** Move assignment operator.
 
-        Releases any existing cached frame, then transfers ownership
-        from `other`.
+        Destroys any owned source and releases existing resources,
+        then transfers ownership from `other`.
 
         @param other The wrapper to move from.
         @return Reference to this wrapper.
     */
     any_read_source&
-    operator=(any_read_source&& other) noexcept
-    {
-        if(this != &other)
-        {
-            if(cached_frame_)
-                ::operator delete(cached_frame_);
-            source_ = std::exchange(other.source_, nullptr);
-            vt_ = std::exchange(other.vt_, nullptr);
-            cached_frame_ = std::exchange(other.cached_frame_, nullptr);
-            cached_size_ = std::exchange(other.cached_size_, 0);
-        }
-        return *this;
-    }
+    operator=(any_read_source&& other) noexcept;
 
-    /** Construct from a ReadSource.
+    /** Construct by taking ownership of a ReadSource.
 
-        Wraps the given source and preallocates the internal
-        coroutine frame. The source must remain valid for the
-        lifetime of this wrapper.
+        Allocates storage and moves the source into this wrapper.
+        The wrapper owns the source and will destroy it.
 
-        @param s The source to wrap.
+        @param s The source to take ownership of.
     */
     template<ReadSource S>
         requires (!std::same_as<std::decay_t<S>, any_read_source>)
-    any_read_source(S& s) noexcept
-        : source_(&s)
+    any_read_source(S s);
+
+    /** Construct by wrapping a ReadSource without ownership.
+
+        Wraps the given source by pointer. The source must remain
+        valid for the lifetime of this wrapper.
+
+        @param s Pointer to the source to wrap.
+    */
+    template<ReadSource S>
+    any_read_source(S* s) noexcept
+        : source_(s)
         , vt_(&vtable_for_impl<S>::value)
     {
         // Preallocate the coroutine frame
-        read_coro<S>(this, s, {}, nullptr, nullptr);
+        read_coro<S>(this, *s, {}, nullptr, nullptr);
     }
 
     /** Check if the wrapper contains a valid source.
@@ -283,6 +266,8 @@ private:
 
 struct any_read_source::vtable
 {
+    void (*destroy)(void*) noexcept;
+
     coro (*do_read)(
         void* source,
         any_read_source* wrapper,
@@ -297,10 +282,80 @@ struct any_read_source::vtable
 template<ReadSource S>
 struct any_read_source::vtable_for_impl
 {
+    static void
+    do_destroy_impl(void* source) noexcept
+    {
+        static_cast<S*>(source)->~S();
+    }
+
     static constexpr vtable value = {
+        &do_destroy_impl,
         &any_read_source::do_read_impl<S>
     };
 };
+
+//----------------------------------------------------------
+
+inline
+any_read_source::~any_read_source()
+{
+    if(storage_)
+    {
+        vt_->destroy(source_);
+        ::operator delete(storage_);
+    }
+    if(cached_frame_)
+        ::operator delete(cached_frame_);
+}
+
+inline any_read_source&
+any_read_source::operator=(any_read_source&& other) noexcept
+{
+    if(this != &other)
+    {
+        if(storage_)
+        {
+            vt_->destroy(source_);
+            ::operator delete(storage_);
+        }
+        if(cached_frame_)
+            ::operator delete(cached_frame_);
+        source_ = std::exchange(other.source_, nullptr);
+        vt_ = std::exchange(other.vt_, nullptr);
+        cached_frame_ = std::exchange(other.cached_frame_, nullptr);
+        cached_size_ = std::exchange(other.cached_size_, 0);
+        storage_ = std::exchange(other.storage_, nullptr);
+    }
+    return *this;
+}
+
+template<ReadSource S>
+    requires (!std::same_as<std::decay_t<S>, any_read_source>)
+any_read_source::any_read_source(S s)
+    : vt_(&vtable_for_impl<S>::value)
+{
+    struct guard {
+        any_read_source* self;
+        bool committed = false;
+        ~guard() {
+            if(!committed && self->storage_) {
+                self->vt_->destroy(self->source_);
+                ::operator delete(self->storage_);
+                self->storage_ = nullptr;
+                self->source_ = nullptr;
+            }
+        }
+    } g{this};
+
+    storage_ = ::operator new(sizeof(S));
+    source_ = ::new(storage_) S(std::move(s));
+
+    // Preallocate the coroutine frame
+    auto& ref = *static_cast<S*>(source_);
+    read_coro<S>(this, ref, {}, nullptr, nullptr);
+
+    g.committed = true;
+}
 
 //----------------------------------------------------------
 

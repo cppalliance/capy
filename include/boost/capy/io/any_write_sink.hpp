@@ -40,9 +40,11 @@ namespace capy {
     sink write operations. It uses a cached coroutine frame to achieve
     zero steady-state allocation after construction.
 
-    The wrapper has reference semantics - it wraps an existing
-    sink without taking ownership. The wrapped sink must
-    outlive this wrapper.
+    The wrapper supports two construction modes:
+    - **Owning**: Pass by value to transfer ownership. The wrapper
+      allocates storage and owns the sink.
+    - **Reference**: Pass a pointer to wrap without ownership. The
+      pointed-to sink must outlive this wrapper.
 
     @par Frame Preallocation
     The constructor preallocates the internal coroutine frame.
@@ -56,8 +58,12 @@ namespace capy {
 
     @par Example
     @code
+    // Owning - takes ownership of the sink
+    any_write_sink ws(some_sink{args...});
+
+    // Reference - wraps without ownership
     some_sink sink;
-    any_write_sink ws(sink);
+    any_write_sink ws(&sink);
 
     const_buffer buf(data, size);
     auto [ec, n] = co_await ws.write(std::span(&buf, 1));
@@ -80,6 +86,7 @@ class any_write_sink
     vtable const* vt_ = nullptr;
     void* cached_frame_ = nullptr;
     std::size_t cached_size_ = 0;
+    void* storage_ = nullptr;
 
     template<WriteSink S>
     static coro
@@ -136,13 +143,10 @@ class any_write_sink
 public:
     /** Destructor.
 
-        Releases the cached coroutine frame if any.
+        Destroys the owned sink (if any) and releases the cached
+        coroutine frame.
     */
-    ~any_write_sink()
-    {
-        if(cached_frame_)
-            ::operator delete(cached_frame_);
-    }
+    ~any_write_sink();
 
     /** Default constructor.
 
@@ -160,7 +164,7 @@ public:
 
     /** Move constructor.
 
-        Transfers ownership of the wrapped sink reference and
+        Transfers ownership of the wrapped sink (if owned) and
         cached frame from `other`. After the move, `other` is
         in a default-constructed state.
 
@@ -171,69 +175,48 @@ public:
         , vt_(std::exchange(other.vt_, nullptr))
         , cached_frame_(std::exchange(other.cached_frame_, nullptr))
         , cached_size_(std::exchange(other.cached_size_, 0))
-    {
-    }
-
-    /** Rebinding move constructor.
-
-        Transfers the cached frame and vtable from `other`, but binds
-        to a new sink object. Used by owning wrappers when the owned
-        object moves to a new location.
-
-        @param other The wrapper to move state from.
-        @param new_sink The new sink to bind to. Must be the same
-            type as the original sink.
-    */
-    template<WriteSink S>
-    any_write_sink(any_write_sink&& other, S& new_sink) noexcept
-        : sink_(&new_sink)
-        , vt_(std::exchange(other.vt_, nullptr))
-        , cached_frame_(std::exchange(other.cached_frame_, nullptr))
-        , cached_size_(std::exchange(other.cached_size_, 0))
+        , storage_(std::exchange(other.storage_, nullptr))
     {
     }
 
     /** Move assignment operator.
 
-        Releases any existing cached frame, then transfers ownership
-        from `other`.
+        Destroys any owned sink and releases existing resources,
+        then transfers ownership from `other`.
 
         @param other The wrapper to move from.
         @return Reference to this wrapper.
     */
     any_write_sink&
-    operator=(any_write_sink&& other) noexcept
-    {
-        if(this != &other)
-        {
-            if(cached_frame_)
-                ::operator delete(cached_frame_);
-            sink_ = std::exchange(other.sink_, nullptr);
-            vt_ = std::exchange(other.vt_, nullptr);
-            cached_frame_ = std::exchange(other.cached_frame_, nullptr);
-            cached_size_ = std::exchange(other.cached_size_, 0);
-        }
-        return *this;
-    }
+    operator=(any_write_sink&& other) noexcept;
 
-    /** Construct from a WriteSink.
+    /** Construct by taking ownership of a WriteSink.
 
-        Wraps the given sink and preallocates the internal
-        coroutine frame. The sink must remain valid for the
-        lifetime of this wrapper.
+        Allocates storage and moves the sink into this wrapper.
+        The wrapper owns the sink and will destroy it.
 
-        @param s The sink to wrap.
+        @param s The sink to take ownership of.
     */
     template<WriteSink S>
         requires (!std::same_as<std::decay_t<S>, any_write_sink>)
-    any_write_sink(S& s) noexcept
-        : sink_(&s)
+    any_write_sink(S s);
+
+    /** Construct by wrapping a WriteSink without ownership.
+
+        Wraps the given sink by pointer. The sink must remain
+        valid for the lifetime of this wrapper.
+
+        @param s Pointer to the sink to wrap.
+    */
+    template<WriteSink S>
+    any_write_sink(S* s) noexcept
+        : sink_(s)
         , vt_(&vtable_for_impl<S>::value)
     {
         // Preallocate coroutine frames to find max size
-        write_coro<S>(this, s, {}, nullptr, nullptr);
-        write_with_eof_coro<S>(this, s, {}, false, nullptr, nullptr);
-        write_eof_coro<S>(this, s, nullptr);
+        write_coro<S>(this, *s, {}, nullptr, nullptr);
+        write_with_eof_coro<S>(this, *s, {}, false, nullptr, nullptr);
+        write_eof_coro<S>(this, *s, nullptr);
     }
 
     /** Check if the wrapper contains a valid sink.
@@ -345,6 +328,8 @@ private:
 
 struct any_write_sink::vtable
 {
+    void (*destroy)(void*) noexcept;
+
     coro (*do_write)(
         void* sink,
         any_write_sink* wrapper,
@@ -368,11 +353,83 @@ struct any_write_sink::vtable
 template<WriteSink S>
 struct any_write_sink::vtable_for_impl
 {
+    static void
+    do_destroy_impl(void* sink) noexcept
+    {
+        static_cast<S*>(sink)->~S();
+    }
+
     static constexpr vtable value = {
+        &do_destroy_impl,
         &any_write_sink::do_write_impl<S>,
         &any_write_sink::do_write_eof_impl<S>
     };
 };
+
+//----------------------------------------------------------
+
+inline
+any_write_sink::~any_write_sink()
+{
+    if(storage_)
+    {
+        vt_->destroy(sink_);
+        ::operator delete(storage_);
+    }
+    if(cached_frame_)
+        ::operator delete(cached_frame_);
+}
+
+inline any_write_sink&
+any_write_sink::operator=(any_write_sink&& other) noexcept
+{
+    if(this != &other)
+    {
+        if(storage_)
+        {
+            vt_->destroy(sink_);
+            ::operator delete(storage_);
+        }
+        if(cached_frame_)
+            ::operator delete(cached_frame_);
+        sink_ = std::exchange(other.sink_, nullptr);
+        vt_ = std::exchange(other.vt_, nullptr);
+        cached_frame_ = std::exchange(other.cached_frame_, nullptr);
+        cached_size_ = std::exchange(other.cached_size_, 0);
+        storage_ = std::exchange(other.storage_, nullptr);
+    }
+    return *this;
+}
+
+template<WriteSink S>
+    requires (!std::same_as<std::decay_t<S>, any_write_sink>)
+any_write_sink::any_write_sink(S s)
+    : vt_(&vtable_for_impl<S>::value)
+{
+    struct guard {
+        any_write_sink* self;
+        bool committed = false;
+        ~guard() {
+            if(!committed && self->storage_) {
+                self->vt_->destroy(self->sink_);
+                ::operator delete(self->storage_);
+                self->storage_ = nullptr;
+                self->sink_ = nullptr;
+            }
+        }
+    } g{this};
+
+    storage_ = ::operator new(sizeof(S));
+    sink_ = ::new(storage_) S(std::move(s));
+
+    // Preallocate coroutine frames to find max size
+    auto& ref = *static_cast<S*>(sink_);
+    write_coro<S>(this, ref, {}, nullptr, nullptr);
+    write_with_eof_coro<S>(this, ref, {}, false, nullptr, nullptr);
+    write_eof_coro<S>(this, ref, nullptr);
+
+    g.committed = true;
+}
 
 //----------------------------------------------------------
 

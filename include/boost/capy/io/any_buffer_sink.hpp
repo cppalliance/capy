@@ -47,9 +47,11 @@ namespace capy {
     buffer copy compared to using @ref prepare and @ref commit
     directly.
 
-    The wrapper has reference semantics - it wraps an existing
-    sink without taking ownership. The wrapped sink must
-    outlive this wrapper.
+    The wrapper supports two construction modes:
+    - **Owning**: Pass by value to transfer ownership. The wrapper
+      allocates storage and owns the sink.
+    - **Reference**: Pass a pointer to wrap without ownership. The
+      pointed-to sink must outlive this wrapper.
 
     @par Frame Preallocation
     The constructor preallocates the internal coroutine frame.
@@ -63,8 +65,12 @@ namespace capy {
 
     @par Example
     @code
+    // Owning - takes ownership of the sink
+    any_buffer_sink abs(some_buffer_sink{args...});
+
+    // Reference - wraps without ownership
     some_buffer_sink sink;
-    any_buffer_sink abs(sink);
+    any_buffer_sink abs(&sink);
 
     mutable_buffer arr[16];
     std::size_t count = abs.prepare(arr, 16);
@@ -88,6 +94,7 @@ class any_buffer_sink
     vtable const* vt_ = nullptr;
     void* cached_frame_ = nullptr;
     std::size_t cached_size_ = 0;
+    void* storage_ = nullptr;
 
     template<BufferSink S>
     static std::size_t
@@ -148,13 +155,10 @@ class any_buffer_sink
 public:
     /** Destructor.
 
-        Releases the cached coroutine frame if any.
+        Destroys the owned sink (if any) and releases the cached
+        coroutine frame.
     */
-    ~any_buffer_sink()
-    {
-        if(cached_frame_)
-            ::operator delete(cached_frame_);
-    }
+    ~any_buffer_sink();
 
     /** Default constructor.
 
@@ -172,7 +176,7 @@ public:
 
     /** Move constructor.
 
-        Transfers ownership of the wrapped sink reference and
+        Transfers ownership of the wrapped sink (if owned) and
         cached frame from `other`. After the move, `other` is
         in a default-constructed state.
 
@@ -183,69 +187,48 @@ public:
         , vt_(std::exchange(other.vt_, nullptr))
         , cached_frame_(std::exchange(other.cached_frame_, nullptr))
         , cached_size_(std::exchange(other.cached_size_, 0))
-    {
-    }
-
-    /** Rebinding move constructor.
-
-        Transfers the cached frame and vtable from `other`, but binds
-        to a new sink object. Used by owning wrappers when the owned
-        object moves to a new location.
-
-        @param other The wrapper to move state from.
-        @param new_sink The new sink to bind to. Must be the same
-            type as the original sink.
-    */
-    template<BufferSink S>
-    any_buffer_sink(any_buffer_sink&& other, S& new_sink) noexcept
-        : sink_(&new_sink)
-        , vt_(std::exchange(other.vt_, nullptr))
-        , cached_frame_(std::exchange(other.cached_frame_, nullptr))
-        , cached_size_(std::exchange(other.cached_size_, 0))
+        , storage_(std::exchange(other.storage_, nullptr))
     {
     }
 
     /** Move assignment operator.
 
-        Releases any existing cached frame, then transfers ownership
-        from `other`.
+        Destroys any owned sink and releases existing resources,
+        then transfers ownership from `other`.
 
         @param other The wrapper to move from.
         @return Reference to this wrapper.
     */
     any_buffer_sink&
-    operator=(any_buffer_sink&& other) noexcept
-    {
-        if(this != &other)
-        {
-            if(cached_frame_)
-                ::operator delete(cached_frame_);
-            sink_ = std::exchange(other.sink_, nullptr);
-            vt_ = std::exchange(other.vt_, nullptr);
-            cached_frame_ = std::exchange(other.cached_frame_, nullptr);
-            cached_size_ = std::exchange(other.cached_size_, 0);
-        }
-        return *this;
-    }
+    operator=(any_buffer_sink&& other) noexcept;
 
-    /** Construct from a BufferSink.
+    /** Construct by taking ownership of a BufferSink.
 
-        Wraps the given sink and preallocates the internal
-        coroutine frame. The sink must remain valid for the
-        lifetime of this wrapper.
+        Allocates storage and moves the sink into this wrapper.
+        The wrapper owns the sink and will destroy it.
 
-        @param s The sink to wrap.
+        @param s The sink to take ownership of.
     */
     template<BufferSink S>
         requires (!std::same_as<std::decay_t<S>, any_buffer_sink>)
-    any_buffer_sink(S& s) noexcept
-        : sink_(&s)
+    any_buffer_sink(S s);
+
+    /** Construct by wrapping a BufferSink without ownership.
+
+        Wraps the given sink by pointer. The sink must remain
+        valid for the lifetime of this wrapper.
+
+        @param s Pointer to the sink to wrap.
+    */
+    template<BufferSink S>
+    any_buffer_sink(S* s) noexcept
+        : sink_(s)
         , vt_(&vtable_for_impl<S>::value)
     {
         // Preallocate coroutine frames to find max size
-        commit_coro<S>(this, s, 0, nullptr);
-        commit_with_eof_coro<S>(this, s, 0, false, nullptr);
-        commit_eof_coro<S>(this, s, nullptr);
+        commit_coro<S>(this, *s, 0, nullptr);
+        commit_with_eof_coro<S>(this, *s, 0, false, nullptr);
+        commit_eof_coro<S>(this, *s, nullptr);
     }
 
     /** Check if the wrapper contains a valid sink.
@@ -416,6 +399,8 @@ protected:
 
 struct any_buffer_sink::vtable
 {
+    void (*destroy)(void*) noexcept;
+
     std::size_t (*do_prepare)(
         void* sink,
         mutable_buffer* arr,
@@ -443,12 +428,84 @@ struct any_buffer_sink::vtable
 template<BufferSink S>
 struct any_buffer_sink::vtable_for_impl
 {
+    static void
+    do_destroy_impl(void* sink) noexcept
+    {
+        static_cast<S*>(sink)->~S();
+    }
+
     static constexpr vtable value = {
+        &do_destroy_impl,
         &any_buffer_sink::do_prepare_impl<S>,
         &any_buffer_sink::do_commit_impl<S>,
         &any_buffer_sink::do_commit_eof_impl<S>
     };
 };
+
+//----------------------------------------------------------
+
+inline
+any_buffer_sink::~any_buffer_sink()
+{
+    if(storage_)
+    {
+        vt_->destroy(sink_);
+        ::operator delete(storage_);
+    }
+    if(cached_frame_)
+        ::operator delete(cached_frame_);
+}
+
+inline any_buffer_sink&
+any_buffer_sink::operator=(any_buffer_sink&& other) noexcept
+{
+    if(this != &other)
+    {
+        if(storage_)
+        {
+            vt_->destroy(sink_);
+            ::operator delete(storage_);
+        }
+        if(cached_frame_)
+            ::operator delete(cached_frame_);
+        sink_ = std::exchange(other.sink_, nullptr);
+        vt_ = std::exchange(other.vt_, nullptr);
+        cached_frame_ = std::exchange(other.cached_frame_, nullptr);
+        cached_size_ = std::exchange(other.cached_size_, 0);
+        storage_ = std::exchange(other.storage_, nullptr);
+    }
+    return *this;
+}
+
+template<BufferSink S>
+    requires (!std::same_as<std::decay_t<S>, any_buffer_sink>)
+any_buffer_sink::any_buffer_sink(S s)
+    : vt_(&vtable_for_impl<S>::value)
+{
+    struct guard {
+        any_buffer_sink* self;
+        bool committed = false;
+        ~guard() {
+            if(!committed && self->storage_) {
+                self->vt_->destroy(self->sink_);
+                ::operator delete(self->storage_);
+                self->storage_ = nullptr;
+                self->sink_ = nullptr;
+            }
+        }
+    } g{this};
+
+    storage_ = ::operator new(sizeof(S));
+    sink_ = ::new(storage_) S(std::move(s));
+
+    // Preallocate coroutine frames to find max size
+    auto& ref = *static_cast<S*>(sink_);
+    commit_coro<S>(this, ref, 0, nullptr);
+    commit_with_eof_coro<S>(this, ref, 0, false, nullptr);
+    commit_eof_coro<S>(this, ref, nullptr);
+
+    g.committed = true;
+}
 
 //----------------------------------------------------------
 

@@ -666,66 +666,7 @@ task<> handle_tls(tls_stream& tls)
 * `<boost/capy/io/any_buffer_source.hpp>`
 * `<boost/capy/io/any_buffer_sink.hpp>`
 
-== Part VII: The owning<> Wrapper
-
-The type-erasing wrappers have reference semantics. When you need a wrapper
-that owns its wrapped object, use the `owning<>` template.
-
-=== Usage
-
-[source,cpp]
-----
-#include <boost/capy/io/owning.hpp>
-
-// Create an owning wrapper
-owning<any_buffer_source, my_source> src(constructor_arg1, constructor_arg2);
-
-// src IS-A any_buffer_source
-any_buffer_source& ref = src;
-
-// Access the owned object
-my_source& s = src.get();
-----
-
-=== Characteristics
-
-**Inherits from Base**::
-`owning<Base, T>` inherits from `Base`, so it can be used anywhere `Base&`
-is accepted.
-
-**Owns Instance of T**::
-The wrapper constructs and owns an instance of `T`. Constructor arguments
-are forwarded to `T`'s constructor.
-
-**Move Semantics**::
-Move operations transfer both the owned object and the type eraser state.
-The base is automatically rebound to the new object location.
-
-**Non-Copyable**::
-Like the base wrappers, `owning<>` is non-copyable.
-
-=== Example
-
-[source,cpp]
-----
-// Factory function returning owned source
-owning<any_buffer_source, file_source> make_file_source(std::string_view path)
-{
-    return owning<any_buffer_source, file_source>(path);
-}
-
-task<> process_file(std::string_view path)
-{
-    auto src = make_file_source(path);
-
-    // Use as any_buffer_source
-    auto [ec, n] = co_await push_to(src, some_sink);
-}
-----
-
-Reference: `<boost/capy/io/owning.hpp>`
-
-== Part VIII: Practical Patterns
+== Part VII: Practical Patterns
 
 === Choosing the Right Abstraction
 

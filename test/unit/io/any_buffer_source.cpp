@@ -46,7 +46,7 @@ public:
         {
             test::fuse f;
             test::buffer_source bs(f);
-            any_buffer_source abs(bs);
+            any_buffer_source abs(&bs);
             BOOST_TEST(abs.has_value());
             BOOST_TEST(static_cast<bool>(abs));
         }
@@ -58,7 +58,7 @@ public:
         test::fuse f;
         test::buffer_source bs(f);
 
-        any_buffer_source abs1(bs);
+        any_buffer_source abs1(&bs);
         BOOST_TEST(abs1.has_value());
 
         // Move construct
@@ -81,7 +81,7 @@ public:
             test::buffer_source bs(f);
             bs.provide("hello world");
 
-            any_buffer_source abs(bs);
+            any_buffer_source abs(&bs);
 
             const_buffer arr[detail::max_iovec_];
             auto [ec, count] = co_await abs.pull(arr, detail::max_iovec_);
@@ -103,7 +103,7 @@ public:
             test::buffer_source bs(f);
             bs.provide("hello world");
 
-            any_buffer_source abs(bs);
+            any_buffer_source abs(&bs);
 
             const_buffer arr[detail::max_iovec_];
 
@@ -144,7 +144,7 @@ public:
             test::buffer_source bs(f);
             bs.provide("test");
 
-            any_buffer_source abs(bs);
+            any_buffer_source abs(&bs);
 
             const_buffer arr[detail::max_iovec_];
 
@@ -175,7 +175,7 @@ public:
             test::buffer_source bs(f, 5); // max 5 bytes per pull
             bs.provide("hello world");
 
-            any_buffer_source abs(bs);
+            any_buffer_source abs(&bs);
 
             std::size_t total = 0;
             for(;;)
@@ -206,7 +206,7 @@ public:
             test::buffer_source bs(f);
             // No data provided
 
-            any_buffer_source abs(bs);
+            any_buffer_source abs(&bs);
 
             const_buffer arr[detail::max_iovec_];
             auto [ec, count] = co_await abs.pull(arr, detail::max_iovec_);
@@ -247,7 +247,7 @@ public:
             test::buffer_source bs(f);
             bs.provide("hello world");
 
-            any_buffer_source abs(bs);
+            any_buffer_source abs(&bs);
 
             test::write_sink ws(f);
 

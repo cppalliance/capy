@@ -373,27 +373,17 @@ Each concept has a corresponding type-erasing wrapper in `<boost/capy/io/>`:
     - Move-only (non-copyable); cached frame reused across operations
     - Constructor takes reference to concrete type; wrapped object must outlive wrapper
 
-### Part VI: Owning Wrapper
+### Part VI: Processing Chains
 
-13. **owning<Base, T>**
-    - Creates owning version of any reference-based wrapper
-    - Inherits from `Base`, owns instance of `T`
-    - Example: `owning<any_buffer_source, my_source> src(args...)`
-    - Supports move with proper rebinding to new object location
-    - Access owned object via `get()` method
-    - Reference: `<boost/capy/io/owning.hpp>`
-
-### Part VII: Processing Chains
-
-14. **Composing Transformations**
+13. **Composing Transformations**
     - Data flows: Source -> Transform -> Transform -> Sink
     - Each component satisfies a concept (e.g., `BufferSource`, `WriteSink`)
     - Chain compression, decompression, encryption, framing, chunked encoding
     - Intermediate transforms implement both source and sink concepts
 
-### Part VIII: Transport-Independent APIs
+### Part VII: Transport-Independent APIs
 
-15. **The Key Value Proposition**
+14. **The Key Value Proposition**
     - Type-erasing wrappers allow APIs independent of underlying transport
     - Same code works with corosio sockets, Boost.Asio adaptors, TLS streams, mock streams
     - Echo server example:

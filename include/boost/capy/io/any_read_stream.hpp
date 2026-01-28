@@ -39,9 +39,11 @@ namespace capy {
     read operations. It uses a cached coroutine frame to achieve
     zero steady-state allocation after construction.
 
-    The wrapper has reference semantics - it wraps an existing
-    stream without taking ownership. The wrapped stream must
-    outlive this wrapper.
+    The wrapper supports two construction modes:
+    - **Owning**: Pass by value to transfer ownership. The wrapper
+      allocates storage and owns the stream.
+    - **Reference**: Pass a pointer to wrap without ownership. The
+      pointed-to stream must outlive this wrapper.
 
     @par Frame Preallocation
     The constructor preallocates the internal coroutine frame.
@@ -55,8 +57,12 @@ namespace capy {
 
     @par Example
     @code
+    // Owning - takes ownership of the stream
+    any_read_stream stream(socket{ioc});
+
+    // Reference - wraps without ownership
     socket sock(ioc);
-    any_read_stream stream(sock);
+    any_read_stream stream(&sock);
 
     mutable_buffer buf(data, size);
     auto [ec, n] = co_await stream.read_some(std::span(&buf, 1));
@@ -77,6 +83,7 @@ class any_read_stream
     vtable const* vt_ = nullptr;
     void* cached_frame_ = nullptr;
     std::size_t cached_size_ = 0;
+    void* storage_ = nullptr;
 
     template<ReadStream S>
     static coro
@@ -105,13 +112,10 @@ class any_read_stream
 public:
     /** Destructor.
 
-        Releases the cached coroutine frame if any.
+        Destroys the owned stream (if any) and releases the cached
+        coroutine frame.
     */
-    ~any_read_stream()
-    {
-        if(cached_frame_)
-            ::operator delete(cached_frame_);
-    }
+    ~any_read_stream();
 
     /** Default constructor.
 
@@ -129,7 +133,7 @@ public:
 
     /** Move constructor.
 
-        Transfers ownership of the wrapped stream reference and
+        Transfers ownership of the wrapped stream (if owned) and
         cached frame from `other`. After the move, `other` is
         in a default-constructed state.
 
@@ -140,67 +144,46 @@ public:
         , vt_(std::exchange(other.vt_, nullptr))
         , cached_frame_(std::exchange(other.cached_frame_, nullptr))
         , cached_size_(std::exchange(other.cached_size_, 0))
-    {
-    }
-
-    /** Rebinding move constructor.
-
-        Transfers the cached frame and vtable from `other`, but binds
-        to a new stream object. Used by owning wrappers when the owned
-        object moves to a new location.
-
-        @param other The wrapper to move state from.
-        @param new_stream The new stream to bind to. Must be the same
-            type as the original stream.
-    */
-    template<ReadStream S>
-    any_read_stream(any_read_stream&& other, S& new_stream) noexcept
-        : stream_(&new_stream)
-        , vt_(std::exchange(other.vt_, nullptr))
-        , cached_frame_(std::exchange(other.cached_frame_, nullptr))
-        , cached_size_(std::exchange(other.cached_size_, 0))
+        , storage_(std::exchange(other.storage_, nullptr))
     {
     }
 
     /** Move assignment operator.
 
-        Releases any existing cached frame, then transfers ownership
-        from `other`.
+        Destroys any owned stream and releases existing resources,
+        then transfers ownership from `other`.
 
         @param other The wrapper to move from.
         @return Reference to this wrapper.
     */
     any_read_stream&
-    operator=(any_read_stream&& other) noexcept
-    {
-        if(this != &other)
-        {
-            if(cached_frame_)
-                ::operator delete(cached_frame_);
-            stream_ = std::exchange(other.stream_, nullptr);
-            vt_ = std::exchange(other.vt_, nullptr);
-            cached_frame_ = std::exchange(other.cached_frame_, nullptr);
-            cached_size_ = std::exchange(other.cached_size_, 0);
-        }
-        return *this;
-    }
+    operator=(any_read_stream&& other) noexcept;
 
-    /** Construct from a ReadStream.
+    /** Construct by taking ownership of a ReadStream.
 
-        Wraps the given stream and preallocates the internal
-        coroutine frame. The stream must remain valid for the
-        lifetime of this wrapper.
+        Allocates storage and moves the stream into this wrapper.
+        The wrapper owns the stream and will destroy it.
 
-        @param s The stream to wrap.
+        @param s The stream to take ownership of.
     */
     template<ReadStream S>
         requires (!std::same_as<std::decay_t<S>, any_read_stream>)
-    any_read_stream(S& s) noexcept
-        : stream_(&s)
+    any_read_stream(S s);
+
+    /** Construct by wrapping a ReadStream without ownership.
+
+        Wraps the given stream by pointer. The stream must remain
+        valid for the lifetime of this wrapper.
+
+        @param s Pointer to the stream to wrap.
+    */
+    template<ReadStream S>
+    any_read_stream(S* s) noexcept
+        : stream_(s)
         , vt_(&vtable_for_impl<S>::value)
     {
         // Preallocate the coroutine frame
-        read_coro<S>(this, s, {}, nullptr, nullptr);
+        read_coro<S>(this, *s, {}, nullptr, nullptr);
     }
     /** Check if the wrapper contains a valid stream.
 
@@ -270,6 +253,8 @@ protected:
 
 struct any_read_stream::vtable
 {
+    void (*destroy)(void*) noexcept;
+
     coro (*do_read)(
         void* stream,
         any_read_stream* wrapper,
@@ -284,10 +269,80 @@ struct any_read_stream::vtable
 template<ReadStream S>
 struct any_read_stream::vtable_for_impl
 {
+    static void
+    do_destroy_impl(void* stream) noexcept
+    {
+        static_cast<S*>(stream)->~S();
+    }
+
     static constexpr vtable value = {
+        &do_destroy_impl,
         &any_read_stream::do_read_impl<S>
     };
 };
+
+//----------------------------------------------------------
+
+inline
+any_read_stream::~any_read_stream()
+{
+    if(storage_)
+    {
+        vt_->destroy(stream_);
+        ::operator delete(storage_);
+    }
+    if(cached_frame_)
+        ::operator delete(cached_frame_);
+}
+
+inline any_read_stream&
+any_read_stream::operator=(any_read_stream&& other) noexcept
+{
+    if(this != &other)
+    {
+        if(storage_)
+        {
+            vt_->destroy(stream_);
+            ::operator delete(storage_);
+        }
+        if(cached_frame_)
+            ::operator delete(cached_frame_);
+        stream_ = std::exchange(other.stream_, nullptr);
+        vt_ = std::exchange(other.vt_, nullptr);
+        cached_frame_ = std::exchange(other.cached_frame_, nullptr);
+        cached_size_ = std::exchange(other.cached_size_, 0);
+        storage_ = std::exchange(other.storage_, nullptr);
+    }
+    return *this;
+}
+
+template<ReadStream S>
+    requires (!std::same_as<std::decay_t<S>, any_read_stream>)
+any_read_stream::any_read_stream(S s)
+    : vt_(&vtable_for_impl<S>::value)
+{
+    struct guard {
+        any_read_stream* self;
+        bool committed = false;
+        ~guard() {
+            if(!committed && self->storage_) {
+                self->vt_->destroy(self->stream_);
+                ::operator delete(self->storage_);
+                self->storage_ = nullptr;
+                self->stream_ = nullptr;
+            }
+        }
+    } g{this};
+
+    storage_ = ::operator new(sizeof(S));
+    stream_ = ::new(storage_) S(std::move(s));
+
+    // Preallocate the coroutine frame
+    auto& ref = *static_cast<S*>(stream_);
+    read_coro<S>(this, ref, {}, nullptr, nullptr);
+
+    g.committed = true;
+}
 
 //----------------------------------------------------------
 
