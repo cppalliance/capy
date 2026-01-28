@@ -13,6 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
 #include <array>
+#include <cassert>
 #include <iterator>
 #include <type_traits>
 

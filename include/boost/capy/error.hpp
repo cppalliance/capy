@@ -54,7 +54,7 @@ namespace capy {
 
 namespace detail {
  
-struct BOOST_SYMBOL_VISIBLE
+struct BOOST_CAPY_SYMBOL_VISIBLE
     error_cat_type
     : std::error_category
 {

@@ -10,21 +10,11 @@
 #ifndef BOOST_CAPY_DETAIL_CONFIG_HPP
 #define BOOST_CAPY_DETAIL_CONFIG_HPP
 
-#include <boost/config.hpp>
-
-#include <cassert>
-#include <cstddef>
-
 #ifndef BOOST_CAPY_ASSERT
 # define BOOST_CAPY_ASSERT(expr) assert(expr)
 #endif
 
-#if __has_include(<version>)
-# include <version>
-#endif
-
-// Detect thread-local storage mechanism
-// Cascade: compiler keyword > thread_local > OS API
+// Efficient thread-local storage keyword for POD types
 #if !defined(BOOST_CAPY_TLS_KEYWORD)
 # if defined(_MSC_VER)
 #  define BOOST_CAPY_TLS_KEYWORD __declspec(thread)
@@ -33,22 +23,19 @@
 # endif
 #endif
 
-#if !defined(BOOST_CAPY_HAS_THREAD_LOCAL)
-# if defined(_MSC_VER) && _MSC_VER >= 1900
-#  define BOOST_CAPY_HAS_THREAD_LOCAL 1
-# elif defined(__has_feature)
-#  if __has_feature(cxx_thread_local)
-#   define BOOST_CAPY_HAS_THREAD_LOCAL 1
-#  elif defined(__GNUC__) && __GNUC__ >= 5
-#   define BOOST_CAPY_HAS_THREAD_LOCAL 1
-#  else
-#   define BOOST_CAPY_HAS_THREAD_LOCAL 0
-#  endif
-# elif defined(__GNUC__) && __GNUC__ >= 5
-#  define BOOST_CAPY_HAS_THREAD_LOCAL 1
-# else
-#  define BOOST_CAPY_HAS_THREAD_LOCAL 0
-# endif
+// Symbol export/import for shared libraries
+#if defined(_WIN32) || defined(__CYGWIN__)
+# define BOOST_CAPY_SYMBOL_EXPORT __declspec(dllexport)
+# define BOOST_CAPY_SYMBOL_IMPORT __declspec(dllimport)
+# define BOOST_CAPY_SYMBOL_VISIBLE
+#elif defined(__GNUC__) && __GNUC__ >= 4
+# define BOOST_CAPY_SYMBOL_EXPORT __attribute__((visibility("default")))
+# define BOOST_CAPY_SYMBOL_IMPORT __attribute__((visibility("default")))
+# define BOOST_CAPY_SYMBOL_VISIBLE __attribute__((visibility("default")))
+#else
+# define BOOST_CAPY_SYMBOL_EXPORT
+# define BOOST_CAPY_SYMBOL_IMPORT
+# define BOOST_CAPY_SYMBOL_VISIBLE
 #endif
 
 namespace boost {
@@ -56,35 +43,21 @@ namespace capy {
 
 //------------------------------------------------
 
-# if (defined(BOOST_CAPY_DYN_LINK) || defined(BOOST_ALL_DYN_LINK)) && !defined(BOOST_CAPY_STATIC_LINK)
-#  if defined(BOOST_CAPY_SOURCE)
-#   define BOOST_CAPY_DECL        BOOST_SYMBOL_EXPORT
-#   define BOOST_CAPY_BUILD_DLL
-#  else
-#   define BOOST_CAPY_DECL        BOOST_SYMBOL_IMPORT
-#  endif
-# endif // shared lib
-
-# ifndef  BOOST_CAPY_DECL
-#  define BOOST_CAPY_DECL
+#if (defined(BOOST_CAPY_DYN_LINK) || defined(BOOST_ALL_DYN_LINK)) && !defined(BOOST_CAPY_STATIC_LINK)
+# if defined(BOOST_CAPY_SOURCE)
+#  define BOOST_CAPY_DECL        BOOST_CAPY_SYMBOL_EXPORT
+#  define BOOST_CAPY_BUILD_DLL
+# else
+#  define BOOST_CAPY_DECL        BOOST_CAPY_SYMBOL_IMPORT
 # endif
+#endif // shared lib
 
-# if !defined(BOOST_CAPY_SOURCE) && !defined(BOOST_ALL_NO_LIB) && !defined(BOOST_CAPY_NO_LIB)
-#  define BOOST_LIB_NAME boost_capy
-#  if defined(BOOST_ALL_DYN_LINK) || defined(BOOST_CAPY_DYN_LINK)
-#   define BOOST_DYN_LINK
-#  endif
-#  include <boost/config/auto_link.hpp>
-# endif
-
-//------------------------------------------------
-
-#if defined(BOOST_NO_CXX14_AGGREGATE_NSDMI) || defined(BOOST_MSVC)
-# define BOOST_CAPY_AGGREGATE_WORKAROUND
+#ifndef  BOOST_CAPY_DECL
+# define BOOST_CAPY_DECL
 #endif
 
 namespace detail {
-inline constexpr std::size_t max_iovec_ = 16;
+inline constexpr unsigned max_iovec_ = 16;
 } // detail
 
 } // capy
