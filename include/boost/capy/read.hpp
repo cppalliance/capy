@@ -87,6 +87,62 @@ read(
     co_return {{}, total_read};
 }
 
+/** Read data from a stream into a dynamic buffer.
+
+    This function reads data from the stream into the dynamic buffer
+    until end-of-file is reached or an error occurs. Data is appended
+    to the buffer using prepare/commit semantics.
+
+    The buffer grows using a strategy that starts with `initial_amount`
+    bytes and grows by a factor of 1.5 when filled.
+
+    @param stream The stream to read from, must satisfy @ref ReadStream.
+    @param buffers The dynamic buffer to read into.
+    @param initial_amount The initial number of bytes to prepare.
+
+    @return A task that yields `(std::error_code, std::size_t)`.
+        On success (EOF reached), `ec` is default-constructed and `n`
+        is the total number of bytes read. On error, `ec` contains the
+        error code and `n` is the total number of bytes read before
+        the error.
+
+    @par Example
+    @code
+    task<void> example(ReadStream auto& stream)
+    {
+        std::string body;
+        auto [ec, n] = co_await read(stream, string_dynamic_buffer(&body));
+        // body contains n bytes of data
+    }
+    @endcode
+
+    @see ReadStream, DynamicBufferParam
+*/
+auto
+read(
+    ReadStream auto& stream,
+    DynamicBufferParam auto&& buffers,
+    std::size_t initial_amount = 2048) ->
+        task<io_result<std::size_t>>
+{
+    std::size_t amount = initial_amount;
+    std::size_t total_read = 0;
+    for(;;)
+    {
+        auto mb = buffers.prepare(amount);
+        auto const mb_size = buffer_size(mb);
+        auto [ec, n] = co_await stream.read_some(mb);
+        buffers.commit(n);
+        total_read += n;
+        if(ec == cond::eof)
+            co_return {{}, total_read};
+        if(ec)
+            co_return {ec, total_read};
+        if(n == mb_size)
+            amount = amount / 2 + amount;
+    }
+}
+
 /** Read data from a source into a dynamic buffer.
 
     This function reads data from the source into the dynamic buffer

@@ -478,12 +478,178 @@ struct read_test
     }
 
     //----------------------------------------------------------
+    // ReadStream + DynamicBuffer tests
+    //----------------------------------------------------------
+
+    void
+    testStreamDynBufString()
+    {
+        // Read all data until EOF
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+            rs.provide("hello world");
+
+            string_dynbuf_factory df;
+            auto db = df.buffer();
+            auto [ec, n] = co_await read(rs, db);
+            if(ec)
+                co_return;
+
+            BOOST_TEST_EQ(n, 11u);
+            BOOST_TEST_EQ(df.data(), "hello world");
+        }));
+
+        // Read large data (tests growth strategy)
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+            std::string large_data(10000, 'x');
+            rs.provide(large_data);
+
+            string_dynbuf_factory df;
+            auto db = df.buffer();
+            auto [ec, n] = co_await read(rs, db);
+            if(ec)
+                co_return;
+
+            BOOST_TEST_EQ(n, 10000u);
+            BOOST_TEST_EQ(df.data().size(), 10000u);
+            BOOST_TEST(df.data() == large_data);
+        }));
+
+        // Empty stream (immediate EOF)
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+
+            string_dynbuf_factory df;
+            auto db = df.buffer();
+            auto [ec, n] = co_await read(rs, db);
+            if(ec)
+                co_return;
+
+            BOOST_TEST_EQ(n, 0u);
+            BOOST_TEST(df.data().empty());
+        }));
+
+        // Custom initial_amount
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+            rs.provide("small");
+
+            string_dynbuf_factory df;
+            auto db = df.buffer();
+            auto [ec, n] = co_await read(rs, db, 64);
+            if(ec)
+                co_return;
+
+            BOOST_TEST_EQ(n, 5u);
+            BOOST_TEST_EQ(df.data(), "small");
+        }));
+
+        // Chunked reads with max_read_size
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f, 3);
+            rs.provide("hello world");
+
+            string_dynbuf_factory df;
+            auto db = df.buffer();
+            auto [ec, n] = co_await read(rs, db);
+            if(ec)
+                co_return;
+
+            BOOST_TEST_EQ(n, 11u);
+            BOOST_TEST_EQ(df.data(), "hello world");
+        }));
+    }
+
+    void
+    testStreamDynBufCircular()
+    {
+        // Read all data until EOF
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+            rs.provide("hello world");
+
+            circular_dynamic_buffer_factory df;
+            auto& db = df.buffer();
+            auto [ec, n] = co_await read(rs, db);
+            if(ec)
+                co_return;
+
+            BOOST_TEST_EQ(n, 11u);
+            BOOST_TEST_EQ(df.data(), "hello world");
+        }));
+
+        // Read larger data
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+            std::string data(1000, 'y');
+            rs.provide(data);
+
+            circular_dynamic_buffer_factory df;
+            auto& db = df.buffer();
+            auto [ec, n] = co_await read(rs, db);
+            if(ec)
+                co_return;
+
+            BOOST_TEST_EQ(n, 1000u);
+            BOOST_TEST_EQ(df.data().size(), 1000u);
+            BOOST_TEST(df.data() == data);
+        }));
+
+        // Empty stream
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+
+            circular_dynamic_buffer_factory df;
+            auto& db = df.buffer();
+            auto [ec, n] = co_await read(rs, db);
+            if(ec)
+                co_return;
+
+            BOOST_TEST_EQ(n, 0u);
+            BOOST_TEST(df.data().empty());
+        }));
+
+        // Custom initial_amount
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+            rs.provide("tiny");
+
+            circular_dynamic_buffer_factory df;
+            auto& db = df.buffer();
+            auto [ec, n] = co_await read(rs, db, 128);
+            if(ec)
+                co_return;
+
+            BOOST_TEST_EQ(n, 4u);
+            BOOST_TEST_EQ(df.data(), "tiny");
+        }));
+    }
+
+    void
+    testStreamDynBuf()
+    {
+        testStreamDynBufString();
+        testStreamDynBufCircular();
+    }
+
+    //----------------------------------------------------------
 
     void
     run()
     {
         testReadStream();
         testReadSource();
+        testStreamDynBuf();
     }
 };
 
