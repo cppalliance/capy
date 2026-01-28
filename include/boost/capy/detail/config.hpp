@@ -38,6 +38,15 @@
 # define BOOST_CAPY_SYMBOL_VISIBLE
 #endif
 
+// Force inline hint
+#if defined(_MSC_VER)
+# define BOOST_CAPY_FORCEINLINE __forceinline
+#elif defined(__GNUC__) || defined(__clang__)
+# define BOOST_CAPY_FORCEINLINE inline __attribute__((always_inline))
+#else
+# define BOOST_CAPY_FORCEINLINE inline
+#endif
+
 namespace boost {
 namespace capy {
 

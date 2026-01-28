@@ -71,6 +71,20 @@ struct [[nodiscard]] io_result<>
     {
     }
 
+#ifdef BOOST_SYSTEM_ERROR_CODE_HPP_INCLUDED
+    /** Construct from a Boost error code.
+
+        Enables implicit conversion from boost::system::error_code,
+        available only when boost/system/error_code.hpp is included
+        before this header.
+    */
+    BOOST_CAPY_FORCEINLINE
+    io_result(boost::system::error_code e) noexcept
+        : ec(e)
+    {
+    }
+#endif
+
     /** Construct from an error code enum.
 
         Enables implicit conversion from error_code enums like
