@@ -78,7 +78,7 @@ public:
 
             auto [ec, n] = co_await aws.write(
                 make_buffer("hello world", 11));
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -99,19 +99,19 @@ public:
 
             auto [ec1, n1] = co_await aws.write(
                 make_buffer("hello", 5));
-            if(ec1.failed())
+            if(ec1)
                 co_return;
             BOOST_TEST_EQ(n1, 5u);
 
             auto [ec2, n2] = co_await aws.write(
                 make_buffer(" ", 1));
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST_EQ(n2, 1u);
 
             auto [ec3, n3] = co_await aws.write(
                 make_buffer("world", 5));
-            if(ec3.failed())
+            if(ec3)
                 co_return;
             BOOST_TEST_EQ(n3, 5u);
 
@@ -135,7 +135,7 @@ public:
             }};
 
             auto [ec, n] = co_await aws.write(buffers);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10u);
@@ -155,7 +155,7 @@ public:
 
             auto [ec, n] = co_await aws.write(
                 make_buffer("hello world", 11));
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -175,7 +175,7 @@ public:
 
             auto [ec, n] = co_await aws.write(
                 make_buffer("hello", 5), false);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 5u);
@@ -196,7 +196,7 @@ public:
 
             auto [ec, n] = co_await aws.write(
                 make_buffer("hello", 5), true);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 5u);
@@ -216,7 +216,7 @@ public:
             any_write_sink aws(&ws);
 
             auto [ec, n] = co_await aws.write(const_buffer(), true);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 0u);
@@ -236,7 +236,7 @@ public:
             any_write_sink aws(&ws);
 
             auto [ec] = co_await aws.write_eof();
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST(ws.eof_called());
@@ -255,13 +255,13 @@ public:
 
             auto [ec1, n] = co_await aws.write(
                 make_buffer("hello", 5));
-            if(ec1.failed())
+            if(ec1)
                 co_return;
             BOOST_TEST_EQ(n, 5u);
             BOOST_TEST(!ws.eof_called());
 
             auto [ec2] = co_await aws.write_eof();
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST(ws.eof_called());
             BOOST_TEST_EQ(ws.data(), "hello");
@@ -284,7 +284,7 @@ public:
             }};
 
             auto [ec, n] = co_await aws.write(buffers);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10u);
@@ -306,7 +306,7 @@ public:
 
             auto [ec, n] = co_await aws.write(
                 make_buffer("hello world", 11));
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -328,7 +328,7 @@ public:
 
             auto [ec, n] = co_await aws.write(
                 make_buffer("hello world", 11), true);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);

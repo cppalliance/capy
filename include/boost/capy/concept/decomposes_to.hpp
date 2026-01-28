@@ -12,6 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 
+#include <system_error>
 #include <concepts>
 #include <cstddef>
 #include <tuple>
@@ -163,7 +164,7 @@ concept decomposes_to = requires(T&& t) {
     // Constrain a function to accept only awaitables that return
     // a decomposable result of (error_code, size_t)
     template<typename A>
-        requires awaitable_decomposes_to<A, system::error_code, std::size_t>
+        requires awaitable_decomposes_to<A, std::error_code, std::size_t>
     task<void> process(A&& op)
     {
         auto [ec, n] = co_await std::forward<A>(op);

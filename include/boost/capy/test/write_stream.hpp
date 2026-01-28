@@ -49,7 +49,7 @@ namespace test {
     auto r = f.armed( [&]( fuse& ) -> task<void> {
         auto [ec, n] = co_await ws.write_some(
             const_buffer( "Hello", 5 ) );
-        if( ec.failed() )
+        if( ec )
             co_return;
         // ws.str() returns "Hello"
     } );
@@ -64,7 +64,7 @@ class write_stream
     std::string expect_;
     std::size_t max_write_size_;
 
-    system::error_code
+    std::error_code
     consume_match_() noexcept
     {
         if(data_.empty() || expect_.empty())
@@ -111,7 +111,7 @@ public:
 
         @return An error if existing data does not match.
     */
-    system::error_code
+    std::error_code
     expect(std::string_view sv)
     {
         expect_.assign(sv);
@@ -169,7 +169,7 @@ public:
             await_resume()
             {
                 auto ec = self_->f_->maybe_fail();
-                if(ec.failed())
+                if(ec)
                     return {ec, 0};
 
                 std::size_t n = buffer_size(buffers_);
@@ -183,7 +183,7 @@ public:
                     self_->data_.data() + old_size, n), buffers_, n);
 
                 ec = self_->consume_match_();
-                if(ec.failed())
+                if(ec)
                     return {ec, n};
 
                 return {{}, n};

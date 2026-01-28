@@ -206,7 +206,7 @@ auto r = f.armed([&](fuse&) {
 
 [source,cpp]
 ----
-auto custom_ec = make_error_code(boost::system::errc::operation_canceled);
+auto custom_ec = make_error_code(std::errc::operation_canceled);
 fuse f(custom_ec);
 
 auto r = f.armed([](fuse& f) {

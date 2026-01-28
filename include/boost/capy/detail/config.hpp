@@ -83,20 +83,6 @@ namespace capy {
 # define BOOST_CAPY_AGGREGATE_WORKAROUND
 #endif
 
-// Add source location to error codes
-#ifdef BOOST_CAPY_NO_SOURCE_LOCATION
-# define BOOST_CAPY_ERR(ev) (::boost::system::error_code(ev))
-# define BOOST_CAPY_RETURN_EC(ev) return (ev)
-#else
-# define BOOST_CAPY_ERR(ev) ( \
-    ::boost::system::error_code( (ev), [] { \
-    static constexpr auto loc((BOOST_CURRENT_LOCATION)); \
-    return &loc; }()))
-# define BOOST_CAPY_RETURN_EC(ev) \
-    static constexpr auto loc ## __LINE__((BOOST_CURRENT_LOCATION)); \
-    return ::boost::system::error_code((ev), &loc ## __LINE__)
-#endif
-
 namespace detail {
 inline constexpr std::size_t max_iovec_ = 16;
 } // detail

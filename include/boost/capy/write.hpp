@@ -16,7 +16,7 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/consuming_buffers.hpp>
 #include <boost/capy/concept/write_stream.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <cstddef>
 
@@ -36,7 +36,7 @@ namespace capy {
     @param stream The stream to write to.
     @param buffers The buffer sequence to write from.
 
-    @return A task that yields `(system::error_code, std::size_t)`.
+    @return A task that yields `(std::error_code, std::size_t)`.
         On success, `ec` is default-constructed (no error) and `n` is
         `buffer_size(buffers)`. On error, `ec` contains the error code
         and `n` is the total number of bytes written before the error.

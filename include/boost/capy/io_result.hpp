@@ -11,7 +11,7 @@
 #define BOOST_CAPY_IO_RESULT_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <cstddef>
 #include <type_traits>
@@ -23,7 +23,7 @@ namespace capy {
 /** Result type for asynchronous I/O operations.
 
     This template provides a unified result type for async operations,
-    always containing a `system::error_code` plus optional additional
+    always containing a `std::error_code` plus optional additional
     values. It supports structured bindings.
 
     @tparam Args Additional value types beyond the error code.
@@ -56,7 +56,7 @@ template<>
 struct [[nodiscard]] io_result<>
 {
     /** The error code from the operation. */
-    system::error_code ec;
+    std::error_code ec;
 
     /** Default constructor. */
     io_result() = default;
@@ -66,7 +66,7 @@ struct [[nodiscard]] io_result<>
         Enables implicit conversion from error_code, allowing
         `co_return ec;` in coroutines returning `task<io_result<>>`.
     */
-    io_result(system::error_code e) noexcept
+    io_result(std::error_code e) noexcept
         : ec(e)
     {
     }
@@ -78,14 +78,14 @@ struct [[nodiscard]] io_result<>
     */
     template<class E,
         class = typename std::enable_if<
-            system::is_error_code_enum<E>::value>::type>
+            std::is_error_code_enum<E>::value>::type>
     io_result(E e) noexcept
         : ec(make_error_code(e))
     {
     }
 
     /** Convert to error_code. */
-    operator system::error_code() const noexcept
+    operator std::error_code() const noexcept
     {
         return ec;
     }
@@ -127,7 +127,7 @@ struct [[nodiscard]] io_result<>
 template<typename T1>
 struct [[nodiscard]] io_result<T1>
 {
-    system::error_code ec;
+    std::error_code ec;
     T1 t1{};
 
 #ifdef _MSC_VER
@@ -160,7 +160,7 @@ struct [[nodiscard]] io_result<T1>
 template<typename T1, typename T2>
 struct [[nodiscard]] io_result<T1, T2>
 {
-    system::error_code ec;
+    std::error_code ec;
     T1 t1{};
     T2 t2{};
 
@@ -197,7 +197,7 @@ struct [[nodiscard]] io_result<T1, T2>
 template<typename T1, typename T2, typename T3>
 struct [[nodiscard]] io_result<T1, T2, T3>
 {
-    system::error_code ec;
+    std::error_code ec;
     T1 t1{};
     T2 t2{};
     T3 t3{};
@@ -331,7 +331,7 @@ struct tuple_size<boost::capy::io_result<>>
 template<>
 struct tuple_element<0, boost::capy::io_result<>>
 {
-    using type = boost::system::error_code;
+    using type = ::std::error_code;
 };
 
 } // namespace std
@@ -363,7 +363,7 @@ struct tuple_size<boost::capy::io_result<T1, T2, T3>>
 template<>
 struct tuple_element<0, boost::capy::io_result<std::size_t>>
 {
-    using type = boost::system::error_code;
+    using type = ::std::error_code;
 };
 
 template<>
@@ -375,7 +375,7 @@ struct tuple_element<1, boost::capy::io_result<std::size_t>>
 template<typename T1>
 struct tuple_element<0, boost::capy::io_result<T1>>
 {
-    using type = boost::system::error_code;
+    using type = ::std::error_code;
 };
 
 template<typename T1>
@@ -389,7 +389,7 @@ struct tuple_element<1, boost::capy::io_result<T1>>
 template<typename T1, typename T2>
 struct tuple_element<0, boost::capy::io_result<T1, T2>>
 {
-    using type = boost::system::error_code;
+    using type = ::std::error_code;
 };
 
 template<typename T1, typename T2>
@@ -409,7 +409,7 @@ struct tuple_element<2, boost::capy::io_result<T1, T2>>
 template<typename T1, typename T2, typename T3>
 struct tuple_element<0, boost::capy::io_result<T1, T2, T3>>
 {
-    using type = boost::system::error_code;
+    using type = ::std::error_code;
 };
 
 template<typename T1, typename T2, typename T3>

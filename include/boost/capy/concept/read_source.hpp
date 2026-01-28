@@ -14,7 +14,7 @@
 #include <boost/capy/concept/buffer_archetype.hpp>
 #include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <concepts>
 #include <cstddef>
@@ -47,18 +47,18 @@ namespace capy {
     The `read` operation transfers data into the buffer sequence. On
     return, exactly one of the following is true:
 
-    @li **Success**: `ec.failed()` is `false` and `n` equals
+    @li **Success**: `ec` is `false` and `n` equals
         `buffer_size( buffers )`. The entire buffer sequence was filled.
-    @li **End-of-stream or Error**: `ec.failed()` is `true` and `n`
+    @li **End-of-stream or Error**: `ec` is `true` and `n`
         indicates the number of bytes transferred before the failure.
 
     If the source reaches end-of-stream before filling the buffer,
-    the operation returns with `ec.failed()` equal to `true`. Successful
+    the operation returns with `ec` equal to `true`. Successful
     partial reads are not permitted; either the entire buffer is filled
     or the operation fails with any partial data reported in `n`.
 
     If `buffer_empty( buffers )` is `true`, the operation completes
-    immediately with `ec.failed()` equal to `false` and `n` equal to 0.
+    immediately with `ec` equal to `false` and `n` equal to 0.
 
     When the buffer sequence contains multiple buffers, each buffer is
     filled completely before proceeding to the next.
@@ -101,7 +101,7 @@ namespace capy {
             auto [ec, n] = co_await source.read( mutable_buffer( buf ) );
             if( ec == cond::eof )
                 break;
-            if( ec.failed() )
+            if( ec )
                 co_return {};
             result.append( buf, n );
         }
@@ -118,7 +118,7 @@ concept ReadSource =
         { source.read(buffers) } -> IoAwaitable;
         requires awaitable_decomposes_to<
             decltype(source.read(buffers)),
-            system::error_code, std::size_t>;
+            std::error_code, std::size_t>;
     };
 
 } // namespace capy

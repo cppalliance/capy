@@ -10,7 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/concept/write_stream.hpp>
 
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <cstddef>
 #include <stop_token>
@@ -34,7 +34,7 @@ struct mock_write_awaitable_pair
     {
     }
 
-    std::pair<system::error_code, std::size_t>
+    std::pair<std::error_code, std::size_t>
     await_resume() const noexcept
     {
         return {};
@@ -53,7 +53,7 @@ struct mock_write_awaitable_tuple
     {
     }
 
-    std::tuple<system::error_code, std::size_t>
+    std::tuple<std::error_code, std::size_t>
     await_resume() const noexcept
     {
         return {};
@@ -87,7 +87,7 @@ struct mock_write_awaitable_wrong_order
     {
     }
 
-    std::pair<std::size_t, system::error_code>
+    std::pair<std::size_t, std::error_code>
     await_resume() const noexcept
     {
         return {};
@@ -101,7 +101,7 @@ struct mock_write_awaitable_not_io
 
     void await_suspend(std::coroutine_handle<>) const noexcept {}
 
-    std::pair<system::error_code, std::size_t>
+    std::pair<std::error_code, std::size_t>
     await_resume() const noexcept
     {
         return {};

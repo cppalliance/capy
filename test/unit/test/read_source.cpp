@@ -80,7 +80,7 @@ public:
 
             char buf[32] = {};
             auto [ec, n] = co_await rs.read(make_buffer(buf));
-            if(ec.failed())
+            if(ec)
                 co_return;
             BOOST_TEST_EQ(n, 11u);
             BOOST_TEST_EQ(std::string_view(buf, n), "hello world");
@@ -98,7 +98,7 @@ public:
 
             char buf[5] = {};
             auto [ec, n] = co_await rs.read(make_buffer(buf));
-            if(ec.failed())
+            if(ec)
                 co_return;
             BOOST_TEST_EQ(n, 5u);
             BOOST_TEST_EQ(std::string_view(buf, n), "hello");
@@ -118,25 +118,25 @@ public:
             char buf[3] = {};
 
             auto [ec1, n1] = co_await rs.read(make_buffer(buf));
-            if(ec1.failed())
+            if(ec1)
                 co_return;
             BOOST_TEST_EQ(n1, 3u);
             BOOST_TEST_EQ(std::string_view(buf, n1), "abc");
 
             auto [ec2, n2] = co_await rs.read(make_buffer(buf));
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST_EQ(n2, 3u);
             BOOST_TEST_EQ(std::string_view(buf, n2), "def");
 
             auto [ec3, n3] = co_await rs.read(make_buffer(buf));
-            if(ec3.failed())
+            if(ec3)
                 co_return;
             BOOST_TEST_EQ(n3, 3u);
             BOOST_TEST_EQ(std::string_view(buf, n3), "ghi");
 
             auto [ec4, n4] = co_await rs.read(make_buffer(buf));
-            if(ec4.failed())
+            if(ec4)
                 co_return;
             BOOST_TEST_EQ(n4, 1u);
             BOOST_TEST_EQ(std::string_view(buf, n4), "j");
@@ -153,7 +153,7 @@ public:
 
             char buf[32] = {};
             auto [ec, n] = co_await rs.read(make_buffer(buf));
-            if(ec.failed() && ec != cond::eof)
+            if(ec && ec != cond::eof)
                 co_return;
             BOOST_TEST(ec == cond::eof);
             BOOST_TEST_EQ(n, 0u);
@@ -172,12 +172,12 @@ public:
             char buf[32] = {};
 
             auto [ec1, n1] = co_await rs.read(make_buffer(buf));
-            if(ec1.failed())
+            if(ec1)
                 co_return;
             BOOST_TEST_EQ(n1, 1u);
 
             auto [ec2, n2] = co_await rs.read(make_buffer(buf));
-            if(ec2.failed() && ec2 != cond::eof)
+            if(ec2 && ec2 != cond::eof)
                 co_return;
             BOOST_TEST(ec2 == cond::eof);
             BOOST_TEST_EQ(n2, 0u);
@@ -201,7 +201,7 @@ public:
             }};
 
             auto [ec, n] = co_await rs.read(buffers);
-            if(ec.failed())
+            if(ec)
                 co_return;
             BOOST_TEST_EQ(n, 10u);
             BOOST_TEST_EQ(std::string_view(buf1, 5), "hello");
@@ -219,7 +219,7 @@ public:
             rs.provide("data");
 
             auto [ec, n] = co_await rs.read(mutable_buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
             BOOST_TEST_EQ(n, 0u);
             BOOST_TEST_EQ(rs.available(), 4u);
@@ -240,7 +240,7 @@ public:
 
             char buf[32] = {};
             auto [ec, n] = co_await rs.read(make_buffer(buf));
-            if(ec.failed())
+            if(ec)
             {
                 ++read_error_count;
                 co_return;
@@ -264,7 +264,7 @@ public:
             char buf[32] = {};
 
             auto [ec1, n1] = co_await rs.read(make_buffer(buf));
-            if(ec1.failed())
+            if(ec1)
                 co_return;
             BOOST_TEST_EQ(std::string_view(buf, n1), "first");
 
@@ -272,7 +272,7 @@ public:
             rs.provide("second");
 
             auto [ec2, n2] = co_await rs.read(make_buffer(buf));
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST_EQ(std::string_view(buf, n2), "second");
         });
@@ -289,7 +289,7 @@ public:
 
             char buf[32] = {};
             auto [ec, n] = co_await rs.read(make_buffer(buf));
-            if(ec.failed())
+            if(ec)
                 co_return;
             BOOST_TEST_EQ(n, 5u);
             BOOST_TEST_EQ(std::string_view(buf, n), "hello");
@@ -309,19 +309,19 @@ public:
             char buf[32] = {};
 
             auto [ec1, n1] = co_await rs.read(make_buffer(buf));
-            if(ec1.failed())
+            if(ec1)
                 co_return;
             BOOST_TEST_EQ(n1, 3u);
             BOOST_TEST_EQ(std::string_view(buf, n1), "abc");
 
             auto [ec2, n2] = co_await rs.read(make_buffer(buf));
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST_EQ(n2, 3u);
             BOOST_TEST_EQ(std::string_view(buf, n2), "def");
 
             auto [ec3, n3] = co_await rs.read(make_buffer(buf));
-            if(ec3.failed())
+            if(ec3)
                 co_return;
             BOOST_TEST_EQ(n3, 2u);
             BOOST_TEST_EQ(std::string_view(buf, n3), "gh");

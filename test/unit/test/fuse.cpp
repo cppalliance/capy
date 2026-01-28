@@ -11,7 +11,7 @@
 #include <boost/capy/test/fuse.hpp>
 
 #include <boost/capy/error.hpp>
-#include <boost/system/errc.hpp>
+#include <system_error>
 #include <cstdint>
 #include <stdexcept>
 
@@ -35,21 +35,21 @@ public:
             ++iterations;
 
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
             {
                 ++fail_points_hit;
                 return;
             }
 
             ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
             {
                 ++fail_points_hit;
                 return;
             }
 
             ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
             {
                 ++fail_points_hit;
                 return;
@@ -74,7 +74,7 @@ public:
         auto r = f.armed([&](fuse& fu) {
             ++iterations;
             auto ec = fu.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
         });
 
@@ -88,13 +88,13 @@ public:
     testCustomErrorCode()
     {
         auto custom_ec = make_error_code(
-            boost::system::errc::operation_canceled);
+            std::errc::operation_canceled);
 
-        system::error_code captured_ec;
+        std::error_code captured_ec;
 
         auto r = fuse(custom_ec)([&](fuse& f) {
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
             {
                 captured_ec = ec;
                 return;
@@ -108,11 +108,11 @@ public:
     void
     testDefaultErrorCode()
     {
-        system::error_code captured_ec;
+        std::error_code captured_ec;
 
         auto r = fuse()([&](fuse& f) {
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
             {
                 captured_ec = ec;
                 return;
@@ -134,20 +134,20 @@ public:
             try
             {
                 auto ec = f.maybe_fail();
-                if(ec.failed())
+                if(ec)
                 {
                     ++error_code_fails;
                     return;
                 }
 
                 ec = f.maybe_fail();
-                if(ec.failed())
+                if(ec)
                 {
                     ++error_code_fails;
                     return;
                 }
             }
-            catch(system::system_error const&)
+            catch(std::system_error const&)
             {
                 ++exception_fails;
                 throw;
@@ -174,7 +174,7 @@ public:
                 return;
             }
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
         });
 
@@ -188,7 +188,7 @@ public:
         // Test that stray exceptions cause failed result
         auto r = fuse()([](fuse& f) {
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
             throw std::runtime_error("stray");
         });
@@ -202,7 +202,7 @@ public:
         // Test that wrong error code in exception causes failed result
         auto expected_ec = make_error_code(error::test_failure);
         auto wrong_ec = make_error_code(
-            boost::system::errc::operation_canceled);
+            std::errc::operation_canceled);
 
         int iterations = 0;
 
@@ -210,11 +210,11 @@ public:
             ++iterations;
             // In exception phase, throw wrong error code
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
             // After error code phase succeeds, we enter exception phase
             // Force a wrong exception to be thrown
-            throw system::system_error(wrong_ec);
+            throw std::system_error(wrong_ec);
         });
 
         BOOST_TEST(!r.success);
@@ -244,7 +244,7 @@ public:
         auto r = fuse()([&](fuse& f) {
             ++iterations;
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
             {
                 ++failures;
                 return;
@@ -268,13 +268,13 @@ public:
             fuse f2 = f; // Copy shares state
 
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
 
             // f2 shares state with f, so this is the 2nd call
             ec = f2.maybe_fail();
             ++call_count;
-            if(ec.failed())
+            if(ec)
                 return;
         });
 
@@ -292,7 +292,7 @@ public:
         fuse f;
         auto r = f([](fuse& fu) {
             auto ec = fu.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
         });
 
@@ -312,7 +312,7 @@ public:
         fuse f;
         auto r = f([](fuse& fu) {
             auto ec = fu.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
             // Force a stray exception to get a failed result
             throw std::runtime_error("test");
@@ -332,7 +332,7 @@ public:
 
         auto r = f([&](fuse& fu) {
             auto ec = fu.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
             line_of_fail = __LINE__ + 1;
             fu.fail();
@@ -350,7 +350,7 @@ public:
 
         auto r = f([](fuse& fu) {
             auto ec = fu.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
             try
             {
@@ -392,14 +392,14 @@ public:
         auto r1 = f1.armed([&](fuse& f) {
             ++iterations1;
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
         });
 
         auto r2 = f2([&](fuse& f) {
             ++iterations2;
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
         });
 
@@ -421,7 +421,7 @@ public:
             {
                 ++maybe_fail_calls;
                 auto ec = fu.maybe_fail();
-                if(ec.failed())
+                if(ec)
                     ++fail_count;
             }
         });
@@ -440,7 +440,7 @@ public:
 
         auto r = f.inert([&](fuse& fu) {
             auto ec = fu.maybe_fail();
-            BOOST_TEST(!ec.failed());
+            BOOST_TEST(!ec);
 
             line_of_fail = __LINE__ + 1;
             fu.fail();
@@ -536,7 +536,7 @@ public:
         auto r = fuse().inert([&](fuse& f) {
             ++iterations;
             auto ec = f.maybe_fail();
-            BOOST_TEST(!ec.failed());
+            BOOST_TEST(!ec);
         });
 
         BOOST_TEST(r.success);
@@ -553,7 +553,7 @@ public:
         for(int i = 0; i < 10; ++i)
         {
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 ++fail_count;
         }
 
@@ -568,7 +568,7 @@ public:
 
         auto r = f.armed([](fuse& fu) {
             auto ec = fu.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
         });
 
@@ -579,7 +579,7 @@ public:
         for(int i = 0; i < 10; ++i)
         {
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 ++fail_count;
         }
 
@@ -604,7 +604,7 @@ public:
         for(int i = 0; i < 10; ++i)
         {
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 ++fail_count;
         }
 
@@ -622,10 +622,10 @@ public:
 
             explicit Service(fuse& f) : f_(f) {}
 
-            system::error_code do_work()
+            std::error_code do_work()
             {
                 auto ec = f_.maybe_fail();
-                if(ec.failed())
+                if(ec)
                     return ec;
                 ++work_count;
                 return {};
@@ -639,7 +639,7 @@ public:
         for(int i = 0; i < 5; ++i)
         {
             auto ec = svc.do_work();
-            BOOST_TEST(!ec.failed());
+            BOOST_TEST(!ec);
         }
         BOOST_TEST(svc.work_count == 5);
 
@@ -650,7 +650,7 @@ public:
         auto r = f.armed([&](fuse&) {
             ++iterations;
             auto ec = svc.do_work();
-            if(ec.failed())
+            if(ec)
                 return;
         });
 
@@ -663,7 +663,7 @@ public:
         for(int i = 0; i < 5; ++i)
         {
             auto ec = svc.do_work();
-            BOOST_TEST(!ec.failed());
+            BOOST_TEST(!ec);
         }
         BOOST_TEST(svc.work_count == 5);
     }

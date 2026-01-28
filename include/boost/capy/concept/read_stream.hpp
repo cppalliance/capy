@@ -14,7 +14,7 @@
 #include <boost/capy/concept/buffer_archetype.hpp>
 #include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <concepts>
 #include <cstddef>
@@ -39,13 +39,13 @@ namespace capy {
     If `buffer_size( buffers ) > 0`, the operation reads one or more
     bytes from the stream into the buffer sequence:
 
-    @li On success: `!ec.failed()`, and `n` is the number of bytes
+    @li On success: `!ec`, and `n` is the number of bytes
         read (at least 1).
-    @li On error: `ec.failed()`, and `n` is 0.
+    @li On error: `ec`, and `n` is 0.
     @li On end-of-file: `ec == cond::eof`, and `n` is 0.
 
     If `buffer_empty( buffers )` is `true`, the operation completes
-    immediately. `!ec.failed()`, and `n` is 0.
+    immediately. `!ec`, and `n` is 0.
 
     Buffers in the sequence are filled completely before proceeding
     to the next buffer.
@@ -82,7 +82,7 @@ namespace capy {
         {
             auto [ec, n] = co_await s.read_some(
                 mutable_buffer( buf + total, size - total ) );
-            if( ec.failed() )
+            if( ec )
                 co_return;
             total += n;
         }
@@ -98,7 +98,7 @@ concept ReadStream =
         { stream.read_some(buffers) } -> IoAwaitable;
         requires awaitable_decomposes_to<
             decltype(stream.read_some(buffers)),
-            system::error_code, std::size_t>;
+            std::error_code, std::size_t>;
     };
 
 } // namespace capy

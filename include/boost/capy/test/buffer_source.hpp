@@ -51,7 +51,7 @@ namespace test {
     auto r = f.armed( [&]( fuse& ) -> task<void> {
         const_buffer arr[16];
         auto [ec, count] = co_await bs.pull( arr, 16 );
-        if( ec.failed() )
+        if( ec )
             co_return;
         // arr[0..count) contains buffer descriptors
         std::size_t n = buffer_size( std::span( arr, count ) );
@@ -166,7 +166,7 @@ public:
             await_resume()
             {
                 auto ec = self_->f_->maybe_fail();
-                if(ec.failed())
+                if(ec)
                     return {ec, 0};
 
                 if(self_->pos_ >= self_->data_.size())

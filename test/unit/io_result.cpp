@@ -27,7 +27,7 @@ struct io_result_test
         BOOST_TEST(!r1.ec);
 
         // With error
-        io_result<> r2{make_error_code(system::errc::invalid_argument)};
+        io_result<> r2{make_error_code(std::errc::invalid_argument)};
         BOOST_TEST(r2.ec);
 
         // Structured binding
@@ -50,7 +50,7 @@ struct io_result_test
 
         // With error
         io_result<std::size_t> r3{
-            make_error_code(system::errc::invalid_argument), 10};
+            make_error_code(std::errc::invalid_argument), 10};
         BOOST_TEST(r3.ec);
         BOOST_TEST_EQ(r3.t1, 10u);
 
@@ -75,7 +75,7 @@ struct io_result_test
 
         // With error
         io_result<std::string> r2{
-            make_error_code(system::errc::invalid_argument), "error"};
+            make_error_code(std::errc::invalid_argument), "error"};
         BOOST_TEST(r2.ec);
         BOOST_TEST_EQ(r2.t1, "error");
     }
@@ -100,7 +100,7 @@ struct io_result_test
 
         // With error
         io_result<int, double> r2{
-            make_error_code(system::errc::invalid_argument), 0, 0.0};
+            make_error_code(std::errc::invalid_argument), 0, 0.0};
         BOOST_TEST(r2.ec);
         BOOST_TEST_EQ(r2.t1, 0);
         BOOST_TEST_EQ(r2.t2, 0.0);

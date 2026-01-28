@@ -14,7 +14,7 @@
 #include <boost/capy/concept/io_launchable_task.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/test/run_blocking.hpp>
-#include <boost/system/system_error.hpp>
+#include <system_error>
 #include <cstddef>
 #include <exception>
 #include <limits>
@@ -32,14 +32,14 @@
     CORRECT pattern - early return on injected error:
 
         auto [ec, n] = co_await rs.read_some(buf);
-        if(ec.failed())
+        if(ec)
             co_return;  // fuse injected error, exit gracefully
         // ... continue with success path
 
     WRONG pattern - asserting success unconditionally:
 
         auto [ec, n] = co_await rs.read_some(buf);
-        BOOST_TEST(! ec.failed());  // FAILS when fuse injects error!
+        BOOST_TEST(! ec);  // FAILS when fuse injects error!
 
     The fuse mechanism tests error handling by failing at each point
     in sequence. Tests must handle injected errors by returning early,
@@ -73,11 +73,11 @@ namespace test {
     @code
     fuse()([](fuse& f) {
         auto ec = f.maybe_fail();
-        if(ec.failed())
+        if(ec)
             return;
 
         ec = f.maybe_fail();
-        if(ec.failed())
+        if(ec)
             return;
     });
     @endcode
@@ -117,10 +117,10 @@ namespace test {
     public:
         explicit MyService(fuse& f) : f_(f) {}
 
-        system::error_code do_work()
+        std::error_code do_work()
         {
             auto ec = f_.maybe_fail();  // No-op outside armed/inert
-            if(ec.failed())
+            if(ec)
                 return ec;
             // ... actual work ...
             return {};
@@ -142,11 +142,11 @@ namespace test {
 
     @code
     auto custom_ec = make_error_code(
-        boost::system::errc::operation_canceled);
+        std::errc::operation_canceled);
     fuse f(custom_ec);
     auto r = f.armed([](fuse& f) {
         auto ec = f.maybe_fail();
-        if(ec.failed())
+        if(ec)
             return;
     });
     @endcode
@@ -157,7 +157,7 @@ namespace test {
     fuse f;
     auto r = f([](fuse& f) {
         auto ec = f.maybe_fail();
-        if(ec.failed())
+        if(ec)
             return;
     });
 
@@ -175,7 +175,7 @@ namespace test {
     fuse f;
     auto r = f([](fuse& f) {
         auto ec = f.maybe_fail();
-        if(ec.failed())
+        if(ec)
             return;
     });
 
@@ -202,7 +202,7 @@ class fuse
         bool throws = false;
         bool stopped = false;
         bool inert = true;
-        system::error_code ec;
+        std::error_code ec;
         std::source_location loc;
         std::exception_ptr ep;
     };
@@ -251,7 +251,7 @@ public:
         fuse f;
         auto r = f([](fuse& f) {
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
         });
 
@@ -281,13 +281,13 @@ public:
 
         @code
         auto custom_ec = make_error_code(
-            boost::system::errc::operation_canceled);
+            std::errc::operation_canceled);
         fuse f(custom_ec);
 
-        system::error_code captured_ec;
+        std::error_code captured_ec;
         auto r = f([&](fuse& f) {
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
             {
                 captured_ec = ec;
                 return;
@@ -299,7 +299,7 @@ public:
 
         @param ec The error code to deliver at failure points.
     */
-    explicit fuse(system::error_code ec)
+    explicit fuse(std::error_code ec)
         : p_(std::make_shared<state>())
     {
         p_->ec = ec;
@@ -313,11 +313,11 @@ public:
 
         @code
         fuse f;
-        system::error_code captured_ec;
+        std::error_code captured_ec;
 
         auto r = f([&](fuse& f) {
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
             {
                 captured_ec = ec;
                 return;
@@ -337,7 +337,7 @@ public:
         When running under @ref armed, increments the internal
         counter. When the counter reaches the current failure
         point, returns the stored error code (or throws
-        `system::system_error` in exception mode) and records
+        `std::system_error` in exception mode) and records
         the source location.
 
         When called outside of @ref armed or @ref inert (standalone
@@ -352,12 +352,12 @@ public:
         auto r = f([](fuse& f) {
             // Error code mode: returns the error
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
 
             // Exception mode: throws system_error
             ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
         });
         @endcode
@@ -378,10 +378,10 @@ public:
         outside @ref armed, or when running under @ref inert,
         always returns an empty error code.
 
-        @throws system::system_error When in exception mode
+        @throws std::system_error When in exception mode
         and at the failure point (not thrown outside @ref armed).
     */
-    system::error_code
+    std::error_code
     maybe_fail(
         std::source_location loc = std::source_location::current())
     {
@@ -395,7 +395,7 @@ public:
             s.triggered = true;
             s.loc = loc;
             if(s.throws)
-                throw system::system_error(s.ec);
+                throw std::system_error(s.ec);
             return s.ec;
         }
         return {};
@@ -413,7 +413,7 @@ public:
         fuse f;
         auto r = f([](fuse& f) {
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
 
             // Explicit failure when a condition is not met
@@ -510,11 +510,11 @@ public:
         fuse f;
         auto r = f.armed([](fuse& f) {
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
 
             ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
         });
 
@@ -579,7 +579,7 @@ public:
             {
                 fn(*this);
             }
-            catch(system::system_error const& ex)
+            catch(std::system_error const& ex)
             {
                 if(ex.code() != p_->ec)
                 {
@@ -628,11 +628,11 @@ public:
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 co_return;
         });
 
@@ -698,7 +698,7 @@ public:
             {
                 run_blocking()(fn(*this));
             }
-            catch(system::system_error const& ex)
+            catch(std::system_error const& ex)
             {
                 if(ex.code() != p_->ec)
                 {
@@ -746,7 +746,7 @@ public:
         // Inline usage:
         auto r3 = fuse()([](fuse& f) {
             auto ec = f.maybe_fail();
-            if(ec.failed())
+            if(ec)
                 return;
         });
         @endcode
@@ -789,7 +789,7 @@ public:
         fuse f;
         auto r = f.inert([](fuse& f) {
             auto ec = f.maybe_fail();  // Always succeeds
-            assert(!ec.failed());
+            assert(!ec);
 
             // Only way to signal failure:
             if(some_condition)
@@ -854,7 +854,7 @@ public:
         fuse f;
         auto r = f.inert([](fuse& f) -> task<void> {
             auto ec = f.maybe_fail();  // Always succeeds
-            assert(!ec.failed());
+            assert(!ec);
 
             // Only way to signal failure:
             if(some_condition)

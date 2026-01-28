@@ -20,7 +20,7 @@
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/task.hpp>
 
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <concepts>
 #include <coroutine>
@@ -98,7 +98,7 @@ class any_write_sink
         coro h,
         executor_ref ex,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* n);
 
     template<WriteSink S>
@@ -109,7 +109,7 @@ class any_write_sink
         coro h,
         executor_ref ex,
         std::stop_token token,
-        system::error_code* ec);
+        std::error_code* ec);
 
     template<WriteSink S>
     static write_op
@@ -117,7 +117,7 @@ class any_write_sink
         any_write_sink* wrapper,
         S& sink,
         std::span<const_buffer const> bufs,
-        system::error_code* out_ec,
+        std::error_code* out_ec,
         std::size_t* out_n);
 
     template<WriteSink S>
@@ -127,7 +127,7 @@ class any_write_sink
         S& sink,
         std::span<const_buffer const> bufs,
         bool eof,
-        system::error_code* out_ec,
+        std::error_code* out_ec,
         std::size_t* out_n);
 
     template<WriteSink S>
@@ -135,7 +135,7 @@ class any_write_sink
     write_eof_coro(
         any_write_sink* wrapper,
         S& sink,
-        system::error_code* out_ec);
+        std::error_code* out_ec);
 
     void* alloc_frame(std::size_t size);
     void free_frame(void* p, std::size_t size);
@@ -338,7 +338,7 @@ struct any_write_sink::vtable
         coro h,
         executor_ref ex,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* n);
 
     coro (*do_write_eof)(
@@ -347,7 +347,7 @@ struct any_write_sink::vtable
         coro h,
         executor_ref ex,
         std::stop_token token,
-        system::error_code* ec);
+        std::error_code* ec);
 };
 
 template<WriteSink S>
@@ -797,7 +797,7 @@ any_write_sink::write_coro(
     any_write_sink*,
     S& sink,
     std::span<const_buffer const> bufs,
-    system::error_code* out_ec,
+    std::error_code* out_ec,
     std::size_t* out_n)
 {
     auto [err, bytes] = co_await sink.write(bufs);
@@ -813,7 +813,7 @@ any_write_sink::write_with_eof_coro(
     S& sink,
     std::span<const_buffer const> bufs,
     bool eof,
-    system::error_code* out_ec,
+    std::error_code* out_ec,
     std::size_t* out_n)
 {
     auto [err, bytes] = co_await sink.write(bufs, eof);
@@ -827,7 +827,7 @@ any_write_sink::write_eof_op
 any_write_sink::write_eof_coro(
     any_write_sink*,
     S& sink,
-    system::error_code* out_ec)
+    std::error_code* out_ec)
 {
     auto [err] = co_await sink.write_eof();
 
@@ -844,7 +844,7 @@ any_write_sink::do_write_impl(
     coro h,
     executor_ref ex,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     std::size_t* n)
 {
     auto& s = *static_cast<S*>(sink);
@@ -883,7 +883,7 @@ any_write_sink::do_write_eof_impl(
     coro h,
     executor_ref ex,
     std::stop_token token,
-    system::error_code* ec)
+    std::error_code* ec)
 {
     auto& s = *static_cast<S*>(sink);
 
@@ -923,7 +923,7 @@ any_write_sink::write_some_(
         any_write_sink* self_;
         std::span<const_buffer const> buffers_;
         bool eof_;
-        system::error_code ec_;
+        std::error_code ec_;
         std::size_t n_ = 0;
 
         bool
@@ -962,7 +962,7 @@ any_write_sink::write_eof()
     struct awaitable
     {
         any_write_sink* self_;
-        system::error_code ec_;
+        std::error_code ec_;
 
         bool
         await_ready() const noexcept
@@ -1012,7 +1012,7 @@ any_write_sink::write(CB buffers, bool eof)
             break;
 
         auto [ec, n] = co_await write_some_(bufs, false);
-        if(ec.failed())
+        if(ec)
             co_return {ec, total + n};
         bp.consume(n);
         total += n;
@@ -1021,7 +1021,7 @@ any_write_sink::write(CB buffers, bool eof)
     if(eof)
     {
         auto [ec] = co_await write_eof();
-        if(ec.failed())
+        if(ec)
             co_return {ec, total};
     }
 

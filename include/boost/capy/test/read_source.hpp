@@ -53,7 +53,7 @@ namespace test {
         char buf[32];
         auto [ec, n] = co_await rs.read(
             mutable_buffer( buf, sizeof( buf ) ) );
-        if( ec.failed() )
+        if( ec )
             co_return;
         // buf contains "Hello, World!"
     } );
@@ -156,7 +156,7 @@ public:
             await_resume()
             {
                 auto ec = self_->f_->maybe_fail();
-                if(ec.failed())
+                if(ec)
                     return {ec, 0};
 
                 if(self_->pos_ >= self_->data_.size())

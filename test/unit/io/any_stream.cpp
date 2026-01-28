@@ -74,7 +74,7 @@ public:
             await_resume()
             {
                 auto ec = self_->f_.maybe_fail();
-                if(ec.failed())
+                if(ec)
                     return {ec, 0};
 
                 if(self_->read_pos_ >= self_->read_data_.size())
@@ -114,7 +114,7 @@ public:
             await_resume()
             {
                 auto ec = self_->f_.maybe_fail();
-                if(ec.failed())
+                if(ec)
                     return {ec, 0};
 
                 std::size_t n = buffer_size(buffers_);
@@ -209,7 +209,7 @@ public:
             char rbuf[32] = {};
             mutable_buffer rmb(rbuf, sizeof(rbuf));
             auto [ec1, n1] = co_await as.read_some(std::span(&rmb, 1));
-            if(ec1.failed())
+            if(ec1)
                 co_return;
             BOOST_TEST_EQ(n1, 5u);
             BOOST_TEST_EQ(std::string_view(rbuf, n1), "hello");
@@ -218,7 +218,7 @@ public:
             char const wdata[] = "world";
             const_buffer wcb(wdata, 5);
             auto [ec2, n2] = co_await as.write_some(std::span(&wcb, 1));
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST_EQ(n2, 5u);
             BOOST_TEST_EQ(ms.written(), "world");
@@ -240,7 +240,7 @@ public:
             char buf[32] = {};
             mutable_buffer mb(buf, sizeof(buf));
             auto [ec, n] = co_await reader.read_some(std::span(&mb, 1));
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 9u);
@@ -262,7 +262,7 @@ public:
             char const data[] = "test output";
             const_buffer cb(data, 11);
             auto [ec, n] = co_await writer.write_some(std::span(&cb, 1));
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);

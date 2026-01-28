@@ -22,7 +22,7 @@
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/task.hpp>
 
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <concepts>
 #include <coroutine>
@@ -113,7 +113,7 @@ class any_buffer_sink
         coro h,
         executor_ref ex,
         std::stop_token token,
-        system::error_code* ec);
+        std::error_code* ec);
 
     template<BufferSink S>
     static coro
@@ -123,7 +123,7 @@ class any_buffer_sink
         coro h,
         executor_ref ex,
         std::stop_token token,
-        system::error_code* ec);
+        std::error_code* ec);
 
     template<BufferSink S>
     static commit_op
@@ -131,7 +131,7 @@ class any_buffer_sink
         any_buffer_sink* wrapper,
         S& sink,
         std::size_t n,
-        system::error_code* out_ec);
+        std::error_code* out_ec);
 
     template<BufferSink S>
     static commit_op
@@ -140,14 +140,14 @@ class any_buffer_sink
         S& sink,
         std::size_t n,
         bool eof,
-        system::error_code* out_ec);
+        std::error_code* out_ec);
 
     template<BufferSink S>
     static commit_op
     commit_eof_coro(
         any_buffer_sink* wrapper,
         S& sink,
-        system::error_code* out_ec);
+        std::error_code* out_ec);
 
     void* alloc_frame(std::size_t size);
     void free_frame(void* p, std::size_t size);
@@ -414,7 +414,7 @@ struct any_buffer_sink::vtable
         coro h,
         executor_ref ex,
         std::stop_token token,
-        system::error_code* ec);
+        std::error_code* ec);
 
     coro (*do_commit_eof)(
         void* sink,
@@ -422,7 +422,7 @@ struct any_buffer_sink::vtable
         coro h,
         executor_ref ex,
         std::stop_token token,
-        system::error_code* ec);
+        std::error_code* ec);
 };
 
 template<BufferSink S>
@@ -715,7 +715,7 @@ any_buffer_sink::commit_coro(
     any_buffer_sink*,
     S& sink,
     std::size_t n,
-    system::error_code* out_ec)
+    std::error_code* out_ec)
 {
     auto [err] = co_await sink.commit(n);
     *out_ec = err;
@@ -728,7 +728,7 @@ any_buffer_sink::commit_with_eof_coro(
     S& sink,
     std::size_t n,
     bool eof,
-    system::error_code* out_ec)
+    std::error_code* out_ec)
 {
     auto [err] = co_await sink.commit(n, eof);
     *out_ec = err;
@@ -739,7 +739,7 @@ any_buffer_sink::commit_op
 any_buffer_sink::commit_eof_coro(
     any_buffer_sink*,
     S& sink,
-    system::error_code* out_ec)
+    std::error_code* out_ec)
 {
     auto [err] = co_await sink.commit_eof();
     *out_ec = err;
@@ -755,7 +755,7 @@ any_buffer_sink::do_commit_impl(
     coro h,
     executor_ref ex,
     std::stop_token token,
-    system::error_code* ec)
+    std::error_code* ec)
 {
     auto& s = *static_cast<S*>(sink);
 
@@ -793,7 +793,7 @@ any_buffer_sink::do_commit_eof_impl(
     coro h,
     executor_ref ex,
     std::stop_token token,
-    system::error_code* ec)
+    std::error_code* ec)
 {
     auto& s = *static_cast<S*>(sink);
 
@@ -838,7 +838,7 @@ any_buffer_sink::commit(std::size_t n)
     {
         any_buffer_sink* self_;
         std::size_t n_;
-        system::error_code ec_;
+        std::error_code ec_;
 
         bool
         await_ready() const noexcept
@@ -877,7 +877,7 @@ any_buffer_sink::commit(std::size_t n, bool eof)
         any_buffer_sink* self_;
         std::size_t n_;
         bool eof_;
-        system::error_code ec_;
+        std::error_code ec_;
 
         bool
         await_ready() const noexcept
@@ -914,7 +914,7 @@ any_buffer_sink::commit_eof()
     struct awaitable
     {
         any_buffer_sink* self_;
-        system::error_code ec_;
+        std::error_code ec_;
 
         bool
         await_ready() const noexcept
@@ -970,14 +970,14 @@ any_buffer_sink::write(CB buffers, bool eof)
         if(count == 0)
         {
             auto [ec] = co_await commit(0);
-            if(ec.failed())
+            if(ec)
                 co_return {ec, total};
             continue;
         }
 
         auto n = buffer_copy(std::span(arr, count), src);
         auto [ec] = co_await commit(n);
-        if(ec.failed())
+        if(ec)
             co_return {ec, total};
         bp.consume(n);
         total += n;
@@ -986,7 +986,7 @@ any_buffer_sink::write(CB buffers, bool eof)
     if(eof)
     {
         auto [ec] = co_await commit_eof();
-        if(ec.failed())
+        if(ec)
             co_return {ec, total};
     }
 

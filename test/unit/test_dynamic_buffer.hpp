@@ -64,7 +64,7 @@ grind_dynamic_buffer(F&& make_buffer_fn)
             {
                 auto mb = db.prepare(buffer_size(b1));
                 auto [ec, n] = co_await rs.read_some(mb);
-                if(ec.failed())
+                if(ec)
                     co_return;
                 db.commit(n);
             }
@@ -76,7 +76,7 @@ grind_dynamic_buffer(F&& make_buffer_fn)
             if(db.size() > 0)
             {
                 auto [ec, n] = co_await ws.write_some(db.data());
-                if(ec.failed())
+                if(ec)
                     co_return;
                 BOOST_TEST_EQ(n, db.size());
             }

@@ -82,7 +82,7 @@ public:
             char buf[32] = {};
             mutable_buffer mb(buf, sizeof(buf));
             auto [ec, n] = co_await ars.read_some(std::span(&mb, 1));
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -104,7 +104,7 @@ public:
             char buf[5] = {};
             mutable_buffer mb(buf, sizeof(buf));
             auto [ec, n] = co_await ars.read_some(std::span(&mb, 1));
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 5u);
@@ -128,19 +128,19 @@ public:
             mutable_buffer mb(buf, sizeof(buf));
 
             auto [ec1, n1] = co_await ars.read_some(std::span(&mb, 1));
-            if(ec1.failed())
+            if(ec1)
                 co_return;
             BOOST_TEST_EQ(n1, 3u);
             BOOST_TEST_EQ(std::string_view(buf, n1), "abc");
 
             auto [ec2, n2] = co_await ars.read_some(std::span(&mb, 1));
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST_EQ(n2, 3u);
             BOOST_TEST_EQ(std::string_view(buf, n2), "def");
 
             auto [ec3, n3] = co_await ars.read_some(std::span(&mb, 1));
-            if(ec3.failed())
+            if(ec3)
                 co_return;
             BOOST_TEST_EQ(n3, 3u);
             BOOST_TEST_EQ(std::string_view(buf, n3), "ghi");
@@ -161,7 +161,7 @@ public:
             char buf[32] = {};
             mutable_buffer mb(buf, sizeof(buf));
             auto [ec, n] = co_await ars.read_some(std::span(&mb, 1));
-            if(ec.failed() && ec != cond::eof)
+            if(ec && ec != cond::eof)
                 co_return;
 
             BOOST_TEST(ec == cond::eof);
@@ -189,7 +189,7 @@ public:
 
             auto [ec, n] = co_await ars.read_some(
                 std::span<mutable_buffer const>(buffers));
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10u);
@@ -213,7 +213,7 @@ public:
             char buf[32] = {};
             mutable_buffer mb(buf, sizeof(buf));
             auto [ec, n] = co_await ars.read_some(mb);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -241,7 +241,7 @@ public:
             }};
 
             auto [ec, n] = co_await ars.read_some(buffers);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10u);

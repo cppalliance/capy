@@ -92,7 +92,7 @@ public:
             std::memcpy(arr[0].data(), "hello", 5);
 
             auto [ec] = co_await abs.commit(5);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(bs.data(), "hello");
@@ -115,7 +115,7 @@ public:
             std::memcpy(arr[0].data(), "world", 5);
 
             auto [ec] = co_await abs.commit(5, true);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(bs.data(), "world");
@@ -139,11 +139,11 @@ public:
             std::memcpy(arr[0].data(), "data", 4);
 
             auto [ec1] = co_await abs.commit(4);
-            if(ec1.failed())
+            if(ec1)
                 co_return;
 
             auto [ec2] = co_await abs.commit_eof();
-            if(ec2.failed())
+            if(ec2)
                 co_return;
 
             BOOST_TEST_EQ(bs.data(), "data");
@@ -169,7 +169,7 @@ public:
                 std::memcpy(arr[0].data(), "hello ", 6);
 
                 auto [ec] = co_await abs.commit(6);
-                if(ec.failed())
+                if(ec)
                     co_return;
             }
 
@@ -182,7 +182,7 @@ public:
                 std::memcpy(arr[0].data(), "world", 5);
 
                 auto [ec] = co_await abs.commit(5, true);
-                if(ec.failed())
+                if(ec)
                     co_return;
             }
 
@@ -201,7 +201,7 @@ public:
             any_buffer_sink abs(&bs);
 
             auto [ec] = co_await abs.commit_eof();
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST(bs.data().empty());
@@ -221,7 +221,7 @@ public:
             test::buffer_sink sink(f);
 
             auto [ec, n] = co_await pull_from(src, sink);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -243,7 +243,7 @@ public:
             any_buffer_sink abs(&sink);
 
             auto [ec, n] = co_await pull_from(src, abs);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -264,7 +264,7 @@ public:
             test::buffer_sink sink(f);
 
             auto [ec, n] = co_await pull_from(src, sink);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -285,7 +285,7 @@ public:
             test::buffer_sink sink(f);
 
             auto [ec, n] = co_await pull_from(src, sink);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 0u);
@@ -306,7 +306,7 @@ public:
             test::buffer_sink sink(f);
 
             auto [ec, n] = co_await pull_from(src, sink);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -328,7 +328,7 @@ public:
             any_buffer_sink abs(&sink);
 
             auto [ec, n] = co_await pull_from(src, abs);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -349,7 +349,7 @@ public:
             test::buffer_sink sink(f);
 
             auto [ec, n] = co_await pull_from(src, sink);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -370,7 +370,7 @@ public:
             test::buffer_sink sink(f);
 
             auto [ec, n] = co_await pull_from(src, sink);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 0u);

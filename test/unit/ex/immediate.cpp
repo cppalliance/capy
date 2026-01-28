@@ -137,7 +137,7 @@ struct immediate_test
         {
             auto coro = []() -> task<std::size_t> {
                 auto [ec, n] = co_await immediate<io_result<std::size_t>>{{{}, 50}};
-                if(ec.failed())
+                if(ec)
                     co_return 0;
                 co_return n;
             };
@@ -161,7 +161,7 @@ struct immediate_test
         {
             auto coro = []() -> task<bool> {
                 auto [ec] = co_await ready();
-                co_return !ec.failed();
+                co_return !ec;
             };
             BOOST_TEST(run_task(coro()));
         }
@@ -183,7 +183,7 @@ struct immediate_test
         {
             auto coro = []() -> task<std::size_t> {
                 auto [ec, n] = co_await ready(std::size_t{100});
-                if(ec.failed())
+                if(ec)
                     co_return 0;
                 co_return n;
             };
@@ -208,7 +208,7 @@ struct immediate_test
         {
             auto coro = []() -> task<double> {
                 auto [ec, a, b] = co_await ready(10, 2.5);
-                if(ec.failed())
+                if(ec)
                     co_return 0.0;
                 co_return a * b;
             };
@@ -234,7 +234,7 @@ struct immediate_test
         {
             auto coro = []() -> task<int> {
                 auto [ec, a, b, c] = co_await ready(10, 20, 30);
-                if(ec.failed())
+                if(ec)
                     co_return 0;
                 co_return a + b + c;
             };
@@ -247,45 +247,45 @@ struct immediate_test
     {
         // ready(ec) creates failed void result
         {
-            auto ec = make_error_code(system::errc::invalid_argument);
+            auto ec = make_error_code(std::errc::invalid_argument);
             auto im = ready(ec);
             BOOST_TEST(im.await_ready());
             auto r = im.await_resume();
-            BOOST_TEST(r.ec.failed());
+            BOOST_TEST(r.ec);
         }
 
         // ready(ec, T1) creates failed single-value result
         {
-            auto ec = make_error_code(system::errc::invalid_argument);
+            auto ec = make_error_code(std::errc::invalid_argument);
             auto im = ready(ec, std::size_t{0});
             BOOST_TEST(im.await_ready());
             auto r = im.await_resume();
-            BOOST_TEST(r.ec.failed());
+            BOOST_TEST(r.ec);
             BOOST_TEST_EQ(r.t1, 0u);
         }
 
         // ready(ec, T1, T2) creates failed two-value result
         {
-            auto ec = make_error_code(system::errc::invalid_argument);
+            auto ec = make_error_code(std::errc::invalid_argument);
             auto im = ready(ec, 0, 0.0);
             auto r = im.await_resume();
-            BOOST_TEST(r.ec.failed());
+            BOOST_TEST(r.ec);
         }
 
         // ready(ec, T1, T2, T3) creates failed three-value result
         {
-            auto ec = make_error_code(system::errc::invalid_argument);
+            auto ec = make_error_code(std::errc::invalid_argument);
             auto im = ready(ec, 0, 0, 0);
             auto r = im.await_resume();
-            BOOST_TEST(r.ec.failed());
+            BOOST_TEST(r.ec);
         }
 
         // co_await with error
         {
             auto coro = []() -> task<std::size_t> {
-                auto ec = make_error_code(system::errc::invalid_argument);
+                auto ec = make_error_code(std::errc::invalid_argument);
                 auto [err, n] = co_await ready(ec, std::size_t{0});
-                if(err.failed())
+                if(err)
                     co_return 999;
                 co_return n;
             };
@@ -302,7 +302,7 @@ struct immediate_test
             std::size_t total_ = 0;
             bool complete_ = false;
 
-            system::error_code
+            std::error_code
             write(std::size_t n)
             {
                 total_ += n;
@@ -321,7 +321,7 @@ struct immediate_test
             write(std::size_t n)
             {
                 auto ec = pr_.write(n);
-                if(ec.failed())
+                if(ec)
                     return ready(ec, std::size_t{0});
                 return ready(n);
             }
@@ -332,7 +332,7 @@ struct immediate_test
                 pr_.finish();
                 if(!pr_.is_complete())
                     return ready(make_error_code(
-                        system::errc::invalid_argument));
+                        std::errc::invalid_argument));
                 return ready();
             }
         };
@@ -344,15 +344,15 @@ struct immediate_test
 
             auto coro = [&]() -> task<std::size_t> {
                 auto [ec1, n1] = co_await sink.write(10);
-                if(ec1.failed())
+                if(ec1)
                     co_return 0;
 
                 auto [ec2, n2] = co_await sink.write(20);
-                if(ec2.failed())
+                if(ec2)
                     co_return 0;
 
                 auto [ec3] = co_await sink.write_eof();
-                if(ec3.failed())
+                if(ec3)
                     co_return 0;
 
                 co_return n1 + n2;

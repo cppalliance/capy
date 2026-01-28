@@ -55,7 +55,7 @@ namespace test {
         std::memcpy( arr[0].data(), "Hello", 5 );
 
         auto [ec] = co_await bs.commit( 5 );
-        if( ec.failed() )
+        if( ec )
             co_return;
 
         auto [ec2] = co_await bs.commit_eof();
@@ -176,7 +176,7 @@ public:
             await_resume()
             {
                 auto ec = self_->f_->maybe_fail();
-                if(ec.failed())
+                if(ec)
                     return {ec};
 
                 std::size_t to_commit = (std::min)(n_, self_->prepare_size_);
@@ -223,7 +223,7 @@ public:
             await_resume()
             {
                 auto ec = self_->f_->maybe_fail();
-                if(ec.failed())
+                if(ec)
                     return {ec};
 
                 std::size_t to_commit = (std::min)(n_, self_->prepare_size_);
@@ -269,7 +269,7 @@ public:
             await_resume()
             {
                 auto ec = self_->f_->maybe_fail();
-                if(ec.failed())
+                if(ec)
                     return {ec};
 
                 self_->eof_called_ = true;

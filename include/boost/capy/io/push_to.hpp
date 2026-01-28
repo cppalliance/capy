@@ -37,7 +37,7 @@ namespace capy {
     @param source The source to pull data from.
     @param sink The sink to write data to.
 
-    @return A task that yields `(system::error_code, std::size_t)`.
+    @return A task that yields `(std::error_code, std::size_t)`.
         On success, `ec` is default-constructed (no error) and `n` is
         the total number of bytes transferred. On error, `ec` contains
         the error code and `n` is the total number of bytes transferred
@@ -48,7 +48,7 @@ namespace capy {
     task<void> transfer_body(BufferSource auto& source, WriteSink auto& sink)
     {
         auto [ec, n] = co_await push_to(source, sink);
-        if (ec.failed())
+        if (ec)
         {
             // Handle error
         }
@@ -68,7 +68,7 @@ push_to(Src& source, Sink& sink)
     for(;;)
     {
         auto [ec, count] = co_await source.pull(arr, detail::max_iovec_);
-        if(ec.failed())
+        if(ec)
             co_return {ec, total};
 
         if(count == 0)
@@ -81,7 +81,7 @@ push_to(Src& source, Sink& sink)
         auto [write_ec, n] = co_await sink.write(bufs);
         total += n;
         source.consume(n);
-        if(write_ec.failed())
+        if(write_ec)
             co_return {write_ec, total};
     }
 }
@@ -103,7 +103,7 @@ push_to(Src& source, Sink& sink)
     @param source The source to pull data from.
     @param stream The stream to write data to.
 
-    @return A task that yields `(system::error_code, std::size_t)`.
+    @return A task that yields `(std::error_code, std::size_t)`.
         On success, `ec` is default-constructed (no error) and `n` is
         the total number of bytes transferred. On error, `ec` contains
         the error code and `n` is the total number of bytes transferred
@@ -114,7 +114,7 @@ push_to(Src& source, Sink& sink)
     task<void> transfer_body(BufferSource auto& source, WriteStream auto& stream)
     {
         auto [ec, n] = co_await push_to(source, stream);
-        if (ec.failed())
+        if (ec)
         {
             // Handle error
         }
@@ -134,7 +134,7 @@ push_to(Src& source, Stream& stream)
     for(;;)
     {
         auto [ec, count] = co_await source.pull(arr, detail::max_iovec_);
-        if(ec.failed())
+        if(ec)
             co_return {ec, total};
 
         if(count == 0)
@@ -142,7 +142,7 @@ push_to(Src& source, Stream& stream)
 
         std::span<const_buffer const> bufs(arr, count);
         auto [write_ec, n] = co_await stream.write_some(bufs);
-        if(write_ec.failed())
+        if(write_ec)
             co_return {write_ec, total};
 
         total += n;

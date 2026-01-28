@@ -11,7 +11,6 @@
 #include <boost/capy/cond.hpp>
 
 #include <boost/capy/error.hpp>
-#include <boost/system/errc.hpp>
 #include <system_error>
 
 #include "test_suite.hpp"
@@ -40,24 +39,23 @@ public:
             BOOST_TEST(!(ec == cond::canceled));
         }
 
-        // Equivalence: boost::system::errc::operation_canceled == cond::canceled
+        // Equivalence: std::errc::operation_canceled == cond::canceled
         {
-            auto ec = make_error_code(boost::system::errc::operation_canceled);
+            auto ec = make_error_code(std::errc::operation_canceled);
             BOOST_TEST(ec == cond::canceled);
             BOOST_TEST(!(ec == cond::eof));
         }
 
         // Equivalence: std::errc::operation_canceled == cond::canceled
         {
-            std::error_code sec = std::make_error_code(std::errc::operation_canceled);
-            system::error_code ec(sec);
+            std::error_code ec = std::make_error_code(std::errc::operation_canceled);
             BOOST_TEST(ec == cond::canceled);
             BOOST_TEST(!(ec == cond::eof));
         }
 
         // Non-matching codes return false
         {
-            auto ec = make_error_code(boost::system::errc::invalid_argument);
+            auto ec = make_error_code(std::errc::invalid_argument);
             BOOST_TEST(!(ec == cond::eof));
             BOOST_TEST(!(ec == cond::canceled));
         }

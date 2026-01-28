@@ -14,7 +14,7 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <concepts>
 #include <cstddef>
@@ -61,8 +61,8 @@ namespace capy {
 
     @li Commits `n` bytes written to the most recent `prepare` buffers
     @li May trigger underlying I/O (flush to socket, compression, etc.)
-    @li On success: `ec.failed()` is `false`
-    @li On error: `ec.failed()` is `true`
+    @li On success: `ec` is `false`
+    @li On error: `ec` is `true`
 
     The `commit` operation with `eof` combines data commit with end-of-stream:
 
@@ -73,8 +73,8 @@ namespace capy {
     The `commit_eof` operation signals end-of-stream with no data:
 
     @li Equivalent to `commit(0, true)`
-    @li On success: `ec.failed()` is `false`, sink is finalized
-    @li On error: `ec.failed()` is `true`
+    @li On success: `ec` is `false`, sink is finalized
+    @li On error: `ec` is `true`
 
     @par Buffer Lifetime
 
@@ -104,7 +104,7 @@ namespace capy {
         for(;;)
         {
             auto [ec1, src_count] = co_await source.pull( src_arr, 16 );
-            if( ec1.failed() )
+            if( ec1 )
                 co_return {ec1, total};
 
             if( src_count == 0 )
@@ -119,7 +119,7 @@ namespace capy {
                 std::span( src_arr, src_count ) );
 
             auto [ec2] = co_await sink.commit( n );
-            if( ec2.failed() )
+            if( ec2 )
                 co_return {ec2, total};
 
             total += n;
@@ -140,19 +140,19 @@ concept BufferSink =
         { sink.commit(n) } -> IoAwaitable;
         requires awaitable_decomposes_to<
             decltype(sink.commit(n)),
-            system::error_code>;
+            std::error_code>;
 
         // Async: commit n bytes with optional EOF
         { sink.commit(n, eof) } -> IoAwaitable;
         requires awaitable_decomposes_to<
             decltype(sink.commit(n, eof)),
-            system::error_code>;
+            std::error_code>;
 
         // Async: signal end of data
         { sink.commit_eof() } -> IoAwaitable;
         requires awaitable_decomposes_to<
             decltype(sink.commit_eof()),
-            system::error_code>;
+            std::error_code>;
     };
 
 } // namespace capy

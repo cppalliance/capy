@@ -11,7 +11,7 @@
 #define BOOST_CAPY_DETAIL_EXCEPT_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 namespace boost {
 namespace capy {
@@ -39,7 +39,7 @@ namespace detail {
     char const* what);
 
 [[noreturn]] BOOST_CAPY_DECL void throw_system_error(
-    system::error_code const& ec);
+    std::error_code const& ec);
 
 } // detail
 } // capy

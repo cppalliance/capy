@@ -14,7 +14,7 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <cstddef>
 
@@ -49,11 +49,11 @@ namespace capy {
     from the current unconsumed position. On return, exactly one of the
     following is true:
 
-    @li **Data available**: `ec.failed()` is `false` and `count > 0`.
+    @li **Data available**: `ec` is `false` and `count > 0`.
         The array contains `count` buffer descriptors.
-    @li **Source exhausted**: `ec.failed()` is `false` and `count == 0`.
+    @li **Source exhausted**: `ec` is `false` and `count == 0`.
         No more data is available; the transfer is complete.
-    @li **Error**: `ec.failed()` is `true`. An error occurred.
+    @li **Error**: `ec` is `true`. An error occurred.
 
     Calling `pull` multiple times without intervening `consume` returns
     the same unconsumed data. The `consume` operation advances the read
@@ -86,13 +86,13 @@ namespace capy {
         for(;;)
         {
             auto [ec, count] = co_await source.pull( arr, 16 );
-            if( ec.failed() )
+            if( ec )
                 co_return {ec, total};
             if( count == 0 )
                 co_return {{}, total};
             auto [write_ec, n] = co_await stream.write_some(
                 std::span( arr, count ) );
-            if( write_ec.failed() )
+            if( write_ec )
                 co_return {write_ec, total};
             source.consume( n );
             total += n;
@@ -109,7 +109,7 @@ concept BufferSource =
         { src.pull(arr, max_count) } -> IoAwaitable;
         requires awaitable_decomposes_to<
             decltype(src.pull(arr, max_count)),
-            system::error_code, std::size_t>;
+            std::error_code, std::size_t>;
         src.consume(n);
     };
 

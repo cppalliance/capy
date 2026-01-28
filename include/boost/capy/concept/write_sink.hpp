@@ -14,7 +14,7 @@
 #include <boost/capy/concept/buffer_archetype.hpp>
 #include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <concepts>
 #include <cstddef>
@@ -50,9 +50,9 @@ namespace capy {
 
     The `write` operation consumes data from the buffer sequence:
 
-    @li On success: `ec.failed()` is `false`, and all bytes from the buffer
+    @li On success: `ec` is `false`, and all bytes from the buffer
         sequence have been consumed.
-    @li On error: `ec.failed()` is `true`.
+    @li On error: `ec` is `true`.
 
     The `write` operation with `eof` combines data writing with end-of-stream
     signaling:
@@ -60,15 +60,15 @@ namespace capy {
     @li If `eof` is `false`, behaves identically to `write(buffers)`.
     @li If `eof` is `true`, writes the data and then finalizes the sink
         as if `write_eof()` were called.
-    @li On success: `ec.failed()` is `false`, and `n` indicates the number
+    @li On success: `ec` is `false`, and `n` indicates the number
         of bytes written from the caller's buffer.
-    @li On error: `ec.failed()` is `true`, and `n` indicates the number of
+    @li On error: `ec` is `true`, and `n` indicates the number of
         bytes written from the caller's buffer before the error occurred.
 
     The `write_eof` operation signals that no more data will be written:
 
-    @li On success: `ec.failed()` is `false`, and the sink is finalized.
-    @li On error: `ec.failed()` is `true`.
+    @li On success: `ec` is `false`, and the sink is finalized.
+    @li On error: `ec` is `true`.
 
     After `write_eof` returns successfully, or after `write(buffers, true)`
     returns successfully, no further calls to `write` or `write_eof` are
@@ -106,7 +106,7 @@ namespace capy {
     task<> send_body( Sink& sink, std::string_view data )
     {
         auto [ec, n] = co_await sink.write( make_buffer( data ) );
-        if( ec.failed() )
+        if( ec )
             co_return;
         auto [ec2] = co_await sink.write_eof();
     }
@@ -128,15 +128,15 @@ concept WriteSink =
         { sink.write(buffers) } -> IoAwaitable;
         requires awaitable_decomposes_to<
             decltype(sink.write(buffers)),
-            system::error_code, std::size_t>;
+            std::error_code, std::size_t>;
         { sink.write(buffers, eof) } -> IoAwaitable;
         requires awaitable_decomposes_to<
             decltype(sink.write(buffers, eof)),
-            system::error_code, std::size_t>;
+            std::error_code, std::size_t>;
         { sink.write_eof() } -> IoAwaitable;
         requires awaitable_decomposes_to<
             decltype(sink.write_eof()),
-            system::error_code>;
+            std::error_code>;
     };
 
 } // namespace capy

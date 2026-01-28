@@ -23,7 +23,7 @@
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/task.hpp>
 
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <concepts>
 #include <coroutine>
@@ -106,7 +106,7 @@ class any_buffer_source
         coro h,
         executor_ref ex,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* count);
 
     template<BufferSource S>
@@ -116,7 +116,7 @@ class any_buffer_source
         S& source,
         const_buffer* arr,
         std::size_t max_count,
-        system::error_code* out_ec,
+        std::error_code* out_ec,
         std::size_t* out_count);
 
     void* alloc_frame(std::size_t size);
@@ -318,7 +318,7 @@ struct any_buffer_source::vtable
         coro h,
         executor_ref ex,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* count);
     void (*do_consume)(void* source, std::size_t n) noexcept;
 };
@@ -606,7 +606,7 @@ any_buffer_source::pull_coro(
     S& source,
     const_buffer* arr,
     std::size_t max_count,
-    system::error_code* out_ec,
+    std::error_code* out_ec,
     std::size_t* out_count)
 {
     auto [err, count] = co_await source.pull(arr, max_count);
@@ -625,7 +625,7 @@ any_buffer_source::do_pull_impl(
     coro h,
     executor_ref ex,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     std::size_t* count)
 {
     auto& s = *static_cast<S*>(source);
@@ -672,7 +672,7 @@ any_buffer_source::pull(
         any_buffer_source* self_;
         const_buffer* arr_;
         std::size_t max_count_;
-        system::error_code ec_;
+        std::error_code ec_;
         std::size_t count_ = 0;
 
         bool
@@ -717,7 +717,7 @@ any_buffer_source::read(MB buffers)
         const_buffer arr[detail::max_iovec_];
         auto [ec, count] = co_await pull(arr, detail::max_iovec_);
 
-        if(ec.failed())
+        if(ec)
             co_return {ec, total};
 
         if(count == 0)

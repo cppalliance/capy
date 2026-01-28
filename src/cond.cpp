@@ -9,7 +9,6 @@
 
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/system/errc.hpp>
 #include <system_error>
 
 namespace boost {
@@ -28,16 +27,6 @@ std::string
 cond_cat_type::
 message(int code) const
 {
-    return message(code, nullptr, 0);
-}
-
-char const*
-cond_cat_type::
-message(
-    int code,
-    char*,
-    std::size_t) const noexcept
-{
     switch(static_cast<cond>(code))
     {
     case cond::eof: return "end of file";
@@ -51,7 +40,7 @@ message(
 bool
 cond_cat_type::
 equivalent(
-    system::error_code const& ec,
+    std::error_code const& ec,
     int condition) const noexcept
 {
     switch(static_cast<cond>(condition))
@@ -60,13 +49,8 @@ equivalent(
         return ec == capy::error::eof;
 
     case cond::canceled:
-        // Check capy::error::canceled
         if(ec == capy::error::canceled)
             return true;
-        // Check boost::system::errc
-        if(ec == boost::system::errc::operation_canceled)
-            return true;
-        // Check std::errc
         if(ec == std::errc::operation_canceled)
             return true;
         return false;

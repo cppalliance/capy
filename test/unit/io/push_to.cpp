@@ -38,7 +38,7 @@ public:
             test::write_sink ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 0u);
@@ -58,7 +58,7 @@ public:
             test::write_sink ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -80,7 +80,7 @@ public:
             test::write_sink ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -100,7 +100,7 @@ public:
             test::write_sink ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -121,7 +121,7 @@ public:
             test::write_sink ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10000u);
@@ -144,7 +144,7 @@ public:
             test::write_sink ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
             {
                 ++error_count;
                 co_return;
@@ -170,7 +170,7 @@ public:
             test::write_sink ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
             {
                 ++error_count;
                 co_return;
@@ -196,7 +196,7 @@ public:
             test::write_stream ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 0u);
@@ -215,7 +215,7 @@ public:
             test::write_stream ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -236,7 +236,7 @@ public:
             test::write_stream ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -255,7 +255,7 @@ public:
             test::write_stream ws(f, 3); // max 3 bytes per write
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -275,7 +275,7 @@ public:
             test::write_stream ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10000u);
@@ -294,7 +294,7 @@ public:
             test::write_stream ws(f, 5); // max 5 bytes per write
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 21u);
@@ -316,7 +316,7 @@ public:
             test::write_stream ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
             {
                 ++error_count;
                 co_return;
@@ -342,7 +342,7 @@ public:
             test::write_stream ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
             {
                 ++error_count;
                 co_return;

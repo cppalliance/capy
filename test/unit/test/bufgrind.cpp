@@ -308,7 +308,7 @@ public:
                     std::string dest;
                     dest.resize(b1.size());
                     auto [ec, n] = co_await rs.read_some(make_buffer(dest));
-                    BOOST_TEST(! ec.failed());
+                    BOOST_TEST(! ec);
                     BOOST_TEST_EQ(n, b1.size());
                 }
             }
@@ -334,13 +334,13 @@ public:
 
                 if(b1.size() > 0) {
                     auto [ec1, n1] = co_await ws.write_some(b1);
-                    BOOST_TEST(! ec1.failed());
+                    BOOST_TEST(! ec1);
                     BOOST_TEST_EQ(n1, b1.size());
                 }
 
                 if(b2.size() > 0) {
                     auto [ec2, n2] = co_await ws.write_some(b2);
-                    BOOST_TEST(! ec2.failed());
+                    BOOST_TEST(! ec2);
                     BOOST_TEST_EQ(n2, b2.size());
                 }
 
@@ -371,11 +371,11 @@ public:
                     write_stream ws(f);
                     if(b1.size() > 0) {
                         auto [ec, n] = co_await ws.write_some(b1);
-                        BOOST_TEST(! ec.failed());
+                        BOOST_TEST(! ec);
                     }
                     if(b2.size() > 0) {
                         auto [ec, n] = co_await ws.write_some(b2);
-                        BOOST_TEST(! ec.failed());
+                        BOOST_TEST(! ec);
                     }
 
                     BOOST_TEST_EQ(ws.data(), buffer_to_string(b1, b2));

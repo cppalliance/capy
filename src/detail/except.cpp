@@ -9,7 +9,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/except.hpp>
-#include <boost/system/system_error.hpp>
+#include <system_error>
 #include <stdexcept>
 #include <typeinfo>
 
@@ -79,9 +79,9 @@ throw_runtime_error(
 
 void
 throw_system_error(
-    system::error_code const& ec)
+    std::error_code const& ec)
 {
-    throw system::system_error(ec);
+    throw std::system_error(ec);
 }
 
 } // detail

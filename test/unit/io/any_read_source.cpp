@@ -81,7 +81,7 @@ public:
 
             char buf[11] = {};
             auto [ec, n] = co_await ars.read(make_buffer(buf, 11));
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -103,7 +103,7 @@ public:
 
             char buf[5] = {};
             auto [ec, n] = co_await ars.read(make_buffer(buf));
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 5u);
@@ -127,19 +127,19 @@ public:
             char buf[3] = {};
 
             auto [ec1, n1] = co_await ars.read(make_buffer(buf));
-            if(ec1.failed())
+            if(ec1)
                 co_return;
             BOOST_TEST_EQ(n1, 3u);
             BOOST_TEST_EQ(std::string_view(buf, n1), "abc");
 
             auto [ec2, n2] = co_await ars.read(make_buffer(buf));
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST_EQ(n2, 3u);
             BOOST_TEST_EQ(std::string_view(buf, n2), "def");
 
             auto [ec3, n3] = co_await ars.read(make_buffer(buf));
-            if(ec3.failed())
+            if(ec3)
                 co_return;
             BOOST_TEST_EQ(n3, 3u);
             BOOST_TEST_EQ(std::string_view(buf, n3), "ghi");
@@ -161,7 +161,7 @@ public:
             char buf[10] = {};
             auto [ec, n] = co_await ars.read(make_buffer(buf));
             // Should fail because buffer can't be filled
-            if(ec.failed() && ec != cond::eof)
+            if(ec && ec != cond::eof)
                 co_return; // fuse-injected error
             BOOST_TEST(ec == cond::eof);
             BOOST_TEST_EQ(n, 2u); // 2 bytes read before EOF
@@ -181,7 +181,7 @@ public:
 
             char buf[32] = {};
             auto [ec, n] = co_await ars.read(make_buffer(buf));
-            if(ec.failed() && ec != cond::eof)
+            if(ec && ec != cond::eof)
                 co_return;
 
             BOOST_TEST(ec == cond::eof);
@@ -204,13 +204,13 @@ public:
             char buf[1] = {};
 
             auto [ec1, n1] = co_await ars.read(make_buffer(buf));
-            if(ec1.failed())
+            if(ec1)
                 co_return;
             BOOST_TEST_EQ(n1, 1u);
 
             auto [ec2, n2] = co_await ars.read(make_buffer(buf));
             // Should get EOF because no more data
-            if(ec2.failed() && ec2 != cond::eof)
+            if(ec2 && ec2 != cond::eof)
                 co_return; // fuse-injected error
             BOOST_TEST(ec2 == cond::eof);
             BOOST_TEST_EQ(n2, 0u);
@@ -236,7 +236,7 @@ public:
             }};
 
             auto [ec, n] = co_await ars.read(buffers);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10u);
@@ -258,7 +258,7 @@ public:
 
             char buf[11] = {};
             auto [ec, n] = co_await ars.read(make_buffer(buf));
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -285,7 +285,7 @@ public:
             }};
 
             auto [ec, n] = co_await ars.read(buffers);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10u);
@@ -306,7 +306,7 @@ public:
             any_read_source ars(&rs);
 
             auto [ec, n] = co_await ars.read(mutable_buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 0u);
@@ -329,7 +329,7 @@ public:
 
             char buf[11] = {};
             auto [ec, n] = co_await ars.read(make_buffer(buf));
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             // Should fill entire buffer by looping
@@ -354,14 +354,14 @@ public:
 
             // First read: fills 5 bytes by looping (3 + 2)
             auto [ec1, n1] = co_await ars.read(make_buffer(buf));
-            if(ec1.failed())
+            if(ec1)
                 co_return;
             BOOST_TEST_EQ(n1, 5u);
             BOOST_TEST_EQ(std::string_view(buf, n1), "abcde");
 
             // Second read: fills 5 bytes by looping (3 + 2)
             auto [ec2, n2] = co_await ars.read(make_buffer(buf));
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST_EQ(n2, 5u);
             BOOST_TEST_EQ(std::string_view(buf, n2), "fghij");

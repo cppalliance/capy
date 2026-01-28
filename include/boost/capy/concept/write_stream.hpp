@@ -14,7 +14,7 @@
 #include <boost/capy/concept/buffer_archetype.hpp>
 #include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <concepts>
 #include <cstddef>
@@ -44,12 +44,12 @@ namespace capy {
     If `buffer_size( buffers ) > 0`, the operation writes one or more
     bytes of data to the stream from the buffer sequence:
 
-    @li On success: `!ec.failed()`, and `n` is the number of bytes
+    @li On success: `!ec`, and `n` is the number of bytes
         written.
-    @li On error: `ec.failed()`, and `n` is 0.
+    @li On error: `ec`, and `n` is 0.
 
     If `buffer_empty( buffers )` is `true`, the operation completes
-    immediately. `!ec.failed()`, and `n` is 0.
+    immediately. `!ec`, and `n` is 0.
 
     Buffers in the sequence are written completely before proceeding
     to the next buffer.
@@ -85,7 +85,7 @@ namespace capy {
         {
             auto [ec, n] = co_await s.write_some(
                 const_buffer( buf + total, size - total ) );
-            if( ec.failed() )
+            if( ec )
                 co_return;
             total += n;
         }
@@ -101,7 +101,7 @@ concept WriteStream =
         { stream.write_some(buffers) } -> IoAwaitable;
         requires awaitable_decomposes_to<
             decltype(stream.write_some(buffers)),
-            system::error_code, std::size_t>;
+            std::error_code, std::size_t>;
     };
 
 } // namespace capy

@@ -25,16 +25,6 @@ std::string
 error_cat_type::
 message(int code) const
 {
-    return message(code, nullptr, 0);
-}
-
-char const*
-error_cat_type::
-message(
-    int code,
-    char*,
-    std::size_t) const noexcept
-{
     switch(static_cast<error>(code))
     {
     case error::eof: return "eof";

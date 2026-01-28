@@ -10,7 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/concept/decomposes_to.hpp>
 
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <array>
 #include <coroutine>
@@ -31,10 +31,10 @@ struct agg4 { int a; float b; char c; double d; };
 struct agg5 { int a; float b; char c; double d; long e; };
 
 // Aggregate types with complex members
-struct xgg1 { system::error_code ec; };
-struct xgg2 { system::error_code ec; std::size_t n; };
-struct xgg3 { system::error_code ec; std::string s; double d; };
-struct xgg4 { system::error_code ec; std::string s; std::size_t n; int* p; };
+struct xgg1 { std::error_code ec; };
+struct xgg2 { std::error_code ec; std::size_t n; };
+struct xgg3 { std::error_code ec; std::string s; double d; };
+struct xgg4 { std::error_code ec; std::string s; std::size_t n; int* p; };
 
 // decomposes_to with aggregates (arity 0)
 static_assert(decomposes_to<agg0>);
@@ -72,26 +72,26 @@ static_assert(decomposes_to<agg2 const&, int, double>);
 static_assert(decomposes_to<agg4 const&, int, float, char, double>);
 
 // decomposes_to with complex aggregates (arity 1)
-static_assert(decomposes_to<xgg1, system::error_code>);
+static_assert(decomposes_to<xgg1, std::error_code>);
 static_assert(!decomposes_to<xgg1, int>);
 
 // decomposes_to with complex aggregates (arity 2)
-static_assert(decomposes_to<xgg2, system::error_code, std::size_t>);
-static_assert(!decomposes_to<xgg2, std::size_t, system::error_code>);
+static_assert(decomposes_to<xgg2, std::error_code, std::size_t>);
+static_assert(!decomposes_to<xgg2, std::size_t, std::error_code>);
 
 // decomposes_to with complex aggregates (arity 3)
-static_assert(decomposes_to<xgg3, system::error_code, std::string, double>);
-static_assert(!decomposes_to<xgg3, system::error_code, std::string>);
+static_assert(decomposes_to<xgg3, std::error_code, std::string, double>);
+static_assert(!decomposes_to<xgg3, std::error_code, std::string>);
 
 // decomposes_to with complex aggregates (arity 4)
-static_assert(decomposes_to<xgg4, system::error_code, std::string, std::size_t, int*>);
-static_assert(!decomposes_to<xgg4, system::error_code, std::string, std::size_t>);
+static_assert(decomposes_to<xgg4, std::error_code, std::string, std::size_t, int*>);
+static_assert(!decomposes_to<xgg4, std::error_code, std::string, std::size_t>);
 
 // decomposes_to with cv-qualified complex aggregates
-static_assert(decomposes_to<xgg2 const, system::error_code, std::size_t>);
-static_assert(decomposes_to<xgg2&, system::error_code, std::size_t>);
-static_assert(decomposes_to<xgg2 const&, system::error_code, std::size_t>);
-static_assert(decomposes_to<xgg4 const&, system::error_code, std::string, std::size_t, int*>);
+static_assert(decomposes_to<xgg2 const, std::error_code, std::size_t>);
+static_assert(decomposes_to<xgg2&, std::error_code, std::size_t>);
+static_assert(decomposes_to<xgg2 const&, std::error_code, std::size_t>);
+static_assert(decomposes_to<xgg4 const&, std::error_code, std::string, std::size_t, int*>);
 
 // decomposes_to with std::pair (arity 2)
 static_assert(decomposes_to<std::pair<int, double>, int, double>);
@@ -137,15 +137,15 @@ static_assert(decomposes_to<std::tuple<int, float, char, double> const&, int, fl
 
 // decomposes_to with real-world types
 static_assert(decomposes_to<
-    std::pair<system::error_code, std::size_t>,
-    system::error_code, std::size_t>);
+    std::pair<std::error_code, std::size_t>,
+    std::error_code, std::size_t>);
 
 // Mock awaitable for testing awaitable_decomposes_to
 struct mock_pair_awaitable
 {
     bool await_ready() const noexcept { return true; }
     void await_suspend(std::coroutine_handle<>) const noexcept {}
-    std::pair<system::error_code, std::size_t> await_resume() const noexcept
+    std::pair<std::error_code, std::size_t> await_resume() const noexcept
     {
         return {};
     }
@@ -208,7 +208,7 @@ struct mock_with_co_await_op
 // awaitable_decomposes_to tests
 static_assert(awaitable_decomposes_to<
     mock_pair_awaitable,
-    system::error_code, std::size_t>);
+    std::error_code, std::size_t>);
 
 static_assert(awaitable_decomposes_to<
     mock_tuple_awaitable,
@@ -247,31 +247,31 @@ static_assert(!awaitable_decomposes_to<
 // awaitable_decomposes_to with complex aggregates (arity 2)
 static_assert(awaitable_decomposes_to<
     mock_xgg2_awaitable,
-    system::error_code, std::size_t>);
+    std::error_code, std::size_t>);
 
 static_assert(!awaitable_decomposes_to<
     mock_xgg2_awaitable,
-    std::size_t, system::error_code>);
+    std::size_t, std::error_code>);
 
 // awaitable_decomposes_to with complex aggregates (arity 4)
 static_assert(awaitable_decomposes_to<
     mock_xgg4_awaitable,
-    system::error_code, std::string, std::size_t, int*>);
+    std::error_code, std::string, std::size_t, int*>);
 
 static_assert(!awaitable_decomposes_to<
     mock_xgg4_awaitable,
-    system::error_code, std::string, std::size_t>);
+    std::error_code, std::string, std::size_t>);
 
 // awaitable_decomposes_to with operator co_await
 static_assert(awaitable_decomposes_to<
     mock_with_co_await_op,
-    system::error_code, std::size_t>);
+    std::error_code, std::size_t>);
 
 // uncomment this to see what diagnostics look like
 #if 0
 struct bad_agg
 {
-    system::error_code ec;
+    std::error_code ec;
     std::string s;
 };
 

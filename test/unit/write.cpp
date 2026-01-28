@@ -137,7 +137,7 @@ struct write_test
 
             single_buffer_factory bf("hello world");
             auto [ec, n] = co_await write(ws, bf.buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -151,7 +151,7 @@ struct write_test
 
             single_buffer_factory bf("exact");
             auto [ec, n] = co_await write(ws, bf.buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 5u);
@@ -164,7 +164,7 @@ struct write_test
             test::write_stream ws(f);
 
             auto [ec, n] = co_await write(ws, const_buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 0u);
@@ -179,7 +179,7 @@ struct write_test
             std::string large_data(10000, 'x');
             single_buffer_factory bf(large_data);
             auto [ec, n] = co_await write(ws, bf.buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10000u);
@@ -198,7 +198,7 @@ struct write_test
 
             buffer_array_factory bf("hello", "world");
             auto [ec, n] = co_await write(ws, bf.buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10u);
@@ -212,7 +212,7 @@ struct write_test
 
             buffer_array_factory bf("", "world");
             auto [ec, n] = co_await write(ws, bf.buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 5u);
@@ -230,7 +230,7 @@ struct write_test
 
             buffer_pair_factory bf("hello", "world");
             auto [ec, n] = co_await write(ws, bf.buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10u);
@@ -244,7 +244,7 @@ struct write_test
 
             buffer_pair_factory bf("ab", "cdefgh");
             auto [ec, n] = co_await write(ws, bf.buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 8u);

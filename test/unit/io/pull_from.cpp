@@ -39,7 +39,7 @@ public:
 
             auto [ec, n] = co_await pull_from(rs, bs);
             // ReadSource returns error::eof when empty, but pull_from handles it
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 0u);
@@ -59,7 +59,7 @@ public:
             test::buffer_sink bs(f);
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -81,7 +81,7 @@ public:
             test::buffer_sink bs(f);
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -101,7 +101,7 @@ public:
             test::buffer_sink bs(f);
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -122,7 +122,7 @@ public:
             test::buffer_sink bs(f);
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10000u);
@@ -142,7 +142,7 @@ public:
             test::buffer_sink bs(f, 5); // small buffer
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -165,7 +165,7 @@ public:
             test::buffer_sink bs(f);
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
             {
                 ++error_count;
                 co_return;
@@ -191,7 +191,7 @@ public:
             test::buffer_sink bs(f);
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
             {
                 ++error_count;
                 co_return;
@@ -217,7 +217,7 @@ public:
             test::buffer_sink bs(f);
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 0u);
@@ -237,7 +237,7 @@ public:
             test::buffer_sink bs(f);
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -259,7 +259,7 @@ public:
             test::buffer_sink bs(f);
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -279,7 +279,7 @@ public:
             test::buffer_sink bs(f);
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -300,7 +300,7 @@ public:
             test::buffer_sink bs(f);
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10000u);
@@ -320,7 +320,7 @@ public:
             test::buffer_sink bs(f, 4); // small buffer
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -340,7 +340,7 @@ public:
             test::buffer_sink bs(f, 5); // max 5 bytes per prepare
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 21u);
@@ -363,7 +363,7 @@ public:
             test::buffer_sink bs(f);
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
             {
                 ++error_count;
                 co_return;
@@ -389,7 +389,7 @@ public:
             test::buffer_sink bs(f);
 
             auto [ec, n] = co_await pull_from(rs, bs);
-            if(ec.failed())
+            if(ec)
             {
                 ++error_count;
                 co_return;

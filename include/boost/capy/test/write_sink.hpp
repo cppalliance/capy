@@ -51,10 +51,10 @@ namespace test {
     auto r = f.armed( [&]( fuse& ) -> task<void> {
         auto [ec, n] = co_await ws.write(
             const_buffer( "Hello", 5 ) );
-        if( ec.failed() )
+        if( ec )
             co_return;
         auto [ec2] = co_await ws.write_eof();
-        if( ec2.failed() )
+        if( ec2 )
             co_return;
         // ws.data() returns "Hello"
     } );
@@ -70,7 +70,7 @@ class write_sink
     std::size_t max_write_size_;
     bool eof_called_ = false;
 
-    system::error_code
+    std::error_code
     consume_match_() noexcept
     {
         if(data_.empty() || expect_.empty())
@@ -117,7 +117,7 @@ public:
 
         @return An error if existing data does not match.
     */
-    system::error_code
+    std::error_code
     expect(std::string_view sv)
     {
         expect_.assign(sv);
@@ -191,7 +191,7 @@ public:
             await_resume()
             {
                 auto ec = self_->f_->maybe_fail();
-                if(ec.failed())
+                if(ec)
                     return {ec, 0};
 
                 std::size_t n = buffer_size(buffers_);
@@ -205,7 +205,7 @@ public:
                     self_->data_.data() + old_size, n), buffers_, n);
 
                 ec = self_->consume_match_();
-                if(ec.failed())
+                if(ec)
                     return {ec, n};
 
                 return {{}, n};
@@ -261,7 +261,7 @@ public:
             await_resume()
             {
                 auto ec = self_->f_->maybe_fail();
-                if(ec.failed())
+                if(ec)
                     return {ec, 0};
 
                 std::size_t n = buffer_size(buffers_);
@@ -274,7 +274,7 @@ public:
                         self_->data_.data() + old_size, n), buffers_, n);
 
                     ec = self_->consume_match_();
-                    if(ec.failed())
+                    if(ec)
                         return {ec, n};
                 }
 
@@ -324,7 +324,7 @@ public:
             await_resume()
             {
                 auto ec = self_->f_->maybe_fail();
-                if(ec.failed())
+                if(ec)
                     return {ec};
 
                 self_->eof_called_ = true;

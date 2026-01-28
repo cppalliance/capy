@@ -10,7 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/concept/read_source.hpp>
 
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <cstddef>
 #include <stop_token>
@@ -34,7 +34,7 @@ struct mock_source_awaitable_pair
     {
     }
 
-    std::pair<system::error_code, std::size_t>
+    std::pair<std::error_code, std::size_t>
     await_resume() const noexcept
     {
         return {};
@@ -53,7 +53,7 @@ struct mock_source_awaitable_tuple
     {
     }
 
-    std::tuple<system::error_code, std::size_t>
+    std::tuple<std::error_code, std::size_t>
     await_resume() const noexcept
     {
         return {};
@@ -72,7 +72,7 @@ struct mock_source_awaitable_wrong_type
     {
     }
 
-    std::tuple<system::error_code>
+    std::tuple<std::error_code>
     await_resume() const noexcept
     {
         return {};
@@ -101,7 +101,7 @@ struct mock_source_awaitable_not_io
 
     void await_suspend(std::coroutine_handle<>) const noexcept {}
 
-    std::pair<system::error_code, std::size_t>
+    std::pair<std::error_code, std::size_t>
     await_resume() const noexcept
     {
         return {};

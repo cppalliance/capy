@@ -19,7 +19,7 @@
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/io_result.hpp>
 
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <concepts>
 #include <coroutine>
@@ -94,7 +94,7 @@ class any_write_stream
         coro h,
         executor_ref ex,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* n);
 
     template<WriteStream S>
@@ -103,7 +103,7 @@ class any_write_stream
         any_write_stream* wrapper,
         S& stream,
         std::span<const_buffer const> bufs,
-        system::error_code* out_ec,
+        std::error_code* out_ec,
         std::size_t* out_n);
 
     void* alloc_frame(std::size_t size);
@@ -262,7 +262,7 @@ struct any_write_stream::vtable
         coro h,
         executor_ref ex,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* n);
 };
 
@@ -543,7 +543,7 @@ any_write_stream::write_coro(
     any_write_stream*,
     S& stream,
     std::span<const_buffer const> bufs,
-    system::error_code* out_ec,
+    std::error_code* out_ec,
     std::size_t* out_n)
 {
     auto [err, bytes] = co_await stream.write_some(bufs);
@@ -561,7 +561,7 @@ any_write_stream::do_write_impl(
     coro h,
     executor_ref ex,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     std::size_t* n)
 {
     auto& s = *static_cast<S*>(stream);
@@ -601,7 +601,7 @@ any_write_stream::write_some(CB buffers)
     {
         any_write_stream* self_;
         buffer_param<CB> bp_;
-        system::error_code ec_;
+        std::error_code ec_;
         std::size_t n_ = 0;
 
         bool

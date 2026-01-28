@@ -85,7 +85,7 @@ public:
 
             const_buffer arr[detail::max_iovec_];
             auto [ec, count] = co_await abs.pull(arr, detail::max_iovec_);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(count, 1u);
@@ -109,7 +109,7 @@ public:
 
             // First pull returns all data
             auto [ec1, count1] = co_await abs.pull(arr, detail::max_iovec_);
-            if(ec1.failed())
+            if(ec1)
                 co_return;
             BOOST_TEST_EQ(count1, 1u);
             BOOST_TEST_EQ(arr[0].size(), 11u);
@@ -119,7 +119,7 @@ public:
 
             // Second pull returns remaining data
             auto [ec2, count2] = co_await abs.pull(arr, detail::max_iovec_);
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST_EQ(count2, 1u);
             BOOST_TEST_EQ(arr[0].size(), 6u); // " world"
@@ -129,7 +129,7 @@ public:
 
             // Third pull returns empty (exhausted)
             auto [ec3, count3] = co_await abs.pull(arr, detail::max_iovec_);
-            if(ec3.failed())
+            if(ec3)
                 co_return;
             BOOST_TEST_EQ(count3, 0u);
         });
@@ -150,14 +150,14 @@ public:
 
             // Pull returns data
             auto [ec1, count1] = co_await abs.pull(arr, detail::max_iovec_);
-            if(ec1.failed())
+            if(ec1)
                 co_return;
             BOOST_TEST_EQ(count1, 1u);
             BOOST_TEST_EQ(arr[0].size(), 4u);
 
             // Pull again without consume returns same data
             auto [ec2, count2] = co_await abs.pull(arr, detail::max_iovec_);
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST_EQ(count2, 1u);
             BOOST_TEST_EQ(arr[0].size(), 4u);
@@ -182,7 +182,7 @@ public:
             {
                 const_buffer arr[detail::max_iovec_];
                 auto [ec, count] = co_await abs.pull(arr, detail::max_iovec_);
-                if(ec.failed())
+                if(ec)
                     co_return;
                 if(count == 0)
                     break;
@@ -210,7 +210,7 @@ public:
 
             const_buffer arr[detail::max_iovec_];
             auto [ec, count] = co_await abs.pull(arr, detail::max_iovec_);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(count, 0u); // Source exhausted
@@ -229,7 +229,7 @@ public:
             test::write_sink ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -252,7 +252,7 @@ public:
             test::write_sink ws(f);
 
             auto [ec, n] = co_await push_to(abs, ws);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -273,7 +273,7 @@ public:
             test::write_sink ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -294,7 +294,7 @@ public:
             test::write_sink ws(f);
 
             auto [ec, n] = co_await push_to(bs, ws);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 0u);

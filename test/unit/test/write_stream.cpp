@@ -49,7 +49,7 @@ public:
 
             auto [ec, n] = co_await ws.write_some(
                 make_buffer("hello world", 11));
-            if(ec.failed())
+            if(ec)
                 co_return;
             BOOST_TEST_EQ(n, 11u);
             BOOST_TEST_EQ(ws.data(), "hello world");
@@ -66,19 +66,19 @@ public:
 
             auto [ec1, n1] = co_await ws.write_some(
                 make_buffer("hello", 5));
-            if(ec1.failed())
+            if(ec1)
                 co_return;
             BOOST_TEST_EQ(n1, 5u);
 
             auto [ec2, n2] = co_await ws.write_some(
                 make_buffer(" ", 1));
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST_EQ(n2, 1u);
 
             auto [ec3, n3] = co_await ws.write_some(
                 make_buffer("world", 5));
-            if(ec3.failed())
+            if(ec3)
                 co_return;
             BOOST_TEST_EQ(n3, 5u);
 
@@ -101,7 +101,7 @@ public:
             }};
 
             auto [ec, n] = co_await ws.write_some(buffers);
-            if(ec.failed())
+            if(ec)
                 co_return;
             BOOST_TEST_EQ(n, 10u);
             BOOST_TEST_EQ(ws.data(), "helloworld");
@@ -117,7 +117,7 @@ public:
             write_stream ws(f);
 
             auto [ec, n] = co_await ws.write_some(const_buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
             BOOST_TEST_EQ(n, 0u);
             BOOST_TEST(ws.data().empty());
@@ -137,7 +137,7 @@ public:
 
             auto [ec, n] = co_await ws.write_some(
                 make_buffer("test data", 9));
-            if(ec.failed())
+            if(ec)
             {
                 ++write_error_count;
                 co_return;
@@ -157,11 +157,11 @@ public:
         auto r = f.armed([&](fuse&) -> task<void> {
             write_stream ws(f);
             auto ec = ws.expect("hello");
-            BOOST_TEST(! ec.failed());
+            BOOST_TEST(! ec);
 
             auto [ec2, n] = co_await ws.write_some(
                 make_buffer("hello", 5));
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST_EQ(n, 5u);
             BOOST_TEST(ws.data().empty());
@@ -176,11 +176,11 @@ public:
         auto r = f.armed([&](fuse&) -> task<void> {
             write_stream ws(f);
             auto ec = ws.expect("hello");
-            BOOST_TEST(! ec.failed());
+            BOOST_TEST(! ec);
 
             auto [ec2, n] = co_await ws.write_some(
                 make_buffer("world", 5));
-            if(! ec2.failed())
+            if(! ec2)
                 co_return;
             BOOST_TEST(ec2 == error::test_failure);
         });
@@ -196,12 +196,12 @@ public:
 
             auto [ec, n] = co_await ws.write_some(
                 make_buffer("hello", 5));
-            if(ec.failed())
+            if(ec)
                 co_return;
             BOOST_TEST_EQ(ws.data(), "hello");
 
             auto ec2 = ws.expect("hello");
-            BOOST_TEST(! ec2.failed());
+            BOOST_TEST(! ec2);
             BOOST_TEST(ws.data().empty());
         });
         BOOST_TEST(r.success);
@@ -216,7 +216,7 @@ public:
 
             auto [ec, n] = co_await ws.write_some(
                 make_buffer("hello", 5));
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             auto ec2 = ws.expect("world");
@@ -232,18 +232,18 @@ public:
         auto r = f.armed([&](fuse&) -> task<void> {
             write_stream ws(f);
             auto ec = ws.expect("helloworld");
-            BOOST_TEST(! ec.failed());
+            BOOST_TEST(! ec);
 
             auto [ec2, n] = co_await ws.write_some(
                 make_buffer("hello", 5));
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST_EQ(n, 5u);
             BOOST_TEST(ws.data().empty());
 
             auto [ec3, n2] = co_await ws.write_some(
                 make_buffer("world", 5));
-            if(ec3.failed())
+            if(ec3)
                 co_return;
             BOOST_TEST_EQ(n2, 5u);
             BOOST_TEST(ws.data().empty());
@@ -258,11 +258,11 @@ public:
         auto r = f.armed([&](fuse&) -> task<void> {
             write_stream ws(f);
             auto ec = ws.expect("hi");
-            BOOST_TEST(! ec.failed());
+            BOOST_TEST(! ec);
 
             auto [ec2, n] = co_await ws.write_some(
                 make_buffer("hi there", 8));
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST_EQ(n, 8u);
             BOOST_TEST_EQ(ws.data(), " there");
@@ -279,7 +279,7 @@ public:
 
             auto [ec, n] = co_await ws.write_some(
                 make_buffer("hello world", 11));
-            if(ec.failed())
+            if(ec)
                 co_return;
             BOOST_TEST_EQ(n, 3u);
             BOOST_TEST_EQ(ws.data(), "hel");
@@ -296,21 +296,21 @@ public:
 
             auto [ec1, n1] = co_await ws.write_some(
                 make_buffer("abcdefghij", 10));
-            if(ec1.failed())
+            if(ec1)
                 co_return;
             BOOST_TEST_EQ(n1, 4u);
             BOOST_TEST_EQ(ws.data(), "abcd");
 
             auto [ec2, n2] = co_await ws.write_some(
                 make_buffer("efghij", 6));
-            if(ec2.failed())
+            if(ec2)
                 co_return;
             BOOST_TEST_EQ(n2, 4u);
             BOOST_TEST_EQ(ws.data(), "abcdefgh");
 
             auto [ec3, n3] = co_await ws.write_some(
                 make_buffer("ij", 2));
-            if(ec3.failed())
+            if(ec3)
                 co_return;
             BOOST_TEST_EQ(n3, 2u);
             BOOST_TEST_EQ(ws.data(), "abcdefghij");

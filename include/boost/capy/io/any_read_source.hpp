@@ -20,7 +20,7 @@
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/task.hpp>
 
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <concepts>
 #include <coroutine>
@@ -95,7 +95,7 @@ class any_read_source
         coro h,
         executor_ref ex,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* n);
 
     template<ReadSource S>
@@ -104,7 +104,7 @@ class any_read_source
         any_read_source* wrapper,
         S& source,
         std::span<mutable_buffer const> bufs,
-        system::error_code* out_ec,
+        std::error_code* out_ec,
         std::size_t* out_n);
 
     void* alloc_frame(std::size_t size);
@@ -223,9 +223,9 @@ public:
 
         @par Postconditions
         Exactly one of the following is true on return:
-        @li **Success**: `!ec.failed()` and `n == buffer_size(buffers)`.
+        @li **Success**: `!ec` and `n == buffer_size(buffers)`.
             The entire buffer was filled.
-        @li **End-of-stream or Error**: `ec.failed()` and `n` indicates
+        @li **End-of-stream or Error**: `ec` and `n` indicates
             the number of bytes transferred before the failure.
 
         @par Preconditions
@@ -275,7 +275,7 @@ struct any_read_source::vtable
         coro h,
         executor_ref ex,
         std::stop_token token,
-        system::error_code* ec,
+        std::error_code* ec,
         std::size_t* n);
 };
 
@@ -554,7 +554,7 @@ any_read_source::read_coro(
     any_read_source*,
     S& source,
     std::span<mutable_buffer const> bufs,
-    system::error_code* out_ec,
+    std::error_code* out_ec,
     std::size_t* out_n)
 {
     auto [err, bytes] = co_await source.read(bufs);
@@ -572,7 +572,7 @@ any_read_source::do_read_impl(
     coro h,
     executor_ref ex,
     std::stop_token token,
-    system::error_code* ec,
+    std::error_code* ec,
     std::size_t* n)
 {
     auto& s = *static_cast<S*>(source);
@@ -610,7 +610,7 @@ any_read_source::read_some_(std::span<mutable_buffer const> buffers)
     {
         any_read_source* self_;
         std::span<mutable_buffer const> buffers_;
-        system::error_code ec_;
+        std::error_code ec_;
         std::size_t n_ = 0;
 
         bool
@@ -657,7 +657,7 @@ any_read_source::read(MB buffers)
 
         auto [ec, n] = co_await read_some_(bufs);
         total += n;
-        if(ec.failed())
+        if(ec)
             co_return {ec, total};
         bp.consume(n);
     }

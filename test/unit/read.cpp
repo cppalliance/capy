@@ -198,7 +198,7 @@ struct read_test
 
             single_buffer_factory bf(11);
             auto [ec, n] = co_await read(rs, bf.buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -213,7 +213,7 @@ struct read_test
 
             single_buffer_factory bf(5);
             auto [ec, n] = co_await read(rs, bf.buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 5u);
@@ -228,7 +228,7 @@ struct read_test
 
             single_buffer_factory bf(32);
             auto [ec, n] = co_await read(rs, bf.buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST(ec == cond::eof);
@@ -243,7 +243,7 @@ struct read_test
             rs.provide("data");
 
             auto [ec, n] = co_await read(rs, mutable_buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 0u);
@@ -261,7 +261,7 @@ struct read_test
 
             buffer_array_factory bf(5, 5);
             auto [ec, n] = co_await read(rs, bf.buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10u);
@@ -277,7 +277,7 @@ struct read_test
 
             buffer_array_factory bf(10, 10);
             auto [ec, n] = co_await read(rs, bf.buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST(ec == cond::eof);
@@ -296,7 +296,7 @@ struct read_test
 
             buffer_pair_factory bf(5, 5);
             auto [ec, n] = co_await read(rs, bf.buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10u);
@@ -312,7 +312,7 @@ struct read_test
 
             buffer_pair_factory bf(5, 5);
             auto [ec, n] = co_await read(rs, bf.buffer());
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST(ec == cond::eof);
@@ -344,7 +344,7 @@ struct read_test
             string_dynbuf_factory df;
             auto db = df.buffer();
             auto [ec, n] = co_await read(rs, db);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -361,7 +361,7 @@ struct read_test
             string_dynbuf_factory df;
             auto db = df.buffer();
             auto [ec, n] = co_await read(rs, db);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 10000u);
@@ -377,7 +377,7 @@ struct read_test
             string_dynbuf_factory df;
             auto db = df.buffer();
             auto [ec, n] = co_await read(rs, db);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 0u);
@@ -393,7 +393,7 @@ struct read_test
             string_dynbuf_factory df;
             auto db = df.buffer();
             auto [ec, n] = co_await read(rs, db, 64);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 5u);
@@ -413,7 +413,7 @@ struct read_test
             circular_dynamic_buffer_factory df;
             auto& db = df.buffer();
             auto [ec, n] = co_await read(rs, db);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 11u);
@@ -430,7 +430,7 @@ struct read_test
             circular_dynamic_buffer_factory df;
             auto& db = df.buffer();
             auto [ec, n] = co_await read(rs, db);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 1000u);
@@ -446,7 +446,7 @@ struct read_test
             circular_dynamic_buffer_factory df;
             auto& db = df.buffer();
             auto [ec, n] = co_await read(rs, db);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 0u);
@@ -462,7 +462,7 @@ struct read_test
             circular_dynamic_buffer_factory df;
             auto& db = df.buffer();
             auto [ec, n] = co_await read(rs, db, 128);
-            if(ec.failed())
+            if(ec)
                 co_return;
 
             BOOST_TEST_EQ(n, 4u);

@@ -11,8 +11,7 @@
 #define BOOST_CAPY_COND_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/system/error_category.hpp>
-#include <boost/system/is_error_condition_enum.hpp>
+#include <system_error>
 
 namespace boost {
 namespace capy {
@@ -40,16 +39,16 @@ enum class cond
 //-----------------------------------------------
 
 } // capy
+} // boost
 
-namespace system {
+namespace std {
 template<>
 struct is_error_condition_enum<
     ::boost::capy::cond>
-{
-    static bool const value = true;
-};
-} // system
+    : std::true_type {};
+} // std
 
+namespace boost {
 namespace capy {
 
 //-----------------------------------------------
@@ -58,22 +57,16 @@ namespace detail {
 
 struct BOOST_SYMBOL_VISIBLE
     cond_cat_type
-    : system::error_category
+    : std::error_category
 {
     BOOST_CAPY_DECL const char* name(
         ) const noexcept override;
     BOOST_CAPY_DECL std::string message(
         int) const override;
-    BOOST_CAPY_DECL char const* message(
-        int, char*, std::size_t
-            ) const noexcept override;
     BOOST_CAPY_DECL bool equivalent(
-        system::error_code const& ec,
+        std::error_code const& ec,
         int condition) const noexcept override;
-    BOOST_SYSTEM_CONSTEXPR cond_cat_type()
-        : error_category(0x2f7a9b3c4e8d1a05)
-    {
-    }
+    constexpr cond_cat_type() noexcept = default;
 };
 
 BOOST_CAPY_DECL extern cond_cat_type cond_cat;
@@ -83,12 +76,11 @@ BOOST_CAPY_DECL extern cond_cat_type cond_cat;
 //-----------------------------------------------
 
 inline
-BOOST_SYSTEM_CONSTEXPR
-system::error_condition
+std::error_condition
 make_error_condition(
     cond ev) noexcept
 {
-    return system::error_condition{
+    return std::error_condition{
         static_cast<std::underlying_type<
             cond>::type>(ev),
         detail::cond_cat};

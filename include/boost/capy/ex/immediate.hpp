@@ -220,7 +220,7 @@ ready(T1 t1, T2 t2, T3 t3)
     write(const_buffer buf)
     {
         auto ec = write_sync(buf);
-        if(ec.failed())
+        if(ec)
             return ready(ec, std::size_t{0});
         return ready(buffer_size(buf));
     }
@@ -234,7 +234,7 @@ ready(T1 t1, T2 t2, T3 t3)
 */
 inline
 immediate<io_result<>>
-ready(system::error_code ec) noexcept
+ready(std::error_code ec) noexcept
 {
     return {{ec}};
 }
@@ -248,7 +248,7 @@ ready(system::error_code ec) noexcept
 */
 template<class T1>
 immediate<io_result<T1>>
-ready(system::error_code ec, T1 t1)
+ready(std::error_code ec, T1 t1)
 {
     return {{ec, std::move(t1)}};
 }
@@ -263,7 +263,7 @@ ready(system::error_code ec, T1 t1)
 */
 template<class T1, class T2>
 immediate<io_result<T1, T2>>
-ready(system::error_code ec, T1 t1, T2 t2)
+ready(std::error_code ec, T1 t1, T2 t2)
 {
     return {{ec, std::move(t1), std::move(t2)}};
 }
@@ -279,7 +279,7 @@ ready(system::error_code ec, T1 t1, T2 t2)
 */
 template<class T1, class T2, class T3>
 immediate<io_result<T1, T2, T3>>
-ready(system::error_code ec, T1 t1, T2 t2, T3 t3)
+ready(std::error_code ec, T1 t1, T2 t2, T3 t3)
 {
     return {{ec, std::move(t1), std::move(t2), std::move(t3)}};
 }

@@ -39,7 +39,7 @@ namespace capy {
     @param source The source to read data from.
     @param sink The sink to write data to.
 
-    @return A task that yields `(system::error_code, std::size_t)`.
+    @return A task that yields `(std::error_code, std::size_t)`.
         On success, `ec` is default-constructed (no error) and `n` is
         the total number of bytes transferred. On error, `ec` contains
         the error code and `n` is the total number of bytes transferred
@@ -50,7 +50,7 @@ namespace capy {
     task<void> transfer_body(ReadSource auto& source, BufferSink auto& sink)
     {
         auto [ec, n] = co_await pull_from(source, sink);
-        if (ec.failed())
+        if (ec)
         {
             // Handle error
         }
@@ -74,7 +74,7 @@ pull_from(Src& source, Sink& sink)
         {
             // No buffer space available; commit nothing to flush
             auto [flush_ec] = co_await sink.commit(0);
-            if(flush_ec.failed())
+            if(flush_ec)
                 co_return {flush_ec, total};
             continue;
         }
@@ -85,7 +85,7 @@ pull_from(Src& source, Sink& sink)
         if(n > 0)
         {
             auto [commit_ec] = co_await sink.commit(n);
-            if(commit_ec.failed())
+            if(commit_ec)
                 co_return {commit_ec, total};
             total += n;
         }
@@ -96,7 +96,7 @@ pull_from(Src& source, Sink& sink)
             co_return {eof_ec, total};
         }
 
-        if(ec.failed())
+        if(ec)
             co_return {ec, total};
     }
 }
@@ -120,7 +120,7 @@ pull_from(Src& source, Sink& sink)
     @param source The stream to read data from.
     @param sink The sink to write data to.
 
-    @return A task that yields `(system::error_code, std::size_t)`.
+    @return A task that yields `(std::error_code, std::size_t)`.
         On success, `ec` is default-constructed (no error) and `n` is
         the total number of bytes transferred. On error, `ec` contains
         the error code and `n` is the total number of bytes transferred
@@ -131,7 +131,7 @@ pull_from(Src& source, Sink& sink)
     task<void> transfer_body(ReadStream auto& stream, BufferSink auto& sink)
     {
         auto [ec, n] = co_await pull_from(stream, sink);
-        if (ec.failed())
+        if (ec)
         {
             // Handle error
         }
@@ -156,7 +156,7 @@ pull_from(Src& source, Sink& sink)
         {
             // No buffer space available; commit nothing to flush
             auto [flush_ec] = co_await sink.commit(0);
-            if(flush_ec.failed())
+            if(flush_ec)
                 co_return {flush_ec, total};
             continue;
         }
@@ -169,7 +169,7 @@ pull_from(Src& source, Sink& sink)
         if(n > 0)
         {
             auto [commit_ec] = co_await sink.commit(n);
-            if(commit_ec.failed())
+            if(commit_ec)
                 co_return {commit_ec, total};
             total += n;
         }
@@ -182,7 +182,7 @@ pull_from(Src& source, Sink& sink)
         }
 
         // Check for other errors
-        if(ec.failed())
+        if(ec)
             co_return {ec, total};
     }
 }

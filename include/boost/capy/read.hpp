@@ -19,7 +19,7 @@
 #include <boost/capy/concept/dynamic_buffer.hpp>
 #include <boost/capy/concept/read_source.hpp>
 #include <boost/capy/concept/read_stream.hpp>
-#include <boost/system/error_code.hpp>
+#include <system_error>
 
 #include <cstddef>
 
@@ -39,7 +39,7 @@ namespace capy {
     @param stream The stream to read from.
     @param buffers The buffer sequence to read into.
 
-    @return A task that yields `(system::error_code, std::size_t)`.
+    @return A task that yields `(std::error_code, std::size_t)`.
         On success, `ec` is default-constructed (no error) and `n` is
         `buffer_size(buffers)`. On error or EOF, `ec` contains the
         error code and `n` is the total number of bytes written before
@@ -102,7 +102,7 @@ read(
     @param buffers The dynamic buffer to read into.
     @param initial_amount The initial number of bytes to prepare.
 
-    @return A task that yields `(system::error_code, std::size_t)`.
+    @return A task that yields `(std::error_code, std::size_t)`.
         On success (EOF reached), `ec` is default-constructed and `n`
         is the total number of bytes read. On error, `ec` contains the
         error code and `n` is the total number of bytes read before
@@ -114,7 +114,7 @@ read(
     {
         std::string body;
         auto [ec, n] = co_await read(source, string_buffers(body));
-        if (ec.failed())
+        if (ec)
         {
             // Handle error
         }
@@ -142,7 +142,7 @@ read(
         total_read += n;
         if(ec == cond::eof)
             co_return {{}, total_read};
-        if(ec.failed())
+        if(ec)
             co_return {ec, total_read};
         if(n == mb_size)
             amount = amount / 2 + amount; // 1.5x growth
