@@ -49,7 +49,7 @@ struct [[nodiscard]]
         return inner_.await_ready();
     }
 
-    auto await_resume()
+    decltype(auto) await_resume()
     {
         return inner_.await_resume();
     }

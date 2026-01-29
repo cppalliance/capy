@@ -453,7 +453,7 @@ struct any_read_stream::read_op
                 return a_.await_ready();
             }
 
-            auto await_resume()
+            decltype(auto) await_resume()
             {
                 return a_.await_resume();
             }

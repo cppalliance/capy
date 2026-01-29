@@ -162,7 +162,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                 return a_.await_ready();
             }
 
-            auto await_resume()
+            decltype(auto) await_resume()
             {
                 // Restore TLS before body resumes
                 if(p_->frame_allocator())
