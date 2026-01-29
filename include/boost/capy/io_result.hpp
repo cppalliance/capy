@@ -61,40 +61,32 @@ struct [[nodiscard]] io_result<>
     /** Default constructor. */
     io_result() = default;
 
-    /** Construct from an error code.
+    /** Construct from any type convertible to std::error_code.
 
-        Enables implicit conversion from error_code, allowing
-        `co_return ec;` in coroutines returning `task<io_result<>>`.
-    */
-    io_result(std::error_code e) noexcept
-        : ec(e)
-    {
-    }
+        This constructor accepts `std::error_code`, `boost::system::error_code`,
+        error code enums (types for which `std::is_error_code_enum` is true),
+        and any other type with implicit conversion to `std::error_code`.
+        The provided value is used to initialize the @ref ec member.
 
-#ifdef BOOST_SYSTEM_ERROR_CODE_HPP_INCLUDED
-    /** Construct from a Boost error code.
+        @tparam E The error code type. Must satisfy
+            `std::is_convertible<E, std::error_code>::value`.
 
-        Enables implicit conversion from boost::system::error_code,
-        available only when boost/system/error_code.hpp is included
-        before this header.
-    */
-    BOOST_CAPY_FORCEINLINE
-    io_result(boost::system::error_code e) noexcept // conditional; not a dependency
-        : ec(e)
-    {
-    }
-#endif
+        @param e The error code value to store. Should represent a valid
+            error code that can be converted to `std::error_code`.
 
-    /** Construct from an error code enum.
+        @par Constraints
+        This constructor only participates in overload resolution when
+        `std::is_convertible<E, std::error_code>::value` is `true`.
 
-        Enables implicit conversion from error_code enums like
-        `route::next`, allowing direct `co_return` of enum values.
+        @par Exception Safety
+        This constructor is `noexcept` and will not throw exceptions.
     */
     template<class E,
-        class = typename std::enable_if<
-            std::is_error_code_enum<E>::value>::type>
-    io_result(E e) noexcept
-        : ec(make_error_code(e))
+        typename std::enable_if<
+            std::is_convertible<E, std::error_code>::value, int>::type = 0>
+    BOOST_CAPY_FORCEINLINE
+    io_result(E const& e) noexcept
+        : ec(e)
     {
     }
 
