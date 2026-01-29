@@ -58,44 +58,7 @@ struct [[nodiscard]] io_result<>
     /** The error code from the operation. */
     std::error_code ec;
 
-    /** Default constructor. */
-    io_result() = default;
-
-    /** Construct from any type convertible to std::error_code.
-
-        This constructor accepts `std::error_code`, `boost::system::error_code`,
-        error code enums (types for which `std::is_error_code_enum` is true),
-        and any other type with implicit conversion to `std::error_code`.
-        The provided value is used to initialize the @ref ec member.
-
-        @tparam E The error code type. Must satisfy
-            `std::is_convertible<E, std::error_code>::value`.
-
-        @param e The error code value to store. Should represent a valid
-            error code that can be converted to `std::error_code`.
-
-        @par Constraints
-        This constructor only participates in overload resolution when
-        `std::is_convertible<E, std::error_code>::value` is `true`.
-
-        @par Exception Safety
-        This constructor is `noexcept` and will not throw exceptions.
-    */
-    template<class E,
-        typename std::enable_if<
-            std::is_convertible<E, std::error_code>::value, int>::type = 0>
-    BOOST_CAPY_FORCEINLINE
-    io_result(E const& e) noexcept
-        : ec(e)
-    {
-    }
-
-    /** Convert to error_code. */
-    operator std::error_code() const noexcept
-    {
-        return ec;
-    }
-
+#ifdef _MSC_VER
     // Tuple protocol (unconditional - io_result<> is not an aggregate)
     template<std::size_t I>
     auto& get() & noexcept
@@ -117,6 +80,7 @@ struct [[nodiscard]] io_result<>
         static_assert(I == 0, "index out of range");
         return std::move(ec);
     }
+#endif
 };
 
 /** Result type for byte transfer operations.
@@ -242,7 +206,10 @@ struct [[nodiscard]] io_result<T1, T2, T3>
 };
 
 //------------------------------------------------------------------------------
-// Free-standing get() overloads for io_result<> (unconditional - not an aggregate)
+
+#ifdef _MSC_VER
+
+// Free-standing get() overloads for ADL (MSVC workaround for aggregates)
 
 template<std::size_t I>
 auto& get(io_result<>& r) noexcept
@@ -261,10 +228,6 @@ auto&& get(io_result<>&& r) noexcept
 {
     return std::move(r).template get<I>();
 }
-
-#ifdef _MSC_VER
-//------------------------------------------------------------------------------
-// Free-standing get() overloads for ADL (MSVC workaround for aggregates)
 
 template<std::size_t I, typename T1>
 auto& get(io_result<T1>& r) noexcept
@@ -326,7 +289,12 @@ auto&& get(io_result<T1, T2, T3>&& r) noexcept
 } // namespace boost
 
 //------------------------------------------------------------------------------
-// Tuple protocol for io_result<> (unconditional - not an aggregate)
+
+#ifdef _MSC_VER
+
+// Tuple protocol for structured bindings (MSVC workaround)
+// MSVC has a bug with aggregate decomposition in coroutines, so we use
+// tuple protocol instead which forces the compiler to use get<>() functions.
 
 namespace std {
 
@@ -339,18 +307,6 @@ struct tuple_element<0, boost::capy::io_result<>>
 {
     using type = ::std::error_code;
 };
-
-} // namespace std
-
-#ifdef _MSC_VER
-//------------------------------------------------------------------------------
-// Tuple protocol for structured bindings (MSVC workaround)
-// MSVC has a bug with aggregate decomposition in coroutines, so we use
-// tuple protocol instead which forces the compiler to use get<>() functions.
-
-namespace std {
-
-// tuple_size specializations for aggregates
 
 template<typename T1>
 struct tuple_size<boost::capy::io_result<T1>>
