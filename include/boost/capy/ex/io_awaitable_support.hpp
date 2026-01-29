@@ -138,7 +138,7 @@ class io_awaitable_support
     std::stop_token stop_token_;
     std::pmr::memory_resource* alloc_ = nullptr;
     executor_ref caller_ex_;
-    coro cont_;
+    mutable coro cont_{nullptr};
 
 public:
     //----------------------------------------------------------
@@ -200,6 +200,12 @@ public:
         mr->deallocate(ptr, total, alignof(std::max_align_t));
     }
 
+    ~io_awaitable_support()
+    {
+        if (cont_)
+            cont_.destroy();
+    }
+
     /** Store a frame allocator for later retrieval.
 
         Call this from initial_suspend to capture the current
@@ -259,8 +265,8 @@ public:
         if(!cont_)
             return std::noop_coroutine();
         if(executor_ == caller_ex_)
-            return cont_;
-        return caller_ex_.dispatch(cont_);
+            return std::exchange(cont_, nullptr);
+        return caller_ex_.dispatch(std::exchange(cont_, nullptr));
     }
 
     /** Store a stop token for later retrieval.

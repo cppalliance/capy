@@ -100,14 +100,14 @@ struct run_async_trampoline
         void* task_promise_ = nullptr;
         std::coroutine_handle<> task_h_;
 
-        promise_type(Ex &ex, Handlers &h, Alloc &a)
+         promise_type(Ex &ex, Handlers &h, Alloc &a)
             : ex_(std::move(ex))
             , handlers_(std::move(h))
             , resource_(std::move(a))
         {
         }
 
-        static void* operator new(std::size_t size, Ex, Handlers, Alloc a)
+        static void* operator new(std::size_t size, Ex, const Handlers& , Alloc a)
         {
             using byte_alloc = typename std::allocator_traits<Alloc>
                 ::template rebind_alloc<std::byte>;
@@ -205,14 +205,14 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
         void* task_promise_ = nullptr;
         std::coroutine_handle<> task_h_;
 
-        promise_type(Ex ex, Handlers h, std::pmr::memory_resource* mr)
+        promise_type(Ex &ex, Handlers &h, std::pmr::memory_resource* mr)
             : ex_(std::move(ex))
             , handlers_(std::move(h))
             , mr_(mr)
         {
         }
 
-        static void* operator new(std::size_t size, Ex, Handlers, std::pmr::memory_resource* mr)
+        static void* operator new(std::size_t size, Ex&, Handlers&, std::pmr::memory_resource* mr)
         {
             auto total = size + sizeof(mr);
             void* raw = mr->allocate(total, alignof(std::max_align_t));
