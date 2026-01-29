@@ -38,23 +38,7 @@ env:
   TZ: "Europe/London"
 
 jobs:
-  # Self-hosted runner selection is disabled to allow re-running individual
-  # failed jobs from the GitHub Actions UI. When using dynamic runner selection,
-  # the runs-on value depends on this job's output, which isn't available when
-  # re-running a subset of jobs.
-  #
-  # runner-selection:
-  #   name: Runner Selection
-  #   runs-on: ${{ github.repository_owner == 'boostorg' && fromJSON('[ "self-hosted", "linux", "x64", "ubuntu-latest-aws" ]') || 'ubuntu-latest' }}
-  #   outputs:
-  #     labelmatrix: ${{ steps.aws_hosted_runners.outputs.labelmatrix }}
-  #   steps:
-  #     - name: AWS Hosted Runners
-  #       id: aws_hosted_runners
-  #       uses: cppalliance/aws-hosted-runners@v1.0.0
-
   build:
-    # needs: [ runner-selection ]
     defaults:
       run:
         shell: bash
@@ -246,8 +230,6 @@ jobs:
             install: "gcc-multilib g++-multilib"
 
     name: ${{ matrix.name }}
-    # Skip self-hosted runner selection for now
-    # runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)[matrix.runs-on] }}
     runs-on: ${{ matrix.runs-on }}
     container:
       image: ${{ matrix.container }}
@@ -347,18 +329,17 @@ jobs:
           stop-on-error: true
           extra-args: ${{ (matrix.valgrind && 'testing.launcher=valgrind' || '' )}}
 
-      - name: Boost CMake Workflow
+      - name: CMake Workflow
         uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
         if: ${{ matrix.coverage || matrix.time-trace || matrix.build-cmake || matrix.is-earliest }}
         with:
-          source-dir: boost-root
-          build-dir: __build_cmake_test__
+          source-dir: capy-root
+          build-dir: __build__
           generator: ${{ matrix.generator }}
           generator-toolset: ${{ matrix.generator-toolset }}
           build-type: ${{ matrix.build-type }}
-          build-target: tests
+          build-target: boost_capy_tests
           run-tests: true
-          install-prefix: .local
           cxxstd: ${{ matrix.latest-cxxstd }}
           cc:  ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
           ccflags: ${{ matrix.ccflags }}
@@ -366,95 +347,17 @@ jobs:
           cxxflags: ${{ matrix.cxxflags }}
           shared: ${{ matrix.shared }}
           cmake-version: '>=3.20'
-          extra-args: |
-            -D Boost_VERBOSE=ON
-            -D BOOST_INCLUDE_LIBRARIES="${{ steps.patch.outputs.module }}"
-          export-compile-commands: ${{ matrix.time-trace }}
+          install: false
           package: false
           package-artifact: false
-          ref-source-dir: boost-root/libs/capy
-
-      - name: Set Path
-        if: startsWith(matrix.runs-on, 'windows') && matrix.shared
-        run: echo "$GITHUB_WORKSPACE/.local/bin" >> $GITHUB_PATH
-
-      - name: Set LD_LIBRARY_PATH
-        if: startsWith(matrix.runs-on, 'ubuntu') && matrix.shared
-        run: |
-          echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/.local/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
-
-      - name: Find Package Integration Workflow
-        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
-        if: ${{ matrix.build-cmake || matrix.is-earliest }}
-        with:
-          source-dir: boost-root/libs/${{ steps.patch.outputs.module }}/test/cmake_test
-          build-dir: __build_cmake_install_test__
-          generator: ${{ matrix.generator }}
-          generator-toolset: ${{ matrix.generator-toolset }}
-          build-type: ${{ matrix.build-type }}
-          cxxstd: ${{ matrix.latest-cxxstd }}
-          cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
-          ccflags: ${{ matrix.ccflags }}
-          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
-          cxxflags: ${{ matrix.cxxflags }}
-          shared: ${{ matrix.shared }}
-          install: false
-          cmake-version: '>=3.15'
-          extra-args: |
-            -D BOOST_CI_INSTALL_TEST=ON
-            -D CMAKE_PREFIX_PATH=${{ steps.patch.outputs.workspace_root }}/.local
-          ref-source-dir: boost-root/libs/capy
-          trace-commands: true
-
-      - name: Subdirectory Integration Workflow
-        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
-        if: ${{ matrix.build-cmake || matrix.is-earliest }}
-        with:
-          source-dir: boost-root/libs/${{ steps.patch.outputs.module }}/test/cmake_test
-          build-dir: __build_cmake_subdir_test__
-          generator: ${{ matrix.generator }}
-          generator-toolset: ${{ matrix.generator-toolset }}
-          build-type: ${{ matrix.build-type }}
-          cxxstd: ${{ matrix.latest-cxxstd }}
-          cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
-          ccflags: ${{ matrix.ccflags }}
-          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
-          cxxflags: ${{ matrix.cxxflags }}
-          shared: ${{ matrix.shared }}
-          install: false
-          cmake-version: '>=3.15'
-          extra-args: -D BOOST_CI_INSTALL_TEST=OFF
-          ref-source-dir: boost-root/libs/capy/test/cmake_test
-
-      - name: Root Project CMake Workflow
-        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
-        if: ${{ matrix.build-cmake || matrix.is-earliest }}
-        with:
-          source-dir: boost-root/libs/${{ steps.patch.outputs.module }}
-          build-dir: __build_root_test__
-          build-target: tests
-          run-tests: true
-          generator: ${{ matrix.generator }}
-          generator-toolset: ${{ matrix.generator-toolset }}
-          build-type: ${{ matrix.build-type }}
-          install: false
-          cxxstd: ${{ matrix.latest-cxxstd }}
-          cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
-          ccflags: ${{ matrix.ccflags }}
-          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
-          cxxflags: ${{ matrix.cxxflags }}
-          shared: ${{ matrix.shared }}
-          cmake-version: '>=3.20'
-          package: false
-          package-artifact: false
-          ref-source-dir: boost-root
+          ref-source-dir: capy-root
 
       - name: FlameGraph
         uses: alandefreitas/cpp-actions/flamegraph@v1.9.0
         if: matrix.time-trace
         with:
-          source-dir: boost-root/libs/capy
-          build-dir: boost-root/__build_cmake_test__
+          source-dir: capy-root
+          build-dir: __build__
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Codecov
@@ -469,10 +372,10 @@ jobs:
           elif command -v "gcov-${{ steps.setup-cpp.outputs.version-major }}" &> /dev/null; then
               gcov_tool="gcov-${{ steps.setup-cpp.outputs.version-major }}"
           fi
-          lcov -c -q -o "boost-root/__build_cmake_test__/coverage.info" -d "boost-root/__build_cmake_test__" --include "$(pwd)/boost-root/libs/${{steps.patch.outputs.module}}/*" --gcov-tool "$gcov_tool"
+          lcov -c -q -o "capy-root/__build__/coverage.info" -d "capy-root/__build__" --include "$(pwd)/capy-root/*" --gcov-tool "$gcov_tool"
 
           # Upload to codecov
-          bash <(curl -s https://codecov.io/bash) -f "boost-root/__build_cmake_test__/coverage.info"
+          bash <(curl -s https://codecov.io/bash) -f "capy-root/__build__/coverage.info"
 
           # Summary
           echo "# Coverage" >> $GITHUB_STEP_SUMMARY
@@ -486,14 +389,11 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
   changelog:
-    # needs: [ runner-selection ]
     defaults:
       run:
         shell: bash
 
     name: Changelog Summary
-    # Skip self-hosted runner selection for now
-    # runs-on: ${{ fromJSON(needs.runner-selection.outputs.labelmatrix)['ubuntu-22.04'] }}
     runs-on: 'ubuntu-22.04'
     timeout-minutes: 120
 
@@ -511,4 +411,3 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           limit: 200
           tag-pattern: 'boost-.*\..*\..*'
-

@@ -11,12 +11,6 @@
 #ifndef BOOST_CAPY_TEST_HELPERS_HPP
 #define BOOST_CAPY_TEST_HELPERS_HPP
 
-// Trick boostdep into requiring URL
-// since we need it for the unit tests
-#ifdef BOOST_CAPY_BOOSTDEP
-#include <boost/url/url.hpp>
-#endif
-
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/execution_context.hpp>

@@ -22,7 +22,6 @@ add_executable(boost_capy_tests ${PFILES})
 target_link_libraries(
     boost_capy_tests PRIVATE
     boost_capy_test_suite_main
-    Boost::asio
     Boost::capy)
 
 target_include_directories(boost_capy_tests PRIVATE . ../../)

@@ -16,12 +16,6 @@
 #include <string>
 #include <string_view>
 
-// Trick boostdep into requiring URL
-// since we need it for the unit tests
-#ifdef BOOST_RUNTIME_SERVICES_BOOSTDEP
-#include <boost/url/url.hpp>
-#endif
-
 #include "test_suite.hpp"
 
 namespace boost {

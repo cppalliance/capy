@@ -17,27 +17,6 @@ if(BOOST_CI_INSTALL_TEST)
 else()
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
   add_subdirectory(../.. boostorg/capy)
-
-  set(deps
-    # Primary dependencies
-
-    config
-    system
-
-    # Secondary dependencies
-
-    assert
-    compat
-    mp11
-    throw_exception
-    variant2
-    winapi
-    predef
-  )
-
-  foreach(dep IN LISTS deps)
-    add_subdirectory(../../../${dep} boostorg/${dep} EXCLUDE_FROM_ALL)
-  endforeach()
 endif()
 
 add_executable(main main.cpp)

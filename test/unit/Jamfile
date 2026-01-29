@@ -14,11 +14,11 @@ project
     : requirements
       $(c20-requires)
       <library>/boost/capy//boost_capy
-      <source>../../../url/extra/test_suite/test_main.cpp
-      <source>../../../url/extra/test_suite/test_suite.cpp
+      <source>../../extra/test_suite/test_main.cpp
+      <source>../../extra/test_suite/test_suite.cpp
       <include>.
       <include>../..
-      <include>../../../url/extra/test_suite
+      <include>../../extra/test_suite
       <warnings>extra
       <warnings-as-errors>on
       <target-os>darwin,<undefined-sanitizer>norecover:<link>static
