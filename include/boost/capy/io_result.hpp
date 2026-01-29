@@ -79,7 +79,7 @@ struct [[nodiscard]] io_result<>
         before this header.
     */
     BOOST_CAPY_FORCEINLINE
-    io_result(boost::system::error_code e) noexcept
+    io_result(boost::system::error_code e) noexcept // conditional; not a dependency
         : ec(e)
     {
     }
