@@ -297,7 +297,7 @@ jobs:
           rm -r "boost-source/libs/$module" || true
 
           # Copy cached boost-source to an isolated boost-root
-          cp -r boost-source boost-root
+          cp -rL boost-source boost-root
 
           # Set boost-root output
           cd boost-root
