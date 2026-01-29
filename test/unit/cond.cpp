@@ -59,6 +59,23 @@ public:
             BOOST_TEST(!(ec == cond::eof));
             BOOST_TEST(!(ec == cond::canceled));
         }
+
+        // Message: not_found
+        BOOST_TEST(make_error_condition(cond::not_found).message() == "not found");
+
+        // Equivalence: error::not_found == cond::not_found
+        {
+            auto ec = make_error_code(error::not_found);
+            BOOST_TEST(ec == cond::not_found);
+            BOOST_TEST(!(ec == cond::eof));
+            BOOST_TEST(!(ec == cond::canceled));
+        }
+
+        // Non-matching codes don't match not_found
+        {
+            auto ec = make_error_code(error::eof);
+            BOOST_TEST(!(ec == cond::not_found));
+        }
     }
 };
 

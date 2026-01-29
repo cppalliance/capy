@@ -146,6 +146,21 @@ public:
 
 using string_dynamic_buffer = basic_string_dynamic_buffer<char>;
 
+/** Create a dynamic buffer from a string.
+
+    @param s The string to wrap.
+    @param max_size Optional maximum size limit.
+    @return A string_dynamic_buffer wrapping the string.
+*/
+template<class CharT, class Traits, class Allocator>
+basic_string_dynamic_buffer<CharT, Traits, Allocator>
+dynamic_buffer(
+    std::basic_string<CharT, Traits, Allocator>& s,
+    std::size_t max_size = std::size_t(-1))
+{
+    return basic_string_dynamic_buffer<CharT, Traits, Allocator>(&s, max_size);
+}
+
 } // capy
 } // boost
 

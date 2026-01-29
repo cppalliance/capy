@@ -33,7 +33,8 @@ enum class cond
 {
     eof = 1,
     canceled = 2,
-    stream_truncated = 3
+    stream_truncated = 3,
+    not_found = 4
 };
 
 //-----------------------------------------------

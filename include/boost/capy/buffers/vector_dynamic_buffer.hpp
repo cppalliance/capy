@@ -227,6 +227,23 @@ public:
 using vector_dynamic_buffer =
     basic_vector_dynamic_buffer<unsigned char>;
 
+/** Create a dynamic buffer from a vector.
+
+    @param v The vector to wrap. Element type must be
+        a fundamental type with sizeof 1.
+    @param max_size Optional maximum size limit.
+    @return A vector_dynamic_buffer wrapping the vector.
+*/
+template<class T, class Allocator>
+    requires std::is_fundamental_v<T> && (sizeof(T) == 1)
+basic_vector_dynamic_buffer<T, Allocator>
+dynamic_buffer(
+    std::vector<T, Allocator>& v,
+    std::size_t max_size = std::size_t(-1))
+{
+    return basic_vector_dynamic_buffer<T, Allocator>(&v, max_size);
+}
+
 } // capy
 } // boost
 

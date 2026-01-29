@@ -31,6 +31,7 @@ message(int code) const
     case error::canceled: return "operation canceled";
     case error::test_failure: return "test failure";
     case error::stream_truncated: return "stream truncated";
+    case error::not_found: return "not found";
     default:
         return "unknown";
     }

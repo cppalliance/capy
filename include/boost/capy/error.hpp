@@ -32,7 +32,8 @@ enum class error
     eof = 1,
     canceled,
     test_failure,
-    stream_truncated
+    stream_truncated,
+    not_found
 };
 
 //-----------------------------------------------
