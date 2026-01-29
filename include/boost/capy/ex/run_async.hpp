@@ -100,7 +100,7 @@ struct run_async_trampoline
         void* task_promise_ = nullptr;
         std::coroutine_handle<> task_h_;
 
-        promise_type(Ex ex, Handlers h, Alloc a)
+        promise_type(Ex &ex, Handlers &h, Alloc &a)
             : ex_(std::move(ex))
             , handlers_(std::move(h))
             , resource_(std::move(a))
