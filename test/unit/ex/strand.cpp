@@ -11,6 +11,7 @@
 #include <boost/capy/ex/strand.hpp>
 
 #include <boost/capy/concept/executor.hpp>
+#include <boost/capy/ex/any_executor.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 
 #include "test_suite.hpp"
@@ -28,6 +29,8 @@ namespace {
 // Verify strand satisfies Executor concept at compile time
 static_assert(Executor<strand<thread_pool::executor_type>>,
     "strand must satisfy Executor concept");
+static_assert(Executor<strand<any_executor>>,
+    "strand<any_executor> must satisfy Executor concept");
 
 // Helper to wait for a condition with timeout
 template<class Pred>
@@ -558,6 +561,59 @@ struct strand_test
     }
 
     void
+    testAnyExecutor()
+    {
+        // Construct strand from any_executor
+        {
+            thread_pool pool(1);
+            any_executor ex = pool.get_executor();
+            strand<any_executor> s(ex);
+            (void)s;
+        }
+
+        // Using deduction guide
+        {
+            thread_pool pool(1);
+            any_executor ex = pool.get_executor();
+            auto s = strand(ex);
+            static_assert(std::is_same_v<decltype(s), strand<any_executor>>);
+            (void)s;
+        }
+
+        // Post work through strand<any_executor>
+        {
+            thread_pool pool(2);
+            any_executor ex = pool.get_executor();
+            auto s = strand(ex);
+
+            std::atomic<int> counter{0};
+            constexpr int N = 20;
+
+            std::vector<counter_coro> coros;
+            coros.reserve(N);
+
+            for(int i = 0; i < N; ++i)
+            {
+                coros.push_back(make_counter_coro(counter));
+                s.post(coros.back().handle());
+                coros.back().release();
+            }
+
+            BOOST_TEST(wait_for([&]{ return counter.load() >= N; }));
+            BOOST_TEST_EQ(counter.load(), N);
+        }
+
+        // Copy and equality
+        {
+            thread_pool pool(1);
+            any_executor ex = pool.get_executor();
+            auto s1 = strand(ex);
+            auto s2 = s1;
+            BOOST_TEST(s1 == s2);
+        }
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -574,6 +630,7 @@ struct strand_test
         testConcurrentPost();
         testFifoOrder();
         testSerialization();
+        testAnyExecutor();
     }
 };
 

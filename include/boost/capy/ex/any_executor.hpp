@@ -23,6 +23,17 @@ namespace boost {
 namespace capy {
 
 class execution_context;
+template<typename> class strand;
+
+namespace detail {
+
+template<typename T>
+struct is_strand_type : std::false_type {};
+
+template<typename E>
+struct is_strand_type<strand<E>> : std::true_type {};
+
+} // detail
 
 /** A type-erased wrapper for executor objects.
 
@@ -172,6 +183,7 @@ public:
     template<class Ex>
         requires (
             !std::same_as<std::decay_t<Ex>, any_executor> &&
+            !detail::is_strand_type<std::decay_t<Ex>>::value &&
             std::copy_constructible<std::decay_t<Ex>>)
     any_executor(Ex&& ex)
         : p_(std::make_shared<impl<std::decay_t<Ex>>>(std::forward<Ex>(ex)))
