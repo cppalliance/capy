@@ -47,8 +47,18 @@
 # define BOOST_CAPY_FORCEINLINE inline
 #endif
 
-namespace boost {
-namespace capy {
+// RTTI detection (user may predefine BOOST_CAPY_NO_RTTI)
+#ifndef BOOST_CAPY_NO_RTTI
+# if defined(__GNUC__) || defined(__clang__)
+#  ifndef __GXX_RTTI
+#   define BOOST_CAPY_NO_RTTI 1
+#  endif
+# elif defined(_MSC_VER)
+#  ifndef _CPPRTTI
+#   define BOOST_CAPY_NO_RTTI 1
+#  endif
+# endif
+#endif
 
 //------------------------------------------------
 
@@ -65,11 +75,8 @@ namespace capy {
 # define BOOST_CAPY_DECL
 #endif
 
-namespace detail {
+namespace boost::capy::detail {
 inline constexpr unsigned max_iovec_ = 16;
-} // detail
-
-} // capy
-} // boost
+}
 
 #endif

@@ -12,6 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/frame_memory_resource.hpp>
+#include <boost/capy/detail/type_id.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <concepts>
 #include <memory>
@@ -19,7 +20,6 @@
 #include <mutex>
 #include <tuple>
 #include <type_traits>
-#include <typeindex>
 #include <utility>
 
 namespace boost {
@@ -156,12 +156,14 @@ public:
         friend class execution_context;
 
         service* next_ = nullptr;
+
+// warning C4251: 'std::type_index' needs to have dll-interface
 #ifdef _MSC_VER
 # pragma warning(push)
 # pragma warning(disable: 4251)
 #endif
-        std::type_index t0_ = typeid(void);
-        std::type_index t1_ = typeid(void);
+        detail::type_index t0_{detail::type_id<void>()};
+        detail::type_index t1_{detail::type_id<void>()};
 #ifdef _MSC_VER
 # pragma warning(pop)
 #endif
@@ -221,7 +223,7 @@ public:
     T* find_service() const noexcept
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        return static_cast<T*>(find_impl(typeid(T)));
+        return static_cast<T*>(find_impl(detail::type_id<T>()));
     }
 
     /** Return a reference to the service of type T, creating it if needed.
@@ -257,10 +259,10 @@ public:
         {
             impl()
                 : factory(
-                    typeid(T),
+                    detail::type_id<T>(),
                     get_key<T>::value
-                        ? typeid(typename get_key<T>::type)
-                        : typeid(T))
+                        ? detail::type_id<typename get_key<T>::type>()
+                        : detail::type_id<T>())
             {
             }
 
@@ -319,10 +321,10 @@ public:
 
             explicit impl(Args&&... a)
                 : factory(
-                    typeid(T),
+                    detail::type_id<T>(),
                     get_key<T>::value
-                        ? typeid(typename get_key<T>::type)
-                        : typeid(T))
+                        ? detail::type_id<typename get_key<T>::type>()
+                        : detail::type_id<T>())
                 , args_(std::forward<Args>(a)...)
             {
             }
@@ -470,13 +472,16 @@ private:
 # pragma warning(push)
 # pragma warning(disable: 4251)
 #endif
-        std::type_index t0;
-        std::type_index t1;
+// warning C4251: 'std::type_index' needs to have dll-interface
+        detail::type_index t0;
+        detail::type_index t1;
 #ifdef _MSC_VER
 # pragma warning(pop)
 #endif
 
-        factory(std::type_index t0_, std::type_index t1_)
+        factory(
+            detail::type_info const& t0_,
+            detail::type_info const& t1_)
             : t0(t0_), t1(t1_)
         {
         }
@@ -487,7 +492,7 @@ private:
         ~factory() = default;
     };
 
-    service* find_impl(std::type_index ti) const noexcept;
+    service* find_impl(detail::type_index ti) const noexcept;
     service& use_service_impl(factory& f);
     service& make_service_impl(factory& f);
 
@@ -495,6 +500,7 @@ private:
 # pragma warning(push)
 # pragma warning(disable: 4251)
 #endif
+// warning C4251: 'std::type_index' needs to have dll-interface
     mutable std::mutex mutex_;
     std::shared_ptr<void> owned_;
 #ifdef _MSC_VER

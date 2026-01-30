@@ -59,7 +59,7 @@ destroy() noexcept
 
 execution_context::service*
 execution_context::
-find_impl(std::type_index ti) const noexcept
+find_impl(detail::type_index ti) const noexcept
 {
     auto p = head_;
     while(p)
