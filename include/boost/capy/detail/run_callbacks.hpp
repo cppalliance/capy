@@ -14,6 +14,7 @@
 
 #include <concepts>
 #include <exception>
+#include <type_traits>
 #include <utility>
 
 namespace boost {
@@ -41,6 +42,11 @@ struct default_handler
 template<class H1, class H2>
 struct handler_pair
 {
+    static_assert(
+        std::is_nothrow_move_constructible_v<H1> &&
+        std::is_nothrow_move_constructible_v<H2>,
+        "Handlers must be nothrow move constructible");
+
     H1 h1_;
     H2 h2_;
 
@@ -64,6 +70,10 @@ struct handler_pair
 template<class H1>
 struct handler_pair<H1, default_handler>
 {
+    static_assert(
+        std::is_nothrow_move_constructible_v<H1>,
+        "Handler must be nothrow move constructible");
+
     H1 h1_;
 
     template<class T>

@@ -81,9 +81,10 @@ class execution_context;
 */
 template<class E>
 concept Executor =
-    std::copy_constructible<E> &&
-    std::equality_comparable<E> &&
-    requires(E& e, E const& ce, std::coroutine_handle<> h) {
+    std::is_nothrow_copy_constructible_v<E> &&
+    std::is_nothrow_move_constructible_v<E> &&
+    requires(E& e, E const& ce, E const& ce2, std::coroutine_handle<> h) {
+        { ce == ce2 } noexcept -> std::convertible_to<bool>;
         { ce.context() } noexcept;
         requires std::is_lvalue_reference_v<decltype(ce.context())> &&
             std::derived_from<

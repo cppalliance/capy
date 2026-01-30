@@ -42,13 +42,10 @@ using dealloc_fn = void(*)(void*, std::size_t);
 template<class Alloc>
 void dealloc_impl(void* raw, std::size_t total)
 {
-    using byte_alloc = typename std::allocator_traits<Alloc>
-        ::template rebind_alloc<std::byte>;
-
+    static_assert(std::is_same_v<typename Alloc::value_type, std::byte>);
     auto* a = std::launder(reinterpret_cast<Alloc*>(
         static_cast<char*>(raw) + total - sizeof(Alloc)));
-
-    byte_alloc ba(*a);
+    Alloc ba(std::move(*a));
     a->~Alloc();
     ba.deallocate(static_cast<std::byte*>(raw), total);
 }
@@ -100,14 +97,15 @@ struct run_async_trampoline
         void* task_promise_ = nullptr;
         std::coroutine_handle<> task_h_;
 
-        promise_type(Ex ex, Handlers h, Alloc a)
+        promise_type(Ex& ex, Handlers& h, Alloc& a) noexcept
             : ex_(std::move(ex))
             , handlers_(std::move(h))
             , resource_(std::move(a))
         {
         }
 
-        static void* operator new(std::size_t size, Ex, Handlers, Alloc a)
+        static void* operator new(
+            std::size_t size, Ex const&, Handlers const&, Alloc a)
         {
             using byte_alloc = typename std::allocator_traits<Alloc>
                 ::template rebind_alloc<std::byte>;
@@ -117,14 +115,14 @@ struct run_async_trampoline
             auto padded = (size + footer_align - 1) & ~(footer_align - 1);
             auto total = padded + sizeof(dealloc_fn) + sizeof(Alloc);
 
-            byte_alloc ba(a);
+            byte_alloc ba(std::move(a));
             void* raw = ba.allocate(total);
 
             auto* fn_loc = reinterpret_cast<dealloc_fn*>(
                 static_cast<char*>(raw) + padded);
-            *fn_loc = &dealloc_impl<Alloc>;
+            *fn_loc = &dealloc_impl<byte_alloc>;
 
-            new (fn_loc + 1) Alloc(std::move(a));
+            new (fn_loc + 1) byte_alloc(std::move(ba));
 
             return raw;
         }
@@ -205,14 +203,17 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
         void* task_promise_ = nullptr;
         std::coroutine_handle<> task_h_;
 
-        promise_type(Ex ex, Handlers h, std::pmr::memory_resource* mr)
+        promise_type(
+            Ex& ex, Handlers& h, std::pmr::memory_resource* mr) noexcept
             : ex_(std::move(ex))
             , handlers_(std::move(h))
             , mr_(mr)
         {
         }
 
-        static void* operator new(std::size_t size, Ex, Handlers, std::pmr::memory_resource* mr)
+        static void* operator new(
+            std::size_t size, Ex const&, Handlers const&,
+            std::pmr::memory_resource* mr)
         {
             auto total = size + sizeof(mr);
             void* raw = mr->allocate(total, alignof(std::max_align_t));
@@ -277,11 +278,9 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
 /// Coroutine body for run_async_trampoline - invokes handlers then destroys task.
 template<class Ex, class Handlers, class Alloc>
 run_async_trampoline<Ex, Handlers, Alloc>
-make_trampoline(Ex ex, Handlers h, Alloc a)
+make_trampoline(Ex, Handlers, Alloc)
 {
-    (void)ex;
-    (void)h;
-    (void)a;
+    // promise_type ctor steals the parameters
     auto& p = co_await get_promise_awaiter<
         typename run_async_trampoline<Ex, Handlers, Alloc>::promise_type>{};
     
@@ -338,11 +337,17 @@ public:
         Ex ex,
         std::stop_token st,
         Handlers h,
-        Alloc a)
+        Alloc a) noexcept
         : tr_(detail::make_trampoline<Ex, Handlers, Alloc>(
             std::move(ex), std::move(h), std::move(a)))
         , st_(std::move(st))
     {
+        if constexpr (!std::is_same_v<Alloc, std::pmr::memory_resource*>)
+        {
+            static_assert(
+                std::is_nothrow_move_constructible_v<Alloc>,
+                "Allocator must be nothrow move constructible");
+        }
         // Set TLS before task argument is evaluated
         current_frame_allocator() = tr_.h_.promise().get_resource();
     }
