@@ -76,7 +76,7 @@ The standardization strategy follows from this layering. Capy is the foundation 
 
 ## Resources
 
-- Design paper: link:papers/io-awaitables.md[IoAwaitables: A Coroutines-First Execution Model]
+- Design paper: link:papers/B1000.io-awaitables.md[IoAwaitables: A Coroutines-First Execution Model]
 - GitHub: https://github.com/cppalliance/capy
 - Documentation: https://develop.capy.cpp.al/
 - Boost.Corosio: https://github.com/cppalliance/corosio
@@ -91,5 +91,5 @@ The team is also happy to receive feedback on the design, the implementation, an
 This is Boost doing what Boost does best: building the libraries that {cpp} needs, proving them in practice, and paving the way for standardization.
 
 Distributed under the Boost Software License, Version 1.0.
-(See accompanying file [LICENSE_1_0.txt](LICENSE_1_0.txt) or copy at
+(See the accompanying link:LICENSE[LICENSE] or copy at
 https://www.boost.org/LICENSE_1_0.txt)
