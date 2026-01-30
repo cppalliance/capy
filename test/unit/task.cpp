@@ -15,6 +15,8 @@
 #include "test_helpers.hpp"
 
 #include <atomic>
+#include <chrono>
+#include <thread>
 #include <queue>
 #include <stdexcept>
 #include <string>
@@ -1120,19 +1122,7 @@ struct task_test
         {
             auto l = []() -> capy::task<void> 
                     {
-                        struct self_destroy 
-                        {
-                            bool await_ready() {return false;}
-
-                            std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, capy::executor_ref, std::stop_token)
-                            {
-                                // one wouldn't expect this to happen, but it should not cause UB
-                                h.destroy();
-                                return std::noop_coroutine();
-                            }
-                            void await_resume() {}
-                        };
-                        co_await self_destroy{};
+                        co_await self_destroy_awaitable{};
                     };
             int dispatch_count = 0;
             test_executor ex(dispatch_count);
@@ -1146,6 +1136,41 @@ struct task_test
         // CHECK if the handlers got destroyed - since we're doing a hard shutdown here, it's ok if they were to live on in the executor.
         BOOST_TEST(td1 == true);
         BOOST_TEST(td2 == true);
+    }
+
+    void testStop()
+    {
+
+        std::atomic<int> state = 0;
+        
+        auto l = [&]() -> capy::task<void> 
+        {
+            struct scope_check
+            {
+                std::atomic<int> &state;
+                ~scope_check() { BOOST_TEST(state == 2);}
+            } sc{state};
+            
+            state = 1;
+            co_await stop_only_awaitable{};
+            state = 2;
+        };
+
+
+        {
+            std::jthread jt(
+                [&](std::stop_token st)
+                {
+                    int dispatch_count = 0;
+                    test_executor ex(dispatch_count);
+                    run_async(ex, st)(l());
+                }
+            );
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            BOOST_TEST(state == 1);
+        }
+
+        BOOST_TEST(state == 2);
     }
 
     void
@@ -1188,6 +1213,7 @@ struct task_test
 
         testTearDown();
         testDelete();
+        testStop();
     }
 };
 

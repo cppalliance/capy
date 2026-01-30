@@ -15,6 +15,9 @@
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
+#include <optional>
+#include <stop_token>
+
 #include "test_suite.hpp"
 
 #include <chrono>
@@ -118,6 +121,7 @@ struct test_executor
 
 static_assert(Executor<test_executor>);
 
+
 //----------------------------------------------------------
 // Wait Utilities
 //----------------------------------------------------------
@@ -196,6 +200,47 @@ thread_name_starts_with(char const* name_prefix)
 }
 
 #endif // BOOST_CAPY_TEST_CAN_GET_THREAD_NAME
+
+struct self_destroy_awaitable
+{
+    bool await_ready() {return false;}
+
+    template<typename Executor>
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h,
+                                          const Executor &,
+                                          std::stop_token)
+    {
+        // one wouldn't expect this to happen, but it should not cause UB
+        h.destroy();
+        return std::noop_coroutine();
+    }
+    void await_resume() {}
+};
+
+
+// test awaitable that must be stopped in order to resume
+struct stop_only_awaitable
+{
+    stop_only_awaitable() noexcept = default;
+    stop_only_awaitable(stop_only_awaitable && ) noexcept {}
+
+    std::optional<std::stop_callback<std::coroutine_handle<>>> stop_cb;
+
+    bool await_ready() {return false;}
+
+    template<typename Executor>
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h,
+                                          const Executor &,
+                                          std::stop_token tk)
+    {
+        if (tk.stop_requested())
+            return h;
+        stop_cb.emplace(tk, h);
+        return std::noop_coroutine();
+    }
+    void await_resume() {}
+};
+
 
 } // capy
 } // boost
