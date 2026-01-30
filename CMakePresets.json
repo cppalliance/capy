@@ -5,6 +5,25 @@
         "minor": 20,
         "patch": 0
     },
-    "configurePresets": [],
-    "buildPresets": []
+    "configurePresets": [
+        {
+            "name": "standalone",
+            "displayName": "Standalone Build",
+            "description": "Build capy standalone (no Boost tree required)",
+            "generator": "Ninja",
+            "binaryDir": "${sourceDir}/out/${presetName}",
+            "cacheVariables": {
+                "CMAKE_CXX_STANDARD": "20",
+                "CMAKE_BUILD_TYPE": "Release",
+                "BOOST_CAPY_BUILD_TESTS": "OFF",
+                "BOOST_CAPY_BUILD_EXAMPLES": "OFF"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "standalone",
+            "configurePreset": "standalone"
+        }
+    ]
 }
