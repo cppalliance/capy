@@ -548,6 +548,11 @@ any_read_source::free_frame(void*, std::size_t)
     // Keep the frame cached for reuse
 }
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
+#endif
+
 template<ReadSource S>
 any_read_source::read_op
 any_read_source::read_coro(
@@ -562,6 +567,10 @@ any_read_source::read_coro(
     *out_ec = err;
     *out_n = bytes;
 }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 template<ReadSource S>
 coro

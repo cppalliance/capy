@@ -599,6 +599,11 @@ any_buffer_source::free_frame(void*, std::size_t)
     // Keep the frame cached for reuse
 }
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
+#endif
+
 template<BufferSource S>
 any_buffer_source::pull_op
 any_buffer_source::pull_coro(
@@ -614,6 +619,10 @@ any_buffer_source::pull_coro(
     *out_ec = err;
     *out_count = count;
 }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 template<BufferSource S>
 coro

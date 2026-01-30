@@ -537,6 +537,11 @@ any_write_stream::free_frame(void*, std::size_t)
     // Keep the frame cached for reuse
 }
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
+#endif
+
 template<WriteStream S>
 any_write_stream::write_op
 any_write_stream::write_coro(
@@ -551,6 +556,10 @@ any_write_stream::write_coro(
     *out_ec = err;
     *out_n = bytes;
 }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 template<WriteStream S>
 coro

@@ -709,6 +709,11 @@ any_buffer_sink::do_prepare_impl(
     return s.prepare(arr, max_count);
 }
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
+#endif
+
 template<BufferSink S>
 any_buffer_sink::commit_op
 any_buffer_sink::commit_coro(
@@ -744,6 +749,10 @@ any_buffer_sink::commit_eof_coro(
     auto [err] = co_await sink.commit_eof();
     *out_ec = err;
 }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 template<BufferSink S>
 coro

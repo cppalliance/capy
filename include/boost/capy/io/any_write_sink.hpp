@@ -791,6 +791,11 @@ any_write_sink::free_frame(void*, std::size_t)
     // Keep the frame cached for reuse
 }
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
+#endif
+
 template<WriteSink S>
 any_write_sink::write_op
 any_write_sink::write_coro(
@@ -833,6 +838,10 @@ any_write_sink::write_eof_coro(
 
     *out_ec = err;
 }
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 template<WriteSink S>
 coro
