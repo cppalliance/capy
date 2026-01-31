@@ -14,7 +14,7 @@
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 
-#include "test_suite.hpp"
+#include "test_helpers.hpp"
 
 #include <atomic>
 #include <queue>
@@ -51,17 +51,12 @@ namespace capy {
 // Test Executors
 //----------------------------------------------------------
 
-/// Minimal test context.
-class test_context : public execution_context
-{
-};
-
 /// Synchronous executor - executes inline.
 struct sync_executor
 {
     int* dispatch_count_ = nullptr;
-    test_context* ctx_ = nullptr;
-    static test_context default_ctx_;
+    test_io_context* ctx_ = nullptr;
+    static test_io_context default_ctx_;
 
     sync_executor() = default;
 
@@ -96,7 +91,7 @@ struct sync_executor
     }
 };
 
-test_context sync_executor::default_ctx_;
+test_io_context sync_executor::default_ctx_;
 
 static_assert(Executor<sync_executor>);
 
@@ -104,8 +99,8 @@ static_assert(Executor<sync_executor>);
 struct queue_executor
 {
     std::queue<coro>* queue_;
-    test_context* ctx_ = nullptr;
-    static test_context default_ctx_;
+    test_io_context* ctx_ = nullptr;
+    static test_io_context default_ctx_;
 
     explicit queue_executor(std::queue<coro>& q)
         : queue_(&q)
@@ -137,7 +132,7 @@ struct queue_executor
     }
 };
 
-test_context queue_executor::default_ctx_;
+test_io_context queue_executor::default_ctx_;
 
 static_assert(Executor<queue_executor>);
 

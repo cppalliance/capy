@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
+#include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
-#include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/run.hpp>
 #include <boost/capy/ex/strand.hpp>
 #include <boost/capy/task.hpp>
@@ -21,25 +21,30 @@ using namespace boost::capy;
 
 //-----------------------------------------------
 //
-// Test Execution Context
+// Bench Execution Context
 //
 // A minimal execution context for benchmarking.
 //
 //-----------------------------------------------
 
-class test_context : public execution_context
+class bench_io_context : public execution_context
 {
 public:
-    ~test_context()
+    class executor_type;
+
+    ~bench_io_context()
     {
         shutdown();
         destroy();
     }
+
+    executor_type
+    get_executor() noexcept;
 };
 
 //-----------------------------------------------
 //
-// Test Executor
+// Bench Executor
 //
 // A minimal executor that satisfies the capy
 // Executor concept. Dispatches inline for
@@ -47,22 +52,22 @@ public:
 //
 //-----------------------------------------------
 
-class test_executor
+class bench_io_context::executor_type
 {
-    test_context* ctx_;
+    bench_io_context* ctx_;
 
 public:
-    explicit test_executor(test_context& ctx) noexcept
+    explicit executor_type(bench_io_context& ctx) noexcept
         : ctx_(&ctx)
     {
     }
 
-    test_context& context() const noexcept
+    bench_io_context& context() const noexcept
     {
         return *ctx_;
     }
 
-    bool operator==(test_executor const& other) const noexcept
+    bool operator==(executor_type const& other) const noexcept
     {
         return ctx_ == other.ctx_;
     }
@@ -92,6 +97,15 @@ public:
         h.resume();
     }
 };
+
+inline bench_io_context::executor_type
+bench_io_context::get_executor() noexcept
+{
+    return executor_type(*this);
+}
+
+static_assert(Executor<bench_io_context::executor_type>);
+static_assert(ExecutionContext<bench_io_context>);
 
 //-----------------------------------------------
 //
@@ -251,14 +265,14 @@ int main()
 {
     constexpr std::size_t iterations = 1000000;
 
-    test_context ctx1;
-    test_context ctx2;
+    bench_io_context ctx1;
+    bench_io_context ctx2;
 
-    test_executor ex1(ctx1);
-    test_executor ex2(ctx2);
+    auto ex1 = ctx1.get_executor();
+    auto ex2 = ctx2.get_executor();
 
-    strand<test_executor> strand1(ex1);
-    strand<test_executor> strand2(ex2);
+    strand<bench_io_context::executor_type> strand1(ex1);
+    strand<bench_io_context::executor_type> strand2(ex2);
 
     foreign_awaitable foreign;
 

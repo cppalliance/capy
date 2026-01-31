@@ -11,6 +11,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/ex/thread_pool.hpp>
 
+#include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 
 #include "test_helpers.hpp"
@@ -23,9 +24,11 @@ namespace capy {
 
 namespace {
 
-// Verify Executor concept at compile time
+// Verify concepts at compile time
 static_assert(Executor<thread_pool::executor_type>,
     "thread_pool::executor_type must satisfy Executor concept");
+static_assert(ExecutionContext<thread_pool>,
+    "thread_pool must satisfy ExecutionContext concept");
 
 // Simple service for testing inherited functionality
 struct test_service : execution_context::service

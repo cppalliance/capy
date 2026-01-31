@@ -11,6 +11,7 @@
 #ifndef BOOST_CAPY_TEST_HELPERS_HPP
 #define BOOST_CAPY_TEST_HELPERS_HPP
 
+#include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -42,18 +43,10 @@ namespace capy {
 // Test Utilities
 //----------------------------------------------------------
 
-class test_context : public execution_context
-{
-public:
-    int id = 0;
-};
+class test_io_context;
 
-inline test_context&
-default_test_context() noexcept
-{
-    static test_context ctx;
-    return ctx;
-}
+inline test_io_context&
+default_test_io_context() noexcept;
 
 /** Simple synchronous executor for testing.
 
@@ -65,12 +58,12 @@ struct test_executor
 {
     int id_ = 0;
     int* dispatch_count_ = nullptr;
-    test_context* ctx_ = nullptr;
+    test_io_context* ctx_ = nullptr;
 
     test_executor() = default;
 
     explicit
-    test_executor(test_context& ctx) noexcept
+    test_executor(test_io_context& ctx) noexcept
         : ctx_(&ctx)
     {
     }
@@ -95,11 +88,8 @@ struct test_executor
                ctx_ == other.ctx_;
     }
 
-    execution_context&
-    context() const noexcept
-    {
-        return ctx_ ? *ctx_ : default_test_context();
-    }
+    test_io_context&
+    context() const noexcept;
 
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
@@ -119,7 +109,40 @@ struct test_executor
     }
 };
 
+/** Test execution context satisfying ExecutionContext.
+
+    Provides a minimal execution context for testing that
+    satisfies the ExecutionContext concept requirements.
+*/
+class test_io_context : public execution_context
+{
+public:
+    using executor_type = test_executor;
+
+    int id = 0;
+
+    executor_type
+    get_executor() noexcept
+    {
+        return test_executor(*this);
+    }
+};
+
+inline test_io_context&
+default_test_io_context() noexcept
+{
+    static test_io_context ctx;
+    return ctx;
+}
+
+inline test_io_context&
+test_executor::context() const noexcept
+{
+    return ctx_ ? *ctx_ : default_test_io_context();
+}
+
 static_assert(Executor<test_executor>);
+static_assert(ExecutionContext<test_io_context>);
 
 
 //----------------------------------------------------------

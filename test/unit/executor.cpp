@@ -22,8 +22,8 @@ struct executor_test
     {
         // executor - equality comparison
         {
-            test_context ctx1;
-            test_context ctx2;
+            test_io_context ctx1;
+            test_io_context ctx2;
             test_executor e1(ctx1);
             test_executor e2(ctx1);
             test_executor e3(ctx2);
@@ -36,7 +36,7 @@ struct executor_test
 
         // executor - context() returns same reference for equal executors
         {
-            test_context ctx;
+            test_io_context ctx;
             test_executor e1(ctx);
             test_executor e2(ctx);
 
@@ -47,7 +47,7 @@ struct executor_test
 
         // executor - copy preserves context
         {
-            test_context ctx;
+            test_io_context ctx;
             test_executor e1(ctx);
             test_executor e2(e1);
 

@@ -532,7 +532,7 @@ struct when_all_test
     struct tracking_executor
     {
         std::atomic<int>* dispatch_count_;
-        test_context* ctx_ = nullptr;
+        test_io_context* ctx_ = nullptr;
 
         explicit tracking_executor(std::atomic<int>& count)
             : dispatch_count_(&count)
@@ -544,9 +544,9 @@ struct when_all_test
             return dispatch_count_ == other.dispatch_count_;
         }
 
-        test_context& context() const noexcept
+        test_io_context& context() const noexcept
         {
-            return ctx_ ? *ctx_ : default_test_context();
+            return ctx_ ? *ctx_ : default_test_io_context();
         }
 
         void on_work_started() const noexcept {}

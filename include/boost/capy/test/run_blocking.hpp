@@ -11,8 +11,8 @@
 #define BOOST_CAPY_TEST_RUN_BLOCKING_HPP
 
 #include <boost/capy/coro.hpp>
+#include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/system_context.hpp>
 
@@ -27,6 +27,28 @@
 namespace boost {
 namespace capy {
 namespace test {
+
+struct inline_executor;
+
+/** Execution context for inline blocking execution.
+
+    This execution context is used with inline_executor for
+    blocking synchronous execution. It satisfies the
+    ExecutionContext concept requirements.
+
+    @see inline_executor
+    @see run_blocking
+*/
+class inline_context : public execution_context
+{
+public:
+    using executor_type = inline_executor;
+
+    inline_context() = default;
+
+    executor_type
+    get_executor() noexcept;
+};
 
 /** Synchronous executor that executes inline and disallows posting.
 
@@ -53,10 +75,9 @@ struct inline_executor
 
         @return A reference to a function-local static `inline_context`.
     */
-    execution_context&
+    inline_context&
     context() const noexcept
     {
-        struct inline_context : public execution_context {};
         static inline_context ctx;
         return ctx;
     }
@@ -97,7 +118,14 @@ struct inline_executor
     }
 };
 
+inline inline_context::executor_type
+inline_context::get_executor() noexcept
+{
+    return inline_executor{};
+}
+
 static_assert(Executor<inline_executor>);
+static_assert(ExecutionContext<inline_context>);
 
 //----------------------------------------------------------
 //

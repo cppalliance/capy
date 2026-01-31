@@ -11,7 +11,7 @@
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 
-#include "test_suite.hpp"
+#include "test_helpers.hpp"
 
 #include <atomic>
 #include <thread>
@@ -21,13 +21,6 @@ namespace boost {
 namespace capy {
 
 namespace {
-
-// Test execution context that exposes protected constructor
-class test_context : public execution_context
-{
-public:
-    test_context() = default;
-};
 
 // Simple service for basic tests
 struct simple_service : execution_context::service
@@ -138,14 +131,14 @@ struct execution_context_test
     {
         // Basic construction and destruction
         {
-            test_context ctx;
+            test_io_context ctx;
         }
     }
 
     void
     testHasService()
     {
-        test_context ctx;
+        test_io_context ctx;
 
         // Initially no services
         BOOST_TEST(!ctx.has_service<simple_service>());
@@ -158,7 +151,7 @@ struct execution_context_test
     void
     testFindService()
     {
-        test_context ctx;
+        test_io_context ctx;
 
         // Initially returns nullptr
         BOOST_TEST_EQ(ctx.find_service<simple_service>(), nullptr);
@@ -171,7 +164,7 @@ struct execution_context_test
     void
     testUseService()
     {
-        test_context ctx;
+        test_io_context ctx;
 
         // Creates service if not present
         auto& svc1 = ctx.use_service<simple_service>();
@@ -185,7 +178,7 @@ struct execution_context_test
     void
     testMakeService()
     {
-        test_context ctx;
+        test_io_context ctx;
 
         // Creates service with value
         auto& svc = ctx.make_service<simple_service>(42);
@@ -203,7 +196,7 @@ struct execution_context_test
     void
     testMakeServiceMultipleArgs()
     {
-        test_context ctx;
+        test_io_context ctx;
 
         auto& svc = ctx.make_service<multi_arg_service>(
             123, std::string("hello"), 3.14);
@@ -216,7 +209,7 @@ struct execution_context_test
     void
     testKeyType()
     {
-        test_context ctx;
+        test_io_context ctx;
 
         // Create derived service
         auto& svc = ctx.make_service<derived_service>(100);
@@ -241,7 +234,7 @@ struct execution_context_test
     void
     testKeyTypeUseService()
     {
-        test_context ctx;
+        test_io_context ctx;
 
         // use_service creates via derived type
         auto& svc = ctx.use_service<derived_service>();
@@ -257,7 +250,7 @@ struct execution_context_test
         bool shutdown_called = false;
 
         {
-            test_context ctx;
+            test_io_context ctx;
             ctx.make_service<tracking_service>(shutdown_called);
             BOOST_TEST(!shutdown_called);
         }
@@ -269,7 +262,7 @@ struct execution_context_test
     void
     testMultipleServices()
     {
-        test_context ctx;
+        test_io_context ctx;
 
         ctx.make_service<simple_service>(1);
         ctx.make_service<multi_arg_service>(2, "test", 2.0);
@@ -284,7 +277,7 @@ struct execution_context_test
     void
     testNestedServiceCreation()
     {
-        test_context ctx;
+        test_io_context ctx;
 
         // nested_service creates simple_service in its constructor
         ctx.use_service<nested_service>();
@@ -297,7 +290,7 @@ struct execution_context_test
     void
     testConcurrentAccess()
     {
-        test_context ctx;
+        test_io_context ctx;
         std::atomic<int> success_count{0};
         constexpr int num_threads = 8;
 
@@ -327,7 +320,7 @@ struct execution_context_test
     void
     testGetFrameAllocator()
     {
-        test_context ctx;
+        test_io_context ctx;
 
         // Default returns non-null (recycling allocator)
         auto* mr = ctx.get_frame_allocator();
@@ -340,7 +333,7 @@ struct execution_context_test
     void
     testSetFrameAllocatorRawPointer()
     {
-        test_context ctx;
+        test_io_context ctx;
 
         // Create a custom memory resource
         std::pmr::monotonic_buffer_resource custom;
@@ -355,7 +348,7 @@ struct execution_context_test
     void
     testSetFrameAllocatorTemplate()
     {
-        test_context ctx;
+        test_io_context ctx;
 
         // Get default allocator for comparison
         auto* default_mr = ctx.get_frame_allocator();

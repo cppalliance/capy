@@ -31,7 +31,7 @@ namespace {
 struct queuing_executor
 {
     std::queue<coro>* queue_;
-    test_context* ctx_ = nullptr;
+    test_io_context* ctx_ = nullptr;
 
     explicit queuing_executor(std::queue<coro>& q)
         : queue_(&q)
@@ -45,7 +45,7 @@ struct queuing_executor
 
     execution_context& context() const noexcept
     {
-        return ctx_ ? *ctx_ : default_test_context();
+        return ctx_ ? *ctx_ : default_test_io_context();
     }
 
     void on_work_started() const noexcept {}
