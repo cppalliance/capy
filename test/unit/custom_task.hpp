@@ -42,7 +42,7 @@ struct custom_task_result_base<void>
 /** A custom task type that satisfies IoLaunchableTask.
 
     This task is intentionally NOT capy::task to prove that
-    run_async and run_on work with any IoLaunchableTask type.
+    run_async and run work with any IoLaunchableTask type.
 */
 template<typename T>
 struct custom_task

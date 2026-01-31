@@ -24,7 +24,7 @@ namespace capy {
 
     A task satisfies `IoLaunchableTask` if it satisfies @ref IoAwaitableTask
     and provides the additional interface needed by launch utilities like
-    `run_async` and `run_on`:
+    `run_async` and `run`:
 
     @li `handle()` — returns the typed coroutine handle
     @li `release()` — releases ownership (task won't destroy frame)
@@ -45,7 +45,7 @@ namespace capy {
 
     @see IoAwaitableTask
     @see run_async
-    @see run_on
+    @see run
 */
 template<typename T>
 concept IoLaunchableTask =

@@ -266,5 +266,5 @@ You can't force HALO, but you can enable it:
 
 == Next Steps
 
-* xref:launching.adoc[Launching Coroutines] — `run_async` and `run_on` in detail
+* xref:launching.adoc[Launching Coroutines] — `run_async` and `run` in detail
 * xref:../library/frame-allocators.adoc[Frame Allocators] — Advanced allocation patterns

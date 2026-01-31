@@ -181,13 +181,13 @@ run_async(pool.get_executor())(root());
 
 All implicit—no manual passing required.
 
-== Changing Affinity with run_on
+== Changing Affinity with run
 
 Sometimes a subtree needs a different executor:
 
 [source,cpp]
 ----
-#include <boost/capy/ex/run_on.hpp>
+#include <boost/capy/ex/run.hpp>
 
 task<void> compute_heavy()
 {
@@ -202,14 +202,14 @@ task<void> io_task()
     auto data = co_await read_data();
 
     // Switch to compute_pool for heavy work
-    co_await run_on(compute_pool.get_executor(), compute_heavy());
+    co_await run(compute_pool.get_executor())(compute_heavy());
 
     // Back on io_pool's executor
     co_await write_results();
 }
 ----
 
-`run_on(ex, task)` binds `task` to executor `ex`, overriding inheritance.
+`run(ex)(task)` binds `task` to executor `ex`, overriding inheritance.
 
 === Flow Diagram Notation
 
@@ -312,7 +312,7 @@ actually suspends—`await_ready()` returns `true`.
 | `post(h)`
 | Always queue, never inline
 
-| `run_on(ex, task)`
+| `run(ex)(task)`
 | Override inherited executor for a subtask
 
 | `this_coro::executor`
@@ -322,4 +322,4 @@ actually suspends—`await_ready()` returns `true`.
 == Next Steps
 
 * xref:stop-token.adoc[The Stop Token] — Cancellation propagation
-* xref:launching.adoc[Launching Coroutines] — `run_async` and `run_on` details
+* xref:launching.adoc[Launching Coroutines] — `run_async` and `run` details

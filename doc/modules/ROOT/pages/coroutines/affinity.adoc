@@ -105,21 +105,21 @@ resumes through that executor.
 * The I/O captures `ex` and resumes through it
 * When `c2` completes, `c1` resumes via symmetric transfer (same executor)
 
-== Changing Affinity with run_on
+== Changing Affinity with run
 
 Sometimes you need a child coroutine to run on a _different_ executor.
-The `run_on` function changes affinity for a subtree:
+The `run` function changes affinity for a subtree:
 
 [source,cpp]
 ----
-#include <boost/capy/ex/run_on.hpp>
+#include <boost/capy/ex/run.hpp>
 
 task<void> parent()
 {
     // This task runs on ex1 (inherited)
 
     // Run child on ex2 instead
-    co_await run_on(ex2, child_task());
+    co_await run(ex2)(child_task());
 
     // Back on ex1 after child completes
 }
@@ -135,7 +135,7 @@ The execution sequence:
 
 1. `c1` launches on `ex1`
 2. `c2` continues on `ex1` (inherited)
-3. `run_on` binds `c3` to `ex2`
+3. `run` binds `c3` to `ex2`
 4. I/O captures `ex2`
 5. I/O completes → `c3` resumes through `ex2`
 6. `c3` completes → `c2` resumes through `ex1` (caller's executor)
@@ -193,15 +193,15 @@ returns `true`.
 If no executor was set (e.g., in a default-constructed promise), the returned
 `executor_ref` will be empty (`operator bool()` returns `false`).
 
-== When NOT to Use run_on
+== When NOT to Use run
 
-Use `run_on` when:
+Use `run` when:
 
 * You need CPU-bound work on a dedicated thread pool
 * You need I/O on a specific context
 * You're integrating with a library that requires a specific executor
 
-Do NOT use `run_on` when:
+Do NOT use `run` when:
 
 * The child task should inherit the parent's executor (just `co_await` directly)
 * You're worried about performance — the context switch cost is already paid
@@ -219,7 +219,7 @@ Do NOT use `run_on` when:
 | Propagation
 | Children inherit affinity from parents via `co_await`
 
-| `run_on`
+| `run`
 | Explicitly binds a child to a different executor
 
 | `this_coro::executor`

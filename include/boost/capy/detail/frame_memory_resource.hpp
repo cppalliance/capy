@@ -59,6 +59,12 @@ public:
     {
     }
 
+    /** Get the memory resource pointer.
+
+        @return Pointer to this memory resource.
+    */
+    std::pmr::memory_resource* get() noexcept { return this; }
+
 protected:
     void*
     do_allocate(std::size_t bytes, std::size_t) override

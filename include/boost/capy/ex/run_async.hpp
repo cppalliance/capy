@@ -11,6 +11,7 @@
 #define BOOST_CAPY_RUN_ASYNC_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/detail/run.hpp>
 #include <boost/capy/detail/run_callbacks.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_launchable_task.hpp>
@@ -27,13 +28,6 @@
 namespace boost {
 namespace capy {
 namespace detail {
-
-/// Concept for standard Allocator types.
-template<class A>
-concept Allocator = requires(A a, std::size_t n) {
-    typename A::value_type;
-    { a.allocate(n) } -> std::same_as<typename A::value_type*>;
-};
 
 /// Function pointer type for type-erased frame deallocation.
 using dealloc_fn = void(*)(void*, std::size_t);

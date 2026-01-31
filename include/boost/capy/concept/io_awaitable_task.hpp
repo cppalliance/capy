@@ -32,7 +32,7 @@ namespace capy {
     @li `stop_token()` — retrieves the stored stop token
 
     This concept formalizes the contract between launch functions
-    (`run_async`, `run_on`) and task types. Launch functions are the
+    (`run_async`, `run`) and task types. Launch functions are the
     root of a coroutine chain and must set context directly on the
     promise rather than going through `await_suspend`.
 

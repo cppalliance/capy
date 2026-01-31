@@ -156,7 +156,7 @@ coro_lock cm;
 
 task<void> multi_threaded_safe()
 {
-    co_await run_on(s, [&]() -> task<void> {
+    co_await run(s)([&]() -> task<void> {
         auto guard = co_await cm.scoped_lock();
         // Now safe: strand serializes, mutex excludes
         co_return;

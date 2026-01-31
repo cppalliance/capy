@@ -46,7 +46,7 @@
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/ex/run_async.hpp>
-#include <boost/capy/ex/run_on.hpp>
+#include <boost/capy/ex/run.hpp>
 #include <boost/capy/ex/strand.hpp>
 #include <boost/capy/ex/system_context.hpp>
 #include <boost/capy/ex/thread_pool.hpp>

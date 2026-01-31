@@ -137,10 +137,10 @@ graph TD
 - Handler overloads for results and exceptions
 - Reference: `<boost/capy/ex/run_async.hpp>`
 
-#### `run_on`
+#### `run`
 - Executor hopping within coroutine code
 - Binding a child task to a different executor
-- Reference: `<boost/capy/ex/run_on.hpp>`
+- Reference: `<boost/capy/ex/run.hpp>`
 
 ## Section: Capy Library
 

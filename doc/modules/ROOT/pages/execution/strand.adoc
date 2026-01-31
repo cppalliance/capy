@@ -93,8 +93,8 @@ strand s(pool.get_executor());
 // Use strand with run_async
 run_async(s)(my_task());
 
-// Use strand with run_on
-co_await run_on(s, other_task());
+// Use strand with run
+co_await run(s)(other_task());
 ----
 
 == Post vs Dispatch
@@ -157,7 +157,7 @@ public:
     // Increment must run on the strand
     task<void> increment()
     {
-        co_await run_on(strand_, [this]() -> task<void> {
+        co_await run(strand_)([this]() -> task<void> {
             ++value_;  // Safe: only one coroutine at a time
             co_return;
         }());
@@ -166,7 +166,7 @@ public:
     // Read also runs on the strand
     task<int> get()
     {
-        co_return co_await run_on(strand_, [this]() -> task<int> {
+        co_return co_await run(strand_)([this]() -> task<int> {
             co_return value_;
         }());
     }
@@ -268,5 +268,5 @@ Do NOT use strands when:
 
 == Next Steps
 
-* xref:../coroutines/affinity.adoc[Executor Affinity] — How `run_on` changes executors
+* xref:../coroutines/affinity.adoc[Executor Affinity] — How `run` changes executors
 * xref:thread-pool.adoc[Thread Pool] — The underlying executor

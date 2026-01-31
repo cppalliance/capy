@@ -10,7 +10,7 @@
 = Launching Coroutines
 
 This section explains how to start coroutines from non-coroutine code using
-`run_async` and how to change executor affinity with `run_on`.
+`run_async` and how to change executor affinity with `run`.
 
 == run_async
 
@@ -139,26 +139,26 @@ The stop token propagates to all child coroutines.
 | `run_async(ex, allocator)(task)`
 |===
 
-== run_on
+== run
 
-The `run_on` function changes executor affinity for a subtask:
+The `run` function changes executor affinity for a subtask:
 
 [source,cpp]
 ----
-#include <boost/capy/ex/run_on.hpp>
+#include <boost/capy/ex/run.hpp>
 
 task<void> io_work()
 {
     // Running on io_executor
 
     // Switch to compute_executor for CPU work
-    co_await run_on(compute_executor, cpu_heavy_task());
+    co_await run(compute_executor)(cpu_heavy_task());
 
     // Back on io_executor
 }
 ----
 
-=== Why run_on?
+=== Why run?
 
 By default, child tasks inherit the parent's executor. Sometimes you need
 a different executor:
@@ -171,7 +171,7 @@ a different executor:
 
 [source,cpp]
 ----
-co_await run_on(target_executor, child_task());
+co_await run(target_executor)(child_task());
 ----
 
 The child task:
@@ -201,7 +201,7 @@ task<void> pipeline()  // On io_pool
     auto d = co_await fetch();  // fetch runs on io_pool
 
     // process runs on compute_pool
-    auto r = co_await run_on(compute_pool.get_executor(), process(d));
+    auto r = co_await run(compute_pool.get_executor())(process(d));
 
     // Back on io_pool
     co_await save_result(r);
@@ -219,7 +219,7 @@ fetch (io_pool, inherited)
     ▼ completes
 pipeline resumes (io_pool)
     │
-    ▼ co_await run_on(compute_pool, process(d))
+    ▼ co_await run(compute_pool)(process(d))
 process (compute_pool, explicit binding)
     │
     ▼ completes
@@ -310,7 +310,7 @@ all executor types.
 | `run_async(ex, token)(task)`
 | Start with cancellation support
 
-| `run_on(ex, task)`
+| `run(ex)(task)`
 | Change affinity for a subtask (use inside coroutines)
 
 | Two-call syntax

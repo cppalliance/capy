@@ -9,7 +9,7 @@
 
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/ex/run_on.hpp>
+#include <boost/capy/ex/run.hpp>
 #include <boost/capy/ex/strand.hpp>
 #include <boost/capy/task.hpp>
 
@@ -208,7 +208,7 @@ task<int> switch_c3(D /*ex2*/, foreign_awaitable& f)
 template<typename D>
 task<int> switch_c2(D ex2, foreign_awaitable& f)
 {
-    co_return co_await run_on(ex2, switch_c3(ex2, f));
+    co_return co_await run(ex2)(switch_c3(ex2, f));
 }
 
 template<typename D>
@@ -320,14 +320,14 @@ int main()
         (void)result;
     });
 
-    std::cout << "\n=== run_on benchmarks ===\n\n";
+    std::cout << "\n=== run benchmarks ===\n\n";
 
     //-----------------------------------------------
     // Flow: !c1 -> c2 -> !c3 -> c4
     //                    \
     //                      f
     //-----------------------------------------------
-    run_benchmark("run_on executor switch + foreign", iterations, [&]{
+    run_benchmark("run executor switch + foreign", iterations, [&]{
         int result = 0;
         run_async(ex1, [&](int v){ result = v; })(switch_c1(ex2, foreign));
         (void)result;
@@ -338,7 +338,7 @@ int main()
     //                    \
     //                      f
     //-----------------------------------------------
-    run_benchmark("run_on strand switch + foreign", iterations, [&]{
+    run_benchmark("run strand switch + foreign", iterations, [&]{
         int result = 0;
         run_async(strand1, [&](int v){ result = v; })(switch_c1(strand2, foreign));
         (void)result;
