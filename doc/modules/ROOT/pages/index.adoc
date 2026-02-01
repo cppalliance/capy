@@ -1,99 +1,68 @@
-//
-// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
-//
-// Distributed under the Boost Software License, Version 1.0. (See accompanying
-// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
-//
-// Official repository: https://github.com/cppalliance/capy
-//
+= Capy
 
-= Boost.Capy
-
-Boost.Capy is the foundation that C++20 coroutines need for buffer-oriented I/O.
-It solves the completion-context problem: ensuring your coroutine always resumes
-on your designated executor in a single-threaded or multi-threaded environment,
-while providing buffer sequences, stream concepts, synchronization, and test
-mocks that I/O libraries require.
+Capy abstracts away sockets, files, and asynchrony with type-erased streams and buffer sequences—code compiles fast because the implementation is hidden. It provides the framework for concurrent algorithms that transact in buffers of memory: networking, serial ports, console, timers, and any platform I/O. This is only possible because Capy is coroutine-only, enabling optimizations and ergonomics that hybrid approaches must sacrifice.
 
 == What This Library Does
 
-* **IoAwaitable protocol** — automatic executor affinity through every `co_await`
-* **Lazy coroutine tasks** with forward-propagating stop tokens and cancellation
-* **Buffer sequences** — `const_buffer`, `mutable_buffer`, dynamic buffers, and algorithms for scatter/gather I/O
-* **Stream concepts** — `ReadStream`, `WriteStream`, `ReadSource`, `WriteSink` for generic buffer-oriented operations
-* **Concurrent composition** via `when_all`, `when_any` with structured error propagation
-* **Execution contexts** — thread pool with service management
-* **Strand** for safe concurrent access without mutexes
-* **Async synchronization** — `coro_lock`, `async_event`
-* **Frame allocation recycling** for zero steady-state allocations
-* **Test utilities** — mock streams, mock sources/sinks, and error injection
+* *Lazy coroutine tasks* — `task<T>` with forward-propagating stop tokens and automatic cancellation
+* *Buffer sequences* — taken straight from Asio and improved
+* *Stream concepts* — `ReadStream`, `WriteStream`, `ReadSource`, `WriteSink`, `BufferSource`, `BufferSink`
+* *Type-erased streams* — `any_stream`, `any_read_stream`, `any_write_stream` for fast compilation
+* *Concurrency facilities* — executors, strands, thread pools, `when_all`, `when_any`
+* *Test utilities* — mock streams, mock sources/sinks, error injection
 
 == What This Library Does Not Do
 
-* **Networking primitives** — no sockets, HTTP, or protocol implementations
-* **Platform-specific event loops** — integrate with io_uring, IOCP, or your platform's I/O framework
-* **The sender/receiver model** — Capy uses the _IoAwaitable_ protocol, not `std::execution`
+* *Networking* — no sockets, acceptors, or DNS; that's what Corosio provides
+* *Protocols* — no HTTP, WebSocket, or TLS; see the Http and Beast2 libraries
+* *Platform event loops* — no io_uring, IOCP, epoll, or kqueue; Capy is the layer above
+* *Callbacks or futures* — coroutine-only means no other continuation styles
+* *Sender/receiver* — Capy uses the IoAwaitable protocol, not `std::execution`
 
 == Target Audience
 
-**Library authors** — Use stream concepts (`ReadStream`, `WriteStream`,
-`ReadSource`, `WriteSink`), algorithms (`read`, `write`), buffer sequences,
-and the _IoAwaitable_ protocol to build composable I/O frameworks without
-being tied to a particular implementation.
+* Users of *Corosio* — portable coroutine networking
+* Users of *Http* — sans-I/O HTTP/1.1 clients and servers
+* Users of *Websocket* — sans-I/O WebSocket
+* Users of *Beast2* — high-level HTTP/WebSocket servers
+* Users of *Burl* — high-level HTTP client
 
-**Application developers** — Program against `task<T>`, `when_all`, stream
-concepts, and buffer sequences. Test async logic with mock streams.
-
-**Migration from callbacks** — Coroutine-native model with explicit executor
-propagation. No thread-local state or intermediate adapters.
-
-**High-performance systems** — Frame allocation recycling (zero steady-state
-allocations), scatter/gather buffer sequences, type erasure only at boundaries.
+All of these are built on Capy. Understanding its concepts—tasks, buffer sequences, streams, executors—unlocks the full power of the stack.
 
 == Design Philosophy
 
-**Lazy by default.** Tasks suspend immediately on creation. This enables
-structured composition where parent coroutines naturally await their children.
-Eager execution is available through `run_async`.
-
-**Affinity through the protocol.** The executor propagates through
-`await_suspend` parameters, not through thread-local storage or global state.
-This makes the data flow explicit and testable.
-
-**Type erasure at boundaries.** Tasks use type-erased executors (`executor_ref`)
-internally, paying the indirection cost once rather than templating everything.
-For I/O-bound code, this cost is negligible.
-
-**Composition over inheritance.** Buffer types, stream concepts, and awaitables
-are designed to compose cleanly rather than requiring deep class hierarchies.
+* *Use case first.* Buffer sequences, stream concepts, executor affinity—these exist because I/O code needs them, not because they're theoretically elegant.
+* *Coroutines-only.* No callbacks, futures, or sender/receiver. Hybrid support forces compromises; full commitment unlocks optimizations that adapted models cannot achieve.
+* *Address the complaints of C++.* Type erasure at boundaries, minimal dependencies, and hidden implementations keep builds fast and templates manageable.
 
 == Requirements
 
-**Assumed Knowledge:**
+=== Assumed Knowledge
 
-* C++20 language features (concepts, ranges, coroutines syntax)
-* Basic understanding of concurrent programming
-* Familiarity with `system::error_code` error handling
+* C++20 coroutines, concepts, and ranges
+* Basic concurrent programming
 
-**Compiler Support:**
+=== Compiler Support
 
-* GCC 13+
+* GCC 12+
 * Clang 17+
-* MSVC 14.34+ (Visual Studio 2022 17+)
+* Apple-Clang (macOS 14+)
+* MSVC 14.34+
+* MinGW
 
-**Dependencies:**
+=== Dependencies
 
-* C++20 standards-compliant library with `<coroutine>` support.
-* Boost: Assert, Compat, Config, Core, Mp11, Predef, System, Throw_exception, Variant2, Winapi
+None. Capy is self-contained and does not require Boost.
 
-**Linking:**
+=== Linking
 
-Capy is a compiled library and needs to be linked against its other Boost dependencies, such as Boost.System.
+Capy is a compiled library. Link against `capy`.
+
+== Code Convention
 
 [NOTE]
 ====
-**Code Convention:** Examples in this documentation assume these declarations
-are in effect unless otherwise noted:
+Unless otherwise specified, all code examples in this documentation assume the following:
 
 [source,cpp]
 ----
@@ -104,42 +73,46 @@ using namespace boost::capy;
 
 == Quick Example
 
+This example demonstrates a minimal coroutine that reads from a stream and echoes the data back:
+
 [source,cpp]
 ----
-#include <boost/capy/task.hpp>
-#include <boost/capy/ex/run_async.hpp>
-#include <boost/capy/ex/thread_pool.hpp>
-#include <iostream>
+#include <boost/capy.hpp>
 
-using boost::capy::task;
-using boost::capy::run_async;
-using boost::capy::thread_pool;
+using namespace boost::capy;
 
-task<int> compute()
+task<> echo(any_stream& stream)
 {
-    co_return 42;
-}
-
-task<void> run()
-{
-    int result = co_await compute();
-    std::cout << "Result: " << result << "\n";
+    char buf[1024];
+    for(;;)
+    {
+        auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
+        if(ec.failed())
+            co_return;
+        auto [wec, wn] = co_await write(stream, const_buffer(buf, n));
+        if(wec.failed())
+            co_return;
+    }
 }
 
 int main()
 {
-    thread_pool pool(1);
-    run_async(pool.get_executor())(run());
-    // Pool destructor waits for completion
+    thread_pool pool;
+    // In a real application, you would obtain a stream from Corosio
+    // and call: run_async(pool.get_executor())(echo(stream));
+    return 0;
 }
 ----
 
-The key insight: both `run()` and `compute()` execute on the same executor
-because affinity propagated automatically through `co_await`.
+The `echo` function accepts an `any_stream&`—a type-erased wrapper that works with any concrete stream implementation. The function reads data into a buffer, then writes it back. Both operations use `co_await` to suspend until the I/O completes.
+
+The `task<>` return type (equivalent to `task<void>`) creates a lazy coroutine that does not start executing until awaited or launched with `run_async`.
 
 == Next Steps
 
-* xref:quick-start.adoc[Quick Start] — Get a working program in 5 minutes
-* xref:cpp20-coroutines/foundations.adoc[Introduction to C++20 Coroutines] — Understand the machinery
-* xref:io-awaitables/concepts.adoc[I/O Awaitables] — Learn the affinity protocol
-* xref:library/task.adoc[The task<T> Type] — Start using Capy
+* xref:quick-start.adoc[Quick Start] — Set up your first Capy project
+* xref:cpp20-coroutines/foundations.adoc[C++20 Coroutines Tutorial] — Learn coroutines from the ground up
+* xref:concurrency/foundations.adoc[Concurrency Tutorial] — Understand threads, mutexes, and synchronization
+* xref:coroutines/tasks.adoc[Coroutines in Capy] — Deep dive into `task<T>` and the IoAwaitable protocol
+* xref:buffers/overview.adoc[Buffer Sequences] — Master the concept-driven buffer model
+* xref:streams/overview.adoc[Stream Concepts] — Understand the six stream concepts

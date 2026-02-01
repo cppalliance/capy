@@ -1,201 +1,159 @@
-//
-// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
-//
-// Distributed under the Boost Software License, Version 1.0. (See accompanying
-// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
-//
-// Official repository: https://github.com/cppalliance/capy
-//
+= Why Concepts, Not Spans
 
-= Buffers and I/O
+This section explains why Capy uses concept-driven buffer sequences instead of `std::span`, and why this design enables composition without allocation.
 
-This page explains why buffers exist and how they enable efficient I/O
-operations in network programming.
+== Prerequisites
 
-NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+* Basic C++ experience with memory and pointers
+* Familiarity with C++20 concepts
 
-== Why Buffers?
+== The I/O Use Case
 
-Every I/O operation ultimately moves bytes between memory and an external
-resource—a socket, file, or device. The operating system reads and writes
-bytes from contiguous memory regions. A buffer is simply a reference to
-such a region: a pointer and a size.
+Buffers exist to interface with operating system I/O. When you read from a socket, write to a file, or transfer data through any I/O channel, you work with contiguous memory regions—addresses and byte counts.
+
+The fundamental unit is a `(pointer, size)` pair. The OS reads bytes from or writes bytes to linear addresses.
+
+== The Reflexive Answer: span
+
+The instinctive C++ answer to "how should I represent a buffer?" is `std::span<std::byte>`:
 
 [source,cpp]
 ----
-// The fundamental pattern: pointer + size
-void const* data = ...;
-std::size_t size = ...;
-
-// This is what OS system calls need
-send(socket, data, size, flags);
+void write_data(std::span<std::byte const> data);
+void read_data(std::span<std::byte> buffer);
 ----
 
-Capy's buffer types wrap this pattern with type safety and convenience.
-
-== Platform-Agnostic I/O
-
-Capy's I/O algorithms work against concepts rather than concrete types.
-The `read()` and `write()` functions don't care whether you're using:
-
-* A real TCP socket
-* An SSL/TLS encrypted stream
-* A mock object for unit testing
-* A custom stream implementation
-
-[source,cpp]
-----
-// This function works with ANY stream type
-template<ReadStream Stream>
-task<std::string> read_message(Stream& stream)
-{
-    char header[4];
-    auto [ec, n] = co_await read(stream, mutable_buffer(header, 4));
-    if (ec.failed())
-        co_return {};
-
-    std::uint32_t len = decode_length(header);
-    std::string body(len, '\0');
-    auto [ec2, n2] = co_await read(stream, mutable_buffer(body.data(), len));
-    co_return body;
-}
-----
-
-This means you can test network code without network I/O:
-
-[source,cpp]
-----
-// In production: real socket
-task<> handle_client(tcp::socket& sock)
-{
-    auto msg = co_await read_message(sock);
-}
-
-// In tests: mock stream
-task<> test_read_message()
-{
-    test::read_stream mock("\\x00\\x00\\x00\\x05Hello");
-    auto msg = co_await read_message(mock);
-    assert(msg == "Hello");
-}
-----
+This works for single contiguous buffers. But I/O often involves multiple buffers—a technique called *scatter/gather I/O*.
 
 == Scatter/Gather I/O
 
-Real protocols rarely transmit data as a single contiguous block.
-Consider an HTTP response:
+Consider assembling an HTTP message. The headers are in one buffer; the body is in another. With single-buffer APIs, you must:
 
-[source,text]
-----
-HTTP/1.1 200 OK\r\n
-Content-Type: text/plain\r\n
-Content-Length: 13\r\n
-\r\n
-Hello, World!
-----
+1. Allocate a new buffer large enough for both
+2. Copy headers into the new buffer
+3. Copy body after headers
+4. Send the combined buffer
 
-The headers come from one place (perhaps formatted on the stack),
-while the body comes from another (perhaps a file or database).
-Copying everything into a single buffer wastes time and memory.
+This is wasteful. The data already exists—why copy it?
 
-Scatter/gather I/O solves this with multiple buffers in a single operation.
+Scatter/gather I/O solves this. Operating systems provide vectored I/O calls (`writev` on POSIX, scatter/gather with IOCP on Windows) that accept multiple buffers and transfer them as a single logical operation.
 
-=== Gather Write
+== The Span Reflex for Multiple Buffers
 
-Write from multiple non-contiguous memory regions in one call:
+Extending the span reflex: `std::span<std::span<std::byte>>`:
 
 [source,cpp]
 ----
-std::string headers = format_headers(status, content_type, body.size());
-std::string_view body = get_response_body();
-
-// Gather write: two buffers, one operation
-std::array<const_buffer, 2> buffers = {
-    const_buffer(headers.data(), headers.size()),
-    const_buffer(body.data(), body.size())
-};
-
-auto [ec, n] = co_await write(stream, buffers);
+void write_data(std::span<std::span<std::byte const> const> buffers);
 ----
 
-The stream writes both regions without copying them together first.
+This works, but introduces a composition problem.
 
-=== Scatter Read
+== The Composition Problem
 
-Read into multiple buffers in one operation:
+Suppose you have:
 
 [source,cpp]
 ----
-// WebSocket frame: 2-byte header + up to 125-byte payload
-char header[2];
-char payload[125];
-
-std::array<mutable_buffer, 2> buffers = {
-    mutable_buffer(header, 2),
-    mutable_buffer(payload, 125)
-};
-
-auto [ec, n] = co_await stream.read_some(buffers);
-// Data filled header first, then payload
+using HeaderBuffers = std::array<std::span<std::byte const>, 2>;  // 2 buffers
+using BodyBuffers = std::array<std::span<std::byte const>, 3>;    // 3 buffers
 ----
 
-== Real-World Example: WebSocket Frame
-
-A WebSocket frame has a variable-length header followed by payload:
+To send headers followed by body, you need 5 buffers total. With `span<span<byte>>`:
 
 [source,cpp]
 ----
-task<io_result<std::size_t>> send_frame(
-    WriteStream auto& stream,
-    std::uint8_t opcode,
-    std::span<char const> payload)
-{
-    // Build the frame header
-    char header[2];
-    header[0] = 0x80 | opcode;  // FIN + opcode
-    header[1] = static_cast<char>(payload.size());
+HeaderBuffers headers = /* ... */;
+BodyBuffers body = /* ... */;
 
-    // Gather write: header + payload
-    std::array<const_buffer, 2> frame = {
-        const_buffer(header, 2),
-        const_buffer(payload.data(), payload.size())
-    };
+// To combine, you MUST allocate a new array:
+std::array<std::span<std::byte const>, 5> combined;
+std::copy(headers.begin(), headers.end(), combined.begin());
+std::copy(body.begin(), body.end(), combined.begin() + 2);
 
-    co_return co_await write(stream, frame);
-}
+write_data(combined);
 ----
 
-No intermediate buffer, no copying—just efficient I/O.
+Every composition allocates. This leads to:
 
-== The Buffer Abstraction Layers
+* Overload proliferation—separate functions for single buffer, multiple buffers, common cases
+* Performance overhead—allocation on every composition
+* Boilerplate—manual copying everywhere
 
-Capy provides buffers at multiple abstraction levels:
+== The Concept-Driven Alternative
 
-[cols="1,3"]
-|===
-| Level | Types
+Instead of concrete types, use concepts. Define `ConstBufferSequence` as "any type that can produce a sequence of buffers":
 
-| Single buffers
-| `const_buffer`, `mutable_buffer`
+[source,cpp]
+----
+template<ConstBufferSequence Buffers>
+void write_data(Buffers const& buffers);
+----
 
-| Buffer sequences
-| Arrays, `const_buffer_pair`, any bidirectional range
+This single signature accepts:
 
-| Dynamic buffers
-| `flat_dynamic_buffer`, `circular_dynamic_buffer`
-|===
+* A single `const_buffer`
+* A `span<const_buffer>`
+* A `vector<const_buffer>`
+* A `string_view` (converts to single buffer)
+* A custom composite type
+* *Any composition of the above—without allocation*
 
-As you move up the abstraction ladder, you trade some control for
-convenience. Start with the simplest tool that fits your needs.
+== Zero-Allocation Composition
+
+With concepts, composition creates views, not copies:
+
+[source,cpp]
+----
+HeaderBuffers headers = /* ... */;
+BodyBuffers body = /* ... */;
+
+// cat() creates a view that iterates both sequences
+auto combined = cat(headers, body);  // No allocation!
+
+write_data(combined);  // Works because combined satisfies ConstBufferSequence
+----
+
+The `cat` function returns a lightweight object that, when iterated, first yields buffers from `headers`, then from `body`. The buffers themselves are not copied—only iterators are composed.
+
+== STL Parallel
+
+This design follows Stepanov's insight from the STL: algorithms parameterized on concepts (iterators), not concrete types (containers), enable composition that concrete types forbid.
+
+The span reflex is a regression from thirty years of generic programming. Concepts restore the compositional power that concrete types lack.
+
+== The Middle Ground
+
+Concepts provide flexibility at user-facing APIs. But at type-erasure boundaries—virtual functions, library boundaries—concrete types are necessary.
+
+Capy's approach:
+
+* *User-facing APIs* — Accept concepts for maximum flexibility
+* *Type-erasure boundaries* — Use concrete spans internally
+* *Library handles conversion* — Users get concepts; implementation uses spans
+
+This gives users the composition benefits of concepts while hiding the concrete types needed for virtual dispatch.
+
+== Why Not std::byte?
+
+Even `std::byte` imposes a semantic opinion. POSIX uses `void*` for semantic neutrality—"raw memory, I move bytes without opining on contents."
+
+But `span<void>` doesn't compile—C++ can't express type-agnostic buffer abstraction with `span`.
+
+Capy provides `const_buffer` and `mutable_buffer` as semantically neutral buffer types. They have known layout compatible with OS structures (`iovec`, `WSABUF`) without imposing `std::byte` semantics.
 
 == Summary
 
-* Buffers represent contiguous memory regions for I/O
-* Buffer sequences enable scatter/gather I/O without copying
-* I/O algorithms work against concepts, not concrete types
-* The same code works with real streams, mock objects, and custom implementations
+The reflexive `span<span<byte>>` approach:
 
-== Navigation
+* Forces allocation on every composition
+* Leads to overload proliferation
+* Loses the compositional power of generic programming
 
-[.text-center]
-xref:../library/buffers.adoc[← Overview] | xref:index.adoc[Next: Buffer Types →]
+The concept-driven approach:
+
+* Enables zero-allocation composition
+* Provides a single signature that accepts anything buffer-like
+* Follows proven STL design principles
+
+Continue to xref:types.adoc[Buffer Types] to learn about `const_buffer` and `mutable_buffer`.

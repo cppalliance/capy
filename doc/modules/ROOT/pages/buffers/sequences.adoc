@@ -1,310 +1,175 @@
-//
-// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
-//
-// Distributed under the Boost Software License, Version 1.0. (See accompanying
-// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
-//
-// Official repository: https://github.com/cppalliance/capy
-//
-
 = Buffer Sequences
 
-This page explains how to work with multiple buffers as a logical unit,
-enabling scatter/gather I/O without data copying.
+This section explains buffer sequences—the concept that enables zero-allocation composition of buffers.
 
-NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+== Prerequisites
 
-== What is a Buffer Sequence?
+* Completed xref:types.adoc[Buffer Types]
+* Understanding of `const_buffer` and `mutable_buffer`
 
-A buffer sequence represents a logical byte stream stored across multiple
-non-contiguous memory regions. Instead of copying data into a single buffer,
-you describe where the pieces are and let I/O operations handle them directly.
+== What Is a Buffer Sequence?
 
-[source,cpp]
-----
-// Three separate memory regions form one logical message
-std::array<const_buffer, 3> message = {
-    const_buffer(header, header_size),
-    const_buffer(body, body_size),
-    const_buffer(footer, footer_size)
-};
+A *buffer sequence* is any type that can produce an iteration of buffers. Formally:
 
-// Write all three as a single operation
-co_await write(stream, message);
-----
+* A single buffer (like `const_buffer`) is a sequence of one element
+* A range of buffers (like `vector<const_buffer>`) is a multi-element sequence
+* Any bidirectional range with buffer-convertible values qualifies
 
-== Buffer Sequence Concepts
+== The Concepts
 
-Capy defines two concepts for buffer sequences:
-
-[cols="1,3"]
-|===
-| Concept | Description
-
-| `ConstBufferSequence`
-| A range whose elements convert to `const_buffer`
-
-| `MutableBufferSequence`
-| A range whose elements convert to `mutable_buffer`
-|===
-
-A type satisfies these concepts if it is either:
-
-* Convertible to `const_buffer` or `mutable_buffer` directly, OR
-* A bidirectional range with buffer-convertible elements
-
-This means single buffers are valid buffer sequences:
+=== ConstBufferSequence
 
 [source,cpp]
 ----
-// Single buffer works anywhere a buffer sequence is expected
-const_buffer single_buf(data, size);
-co_await write(stream, single_buf);  // OK
+template<typename T>
+concept ConstBufferSequence =
+    std::is_convertible_v<T, const_buffer> || (
+        std::ranges::bidirectional_range<T> &&
+        std::is_convertible_v<std::ranges::range_value_t<T>, const_buffer>);
 ----
 
-== Iterating Buffer Sequences
+A type satisfies `ConstBufferSequence` if:
 
-Use `begin()` and `end()` to iterate uniformly over any buffer sequence:
+* It converts to `const_buffer` directly (single buffer), OR
+* It is a bidirectional range whose elements convert to `const_buffer`
+
+=== MutableBufferSequence
+
+[source,cpp]
+----
+template<typename T>
+concept MutableBufferSequence =
+    std::is_convertible_v<T, mutable_buffer> || (
+        std::ranges::bidirectional_range<T> &&
+        std::is_convertible_v<std::ranges::range_value_t<T>, mutable_buffer>);
+----
+
+Same pattern, but for `mutable_buffer`.
+
+== Satisfying the Concepts
+
+Many common types satisfy these concepts:
+
+[source,cpp]
+----
+// Single buffers
+const_buffer cb;                    // ConstBufferSequence
+mutable_buffer mb;                  // MutableBufferSequence (and ConstBufferSequence)
+
+// Standard containers of buffers
+std::vector<const_buffer> v;        // ConstBufferSequence
+std::array<mutable_buffer, 3> a;    // MutableBufferSequence
+
+// String types (convert to single buffer)
+std::string str;                    // ConstBufferSequence (via make_buffer)
+std::string_view sv;                // ConstBufferSequence
+----
+
+== Heterogeneous Composition
+
+Because the concept accepts anything convertible to buffer, you can mix types:
 
 [source,cpp]
 ----
 template<ConstBufferSequence Buffers>
-void dump_buffers(Buffers const& bufs)
+void send(Buffers const& bufs);
+
+// All of these work:
+send(make_buffer("Hello"));                    // string literal
+send(std::string_view{"Hello"});               // string_view
+send(std::array{buf1, buf2});                  // array of buffers
+send(my_custom_buffer_sequence);               // custom type
+----
+
+== Iterating Buffer Sequences
+
+Use `begin()` and `end()` from `<boost/capy/buffers.hpp>`:
+
+[source,cpp]
+----
+template<ConstBufferSequence Buffers>
+void process(Buffers const& bufs)
 {
     for (auto it = begin(bufs); it != end(bufs); ++it)
     {
-        const_buffer b = *it;
-        std::cout << "Buffer: " << b.size() << " bytes at "
-                  << b.data() << "\n";
+        const_buffer buf = *it;
+        // Process buf.data(), buf.size()
     }
 }
 ----
 
-These functions handle both single buffers and ranges uniformly.
+These functions handle both single buffers (returning pointer-to-self) and ranges (returning standard iterators).
 
-== Buffer Pairs
+== consuming_buffers
 
-For sequences with exactly two elements, `const_buffer_pair` and
-`mutable_buffer_pair` provide optimized storage:
-
-[source,cpp]
-----
-const_buffer_pair pair(
-    const_buffer(part1, size1),
-    const_buffer(part2, size2)
-);
-
-// Access by index
-const_buffer& first = pair[0];
-const_buffer& second = pair[1];
-
-// Iterate
-for (const_buffer const& buf : pair)
-{
-    process(buf);
-}
-----
-
-Buffer pairs are especially useful for circular buffers where data
-wraps around the end of storage.
-
-== Incremental Consumption with consuming_buffers
-
-When reading or writing in a loop, you need to track progress through the
-buffer sequence. The `consuming_buffers` wrapper handles this automatically.
+When transferring data incrementally, `consuming_buffers` tracks progress:
 
 [source,cpp]
 ----
 #include <boost/capy/buffers/consuming_buffers.hpp>
 
-template<WriteStream Stream, ConstBufferSequence Buffers>
-task<io_result<std::size_t>> write_all(Stream& stream, Buffers const& bufs)
+template<MutableBufferSequence Buffers>
+task<std::size_t> read_all(Stream& stream, Buffers buffers)
 {
-    consuming_buffers consuming(bufs);
+    consuming_buffers<Buffers> remaining(buffers);
     std::size_t total = 0;
-
-    while (buffer_size(consuming) > 0)
+    
+    while (buffer_size(remaining) > 0)
     {
-        auto [ec, n] = co_await stream.write_some(consuming);
+        auto [ec, n] = co_await stream.read_some(remaining);
         if (ec.failed())
-            co_return {ec, total};
-        consuming.consume(n);
+            break;
+        remaining.consume(n);
         total += n;
     }
-
-    co_return {{}, total};
+    
+    co_return total;
 }
 ----
 
-=== How consuming_buffers Works
+`consuming_buffers` wraps a buffer sequence and provides:
 
-The wrapper tracks the current position within the buffer sequence:
+* `consume(n)` — Mark `n` bytes as consumed (remove from front)
+* Iteration over unconsumed buffers
+* `buffer_size()` of remaining bytes
 
-[source,cpp]
-----
-std::array<const_buffer, 3> bufs = {
-    const_buffer(a, 100),
-    const_buffer(b, 200),
-    const_buffer(c, 150)
-};
+== Zero-Allocation Composition
 
-consuming_buffers cb(bufs);
-// cb iteration yields: [a, 100], [b, 200], [c, 150]
-
-cb.consume(50);
-// cb iteration yields: [a+50, 50], [b, 200], [c, 150]
-
-cb.consume(60);
-// cb iteration yields: [b+10, 190], [c, 150]
-----
-
-The original buffer sequence is not modified.
-
-== I/O Loop Patterns
-
-Understanding how the composed `read()` and `write()` functions work
-helps you implement custom I/O patterns.
-
-=== Complete Write Pattern
-
-The `write()` function loops until all data is written:
+The `cat()` function composes buffer sequences without allocation:
 
 [source,cpp]
 ----
-// Simplified implementation of write()
-auto write(WriteStream auto& stream, ConstBufferSequence auto const& buffers)
-    -> task<io_result<std::size_t>>
-{
-    consuming_buffers consuming(buffers);
-    std::size_t total = 0;
-    std::size_t const goal = buffer_size(buffers);
+auto headers = std::array{header_buf1, header_buf2};
+auto body = body_buffer;
 
-    while (total < goal)
-    {
-        auto [ec, n] = co_await stream.write_some(consuming);
-        if (ec.failed())
-            co_return {ec, total};
-        consuming.consume(n);
-        total += n;
-    }
+auto combined = cat(headers, body);  // No allocation
 
-    co_return {{}, total};
-}
+// combined satisfies ConstBufferSequence
+// Iteration yields: header_buf1, header_buf2, body_buffer
 ----
 
-=== Complete Read Pattern
+The returned object stores references (or small copies for single buffers) and iterates through the composed sequence on demand.
 
-The `read()` function fills buffers completely:
+== Why Bidirectional?
 
-[source,cpp]
-----
-// Simplified implementation of read()
-auto read(ReadStream auto& stream, MutableBufferSequence auto const& buffers)
-    -> task<io_result<std::size_t>>
-{
-    consuming_buffers consuming(buffers);
-    std::size_t total = 0;
-    std::size_t const goal = buffer_size(buffers);
+The concepts require bidirectional ranges (not just forward ranges) for two reasons:
 
-    while (total < goal)
-    {
-        auto [ec, n] = co_await stream.read_some(consuming);
-        if (ec.failed())
-            co_return {ec, total};
-        consuming.consume(n);
-        total += n;
-    }
+1. Some algorithms traverse buffers backwards
+2. `consuming_buffers` needs to adjust the first buffer's start position
 
-    co_return {{}, total};
-}
-----
+If your custom buffer sequence only provides forward iteration, wrap it in a type that provides bidirectional access.
 
-== Slicing Buffer Sequences
-
-The `tag_invoke` customization point enables slicing buffers:
-
-[source,cpp]
-----
-mutable_buffer buf(data, 100);
-
-// Remove first 20 bytes
-tag_invoke(slice_tag{}, buf, slice_how::remove_prefix, 20);
-// buf now points to data+20, size 80
-
-// Keep only first 50 bytes
-mutable_buffer buf2(data, 100);
-tag_invoke(slice_tag{}, buf2, slice_how::keep_prefix, 50);
-// buf2 points to data, size 50
-----
-
-== Common Patterns
-
-=== Scatter Read: Protocol Header + Body
-
-[source,cpp]
-----
-task<void> read_framed_message(ReadStream auto& stream)
-{
-    // Fixed header followed by variable body
-    char header[8];
-    char body[1024];
-
-    std::array<mutable_buffer, 2> bufs = {
-        mutable_buffer(header, 8),
-        mutable_buffer(body, 1024)
-    };
-
-    auto [ec, n] = co_await stream.read_some(bufs);
-    // header filled first, then body
-}
-----
-
-=== Gather Write: Multipart Response
-
-[source,cpp]
-----
-task<void> send_http_response(
-    WriteStream auto& stream,
-    std::string_view status_line,
-    std::string_view headers,
-    std::string_view body)
-{
-    std::array<const_buffer, 3> parts = {
-        make_buffer(status_line),
-        make_buffer(headers),
-        make_buffer(body)
-    };
-
-    co_await write(stream, parts);
-}
-----
-
-== Summary
+== Reference
 
 [cols="1,3"]
 |===
-| Component | Purpose
+| Header | Description
 
-| `ConstBufferSequence`
-| Concept for sequences of read-only buffers
+| `<boost/capy/buffers.hpp>`
+| Concepts and iteration functions
 
-| `MutableBufferSequence`
-| Concept for sequences of writable buffers
-
-| `begin`, `end`
-| Uniform iteration over any buffer sequence
-
-| `const_buffer_pair`
-| Optimized two-element const sequence
-
-| `mutable_buffer_pair`
-| Optimized two-element mutable sequence
-
-| `consuming_buffers`
-| Track progress through a buffer sequence
+| `<boost/capy/buffers/consuming_buffers.hpp>`
+| Incremental consumption wrapper
 |===
 
-== Navigation
-
-[.text-center]
-xref:index.adoc[← Buffer Types] | xref:algorithms.adoc[Next: Buffer Algorithms →]
+You have now learned how buffer sequences enable zero-allocation composition. Continue to xref:system-io.adoc[System I/O Integration] to see how buffer sequences interface with operating system I/O.

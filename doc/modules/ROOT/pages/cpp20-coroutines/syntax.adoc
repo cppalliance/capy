@@ -1,409 +1,202 @@
-//
-// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
-//
-// Distributed under the Boost Software License, Version 1.0. (See accompanying
-// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
-//
-// Official repository: https://github.com/cppalliance/capy
-//
-
 = Part II: C++20 Syntax
 
-This section covers the three keywords that make a function into a coroutine
-and explains how awaitables control suspension.
+This section introduces the three C++20 keywords that create coroutines and walks you through building your first coroutine step by step.
+
+== Prerequisites
+
+* Completed xref:foundations.adoc[Part I: Foundations]
+* Understanding of why coroutines exist and what problem they solve
 
 == The Three Keywords
 
-C++20 introduces three keywords that transform a function into a coroutine:
+A function becomes a coroutine when its body contains any of three special keywords: `co_await`, `co_yield`, or `co_return`. The presence of any of these keywords signals to the compiler that the function requires coroutine machinery.
 
-[cols="1,3"]
-|===
-| Keyword | Purpose
+=== co_await
 
-| `co_await`
-| Suspend and wait for an operation to complete
-
-| `co_yield`
-| Produce a value and suspend
-
-| `co_return`
-| Complete the coroutine with a final value
-|===
-
-The mere presence of any of these keywords causes the compiler to treat the
-function as a coroutine, allocating a coroutine frame and generating the
-suspension machinery.
-
-=== co_await — Suspend and Wait
-
-The `co_await` expression suspends the current coroutine until the awaited
-operation completes:
+The `co_await` keyword suspends the coroutine and waits for some operation to complete. When you write `co_await expr`, the coroutine saves its state, pauses execution, and potentially allows other code to run. When the awaited operation completes, the coroutine resumes from exactly where it left off.
 
 [source,cpp]
 ----
-task<data> fetch()
+task<std::string> fetch_page(std::string url)
 {
-    auto response = co_await http_get(url);  // Suspend here
-    // Execution resumes when http_get completes
-    co_return parse(response);
+    auto response = co_await http_get(url);  // suspends until HTTP completes
+    return response.body;                     // continues after resumption
 }
 ----
 
-When `co_await` executes:
+=== co_yield
 
-1. The awaited object is queried (can we skip suspension?)
-2. If suspension is needed, coroutine state is saved
-3. Control returns to whoever resumed this coroutine
-4. Later, when the operation completes, the coroutine resumes
-5. The result of `co_await` is the operation's result
-
-=== co_yield — Produce a Value
-
-The `co_yield` expression produces a value to the caller and suspends:
+The `co_yield` keyword produces a value and suspends the coroutine. This pattern creates *generators*—functions that produce sequences of values one at a time. After yielding a value, the coroutine pauses until someone asks for the next value.
 
 [source,cpp]
 ----
-generator<int> range(int start, int end)
+generator<int> count_to(int n)
 {
-    for (int i = start; i < end; ++i)
-        co_yield i;  // Produce i, suspend
+    for (int i = 1; i <= n; ++i)
+    {
+        co_yield i;  // produce value, suspend, resume when next value requested
+    }
 }
 ----
 
-`co_yield x` is shorthand for `co_await promise.yield_value(x)`. The
-promise (which we'll cover later) decides what to do with the yielded value.
+=== co_return
 
-=== co_return — Complete the Coroutine
-
-The `co_return` statement completes the coroutine with an optional final value:
+The `co_return` keyword completes the coroutine and optionally provides a final result. Unlike a regular `return` statement, `co_return` interacts with the coroutine machinery to properly finalize the coroutine's state.
 
 [source,cpp]
 ----
 task<int> compute()
 {
     int result = 42;
-    co_return result;  // Complete with value 42
-}
-
-task<void> work()
-{
-    do_something();
-    co_return;  // Complete (void coroutine)
+    co_return result;  // completes the coroutine with value 42
 }
 ----
 
-After `co_return`:
-
-1. The promise stores the returned value (if any)
-2. The coroutine enters its final suspension point
-3. The coroutine cannot be resumed again
+For coroutines that do not return a value, use `co_return;` without an argument.
 
 == Your First Coroutine
 
-Let's build a complete, minimal coroutine. We'll need a return type that
-tells the compiler how to manage the coroutine.
+The distinction between regular functions and coroutines matters because they behave fundamentally differently at runtime:
+
+* A regular function allocates its local variables on the stack. When it returns, those variables are gone.
+* A coroutine allocates its local variables in a heap-allocated *coroutine frame*. When it suspends, those variables persist. When it resumes, they are still there.
+
+Here is the minimal structure needed to create a coroutine:
+
+[source,cpp]
+----
+#include <coroutine>
+
+struct SimpleCoroutine
+{
+    struct promise_type
+    {
+        SimpleCoroutine get_return_object() { return {}; }
+        std::suspend_never initial_suspend() { return {}; }
+        std::suspend_never final_suspend() noexcept { return {}; }
+        void return_void() {}
+        void unhandled_exception() {}
+    };
+};
+
+SimpleCoroutine my_first_coroutine()
+{
+    co_return;  // This makes it a coroutine
+}
+----
+
+The `promise_type` nested structure provides the minimum scaffolding the compiler needs. You will learn what each method does in xref:machinery.adoc[Part III: Coroutine Machinery].
+
+For now, observe that the presence of `co_return` transforms what looks like a regular function into a coroutine. If you try to compile a function with coroutine keywords but without proper infrastructure, the compiler will produce errors.
+
+== Awaitables and Awaiters
+
+When you write `co_await expr`, the expression `expr` must be an *awaitable*—something that knows how to suspend and resume a coroutine. The awaitable produces an *awaiter* object that implements three methods:
+
+* `await_ready()` — Returns `true` if the result is immediately available and no suspension is needed
+* `await_suspend(handle)` — Called when the coroutine suspends; receives a handle to the coroutine for later resumption
+* `await_resume()` — Called when the coroutine resumes; its return value becomes the value of the `co_await` expression
+
+=== Example: Understanding the Awaiter Protocol
 
 [source,cpp]
 ----
 #include <coroutine>
 #include <iostream>
 
-struct MinimalTask
+struct ReturnObject
 {
     struct promise_type
     {
-        MinimalTask get_return_object()
-        {
-            return MinimalTask{
-                std::coroutine_handle<promise_type>::from_promise(*this)
-            };
-        }
-
+        ReturnObject get_return_object() { return {}; }
         std::suspend_never initial_suspend() { return {}; }
         std::suspend_never final_suspend() noexcept { return {}; }
         void return_void() {}
-        void unhandled_exception() { std::terminate(); }
+        void unhandled_exception() {}
     };
-
-    std::coroutine_handle<promise_type> handle_;
 };
 
-MinimalTask hello()
+struct Awaiter
 {
-    std::cout << "Hello, ";
-    co_await std::suspend_never{};  // Makes this a coroutine
-    std::cout << "World!\n";
+    std::coroutine_handle<>* handle_out;
+    
+    bool await_ready() { return false; }  // always suspend
+    
+    void await_suspend(std::coroutine_handle<> h)
+    {
+        *handle_out = h;  // store handle for later resumption
+    }
+    
+    void await_resume() {}  // nothing to return
+};
+
+ReturnObject counter(std::coroutine_handle<>* handle)
+{
+    Awaiter awaiter{handle};
+    
+    for (unsigned i = 0; ; ++i)
+    {
+        std::cout << "counter: " << i << std::endl;
+        co_await awaiter;
+    }
 }
 
 int main()
 {
-    hello();  // Prints "Hello, World!"
-}
-----
-
-The presence of `co_await` transforms `hello()` into a coroutine. The
-compiler looks for `MinimalTask::promise_type` to determine how to manage it.
-
-=== What the Compiler Transforms
-
-When you write a coroutine function, the compiler transforms it roughly like:
-
-[source,cpp]
-----
-// What you write:
-task<int> compute()
-{
-    int x = 1;
-    co_await something();
-    co_return x + 1;
-}
-
-// What the compiler generates (conceptually):
-task<int> compute()
-{
-    // Allocate coroutine frame
-    auto* frame = new __compute_frame();
-    auto& promise = frame->promise;
-
-    // Create return object immediately
-    auto return_object = promise.get_return_object();
-
-    try {
-        co_await promise.initial_suspend();
-
-        // Your code with suspension points
-        frame->x = 1;
-        co_await something();
-        promise.return_value(frame->x + 1);
-
-    } catch (...) {
-        promise.unhandled_exception();
-    }
-
-    co_await promise.final_suspend();
-    // Frame may be destroyed here or by caller
-    return return_object;
-}
-----
-
-The frame persists across suspensions, holding local variables (`x`) and
-the promise object.
-
-=== The Coroutine Frame
-
-The coroutine frame is heap-allocated (by default) and contains:
-
-* Local variables that span suspension points
-* The promise object
-* Bookkeeping for the current suspension point
-* Parameters (copied or moved into the frame)
-
-----
-+------------------------+
-| __compute_frame        |
-+------------------------+
-| int x;                 |  ← local variables
-| promise_type promise;  |  ← promise object
-| int __suspend_point;   |  ← which co_await are we at?
-+------------------------+
-----
-
-Heap Allocation eLision Optimization (HALO) can sometimes place the frame in
-the caller's frame, avoiding the allocation entirely.
-
-== Awaitables and Awaiters
-
-When you write `co_await expr`, the compiler needs to know:
-
-1. Should we actually suspend?
-2. What happens when we suspend?
-3. What value do we produce when we resume?
-
-These questions are answered by the _awaiter_ object.
-
-=== The Awaitable Concept
-
-An awaitable is anything that can be used with `co_await`. The compiler
-converts it to an awaiter using these rules (in order):
-
-1. If the promise has `await_transform`, call it: `promise.await_transform(expr)`
-2. Otherwise, if `expr` has `operator co_await`, call it
-3. Otherwise, use `expr` directly as the awaiter
-
-=== The Awaiter Interface
-
-An awaiter must provide three methods:
-
-[source,cpp]
-----
-struct Awaiter
-{
-    bool await_ready();                              // Skip suspension?
-    ??? await_suspend(std::coroutine_handle<> h);   // Do the suspension
-    T await_resume();                                // Get the result
-};
-----
-
-==== await_ready()
-
-Returns `true` if the result is already available and suspension should be
-skipped. This is an optimization—if the operation completed synchronously,
-we can avoid the suspension overhead.
-
-[source,cpp]
-----
-bool await_ready()
-{
-    return result_already_cached_;
-}
-----
-
-==== await_suspend(handle)
-
-Called when we actually suspend. Receives the coroutine handle, which can be
-stored and used later to resume the coroutine.
-
-The return type affects behavior:
-
-[cols="1,3"]
-|===
-| Return type | Behavior
-
-| `void`
-| Always suspend (caller continues)
-
-| `bool`
-| `true` = suspend, `false` = don't suspend (resume immediately)
-
-| `coroutine_handle<>`
-| Suspend and immediately resume the returned handle (symmetric transfer)
-|===
-
-[source,cpp]
-----
-void await_suspend(std::coroutine_handle<> h)
-{
-    // Store handle, start async operation
-    async_start([h]() {
-        h.resume();  // Resume when done
-    });
-}
-
-// Or: symmetric transfer to another coroutine
-std::coroutine_handle<> await_suspend(std::coroutine_handle<> h)
-{
-    store_continuation(h);
-    return next_coroutine_to_run();
-}
-----
-
-==== await_resume()
-
-Called when the coroutine resumes. Returns the result of the `co_await`
-expression.
-
-[source,cpp]
-----
-int await_resume()
-{
-    if (error_)
-        throw std::runtime_error("operation failed");
-    return result_;
-}
-----
-
-=== Built-in Awaiters
-
-The standard provides two simple awaiters:
-
-[source,cpp]
-----
-struct std::suspend_always
-{
-    bool await_ready() { return false; }  // Always suspend
-    void await_suspend(std::coroutine_handle<>) {}
-    void await_resume() {}
-};
-
-struct std::suspend_never
-{
-    bool await_ready() { return true; }   // Never suspend
-    void await_suspend(std::coroutine_handle<>) {}
-    void await_resume() {}
-};
-----
-
-These are building blocks for promise types (e.g., `initial_suspend()`).
-
-=== Awaiter Example: Simple Timer
-
-Here's a complete awaiter that suspends for a duration:
-
-[source,cpp]
-----
-#include <chrono>
-#include <thread>
-
-struct sleep_for
-{
-    std::chrono::milliseconds duration_;
-
-    bool await_ready() const
+    std::coroutine_handle<> h;
+    counter(&h);
+    
+    for (int i = 0; i < 3; ++i)
     {
-        return duration_.count() <= 0;  // No sleep needed
+        std::cout << "main: resuming" << std::endl;
+        h();
     }
-
-    void await_suspend(std::coroutine_handle<> h) const
-    {
-        // In real code, use a proper async timer
-        std::thread([=]() {
-            std::this_thread::sleep_for(duration_);
-            h.resume();
-        }).detach();
-    }
-
-    void await_resume() const {}
-};
-
-// Usage:
-task<void> delayed_work()
-{
-    std::cout << "Starting...\n";
-    co_await sleep_for{std::chrono::seconds(1)};
-    std::cout << "One second later\n";
+    
+    h.destroy();
 }
 ----
 
-WARNING: This example detaches a thread, which is rarely appropriate in
-production code. Real async timers integrate with event loops.
+*Output:*
 
-== Summary
+----
+counter: 0
+main: resuming
+counter: 1
+main: resuming
+counter: 2
+main: resuming
+counter: 3
+----
 
-[cols="1,3"]
-|===
-| Element | Purpose
+Study this execution flow:
 
-| `co_await`
-| Suspend until operation completes
+1. `main` calls `counter`, passing the address of a coroutine handle
+2. `counter` begins executing, prints "counter: 0", and reaches `co_await awaiter`
+3. `await_ready()` returns `false`, so suspension proceeds
+4. `await_suspend` receives a handle to the suspended coroutine and stores it in `main`'s variable `h`
+5. Control returns to `main`, which now holds a handle to the suspended coroutine
+6. `main` calls `h()`, which resumes the coroutine
+7. The coroutine continues from where it left off, increments `i`, prints "counter: 1", and suspends again
+8. This cycle repeats until `main` destroys the coroutine
 
-| `co_yield`
-| Produce value and suspend
+The variable `i` inside `counter` maintains its value across all these suspension and resumption cycles.
 
-| `co_return`
-| Complete coroutine with final value
+=== Standard Awaiters
 
-| `await_ready()`
-| Can we skip suspension?
+The C++ standard library provides two predefined awaiters:
 
-| `await_suspend(h)`
-| Perform suspension, maybe store handle
+* `std::suspend_always` — `await_ready()` returns `false` (always suspend)
+* `std::suspend_never` — `await_ready()` returns `true` (never suspend)
 
-| `await_resume()`
-| Return result when resumed
-|===
+These are useful building blocks for promise types and custom awaitables.
 
-== Next Steps
+[source,cpp]
+----
+// suspend_always causes suspension at this point
+co_await std::suspend_always{};
 
-You've learned the syntax. Now understand the machinery that makes it work:
+// suspend_never continues immediately without suspending
+co_await std::suspend_never{};
+----
 
-* xref:machinery.adoc[Part III: Coroutine Machinery] — Promise types and handles
+You have now learned the three coroutine keywords and how awaitables work. In the next section, you will learn about the promise type and coroutine handle—the machinery that makes coroutines function.

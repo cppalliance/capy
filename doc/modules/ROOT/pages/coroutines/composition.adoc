@@ -1,0 +1,255 @@
+= Concurrent Composition
+
+This section explains how to run multiple tasks concurrently using `when_all` and `when_any`.
+
+== Prerequisites
+
+* Completed xref:cancellation.adoc[Stop Tokens and Cancellation]
+* Understanding of stop token propagation
+
+== Overview
+
+Sequential execution—one task after another—is the default when using `co_await`:
+
+[source,cpp]
+----
+task<> sequential()
+{
+    co_await task_a();  // Wait for A
+    co_await task_b();  // Then wait for B
+    co_await task_c();  // Then wait for C
+}
+----
+
+For independent operations, concurrent execution is more efficient:
+
+[source,cpp]
+----
+task<> concurrent()
+{
+    // Run A, B, C simultaneously
+    co_await when_all(task_a(), task_b(), task_c());
+}
+----
+
+== when_all: Wait for All Tasks
+
+`when_all` launches multiple tasks concurrently and waits for all of them to complete:
+
+[source,cpp]
+----
+#include <boost/capy/when_all.hpp>
+
+task<int> fetch_a() { co_return 1; }
+task<int> fetch_b() { co_return 2; }
+task<std::string> fetch_c() { co_return "hello"; }
+
+task<> example()
+{
+    auto [a, b, c] = co_await when_all(fetch_a(), fetch_b(), fetch_c());
+    
+    // a == 1
+    // b == 2
+    // c == "hello"
+}
+----
+
+=== Result Tuple
+
+`when_all` returns a tuple of results in the same order as the input tasks. Use structured bindings to unpack them.
+
+=== Void Filtering
+
+Tasks returning `void` do not contribute to the result tuple:
+
+[source,cpp]
+----
+task<> void_task() { co_return; }
+task<int> int_task() { co_return 42; }
+
+task<> example()
+{
+    auto [value] = co_await when_all(void_task(), int_task(), void_task());
+    // value == 42  (only the int_task contributes)
+}
+----
+
+If all tasks return `void`, `when_all` returns `void`:
+
+[source,cpp]
+----
+task<> example()
+{
+    co_await when_all(void_task_a(), void_task_b());  // Returns void
+}
+----
+
+=== Error Handling
+
+If any task throws an exception:
+
+1. The exception is captured
+2. Stop is requested for sibling tasks
+3. All tasks are allowed to complete (or respond to stop)
+4. The *first* exception is rethrown; later exceptions are discarded
+
+[source,cpp]
+----
+task<int> might_fail(bool fail)
+{
+    if (fail)
+        throw std::runtime_error("failed");
+    co_return 42;
+}
+
+task<> example()
+{
+    try
+    {
+        co_await when_all(might_fail(true), might_fail(false));
+    }
+    catch (std::runtime_error const& e)
+    {
+        // Catches the exception from the failing task
+    }
+}
+----
+
+=== Stop Propagation
+
+When one task fails, `when_all` requests stop for its siblings. Well-behaved tasks should check their stop token and exit promptly:
+
+[source,cpp]
+----
+task<> long_running()
+{
+    auto token = co_await get_stop_token();
+    
+    for (int i = 0; i < 1000; ++i)
+    {
+        if (token.stop_requested())
+            co_return;  // Exit early when sibling fails
+        
+        co_await do_iteration();
+    }
+}
+----
+
+== when_any: First-to-Finish Wins
+
+`when_any` is not yet implemented in Capy, but its design is planned:
+
+* Launch multiple tasks concurrently
+* Return when the *first* task completes
+* Cancel remaining tasks via stop token
+* Return the winning task's result
+
+The pattern would look like:
+
+[source,cpp]
+----
+// Planned API (not yet available)
+task<std::variant<int, std::string>> example()
+{
+    co_return co_await when_any(
+        fetch_int(),     // task<int>
+        fetch_string()   // task<std::string>
+    );
+}
+----
+
+== Practical Patterns
+
+=== Parallel Fetch
+
+Fetch multiple resources simultaneously:
+
+[source,cpp]
+----
+task<page_data> fetch_page_data(std::string url)
+{
+    auto [header, body, sidebar] = co_await when_all(
+        fetch_header(url),
+        fetch_body(url),
+        fetch_sidebar(url)
+    );
+    
+    co_return page_data{
+        std::move(header),
+        std::move(body),
+        std::move(sidebar)
+    };
+}
+----
+
+=== Fan-Out/Fan-In
+
+Process items in parallel, then combine results:
+
+[source,cpp]
+----
+task<int> process_item(item const& i);
+
+task<int> process_all(std::vector<item> const& items)
+{
+    std::vector<task<int>> tasks;
+    for (auto const& item : items)
+        tasks.push_back(process_item(item));
+    
+    // This requires a range-based when_all (not yet available)
+    // For now, use fixed-arity when_all
+    
+    int total = 0;
+    // ... accumulate results
+    co_return total;
+}
+----
+
+=== Timeout with Fallback
+
+Use when_any (when available) to implement timeout with fallback:
+
+[source,cpp]
+----
+// Planned pattern
+task<result> fetch_with_fallback()
+{
+    co_return co_await when_any(
+        fetch_from_primary(),
+        delay_then(std::chrono::seconds(5), fetch_from_backup())
+    );
+}
+----
+
+== Implementation Notes
+
+=== Task Storage
+
+`when_all` stores all tasks in its coroutine frame. Tasks are moved from the arguments, so the original task objects become empty after the call.
+
+=== Completion Tracking
+
+A shared atomic counter tracks how many tasks remain. Each task completion decrements the counter. When it reaches zero, the parent coroutine is resumed.
+
+=== Runner Coroutines
+
+Each child task is wrapped in a "runner" coroutine that:
+
+1. Receives context (executor, stop token) from `when_all`
+2. Awaits the child task
+3. Stores the result in shared state
+4. Signals completion
+
+This design ensures proper context propagation to all children.
+
+== Reference
+
+[cols="1,3"]
+|===
+| Header | Description
+
+| `<boost/capy/when_all.hpp>`
+| Concurrent composition with when_all
+|===
+
+You have now learned how to compose tasks concurrently with `when_all`. In the next section, you will learn about frame allocators for customizing coroutine memory allocation.

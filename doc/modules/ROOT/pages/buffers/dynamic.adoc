@@ -1,374 +1,285 @@
-//
-// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
-//
-// Distributed under the Boost Software License, Version 1.0. (See accompanying
-// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
-//
-// Official repository: https://github.com/cppalliance/capy
-//
-
 = Dynamic Buffers
 
-This page explains dynamic buffers—containers that manage resizable storage
-with a producer/consumer model designed for streaming I/O.
+This section introduces dynamic buffers—growable storage that adapts to data flow between producers and consumers.
 
-NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+== Prerequisites
+
+* Completed xref:algorithms.adoc[Buffer Algorithms]
+* Understanding of buffer sequences and copying
 
 == The Producer/Consumer Model
 
-Dynamic buffers serve as intermediate storage between a **producer** that
-writes data and a **consumer** that reads it. The classic example is network
-I/O: the network produces data that your application consumes.
+Dynamic buffers serve as intermediate storage between a *producer* (typically network I/O) and a *consumer* (your application code).
 
-[source,text]
-----
-    Network (Producer)
-          |
-          v
-    +-----------------+
-    | Dynamic Buffer  |
-    | [readable data] |
-    +-----------------+
-          |
-          v
-    Application (Consumer)
-----
+The flow:
 
-The buffer API reflects this model:
+1. **Producer** writes data into the buffer
+2. **Buffer** grows as needed to accommodate data
+3. **Consumer** reads and processes data
+4. **Buffer** releases consumed data
 
-* **Producer side**: `prepare(n)` → write data → `commit(n)`
-* **Consumer side**: `data()` → read data → `consume(n)`
-
-This separation prevents reading uncommitted data or overwriting unread data.
+This model decouples production rate from consumption rate—the buffer absorbs variations.
 
 == The DynamicBuffer Concept
 
 [source,cpp]
 ----
-template<class T>
-concept DynamicBuffer = requires(T& buf, T const& cbuf, std::size_t n)
-{
-    // Capacity management
-    { cbuf.size() } -> std::convertible_to<std::size_t>;      // Readable bytes
-    { cbuf.max_size() } -> std::convertible_to<std::size_t>;  // Maximum capacity
-    { cbuf.capacity() } -> std::convertible_to<std::size_t>;  // Current capacity
-
-    // Consumer side
-    { cbuf.data() } -> ConstBufferSequence;   // Get readable data
-    buf.consume(n);                            // Discard n bytes
-
+template<typename T>
+concept DynamicBuffer = requires(T& t, std::size_t n) {
     // Producer side
-    { buf.prepare(n) } -> MutableBufferSequence;  // Get writable space
-    buf.commit(n);                                 // Make n bytes readable
+    { t.prepare(n) } -> MutableBufferSequence;
+    { t.commit(n) };
+    
+    // Consumer side
+    { t.data() } -> ConstBufferSequence;
+    { t.consume(n) };
+    
+    // Capacity
+    { t.size() } -> std::same_as<std::size_t>;
+    { t.max_size() } -> std::same_as<std::size_t>;
+    { t.capacity() } -> std::same_as<std::size_t>;
 };
 ----
 
-=== Producer Operations
+== Producer Interface
+
+=== prepare(n)
+
+Returns mutable buffer space for writing up to `n` bytes:
 
 [source,cpp]
 ----
-flat_dynamic_buffer buf(storage, sizeof(storage));
-
-// 1. Get writable space
-auto writable = buf.prepare(1024);
-
-// 2. Write data (e.g., from network)
-std::size_t n = receive_data(writable);
-
-// 3. Make written bytes readable
-buf.commit(n);
+auto buffers = dynamic_buf.prepare(1024);  // Space for up to 1024 bytes
 ----
 
-=== Consumer Operations
+The returned space may be larger than requested. The data is not yet part of the readable sequence.
+
+=== commit(n)
+
+Marks `n` bytes of prepared space as written and readable:
 
 [source,cpp]
 ----
-// 1. Get readable data
-auto readable = buf.data();
-
-// 2. Process the data
-std::size_t processed = parse_message(readable);
-
-// 3. Discard processed bytes
-buf.consume(processed);
+// After writing data:
+dynamic_buf.commit(bytes_written);
+// Data is now visible via data()
 ----
 
-== DynamicBufferParam for Coroutines
-
-When passing dynamic buffers to coroutine functions, use `DynamicBufferParam`
-with a forwarding reference:
+=== Typical Producer Pattern
 
 [source,cpp]
 ----
-auto read(ReadSource auto& source, DynamicBufferParam auto&& buffers)
-    -> task<io_result<std::size_t>>;
+task<> read_into_buffer(Stream& stream, DynamicBuffer auto& buffer)
+{
+    // Prepare space
+    auto space = buffer.prepare(1024);
+    
+    // Read into prepared space
+    auto [ec, n] = co_await stream.read_some(space);
+    
+    if (!ec.failed())
+        buffer.commit(n);  // Make data readable
+}
 ----
 
-This concept enforces safe parameter passing:
+== Consumer Interface
 
-* **Lvalues**: Always allowed—the caller manages the buffer's lifetime
-* **Rvalues**: Only allowed for adapter types that update external storage
+=== data()
 
-=== Why the Distinction?
-
-Some buffer types store bookkeeping internally:
+Returns the readable data as a const buffer sequence:
 
 [source,cpp]
 ----
-// BAD: rvalue non-adapter loses bookkeeping
-flat_dynamic_buffer buf(storage, sizeof(storage));
-co_await read(source, std::move(buf));  // Compile error!
-
-// GOOD: lvalue keeps bookkeeping accessible
-flat_dynamic_buffer buf(storage, sizeof(storage));
-co_await read(source, buf);  // OK
+auto readable = dynamic_buf.data();
+// Process readable bytes
 ----
 
-Adapters update external storage, so rvalues are safe:
+=== consume(n)
+
+Removes `n` bytes from the front of readable data:
 
 [source,cpp]
 ----
-// GOOD: adapter rvalue, string retains data
-std::string body;
-co_await read(source, string_dynamic_buffer(&body));  // OK
+dynamic_buf.consume(processed_bytes);
+// Those bytes are no longer in data()
 ----
 
-=== Marking Adapter Types
-
-Types safe to pass as rvalues define a nested tag:
+=== Typical Consumer Pattern
 
 [source,cpp]
 ----
-class string_dynamic_buffer {
-public:
-    using is_dynamic_buffer_adapter = void;
-    // ...
-};
+void process_buffer(DynamicBuffer auto& buffer)
+{
+    auto data = buffer.data();
+    
+    while (buffer_size(data) >= message_header_size)
+    {
+        auto msg_size = parse_header(data);
+        if (buffer_size(data) < msg_size)
+            break;  // Need more data
+        
+        process_message(data, msg_size);
+        buffer.consume(msg_size);
+        data = buffer.data();  // Refresh after consume
+    }
+}
 ----
+
+== Capacity Management
+
+`size()`::
+Current number of readable bytes (the length of `data()`).
+
+`max_size()`::
+Maximum allowed size. Attempts to grow beyond this throw or fail.
+
+`capacity()`::
+Current allocated capacity. May be larger than `size()`.
+
+== DynamicBufferParam
+
+When passing dynamic buffers to coroutines, use `DynamicBufferParam` for safe parameter handling:
+
+[source,cpp]
+----
+template<typename DB>
+concept DynamicBufferParam = DynamicBuffer<std::remove_reference_t<DB>>;
+
+template<DynamicBufferParam Buf>
+task<std::size_t> read_until(Stream& stream, Buf&& buffer, char delimiter);
+----
+
+This concept ensures proper handling of lvalues and rvalues, preventing dangling references across suspension points.
 
 == Provided Implementations
 
 === flat_dynamic_buffer
 
-Uses a single contiguous memory region:
+Linear storage with single-buffer sequences:
 
 [source,cpp]
 ----
 #include <boost/capy/buffers/flat_dynamic_buffer.hpp>
 
-char storage[4096];
-flat_dynamic_buffer buf(storage, sizeof(storage));
+flat_dynamic_buffer buffer;
+buffer.prepare(1024);
+// ... write data ...
+buffer.commit(n);
 
-// prepare() and data() always return single-element sequences
-auto writable = buf.prepare(100);  // Single mutable_buffer
-auto readable = buf.data();         // Single const_buffer
+// data() returns a single const_buffer
 ----
 
-**Characteristics:**
+Advantages:
 
-* Data is always contiguous—good for parsers requiring linear access
-* Buffer sequences have exactly one element
-* May waste space after consume (gap at front)
+* Contiguous memory—good for parsing that needs contiguous data
+* Cache-friendly
 
-**Best for:** Protocols requiring contiguous parsing, simple request/response patterns.
+Disadvantages:
+
+* May require copying when buffer wraps or grows
 
 === circular_dynamic_buffer
 
-Uses a ring buffer that wraps around:
+Ring buffer implementation:
 
 [source,cpp]
 ----
 #include <boost/capy/buffers/circular_dynamic_buffer.hpp>
 
-char storage[4096];
-circular_dynamic_buffer buf(storage, sizeof(storage));
-
-// Data may wrap around
-auto readable = buf.data();  // May return const_buffer_pair
+circular_dynamic_buffer<1024> buffer;  // Fixed capacity
 ----
 
-**Characteristics:**
+Advantages:
 
-* No space wasted after consume (wraps around)
-* Buffer sequences may have two elements when data spans the wrap point
-* Fixed maximum capacity
+* No copying on wrap—head/tail pointers move
+* Fixed memory footprint
 
-**Best for:** Continuous streaming, bidirectional protocols, high-throughput scenarios.
+Disadvantages:
 
-=== string_dynamic_buffer
-
-Adapts a `std::string` as a dynamic buffer:
-
-[source,cpp]
-----
-#include <boost/capy/buffers/string_dynamic_buffer.hpp>
-
-std::string body;
-string_dynamic_buffer buf(&body);
-
-// Buffer operations modify the string
-co_await read(source, buf);
-// body now contains the data
-----
-
-**Characteristics:**
-
-* Does not own storage—wraps an existing string
-* String grows as needed (up to max_size)
-* Destructor resizes string to final readable size
-* Move-only (cannot be copied)
-* Marked as adapter—safe to pass as rvalue
-
-**Best for:** Building string results, HTTP bodies, text protocols.
+* `data()` may return two buffers (wrapped around end)
+* Fixed capacity
 
 === vector_dynamic_buffer
 
-Adapts a `std::vector<unsigned char>` as a dynamic buffer:
+Backed by `std::vector<char>`:
 
 [source,cpp]
 ----
 #include <boost/capy/buffers/vector_dynamic_buffer.hpp>
 
-std::vector<unsigned char> data;
-vector_dynamic_buffer buf(&data);
-
-co_await read(source, buf);
-// data now contains the bytes
+std::vector<char> storage;
+vector_dynamic_buffer buffer(storage);
 ----
 
-**Characteristics:**
+Adapts an existing vector for use as a dynamic buffer.
 
-* Similar to string_dynamic_buffer but for binary data
-* Vector grows as needed
-* Marked as adapter—safe to pass as rvalue
+=== string_dynamic_buffer
 
-**Best for:** Binary protocols, file I/O, binary message bodies.
-
-== Real-World Examples
-
-=== Reading HTTP Body
+Backed by `std::string`:
 
 [source,cpp]
 ----
-task<std::string> read_body(ReadSource auto& source, std::size_t content_length)
-{
-    std::string body;
-    string_dynamic_buffer buf(&body, content_length);
+#include <boost/capy/buffers/string_dynamic_buffer.hpp>
 
-    // Read until we have the full body
-    char temp[4096];
-    std::size_t remaining = content_length;
-    while (remaining > 0)
-    {
-        auto to_read = (std::min)(remaining, sizeof(temp));
-        auto [ec, n] = co_await source.read(mutable_buffer(temp, to_read));
-        if (ec.failed())
-            co_return {};
-
-        auto writable = buf.prepare(n);
-        buffer_copy(writable, const_buffer(temp, n));
-        buf.commit(n);
-        remaining -= n;
-    }
-
-    co_return body;
-}
+std::string storage;
+string_dynamic_buffer buffer(storage);
 ----
 
-=== Streaming Protocol Parser
+Useful when you want the final data as a string.
+
+== Example: Line-Based Protocol
 
 [source,cpp]
 ----
-task<void> parse_stream(ReadStream auto& stream)
+task<std::string> read_line(Stream& stream)
 {
-    char storage[8192];
-    circular_dynamic_buffer buf(storage, sizeof(storage));
-
-    for (;;)
+    flat_dynamic_buffer buffer;
+    
+    while (true)
     {
-        // Read more data
-        auto [ec, n] = co_await stream.read_some(buf.prepare(1024));
-        if (ec == cond::eof)
-            break;
+        // Prepare space and read
+        auto space = buffer.prepare(256);
+        auto [ec, n] = co_await stream.read_some(space);
         if (ec.failed())
-            co_return;
-        buf.commit(n);
-
-        // Parse complete messages
-        while (auto msg = try_parse_message(buf.data()))
+            throw std::system_error(ec);
+        buffer.commit(n);
+        
+        // Search for newline in readable data
+        auto data = buffer.data();
+        std::string_view sv(
+            static_cast<char const*>(data.data()), data.size());
+        
+        auto pos = sv.find('\n');
+        if (pos != std::string_view::npos)
         {
-            handle_message(*msg);
-            buf.consume(msg->size());
+            std::string line(sv.substr(0, pos));
+            buffer.consume(pos + 1);  // Include newline
+            co_return line;
         }
     }
 }
 ----
 
-=== Read Until EOF
-
-[source,cpp]
-----
-task<std::vector<unsigned char>> read_all(ReadSource auto& source)
-{
-    std::vector<unsigned char> result;
-    vector_dynamic_buffer buf(&result);
-
-    auto [ec, total] = co_await read(source, buf);
-    // read() loops until EOF, growing the buffer as needed
-
-    co_return result;
-}
-----
-
-== Choosing a Buffer Type
-
-[cols="1,2,2"]
-|===
-| Type | Best For | Trade-off
-
-| `flat_dynamic_buffer`
-| Protocols requiring contiguous data
-| May waste space after consume
-
-| `circular_dynamic_buffer`
-| High-throughput streaming
-| Two-element sequences add complexity
-
-| `string_dynamic_buffer`
-| Building string results
-| Requires external string ownership
-
-| `vector_dynamic_buffer`
-| Binary data accumulation
-| Requires external vector ownership
-|===
-
-== Summary
+== Reference
 
 [cols="1,3"]
 |===
-| Component | Purpose
+| Header | Description
 
-| `DynamicBuffer`
-| Concept for resizable buffers with prepare/commit semantics
+| `<boost/capy/concept/dynamic_buffer.hpp>`
+| DynamicBuffer concept definition
 
-| `DynamicBufferParam`
-| Safe parameter passing constraint for coroutines
+| `<boost/capy/buffers/flat_dynamic_buffer.hpp>`
+| Linear dynamic buffer
 
-| `flat_dynamic_buffer`
-| Contiguous storage, single-element sequences
+| `<boost/capy/buffers/circular_dynamic_buffer.hpp>`
+| Ring buffer implementation
 
-| `circular_dynamic_buffer`
-| Ring buffer, no space waste, may have two-element sequences
+| `<boost/capy/buffers/vector_dynamic_buffer.hpp>`
+| Vector-backed adapter
 
-| `string_dynamic_buffer`
-| Adapter for `std::string`
-
-| `vector_dynamic_buffer`
-| Adapter for `std::vector<unsigned char>`
+| `<boost/capy/buffers/string_dynamic_buffer.hpp>`
+| String-backed adapter
 |===
 
-== Navigation
-
-[.text-center]
-xref:algorithms.adoc[← Buffer Algorithms] | xref:../library/streams.adoc[Next: Stream Concepts →]
+You have now learned about dynamic buffers for producer/consumer patterns. This completes the Buffer Sequences section. Continue to xref:../streams/overview.adoc[Stream Concepts] to learn about Capy's stream abstractions.

@@ -1,178 +1,167 @@
-//
-// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
-//
-// Distributed under the Boost Software License, Version 1.0. (See accompanying
-// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
-//
-// Official repository: https://github.com/cppalliance/capy
-//
+= Launching Coroutines
 
-= Launching Tasks
+This section explains how to launch coroutines for execution. You will learn about `run_async` for entry from non-coroutine code and `run` for executor hopping within coroutine code.
 
-This page explains how to start lazy tasks for execution using `run_async`.
+== Prerequisites
 
-NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+* Completed xref:tasks.adoc[The task Type]
+* Understanding of lazy task execution
 
-== Why Tasks Need a Driver
+== The Execution Model
 
-Tasks are lazy. They remain suspended until something starts them. Within a
-coroutine, `co_await` serves this purpose. But at the program's entry point,
-you need a way to kick off the first coroutine.
+Capy tasks are lazy—they do not execute until something drives them. Two mechanisms exist:
 
-The `run_async` function provides this capability. It:
+* *Awaiting* — One coroutine awaits another (`co_await task`)
+* *Launching* — Non-coroutine code initiates execution (`run_async`)
 
-1. Binds a task to a dispatcher (typically an executor)
-2. Starts the task's execution
-3. Optionally delivers the result to a completion handler
+When a task is awaited, the awaiting coroutine provides context: an executor for dispatching completion and a stop token for cancellation. But what about the first task in a chain? That task needs explicit launching.
 
-== Basic Usage
+== run_async: Entry from Non-Coroutine Code
+
+`run_async` is the bridge between regular code and coroutine code. It takes an executor, creates the necessary context, and starts the task executing.
 
 [source,cpp]
 ----
-#include <boost/capy/ex/run_async.hpp>
+#include <boost/capy.hpp>
+using namespace boost::capy;
 
-void start(executor ex)
+task<int> compute()
 {
-    run_async(ex)(compute());
+    co_return 42;
+}
+
+int main()
+{
+    thread_pool pool;
+    run_async(pool.get_executor())(compute());
+    // Task is now running on the thread pool
+    
+    // pool destructor waits for work to complete
+    return 0;
 }
 ----
 
-The syntax `run_async(ex)(task)` creates a runner bound to the executor, then
-immediately launches the task. The task begins executing when the executor
-schedules it.
+=== Two-Call Syntax
 
-== Fire and Forget
+Notice the unusual syntax: `run_async(executor)(task)`. This is intentional and relates to C++17 evaluation order.
 
-The simplest pattern discards the result:
+C++17 guarantees that in the expression `f(a)(b)`:
 
-[source,cpp]
-----
-run_async(ex)(compute());
-----
+1. `f(a)` is evaluated first, producing a callable
+2. `b` is evaluated second
+3. The callable is invoked with `b`
 
-If the task throws an exception, it propagates to the executor's error handling
-(typically rethrown from `run()`). This pattern is appropriate for top-level
-tasks where errors should terminate the program.
+This ordering matters because the task's coroutine frame is allocated during step 2, and `run_async` sets up thread-local allocator state in step 1. The task inherits that allocator.
 
-== Handling Results
-
-To receive the task's result, provide a completion handler:
+[WARNING]
+====
+Do not store the result of `run_async(executor)` and call it later:
 
 [source,cpp]
 ----
-run_async(ex)(compute(), [](int result) {
+auto wrapper = run_async(pool.get_executor());  // Don't do this
+wrapper(compute());  // TLS state no longer valid
+----
+
+Always use the two-call pattern in a single expression.
+====
+
+=== Handler Overloads
+
+`run_async` accepts optional handlers for results and exceptions:
+
+[source,cpp]
+----
+// Result handler only (exceptions rethrown)
+run_async(ex, [](int result) {
     std::cout << "Got: " << result << "\n";
-});
-----
+})(compute());
 
-The handler is called when the task completes successfully. For `task<void>`,
-the handler takes no arguments:
-
-[source,cpp]
-----
-run_async(ex)(do_work(), []() {
-    std::cout << "Work complete\n";
-});
-----
-
-== Handling Errors
-
-To handle both success and failure, provide a handler that also accepts
-`std::exception_ptr`:
-
-[source,cpp]
-----
-run_async(ex)(compute(), overloaded{
-    [](int result) {
-        std::cout << "Success: " << result << "\n";
-    },
+// Separate handlers for result and exception
+run_async(ex,
+    [](int result) { std::cout << "Result: " << result << "\n"; },
     [](std::exception_ptr ep) {
-        try {
-            if (ep) std::rethrow_exception(ep);
-        } catch (std::exception const& e) {
-            std::cerr << "Error: " << e.what() << "\n";
+        try { std::rethrow_exception(ep); }
+        catch (std::exception const& e) {
+            std::cout << "Error: " << e.what() << "\n";
         }
     }
-});
+)(compute());
 ----
 
-Alternatively, use separate handlers for success and error:
+When no handlers are provided, results are discarded and exceptions are rethrown (causing `std::terminate` if uncaught).
 
-[source,cpp]
-----
-run_async(ex)(compute(),
-    [](int result) { std::cout << result << "\n"; },
-    [](std::exception_ptr ep) { /* handle error */ }
-);
-----
+=== Stop Token Support
 
-== The Single-Expression Idiom
-
-The `run_async` return value enforces a specific usage pattern:
-
-[source,cpp]
-----
-// CORRECT: Single expression
-run_async(ex)(make_task());
-
-// INCORRECT: Split across statements
-auto runner = run_async(ex);  // Sets thread-local state
-// ... other code may interfere ...
-runner(make_task());          // Won't compile (deleted move)
-----
-
-This design ensures the frame allocator is active when your task is created,
-enabling frame recycling optimization.
-
-== Stop Token Support
-
-Pass a stop token for cooperative cancellation:
+Pass a stop token to enable cooperative cancellation:
 
 [source,cpp]
 ----
 std::stop_source source;
 run_async(ex, source.get_token())(cancellable_task());
 
-// Later: request cancellation
+// Later, to request cancellation:
 source.request_stop();
 ----
 
-See xref:cancellation.adoc[Cancellation] for details on stop token propagation.
+The stop token is propagated to the task and all tasks it awaits.
 
-== When NOT to Use run_async
+== run: Executor Hopping Within Coroutines
 
-Use `run_async` when:
+Inside a coroutine, use `run` to execute a child task on a different executor:
 
-* You need to start a coroutine from non-coroutine code
-* You want fire-and-forget semantics
-* You need to receive the result via callback
+[source,cpp]
+----
+task<int> compute_on_pool(thread_pool& pool)
+{
+    // This task runs on whatever executor we're already on
+    
+    // But this child task runs on the pool's executor:
+    int result = co_await run(pool.get_executor())(expensive_computation());
+    
+    // After co_await, we're back on our original executor
+    co_return result;
+}
+----
 
-Do NOT use `run_async` when:
+=== Executor Affinity
 
-* You are already inside a coroutine — just `co_await` the task directly
-* You need the result synchronously — `run_async` is asynchronous
+By default, a task inherits its caller's executor. This means completions are dispatched through that executor, ensuring thread affinity for thread-sensitive code.
 
-== Summary
+`run` overrides this inheritance for a specific child task, binding it to a different executor. The child task runs on the specified executor, and when it completes, the parent task resumes on its original executor.
+
+This pattern is useful for:
+
+* Running CPU-intensive work on a thread pool
+* Performing I/O on an I/O-specific context
+* Ensuring UI updates happen on the UI thread
+
+== Handler Threading
+
+Handlers passed to `run_async` are invoked on whatever thread the executor schedules:
+
+[source,cpp]
+----
+// If pool has 4 threads, the handler runs on one of those threads
+run_async(pool.get_executor(), [](int result) {
+    // This runs on a pool thread, NOT the main thread
+    update_shared_state(result);
+})(compute());
+----
+
+If you need results on a specific thread, use appropriate synchronization or dispatch mechanisms.
+
+== Reference
 
 [cols="1,3"]
 |===
-| Pattern | Code
+| Header | Description
 
-| Fire and forget
-| `run_async(ex)(task)`
+| `<boost/capy/ex/run_async.hpp>`
+| Entry point for launching tasks from non-coroutine code
 
-| Success handler
-| `run_async(ex)(task, handler)`
-
-| Success + error handlers
-| `run_async(ex)(task, on_success, on_error)`
-
-| With stop token
-| `run_async(ex, stop_token)(task)`
+| `<boost/capy/ex/run.hpp>`
+| Executor binding for child tasks within coroutines
 |===
 
-== Next Steps
-
-* xref:when-all.adoc[Concurrent Composition] — Run multiple tasks in parallel
-* xref:affinity.adoc[Executor Affinity] — Control where coroutines execute
-* xref:../execution/frame-allocation.adoc[Frame Allocation] — Optimize memory usage
+You have now learned how to launch coroutines using `run_async` and bind child tasks to specific executors using `run`. In the next section, you will learn about executors and execution contexts in detail.
