@@ -28,9 +28,11 @@ fill_buffers(Buffer* arr, BS const& bs) noexcept
     auto it = begin(bs);
     auto const last = end(bs);
     std::size_t n = 0;
-    while(it != last && n < max_iovec_) {
-        if((*it).size() != 0)
-            ::new(&arr[n++]) Buffer(*it);
+    while(it != last && n < max_iovec_)
+    {
+        Buffer b(*it);
+        if(b.size() != 0)
+            ::new(&arr[n++]) Buffer(b);
         ++it;
     }
     return n;
