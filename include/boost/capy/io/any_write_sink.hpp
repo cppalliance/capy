@@ -11,6 +11,7 @@
 #define BOOST_CAPY_IO_ANY_WRITE_SINK_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_param.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
@@ -26,6 +27,7 @@
 #include <coroutine>
 #include <cstddef>
 #include <exception>
+#include <new>
 #include <span>
 #include <stop_token>
 #include <utility>
@@ -37,7 +39,7 @@ namespace capy {
 
     This class provides type erasure for any type satisfying the
     @ref WriteSink concept, enabling runtime polymorphism for
-    sink write operations. It uses a cached coroutine frame to achieve
+    sink write operations. It uses cached awaitable storage to achieve
     zero steady-state allocation after construction.
 
     The wrapper supports two construction modes:
@@ -46,8 +48,8 @@ namespace capy {
     - **Reference**: Pass a pointer to wrap without ownership. The
       pointed-to sink must outlive this wrapper.
 
-    @par Frame Preallocation
-    The constructor preallocates the internal coroutine frame.
+    @par Awaitable Preallocation
+    The constructor preallocates storage for the type-erased awaitable.
     This reserves all virtual address space at server startup
     so memory usage can be measured up front, rather than
     allocating piecemeal as traffic arrives.
@@ -75,76 +77,24 @@ namespace capy {
 class any_write_sink
 {
     struct vtable;
+    struct write_awaitable_ops;
+    struct eof_awaitable_ops;
 
     template<WriteSink S>
     struct vtable_for_impl;
 
-    struct write_op;
-    struct write_eof_op;
-
     void* sink_ = nullptr;
     vtable const* vt_ = nullptr;
-    void* cached_frame_ = nullptr;
-    std::size_t cached_size_ = 0;
+    void* cached_awaitable_ = nullptr;
     void* storage_ = nullptr;
-
-    template<WriteSink S>
-    static coro
-    do_write_impl(
-        void* sink,
-        any_write_sink* wrapper,
-        std::span<const_buffer const> buffers,
-        bool eof,
-        coro h,
-        executor_ref ex,
-        std::stop_token token,
-        std::error_code* ec,
-        std::size_t* n);
-
-    template<WriteSink S>
-    static coro
-    do_write_eof_impl(
-        void* sink,
-        any_write_sink* wrapper,
-        coro h,
-        executor_ref ex,
-        std::stop_token token,
-        std::error_code* ec);
-
-    template<WriteSink S>
-    static write_op
-    write_coro(
-        any_write_sink* wrapper,
-        S& sink,
-        std::span<const_buffer const> bufs,
-        std::error_code* out_ec,
-        std::size_t* out_n);
-
-    template<WriteSink S>
-    static write_op
-    write_with_eof_coro(
-        any_write_sink* wrapper,
-        S& sink,
-        std::span<const_buffer const> bufs,
-        bool eof,
-        std::error_code* out_ec,
-        std::size_t* out_n);
-
-    template<WriteSink S>
-    static write_eof_op
-    write_eof_coro(
-        any_write_sink* wrapper,
-        S& sink,
-        std::error_code* out_ec);
-
-    void* alloc_frame(std::size_t size);
-    void free_frame(void* p, std::size_t size);
+    write_awaitable_ops const* active_write_ops_ = nullptr;
+    eof_awaitable_ops const* active_eof_ops_ = nullptr;
 
 public:
     /** Destructor.
 
         Destroys the owned sink (if any) and releases the cached
-        coroutine frame.
+        awaitable storage.
     */
     ~any_write_sink();
 
@@ -157,7 +107,7 @@ public:
 
     /** Non-copyable.
 
-        The frame cache is per-instance and cannot be shared.
+        The awaitable cache is per-instance and cannot be shared.
     */
     any_write_sink(any_write_sink const&) = delete;
     any_write_sink& operator=(any_write_sink const&) = delete;
@@ -165,7 +115,7 @@ public:
     /** Move constructor.
 
         Transfers ownership of the wrapped sink (if owned) and
-        cached frame from `other`. After the move, `other` is
+        cached awaitable storage from `other`. After the move, `other` is
         in a default-constructed state.
 
         @param other The wrapper to move from.
@@ -173,9 +123,10 @@ public:
     any_write_sink(any_write_sink&& other) noexcept
         : sink_(std::exchange(other.sink_, nullptr))
         , vt_(std::exchange(other.vt_, nullptr))
-        , cached_frame_(std::exchange(other.cached_frame_, nullptr))
-        , cached_size_(std::exchange(other.cached_size_, 0))
+        , cached_awaitable_(std::exchange(other.cached_awaitable_, nullptr))
         , storage_(std::exchange(other.storage_, nullptr))
+        , active_write_ops_(std::exchange(other.active_write_ops_, nullptr))
+        , active_eof_ops_(std::exchange(other.active_eof_ops_, nullptr))
     {
     }
 
@@ -209,15 +160,7 @@ public:
         @param s Pointer to the sink to wrap.
     */
     template<WriteSink S>
-    any_write_sink(S* s) noexcept
-        : sink_(s)
-        , vt_(&vtable_for_impl<S>::value)
-    {
-        // Preallocate coroutine frames to find max size
-        write_coro<S>(this, *s, {}, nullptr, nullptr);
-        write_with_eof_coro<S>(this, *s, {}, false, nullptr, nullptr);
-        write_eof_coro<S>(this, *s, nullptr);
-    }
+    any_write_sink(S* s);
 
     /** Check if the wrapper contains a valid sink.
 
@@ -326,43 +269,120 @@ private:
 
 //----------------------------------------------------------
 
+struct any_write_sink::write_awaitable_ops
+{
+    bool (*await_ready)(void*);
+    coro (*await_suspend)(void*, coro, executor_ref, std::stop_token);
+    io_result<std::size_t> (*await_resume)(void*);
+    void (*destroy)(void*) noexcept;
+};
+
+struct any_write_sink::eof_awaitable_ops
+{
+    bool (*await_ready)(void*);
+    coro (*await_suspend)(void*, coro, executor_ref, std::stop_token);
+    io_result<> (*await_resume)(void*);
+    void (*destroy)(void*) noexcept;
+};
+
 struct any_write_sink::vtable
 {
     void (*destroy)(void*) noexcept;
-
-    coro (*do_write)(
+    std::size_t awaitable_size;
+    std::size_t awaitable_align;
+    write_awaitable_ops const* (*construct_write_awaitable)(
         void* sink,
-        any_write_sink* wrapper,
+        void* storage,
         std::span<const_buffer const> buffers,
-        bool eof,
-        coro h,
-        executor_ref ex,
-        std::stop_token token,
-        std::error_code* ec,
-        std::size_t* n);
-
-    coro (*do_write_eof)(
+        bool eof);
+    eof_awaitable_ops const* (*construct_eof_awaitable)(
         void* sink,
-        any_write_sink* wrapper,
-        coro h,
-        executor_ref ex,
-        std::stop_token token,
-        std::error_code* ec);
+        void* storage);
 };
 
 template<WriteSink S>
 struct any_write_sink::vtable_for_impl
 {
+    using WriteAwaitable = decltype(std::declval<S&>().write(
+        std::span<const_buffer const>{}, false));
+    using EofAwaitable = decltype(std::declval<S&>().write_eof());
+
     static void
     do_destroy_impl(void* sink) noexcept
     {
         static_cast<S*>(sink)->~S();
     }
 
+    static write_awaitable_ops const*
+    construct_write_awaitable_impl(
+        void* sink,
+        void* storage,
+        std::span<const_buffer const> buffers,
+        bool eof)
+    {
+        auto& s = *static_cast<S*>(sink);
+        ::new(storage) WriteAwaitable(s.write(buffers, eof));
+
+        static constexpr write_awaitable_ops ops = {
+            +[](void* p) {
+                return static_cast<WriteAwaitable*>(p)->await_ready();
+            },
+            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+                return detail::call_await_suspend(
+                    static_cast<WriteAwaitable*>(p), h, ex, token);
+            },
+            +[](void* p) {
+                return static_cast<WriteAwaitable*>(p)->await_resume();
+            },
+            +[](void* p) noexcept {
+                static_cast<WriteAwaitable*>(p)->~WriteAwaitable();
+            }
+        };
+        return &ops;
+    }
+
+    static eof_awaitable_ops const*
+    construct_eof_awaitable_impl(
+        void* sink,
+        void* storage)
+    {
+        auto& s = *static_cast<S*>(sink);
+        ::new(storage) EofAwaitable(s.write_eof());
+
+        static constexpr eof_awaitable_ops ops = {
+            +[](void* p) {
+                return static_cast<EofAwaitable*>(p)->await_ready();
+            },
+            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+                return detail::call_await_suspend(
+                    static_cast<EofAwaitable*>(p), h, ex, token);
+            },
+            +[](void* p) {
+                return static_cast<EofAwaitable*>(p)->await_resume();
+            },
+            +[](void* p) noexcept {
+                static_cast<EofAwaitable*>(p)->~EofAwaitable();
+            }
+        };
+        return &ops;
+    }
+
+    static constexpr std::size_t max_awaitable_size =
+        sizeof(WriteAwaitable) > sizeof(EofAwaitable)
+            ? sizeof(WriteAwaitable)
+            : sizeof(EofAwaitable);
+
+    static constexpr std::size_t max_awaitable_align =
+        alignof(WriteAwaitable) > alignof(EofAwaitable)
+            ? alignof(WriteAwaitable)
+            : alignof(EofAwaitable);
+
     static constexpr vtable value = {
         &do_destroy_impl,
-        &any_write_sink::do_write_impl<S>,
-        &any_write_sink::do_write_eof_impl<S>
+        max_awaitable_size,
+        max_awaitable_align,
+        &construct_write_awaitable_impl,
+        &construct_eof_awaitable_impl
     };
 };
 
@@ -376,8 +396,8 @@ any_write_sink::~any_write_sink()
         vt_->destroy(sink_);
         ::operator delete(storage_);
     }
-    if(cached_frame_)
-        ::operator delete(cached_frame_);
+    if(cached_awaitable_)
+        ::operator delete(cached_awaitable_);
 }
 
 inline any_write_sink&
@@ -390,13 +410,14 @@ any_write_sink::operator=(any_write_sink&& other) noexcept
             vt_->destroy(sink_);
             ::operator delete(storage_);
         }
-        if(cached_frame_)
-            ::operator delete(cached_frame_);
+        if(cached_awaitable_)
+            ::operator delete(cached_awaitable_);
         sink_ = std::exchange(other.sink_, nullptr);
         vt_ = std::exchange(other.vt_, nullptr);
-        cached_frame_ = std::exchange(other.cached_frame_, nullptr);
-        cached_size_ = std::exchange(other.cached_size_, 0);
+        cached_awaitable_ = std::exchange(other.cached_awaitable_, nullptr);
         storage_ = std::exchange(other.storage_, nullptr);
+        active_write_ops_ = std::exchange(other.active_write_ops_, nullptr);
+        active_eof_ops_ = std::exchange(other.active_eof_ops_, nullptr);
     }
     return *this;
 }
@@ -422,502 +443,19 @@ any_write_sink::any_write_sink(S s)
     storage_ = ::operator new(sizeof(S));
     sink_ = ::new(storage_) S(std::move(s));
 
-    // Preallocate coroutine frames to find max size
-    auto& ref = *static_cast<S*>(sink_);
-    write_coro<S>(this, ref, {}, nullptr, nullptr);
-    write_with_eof_coro<S>(this, ref, {}, false, nullptr, nullptr);
-    write_eof_coro<S>(this, ref, nullptr);
+    // Preallocate the awaitable storage (sized for max of write/eof)
+    cached_awaitable_ = ::operator new(vt_->awaitable_size);
 
     g.committed = true;
 }
 
-//----------------------------------------------------------
-
-struct any_write_sink::write_op
-{
-    struct promise_type
-    {
-        executor_ref executor_;
-        std::stop_token stop_token_;
-        coro caller_h_{};
-
-        promise_type() = default;
-
-        write_op
-        get_return_object() noexcept
-        {
-            return write_op{
-                std::coroutine_handle<promise_type>::from_promise(*this)};
-        }
-
-        std::suspend_always
-        initial_suspend() noexcept
-        {
-            return {};
-        }
-
-        auto
-        final_suspend() noexcept
-        {
-            struct awaiter
-            {
-                promise_type* p_;
-
-                bool await_ready() const noexcept { return false; }
-
-                coro await_suspend(coro) const noexcept
-                {
-                    if(p_->caller_h_)
-                        return p_->caller_h_;
-                    return std::noop_coroutine();
-                }
-
-                void await_resume() const noexcept {}
-            };
-            return awaiter{this};
-        }
-
-        void
-        return_void() noexcept
-        {
-        }
-
-        void
-        unhandled_exception()
-        {
-            throw;
-        }
-
-        template<class... Args>
-        static void*
-        operator new(
-            std::size_t size,
-            any_write_sink* wrapper,
-            Args&&...)
-        {
-            return wrapper->alloc_frame(size);
-        }
-
-        template<class... Args>
-        static void
-        operator delete(void*, any_write_sink*, Args&&...) noexcept
-        {
-        }
-
-        static void
-        operator delete(void*, std::size_t) noexcept
-        {
-        }
-
-        void
-        set_executor(executor_ref ex) noexcept
-        {
-            executor_ = ex;
-        }
-
-        void
-        set_stop_token(std::stop_token token) noexcept
-        {
-            stop_token_ = token;
-        }
-
-        void
-        set_caller(coro h) noexcept
-        {
-            caller_h_ = h;
-        }
-
-        template<class Awaitable>
-        struct transform_awaiter
-        {
-            std::decay_t<Awaitable> a_;
-            promise_type* p_;
-
-            bool await_ready()
-            {
-                return a_.await_ready();
-            }
-
-            decltype(auto) await_resume()
-            {
-                return a_.await_resume();
-            }
-
-            auto await_suspend(coro h)
-            {
-                return a_.await_suspend(h, p_->executor_, p_->stop_token_);
-            }
-        };
-
-        template<class Awaitable>
-        auto await_transform(Awaitable&& a)
-        {
-            using A = std::decay_t<Awaitable>;
-            if constexpr (IoAwaitable<A>)
-            {
-                return transform_awaiter<Awaitable>{
-                    std::forward<Awaitable>(a), this};
-            }
-            else
-            {
-                static_assert(sizeof(A) == 0, "requires IoAwaitable");
-            }
-        }
-    };
-
-    std::coroutine_handle<promise_type> h_;
-
-    ~write_op()
-    {
-        if(h_)
-            h_.destroy();
-    }
-
-    write_op(write_op const&) = delete;
-    write_op& operator=(write_op const&) = delete;
-
-    write_op(write_op&& other) noexcept
-        : h_(std::exchange(other.h_, nullptr))
-    {
-    }
-
-    write_op& operator=(write_op&& other) noexcept
-    {
-        if(this != &other)
-        {
-            if(h_)
-                h_.destroy();
-            h_ = std::exchange(other.h_, nullptr);
-        }
-        return *this;
-    }
-
-private:
-    explicit
-    write_op(std::coroutine_handle<promise_type> h) noexcept
-        : h_(h)
-    {
-    }
-};
-
-//----------------------------------------------------------
-
-struct any_write_sink::write_eof_op
-{
-    struct promise_type
-    {
-        executor_ref executor_;
-        std::stop_token stop_token_;
-        coro caller_h_{};
-
-        promise_type() = default;
-
-        write_eof_op
-        get_return_object() noexcept
-        {
-            return write_eof_op{
-                std::coroutine_handle<promise_type>::from_promise(*this)};
-        }
-
-        std::suspend_always
-        initial_suspend() noexcept
-        {
-            return {};
-        }
-
-        auto
-        final_suspend() noexcept
-        {
-            struct awaiter
-            {
-                promise_type* p_;
-
-                bool await_ready() const noexcept { return false; }
-
-                coro await_suspend(coro) const noexcept
-                {
-                    if(p_->caller_h_)
-                        return p_->caller_h_;
-                    return std::noop_coroutine();
-                }
-
-                void await_resume() const noexcept {}
-            };
-            return awaiter{this};
-        }
-
-        void
-        return_void() noexcept
-        {
-        }
-
-        void
-        unhandled_exception()
-        {
-            throw;
-        }
-
-        template<class... Args>
-        static void*
-        operator new(
-            std::size_t size,
-            any_write_sink* wrapper,
-            Args&&...)
-        {
-            return wrapper->alloc_frame(size);
-        }
-
-        template<class... Args>
-        static void
-        operator delete(void*, any_write_sink*, Args&&...) noexcept
-        {
-        }
-
-        static void
-        operator delete(void*, std::size_t) noexcept
-        {
-        }
-
-        void
-        set_executor(executor_ref ex) noexcept
-        {
-            executor_ = ex;
-        }
-
-        void
-        set_stop_token(std::stop_token token) noexcept
-        {
-            stop_token_ = token;
-        }
-
-        void
-        set_caller(coro h) noexcept
-        {
-            caller_h_ = h;
-        }
-
-        template<class Awaitable>
-        struct transform_awaiter
-        {
-            std::decay_t<Awaitable> a_;
-            promise_type* p_;
-
-            bool await_ready()
-            {
-                return a_.await_ready();
-            }
-
-            decltype(auto) await_resume()
-            {
-                return a_.await_resume();
-            }
-
-            auto await_suspend(coro h)
-            {
-                return a_.await_suspend(h, p_->executor_, p_->stop_token_);
-            }
-        };
-
-        template<class Awaitable>
-        auto await_transform(Awaitable&& a)
-        {
-            using A = std::decay_t<Awaitable>;
-            if constexpr (IoAwaitable<A>)
-            {
-                return transform_awaiter<Awaitable>{
-                    std::forward<Awaitable>(a), this};
-            }
-            else
-            {
-                static_assert(sizeof(A) == 0, "requires IoAwaitable");
-            }
-        }
-    };
-
-    std::coroutine_handle<promise_type> h_;
-
-    ~write_eof_op()
-    {
-        if(h_)
-            h_.destroy();
-    }
-
-    write_eof_op(write_eof_op const&) = delete;
-    write_eof_op& operator=(write_eof_op const&) = delete;
-
-    write_eof_op(write_eof_op&& other) noexcept
-        : h_(std::exchange(other.h_, nullptr))
-    {
-    }
-
-    write_eof_op& operator=(write_eof_op&& other) noexcept
-    {
-        if(this != &other)
-        {
-            if(h_)
-                h_.destroy();
-            h_ = std::exchange(other.h_, nullptr);
-        }
-        return *this;
-    }
-
-private:
-    explicit
-    write_eof_op(std::coroutine_handle<promise_type> h) noexcept
-        : h_(h)
-    {
-    }
-};
-
-//----------------------------------------------------------
-
-inline void*
-any_write_sink::alloc_frame(std::size_t size)
-{
-    if(cached_frame_ && cached_size_ >= size)
-        return cached_frame_;
-
-    if(cached_frame_)
-        ::operator delete(cached_frame_);
-
-    cached_frame_ = ::operator new(size);
-    cached_size_ = size;
-    return cached_frame_;
-}
-
-inline void
-any_write_sink::free_frame(void*, std::size_t)
-{
-    // Keep the frame cached for reuse
-}
-
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
-#endif
-
 template<WriteSink S>
-any_write_sink::write_op
-any_write_sink::write_coro(
-    any_write_sink*,
-    S& sink,
-    std::span<const_buffer const> bufs,
-    std::error_code* out_ec,
-    std::size_t* out_n)
+any_write_sink::any_write_sink(S* s)
+    : sink_(s)
+    , vt_(&vtable_for_impl<S>::value)
 {
-    auto [err, bytes] = co_await sink.write(bufs);
-
-    *out_ec = err;
-    *out_n = bytes;
-}
-
-template<WriteSink S>
-any_write_sink::write_op
-any_write_sink::write_with_eof_coro(
-    any_write_sink*,
-    S& sink,
-    std::span<const_buffer const> bufs,
-    bool eof,
-    std::error_code* out_ec,
-    std::size_t* out_n)
-{
-    auto [err, bytes] = co_await sink.write(bufs, eof);
-
-    *out_ec = err;
-    *out_n = bytes;
-}
-
-template<WriteSink S>
-any_write_sink::write_eof_op
-any_write_sink::write_eof_coro(
-    any_write_sink*,
-    S& sink,
-    std::error_code* out_ec)
-{
-    auto [err] = co_await sink.write_eof();
-
-    *out_ec = err;
-}
-
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-
-template<WriteSink S>
-coro
-any_write_sink::do_write_impl(
-    void* sink,
-    any_write_sink* wrapper,
-    std::span<const_buffer const> buffers,
-    bool eof,
-    coro h,
-    executor_ref ex,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* n)
-{
-    auto& s = *static_cast<S*>(sink);
-
-    // Create coroutine - frame is cached in wrapper
-    auto op = eof
-        ? write_with_eof_coro<S>(wrapper, s, buffers, eof, ec, n)
-        : write_coro<S>(wrapper, s, buffers, ec, n);
-
-    // Set executor and stop token on promise before resuming
-    op.h_.promise().set_executor(ex);
-    op.h_.promise().set_stop_token(token);
-
-    // Resume the coroutine to start the operation
-    op.h_.resume();
-
-    // Check if operation completed synchronously
-    if(op.h_.done())
-    {
-        op.h_.destroy();
-        op.h_ = nullptr;
-        return ex.dispatch(h);
-    }
-
-    // Operation is pending - caller will be resumed via symmetric transfer
-    op.h_.promise().set_caller(h);
-    op.h_ = nullptr;
-    return std::noop_coroutine();
-}
-
-template<WriteSink S>
-coro
-any_write_sink::do_write_eof_impl(
-    void* sink,
-    any_write_sink* wrapper,
-    coro h,
-    executor_ref ex,
-    std::stop_token token,
-    std::error_code* ec)
-{
-    auto& s = *static_cast<S*>(sink);
-
-    // Create coroutine - frame is cached in wrapper
-    auto op = write_eof_coro<S>(wrapper, s, ec);
-
-    // Set executor and stop token on promise before resuming
-    op.h_.promise().set_executor(ex);
-    op.h_.promise().set_stop_token(token);
-
-    // Resume the coroutine to start the operation
-    op.h_.resume();
-
-    // Check if operation completed synchronously
-    if(op.h_.done())
-    {
-        op.h_.destroy();
-        op.h_ = nullptr;
-        return ex.dispatch(h);
-    }
-
-    // Operation is pending - caller will be resumed via symmetric transfer
-    op.h_.promise().set_caller(h);
-    op.h_ = nullptr;
-    return std::noop_coroutine();
+    // Preallocate the awaitable storage (sized for max of write/eof)
+    cached_awaitable_ = ::operator new(vt_->awaitable_size);
 }
 
 //----------------------------------------------------------
@@ -932,8 +470,6 @@ any_write_sink::write_some_(
         any_write_sink* self_;
         std::span<const_buffer const> buffers_;
         bool eof_;
-        std::error_code ec_;
-        std::size_t n_ = 0;
 
         bool
         await_ready() const noexcept
@@ -944,25 +480,37 @@ any_write_sink::write_some_(
         coro
         await_suspend(coro h, executor_ref ex, std::stop_token token)
         {
-            return self_->vt_->do_write(
+            // Construct the underlying awaitable into cached storage
+            self_->active_write_ops_ = self_->vt_->construct_write_awaitable(
                 self_->sink_,
-                self_,
+                self_->cached_awaitable_,
                 buffers_,
-                eof_,
-                h,
-                ex,
-                token,
-                &ec_,
-                &n_);
+                eof_);
+
+            // Check if underlying is immediately ready
+            if(self_->active_write_ops_->await_ready(self_->cached_awaitable_))
+                return h;
+
+            // Forward to underlying awaitable
+            return self_->active_write_ops_->await_suspend(
+                self_->cached_awaitable_, h, ex, token);
         }
 
         io_result<std::size_t>
-        await_resume() const noexcept
+        await_resume()
         {
-            return {ec_, n_};
+            struct guard {
+                any_write_sink* self;
+                ~guard() {
+                    self->active_write_ops_->destroy(self->cached_awaitable_);
+                    self->active_write_ops_ = nullptr;
+                }
+            } g{self_};
+            return self_->active_write_ops_->await_resume(
+                self_->cached_awaitable_);
         }
     };
-    return awaitable{this, buffers, eof, {}, 0};
+    return awaitable{this, buffers, eof};
 }
 
 inline auto
@@ -971,7 +519,6 @@ any_write_sink::write_eof()
     struct awaitable
     {
         any_write_sink* self_;
-        std::error_code ec_;
 
         bool
         await_ready() const noexcept
@@ -982,22 +529,35 @@ any_write_sink::write_eof()
         coro
         await_suspend(coro h, executor_ref ex, std::stop_token token)
         {
-            return self_->vt_->do_write_eof(
+            // Construct the underlying awaitable into cached storage
+            self_->active_eof_ops_ = self_->vt_->construct_eof_awaitable(
                 self_->sink_,
-                self_,
-                h,
-                ex,
-                token,
-                &ec_);
+                self_->cached_awaitable_);
+
+            // Check if underlying is immediately ready
+            if(self_->active_eof_ops_->await_ready(self_->cached_awaitable_))
+                return h;
+
+            // Forward to underlying awaitable
+            return self_->active_eof_ops_->await_suspend(
+                self_->cached_awaitable_, h, ex, token);
         }
 
         io_result<>
-        await_resume() const noexcept
+        await_resume()
         {
-            return {ec_};
+            struct guard {
+                any_write_sink* self;
+                ~guard() {
+                    self->active_eof_ops_->destroy(self->cached_awaitable_);
+                    self->active_eof_ops_ = nullptr;
+                }
+            } g{self_};
+            return self_->active_eof_ops_->await_resume(
+                self_->cached_awaitable_);
         }
     };
-    return awaitable{this, {}};
+    return awaitable{this};
 }
 
 template<ConstBufferSequence CB>

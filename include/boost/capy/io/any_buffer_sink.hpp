@@ -11,6 +11,7 @@
 #define BOOST_CAPY_IO_ANY_BUFFER_SINK_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/buffer_param.hpp>
@@ -28,6 +29,7 @@
 #include <coroutine>
 #include <cstddef>
 #include <exception>
+#include <new>
 #include <stop_token>
 #include <utility>
 
@@ -38,7 +40,7 @@ namespace capy {
 
     This class provides type erasure for any type satisfying the
     @ref BufferSink concept, enabling runtime polymorphism for
-    buffer sink operations. It uses a cached coroutine frame to achieve
+    buffer sink operations. It uses cached awaitable storage to achieve
     zero steady-state allocation after construction.
 
     The wrapper also satisfies @ref WriteSink through templated
@@ -53,8 +55,8 @@ namespace capy {
     - **Reference**: Pass a pointer to wrap without ownership. The
       pointed-to sink must outlive this wrapper.
 
-    @par Frame Preallocation
-    The constructor preallocates the internal coroutine frame.
+    @par Awaitable Preallocation
+    The constructor preallocates storage for the type-erased awaitable.
     This reserves all virtual address space at server startup
     so memory usage can be measured up front, rather than
     allocating piecemeal as traffic arrives.
@@ -84,79 +86,22 @@ namespace capy {
 class any_buffer_sink
 {
     struct vtable;
+    struct awaitable_ops;
 
     template<BufferSink S>
     struct vtable_for_impl;
 
-    struct commit_op;
-
     void* sink_ = nullptr;
     vtable const* vt_ = nullptr;
-    void* cached_frame_ = nullptr;
-    std::size_t cached_size_ = 0;
+    void* cached_awaitable_ = nullptr;
     void* storage_ = nullptr;
-
-    template<BufferSink S>
-    static std::size_t
-    do_prepare_impl(
-        void* sink,
-        mutable_buffer* arr,
-        std::size_t max_count);
-
-    template<BufferSink S>
-    static coro
-    do_commit_impl(
-        void* sink,
-        any_buffer_sink* wrapper,
-        std::size_t n,
-        bool eof,
-        coro h,
-        executor_ref ex,
-        std::stop_token token,
-        std::error_code* ec);
-
-    template<BufferSink S>
-    static coro
-    do_commit_eof_impl(
-        void* sink,
-        any_buffer_sink* wrapper,
-        coro h,
-        executor_ref ex,
-        std::stop_token token,
-        std::error_code* ec);
-
-    template<BufferSink S>
-    static commit_op
-    commit_coro(
-        any_buffer_sink* wrapper,
-        S& sink,
-        std::size_t n,
-        std::error_code* out_ec);
-
-    template<BufferSink S>
-    static commit_op
-    commit_with_eof_coro(
-        any_buffer_sink* wrapper,
-        S& sink,
-        std::size_t n,
-        bool eof,
-        std::error_code* out_ec);
-
-    template<BufferSink S>
-    static commit_op
-    commit_eof_coro(
-        any_buffer_sink* wrapper,
-        S& sink,
-        std::error_code* out_ec);
-
-    void* alloc_frame(std::size_t size);
-    void free_frame(void* p, std::size_t size);
+    awaitable_ops const* active_ops_ = nullptr;
 
 public:
     /** Destructor.
 
         Destroys the owned sink (if any) and releases the cached
-        coroutine frame.
+        awaitable storage.
     */
     ~any_buffer_sink();
 
@@ -169,7 +114,7 @@ public:
 
     /** Non-copyable.
 
-        The frame cache is per-instance and cannot be shared.
+        The awaitable cache is per-instance and cannot be shared.
     */
     any_buffer_sink(any_buffer_sink const&) = delete;
     any_buffer_sink& operator=(any_buffer_sink const&) = delete;
@@ -177,7 +122,7 @@ public:
     /** Move constructor.
 
         Transfers ownership of the wrapped sink (if owned) and
-        cached frame from `other`. After the move, `other` is
+        cached awaitable storage from `other`. After the move, `other` is
         in a default-constructed state.
 
         @param other The wrapper to move from.
@@ -185,9 +130,9 @@ public:
     any_buffer_sink(any_buffer_sink&& other) noexcept
         : sink_(std::exchange(other.sink_, nullptr))
         , vt_(std::exchange(other.vt_, nullptr))
-        , cached_frame_(std::exchange(other.cached_frame_, nullptr))
-        , cached_size_(std::exchange(other.cached_size_, 0))
+        , cached_awaitable_(std::exchange(other.cached_awaitable_, nullptr))
         , storage_(std::exchange(other.storage_, nullptr))
+        , active_ops_(std::exchange(other.active_ops_, nullptr))
     {
     }
 
@@ -221,15 +166,7 @@ public:
         @param s Pointer to the sink to wrap.
     */
     template<BufferSink S>
-    any_buffer_sink(S* s) noexcept
-        : sink_(s)
-        , vt_(&vtable_for_impl<S>::value)
-    {
-        // Preallocate coroutine frames to find max size
-        commit_coro<S>(this, *s, 0, nullptr);
-        commit_with_eof_coro<S>(this, *s, 0, false, nullptr);
-        commit_eof_coro<S>(this, *s, nullptr);
-    }
+    any_buffer_sink(S* s);
 
     /** Check if the wrapper contains a valid sink.
 
@@ -397,48 +334,127 @@ protected:
 
 //----------------------------------------------------------
 
+struct any_buffer_sink::awaitable_ops
+{
+    bool (*await_ready)(void*);
+    coro (*await_suspend)(void*, coro, executor_ref, std::stop_token);
+    io_result<> (*await_resume)(void*);
+    void (*destroy)(void*) noexcept;
+};
+
 struct any_buffer_sink::vtable
 {
     void (*destroy)(void*) noexcept;
-
     std::size_t (*do_prepare)(
         void* sink,
         mutable_buffer* arr,
         std::size_t max_count);
-
-    coro (*do_commit)(
+    std::size_t awaitable_size;
+    std::size_t awaitable_align;
+    awaitable_ops const* (*construct_commit_awaitable)(
         void* sink,
-        any_buffer_sink* wrapper,
+        void* storage,
         std::size_t n,
-        bool eof,
-        coro h,
-        executor_ref ex,
-        std::stop_token token,
-        std::error_code* ec);
-
-    coro (*do_commit_eof)(
+        bool eof);
+    awaitable_ops const* (*construct_eof_awaitable)(
         void* sink,
-        any_buffer_sink* wrapper,
-        coro h,
-        executor_ref ex,
-        std::stop_token token,
-        std::error_code* ec);
+        void* storage);
 };
 
 template<BufferSink S>
 struct any_buffer_sink::vtable_for_impl
 {
+    using CommitAwaitable = decltype(std::declval<S&>().commit(
+        std::size_t{}, false));
+    using EofAwaitable = decltype(std::declval<S&>().commit_eof());
+
     static void
     do_destroy_impl(void* sink) noexcept
     {
         static_cast<S*>(sink)->~S();
     }
 
+    static std::size_t
+    do_prepare_impl(
+        void* sink,
+        mutable_buffer* arr,
+        std::size_t max_count)
+    {
+        auto& s = *static_cast<S*>(sink);
+        return s.prepare(arr, max_count);
+    }
+
+    static awaitable_ops const*
+    construct_commit_awaitable_impl(
+        void* sink,
+        void* storage,
+        std::size_t n,
+        bool eof)
+    {
+        auto& s = *static_cast<S*>(sink);
+        ::new(storage) CommitAwaitable(s.commit(n, eof));
+
+        static constexpr awaitable_ops ops = {
+            +[](void* p) {
+                return static_cast<CommitAwaitable*>(p)->await_ready();
+            },
+            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+                return detail::call_await_suspend(
+                    static_cast<CommitAwaitable*>(p), h, ex, token);
+            },
+            +[](void* p) {
+                return static_cast<CommitAwaitable*>(p)->await_resume();
+            },
+            +[](void* p) noexcept {
+                static_cast<CommitAwaitable*>(p)->~CommitAwaitable();
+            }
+        };
+        return &ops;
+    }
+
+    static awaitable_ops const*
+    construct_eof_awaitable_impl(
+        void* sink,
+        void* storage)
+    {
+        auto& s = *static_cast<S*>(sink);
+        ::new(storage) EofAwaitable(s.commit_eof());
+
+        static constexpr awaitable_ops ops = {
+            +[](void* p) {
+                return static_cast<EofAwaitable*>(p)->await_ready();
+            },
+            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+                return detail::call_await_suspend(
+                    static_cast<EofAwaitable*>(p), h, ex, token);
+            },
+            +[](void* p) {
+                return static_cast<EofAwaitable*>(p)->await_resume();
+            },
+            +[](void* p) noexcept {
+                static_cast<EofAwaitable*>(p)->~EofAwaitable();
+            }
+        };
+        return &ops;
+    }
+
+    static constexpr std::size_t max_awaitable_size =
+        sizeof(CommitAwaitable) > sizeof(EofAwaitable)
+            ? sizeof(CommitAwaitable)
+            : sizeof(EofAwaitable);
+
+    static constexpr std::size_t max_awaitable_align =
+        alignof(CommitAwaitable) > alignof(EofAwaitable)
+            ? alignof(CommitAwaitable)
+            : alignof(EofAwaitable);
+
     static constexpr vtable value = {
         &do_destroy_impl,
-        &any_buffer_sink::do_prepare_impl<S>,
-        &any_buffer_sink::do_commit_impl<S>,
-        &any_buffer_sink::do_commit_eof_impl<S>
+        &do_prepare_impl,
+        max_awaitable_size,
+        max_awaitable_align,
+        &construct_commit_awaitable_impl,
+        &construct_eof_awaitable_impl
     };
 };
 
@@ -452,8 +468,8 @@ any_buffer_sink::~any_buffer_sink()
         vt_->destroy(sink_);
         ::operator delete(storage_);
     }
-    if(cached_frame_)
-        ::operator delete(cached_frame_);
+    if(cached_awaitable_)
+        ::operator delete(cached_awaitable_);
 }
 
 inline any_buffer_sink&
@@ -466,13 +482,13 @@ any_buffer_sink::operator=(any_buffer_sink&& other) noexcept
             vt_->destroy(sink_);
             ::operator delete(storage_);
         }
-        if(cached_frame_)
-            ::operator delete(cached_frame_);
+        if(cached_awaitable_)
+            ::operator delete(cached_awaitable_);
         sink_ = std::exchange(other.sink_, nullptr);
         vt_ = std::exchange(other.vt_, nullptr);
-        cached_frame_ = std::exchange(other.cached_frame_, nullptr);
-        cached_size_ = std::exchange(other.cached_size_, 0);
+        cached_awaitable_ = std::exchange(other.cached_awaitable_, nullptr);
         storage_ = std::exchange(other.storage_, nullptr);
+        active_ops_ = std::exchange(other.active_ops_, nullptr);
     }
     return *this;
 }
@@ -498,336 +514,19 @@ any_buffer_sink::any_buffer_sink(S s)
     storage_ = ::operator new(sizeof(S));
     sink_ = ::new(storage_) S(std::move(s));
 
-    // Preallocate coroutine frames to find max size
-    auto& ref = *static_cast<S*>(sink_);
-    commit_coro<S>(this, ref, 0, nullptr);
-    commit_with_eof_coro<S>(this, ref, 0, false, nullptr);
-    commit_eof_coro<S>(this, ref, nullptr);
+    // Preallocate the awaitable storage (sized for max of commit/eof)
+    cached_awaitable_ = ::operator new(vt_->awaitable_size);
 
     g.committed = true;
 }
 
-//----------------------------------------------------------
-
-struct any_buffer_sink::commit_op
-{
-    struct promise_type
-    {
-        executor_ref executor_;
-        std::stop_token stop_token_;
-        coro caller_h_{};
-
-        promise_type() = default;
-
-        commit_op
-        get_return_object() noexcept
-        {
-            return commit_op{
-                std::coroutine_handle<promise_type>::from_promise(*this)};
-        }
-
-        std::suspend_always
-        initial_suspend() noexcept
-        {
-            return {};
-        }
-
-        auto
-        final_suspend() noexcept
-        {
-            struct awaiter
-            {
-                promise_type* p_;
-
-                bool await_ready() const noexcept { return false; }
-
-                coro await_suspend(coro) const noexcept
-                {
-                    if(p_->caller_h_)
-                        return p_->caller_h_;
-                    return std::noop_coroutine();
-                }
-
-                void await_resume() const noexcept {}
-            };
-            return awaiter{this};
-        }
-
-        void
-        return_void() noexcept
-        {
-        }
-
-        void
-        unhandled_exception()
-        {
-            throw;
-        }
-
-        template<class... Args>
-        static void*
-        operator new(
-            std::size_t size,
-            any_buffer_sink* wrapper,
-            Args&&...)
-        {
-            return wrapper->alloc_frame(size);
-        }
-
-        template<class... Args>
-        static void
-        operator delete(void*, any_buffer_sink*, Args&&...) noexcept
-        {
-        }
-
-        static void
-        operator delete(void*, std::size_t) noexcept
-        {
-        }
-
-        void
-        set_executor(executor_ref ex) noexcept
-        {
-            executor_ = ex;
-        }
-
-        void
-        set_stop_token(std::stop_token token) noexcept
-        {
-            stop_token_ = token;
-        }
-
-        void
-        set_caller(coro h) noexcept
-        {
-            caller_h_ = h;
-        }
-
-        template<class Awaitable>
-        struct transform_awaiter
-        {
-            std::decay_t<Awaitable> a_;
-            promise_type* p_;
-
-            bool await_ready()
-            {
-                return a_.await_ready();
-            }
-
-            auto await_resume()
-            {
-                return a_.await_resume();
-            }
-
-            auto await_suspend(coro h)
-            {
-                return a_.await_suspend(h, p_->executor_, p_->stop_token_);
-            }
-        };
-
-        template<class Awaitable>
-        auto await_transform(Awaitable&& a)
-        {
-            using A = std::decay_t<Awaitable>;
-            if constexpr (IoAwaitable<A>)
-            {
-                return transform_awaiter<Awaitable>{
-                    std::forward<Awaitable>(a), this};
-            }
-            else
-            {
-                static_assert(sizeof(A) == 0, "requires IoAwaitable");
-            }
-        }
-    };
-
-    std::coroutine_handle<promise_type> h_;
-
-    ~commit_op()
-    {
-        if(h_)
-            h_.destroy();
-    }
-
-    commit_op(commit_op const&) = delete;
-    commit_op& operator=(commit_op const&) = delete;
-
-    commit_op(commit_op&& other) noexcept
-        : h_(std::exchange(other.h_, nullptr))
-    {
-    }
-
-    commit_op& operator=(commit_op&& other) noexcept
-    {
-        if(this != &other)
-        {
-            if(h_)
-                h_.destroy();
-            h_ = std::exchange(other.h_, nullptr);
-        }
-        return *this;
-    }
-
-private:
-    explicit
-    commit_op(std::coroutine_handle<promise_type> h) noexcept
-        : h_(h)
-    {
-    }
-};
-
-//----------------------------------------------------------
-
-inline void*
-any_buffer_sink::alloc_frame(std::size_t size)
-{
-    if(cached_frame_ && cached_size_ >= size)
-        return cached_frame_;
-
-    if(cached_frame_)
-        ::operator delete(cached_frame_);
-
-    cached_frame_ = ::operator new(size);
-    cached_size_ = size;
-    return cached_frame_;
-}
-
-inline void
-any_buffer_sink::free_frame(void*, std::size_t)
-{
-    // Keep the frame cached for reuse
-}
-
 template<BufferSink S>
-std::size_t
-any_buffer_sink::do_prepare_impl(
-    void* sink,
-    mutable_buffer* arr,
-    std::size_t max_count)
+any_buffer_sink::any_buffer_sink(S* s)
+    : sink_(s)
+    , vt_(&vtable_for_impl<S>::value)
 {
-    auto& s = *static_cast<S*>(sink);
-    return s.prepare(arr, max_count);
-}
-
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
-#endif
-
-template<BufferSink S>
-any_buffer_sink::commit_op
-any_buffer_sink::commit_coro(
-    any_buffer_sink*,
-    S& sink,
-    std::size_t n,
-    std::error_code* out_ec)
-{
-    auto [err] = co_await sink.commit(n);
-    *out_ec = err;
-}
-
-template<BufferSink S>
-any_buffer_sink::commit_op
-any_buffer_sink::commit_with_eof_coro(
-    any_buffer_sink*,
-    S& sink,
-    std::size_t n,
-    bool eof,
-    std::error_code* out_ec)
-{
-    auto [err] = co_await sink.commit(n, eof);
-    *out_ec = err;
-}
-
-template<BufferSink S>
-any_buffer_sink::commit_op
-any_buffer_sink::commit_eof_coro(
-    any_buffer_sink*,
-    S& sink,
-    std::error_code* out_ec)
-{
-    auto [err] = co_await sink.commit_eof();
-    *out_ec = err;
-}
-
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-
-template<BufferSink S>
-coro
-any_buffer_sink::do_commit_impl(
-    void* sink,
-    any_buffer_sink* wrapper,
-    std::size_t n,
-    bool eof,
-    coro h,
-    executor_ref ex,
-    std::stop_token token,
-    std::error_code* ec)
-{
-    auto& s = *static_cast<S*>(sink);
-
-    // Create coroutine - frame is cached in wrapper
-    auto op = eof
-        ? commit_with_eof_coro<S>(wrapper, s, n, eof, ec)
-        : commit_coro<S>(wrapper, s, n, ec);
-
-    // Set executor and stop token on promise before resuming
-    op.h_.promise().set_executor(ex);
-    op.h_.promise().set_stop_token(token);
-
-    // Resume the coroutine to start the operation
-    op.h_.resume();
-
-    // Check if operation completed synchronously
-    if(op.h_.done())
-    {
-        op.h_.destroy();
-        op.h_ = nullptr;
-        return ex.dispatch(h);
-    }
-
-    // Operation is pending - caller will be resumed via symmetric transfer
-    op.h_.promise().set_caller(h);
-    op.h_ = nullptr;
-    return std::noop_coroutine();
-}
-
-template<BufferSink S>
-coro
-any_buffer_sink::do_commit_eof_impl(
-    void* sink,
-    any_buffer_sink* wrapper,
-    coro h,
-    executor_ref ex,
-    std::stop_token token,
-    std::error_code* ec)
-{
-    auto& s = *static_cast<S*>(sink);
-
-    // Create coroutine - frame is cached in wrapper
-    auto op = commit_eof_coro<S>(wrapper, s, ec);
-
-    // Set executor and stop token on promise before resuming
-    op.h_.promise().set_executor(ex);
-    op.h_.promise().set_stop_token(token);
-
-    // Resume the coroutine to start the operation
-    op.h_.resume();
-
-    // Check if operation completed synchronously
-    if(op.h_.done())
-    {
-        op.h_.destroy();
-        op.h_ = nullptr;
-        return ex.dispatch(h);
-    }
-
-    // Operation is pending - caller will be resumed via symmetric transfer
-    op.h_.promise().set_caller(h);
-    op.h_ = nullptr;
-    return std::noop_coroutine();
+    // Preallocate the awaitable storage (sized for max of commit/eof)
+    cached_awaitable_ = ::operator new(vt_->awaitable_size);
 }
 
 //----------------------------------------------------------
@@ -841,44 +540,6 @@ any_buffer_sink::prepare(
 }
 
 inline auto
-any_buffer_sink::commit(std::size_t n)
-{
-    struct awaitable
-    {
-        any_buffer_sink* self_;
-        std::size_t n_;
-        std::error_code ec_;
-
-        bool
-        await_ready() const noexcept
-        {
-            return false;
-        }
-
-        coro
-        await_suspend(coro h, executor_ref ex, std::stop_token token)
-        {
-            return self_->vt_->do_commit(
-                self_->sink_,
-                self_,
-                n_,
-                false,
-                h,
-                ex,
-                token,
-                &ec_);
-        }
-
-        io_result<>
-        await_resume() const noexcept
-        {
-            return {ec_};
-        }
-    };
-    return awaitable{this, n, {}};
-}
-
-inline auto
 any_buffer_sink::commit(std::size_t n, bool eof)
 {
     struct awaitable
@@ -886,7 +547,6 @@ any_buffer_sink::commit(std::size_t n, bool eof)
         any_buffer_sink* self_;
         std::size_t n_;
         bool eof_;
-        std::error_code ec_;
 
         bool
         await_ready() const noexcept
@@ -897,24 +557,43 @@ any_buffer_sink::commit(std::size_t n, bool eof)
         coro
         await_suspend(coro h, executor_ref ex, std::stop_token token)
         {
-            return self_->vt_->do_commit(
+            // Construct the underlying awaitable into cached storage
+            self_->active_ops_ = self_->vt_->construct_commit_awaitable(
                 self_->sink_,
-                self_,
+                self_->cached_awaitable_,
                 n_,
-                eof_,
-                h,
-                ex,
-                token,
-                &ec_);
+                eof_);
+
+            // Check if underlying is immediately ready
+            if(self_->active_ops_->await_ready(self_->cached_awaitable_))
+                return h;
+
+            // Forward to underlying awaitable
+            return self_->active_ops_->await_suspend(
+                self_->cached_awaitable_, h, ex, token);
         }
 
         io_result<>
-        await_resume() const noexcept
+        await_resume()
         {
-            return {ec_};
+            struct guard {
+                any_buffer_sink* self;
+                ~guard() {
+                    self->active_ops_->destroy(self->cached_awaitable_);
+                    self->active_ops_ = nullptr;
+                }
+            } g{self_};
+            return self_->active_ops_->await_resume(
+                self_->cached_awaitable_);
         }
     };
-    return awaitable{this, n, eof, {}};
+    return awaitable{this, n, eof};
+}
+
+inline auto
+any_buffer_sink::commit(std::size_t n)
+{
+    return commit(n, false);
 }
 
 inline auto
@@ -923,7 +602,6 @@ any_buffer_sink::commit_eof()
     struct awaitable
     {
         any_buffer_sink* self_;
-        std::error_code ec_;
 
         bool
         await_ready() const noexcept
@@ -934,22 +612,35 @@ any_buffer_sink::commit_eof()
         coro
         await_suspend(coro h, executor_ref ex, std::stop_token token)
         {
-            return self_->vt_->do_commit_eof(
+            // Construct the underlying awaitable into cached storage
+            self_->active_ops_ = self_->vt_->construct_eof_awaitable(
                 self_->sink_,
-                self_,
-                h,
-                ex,
-                token,
-                &ec_);
+                self_->cached_awaitable_);
+
+            // Check if underlying is immediately ready
+            if(self_->active_ops_->await_ready(self_->cached_awaitable_))
+                return h;
+
+            // Forward to underlying awaitable
+            return self_->active_ops_->await_suspend(
+                self_->cached_awaitable_, h, ex, token);
         }
 
         io_result<>
-        await_resume() const noexcept
+        await_resume()
         {
-            return {ec_};
+            struct guard {
+                any_buffer_sink* self;
+                ~guard() {
+                    self->active_ops_->destroy(self->cached_awaitable_);
+                    self->active_ops_ = nullptr;
+                }
+            } g{self_};
+            return self_->active_ops_->await_resume(
+                self_->cached_awaitable_);
         }
     };
-    return awaitable{this, {}};
+    return awaitable{this};
 }
 
 //----------------------------------------------------------

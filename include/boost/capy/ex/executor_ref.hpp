@@ -125,8 +125,15 @@ public:
                   concept. A pointer to this object is stored
                   internally; the executor must outlive this wrapper.
     */
+#if defined(__GNUC__) && !defined(__clang__)
+    // GCC constraint satisfaction caching bug workaround
+    template<class Ex,
+        std::enable_if_t<!std::is_same_v<
+            std::decay_t<Ex>, executor_ref>, int> = 0>
+#else
     template<class Ex>
         requires (!std::same_as<std::decay_t<Ex>, executor_ref>)
+#endif
     executor_ref(Ex const& ex) noexcept
         : ex_(&ex)
         , vt_(&detail::vtable_for<Ex>)

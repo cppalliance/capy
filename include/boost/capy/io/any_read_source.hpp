@@ -11,6 +11,7 @@
 #define BOOST_CAPY_IO_ANY_READ_SOURCE_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_param.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
@@ -25,7 +26,7 @@
 #include <concepts>
 #include <coroutine>
 #include <cstddef>
-#include <exception>
+#include <new>
 #include <span>
 #include <stop_token>
 #include <utility>
@@ -37,7 +38,7 @@ namespace capy {
 
     This class provides type erasure for any type satisfying the
     @ref ReadSource concept, enabling runtime polymorphism for
-    source read operations. It uses a cached coroutine frame to achieve
+    source read operations. It uses cached awaitable storage to achieve
     zero steady-state allocation after construction.
 
     The wrapper supports two construction modes:
@@ -46,8 +47,8 @@ namespace capy {
     - **Reference**: Pass a pointer to wrap without ownership. The
       pointed-to source must outlive this wrapper.
 
-    @par Frame Preallocation
-    The constructor preallocates the internal coroutine frame.
+    @par Awaitable Preallocation
+    The constructor preallocates storage for the type-erased awaitable.
     This reserves all virtual address space at server startup
     so memory usage can be measured up front, rather than
     allocating piecemeal as traffic arrives.
@@ -74,47 +75,22 @@ namespace capy {
 class any_read_source
 {
     struct vtable;
+    struct awaitable_ops;
 
     template<ReadSource S>
     struct vtable_for_impl;
 
-    struct read_op;
-
     void* source_ = nullptr;
     vtable const* vt_ = nullptr;
-    void* cached_frame_ = nullptr;
-    std::size_t cached_size_ = 0;
+    void* cached_awaitable_ = nullptr;
     void* storage_ = nullptr;
-
-    template<ReadSource S>
-    static coro
-    do_read_impl(
-        void* source,
-        any_read_source* wrapper,
-        std::span<mutable_buffer const> buffers,
-        coro h,
-        executor_ref ex,
-        std::stop_token token,
-        std::error_code* ec,
-        std::size_t* n);
-
-    template<ReadSource S>
-    static read_op
-    read_coro(
-        any_read_source* wrapper,
-        S& source,
-        std::span<mutable_buffer const> bufs,
-        std::error_code* out_ec,
-        std::size_t* out_n);
-
-    void* alloc_frame(std::size_t size);
-    void free_frame(void* p, std::size_t size);
+    awaitable_ops const* active_ops_ = nullptr;
 
 public:
     /** Destructor.
 
         Destroys the owned source (if any) and releases the cached
-        coroutine frame.
+        awaitable storage.
     */
     ~any_read_source();
 
@@ -127,7 +103,7 @@ public:
 
     /** Non-copyable.
 
-        The frame cache is per-instance and cannot be shared.
+        The awaitable cache is per-instance and cannot be shared.
     */
     any_read_source(any_read_source const&) = delete;
     any_read_source& operator=(any_read_source const&) = delete;
@@ -135,7 +111,7 @@ public:
     /** Move constructor.
 
         Transfers ownership of the wrapped source (if owned) and
-        cached frame from `other`. After the move, `other` is
+        cached awaitable storage from `other`. After the move, `other` is
         in a default-constructed state.
 
         @param other The wrapper to move from.
@@ -143,9 +119,9 @@ public:
     any_read_source(any_read_source&& other) noexcept
         : source_(std::exchange(other.source_, nullptr))
         , vt_(std::exchange(other.vt_, nullptr))
-        , cached_frame_(std::exchange(other.cached_frame_, nullptr))
-        , cached_size_(std::exchange(other.cached_size_, 0))
+        , cached_awaitable_(std::exchange(other.cached_awaitable_, nullptr))
         , storage_(std::exchange(other.storage_, nullptr))
+        , active_ops_(std::exchange(other.active_ops_, nullptr))
     {
     }
 
@@ -179,13 +155,7 @@ public:
         @param s Pointer to the source to wrap.
     */
     template<ReadSource S>
-    any_read_source(S* s) noexcept
-        : source_(s)
-        , vt_(&vtable_for_impl<S>::value)
-    {
-        // Preallocate the coroutine frame
-        read_coro<S>(this, *s, {}, nullptr, nullptr);
-    }
+    any_read_source(S* s);
 
     /** Check if the wrapper contains a valid source.
 
@@ -264,33 +234,69 @@ private:
 
 //----------------------------------------------------------
 
+struct any_read_source::awaitable_ops
+{
+    bool (*await_ready)(void*);
+    coro (*await_suspend)(void*, coro, executor_ref, std::stop_token);
+    io_result<std::size_t> (*await_resume)(void*);
+    void (*destroy)(void*) noexcept;
+};
+
 struct any_read_source::vtable
 {
     void (*destroy)(void*) noexcept;
-
-    coro (*do_read)(
+    std::size_t awaitable_size;
+    std::size_t awaitable_align;
+    awaitable_ops const* (*construct_awaitable)(
         void* source,
-        any_read_source* wrapper,
-        std::span<mutable_buffer const> buffers,
-        coro h,
-        executor_ref ex,
-        std::stop_token token,
-        std::error_code* ec,
-        std::size_t* n);
+        void* storage,
+        std::span<mutable_buffer const> buffers);
 };
 
 template<ReadSource S>
 struct any_read_source::vtable_for_impl
 {
+    using Awaitable = decltype(std::declval<S&>().read(
+        std::span<mutable_buffer const>{}));
+
     static void
     do_destroy_impl(void* source) noexcept
     {
         static_cast<S*>(source)->~S();
     }
 
+    static awaitable_ops const*
+    construct_awaitable_impl(
+        void* source,
+        void* storage,
+        std::span<mutable_buffer const> buffers)
+    {
+        auto& s = *static_cast<S*>(source);
+        ::new(storage) Awaitable(s.read(buffers));
+
+        static constexpr awaitable_ops ops = {
+            +[](void* p) {
+                return static_cast<Awaitable*>(p)->await_ready();
+            },
+            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+                return detail::call_await_suspend(
+                    static_cast<Awaitable*>(p), h, ex, token);
+            },
+            +[](void* p) {
+                return static_cast<Awaitable*>(p)->await_resume();
+            },
+            +[](void* p) noexcept {
+                static_cast<Awaitable*>(p)->~Awaitable();
+            }
+        };
+        return &ops;
+    }
+
     static constexpr vtable value = {
         &do_destroy_impl,
-        &any_read_source::do_read_impl<S>
+        sizeof(Awaitable),
+        alignof(Awaitable),
+        &construct_awaitable_impl
     };
 };
 
@@ -304,8 +310,8 @@ any_read_source::~any_read_source()
         vt_->destroy(source_);
         ::operator delete(storage_);
     }
-    if(cached_frame_)
-        ::operator delete(cached_frame_);
+    if(cached_awaitable_)
+        ::operator delete(cached_awaitable_);
 }
 
 inline any_read_source&
@@ -318,13 +324,13 @@ any_read_source::operator=(any_read_source&& other) noexcept
             vt_->destroy(source_);
             ::operator delete(storage_);
         }
-        if(cached_frame_)
-            ::operator delete(cached_frame_);
+        if(cached_awaitable_)
+            ::operator delete(cached_awaitable_);
         source_ = std::exchange(other.source_, nullptr);
         vt_ = std::exchange(other.vt_, nullptr);
-        cached_frame_ = std::exchange(other.cached_frame_, nullptr);
-        cached_size_ = std::exchange(other.cached_size_, 0);
+        cached_awaitable_ = std::exchange(other.cached_awaitable_, nullptr);
         storage_ = std::exchange(other.storage_, nullptr);
+        active_ops_ = std::exchange(other.active_ops_, nullptr);
     }
     return *this;
 }
@@ -350,264 +356,19 @@ any_read_source::any_read_source(S s)
     storage_ = ::operator new(sizeof(S));
     source_ = ::new(storage_) S(std::move(s));
 
-    // Preallocate the coroutine frame
-    auto& ref = *static_cast<S*>(source_);
-    read_coro<S>(this, ref, {}, nullptr, nullptr);
+    // Preallocate the awaitable storage
+    cached_awaitable_ = ::operator new(vt_->awaitable_size);
 
     g.committed = true;
 }
 
-//----------------------------------------------------------
-
-struct any_read_source::read_op
-{
-    struct promise_type
-    {
-        executor_ref executor_;
-        std::stop_token stop_token_;
-        coro caller_h_{};
-
-        promise_type() = default;
-
-        read_op
-        get_return_object() noexcept
-        {
-            return read_op{
-                std::coroutine_handle<promise_type>::from_promise(*this)};
-        }
-
-        std::suspend_always
-        initial_suspend() noexcept
-        {
-            return {};
-        }
-
-        auto
-        final_suspend() noexcept
-        {
-            struct awaiter
-            {
-                promise_type* p_;
-
-                bool await_ready() const noexcept { return false; }
-
-                coro await_suspend(coro) const noexcept
-                {
-                    if(p_->caller_h_)
-                        return p_->caller_h_;
-                    return std::noop_coroutine();
-                }
-
-                void await_resume() const noexcept {}
-            };
-            return awaiter{this};
-        }
-
-        void
-        return_void() noexcept
-        {
-        }
-
-        void
-        unhandled_exception()
-        {
-            throw;
-        }
-
-        template<class... Args>
-        static void*
-        operator new(
-            std::size_t size,
-            any_read_source* wrapper,
-            Args&&...)
-        {
-            return wrapper->alloc_frame(size);
-        }
-
-        template<class... Args>
-        static void
-        operator delete(void*, any_read_source*, Args&&...) noexcept
-        {
-        }
-
-        static void
-        operator delete(void*, std::size_t) noexcept
-        {
-        }
-
-        void
-        set_executor(executor_ref ex) noexcept
-        {
-            executor_ = ex;
-        }
-
-        void
-        set_stop_token(std::stop_token token) noexcept
-        {
-            stop_token_ = token;
-        }
-
-        void
-        set_caller(coro h) noexcept
-        {
-            caller_h_ = h;
-        }
-
-        template<class Awaitable>
-        struct transform_awaiter
-        {
-            std::decay_t<Awaitable> a_;
-            promise_type* p_;
-
-            bool await_ready()
-            {
-                return a_.await_ready();
-            }
-
-            decltype(auto) await_resume()
-            {
-                return a_.await_resume();
-            }
-
-            auto await_suspend(coro h)
-            {
-                return a_.await_suspend(h, p_->executor_, p_->stop_token_);
-            }
-        };
-
-        template<class Awaitable>
-        auto await_transform(Awaitable&& a)
-        {
-            using A = std::decay_t<Awaitable>;
-            if constexpr (IoAwaitable<A>)
-            {
-                return transform_awaiter<Awaitable>{
-                    std::forward<Awaitable>(a), this};
-            }
-            else
-            {
-                static_assert(sizeof(A) == 0, "requires IoAwaitable");
-            }
-        }
-    };
-
-    std::coroutine_handle<promise_type> h_;
-
-    ~read_op()
-    {
-        if(h_)
-            h_.destroy();
-    }
-
-    read_op(read_op const&) = delete;
-    read_op& operator=(read_op const&) = delete;
-
-    read_op(read_op&& other) noexcept
-        : h_(std::exchange(other.h_, nullptr))
-    {
-    }
-
-    read_op& operator=(read_op&& other) noexcept
-    {
-        if(this != &other)
-        {
-            if(h_)
-                h_.destroy();
-            h_ = std::exchange(other.h_, nullptr);
-        }
-        return *this;
-    }
-
-private:
-    explicit
-    read_op(std::coroutine_handle<promise_type> h) noexcept
-        : h_(h)
-    {
-    }
-};
-
-//----------------------------------------------------------
-
-inline void*
-any_read_source::alloc_frame(std::size_t size)
-{
-    if(cached_frame_ && cached_size_ >= size)
-        return cached_frame_;
-
-    if(cached_frame_)
-        ::operator delete(cached_frame_);
-
-    cached_frame_ = ::operator new(size);
-    cached_size_ = size;
-    return cached_frame_;
-}
-
-inline void
-any_read_source::free_frame(void*, std::size_t)
-{
-    // Keep the frame cached for reuse
-}
-
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
-#endif
-
 template<ReadSource S>
-any_read_source::read_op
-any_read_source::read_coro(
-    any_read_source*,
-    S& source,
-    std::span<mutable_buffer const> bufs,
-    std::error_code* out_ec,
-    std::size_t* out_n)
+any_read_source::any_read_source(S* s)
+    : source_(s)
+    , vt_(&vtable_for_impl<S>::value)
 {
-    auto [err, bytes] = co_await source.read(bufs);
-
-    *out_ec = err;
-    *out_n = bytes;
-}
-
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-
-template<ReadSource S>
-coro
-any_read_source::do_read_impl(
-    void* source,
-    any_read_source* wrapper,
-    std::span<mutable_buffer const> buffers,
-    coro h,
-    executor_ref ex,
-    std::stop_token token,
-    std::error_code* ec,
-    std::size_t* n)
-{
-    auto& s = *static_cast<S*>(source);
-
-    // Create coroutine - frame is cached in wrapper
-    auto op = read_coro<S>(wrapper, s, buffers, ec, n);
-
-    // Set executor and stop token on promise before resuming
-    op.h_.promise().set_executor(ex);
-    op.h_.promise().set_stop_token(token);
-
-    // Resume the coroutine to start the operation
-    op.h_.resume();
-
-    // Check if operation completed synchronously
-    if(op.h_.done())
-    {
-        op.h_.destroy();
-        op.h_ = nullptr;
-        return ex.dispatch(h);
-    }
-
-    // Operation is pending - caller will be resumed via symmetric transfer
-    op.h_.promise().set_caller(h);
-    op.h_ = nullptr;
-    return std::noop_coroutine();
+    // Preallocate the awaitable storage
+    cached_awaitable_ = ::operator new(vt_->awaitable_size);
 }
 
 //----------------------------------------------------------
@@ -619,8 +380,6 @@ any_read_source::read_some_(std::span<mutable_buffer const> buffers)
     {
         any_read_source* self_;
         std::span<mutable_buffer const> buffers_;
-        std::error_code ec_;
-        std::size_t n_ = 0;
 
         bool
         await_ready() const noexcept
@@ -631,24 +390,36 @@ any_read_source::read_some_(std::span<mutable_buffer const> buffers)
         coro
         await_suspend(coro h, executor_ref ex, std::stop_token token)
         {
-            return self_->vt_->do_read(
+            // Construct the underlying awaitable into cached storage
+            self_->active_ops_ = self_->vt_->construct_awaitable(
                 self_->source_,
-                self_,
-                buffers_,
-                h,
-                ex,
-                token,
-                &ec_,
-                &n_);
+                self_->cached_awaitable_,
+                buffers_);
+
+            // Check if underlying is immediately ready
+            if(self_->active_ops_->await_ready(self_->cached_awaitable_))
+                return h;
+
+            // Forward to underlying awaitable
+            return self_->active_ops_->await_suspend(
+                self_->cached_awaitable_, h, ex, token);
         }
 
         io_result<std::size_t>
-        await_resume() const noexcept
+        await_resume()
         {
-            return {ec_, n_};
+            struct guard {
+                any_read_source* self;
+                ~guard() {
+                    self->active_ops_->destroy(self->cached_awaitable_);
+                    self->active_ops_ = nullptr;
+                }
+            } g{self_};
+            return self_->active_ops_->await_resume(
+                self_->cached_awaitable_);
         }
     };
-    return awaitable{this, buffers, {}, 0};
+    return awaitable{this, buffers};
 }
 
 template<MutableBufferSequence MB>
