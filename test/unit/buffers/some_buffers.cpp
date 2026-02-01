@@ -81,6 +81,87 @@ public:
                 ++count;
             BOOST_TEST_EQ(count, 1u);
         }
+
+        // Skip single empty buffer
+        {
+            const_buffer buf(nullptr, 0);
+            some_const_buffers bufs(buf);
+            BOOST_TEST_EQ(bufs.size(), 0u);
+        }
+
+        // Skip all empty buffers
+        {
+            std::array<const_buffer, 3> arr = {{
+                const_buffer(nullptr, 0),
+                const_buffer(nullptr, 0),
+                const_buffer(nullptr, 0)
+            }};
+            some_const_buffers bufs(arr);
+            BOOST_TEST_EQ(bufs.size(), 0u);
+        }
+
+        // Skip empty buffers at beginning
+        {
+            char const d1[] = "hello";
+            std::array<const_buffer, 3> arr = {{
+                const_buffer(nullptr, 0),
+                const_buffer(nullptr, 0),
+                const_buffer(d1, 5)
+            }};
+            some_const_buffers bufs(arr);
+            BOOST_TEST_EQ(bufs.size(), 1u);
+            BOOST_TEST_EQ(bufs.data()[0].data(), d1);
+            BOOST_TEST_EQ(bufs.data()[0].size(), 5u);
+        }
+
+        // Skip empty buffers in middle
+        {
+            char const d1[] = "hello";
+            char const d2[] = "world";
+            std::array<const_buffer, 4> arr = {{
+                const_buffer(d1, 5),
+                const_buffer(nullptr, 0),
+                const_buffer(nullptr, 0),
+                const_buffer(d2, 5)
+            }};
+            some_const_buffers bufs(arr);
+            BOOST_TEST_EQ(bufs.size(), 2u);
+            BOOST_TEST_EQ(bufs.data()[0].data(), d1);
+            BOOST_TEST_EQ(bufs.data()[1].data(), d2);
+        }
+
+        // Skip empty buffers at end
+        {
+            char const d1[] = "hello";
+            std::array<const_buffer, 3> arr = {{
+                const_buffer(d1, 5),
+                const_buffer(nullptr, 0),
+                const_buffer(nullptr, 0)
+            }};
+            some_const_buffers bufs(arr);
+            BOOST_TEST_EQ(bufs.size(), 1u);
+            BOOST_TEST_EQ(bufs.data()[0].data(), d1);
+        }
+
+        // Mixed empty and non-empty
+        {
+            char const d1[] = "a";
+            char const d2[] = "bb";
+            char const d3[] = "ccc";
+            std::array<const_buffer, 6> arr = {{
+                const_buffer(nullptr, 0),
+                const_buffer(d1, 1),
+                const_buffer(nullptr, 0),
+                const_buffer(d2, 2),
+                const_buffer(d3, 3),
+                const_buffer(nullptr, 0)
+            }};
+            some_const_buffers bufs(arr);
+            BOOST_TEST_EQ(bufs.size(), 3u);
+            BOOST_TEST_EQ(bufs.data()[0].size(), 1u);
+            BOOST_TEST_EQ(bufs.data()[1].size(), 2u);
+            BOOST_TEST_EQ(bufs.data()[2].size(), 3u);
+        }
     }
 
     void
@@ -140,6 +221,87 @@ public:
             for(auto it = bufs.begin(); it != bufs.end(); ++it)
                 ++count;
             BOOST_TEST_EQ(count, 1u);
+        }
+
+        // Skip single empty buffer
+        {
+            mutable_buffer buf(nullptr, 0);
+            some_mutable_buffers bufs(buf);
+            BOOST_TEST_EQ(bufs.size(), 0u);
+        }
+
+        // Skip all empty buffers
+        {
+            std::array<mutable_buffer, 3> arr = {{
+                mutable_buffer(nullptr, 0),
+                mutable_buffer(nullptr, 0),
+                mutable_buffer(nullptr, 0)
+            }};
+            some_mutable_buffers bufs(arr);
+            BOOST_TEST_EQ(bufs.size(), 0u);
+        }
+
+        // Skip empty buffers at beginning
+        {
+            char d1[8] = {};
+            std::array<mutable_buffer, 3> arr = {{
+                mutable_buffer(nullptr, 0),
+                mutable_buffer(nullptr, 0),
+                mutable_buffer(d1, sizeof(d1))
+            }};
+            some_mutable_buffers bufs(arr);
+            BOOST_TEST_EQ(bufs.size(), 1u);
+            BOOST_TEST_EQ(bufs.data()[0].data(), d1);
+            BOOST_TEST_EQ(bufs.data()[0].size(), sizeof(d1));
+        }
+
+        // Skip empty buffers in middle
+        {
+            char d1[8] = {};
+            char d2[16] = {};
+            std::array<mutable_buffer, 4> arr = {{
+                mutable_buffer(d1, sizeof(d1)),
+                mutable_buffer(nullptr, 0),
+                mutable_buffer(nullptr, 0),
+                mutable_buffer(d2, sizeof(d2))
+            }};
+            some_mutable_buffers bufs(arr);
+            BOOST_TEST_EQ(bufs.size(), 2u);
+            BOOST_TEST_EQ(bufs.data()[0].data(), d1);
+            BOOST_TEST_EQ(bufs.data()[1].data(), d2);
+        }
+
+        // Skip empty buffers at end
+        {
+            char d1[8] = {};
+            std::array<mutable_buffer, 3> arr = {{
+                mutable_buffer(d1, sizeof(d1)),
+                mutable_buffer(nullptr, 0),
+                mutable_buffer(nullptr, 0)
+            }};
+            some_mutable_buffers bufs(arr);
+            BOOST_TEST_EQ(bufs.size(), 1u);
+            BOOST_TEST_EQ(bufs.data()[0].data(), d1);
+        }
+
+        // Mixed empty and non-empty
+        {
+            char d1[4] = {};
+            char d2[8] = {};
+            char d3[12] = {};
+            std::array<mutable_buffer, 6> arr = {{
+                mutable_buffer(nullptr, 0),
+                mutable_buffer(d1, sizeof(d1)),
+                mutable_buffer(nullptr, 0),
+                mutable_buffer(d2, sizeof(d2)),
+                mutable_buffer(d3, sizeof(d3)),
+                mutable_buffer(nullptr, 0)
+            }};
+            some_mutable_buffers bufs(arr);
+            BOOST_TEST_EQ(bufs.size(), 3u);
+            BOOST_TEST_EQ(bufs.data()[0].size(), sizeof(d1));
+            BOOST_TEST_EQ(bufs.data()[1].size(), sizeof(d2));
+            BOOST_TEST_EQ(bufs.data()[2].size(), sizeof(d3));
         }
     }
 

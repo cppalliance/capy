@@ -15,33 +15,25 @@
 
 #include <cstddef>
 #include <new>
-#include <utility>
 
 namespace boost {
 namespace capy {
 
 namespace detail {
 
-template<class Buffer, class BS, std::size_t... Is>
-std::size_t
-fill_buffers_impl(
-    Buffer* arr,
-    BS const& bs,
-    std::index_sequence<Is...>) noexcept
-{
-    auto it = begin(bs);
-    auto const last = end(bs);
-    std::size_t n = 0;
-    ((it != last ? (::new(&arr[Is]) Buffer(*it++), ++n, void()) : void()), ...);
-    return n;
-}
-
 template<class Buffer, class BS>
 std::size_t
 fill_buffers(Buffer* arr, BS const& bs) noexcept
 {
-    return fill_buffers_impl(
-        arr, bs, std::make_index_sequence<max_iovec_>{});
+    auto it = begin(bs);
+    auto const last = end(bs);
+    std::size_t n = 0;
+    while(it != last && n < max_iovec_) {
+        if((*it).size() != 0)
+            ::new(&arr[n++]) Buffer(*it);
+        ++it;
+    }
+    return n;
 }
 
 } // detail
@@ -67,11 +59,11 @@ fill_buffers(Buffer* arr, BS const& bs) noexcept
 */
 class some_const_buffers
 {
+    std::size_t n_ = 0;
     union {
         int dummy_;
         const_buffer arr_[detail::max_iovec_];
     };
-    std::size_t n_ = 0;
 
 public:
     /** Default constructor.
@@ -100,7 +92,6 @@ public:
         @param bs The buffer sequence to copy from.
     */
     template<ConstBufferSequence BS>
-    explicit
     some_const_buffers(BS const& bs) noexcept
         : n_(detail::fill_buffers(arr_, bs))
     {
@@ -192,11 +183,11 @@ public:
 */
 class some_mutable_buffers
 {
+    std::size_t n_ = 0;
     union {
         int dummy_;
         mutable_buffer arr_[detail::max_iovec_];
     };
-    std::size_t n_ = 0;
 
 public:
     /** Default constructor.
@@ -225,7 +216,6 @@ public:
         @param bs The buffer sequence to copy from.
     */
     template<MutableBufferSequence BS>
-    explicit
     some_mutable_buffers(BS const& bs) noexcept
         : n_(detail::fill_buffers(arr_, bs))
     {
