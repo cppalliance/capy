@@ -32,7 +32,7 @@ fill_buffers_impl(
     auto it = begin(bs);
     auto const last = end(bs);
     std::size_t n = 0;
-    ((it != last ? (::new(&arr[Is]) Buffer(*it++), ++n, true) : false), ...);
+    ((it != last ? (::new(&arr[Is]) Buffer(*it++), ++n, void()) : void()), ...);
     return n;
 }
 
