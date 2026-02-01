@@ -78,7 +78,7 @@ namespace capy {
     any_buffer_source abs(&src);
 
     const_buffer arr[16];
-    auto [ec, count] = co_await abs.pull(arr, 16);
+    auto [ec, bufs] = co_await abs.pull(arr);
     @endcode
 
     @see any_write_sink, BufferSource, ReadSource
@@ -207,22 +207,21 @@ public:
 
     /** Pull buffer data from the source.
 
-        Fills the provided array with buffer descriptors from the
+        Fills the provided span with buffer descriptors from the
         underlying source. The operation completes when data is
         available, the source is exhausted, or an error occurs.
 
-        @param arr Pointer to array of const_buffer to fill.
-        @param max_count Maximum number of buffers to fill.
+        @param dest Span of const_buffer to fill.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
-            On success with data, `count > 0` indicates buffers filled.
-            On success with `count == 0`, source is exhausted.
+        @return An awaitable yielding `(error_code,std::span<const_buffer>)`.
+            On success with data, a non-empty span of filled buffers.
+            On success with empty span, source is exhausted.
 
         @par Preconditions
         The wrapper must contain a valid source (`has_value() == true`).
     */
     auto
-    pull(const_buffer* arr, std::size_t max_count);
+    pull(std::span<const_buffer> dest);
 
     /** Read data into a mutable buffer sequence.
 
@@ -279,7 +278,7 @@ struct any_buffer_source::awaitable_ops
 {
     bool (*await_ready)(void*);
     coro (*await_suspend)(void*, coro, executor_ref, std::stop_token);
-    io_result<std::size_t> (*await_resume)(void*);
+    io_result<std::span<const_buffer>> (*await_resume)(void*);
     void (*destroy)(void*) noexcept;
 };
 
@@ -292,16 +291,14 @@ struct any_buffer_source::vtable
     awaitable_ops const* (*construct_awaitable)(
         void* source,
         void* storage,
-        const_buffer* arr,
-        std::size_t max_count);
+        std::span<const_buffer> dest);
 };
 
 template<BufferSource S>
 struct any_buffer_source::vtable_for_impl
 {
     using Awaitable = decltype(std::declval<S&>().pull(
-        std::declval<const_buffer*>(),
-        std::declval<std::size_t>()));
+        std::declval<std::span<const_buffer>>()));
 
     static void
     do_destroy_impl(void* source) noexcept
@@ -319,11 +316,10 @@ struct any_buffer_source::vtable_for_impl
     construct_awaitable_impl(
         void* source,
         void* storage,
-        const_buffer* arr,
-        std::size_t max_count)
+        std::span<const_buffer> dest)
     {
         auto& s = *static_cast<S*>(source);
-        ::new(storage) Awaitable(s.pull(arr, max_count));
+        ::new(storage) Awaitable(s.pull(dest));
 
         static constexpr awaitable_ops ops = {
             +[](void* p) {
@@ -432,15 +428,12 @@ any_buffer_source::consume(std::size_t n) noexcept
 }
 
 inline auto
-any_buffer_source::pull(
-    const_buffer* arr,
-    std::size_t max_count)
+any_buffer_source::pull(std::span<const_buffer> dest)
 {
     struct awaitable
     {
         any_buffer_source* self_;
-        const_buffer* arr_;
-        std::size_t max_count_;
+        std::span<const_buffer> dest_;
 
         bool
         await_ready() const noexcept
@@ -455,8 +448,7 @@ any_buffer_source::pull(
             self_->active_ops_ = self_->vt_->construct_awaitable(
                 self_->source_,
                 self_->cached_awaitable_,
-                arr_,
-                max_count_);
+                dest_);
 
             // Check if underlying is immediately ready
             if(self_->active_ops_->await_ready(self_->cached_awaitable_))
@@ -467,7 +459,7 @@ any_buffer_source::pull(
                 self_->cached_awaitable_, h, ex, token);
         }
 
-        io_result<std::size_t>
+        io_result<std::span<const_buffer>>
         await_resume()
         {
             struct guard {
@@ -481,7 +473,7 @@ any_buffer_source::pull(
                 self_->cached_awaitable_);
         }
     };
-    return awaitable{this, arr, max_count};
+    return awaitable{this, dest};
 }
 
 template<MutableBufferSequence MB>
@@ -494,15 +486,15 @@ any_buffer_source::read(MB buffers)
     while(!buffer_empty(dest))
     {
         const_buffer arr[detail::max_iovec_];
-        auto [ec, count] = co_await pull(arr, detail::max_iovec_);
+        auto [ec, bufs] = co_await pull(arr);
 
         if(ec)
             co_return {ec, total};
 
-        if(count == 0)
+        if(bufs.empty())
             co_return {error::eof, total};
 
-        auto n = buffer_copy(dest, std::span(arr, count));
+        auto n = buffer_copy(dest, bufs);
         consume(n);
         total += n;
         dest = sans_prefix(dest, n);

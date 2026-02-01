@@ -67,17 +67,16 @@ push_to(Src& source, Sink& sink)
 
     for(;;)
     {
-        auto [ec, count] = co_await source.pull(arr, detail::max_iovec_);
+        auto [ec, bufs] = co_await source.pull(arr);
         if(ec)
             co_return {ec, total};
 
-        if(count == 0)
+        if(bufs.empty())
         {
             auto [eof_ec] = co_await sink.write_eof();
             co_return {eof_ec, total};
         }
 
-        std::span<const_buffer const> bufs(arr, count);
         auto [write_ec, n] = co_await sink.write(bufs);
         total += n;
         source.consume(n);
@@ -133,14 +132,13 @@ push_to(Src& source, Stream& stream)
 
     for(;;)
     {
-        auto [ec, count] = co_await source.pull(arr, detail::max_iovec_);
+        auto [ec, bufs] = co_await source.pull(arr);
         if(ec)
             co_return {ec, total};
 
-        if(count == 0)
+        if(bufs.empty())
             co_return {{}, total};
 
-        std::span<const_buffer const> bufs(arr, count);
         auto [write_ec, n] = co_await stream.write_some(bufs);
         if(write_ec)
             co_return {write_ec, total};

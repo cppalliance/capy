@@ -128,30 +128,28 @@ public:
 
     /** Pull buffer data from the source.
 
-        Fills the provided array with buffer descriptors pointing to
+        Fills the provided span with buffer descriptors pointing to
         internal data starting from the current unconsumed position.
-        Returns the number of buffers filled. When no data remains,
-        returns count=0 to signal completion.
+        Returns a span of filled buffers. When no data remains,
+        returns an empty span to signal completion.
 
         Calling pull multiple times without intervening @ref consume
         returns the same data. Use consume to advance past processed
         bytes.
 
-        @param arr Pointer to array of const_buffer to fill.
-        @param max_count Maximum number of buffers to fill.
+        @param dest Span of const_buffer to fill.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable yielding `(error_code,std::span<const_buffer>)`.
 
         @see consume, fuse
     */
     auto
-    pull(const_buffer* arr, std::size_t max_count)
+    pull(std::span<const_buffer> dest)
     {
         struct awaitable
         {
             buffer_source* self_;
-            const_buffer* arr_;
-            std::size_t max_count_;
+            std::span<const_buffer> dest_;
 
             bool await_ready() const noexcept { return true; }
 
@@ -162,31 +160,31 @@ public:
             {
             }
 
-            io_result<std::size_t>
+            io_result<std::span<const_buffer>>
             await_resume()
             {
                 auto ec = self_->f_->maybe_fail();
                 if(ec)
-                    return {ec, 0};
+                    return {ec, {}};
 
                 if(self_->pos_ >= self_->data_.size())
-                    return {{}, 0}; // Source exhausted
+                    return {{}, {}}; // Source exhausted
 
                 std::size_t avail = self_->data_.size() - self_->pos_;
                 std::size_t to_return = (std::min)(avail, self_->max_pull_size_);
 
-                if(max_count_ == 0)
-                    return {{}, 0};
+                if(dest_.empty())
+                    return {{}, {}};
 
                 // Fill a single buffer descriptor
-                arr_[0] = make_buffer(
+                dest_[0] = make_buffer(
                     self_->data_.data() + self_->pos_,
                     to_return);
 
-                return {{}, 1};
+                return {{}, dest_.first(1)};
             }
         };
-        return awaitable{this, arr, max_count};
+        return awaitable{this, dest};
     }
 };
 

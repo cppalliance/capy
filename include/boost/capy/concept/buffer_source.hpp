@@ -14,9 +14,10 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
-#include <system_error>
 
 #include <cstddef>
+#include <span>
+#include <system_error>
 
 namespace boost {
 namespace capy {
@@ -24,9 +25,10 @@ namespace capy {
 /** Concept for types that produce buffer data asynchronously.
 
     A type satisfies `BufferSource` if it provides a `pull` member function
-    that fills a caller-provided array of buffer descriptors and is an
-    @ref IoAwaitable whose return value decomposes to `(error_code,std::size_t)`,
-    plus a `consume` member function to indicate how many bytes were used.
+    that fills a caller-provided span of buffer descriptors and is an
+    @ref IoAwaitable whose return value decomposes to
+    `(error_code,std::span<const_buffer>)`, plus a `consume` member function
+    to indicate how many bytes were used.
 
     Use this concept when you need to produce data asynchronously for
     transfer to a sink, such as streaming HTTP request bodies or reading
@@ -36,22 +38,22 @@ namespace capy {
 
     @par Syntactic Requirements
 
-    @li `T` must provide a `pull` member function accepting a pointer to
-        `const_buffer` and a maximum count
+    @li `T` must provide a `pull` member function accepting a
+        `std::span<const_buffer>` for output
     @li The return type must satisfy @ref IoAwaitable
-    @li The awaitable must decompose to `(error_code,std::size_t)`
+    @li The awaitable must decompose to `(error_code,std::span<const_buffer>)`
         via structured bindings
     @li `T` must provide a `consume` member function accepting a byte count
 
     @par Semantic Requirements
 
-    The `pull` operation fills the provided buffer array with data starting
+    The `pull` operation fills the provided buffer span with data starting
     from the current unconsumed position. On return, exactly one of the
     following is true:
 
-    @li **Data available**: `ec` is `false` and `count > 0`.
-        The array contains `count` buffer descriptors.
-    @li **Source exhausted**: `ec` is `false` and `count == 0`.
+    @li **Data available**: `ec` is `false` and `bufs.size() > 0`.
+        The returned span contains buffer descriptors.
+    @li **Source exhausted**: `ec` is `false` and `bufs.empty()`.
         No more data is available; the transfer is complete.
     @li **Error**: `ec` is `true`. An error occurred.
 
@@ -69,8 +71,8 @@ namespace capy {
     @par Conforming Signatures
 
     @code
-    some_io_awaitable<io_result<std::size_t>>
-    pull( const_buffer* arr, std::size_t max_count );
+    some_io_awaitable<io_result<std::span<const_buffer>>>
+    pull( std::span<const_buffer> dest );
 
     void consume( std::size_t n ) noexcept;
     @endcode
@@ -85,13 +87,12 @@ namespace capy {
         std::size_t total = 0;
         for(;;)
         {
-            auto [ec, count] = co_await source.pull( arr, 16 );
+            auto [ec, bufs] = co_await source.pull( arr );
             if( ec )
                 co_return {ec, total};
-            if( count == 0 )
+            if( bufs.empty() )
                 co_return {{}, total};
-            auto [write_ec, n] = co_await stream.write_some(
-                std::span( arr, count ) );
+            auto [write_ec, n] = co_await stream.write_some( bufs );
             if( write_ec )
                 co_return {write_ec, total};
             source.consume( n );
@@ -104,12 +105,12 @@ namespace capy {
 */
 template<typename T>
 concept BufferSource =
-    requires(T& src, const_buffer* arr, std::size_t max_count, std::size_t n)
+    requires(T& src, std::span<const_buffer> dest, std::size_t n)
     {
-        { src.pull(arr, max_count) } -> IoAwaitable;
+        { src.pull(dest) } -> IoAwaitable;
         requires awaitable_decomposes_to<
-            decltype(src.pull(arr, max_count)),
-            std::error_code, std::size_t>;
+            decltype(src.pull(dest)),
+            std::error_code, std::span<const_buffer>>;
         src.consume(n);
     };
 

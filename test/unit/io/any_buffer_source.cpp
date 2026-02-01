@@ -84,12 +84,12 @@ public:
             any_buffer_source abs(&bs);
 
             const_buffer arr[detail::max_iovec_];
-            auto [ec, count] = co_await abs.pull(arr, detail::max_iovec_);
+            auto [ec, bufs] = co_await abs.pull(arr);
             if(ec)
                 co_return;
 
-            BOOST_TEST_EQ(count, 1u);
-            BOOST_TEST_EQ(arr[0].size(), 11u);
+            BOOST_TEST_EQ(bufs.size(), 1u);
+            BOOST_TEST_EQ(bufs[0].size(), 11u);
             abs.consume(11);
         });
         BOOST_TEST(r.success);
@@ -108,30 +108,30 @@ public:
             const_buffer arr[detail::max_iovec_];
 
             // First pull returns all data
-            auto [ec1, count1] = co_await abs.pull(arr, detail::max_iovec_);
+            auto [ec1, bufs1] = co_await abs.pull(arr);
             if(ec1)
                 co_return;
-            BOOST_TEST_EQ(count1, 1u);
-            BOOST_TEST_EQ(arr[0].size(), 11u);
+            BOOST_TEST_EQ(bufs1.size(), 1u);
+            BOOST_TEST_EQ(bufs1[0].size(), 11u);
 
             // Consume partial (5 bytes = "hello")
             abs.consume(5);
 
             // Second pull returns remaining data
-            auto [ec2, count2] = co_await abs.pull(arr, detail::max_iovec_);
+            auto [ec2, bufs2] = co_await abs.pull(arr);
             if(ec2)
                 co_return;
-            BOOST_TEST_EQ(count2, 1u);
-            BOOST_TEST_EQ(arr[0].size(), 6u); // " world"
+            BOOST_TEST_EQ(bufs2.size(), 1u);
+            BOOST_TEST_EQ(bufs2[0].size(), 6u); // " world"
 
             // Consume rest
             abs.consume(6);
 
             // Third pull returns empty (exhausted)
-            auto [ec3, count3] = co_await abs.pull(arr, detail::max_iovec_);
+            auto [ec3, bufs3] = co_await abs.pull(arr);
             if(ec3)
                 co_return;
-            BOOST_TEST_EQ(count3, 0u);
+            BOOST_TEST(bufs3.empty());
         });
         BOOST_TEST(r.success);
     }
@@ -149,18 +149,18 @@ public:
             const_buffer arr[detail::max_iovec_];
 
             // Pull returns data
-            auto [ec1, count1] = co_await abs.pull(arr, detail::max_iovec_);
+            auto [ec1, bufs1] = co_await abs.pull(arr);
             if(ec1)
                 co_return;
-            BOOST_TEST_EQ(count1, 1u);
-            BOOST_TEST_EQ(arr[0].size(), 4u);
+            BOOST_TEST_EQ(bufs1.size(), 1u);
+            BOOST_TEST_EQ(bufs1[0].size(), 4u);
 
             // Pull again without consume returns same data
-            auto [ec2, count2] = co_await abs.pull(arr, detail::max_iovec_);
+            auto [ec2, bufs2] = co_await abs.pull(arr);
             if(ec2)
                 co_return;
-            BOOST_TEST_EQ(count2, 1u);
-            BOOST_TEST_EQ(arr[0].size(), 4u);
+            BOOST_TEST_EQ(bufs2.size(), 1u);
+            BOOST_TEST_EQ(bufs2[0].size(), 4u);
 
             abs.consume(4);
         });
@@ -181,15 +181,15 @@ public:
             for(;;)
             {
                 const_buffer arr[detail::max_iovec_];
-                auto [ec, count] = co_await abs.pull(arr, detail::max_iovec_);
+                auto [ec, bufs] = co_await abs.pull(arr);
                 if(ec)
                     co_return;
-                if(count == 0)
+                if(bufs.empty())
                     break;
-                for(std::size_t i = 0; i < count; ++i)
+                for(auto const& buf : bufs)
                 {
-                    total += arr[i].size();
-                    abs.consume(arr[i].size());
+                    total += buf.size();
+                    abs.consume(buf.size());
                 }
             }
 
@@ -209,11 +209,11 @@ public:
             any_buffer_source abs(&bs);
 
             const_buffer arr[detail::max_iovec_];
-            auto [ec, count] = co_await abs.pull(arr, detail::max_iovec_);
+            auto [ec, bufs] = co_await abs.pull(arr);
             if(ec)
                 co_return;
 
-            BOOST_TEST_EQ(count, 0u); // Source exhausted
+            BOOST_TEST(bufs.empty()); // Source exhausted
         });
         BOOST_TEST(r.success);
     }

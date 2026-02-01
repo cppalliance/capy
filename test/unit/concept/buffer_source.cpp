@@ -21,7 +21,7 @@ namespace capy {
 
 namespace {
 
-// Mock IoAwaitable returning (error_code, size_t)
+// Mock IoAwaitable returning (error_code, span<const_buffer>)
 struct mock_source_awaitable
 {
     bool await_ready() const noexcept { return true; }
@@ -33,7 +33,7 @@ struct mock_source_awaitable
     {
     }
 
-    std::pair<std::error_code, std::size_t>
+    std::pair<std::error_code, std::span<const_buffer>>
     await_resume() const noexcept
     {
         return {};
@@ -81,7 +81,7 @@ struct mock_source_awaitable_not_io
 struct valid_buffer_source
 {
     mock_source_awaitable
-    pull(const_buffer*, std::size_t)
+    pull(std::span<const_buffer>)
     {
         return {};
     }
@@ -93,7 +93,7 @@ struct valid_buffer_source
 struct invalid_buffer_source_wrong_type
 {
     mock_source_awaitable_wrong_type
-    pull(const_buffer*, std::size_t)
+    pull(std::span<const_buffer>)
     {
         return {};
     }
@@ -109,7 +109,7 @@ struct invalid_buffer_source_no_pull
 struct invalid_buffer_source_not_io
 {
     mock_source_awaitable_not_io
-    pull(const_buffer*, std::size_t)
+    pull(std::span<const_buffer>)
     {
         return {};
     }
@@ -118,14 +118,14 @@ struct invalid_buffer_source_not_io
 // Invalid: pull returns non-awaitable
 struct invalid_buffer_source_returns_int
 {
-    int pull(const_buffer*, std::size_t) { return 0; }
+    int pull(std::span<const_buffer>) { return 0; }
 };
 
-// Invalid: pull has wrong signature
+// Invalid: pull has wrong signature (old style with ptr+count)
 struct invalid_buffer_source_wrong_sig
 {
     mock_source_awaitable
-    pull(const_buffer*) // Missing max_count
+    pull(const_buffer*, std::size_t) // Old signature
     {
         return {};
     }
@@ -137,7 +137,7 @@ struct invalid_buffer_source_wrong_sig
 struct invalid_buffer_source_no_consume
 {
     mock_source_awaitable
-    pull(const_buffer*, std::size_t)
+    pull(std::span<const_buffer>)
     {
         return {};
     }
