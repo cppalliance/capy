@@ -19,6 +19,7 @@
 #include <boost/capy/test/fuse.hpp>
 
 #include <algorithm>
+#include <span>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -123,24 +124,23 @@ public:
 
     /** Prepare writable buffers.
 
-        Fills the provided array with mutable buffer descriptors pointing
+        Fills the provided span with mutable buffer descriptors pointing
         to internal storage. The caller writes data into these buffers,
         then calls @ref commit to finalize.
 
-        @param arr Pointer to array of mutable_buffer to fill.
-        @param max_count Maximum number of buffers to fill.
+        @param dest Span of mutable_buffer to fill.
 
-        @return The number of buffers filled (0 or 1 in this implementation).
+        @return A span of filled buffers (empty or 1 buffer in this implementation).
     */
-    std::size_t
-    prepare(mutable_buffer* arr, std::size_t max_count)
+    std::span<mutable_buffer>
+    prepare(std::span<mutable_buffer> dest)
     {
-        if(max_count == 0)
-            return 0;
+        if(dest.empty())
+            return {};
 
         prepare_size_ = max_prepare_size_;
-        arr[0] = make_buffer(prepare_buf_.data(), prepare_size_);
-        return 1;
+        dest[0] = make_buffer(prepare_buf_.data(), prepare_size_);
+        return dest.first(1);
     }
 
     /** Commit bytes written to the prepared buffers.

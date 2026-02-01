@@ -75,8 +75,8 @@ namespace capy {
     any_buffer_sink abs(&sink);
 
     mutable_buffer arr[16];
-    std::size_t count = abs.prepare(arr, 16);
-    // Write data into arr[0..count)
+    auto bufs = abs.prepare(arr);
+    // Write data into bufs[0..bufs.size())
     auto [ec] = co_await abs.commit(bytes_written);
     auto [ec2] = co_await abs.commit_eof();
     @endcode
@@ -192,20 +192,19 @@ public:
 
     /** Prepare writable buffers.
 
-        Fills the provided array with mutable buffer descriptors
+        Fills the provided span with mutable buffer descriptors
         pointing to the underlying sink's internal storage. This
         operation is synchronous.
 
-        @param arr Pointer to array of mutable_buffer to fill.
-        @param max_count Maximum number of buffers to fill.
+        @param dest Span of mutable_buffer to fill.
 
-        @return The number of buffers filled.
+        @return A span of filled buffers.
 
         @par Preconditions
         The wrapper must contain a valid sink (`has_value() == true`).
     */
-    std::size_t
-    prepare(mutable_buffer* arr, std::size_t max_count);
+    std::span<mutable_buffer>
+    prepare(std::span<mutable_buffer> dest);
 
     /** Commit bytes written to the prepared buffers.
 
@@ -345,10 +344,9 @@ struct any_buffer_sink::awaitable_ops
 struct any_buffer_sink::vtable
 {
     void (*destroy)(void*) noexcept;
-    std::size_t (*do_prepare)(
+    std::span<mutable_buffer> (*do_prepare)(
         void* sink,
-        mutable_buffer* arr,
-        std::size_t max_count);
+        std::span<mutable_buffer> dest);
     std::size_t awaitable_size;
     std::size_t awaitable_align;
     awaitable_ops const* (*construct_commit_awaitable)(
@@ -374,14 +372,13 @@ struct any_buffer_sink::vtable_for_impl
         static_cast<S*>(sink)->~S();
     }
 
-    static std::size_t
+    static std::span<mutable_buffer>
     do_prepare_impl(
         void* sink,
-        mutable_buffer* arr,
-        std::size_t max_count)
+        std::span<mutable_buffer> dest)
     {
         auto& s = *static_cast<S*>(sink);
-        return s.prepare(arr, max_count);
+        return s.prepare(dest);
     }
 
     static awaitable_ops const*
@@ -531,12 +528,10 @@ any_buffer_sink::any_buffer_sink(S* s)
 
 //----------------------------------------------------------
 
-inline std::size_t
-any_buffer_sink::prepare(
-    mutable_buffer* arr,
-    std::size_t max_count)
+inline std::span<mutable_buffer>
+any_buffer_sink::prepare(std::span<mutable_buffer> dest)
 {
-    return vt_->do_prepare(sink_, arr, max_count);
+    return vt_->do_prepare(sink_, dest);
 }
 
 inline auto
@@ -666,8 +661,8 @@ any_buffer_sink::write(CB buffers, bool eof)
             break;
 
         mutable_buffer arr[detail::max_iovec_];
-        std::size_t count = prepare(arr, detail::max_iovec_);
-        if(count == 0)
+        auto dst_bufs = prepare(arr);
+        if(dst_bufs.empty())
         {
             auto [ec] = co_await commit(0);
             if(ec)
@@ -675,7 +670,7 @@ any_buffer_sink::write(CB buffers, bool eof)
             continue;
         }
 
-        auto n = buffer_copy(std::span(arr, count), src);
+        auto n = buffer_copy(dst_bufs, src);
         auto [ec] = co_await commit(n);
         if(ec)
             co_return {ec, total};

@@ -69,8 +69,8 @@ pull_from(Src& source, Sink& sink)
 
     for(;;)
     {
-        std::size_t dst_count = sink.prepare(dst_arr, detail::max_iovec_);
-        if(dst_count == 0)
+        auto dst_bufs = sink.prepare(dst_arr);
+        if(dst_bufs.empty())
         {
             // No buffer space available; commit nothing to flush
             auto [flush_ec] = co_await sink.commit(0);
@@ -80,7 +80,7 @@ pull_from(Src& source, Sink& sink)
         }
 
         auto [ec, n] = co_await source.read(
-            std::span<mutable_buffer const>(dst_arr, dst_count));
+            std::span<mutable_buffer const>(dst_bufs));
 
         if(n > 0)
         {
@@ -151,8 +151,8 @@ pull_from(Src& source, Sink& sink)
     for(;;)
     {
         // Prepare destination buffers from the sink
-        std::size_t dst_count = sink.prepare(dst_arr, detail::max_iovec_);
-        if(dst_count == 0)
+        auto dst_bufs = sink.prepare(dst_arr);
+        if(dst_bufs.empty())
         {
             // No buffer space available; commit nothing to flush
             auto [flush_ec] = co_await sink.commit(0);
@@ -163,7 +163,7 @@ pull_from(Src& source, Sink& sink)
 
         // Read data from the stream into the sink's buffers
         auto [ec, n] = co_await source.read_some(
-            std::span<mutable_buffer const>(dst_arr, dst_count));
+            std::span<mutable_buffer const>(dst_bufs));
 
         // Commit any data that was read
         if(n > 0)

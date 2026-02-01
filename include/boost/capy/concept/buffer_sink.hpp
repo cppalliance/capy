@@ -18,6 +18,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <span>
 
 namespace boost {
 namespace capy {
@@ -25,7 +26,7 @@ namespace capy {
 /** Concept for types that consume buffer data using callee-owned buffers.
 
     A type satisfies `BufferSink` if it provides a synchronous `prepare`
-    member function that fills a caller-provided array with mutable buffer
+    member function that fills a caller-provided span with mutable buffer
     descriptors pointing to the sink's internal storage, and asynchronous
     `commit` and `commit_eof` member functions to finalize written data.
 
@@ -39,8 +40,7 @@ namespace capy {
     @par Syntactic Requirements
 
     @li `T` must provide a synchronous `prepare` member function accepting
-        a pointer to `mutable_buffer` and a maximum count, returning
-        `std::size_t` (the number of buffers filled)
+        a `std::span<mutable_buffer>` and returning a span of filled buffers
     @li `T` must provide `commit(n)` returning an @ref IoAwaitable that
         decomposes to `(error_code)`
     @li `T` must provide `commit(n, eof)` returning an @ref IoAwaitable
@@ -52,10 +52,10 @@ namespace capy {
 
     The `prepare` operation provides writable buffer space:
 
-    @li Returns `count` indicating how many buffer descriptors were filled
+    @li Returns a span of buffer descriptors that were filled
     @li The returned buffers point to the sink's internal storage
-    @li If `count == 0`, the sink has no available space; caller should
-        call `commit` to flush data and try again
+    @li If the returned span is empty, the sink has no available space;
+        caller should call `commit` to flush data and try again
 
     The `commit` operation finalizes written data:
 
@@ -84,7 +84,7 @@ namespace capy {
     @par Conforming Signatures
 
     @code
-    std::size_t prepare( mutable_buffer* arr, std::size_t max_count );
+    std::span<mutable_buffer> prepare( std::span<mutable_buffer> dest );
 
     IoAwaitable auto commit( std::size_t n );
     IoAwaitable auto commit( std::size_t n, bool eof );
@@ -103,20 +103,18 @@ namespace capy {
 
         for(;;)
         {
-            auto [ec1, src_count] = co_await source.pull( src_arr, 16 );
+            auto [ec1, src_bufs] = co_await source.pull( src_arr );
             if( ec1 )
                 co_return {ec1, total};
 
-            if( src_count == 0 )
+            if( src_bufs.empty() )
             {
                 auto [eof_ec] = co_await sink.commit_eof();
                 co_return {eof_ec, total};
             }
 
-            std::size_t dst_count = sink.prepare( dst_arr, 16 );
-            std::size_t n = buffer_copy(
-                std::span( dst_arr, dst_count ),
-                std::span( src_arr, src_count ) );
+            auto dst_bufs = sink.prepare( dst_arr );
+            std::size_t n = buffer_copy( dst_bufs, src_bufs );
 
             auto [ec2] = co_await sink.commit( n );
             if( ec2 )
@@ -131,10 +129,10 @@ namespace capy {
 */
 template<typename T>
 concept BufferSink =
-    requires(T& sink, mutable_buffer* arr, std::size_t max_count, std::size_t n, bool eof)
+    requires(T& sink, std::span<mutable_buffer> dest, std::size_t n, bool eof)
     {
         // Synchronous: get writable buffers from sink's internal storage
-        { sink.prepare(arr, max_count) } -> std::convertible_to<std::size_t>;
+        { sink.prepare(dest) } -> std::same_as<std::span<mutable_buffer>>;
 
         // Async: commit n bytes written
         { sink.commit(n) } -> IoAwaitable;

@@ -13,6 +13,7 @@
 #include <system_error>
 
 #include <cstddef>
+#include <span>
 #include <stop_token>
 #include <utility>
 
@@ -80,10 +81,10 @@ struct mock_commit_awaitable_not_io
 // Valid BufferSink
 struct valid_buffer_sink
 {
-    std::size_t
-    prepare(mutable_buffer*, std::size_t)
+    std::span<mutable_buffer>
+    prepare(std::span<mutable_buffer>)
     {
-        return 0;
+        return {};
     }
 
     mock_commit_awaitable
@@ -108,10 +109,10 @@ struct valid_buffer_sink
 // Invalid: commit returns wrong type
 struct invalid_buffer_sink_wrong_type
 {
-    std::size_t
-    prepare(mutable_buffer*, std::size_t)
+    std::span<mutable_buffer>
+    prepare(std::span<mutable_buffer>)
     {
-        return 0;
+        return {};
     }
 
     mock_commit_awaitable_wrong_type
@@ -158,10 +159,10 @@ struct invalid_buffer_sink_no_prepare
 // Invalid: missing commit
 struct invalid_buffer_sink_no_commit
 {
-    std::size_t
-    prepare(mutable_buffer*, std::size_t)
+    std::span<mutable_buffer>
+    prepare(std::span<mutable_buffer>)
     {
-        return 0;
+        return {};
     }
 
     mock_commit_awaitable
@@ -174,10 +175,10 @@ struct invalid_buffer_sink_no_commit
 // Invalid: missing commit_eof
 struct invalid_buffer_sink_no_commit_eof
 {
-    std::size_t
-    prepare(mutable_buffer*, std::size_t)
+    std::span<mutable_buffer>
+    prepare(std::span<mutable_buffer>)
     {
-        return 0;
+        return {};
     }
 
     mock_commit_awaitable
@@ -196,10 +197,10 @@ struct invalid_buffer_sink_no_commit_eof
 // Invalid: commit is not IoAwaitable
 struct invalid_buffer_sink_not_io
 {
-    std::size_t
-    prepare(mutable_buffer*, std::size_t)
+    std::span<mutable_buffer>
+    prepare(std::span<mutable_buffer>)
     {
-        return 0;
+        return {};
     }
 
     mock_commit_awaitable_not_io
@@ -221,11 +222,11 @@ struct invalid_buffer_sink_not_io
     }
 };
 
-// Invalid: prepare returns non-size_t
+// Invalid: prepare returns wrong type (size_t instead of span)
 struct invalid_buffer_sink_prepare_returns_void
 {
     void
-    prepare(mutable_buffer*, std::size_t)
+    prepare(std::span<mutable_buffer>)
     {
     }
 
@@ -248,11 +249,11 @@ struct invalid_buffer_sink_prepare_returns_void
     }
 };
 
-// Invalid: prepare has wrong signature
+// Invalid: prepare has old signature (ptr + count)
 struct invalid_buffer_sink_wrong_sig
 {
     std::size_t
-    prepare(mutable_buffer*) // Missing max_count
+    prepare(mutable_buffer*, std::size_t) // Old signature
     {
         return 0;
     }

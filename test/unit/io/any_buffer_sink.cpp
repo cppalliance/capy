@@ -84,12 +84,12 @@ public:
             any_buffer_sink abs(&bs);
 
             mutable_buffer arr[detail::max_iovec_];
-            std::size_t count = abs.prepare(arr, detail::max_iovec_);
-            BOOST_TEST_EQ(count, 1u);
-            BOOST_TEST(arr[0].size() > 0);
+            auto bufs = abs.prepare(arr);
+            BOOST_TEST_EQ(bufs.size(), 1u);
+            BOOST_TEST(bufs[0].size() > 0);
 
             // Write data into the buffer
-            std::memcpy(arr[0].data(), "hello", 5);
+            std::memcpy(bufs[0].data(), "hello", 5);
 
             auto [ec] = co_await abs.commit(5);
             if(ec)
@@ -109,10 +109,10 @@ public:
             any_buffer_sink abs(&bs);
 
             mutable_buffer arr[detail::max_iovec_];
-            std::size_t count = abs.prepare(arr, detail::max_iovec_);
-            BOOST_TEST_EQ(count, 1u);
+            auto bufs = abs.prepare(arr);
+            BOOST_TEST_EQ(bufs.size(), 1u);
 
-            std::memcpy(arr[0].data(), "world", 5);
+            std::memcpy(bufs[0].data(), "world", 5);
 
             auto [ec] = co_await abs.commit(5, true);
             if(ec)
@@ -133,10 +133,10 @@ public:
             any_buffer_sink abs(&bs);
 
             mutable_buffer arr[detail::max_iovec_];
-            std::size_t count = abs.prepare(arr, detail::max_iovec_);
-            BOOST_TEST_EQ(count, 1u);
+            auto bufs = abs.prepare(arr);
+            BOOST_TEST_EQ(bufs.size(), 1u);
 
-            std::memcpy(arr[0].data(), "data", 4);
+            std::memcpy(bufs[0].data(), "data", 4);
 
             auto [ec1] = co_await abs.commit(4);
             if(ec1)
@@ -163,10 +163,10 @@ public:
             // First write
             {
                 mutable_buffer arr[detail::max_iovec_];
-                std::size_t count = abs.prepare(arr, detail::max_iovec_);
-                BOOST_TEST_EQ(count, 1u);
+                auto bufs = abs.prepare(arr);
+                BOOST_TEST_EQ(bufs.size(), 1u);
 
-                std::memcpy(arr[0].data(), "hello ", 6);
+                std::memcpy(bufs[0].data(), "hello ", 6);
 
                 auto [ec] = co_await abs.commit(6);
                 if(ec)
@@ -176,10 +176,10 @@ public:
             // Second write
             {
                 mutable_buffer arr[detail::max_iovec_];
-                std::size_t count = abs.prepare(arr, detail::max_iovec_);
-                BOOST_TEST_EQ(count, 1u);
+                auto bufs = abs.prepare(arr);
+                BOOST_TEST_EQ(bufs.size(), 1u);
 
-                std::memcpy(arr[0].data(), "world", 5);
+                std::memcpy(bufs[0].data(), "world", 5);
 
                 auto [ec] = co_await abs.commit(5, true);
                 if(ec)
