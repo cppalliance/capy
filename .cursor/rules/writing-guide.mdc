@@ -38,6 +38,32 @@ Use second person ("You will configure...") to keep focus on the reader. In some
 
 Use motivational language focused on outcomes. Instead of "You will learn how to install Apache," try "In this tutorial, you will install Apache."
 
+## Technical Depth for Core Topics
+
+Certain foundational topics require deeper, more methodical treatment:
+
+- **Task/coroutine documentation**
+- **Buffer sequences**
+- **Streams**
+
+For these sections:
+
+- Use more technical and methodical exposition
+- Provide convincing explanations with thorough reasoning
+- Include extended background and context
+- Explain the "why" behind design decisions
+
+These topics build reader understanding from first principles, not just usage. Readers need to understand the reasoning to apply concepts correctly in their own code.
+
+# Build Workflow
+
+When documentation is built:
+
+- Obsolete pages are automatically removed
+- New pages are linked into the table of contents
+
+No manual cleanup of old files is needed.
+
 # Structure
 
 ## Introduction
