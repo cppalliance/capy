@@ -143,7 +143,7 @@ public:
 
         @param buffers The const buffer sequence containing data to write.
 
-        @return An awaitable yielding ( error_code, std::size_t ).
+        @return An awaitable yielding `(error_code,std::size_t)`.
 
         @see fuse
     */

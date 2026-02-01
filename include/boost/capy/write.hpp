@@ -23,39 +23,44 @@
 namespace boost {
 namespace capy {
 
-/** Write data until the buffer sequence is empty or an error occurs.
+/** Asynchronously write the entire buffer sequence.
 
-    This function writes data from the buffer sequence to the stream
-    until either the entire buffer sequence is written or an error
-    occurs.
+    Writes data to the stream by calling `write_some` repeatedly
+    until the entire buffer sequence is written or an error occurs.
 
-    @tparam Stream The stream type, must satisfy @ref WriteStream.
-    @tparam CB The buffer sequence type, must satisfy
-        @ref ConstBufferSequence.
+    @li The operation completes when:
+    @li The entire buffer sequence has been written
+    @li An error occurs
+    @li The operation is cancelled
 
-    @param stream The stream to write to.
-    @param buffers The buffer sequence to write from.
+    @par Cancellation
+    Supports cancellation via `stop_token` propagated through the
+    IoAwaitable protocol. When cancelled, returns with `cond::canceled`.
 
-    @return A task that yields `(std::error_code, std::size_t)`.
-        On success, `ec` is default-constructed (no error) and `n` is
-        `buffer_size(buffers)`. On error, `ec` contains the error code
-        and `n` is the total number of bytes written before the error.
+    @param stream The stream to write to. The caller retains ownership.
+    @param buffers The buffer sequence to write. The caller retains
+        ownership and must ensure validity until the operation completes.
+
+    @return An awaitable yielding `(error_code, std::size_t)`.
+        On success, `n` equals `buffer_size(buffers)`. On error,
+        `n` is the number of bytes written before the error. Compare
+        error codes to conditions:
+        @li `cond::canceled` - Operation was cancelled
+        @li `std::errc::broken_pipe` - Peer closed connection
 
     @par Example
+
     @code
-    task<void> example(WriteStream auto& stream)
+    task<> send_response( WriteStream auto& stream, std::string_view body )
     {
-        std::string data = "Hello, World!";
-        auto [ec, n] = co_await write(stream, make_buffer(data));
-        if (ec)
-        {
-            // Handle error
-        }
-        // n bytes were written (n == data.size() on success)
+        auto [ec, n] = co_await write( stream, make_buffer( body ) );
+        if( ec.failed() )
+            detail::throw_system_error( ec );
+        // All bytes written successfully
     }
     @endcode
 
-    @see WriteStream, ConstBufferSequence
+    @see write_some, WriteStream, ConstBufferSequence
 */
 auto
 write(

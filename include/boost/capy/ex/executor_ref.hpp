@@ -89,6 +89,20 @@ inline constexpr executor_vtable vtable_for = {
     @par Executor Concept
     This class satisfies the `Executor` concept, making it usable
     anywhere a concrete executor is expected.
+
+    @par Example
+    @code
+    void store_executor(executor_ref ex)
+    {
+        if(ex)
+            ex.post(my_coroutine);
+    }
+
+    io_context ctx;
+    store_executor(ctx.get_executor());
+    @endcode
+
+    @see any_executor, Executor
 */
 class executor_ref
 {

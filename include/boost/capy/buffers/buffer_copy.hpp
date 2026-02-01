@@ -18,10 +18,10 @@
 namespace boost {
 namespace capy {
 
-/** Copy the contents of a buffer sequence into another buffer sequence
+/** Copy the contents of a buffer sequence into another buffer sequence.
 
-    This function copies no more than `at_most` bytes from the constant buffer
-    sequence denoted by `src` into the mutable buffer sequence denoted by `dest`.
+    This function copies bytes from the constant buffer sequence `src` into
+    the mutable buffer sequence `dest`, stopping when any limit is reached.
 
     @par Constraints
     @code
@@ -29,22 +29,22 @@ namespace capy {
     ConstBufferSequence<decltype(src)>
     @endcode
 
-    @return The number of bytes actually copied, which will be exactly equal to
-    `std::min( size(dest), size(src), at_most )`.
+    @return The number of bytes copied, equal to
+    `std::min(size(dest), size(src), at_most)`.
 
-    @param dest The destination buffer sequence
-
-    @param src The source buffer sequence
+    @param dest The destination buffer sequence.
+    @param src The source buffer sequence.
+    @param at_most The maximum bytes to copy. Default copies all available.
 */
 constexpr struct buffer_copy_mrdocs_workaround_t
 {
     template<
-        MutableBufferSequence MutableBufferSequence,
-        ConstBufferSequence ConstBufferSequence>
+        MutableBufferSequence MB,
+        ConstBufferSequence CB>
     std::size_t
     operator()(
-        MutableBufferSequence const& dest,
-        ConstBufferSequence const& src,
+        MB const& dest,
+        CB const& src,
         std::size_t at_most = std::size_t(-1)) const noexcept
     {
         std::size_t total = 0;

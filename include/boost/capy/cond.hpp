@@ -16,24 +16,59 @@
 namespace boost {
 namespace capy {
 
-/** Portable error conditions.
+/** Portable error conditions for capy I/O operations.
 
-    Use these conditions for portable error comparisons:
+    These are the conditions callers should compare against when
+    handling errors from capy operations. The @ref error enum values
+    map to these conditions, as do platform-specific error codes
+    (e.g., `ECANCELED`, SSL EOF errors).
 
-  - Return `error::eof` when originating an eof error.
-      Check `ec == cond::eof` to portably test for eof.
+    @par Example
 
-  - Return the platform canceled error when originating canceled.
-      Check `ec == cond::canceled` to portably test for cancellation.
+    @code
+    auto [ec, n] = co_await stream.read_some( bufs );
+    if( ec == cond::canceled )
+        // handle cancellation
+    else if( ec == cond::eof )
+        // handle end of stream
+    else if( ec.failed() )
+        // handle other errors
+    @endcode
 
-  - Return `error::stream_truncated` when peer closes without TLS shutdown.
-      Check `ec == cond::stream_truncated` to portably test for truncation.
+    @see error
 */
 enum class cond
 {
+    /** End-of-stream condition.
+
+        An `error_code` compares equal to `eof` when the stream
+        reached its natural end, such as when a peer sends TCP FIN
+        or a file reaches EOF.
+    */
     eof = 1,
+
+    /** Operation cancelled condition.
+
+        An `error_code` compares equal to `canceled` when the
+        operation's stop token was activated, the I/O object's
+        `cancel()` was called, or a platform cancellation error
+        occurred.
+    */
     canceled = 2,
+
+    /** Stream truncated condition.
+
+        An `error_code` compares equal to `stream_truncated` when
+        a TLS peer closed the connection without sending a proper
+        shutdown alert.
+    */
     stream_truncated = 3,
+
+    /** Item not found condition.
+
+        An `error_code` compares equal to `not_found` when a
+        lookup operation failed to find the requested item.
+    */
     not_found = 4
 };
 

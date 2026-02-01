@@ -19,26 +19,55 @@
 namespace boost {
 namespace capy {
 
-/** Concept for execution context types.
+/** Concept for types that provide a place where work is executed.
 
-    An execution context represents a place where function objects
-    are executed. A type meeting the ExecutionContext requirements
-    must be publicly derived from execution_context and provide
-    an associated executor type.
+    An execution context owns the resources (threads, event loops,
+    completion ports) needed to execute function objects. It serves
+    as the factory for executors, which are lightweight handles used
+    to submit work. Multiple executors may reference the same context.
 
-    @par Required Operations
+    @tparam X The execution context type.
 
-    @li `X::executor_type` - A type meeting the Executor requirements.
+    @par Syntactic Requirements
 
-    @li `x.get_executor()` - Returns an executor object associated
-        with the execution context.
+    @li `X` must be publicly derived from `execution_context`
+    @li `X::executor_type` must be a type satisfying @ref Executor
+    @li `x.get_executor()` must return `X::executor_type` and be `noexcept`
 
-    @par Destructor Semantics
+    @par Semantic Requirements
 
-    The destructor destroys all unexecuted function objects that
-    were submitted via an executor associated with this context.
+    The execution context owns the execution environment:
 
-    @tparam X The type to check for execution context conformance.
+    @li Work submitted via any executor from this context runs on
+        resources owned by the context
+    @li The context remains valid while any executor referencing it
+        exists and may be used
+    @li Destroying the context destroys all unexecuted work submitted
+        via associated executors
+
+    @par Conforming Signatures
+
+    @code
+    class X : public execution_context
+    {
+    public:
+        using executor_type = // Executor
+        executor_type get_executor() noexcept;
+    };
+    @endcode
+
+    @par Example
+
+    @code
+    template<ExecutionContext Ctx>
+    void spawn_work( Ctx& ctx )
+    {
+        auto ex = ctx.get_executor();
+        ex.post( []{ } ); // work runs on ctx
+    }
+    @endcode
+
+    @see Executor, execution_context
 */
 template<class X>
 concept ExecutionContext =

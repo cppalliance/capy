@@ -26,44 +26,47 @@
 namespace boost {
 namespace capy {
 
-/** Read data until the buffer sequence is full or an error occurs.
+/** Asynchronously read until the buffer sequence is full.
 
-    This function reads data from the stream into the buffer sequence
-    until either the entire buffer sequence is filled or an error
-    occurs (including end-of-file).
+    Reads data from the stream by calling `read_some` repeatedly
+    until the entire buffer sequence is filled or an error occurs.
 
-    @tparam Stream The stream type, must satisfy @ref ReadStream.
-    @tparam MB The buffer sequence type, must satisfy
-        @ref MutableBufferSequence.
+    @li The operation completes when:
+    @li The buffer sequence is completely filled
+    @li An error occurs (including `cond::eof`)
+    @li The operation is cancelled
 
-    @param stream The stream to read from.
-    @param buffers The buffer sequence to read into.
+    @par Cancellation
+    Supports cancellation via `stop_token` propagated through the
+    IoAwaitable protocol. When cancelled, returns with `cond::canceled`.
 
-    @return A task that yields `(std::error_code, std::size_t)`.
-        On success, `ec` is default-constructed (no error) and `n` is
-        `buffer_size(buffers)`. On error or EOF, `ec` contains the
-        error code and `n` is the total number of bytes written before
-        the error.
+    @param stream The stream to read from. The caller retains ownership.
+    @param buffers The buffer sequence to fill. The caller retains
+        ownership and must ensure validity until the operation completes.
+
+    @return An awaitable yielding `(error_code, std::size_t)`.
+        On success, `n` equals `buffer_size(buffers)`. On error,
+        `n` is the number of bytes read before the error. Compare
+        error codes to conditions:
+        @li `cond::eof` - Stream reached end before buffer was filled
+        @li `cond::canceled` - Operation was cancelled
 
     @par Example
+
     @code
-    task<void> example(ReadStream auto& stream)
+    task<> read_message( ReadStream auto& stream )
     {
-        char buf[1024];
-        auto [ec, n] = co_await read(stream, mutable_buffer(buf, sizeof(buf)));
-        if (ec == cond::eof)
-        {
-            // Handle end-of-file
-        }
-        else if (ec)
-        {
-            // Handle other error
-        }
-        // n bytes were read into buf
+        char header[16];
+        auto [ec, n] = co_await read( stream, mutable_buffer( header ) );
+        if( ec == cond::eof )
+            co_return;  // Connection closed
+        if( ec.failed() )
+            detail::throw_system_error( ec );
+        // header contains exactly 16 bytes
     }
     @endcode
 
-    @see ReadStream, MutableBufferSequence
+    @see read_some, ReadStream, MutableBufferSequence
 */
 auto
 read(
@@ -87,36 +90,46 @@ read(
     co_return {{}, total_read};
 }
 
-/** Read data from a stream into a dynamic buffer.
+/** Asynchronously read all data from a stream into a dynamic buffer.
 
-    This function reads data from the stream into the dynamic buffer
-    until end-of-file is reached or an error occurs. Data is appended
-    to the buffer using prepare/commit semantics.
+    Reads data by calling `read_some` repeatedly until EOF is reached
+    or an error occurs. Data is appended using prepare/commit semantics.
+    The buffer grows with 1.5x factor when filled.
 
-    The buffer grows using a strategy that starts with `initial_amount`
-    bytes and grows by a factor of 1.5 when filled.
+    @li The operation completes when:
+    @li End-of-stream is reached (`cond::eof`)
+    @li An error occurs
+    @li The operation is cancelled
 
-    @param stream The stream to read from, must satisfy @ref ReadStream.
-    @param buffers The dynamic buffer to read into.
-    @param initial_amount The initial number of bytes to prepare.
+    @par Cancellation
+    Supports cancellation via `stop_token` propagated through the
+    IoAwaitable protocol. When cancelled, returns with `cond::canceled`.
 
-    @return A task that yields `(std::error_code, std::size_t)`.
-        On success (EOF reached), `ec` is default-constructed and `n`
-        is the total number of bytes read. On error, `ec` contains the
-        error code and `n` is the total number of bytes read before
-        the error.
+    @param stream The stream to read from. The caller retains ownership.
+    @param buffers The dynamic buffer to append data to. Must remain
+        valid until the operation completes.
+    @param initial_amount Initial bytes to prepare (default 2048).
+
+    @return An awaitable yielding `(error_code, std::size_t)`.
+        On success (EOF), `ec` is clear and `n` is total bytes read.
+        On error, `n` is bytes read before the error. Compare error
+        codes to conditions:
+        @li `cond::canceled` - Operation was cancelled
 
     @par Example
+
     @code
-    task<void> example(ReadStream auto& stream)
+    task<std::string> read_body( ReadStream auto& stream )
     {
         std::string body;
-        auto [ec, n] = co_await read(stream, string_dynamic_buffer(&body));
-        // body contains n bytes of data
+        auto [ec, n] = co_await read( stream, string_dynamic_buffer( &body ) );
+        if( ec.failed() )
+            detail::throw_system_error( ec );
+        return body;
     }
     @endcode
 
-    @see ReadStream, DynamicBufferParam
+    @see read_some, ReadStream, DynamicBufferParam
 */
 auto
 read(
@@ -143,38 +156,42 @@ read(
     }
 }
 
-/** Read data from a source into a dynamic buffer.
+/** Asynchronously read all data from a source into a dynamic buffer.
 
-    This function reads data from the source into the dynamic buffer
-    until end-of-file is reached or an error occurs. Data is appended
-    to the buffer using prepare/commit semantics.
+    Reads data by calling `source.read` repeatedly until EOF is reached
+    or an error occurs. Data is appended using prepare/commit semantics.
+    The buffer grows with 1.5x factor when filled.
 
-    The buffer grows using a strategy that starts with `initial_amount`
-    bytes and grows by a factor of 1.5 when filled.
+    @li The operation completes when:
+    @li End-of-stream is reached (`cond::eof`)
+    @li An error occurs
+    @li The operation is cancelled
 
-    @tparam Source The source type, must satisfy @ref ReadSource.
+    @par Cancellation
+    Supports cancellation via `stop_token` propagated through the
+    IoAwaitable protocol. When cancelled, returns with `cond::canceled`.
 
-    @param source The source to read from.
-    @param buffers The dynamic buffer to read into.
-    @param initial_amount The initial number of bytes to prepare.
+    @param source The source to read from. The caller retains ownership.
+    @param buffers The dynamic buffer to append data to. Must remain
+        valid until the operation completes.
+    @param initial_amount Initial bytes to prepare (default 2048).
 
-    @return A task that yields `(std::error_code, std::size_t)`.
-        On success (EOF reached), `ec` is default-constructed and `n`
-        is the total number of bytes read. On error, `ec` contains the
-        error code and `n` is the total number of bytes read before
-        the error.
+    @return An awaitable yielding `(error_code, std::size_t)`.
+        On success (EOF), `ec` is clear and `n` is total bytes read.
+        On error, `n` is bytes read before the error. Compare error
+        codes to conditions:
+        @li `cond::canceled` - Operation was cancelled
 
     @par Example
+
     @code
-    task<void> example(ReadSource auto& source)
+    task<std::string> read_body( ReadSource auto& source )
     {
         std::string body;
-        auto [ec, n] = co_await read(source, string_buffers(body));
-        if (ec)
-        {
-            // Handle error
-        }
-        // body contains n bytes of data
+        auto [ec, n] = co_await read( source, string_dynamic_buffer( &body ) );
+        if( ec.failed() )
+            detail::throw_system_error( ec );
+        return body;
     }
     @endcode
 

@@ -392,29 +392,53 @@ auto extract_results(when_all_state<Ts...>& state)
 
 } // namespace detail
 
-/** Wait for all tasks to complete concurrently.
+/** Execute multiple tasks concurrently and collect their results.
+
+    Launches all tasks simultaneously and waits for all to complete
+    before returning. Results are collected in input order. If any
+    task throws, cancellation is requested for siblings and the first
+    exception is rethrown after all tasks complete.
+
+    @li All child tasks run concurrently on the caller's executor
+    @li Results are returned as a tuple in input order
+    @li Void-returning tasks do not contribute to the result tuple
+    @li If all tasks return void, `when_all` returns `task<void>`
+    @li First exception wins; subsequent exceptions are discarded
+    @li Stop is requested for siblings on first error
+    @li Completes only after all children have finished
+
+    @par Thread Safety
+    The returned task must be awaited from a single execution context.
+    Child tasks execute concurrently but complete through the caller's
+    executor.
+
+    @param tasks The tasks to execute concurrently. Each task is
+        consumed (moved-from) when `when_all` is awaited.
+
+    @return A task yielding a tuple of non-void results. Returns
+        `task<void>` when all input tasks return void.
 
     @par Example
+
     @code
-    task<void> example() {
-        auto [a, b] = co_await when_all(
-            fetch_int(),     // task<int>
-            fetch_string()   // task<std::string>
+    task<> example()
+    {
+        // Concurrent fetch, results collected in order
+        auto [user, posts] = co_await when_all(
+            fetch_user( id ),      // task<User>
+            fetch_posts( id )      // task<std::vector<Post>>
         );
+
+        // Void tasks don't contribute to result
+        co_await when_all(
+            log_event( "start" ),  // task<void>
+            notify_user( id )      // task<void>
+        );
+        // Returns task<void>, no result tuple
     }
     @endcode
 
-    @param tasks The tasks to execute concurrently.
-    @return A task yielding a tuple of results (void types filtered out).
-
-    Key features:
-    @li All child tasks are launched concurrently
-    @li Results are collected in input order
-    @li First error is captured; subsequent errors are discarded
-    @li On error, stop is requested for all siblings
-    @li Completes only after all children have completed
-    @li Void tasks do not contribute to the result tuple
-    @li Properly propagates frame allocators to all child coroutines
+    @see task
 */
 template<typename... Ts>
 [[nodiscard]] task<detail::when_all_result_t<Ts...>>
@@ -445,7 +469,7 @@ when_all(task<Ts>... tasks)
         co_return detail::extract_results(state);
 }
 
-// For backwards compatibility and type queries, expose result type computation
+/// Compute the result type of `when_all` for the given task types.
 template<typename... Ts>
 using when_all_result_type = detail::when_all_result_t<Ts...>;
 

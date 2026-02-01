@@ -16,23 +16,33 @@
 namespace boost {
 namespace capy {
 
-/** Error codes returned from algorithms and operations.
+/** Error codes for capy I/O operations.
 
-    Return `error::eof` when originating an eof error.
-    Check `ec == cond::eof` for portable comparison.
+    These codes are produced by capy algorithms and I/O operations.
 
-    Return `error::canceled` when originating a cancellation error.
-    Check `ec == cond::canceled` for portable comparison.
+    @warning Callers must never compare received `error_code` values
+    directly against this enum. Always compare against the portable
+    @ref cond error conditions instead. These enum values are
+    implementation details subject to change.
 
-    Return `error::stream_truncated` when peer closes without TLS shutdown.
-    Check `ec == cond::stream_truncated` for portable comparison.
+    @see cond
 */
 enum class error
 {
+    /// End-of-stream reached. Compare with `cond::eof`.
     eof = 1,
+
+    /// Operation was cancelled. Compare with `cond::canceled`.
     canceled,
+
+    /// Internal test assertion failed.
     test_failure,
+
+    /// Peer closed connection without proper TLS shutdown.
+    /// Compare with `cond::stream_truncated`.
     stream_truncated,
+
+    /// Requested item was not found. Compare with `cond::not_found`.
     not_found
 };
 

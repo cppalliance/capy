@@ -66,61 +66,53 @@ class basic_buffer
 
 //------------------------------------------------
 
-/** size tag for `tag_invoke`
-
-    This type is used in overloads of `tag_invoke`
-    for user-defined types to customize the `size()`
-    algorithm.
-*/
+/// Tag type for customizing `buffer_size` via `tag_invoke`.
 struct size_tag {};
 
-/** slice tag for `tag_invoke`
-
-    This type is used in overloads of `tag_invoke`
-    for user-defined types to customize the slicing
-    algorithms.
-*/
+/// Tag type for customizing slice operations via `tag_invoke`.
 struct slice_tag {};
 
-/** slice constants for slice customization
+/** Constants for slice customization.
 
-    This defines the possible values passed to
-    overloads of `tag_invoke` for user-defined
-    types which customize the slicing algorithms.
+    Passed to `tag_invoke` overloads to specify which portion
+    of a buffer sequence to retain.
 */
 enum class slice_how
 {
-    /// Indicates that the front of the buffer sequence should be trimmed
+    /// Remove bytes from the front of the sequence.
     remove_prefix,
 
-    /// Indicates that the front of the buffer sequence should be preserved
+    /// Keep only the first N bytes.
     keep_prefix
 };
 
 //------------------------------------------------
 
-/** Holds a contiguous range of modifiable bytes
+/** A reference to a contiguous region of writable memory.
+
+    Represents a pointer and size pair for a modifiable byte range.
+    Does not own the memory. Satisfies `MutableBufferSequence` (as a
+    single-element sequence) and is implicitly convertible to
+    `const_buffer`.
+
+    @see const_buffer, MutableBufferSequence
 */
 class mutable_buffer
     : public detail::basic_buffer<unsigned char>
 {
 public:
-    /** Constructor.
-    */
+    /// Construct an empty buffer.
     mutable_buffer() = default;
 
-    /** Constructor.
-    */
+    /// Copy constructor.
     mutable_buffer(
         mutable_buffer const&) = default;
 
-    /** Assignment.
-    */
+    /// Copy assignment.
     mutable_buffer& operator=(
         mutable_buffer const&) = default;
 
-    /** Constructor.
-    */
+    /// Construct from pointer and size.
     constexpr mutable_buffer(
         void* data, std::size_t size) noexcept
         : basic_buffer<unsigned char>(
@@ -128,8 +120,7 @@ public:
     {
     }
 
-    /** Constructor
-    */
+    /// Construct from Asio mutable_buffer.
     template<class MutableBuffer>
         requires std::same_as<MutableBuffer, asio::mutable_buffer>
     constexpr mutable_buffer(
@@ -140,26 +131,21 @@ public:
     {
     }
 
-    /** Return a pointer to the beginning of the memory region
-    */
+    /// Return a pointer to the memory region.
     constexpr void* data() const noexcept
     {
         return p_;
     }
 
-    /** Return the number of valid bytes in the referenced memory region
-    */
+    /// Return the size in bytes.
     constexpr std::size_t size() const noexcept
     {
         return n_;
     }
 
-    /** Remove a prefix of the memory region
+    /** Advance the buffer start, shrinking the region.
 
-        If the requested number of bytes is larger than the current size,
-        the resulting buffer will have size 0.
-
-        @param n The number of bytes to remove.
+        @param n Bytes to skip. Clamped to `size()`.
     */
     mutable_buffer&
     operator+=(std::size_t n) noexcept
@@ -171,8 +157,7 @@ public:
         return *this;
     }
 
-    /** Remove a slice from the buffer
-    */
+    /// Slice customization point for `tag_invoke`.
     friend
     void
     tag_invoke(
@@ -204,32 +189,30 @@ private:
 
 //------------------------------------------------
 
-/** Holds a contiguous range of unmodifiable bytes
+/** A reference to a contiguous region of read-only memory.
+
+    Represents a pointer and size pair for a non-modifiable byte range.
+    Does not own the memory. Satisfies `ConstBufferSequence` (as a
+    single-element sequence). Implicitly constructible from
+    `mutable_buffer`.
+
+    @see mutable_buffer, ConstBufferSequence
 */
 class const_buffer
     : public detail::basic_buffer<unsigned char const>
 {
 public:
-    /** Constructor
-    */
+    /// Construct an empty buffer.
     const_buffer() = default;
 
-    /** Constructor
-    */
+    /// Copy constructor.
     const_buffer(const_buffer const&) = default;
 
-    /** Assignment
-
-        @par Postconditions
-        @code
-        this->data() == other.data() && this->size() == other.size()
-        @endcode
-    */
+    /// Copy assignment.
     const_buffer& operator=(
         const_buffer const& other) = default;
 
-    /** Constructor
-    */
+    /// Construct from pointer and size.
     constexpr const_buffer(
         void const* data, std::size_t size) noexcept
         : basic_buffer<unsigned char const>(
@@ -237,8 +220,7 @@ public:
     {
     }
 
-    /** Constructor
-    */
+    /// Construct from mutable_buffer.
     constexpr const_buffer(
         mutable_buffer const& b) noexcept
         : basic_buffer<unsigned char const>(
@@ -246,8 +228,7 @@ public:
     {
     }
 
-    /** Constructor
-    */
+    /// Construct from Asio buffer types.
     template<class ConstBuffer>
         requires (std::same_as<ConstBuffer, asio::const_buffer> ||
                   std::same_as<ConstBuffer, asio::mutable_buffer>)
@@ -259,26 +240,21 @@ public:
     {
     }
 
-    /** Return a pointer to the beginning of the memory region
-    */
+    /// Return a pointer to the memory region.
     constexpr void const* data() const noexcept
     {
         return p_;
     }
 
-    /** Return the number of valid bytes in the referenced memory region
-    */
+    /// Return the size in bytes.
     constexpr std::size_t size() const noexcept
     {
         return n_;
     }
 
-    /** Remove a prefix of the memory region
+    /** Advance the buffer start, shrinking the region.
 
-        If the requested number of bytes is larger than the current size,
-        the resulting buffer will have size 0.
-
-        @param n The number of bytes to remove.
+        @param n Bytes to skip. Clamped to `size()`.
     */
     const_buffer&
     operator+=(std::size_t n) noexcept
@@ -290,8 +266,7 @@ public:
         return *this;
     }
 
-    /** Remove a slice from the buffer
-    */
+    /// Slice customization point for `tag_invoke`.
     friend
     void
     tag_invoke(
@@ -323,11 +298,17 @@ private:
 
 //------------------------------------------------
 
-/** Concept for types that model ConstBufferSequence.
+/** Concept for sequences of read-only buffer regions.
 
-    A type satisfies `ConstBufferSequence` if it is convertible
-    to `const_buffer`, or if it is a bidirectional range whose
-    value type is convertible to `const_buffer`.
+    A type satisfies `ConstBufferSequence` if it represents one or more
+    contiguous memory regions that can be read. This includes single
+    buffers (convertible to `const_buffer`) and ranges of buffers.
+
+    @par Syntactic Requirements
+    @li Convertible to `const_buffer`, OR
+    @li A bidirectional range with value type convertible to `const_buffer`
+
+    @see const_buffer, MutableBufferSequence
 */
 template<typename T>
 concept ConstBufferSequence =
@@ -335,11 +316,18 @@ concept ConstBufferSequence =
         std::ranges::bidirectional_range<T> &&
         std::is_convertible_v<std::ranges::range_value_t<T>, const_buffer>);
 
-/** Concept for types that model MutableBufferSequence.
+/** Concept for sequences of writable buffer regions.
 
-    A type satisfies `MutableBufferSequence` if it is convertible
-    to `mutable_buffer`, or if it is a bidirectional range whose
-    value type is convertible to `mutable_buffer`.
+    A type satisfies `MutableBufferSequence` if it represents one or more
+    contiguous memory regions that can be written. This includes single
+    buffers (convertible to `mutable_buffer`) and ranges of buffers.
+    Every `MutableBufferSequence` also satisfies `ConstBufferSequence`.
+
+    @par Syntactic Requirements
+    @li Convertible to `mutable_buffer`, OR
+    @li A bidirectional range with value type convertible to `mutable_buffer`
+
+    @see mutable_buffer, ConstBufferSequence
 */
 template<typename T>
 concept MutableBufferSequence =
@@ -349,17 +337,10 @@ concept MutableBufferSequence =
 
 //------------------------------------------------------------------------------
 
-/** Return an iterator pointing to the first element of a buffer sequence
+/** Return an iterator to the first buffer in a sequence.
 
-    This function returns an iterator to the beginning of the range denoted by
-    `t`. It handles both ranges and single buffers uniformly.
-
-    @par Constraints
-    @code
-    const_buffer_sequence<T>
-    @endcode
-
-    @param t The buffer sequence
+    Handles single buffers and ranges uniformly. For a single buffer,
+    returns a pointer to it (forming a one-element range).
 */
 constexpr struct begin_mrdocs_workaround_t
 {
@@ -384,19 +365,10 @@ constexpr struct begin_mrdocs_workaround_t
     }
 } begin {};
 
-//------------------------------------------------------------------------------
+/** Return an iterator past the last buffer in a sequence.
 
-/** Return an iterator to the end of the buffer sequence
-
-    This function returns an iterator to the end of the range denoted by
-    `t`. It handles both ranges and single buffers uniformly.
-
-    @par Constraints
-    @code
-    const_buffer_sequence<T>
-    @endcode
-
-    @param t The buffer sequence
+    Handles single buffers and ranges uniformly. For a single buffer,
+    returns a pointer one past it.
 */
 constexpr struct end_mrdocs_workaround_t
 {
@@ -438,24 +410,15 @@ tag_invoke(
 
 //------------------------------------------------------------------------------
 
-/** Return the total number of bytes in a buffer sequence
+/** Return the total byte count across all buffers in a sequence.
 
-    This function returns the sum of the number of bytes in each contiguous
-    buffer contained in the range or value. This is different from the length
-    of the sequence returned by `std::ranges::size(t)`
-
-    @par Constraints
-    @code
-    ConstBufferSequence<T>
-    @endcode
+    Sums the `size()` of each buffer in the sequence. This differs
+    from `buffer_length` which counts the number of buffer elements.
 
     @par Example
     @code
-    template<ConstBufferSequence CB>
-    bool is_small( CB const& bs ) noexcept
-    {
-        return buffer_size(bs) < 100;
-    }
+    std::array<mutable_buffer, 2> bufs = { ... };
+    std::size_t total = buffer_size( bufs );  // sum of both sizes
     @endcode
 */
 constexpr struct buffer_size_mrdocs_workaround_t
@@ -468,17 +431,10 @@ constexpr struct buffer_size_mrdocs_workaround_t
     }
 } buffer_size {};
 
-//-----------------------------------------------
-
 /** Check if a buffer sequence contains no data.
 
-    A buffer sequence is considered empty if all of its
-    constituent buffers have size zero, or if the sequence
-    contains no buffers.
-
-    @param bs The buffer sequence to check.
-
-    @return `true` if the total size of all buffers is zero.
+    @return `true` if all buffers have size zero or the sequence
+        is empty.
 */
 constexpr struct buffer_empty_mrdocs_workaround_t
 {
@@ -525,7 +481,13 @@ length_impl(It first, It last, long)
 
 } // detail
 
-/** Return the number of elements in a buffer sequence.
+/** Return the number of buffer elements in a sequence.
+
+    Counts the number of individual buffer objects, not bytes.
+    For a single buffer, returns 1. For a range, returns the
+    distance from `begin` to `end`.
+
+    @see buffer_size
 */
 template<ConstBufferSequence CB>
 std::size_t
@@ -535,8 +497,7 @@ buffer_length(CB const& bs)
         begin(bs), end(bs), 0);
 }
 
-/** Alias for const_buffer or mutable_buffer depending on sequence type.
-*/
+/// Alias for `mutable_buffer` or `const_buffer` based on sequence type.
 template<typename BS>
 using buffer_type = std::conditional_t<
     MutableBufferSequence<BS>,

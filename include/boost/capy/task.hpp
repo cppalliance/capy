@@ -55,26 +55,43 @@ struct task_return_base<void>
 
 } // namespace detail
 
-/** A coroutine task type implementing the affine awaitable protocol.
+/** Lazy coroutine task satisfying @ref IoLaunchableTask.
 
-    This task type represents an asynchronous operation that can be awaited.
-    It implements the affine awaitable protocol where `await_suspend` receives
-    the caller's executor, enabling proper completion dispatch across executor
-    boundaries.
+    Use `task<T>` as the return type for coroutines that perform I/O
+    and return a value of type `T`. The coroutine body does not start
+    executing until the task is awaited, enabling efficient composition
+    without unnecessary eager execution.
 
-    @tparam T The return type of the task. Defaults to void.
+    The task participates in the I/O awaitable protocol: when awaited,
+    it receives the caller's executor and stop token, propagating them
+    to nested `co_await` expressions. This enables cancellation and
+    proper completion dispatch across executor boundaries.
 
-    Key features:
-    @li Lazy execution - the coroutine does not start until awaited
-    @li Symmetric transfer - uses coroutine handle returns for efficient
-        resumption
-    @li Executor inheritance - inherits caller's executor unless explicitly
-        bound
+    @tparam T The result type. Use `task<>` for `task<void>`.
 
-    The task uses `[[clang::coro_await_elidable]]` (when available) to enable
-    heap allocation elision optimization (HALO) for nested coroutine calls.
+    @par Thread Safety
+    Distinct objects: Safe.
+    Shared objects: Unsafe.
 
-    @see executor_ref
+    @par Example
+
+    @code
+    task<int> compute_value()
+    {
+        auto [ec, n] = co_await stream.read_some( buf );
+        if( ec.failed() )
+            co_return 0;
+        co_return process( buf, n );
+    }
+
+    task<> run_session( tcp_socket sock )
+    {
+        int result = co_await compute_value();
+        // ...
+    }
+    @endcode
+
+    @see IoLaunchableTask, IoAwaitableTask, run, run_async
 */
 template<typename T = void>
 struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
@@ -195,17 +212,20 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
     std::coroutine_handle<promise_type> h_;
 
+    /// Destroy the task and its coroutine frame if owned.
     ~task()
     {
         if(h_)
             h_.destroy();
     }
 
+    /// Return false; tasks are never immediately ready.
     bool await_ready() const noexcept
     {
         return false;
     }
 
+    /// Return the result or rethrow any stored exception.
     auto await_resume()
     {
         if(h_.promise().ep_)
@@ -216,7 +236,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             return;
     }
 
-    // IoAwaitable: receive caller's executor and stop_token for completion dispatch
+    /// Start execution with the caller's context.
     coro await_suspend(coro cont, executor_ref caller_ex, std::stop_token token)
     {
         h_.promise().set_continuation(cont, caller_ex);
@@ -225,35 +245,37 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         return h_;
     }
 
-    /** Return the coroutine handle.
-
-        @return The coroutine handle.
-    */
+    /// Return the coroutine handle.
     std::coroutine_handle<promise_type> handle() const noexcept
     {
         return h_;
     }
 
-    /** Release ownership of the coroutine handle.
+    /** Release ownership of the coroutine frame.
 
-        After calling this, the task no longer owns the handle and will
-        not destroy it. The caller is responsible for the handle's lifetime.
+        After calling this, destroying the task does not destroy the
+        coroutine frame. The caller becomes responsible for the frame's
+        lifetime.
+
+        @par Postconditions
+        `handle()` returns the original handle, but the task no longer
+        owns it.
     */
     void release() noexcept
     {
         h_ = nullptr;
     }
 
-    // Non-copyable
     task(task const&) = delete;
     task& operator=(task const&) = delete;
 
-    // Movable
+    /// Move construct, transferring ownership.
     task(task&& other) noexcept
         : h_(std::exchange(other.h_, nullptr))
     {
     }
 
+    /// Move assign, transferring ownership.
     task& operator=(task&& other) noexcept
     {
         if(this != &other)

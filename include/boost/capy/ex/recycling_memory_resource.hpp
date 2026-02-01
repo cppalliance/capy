@@ -35,6 +35,12 @@ namespace capy {
     Thread-safe. The thread-local pool requires no synchronization.
     The global pool uses a mutex for cross-thread access.
 
+    @par Example
+    @code
+    auto* mr = get_recycling_memory_resource();
+    run_async(ex, mr)(my_task());
+    @endcode
+
     @see get_recycling_memory_resource
     @see run_async
 */

@@ -19,39 +19,75 @@
 namespace boost {
 namespace capy {
 
-/** Concept for I/O awaitable types.
+/** Concept for awaitables that participate in the I/O protocol.
 
-    An awaitable is an I/O awaitable if it participates in the I/O awaitable
-    protocol by accepting an executor and a stop_token in its `await_suspend`
-    method. This enables zero-overhead scheduler affinity and cancellation
-    support.
+    An awaitable satisfies `IoAwaitable` if its `await_suspend` accepts
+    an executor and stop token, enabling scheduler affinity and cancellation.
+    This extended signature distinguishes I/O awaitables from standard
+    C++ awaitables that only take a coroutine handle.
 
     @tparam A The awaitable type.
 
-    @par Requirements
-    @li `A` must provide `await_suspend(coro h, executor_ref ex,
-        std::stop_token token)`
-    @li The awaitable must use the executor `ex` to resume the caller
-    @li The awaitable should use the stop_token to support cancellation
+    @par Syntactic Requirements
+
+    @li `a.await_suspend(h, ex, token)` must be a valid expression where:
+        - `h` is a `coro` (coroutine handle)
+        - `ex` is an `executor_ref`
+        - `token` is a `std::stop_token`
+
+    @par Semantic Requirements
+
+    The `await_suspend` operation initiates the async operation:
+
+    @li The awaitable stores the executor and uses it to schedule
+        resumption of the coroutine when the operation completes
+    @li The awaitable should monitor the stop token and complete
+        early with a cancellation error if stop is requested
+    @li The awaitable may return `std::noop_coroutine()` to indicate
+        the operation was started asynchronously
+
+    @par Conforming Signatures
+
+    @code
+    struct A
+    {
+        bool await_ready() const noexcept;
+
+        auto await_suspend(
+            coro h,
+            executor_ref ex,
+            std::stop_token token );
+
+        T await_resume();
+    };
+    @endcode
 
     @par Example
+
     @code
     struct my_io_op
     {
-        auto await_suspend(coro h, executor_ref ex,
-            std::stop_token token)
+        auto await_suspend(
+            coro h,
+            executor_ref ex,
+            std::stop_token token )
         {
-            start_async([h, ex, token] {
-                if (token.stop_requested()) {
-                    // Handle cancellation
+            start_async( [h, ex, token] {
+                if( token.stop_requested() )
+                {
+                    // complete with cancellation error
                 }
-                ex.dispatch(h);  // Schedule resumption through executor
-            });
+                ex.dispatch( h );
+            } );
             return std::noop_coroutine();
         }
-        // ... await_ready, await_resume ...
+
+        bool await_ready() const noexcept { return false; }
+        void await_resume() {}
     };
     @endcode
+
+    @see IoAwaitableTask, awaitable_decomposes_to
 */
 template<typename A>
 concept IoAwaitable =

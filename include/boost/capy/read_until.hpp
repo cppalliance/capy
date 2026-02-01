@@ -195,11 +195,13 @@ struct read_until_awaitable
 
 } // namespace detail
 
-/** Matcher for string delimiters.
+/** Match condition that searches for a delimiter string.
 
-    This matcher searches for a delimiter string and provides
-    the appropriate overlap hint for efficient searching across
-    read boundaries.
+    Satisfies @ref MatchCondition. Returns the position after the
+    delimiter when found, or `npos` otherwise. Provides an overlap
+    hint of `delim.size() - 1` to handle delimiters spanning reads.
+
+    @see MatchCondition, read_until
 */
 struct match_delim
 {
@@ -221,56 +223,63 @@ struct match_delim
     }
 };
 
-/** Read data until a match condition is satisfied.
+/** Asynchronously read until a match condition is satisfied.
 
-    This function reads data from the stream into the dynamic buffer
-    until the match condition returns a valid position. The operation
-    completes when a match is found, an error occurs, EOF is reached,
-    or the buffer's max_size is reached.
+    Reads data from the stream into the dynamic buffer until the match
+    condition returns a valid position. Implemented using `read_some`.
+    If the match condition is already satisfied by existing buffer
+    data, returns immediately without I/O.
 
-    If the match condition is already satisfied by data in the buffer,
-    the function returns immediately without performing any I/O.
+    @li The operation completes when:
+    @li The match condition returns a valid position
+    @li End-of-stream is reached (`cond::eof`)
+    @li The buffer's `max_size()` is reached (`cond::not_found`)
+    @li An error occurs
+    @li The operation is cancelled
 
-    @tparam Stream The stream type, must satisfy @ref ReadStream.
-    @tparam B The buffer type, must satisfy @ref DynamicBufferParam.
-    @tparam M The match condition type, must satisfy @ref MatchCondition.
+    @par Cancellation
+    Supports cancellation via `stop_token` propagated through the
+    IoAwaitable protocol. When cancelled, returns with `cond::canceled`.
 
-    @param stream The stream to read from.
-    @param buffers The dynamic buffer to read into.
-    @param match The match condition callable.
-    @param initial_amount The initial number of bytes to read per
-        iteration. Grows automatically for subsequent reads.
+    @param stream The stream to read from. The caller retains ownership.
+    @param buffers The dynamic buffer to append data to. Must remain
+        valid until the operation completes.
+    @param match The match condition callable. Copied into the awaitable.
+    @param initial_amount Initial bytes to read per iteration (default
+        2048). Grows by 1.5x when filled.
 
-    @return An awaitable yielding `(error_code,std::size_t)`.
-        On success, `ec` is default-constructed and `n` is the
-        position returned by the match condition. On error:
-        - `ec == cond::eof`: EOF reached before match, `n` is buffer size
-        - `ec == cond::not_found`: max_size reached before match, `n` is 0
-        - Other error: I/O error occurred, `n` is bytes read before error
+    @return An awaitable yielding `(error_code, std::size_t)`.
+        On success, `n` is the position returned by the match condition
+        (bytes up to and including the matched delimiter). Compare error
+        codes to conditions:
+        @li `cond::eof` - EOF before match; `n` is buffer size
+        @li `cond::not_found` - `max_size()` reached before match
+        @li `cond::canceled` - Operation was cancelled
 
     @par Example
+
     @code
-    // Read until HTTP header end
-    task<void> read_http_header(ReadStream auto& stream)
+    task<> read_http_header( ReadStream auto& stream )
     {
         std::string header;
         auto [ec, n] = co_await read_until(
-            stream, dynamic_buffer(header),
-            [](std::string_view data, std::size_t* hint) {
-                auto pos = data.find("\r\n\r\n");
-                if(pos != std::string_view::npos)
+            stream,
+            string_dynamic_buffer( &header ),
+            []( std::string_view data, std::size_t* hint ) {
+                auto pos = data.find( "\r\n\r\n" );
+                if( pos != std::string_view::npos )
                     return pos + 4;
-                if(hint)
-                    *hint = 3;  // Partial match possible
+                if( hint )
+                    *hint = 3;  // partial "\r\n\r" possible
                 return std::string_view::npos;
-            });
-        if(ec)
-            co_return;
-        // header contains data including "\r\n\r\n"
+            } );
+        if( ec.failed() )
+            detail::throw_system_error( ec );
+        // header contains data through "\r\n\r\n"
     }
     @endcode
 
-    @see ReadStream, DynamicBufferParam, MatchCondition
+    @see read_some, MatchCondition, DynamicBufferParam
 */
 template<ReadStream Stream, class B, MatchCondition M>
     requires DynamicBufferParam<B&&>
@@ -292,50 +301,56 @@ read_until(
             stream, std::move(buffers), std::move(match), initial_amount);
 }
 
-/** Read data until a delimiter is found.
+/** Asynchronously read until a delimiter string is found.
 
-    This function reads data from the stream into the dynamic buffer
-    until the specified delimiter string is found. The operation
-    completes when the delimiter is found, an error occurs, EOF is
-    reached, or the buffer's max_size is reached.
+    Reads data from the stream until the delimiter is found. This is
+    a convenience overload equivalent to calling `read_until` with
+    `match_delim{delim}`. If the delimiter already exists in the
+    buffer, returns immediately without I/O.
 
-    If the delimiter already exists in the buffer, the function
-    returns immediately without performing any I/O.
+    @li The operation completes when:
+    @li The delimiter string is found
+    @li End-of-stream is reached (`cond::eof`)
+    @li The buffer's `max_size()` is reached (`cond::not_found`)
+    @li An error occurs
+    @li The operation is cancelled
 
-    @tparam Stream The stream type, must satisfy @ref ReadStream.
-    @tparam B The buffer type, must satisfy @ref DynamicBufferParam.
+    @par Cancellation
+    Supports cancellation via `stop_token` propagated through the
+    IoAwaitable protocol. When cancelled, returns with `cond::canceled`.
 
-    @param stream The stream to read from.
-    @param buffers The dynamic buffer to read into.
+    @param stream The stream to read from. The caller retains ownership.
+    @param buffers The dynamic buffer to append data to. Must remain
+        valid until the operation completes.
     @param delim The delimiter string to search for.
-    @param initial_amount The initial number of bytes to read per
-        iteration. Grows automatically for subsequent reads.
+    @param initial_amount Initial bytes to read per iteration (default
+        2048). Grows by 1.5x when filled.
 
-    @return An awaitable yielding `(error_code,std::size_t)`.
-        On success, `ec` is default-constructed and `n` is the number
-        of bytes up to and including the delimiter. On error:
-        - `ec == cond::eof`: EOF reached before delimiter, `n` is buffer size
-        - `ec == cond::not_found`: max_size reached before delimiter, `n` is 0
-        - Other error: I/O error occurred, `n` is bytes read before error
+    @return An awaitable yielding `(error_code, std::size_t)`.
+        On success, `n` is bytes up to and including the delimiter.
+        Compare error codes to conditions:
+        @li `cond::eof` - EOF before delimiter; `n` is buffer size
+        @li `cond::not_found` - `max_size()` reached before delimiter
+        @li `cond::canceled` - Operation was cancelled
 
     @par Example
+
     @code
-    task<void> read_line(ReadStream auto& stream)
+    task<std::string> read_line( ReadStream auto& stream )
     {
         std::string line;
         auto [ec, n] = co_await read_until(
-            stream, dynamic_buffer(line), "\r\n");
-        if(ec)
-        {
-            // Handle error or EOF
-            co_return;
-        }
-        // line contains data including "\r\n"
-        line.resize(n - 2);  // Remove delimiter
+            stream, string_dynamic_buffer( &line ), "\r\n" );
+        if( ec == cond::eof )
+            co_return line;  // partial line at EOF
+        if( ec.failed() )
+            detail::throw_system_error( ec );
+        line.resize( n - 2 );  // remove "\r\n"
+        co_return line;
     }
     @endcode
 
-    @see ReadStream, DynamicBufferParam
+    @see read_until, match_delim, DynamicBufferParam
 */
 template<ReadStream Stream, class B>
     requires DynamicBufferParam<B&&>

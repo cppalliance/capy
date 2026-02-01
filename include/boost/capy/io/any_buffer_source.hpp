@@ -24,8 +24,6 @@
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/task.hpp>
 
-#include <system_error>
-
 #include <concepts>
 #include <coroutine>
 #include <cstddef>
@@ -33,6 +31,7 @@
 #include <new>
 #include <span>
 #include <stop_token>
+#include <system_error>
 #include <utility>
 
 namespace boost {
@@ -81,7 +80,7 @@ namespace capy {
     auto [ec, bufs] = co_await abs.pull(arr);
     @endcode
 
-    @see any_write_sink, BufferSource, ReadSource
+    @see any_buffer_sink, BufferSource, ReadSource
 */
 class any_buffer_source
 {

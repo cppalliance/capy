@@ -126,7 +126,7 @@ public:
 
         @param buffers The mutable buffer sequence to receive data.
 
-        @return An awaitable yielding ( error_code, std::size_t ).
+        @return An awaitable yielding `(error_code,std::size_t)`.
 
         @see fuse
     */

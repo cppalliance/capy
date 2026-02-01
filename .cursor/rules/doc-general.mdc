@@ -1,0 +1,32 @@
+---
+description: doc javadoc for general types and functions
+alwaysApply: false
+---
+
+- Keep the ascii-art to a minimum, only add dividers if the class declaration is very long
+- Don't emit @tparam for deduced types or concepts
+- Don't use C-style /* */ comments inside C-style comments
+- Never list std::bad_alloc
+- Don't document detail:: or implementation symbols
+
+**Rules for general type javadocs:**
+
+- **Brief** — One sentence stating what the type is and its primary purpose.
+- **Extended description** — What it does, when to use it, how it relates to other types in the library. Mention ownership semantics, copyability/movability, and thread safety if relevant.
+- **`@tparam`** — For each non-variadic template parameter, state its role and any concept requirements.
+- **`@par Example`** — One or more `@code` blocks showing construction and typical usage.
+- **`@note`** — Gotchas, lifetime constraints, or non-obvious behavior.
+- **`@see`** — Always last. Related types, concepts, and functions.
+
+---
+
+**Rules for general function javadocs:**
+
+- **Brief** — One sentence starting with a verb describing what the function does. If it returns a value, start with "Return".
+- **Extended description** — Preconditions, what the function does, and any side effects. State complexity if non-obvious.
+- **`@param`** — For each parameter. Include ownership, lifetime, and validity requirements.
+- **`@return`** — What is returned and under what conditions the return value varies.
+- **`@throws`** — Each exception type and the condition that triggers it. If noexcept, say so.
+- **`@par Example`** — One or more `@code` blocks. More examples when the function has multiple usage patterns or overloads.
+- **`@note`** — Gotchas, performance considerations, or surprising behavior.
+- **`@see`** — Always last. Related functions, types, and concepts.

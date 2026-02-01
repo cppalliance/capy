@@ -21,63 +21,96 @@ namespace capy {
 
 class execution_context;
 
-/** Concept for executor types.
+/** Concept for types that schedule coroutine execution.
 
-    An executor provides mechanisms for scheduling work for
-    execution. A type meeting the executor requirements embodies
-    a set of rules for determining how submitted function objects
-    are to be executed.
+    An executor embodies a set of rules for determining how and where
+    coroutines are executed. It provides operations to submit work
+    and to track outstanding work for graceful shutdown.
 
-    @par Required Operations
+    @tparam E The executor type.
 
-    @li `context()` - Returns a reference to the associated
-        execution context.
+    @par Syntactic Requirements
 
-    @li `on_work_started()` - Informs the executor that work is
-        beginning. Must be paired with `on_work_finished()`.
+    @li `E` must be nothrow copy and move constructible
+    @li `e1 == e2` must return a type convertible to `bool`, `noexcept`
+    @li `e.context()` must return an lvalue reference to a type derived
+        from `execution_context`, `noexcept`
+    @li `e.on_work_started()` must be valid and `noexcept`
+    @li `e.on_work_finished()` must be valid and `noexcept`
+    @li `e.dispatch(h)` must return a type convertible to
+        `std::coroutine_handle<>`
+    @li `e.post(h)` must be valid
 
-    @li `on_work_finished()` - Informs the executor that work has
-        completed. Precondition: a preceding call to
-        `on_work_started()` on an equal executor.
+    @par Semantic Requirements
 
-    @li `dispatch(h)` - Execute a coroutine, potentially immediately
-        if the executor determines it is safe to do so. The executor
-        may block forward progress of the caller until execution
-        completes.
+    The `context` operation returns the owning context:
 
-    @li `post(h)` - Queue a coroutine for later execution. The
-        executor shall not block forward progress of the caller
-        pending completion.
+    @li Returns a reference to the execution context that created
+        this executor
+    @li The context outlives all executors created from it
 
-    @par Synchronization
+    The `on_work_started` and `on_work_finished` operations track work:
 
-    The invocation of `dispatch` or `post` synchronizes
-    with the invocation of the coroutine.
+    @li Calls must be paired; each `on_work_started` must have a
+        matching `on_work_finished`
+    @li The context uses this count to determine when shutdown
+        is complete
 
-    @par No-Throw Guarantee
+    The `dispatch` operation executes immediately if safe:
 
-    The following operations shall not exit via an exception:
-    constructors, comparison operators, copy/move operations,
-    swap, `context()`, `on_work_started()`, and `on_work_finished()`.
+    @li May execute the coroutine inline if the executor determines
+        it is safe (e.g., already on the correct thread)
+    @li May block the caller until execution completes
+    @li Returns a coroutine handle (possibly `noop_coroutine()`)
 
-    @par Thread Safety
+    The `post` operation queues for later execution:
 
-    The executor copy constructor, comparison operators, and other
-    member functions shall not introduce data races as a result of
-    concurrent calls from different threads.
+    @li Never blocks the caller
+    @li The coroutine executes on the executor's associated context
 
     @par Executor Validity
 
-    Let `ctx` be the execution context returned by `context()`.
     An executor becomes invalid when the first call to
-    `ctx.shutdown()` returns. The effect of calling
-    `on_work_started`, `on_work_finished`, `dispatch`, or `post`
-    on an invalid executor is undefined.
+    `ctx.shutdown()` returns. Calling `dispatch`, `post`,
+    `on_work_started`, or `on_work_finished` on an invalid executor
+    is undefined behavior. Copy, comparison, and `context()` remain
+    valid until the context is destroyed.
 
-    @note The copy constructor, comparison operators, and `context()`
-    remain valid until `ctx` is destroyed.
+    @par Thread Safety
+    Distinct objects: Safe.
+    Shared objects: Safe for copy, comparison, and `context()`.
 
-    @tparam E The type to check for executor conformance.
+    @par Conforming Signatures
+
+    @code
+    class E
+    {
+    public:
+        execution_context& context() const noexcept;
+
+        void on_work_started() const noexcept;
+        void on_work_finished() const noexcept;
+
+        std::coroutine_handle<> dispatch( std::coroutine_handle<> h ) const;
+        void post( std::coroutine_handle<> h ) const;
+
+        bool operator==( E const& ) const noexcept;
+    };
+    @endcode
+
+    @par Example
+
+    @code
+    template<Executor Ex>
+    void submit_work( Ex ex, std::coroutine_handle<> h )
+    {
+        ex.on_work_started();
+        ex.post( h );
+        // on_work_finished called when coroutine completes
+    }
+    @endcode
+
+    @see ExecutionContext, execution_context
 */
 template<class E>
 concept Executor =

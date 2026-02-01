@@ -20,32 +20,79 @@
 namespace boost {
 namespace capy {
 
-/** Concept for launchable I/O task types.
+/** Concept for task types that can be launched from non-coroutine contexts.
 
-    A task satisfies `IoLaunchableTask` if it satisfies @ref IoAwaitableTask
-    and provides the additional interface needed by launch utilities like
-    `run_async` and `run`:
-
-    @li `handle()` — returns the typed coroutine handle
-    @li `release()` — releases ownership (task won't destroy frame)
-    @li `exception()` — returns stored exception_ptr from the promise
-    @li `result()` — returns stored result from the promise (non-void tasks)
-
-    This concept formalizes the contract for launching tasks from
-    non-coroutine contexts.
+    Extends @ref IoAwaitableTask with operations needed by launch utilities
+    (`run`, `run_async`) to start a task, transfer ownership of the
+    coroutine frame, and retrieve results or exceptions after completion.
 
     @tparam T The task type.
 
-    @par Requirements
-    @li `T` must satisfy @ref IoAwaitableTask
-    @li `T::handle()` returns `std::coroutine_handle<promise_type>`
-    @li `T::release()` releases ownership without returning the handle
-    @li `T::promise_type::exception()` returns the stored exception
-    @li `T::promise_type::result()` returns the result (for non-void tasks)
+    @par Syntactic Requirements
 
-    @see IoAwaitableTask
-    @see run_async
-    @see run
+    @li `T` must satisfy @ref IoAwaitableTask
+    @li `t.handle()` returns `std::coroutine_handle<T::promise_type>`,
+        must be `noexcept`
+    @li `t.release()` releases ownership, must be `noexcept`
+    @li `p.exception()` returns `std::exception_ptr`, must be `noexcept`
+    @li `p.result()` returns the task result (required for non-void tasks)
+
+    @par Semantic Requirements
+
+    The `handle` operation provides access to the coroutine:
+
+    @li Returns the typed coroutine handle for the task's frame
+    @li The task retains ownership; destroying the task destroys the frame
+
+    The `release` operation transfers ownership:
+
+    @li After `release()`, destroying the task does not destroy the frame
+    @li The caller becomes responsible for resuming and destroying the frame
+
+    The `exception` operation retrieves failure state:
+
+    @li Returns the exception stored by the promise if the coroutine
+        completed with an unhandled exception
+    @li Returns `nullptr` if no exception was thrown
+
+    The `result` operation retrieves success state (non-void tasks):
+
+    @li Returns the value passed to `co_return`
+    @li Behavior is undefined if called when `exception()` is non-null
+
+    @par Conforming Signatures
+
+    @code
+    class T
+    {
+    public:
+        struct promise_type
+        {
+            std::exception_ptr exception() noexcept;
+            R result();  // non-void tasks only
+        };
+
+        std::coroutine_handle<promise_type> handle() const noexcept;
+        void release() noexcept;
+    };
+    @endcode
+
+    @par Example
+
+    @code
+    template<IoLaunchableTask Task>
+    void blocking_run( Task task )
+    {
+        task.release();  // take ownership of the frame
+        auto h = task.handle();
+        h.resume();
+
+        if( auto ep = h.promise().exception() )
+            std::rethrow_exception( ep );
+    }
+    @endcode
+
+    @see IoAwaitableTask, run, run_async
 */
 template<typename T>
 concept IoLaunchableTask =

@@ -21,30 +21,67 @@
 namespace boost {
 namespace capy {
 
-/** Concept for I/O awaitable task types.
+/** Concept for task types with promise-based context injection.
 
-    A task is an I/O awaitable task if it satisfies @ref IoAwaitable and
-    its `promise_type` provides the interface for context injection:
-
-    @li `set_executor(executor_ref)` — stores the executor
-    @li `set_stop_token(std::stop_token)` — stores the stop token
-    @li `executor()` — retrieves the stored executor
-    @li `stop_token()` — retrieves the stored stop token
-
-    This concept formalizes the contract between launch functions
-    (`run_async`, `run`) and task types. Launch functions are the
-    root of a coroutine chain and must set context directly on the
-    promise rather than going through `await_suspend`.
+    Extends @ref IoAwaitable with a `promise_type` that stores executor
+    and stop token state. This enables launch functions (`run`, `run_async`)
+    to inject context at the root of a coroutine chain without going
+    through `await_suspend`.
 
     @tparam T The task type.
 
-    @par Requirements
+    @par Syntactic Requirements
+
     @li `T` must satisfy @ref IoAwaitable
-    @li `T::promise_type` must exist
-    @li The promise must provide `set_executor` and `set_stop_token`
-    @li The promise must provide `executor` and `stop_token` accessors
+    @li `T::promise_type` must be a valid type
+    @li `p.set_executor(ex)` must be valid and `noexcept`
+    @li `p.set_stop_token(st)` must be valid and `noexcept`
+    @li `p.set_continuation(cont, ex)` must be valid and `noexcept`
+    @li `p.executor()` must return `executor_ref` and be `noexcept`
+    @li `p.stop_token()` must return `std::stop_token const&` and be `noexcept`
+    @li `p.complete()` must return `coro` and be `noexcept`
+
+    @par Semantic Requirements
+
+    The `set_executor` and `set_stop_token` operations inject context:
+
+    @li Called by launch functions before resuming the task
+    @li The promise stores these values for use by child awaitables
+    @li Values propagate to nested `co_await` expressions
+
+    The `executor` and `stop_token` accessors retrieve stored context:
+
+    @li Return the values set by launch functions or parent tasks
+    @li Used by awaitables to schedule resumption and check cancellation
+
+    The `set_continuation` and `complete` operations manage resumption:
+
+    @li `set_continuation` stores who to resume when the task completes
+    @li `complete` returns the coroutine handle to resume at completion
+
+    @par Conforming Signatures
+
+    @code
+    struct T
+    {
+        struct promise_type
+        {
+            void set_executor( executor_ref ex ) noexcept;
+            void set_stop_token( std::stop_token st ) noexcept;
+            void set_continuation( coro cont, executor_ref ex ) noexcept;
+            executor_ref executor() const noexcept;
+            std::stop_token const& stop_token() const noexcept;
+            coro complete() const noexcept;
+        };
+
+        bool await_ready() const noexcept;
+        coro await_suspend( coro h, executor_ref ex, std::stop_token token );
+        R await_resume();
+    };
+    @endcode
 
     @par Example
+
     @code
     struct my_task
     {
@@ -61,21 +98,21 @@ namespace capy {
 
         bool await_ready() const noexcept { return false; }
 
-        coro await_suspend(coro cont, executor_ref ex, std::stop_token token)
+        coro await_suspend( coro cont, executor_ref ex, std::stop_token token )
         {
-            h_.promise().set_executor(ex);
-            h_.promise().set_stop_token(token);
-            // ... set continuation, return handle ...
+            h_.promise().set_executor( ex );
+            h_.promise().set_stop_token( token );
+            h_.promise().set_continuation( cont, ex );
+            return h_;
         }
 
         void await_resume() {}
     };
 
-    static_assert(IoAwaitableTask<my_task>);
+    static_assert( IoAwaitableTask<my_task> );
     @endcode
 
-    @see IoAwaitable
-    @see io_awaitable_support
+    @see IoAwaitable, IoLaunchableTask, io_awaitable_support
 */
 template<typename T>
 concept IoAwaitableTask =

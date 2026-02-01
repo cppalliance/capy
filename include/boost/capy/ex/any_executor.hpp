@@ -69,6 +69,16 @@ struct is_strand_type<strand<E>> : std::true_type {};
     This class satisfies the `Executor` concept, making it usable
     anywhere a concrete executor is expected.
 
+    @par Example
+    @code
+    any_executor exec = ctx.get_executor();
+    if(exec)
+    {
+        auto& context = exec.context();
+        exec.post(my_coroutine);
+    }
+    @endcode
+
     @see executor_ref, Executor
 */
 class any_executor
