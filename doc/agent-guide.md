@@ -3,8 +3,6 @@ Boost.Capy specific instructions
 ---
 
 # Research:
-- research/mazieres-coro.md
-- research/ana-lucia-coro.md
 
 # Extra Instructions
 - use `thread_pool` and `thread_pool::get_executor` in examples which need a context or executor

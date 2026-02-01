@@ -29,7 +29,7 @@ namespace capy {
 
     Inherits from both @ref any_read_stream and @ref any_write_stream,
     providing `read_some` and `write_some` operations. Each base
-    maintains its own cached coroutine frame, allowing concurrent
+    maintains its own cached awaitable storage, allowing concurrent
     read and write operations.
 
     The wrapper supports two construction modes:
@@ -88,7 +88,7 @@ public:
     /** Destructor.
 
         Destroys the owned stream (if any). Base class destructors
-        handle their cached coroutine frames.
+        handle their cached awaitable storage.
     */
     ~any_stream()
     {
@@ -108,7 +108,7 @@ public:
 
     /** Non-copyable.
 
-        The frame caches are per-instance and cannot be shared.
+        The awaitable caches are per-instance and cannot be shared.
     */
     any_stream(any_stream const&) = delete;
     any_stream& operator=(any_stream const&) = delete;
@@ -206,7 +206,7 @@ public:
     */
     template<class S>
         requires ReadStream<S> && WriteStream<S>
-    any_stream(S* s) noexcept
+    any_stream(S* s)
         : any_read_stream(s)
         , any_write_stream(s)
     {

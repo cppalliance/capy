@@ -54,12 +54,12 @@ public:
 
     template<MutableBufferSequence MB>
     auto
-    read_some(MB const& buffers)
+    read_some(MB buffers)
     {
         struct awaitable
         {
             mock_stream* self_;
-            MB const& buffers_;
+            MB buffers_;
 
             bool await_ready() const noexcept { return true; }
 
@@ -94,12 +94,12 @@ public:
 
     template<ConstBufferSequence CB>
     auto
-    write_some(CB const& buffers)
+    write_some(CB buffers)
     {
         struct awaitable
         {
             mock_stream* self_;
-            CB const& buffers_;
+            CB buffers_;
 
             bool await_ready() const noexcept { return true; }
 
