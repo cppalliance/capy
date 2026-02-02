@@ -57,6 +57,8 @@ reviews:
           the name and signature. Docstrings should add value beyond what the
           declaration already communicates. Do not warn about terse
           documentation for self-explanatory accessors or trivial type aliases.
+        - Documentation in detail namespaces is allowed, but should be focused
+          on the *why* instead of *what* for the purpose of maintainability.
         - Document thread-safety guarantees and exception specifications where
           applicable, particularly for classes intended for concurrent use or
           functions that may throw.
