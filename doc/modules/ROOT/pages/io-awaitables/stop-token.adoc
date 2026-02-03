@@ -1,0 +1,318 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= The Stop Token
+
+This section explains how cancellation propagates through coroutine chains
+using `std::stop_token`.
+
+== Cooperative Cancellation
+
+Capy supports _cooperative_ cancellation through C++20's `std::stop_token`:
+
+* **Cooperative:** Operations check the token and decide how to respond
+* **Non-preemptive:** Nothing is forcibly terminated
+* **Propagating:** Tokens flow automatically through `co_await` chains
+
+[source,cpp]
+----
+task<void> long_operation()
+{
+    for (int i = 0; i < 1000; ++i)
+    {
+        auto token = co_await this_coro::stop_token;
+        if (token.stop_requested())
+            co_return;  // Exit gracefully
+
+        co_await do_chunk(i);
+    }
+}
+----
+
+== The Stop Token API
+
+C++20 provides three related types:
+
+[source,cpp]
+----
+#include <stop_token>
+
+std::stop_source source;              // Can request stop
+std::stop_token token = source.get_token();  // Can check stop
+
+source.request_stop();                // Request cancellation
+bool stopped = token.stop_requested();  // Check if requested
+bool possible = token.stop_possible();  // Can stop ever be requested?
+
+// Register callback
+std::stop_callback cb(token, []() {
+    std::cout << "Stop requested!\n";
+});
+----
+
+=== stop_source
+
+The _controller_. Call `request_stop()` to signal cancellation:
+
+[source,cpp]
+----
+std::stop_source source;
+
+// Later...
+source.request_stop();  // All tokens see this
+----
+
+=== stop_token
+
+The _observer_. Check `stop_requested()` to see if cancellation was requested:
+
+[source,cpp]
+----
+std::stop_token token = source.get_token();
+
+if (token.stop_requested())
+    // Cancel the operation
+----
+
+Tokens are cheap to copy (internally reference-counted).
+
+=== stop_callback
+
+Execute code when stop is requested:
+
+[source,cpp]
+----
+std::stop_callback cb(token, [&]() {
+    cancel_underlying_io();
+});
+
+// Callback runs immediately if stop already requested,
+// or when request_stop() is called later
+----
+
+Callbacks are unregistered when the `stop_callback` object is destroyed.
+
+== How Stop Tokens Propagate
+
+Stop tokens flow forward through `co_await`, just like executors:
+
+[source,cpp]
+----
+task<void> child()
+{
+    // Inherits parent's stop token
+    auto token = co_await this_coro::stop_token;
+    if (token.stop_requested())
+        co_return;
+}
+
+task<void> parent()
+{
+    // Our stop token is passed to child
+    co_await child();
+}
+
+// Launch with stop token
+std::stop_source source;
+run_async(pool.get_executor(), source.get_token())(parent());
+
+// Later: cancel everything
+source.request_stop();
+----
+
+=== Propagation Mechanism
+
+1. `run_async` sets stop token in `parent`'s promise
+2. `parent` awaits `child`
+3. `parent`'s `await_transform` wraps `child`
+4. The wrapper passes stop token to `child.await_suspend()`
+5. `child`'s promise stores the token
+6. Process repeats for any grandchildren
+
+== Querying the Stop Token
+
+Inside a coroutine, retrieve the current stop token:
+
+[source,cpp]
+----
+task<void> cancellable_work()
+{
+    auto token = co_await this_coro::stop_token;
+
+    while (!token.stop_requested())
+    {
+        co_await do_work();
+    }
+
+    // Cleanup before returning
+    cleanup();
+    co_return;
+}
+----
+
+`this_coro::stop_token` never suspends—it's intercepted by `await_transform` and
+returns immediately.
+
+== Implementing Stoppable Awaitables
+
+Custom awaitables can support cancellation:
+
+[source,cpp]
+----
+struct stoppable_timer
+{
+    std::chrono::milliseconds duration_;
+    timer_handle handle_;
+    bool cancelled_ = false;
+
+    bool await_ready() const
+    {
+        return duration_.count() <= 0;
+    }
+
+    void await_suspend(std::coroutine_handle<> h,
+                       executor_ref ex,
+                       std::stop_token token)
+    {
+        // Check if already cancelled
+        if (token.stop_requested())
+        {
+            cancelled_ = true;
+            ex.dispatch(h).resume();
+            return;
+        }
+
+        // Start timer
+        handle_ = start_timer(duration_, [h, ex]() {
+            ex.dispatch(h).resume();
+        });
+
+        // Cancel timer if stop requested
+        if (token.stop_possible())
+        {
+            // Note: stop_callback must outlive the operation
+            // In real code, store in coroutine frame or awaiter
+            std::stop_callback cb(token, [this]() {
+                cancel_timer(handle_);
+            });
+        }
+    }
+
+    void await_resume()
+    {
+        if (cancelled_)
+            throw operation_cancelled();
+    }
+};
+----
+
+Key points:
+
+* Check `stop_requested()` _before_ starting work
+* Register `stop_callback` to cancel underlying operations
+* Signal cancellation in `await_resume()` (typically via exception)
+
+== Stop Propagation in when_all
+
+`when_all` creates its own stop source for child coordination:
+
+[source,cpp]
+----
+task<void> example()
+{
+    co_await when_all(
+        might_fail(),
+        long_running(),
+        another_task()
+    );
+}
+----
+
+If any child throws:
+
+1. Exception is captured
+2. `when_all` requests stop on its internal source
+3. Sibling tasks see `stop_requested() == true`
+4. `when_all` waits for all children to complete
+5. First exception is rethrown
+
+Parent stop tokens are also forwarded:
+
+[source,cpp]
+----
+std::stop_source source;
+run_async(ex, source.get_token())(example());
+
+source.request_stop();  // All children in when_all see this
+----
+
+== Error Handling vs Cancellation
+
+Cancellation is not an error—it's an expected outcome:
+
+[source,cpp]
+----
+task<std::optional<result>> fetch_with_timeout()
+{
+    auto token = co_await this_coro::stop_token;
+
+    try {
+        auto data = co_await fetch_data();
+        co_return data;
+    } catch (operation_cancelled const&) {
+        // Cancellation is expected
+        co_return std::nullopt;
+    }
+}
+----
+
+Use `std::optional`, sentinel values, or error codes to signal
+cancellation—reserve exceptions for unexpected failures.
+
+== When NOT to Use Cancellation
+
+Use cancellation when:
+
+* Operations may take a long time
+* Users need to abort operations
+* Timeouts are required
+* Parent tasks complete early
+
+Do NOT use cancellation when:
+
+* Operations are very short (overhead not worth it)
+* Operations cannot be interrupted meaningfully
+* You need guaranteed completion (e.g., cleanup tasks)
+
+== Summary
+
+[cols="1,3"]
+|===
+| Component | Purpose
+
+| `std::stop_source`
+| Controller that can request stop
+
+| `std::stop_token`
+| Observer that can check if stop was requested
+
+| `std::stop_callback`
+| Execute code when stop is requested
+
+| `this_coro::stop_token`
+| Query current token inside coroutine
+
+| `when_all` stop propagation
+| Sibling cancellation on first error
+|===
+
+== Next Steps
+
+* xref:allocator.adoc[The Allocator] — Frame allocation strategy
+* xref:launching.adoc[Launching Coroutines] — Pass stop tokens to `run_async`

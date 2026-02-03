@@ -1,0 +1,233 @@
+= Executors and Execution Contexts
+
+This section explains executors and execution contexts—the mechanisms that control where and how coroutines execute.
+
+== Prerequisites
+
+* Completed xref:launching.adoc[Launching Coroutines]
+* Understanding of `run_async` and `run`
+
+== The Executor Concept
+
+An *executor* is an object that can schedule work for execution. In Capy, executors must provide two methods:
+
+[source,cpp]
+----
+concept Executor = requires(E ex, coro h) {
+    { ex.dispatch(h) } -> std::same_as<coro>;
+    { ex.post(h) } -> std::same_as<void>;
+    { ex.context() } -> std::convertible_to<execution_context&>;
+};
+----
+
+=== dispatch() vs post()
+
+Both methods schedule a coroutine for execution, but with different semantics:
+
+`dispatch(h)`::
+May execute `h` inline if the current thread is already associated with the executor. Returns a coroutine handle—either `h` if execution was deferred, or `std::noop_coroutine()` if `h` was executed immediately. This enables symmetric transfer optimization.
+
+`post(h)`::
+Always queues `h` for later execution. Never executes inline. Returns void. Use when you need guaranteed asynchrony.
+
+=== context()
+
+Returns a reference to the execution context that owns this executor. The context provides resources like frame allocators.
+
+== executor_ref: Type-Erased Executor
+
+`executor_ref` wraps any executor in a type-erased container, allowing code to work with executors without knowing their concrete type:
+
+[source,cpp]
+----
+void schedule_work(executor_ref ex, coro h)
+{
+    ex.post(h);  // Works with any executor
+}
+
+int main()
+{
+    thread_pool pool;
+    executor_ref ex = pool.get_executor();  // Type erasure
+    
+    schedule_work(ex, some_coroutine);
+}
+----
+
+`executor_ref` stores a reference to the underlying executor—the original executor must outlive the `executor_ref`.
+
+== thread_pool: Multi-Threaded Execution
+
+`thread_pool` manages a pool of worker threads that execute coroutines concurrently:
+
+[source,cpp]
+----
+#include <boost/capy/ex/thread_pool.hpp>
+
+int main()
+{
+    // Create pool with 4 threads
+    thread_pool pool(4);
+    
+    // Get an executor for this pool
+    auto ex = pool.get_executor();
+    
+    // Launch work on the pool
+    run_async(ex)(my_task());
+    
+    // pool destructor waits for all work to complete
+}
+----
+
+=== Constructor Parameters
+
+[source,cpp]
+----
+thread_pool(
+    std::size_t num_threads = 0,
+    std::string_view thread_name_prefix = "capy-pool-"
+);
+----
+
+* `num_threads` — Number of worker threads. If 0, uses hardware concurrency.
+* `thread_name_prefix` — Prefix for thread names (useful for debugging).
+
+=== Thread Safety
+
+Work posted to a `thread_pool` may execute on any of its worker threads. If your coroutines access shared data, you must use appropriate synchronization.
+
+== execution_context: Base Class
+
+`execution_context` is the base class for execution contexts. It provides:
+
+* Frame allocator access via `get_frame_allocator()`
+* Service infrastructure for extensibility
+
+Custom execution contexts inherit from `execution_context`:
+
+[source,cpp]
+----
+class my_context : public execution_context
+{
+public:
+    // ... custom implementation
+    
+    my_executor get_executor();
+};
+----
+
+== strand: Serialization Without Mutexes
+
+A `strand` ensures that handlers are executed in order, with no two handlers executing concurrently. This eliminates the need for mutexes when all access to shared data goes through the strand.
+
+[source,cpp]
+----
+#include <boost/capy/ex/strand.hpp>
+
+class shared_resource
+{
+    strand<thread_pool::executor_type> strand_;
+    int counter_ = 0;
+    
+public:
+    explicit shared_resource(thread_pool& pool)
+        : strand_(pool.get_executor())
+    {
+    }
+    
+    task<int> increment()
+    {
+        // All increments are serialized through the strand
+        co_return co_await run(strand_)(do_increment());
+    }
+    
+private:
+    task<int> do_increment()
+    {
+        // No mutex needed—strand ensures exclusive access
+        ++counter_;
+        co_return counter_;
+    }
+};
+----
+
+=== How Strands Work
+
+The strand maintains a queue of pending work. When work is dispatched:
+
+1. If no other work is executing on the strand, the new work runs immediately
+2. If other work is executing, the new work is queued
+3. When the current work completes, the next queued item runs
+
+This provides logical single-threading without blocking physical threads.
+
+=== When to Use Strands
+
+* *Thread-affine resources* — When code must not be called from multiple threads simultaneously
+* *Ordered operations* — When operations must complete in a specific order
+* *Avoiding mutexes* — When mutex overhead is unacceptable
+
+== Single-Threaded vs Multi-Threaded Patterns
+
+=== Single-Threaded
+
+For single-threaded applications, use a context with one thread:
+
+[source,cpp]
+----
+thread_pool single_thread(1);
+auto ex = single_thread.get_executor();
+// All work runs on the single thread
+----
+
+=== Multi-Threaded with Shared Data
+
+For multi-threaded applications with shared data, use strands:
+
+[source,cpp]
+----
+thread_pool pool(4);
+strand<thread_pool::executor_type> data_strand(pool.get_executor());
+
+// Use data_strand for all access to shared data
+// Use pool.get_executor() for independent work
+----
+
+=== Multi-Threaded with Independent Work
+
+For embarrassingly parallel work with no shared state:
+
+[source,cpp]
+----
+thread_pool pool(4);
+auto ex = pool.get_executor();
+
+// Launch independent tasks directly on the pool
+std::vector<task<int>> tasks;
+for (int i = 0; i < 100; ++i)
+    run_async(ex)(independent_task(i));
+----
+
+== Reference
+
+[cols="1,3"]
+|===
+| Header | Description
+
+| `<boost/capy/concept/executor.hpp>`
+| The Executor concept definition
+
+| `<boost/capy/ex/executor_ref.hpp>`
+| Type-erased executor wrapper
+
+| `<boost/capy/ex/thread_pool.hpp>`
+| Multi-threaded execution context
+
+| `<boost/capy/ex/execution_context.hpp>`
+| Base class for execution contexts
+
+| `<boost/capy/ex/strand.hpp>`
+| Serialization primitive
+|===
+
+You have now learned about executors, execution contexts, thread pools, and strands. In the next section, you will learn about the IoAwaitable protocol that enables context propagation.
