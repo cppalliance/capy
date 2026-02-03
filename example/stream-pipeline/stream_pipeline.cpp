@@ -1,22 +1,12 @@
-= Stream Pipeline
+//
+// Copyright (c) 2026 Mungo Gill
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
 
-Data transformation through a pipeline of sources and sinks.
-
-== What You Will Learn
-
-* Building processing pipelines
-* Using `BufferSource` and `BufferSink` concepts
-* Chaining transformations
-
-== Prerequisites
-
-* Completed xref:echo-server-corosio.adoc[Echo Server with Corosio]
-* Understanding of buffer sources/sinks from xref:../streams/buffer-concepts.adoc[Buffer Concepts]
-
-== Source Code
-
-[source,cpp]
-----
 //
 // Stream Pipeline Example
 //
@@ -27,6 +17,9 @@ Data transformation through a pipeline of sources and sinks.
 //
 // Each transform is a BufferSource that wraps an upstream any_buffer_source,
 // enabling type-erased composition of arbitrary transform chains.
+//
+// The transforms use task<> coroutines for their pull() methods, allowing
+// them to properly co_await the upstream source.
 //
 
 #include <boost/capy.hpp>
@@ -42,13 +35,21 @@ Data transformation through a pipeline of sources and sinks.
 
 using namespace boost::capy;
 
-// A transform stage that converts to uppercase
+//------------------------------------------------------------------------------
+//
+// Transform: uppercase_transform
+//
+// A BufferSource that pulls from an upstream source and converts all
+// characters to uppercase. Demonstrates a simple byte-by-byte transform.
+//
+//------------------------------------------------------------------------------
+
 class uppercase_transform
 {
     any_buffer_source* source_;  // any_buffer_source*
-    std::vector<char> buffer_;   // std::vector<char>
-    std::size_t consumed_ = 0;   // std::size_t
-    bool exhausted_ = false;     // bool
+    std::vector<char> buffer_;   // std::vector<char> - transformed data
+    std::size_t consumed_ = 0;   // std::size_t - bytes consumed by downstream
+    bool exhausted_ = false;     // bool - upstream exhausted
     
 public:
     explicit uppercase_transform(any_buffer_source& source)
@@ -57,9 +58,11 @@ public:
     }
     
     // BufferSource::consume - advance past processed bytes
-    void consume(std::size_t n) noexcept
+    void
+    consume(std::size_t n) noexcept
     {
         consumed_ += n;
+        // Compact buffer when fully consumed
         if (consumed_ >= buffer_.size())
         {
             buffer_.clear();
@@ -129,15 +132,23 @@ public:
     }
 };
 
-// A transform that adds line numbers
+//------------------------------------------------------------------------------
+//
+// Transform: line_numbering_transform
+//
+// A BufferSource that pulls from an upstream source and prepends line
+// numbers to each line. Demonstrates a transform that changes data size.
+//
+//------------------------------------------------------------------------------
+
 class line_numbering_transform
 {
     any_buffer_source* source_;  // any_buffer_source*
-    std::string buffer_;         // std::string
-    std::size_t consumed_ = 0;   // std::size_t
-    std::size_t line_num_ = 1;   // std::size_t
-    bool at_line_start_ = true;  // bool
-    bool exhausted_ = false;     // bool
+    std::string buffer_;         // std::string - transformed data
+    std::size_t consumed_ = 0;   // std::size_t - bytes consumed by downstream
+    std::size_t line_num_ = 1;   // std::size_t - current line number
+    bool at_line_start_ = true;  // bool - are we at start of a line?
+    bool exhausted_ = false;     // bool - upstream exhausted
     
 public:
     explicit line_numbering_transform(any_buffer_source& source)
@@ -145,9 +156,12 @@ public:
     {
     }
     
-    void consume(std::size_t n) noexcept
+    // BufferSource::consume - advance past processed bytes
+    void
+    consume(std::size_t n) noexcept
     {
         consumed_ += n;
+        // Compact buffer when fully consumed
         if (consumed_ >= buffer_.size())
         {
             buffer_.clear();
@@ -155,9 +169,11 @@ public:
         }
     }
     
+    // BufferSource::pull - returns task<> to enable co_await on upstream
     task<io_result<std::span<const_buffer>>>
     pull(std::span<const_buffer> dest)
     {
+        // Already have unconsumed data?
         if (consumed_ < buffer_.size())
         {
             if (dest.empty())
@@ -169,9 +185,11 @@ public:
             co_return {std::error_code{}, dest.first(1)};
         }
         
+        // Upstream exhausted?
         if (exhausted_)
             co_return {std::error_code{}, std::span<const_buffer>{}};
         
+        // Pull from upstream
         buffer_.clear();
         consumed_ = 0;
         
@@ -207,8 +225,10 @@ public:
             }
         }
         
+        // Consume from upstream
         source_->consume(buffer_size(bufs));
         
+        // Return transformed data
         if (dest.empty() || buffer_.empty())
             co_return {std::error_code{}, std::span<const_buffer>{}};
         
@@ -217,7 +237,12 @@ public:
     }
 };
 
-// Transfer from source to sink
+//------------------------------------------------------------------------------
+//
+// transfer: Pull from source and write to sink until exhausted
+//
+//------------------------------------------------------------------------------
+
 task<std::size_t> transfer(any_buffer_source& source, any_write_sink& sink)
 {
     std::size_t total = 0;  // std::size_t
@@ -234,6 +259,7 @@ task<std::size_t> transfer(any_buffer_source& source, any_write_sink& sink)
         if (spans.empty())
             break;
         
+        // Write each buffer to sink
         for (auto const& buf : spans)  // const_buffer const&
         {
             // wec: std::error_code, n: std::size_t
@@ -243,6 +269,7 @@ task<std::size_t> transfer(any_buffer_source& source, any_write_sink& sink)
             total += n;
         }
         
+        // Consume what we read
         source.consume(buffer_size(spans));
     }
     
@@ -253,11 +280,17 @@ task<std::size_t> transfer(any_buffer_source& source, any_write_sink& sink)
     co_return total;
 }
 
+//------------------------------------------------------------------------------
+//
+// demo_pipeline: Demonstrate chained transforms
+//
+//------------------------------------------------------------------------------
+
 void demo_pipeline()
 {
     std::cout << "=== Stream Pipeline Demo ===\n\n";
     
-    // Input data
+    // Input data - three lines
     std::string input = "hello world\nthis is a test\nof the pipeline\n";
     std::cout << "Input:\n" << input << "\n";
     
@@ -266,28 +299,41 @@ void demo_pipeline()
     test::buffer_source source(f);  // test::buffer_source
     source.provide(input);
     
-    // Build the pipeline using type-erased buffer sources.
-    // Using pointer construction (&source) for reference semantics -
-    // the wrapper does not take ownership, so source must outlive src.
+    // Build the pipeline using type-erased buffer sources:
+    //   source -> [uppercase] -> [line_numbering] -> sink
+    
+    // Stage 1: Wrap raw source as any_buffer_source.
+    // Using pointer construction (&source) for reference semantics - the
+    // wrapper does not take ownership, so source must outlive src.
     any_buffer_source src{&source};  // any_buffer_source
     
+    // Stage 2: Uppercase transform wraps src.
+    // Again using pointer construction so upper_src references upper
+    // without taking ownership.
     uppercase_transform upper{src};  // uppercase_transform
     any_buffer_source upper_src{&upper};  // any_buffer_source
     
+    // Stage 3: Line numbering transform wraps upper_src.
     line_numbering_transform numbered{upper_src};  // line_numbering_transform
     any_buffer_source numbered_src{&numbered};  // any_buffer_source
     
-    // Create sink - pointer construction ensures sink outlives dst
+    // Create sink to collect output.
+    // Pointer construction ensures sink outlives dst.
     test::write_sink sink(f);  // test::write_sink
     any_write_sink dst{&sink};  // any_write_sink
     
-    // Run pipeline
+    // Run the pipeline
     std::size_t bytes = 0;  // std::size_t
     test::run_blocking([&](std::size_t n) { bytes = n; })(
         transfer(numbered_src, dst));
     
     std::cout << "Output (" << bytes << " bytes):\n";
     std::cout << sink.data() << "\n";
+    
+    // Expected output:
+    // 1: HELLO WORLD
+    // 2: THIS IS A TEST
+    // 3: OF THE PIPELINE
 }
 
 int main()
@@ -303,108 +349,3 @@ int main()
     }
     return 0;
 }
-----
-
-== Build
-
-[source,cmake]
-----
-add_executable(stream_pipeline stream_pipeline.cpp)
-target_link_libraries(stream_pipeline PRIVATE capy)
-----
-
-== Walkthrough
-
-=== Pipeline Structure
-
-----
-Source → Uppercase → LineNumbering → Sink
-----
-
-Data flows through the pipeline:
-
-1. Source provides raw input
-2. Uppercase transforms to uppercase
-3. LineNumbering adds line numbers
-4. Sink collects output
-
-=== BufferSource Implementation
-
-[source,cpp]
-----
-task<io_result<std::span<const_buffer>>>
-pull(std::span<const_buffer> dest)
-{
-    // Pull from upstream
-    // ec: std::error_code, bufs: std::span<const_buffer>
-    auto [ec, bufs] = co_await source_->pull(upstream);
-    
-    // Transform data...
-    
-    // Consume from upstream
-    source_->consume(buffer_size(bufs));
-    
-    // Return transformed buffer
-    dest[0] = const_buffer(buffer_.data(), buffer_.size());
-    co_return {std::error_code{}, dest.first(1)};
-}
-----
-
-Each stage:
-
-1. Pulls buffers from upstream using `co_await`
-2. Transforms the data
-3. Calls `consume()` on upstream to indicate bytes processed
-4. Returns transformed buffers
-
-=== Type Erasure with Pointer Construction
-
-[source,cpp]
-----
-// Using pointer construction (&source) for reference semantics
-any_buffer_source src{&source};  // any_buffer_source
-
-uppercase_transform upper{src};  // uppercase_transform
-any_buffer_source upper_src{&upper};  // any_buffer_source
-----
-
-`any_buffer_source` wraps each stage using pointer construction, allowing uniform composition while preserving the lifetime of the underlying objects.
-
-== Output
-
-----
-=== Stream Pipeline Demo ===
-
-Input:
-hello world
-this is a test
-of the pipeline
-
-Output (52 bytes):
-1: HELLO WORLD
-2: THIS IS A TEST
-3: OF THE PIPELINE
-----
-
-== Exercises
-
-1. Add a compression/decompression stage
-2. Implement a ROT13 transform
-3. Create a filtering stage that drops lines matching a pattern
-
-== Summary
-
-This example catalog demonstrated:
-
-* Basic task creation and launching
-* Coroutine synchronization with events
-* Buffer composition for scatter/gather I/O
-* Unit testing with mock streams
-* Compilation firewalls with type erasure
-* Cooperative cancellation with stop tokens
-* Concurrent execution with `when_all`
-* Custom buffer implementations
-* Real network I/O with Corosio
-* Data transformation pipelines
-
-These patterns form the foundation for building robust, efficient I/O applications with Capy.

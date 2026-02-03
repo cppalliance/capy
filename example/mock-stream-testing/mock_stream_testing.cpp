@@ -1,22 +1,12 @@
-= Mock Stream Testing
+//
+// Copyright (c) 2026 Mungo Gill
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
 
-Unit testing protocol code with mock streams and error injection.
-
-== What You Will Learn
-
-* Using `test::read_stream` and `test::write_stream`
-* Error injection with `fuse`
-* Synchronous testing with `run_blocking`
-
-== Prerequisites
-
-* Completed xref:buffer-composition.adoc[Buffer Composition]
-* Understanding of streams from xref:../streams/streams.adoc[Streams]
-
-== Source Code
-
-[source,cpp]
-----
 #include <boost/capy.hpp>
 #include <boost/capy/test/stream.hpp>
 #include <boost/capy/test/fuse.hpp>
@@ -169,93 +159,3 @@ int main()
     std::cout << "\nAll tests passed!\n";
     return 0;
 }
-----
-
-== Build
-
-[source,cmake]
-----
-add_executable(mock_stream_testing mock_stream_testing.cpp)
-target_link_libraries(mock_stream_testing PRIVATE capy)
-----
-
-== Walkthrough
-
-=== Mock Streams
-
-[source,cpp]
-----
-test::fuse f;  // test::fuse
-test::stream mock(f);  // test::stream
-mock.provide("hello\n");
-----
-
-`test::stream` is a bidirectional mock that satisfies both `ReadStream` and `WriteStream`:
-
-* Constructor takes a `fuse&` for error injection
-* `provide(data)` — Supplies data for reads
-* `data()` — Returns data written to the mock
-* Second constructor parameter controls max bytes per operation
-
-=== Type-Erased Streams
-
-[source,cpp]
-----
-// Wrap mock in any_stream using pointer construction for reference semantics
-any_stream stream{&mock};  // any_stream
-----
-
-Use pointer construction (`&mock`) so the `any_stream` wrapper references the mock without taking ownership. This allows inspecting `mock.data()` after operations.
-
-=== Synchronous Testing
-
-[source,cpp]
-----
-bool result = false;  // bool
-test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
-----
-
-`run_blocking` executes a coroutine synchronously, blocking until complete. Pass a handler to capture the result.
-
-=== Error Injection
-
-[source,cpp]
-----
-test::fuse f;  // test::fuse
-auto r = f.armed([&](test::fuse&) -> task<> {
-    test::stream mock(f);  // test::stream
-    // ... run test ...
-});
-----
-
-`fuse::armed` runs the test function repeatedly, injecting errors at each operation point:
-
-1. First run: error at operation 1
-2. Second run: error at operation 2
-3. ...and so on until all operations succeed
-
-This systematically tests all error handling paths.
-
-== Output
-
-----
-Test: happy path
-  PASSED
-Test: partial reads (1 byte at a time)
-  PASSED
-Test: error injection
-  Runs: 9 (success=2, error=7)
-  PASSED (all error paths tested)
-
-All tests passed!
-----
-
-== Exercises
-
-1. Add a test for EOF handling (what if input doesn't end with newline?)
-2. Test with different max_read_size values
-3. Add a test for write errors using `test::write_stream`
-
-== Next Steps
-
-* xref:type-erased-echo.adoc[Type-Erased Echo] — Compilation firewall pattern

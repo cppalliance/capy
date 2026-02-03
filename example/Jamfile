@@ -1,0 +1,18 @@
+#
+# Copyright (c) 2026 Mungo Gill
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/capy
+#
+
+build-project hello-task ;
+build-project producer-consumer ;
+build-project buffer-composition ;
+build-project mock-stream-testing ;
+build-project type-erased-echo ;
+build-project timeout-cancellation ;
+build-project parallel-fetch ;
+build-project custom-dynamic-buffer ;
+build-project stream-pipeline ;

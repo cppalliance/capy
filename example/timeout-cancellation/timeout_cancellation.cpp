@@ -1,22 +1,12 @@
-= Timeout with Cancellation
+//
+// Copyright (c) 2026 Mungo Gill
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
 
-Using stop tokens to implement operation timeouts.
-
-== What You Will Learn
-
-* Creating and using `std::stop_source`
-* Checking `stop_requested()` in coroutines
-* Cancellation patterns
-
-== Prerequisites
-
-* Completed xref:type-erased-echo.adoc[Type-Erased Echo]
-* Understanding of stop tokens from xref:../coroutines/cancellation.adoc[Cancellation]
-
-== Source Code
-
-[source,cpp]
-----
 #include <boost/capy.hpp>
 #include <boost/capy/test/stream.hpp>
 #include <boost/capy/test/run_blocking.hpp>
@@ -50,6 +40,7 @@ task<std::string> slow_fetch(int steps)
         std::cout << "  Completed step " << i << std::endl;
         
         // Yield to allow stop request to be processed before next check
+        // Extra 5ms ensures print completes before main thread prints
         std::this_thread::sleep_for(std::chrono::milliseconds(15));
     }
     
@@ -118,6 +109,7 @@ void demo_cancellation()
     
     // Simulate timeout: cancel after 2 steps complete
     // Timing: each step is 10ms work + 15ms yield = 25ms total
+    // Step 1 prints at 35ms, step 2 check at 50ms
     // Stop at 42ms: after step 1 print, before step 2 check
     std::this_thread::sleep_for(std::chrono::milliseconds(42));
     std::cout << "  Requesting stop..." << std::endl;
@@ -153,89 +145,3 @@ int main()
     
     return 0;
 }
-----
-
-== Build
-
-[source,cmake]
-----
-add_executable(timeout_cancellation timeout_cancellation.cpp)
-target_link_libraries(timeout_cancellation PRIVATE capy)
-----
-
-== Walkthrough
-
-=== Getting the Stop Token
-
-[source,cpp]
-----
-auto token = co_await this_coro::stop_token;  // std::stop_token
-----
-
-Inside a task, `this_coro::stop_token` retrieves the stop token propagated from the caller.
-
-=== Checking for Cancellation
-
-[source,cpp]
-----
-if (token.stop_requested())
-{
-    throw std::system_error(make_error_code(std::errc::operation_canceled));
-}
-----
-
-Check `stop_requested()` at appropriate points—typically before expensive operations or at loop iterations.
-
-=== Triggering Cancellation
-
-[source,cpp]
-----
-std::stop_source source;
-run_async(ex, source.get_token())(my_task());
-
-// Later:
-source.request_stop();
-----
-
-The stop source controls the stop token. Calling `request_stop()` signals all holders of tokens from this source.
-
-=== Partial Results
-
-[source,cpp]
-----
-if (token.stop_requested())
-{
-    co_return partial_result;  // Return what we have
-}
-----
-
-Cancellation doesn't have to throw. You can return partial results or a sentinel value.
-
-== Output
-
-----
-Demo: Normal completion
-  Completed step 0
-  Completed step 1
-  Completed step 2
-  Completed step 3
-  Completed step 4
-Result: step0 step1 step2 step3 step4 
-
-Demo: Cancellation after 2 steps
-  Completed step 0
-  Completed step 1
-  Requesting stop...
-  Cancelled at step 2
-Cancelled (returned nullopt)
-----
-
-== Exercises
-
-1. Implement a retry-with-timeout pattern
-2. Add cancellation support to the echo session from the previous example
-3. Create a task that cancels itself after processing N items
-
-== Next Steps
-
-* xref:parallel-fetch.adoc[Parallel Fetch] — Concurrent operations with when_all

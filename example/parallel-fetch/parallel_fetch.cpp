@@ -1,22 +1,12 @@
-= Parallel Fetch
+//
+// Copyright (c) 2026 Mungo Gill
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
 
-Running multiple operations concurrently with `when_all`.
-
-== What You Will Learn
-
-* Using `when_all` to run tasks in parallel
-* Structured bindings for results
-* Error propagation in concurrent tasks
-
-== Prerequisites
-
-* Completed xref:timeout-cancellation.adoc[Timeout with Cancellation]
-* Understanding of `when_all` from xref:../coroutines/composition.adoc[Composition]
-
-== Source Code
-
-[source,cpp]
-----
 #include <boost/capy.hpp>
 #include <iostream>
 #include <latch>
@@ -142,7 +132,6 @@ task<> demonstrate_error_handling()
 int main()
 {
     thread_pool pool;
-    
     std::latch done(3);  // std::latch - wait for 3 tasks
     
     // Completion handlers signal the latch when each task finishes
@@ -157,105 +146,3 @@ int main()
     done.wait();  // Block until all tasks complete
     return 0;
 }
-----
-
-== Build
-
-[source,cmake]
-----
-add_executable(parallel_fetch parallel_fetch.cpp)
-target_link_libraries(parallel_fetch PRIVATE capy)
-----
-
-== Walkthrough
-
-=== Basic when_all
-
-[source,cpp]
-----
-auto [name, orders, balance] = co_await when_all(
-    fetch_user_name(user_id),
-    fetch_order_count(user_id),
-    fetch_account_balance(user_id)
-);
-----
-
-All three tasks run concurrently. `when_all` completes when all tasks finish. Results are returned in a tuple matching input order.
-
-=== Void Filtering
-
-[source,cpp]
-----
-std::tuple<std::string> results = co_await when_all(
-    log_access("api/data"),      // void - filtered out
-    update_metrics("api_calls"), // void - filtered out
-    fetch_user_name(42)          // string - in tuple
-);
-std::string data = std::get<0>(results);  // std::string
-----
-
-Tasks returning `void` don't contribute to the result tuple. Only non-void results appear.
-
-=== Error Propagation
-
-[source,cpp]
-----
-try
-{
-    auto results = co_await when_all(task_a(), task_b(), task_c());
-}
-catch (...)
-{
-    // First exception is rethrown
-    // All tasks complete before exception propagates
-}
-----
-
-When a task throws:
-
-1. The exception is captured
-2. Stop is requested for siblings
-3. All tasks complete (or respond to stop)
-4. First exception is rethrown
-
-== Output
-
-----
-=== Fetching dashboard for: alice ===
-Fetching user ID for: alice
-Got user ID: 500
-
-Starting parallel fetches...
-Fetching name for user ID: 500
-Fetching order count for user: 500
-Fetching balance for user: 500
-
-Dashboard results:
-  Name: User500
-  Orders: 50
-  Balance: $750
-
-=== Fetch with side effects ===
-Logging access to: api/data
-Updating metric: api_calls
-Fetching name for user ID: 42
-Data: User42
-
-=== Error handling ===
-Task A starting
-Task B starting
-Task C starting
-Task A completed
-Task C completed
-Caught error: B failed!
-----
-
-== Exercises
-
-1. Add timing to see the parallel speedup vs sequential execution
-2. Implement a "fan-out/fan-in" pattern that processes a list of items in parallel
-3. Add cancellation support so remaining tasks can exit early on error
-
-== Next Steps
-
-* xref:custom-dynamic-buffer.adoc[Custom Dynamic Buffer] — Implementing your own buffer

@@ -1,22 +1,12 @@
-= Buffer Composition
+//
+// Copyright (c) 2026 Mungo Gill
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
 
-Composing buffer sequences without allocation for scatter/gather I/O.
-
-== What You Will Learn
-
-* Creating buffers from different sources
-* Using `const_buffer_pair` and `mutable_buffer_pair` for scatter/gather I/O
-* Zero-allocation buffer sequence patterns
-
-== Prerequisites
-
-* Completed xref:producer-consumer.adoc[Producer-Consumer]
-* Understanding of buffer types from xref:../buffers/types.adoc[Buffer Types]
-
-== Source Code
-
-[source,cpp]
-----
 #include <boost/capy.hpp>
 #include <iostream>
 #include <string>
@@ -130,102 +120,3 @@ int main()
     
     return 0;
 }
-----
-
-== Build
-
-[source,cmake]
-----
-add_executable(buffer_composition buffer_composition.cpp)
-target_link_libraries(buffer_composition PRIVATE capy)
-----
-
-== Walkthrough
-
-=== Creating Buffers
-
-[source,cpp]
-----
-auto str_buf = make_buffer(str);  // mutable_buffer
-auto arr_buf = make_buffer(arr, sizeof(arr) - 1);  // mutable_buffer
-----
-
-`make_buffer` creates buffer views from various sources. No data is copied—the buffers reference the original storage.
-
-=== Buffer Pairs
-
-[source,cpp]
-----
-const_buffer_pair message = {{
-    make_buffer(header),
-    make_buffer(body)
-}};
-----
-
-`const_buffer_pair` is `std::array<const_buffer, 2>` — a fixed-size buffer sequence for scatter/gather I/O. Similarly, `mutable_buffer_pair` holds two mutable buffers.
-
-=== Multi-Buffer Arrays
-
-[source,cpp]
-----
-std::array<const_buffer, 5> http_response = {{
-    make_buffer(status),
-    make_buffer(content_type),
-    // ...
-}};
-----
-
-For more than two buffers, use `std::array` directly. Buffer sequences support `buffer_size()` and `buffer_length()` for querying total bytes and buffer count.
-
-=== Scatter/Gather I/O
-
-[source,cpp]
-----
-co_await write(stream, http_response);
-----
-
-When you write a buffer sequence, the OS receives all buffers in a single system call. This is *scatter/gather I/O*:
-
-* No intermediate buffer allocation
-* No copying data together
-* Single syscall for multiple buffers
-
-== Output
-
-----
-=== Single Buffer Examples ===
-
-String buffer: 13 bytes
-Array buffer:  10 bytes
-Vector buffer: 6 bytes
-
-=== Buffer Pair (Scatter/Gather) ===
-
-Total message size: 41 bytes
-Buffer count: 2
-
-Buffer contents:
-  [28 bytes]: Content-Type: text/plain
-
-
-  [13 bytes]: Hello, World!
-
-=== Multi-Buffer Array ===
-
-HTTP response size: 84 bytes
-Buffer count: 5
-
-=== Mutable Buffer Example ===
-
-Prepared 2 buffers with 128 bytes total capacity
-----
-
-== Exercises
-
-1. Create a function that takes any `ConstBufferSequence` and prints its contents
-2. Measure the difference between copying data into a single buffer vs. using `cat()`
-3. Implement a simple message framing protocol using buffer composition
-
-== Next Steps
-
-* xref:mock-stream-testing.adoc[Mock Stream Testing] — Unit testing with mock streams

@@ -1,22 +1,12 @@
-= Custom Dynamic Buffer
+//
+// Copyright (c) 2026 Mungo Gill
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
 
-Implementing the DynamicBuffer concept for a custom allocation strategy.
-
-== What You Will Learn
-
-* Implementing the DynamicBuffer concept
-* Understanding `prepare`, `commit`, `consume` lifecycle
-* Custom memory management for I/O
-
-== Prerequisites
-
-* Completed xref:parallel-fetch.adoc[Parallel Fetch]
-* Understanding of dynamic buffers from xref:../buffers/dynamic.adoc[Dynamic Buffers]
-
-== Source Code
-
-[source,cpp]
-----
 #include <boost/capy.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 #include <boost/capy/test/stream.hpp>
@@ -203,101 +193,3 @@ int main()
     demo_tracked_buffer();
     return 0;
 }
-----
-
-== Build
-
-[source,cmake]
-----
-add_executable(custom_dynamic_buffer custom_dynamic_buffer.cpp)
-target_link_libraries(custom_dynamic_buffer PRIVATE capy)
-----
-
-== Walkthrough
-
-=== DynamicBuffer Requirements
-
-A DynamicBuffer must provide:
-
-[source,cpp]
-----
-// Consumer interface
-const_buffer data() const;      // Readable data
-void consume(std::size_t n);    // Mark bytes as processed
-
-// Producer interface
-mutable_buffer prepare(std::size_t n);  // Space for writing
-void commit(std::size_t n);             // Mark bytes as written
-
-// Capacity queries
-std::size_t size() const;       // Readable bytes
-std::size_t max_size() const;   // Maximum allowed
-std::size_t capacity() const;   // Currently allocated
-----
-
-=== The Producer/Consumer Flow
-
-[source,cpp]
-----
-// 1. Producer prepares space
-auto space = buffer.prepare(256);  // mutable_buffer
-
-// 2. Data is written into space
-// ec: std::error_code, n: std::size_t
-auto [ec, n] = co_await stream.read_some(space);
-
-// 3. Producer commits written bytes
-buffer.commit(n);
-
-// 4. Consumer reads data
-auto data = buffer.data();  // const_buffer
-process(data);
-
-// 5. Consumer marks bytes as processed
-buffer.consume(processed_bytes);
-----
-
-=== Memory Management
-
-The `tracked_buffer` implementation:
-
-* Uses a single contiguous vector
-* Tracks read and write positions
-* Compacts when needed to reuse space
-* Grows on demand up to `max_size`
-
-== Output
-
-----
-=== Tracked Buffer Demo ===
-
-Read 51 bytes, buffer size now: 51
-
-Final buffer contents: Hello, World! This is a test of the custom buffer.
-
-
-Buffer statistics:
-  Total prepared:  512 bytes
-  Total committed: 51 bytes
-  Total consumed:  0 bytes
-  Current size:    51 bytes
-  Capacity:        1024 bytes
-
-Consuming 7 bytes...
-Buffer statistics:
-  Total prepared:  512 bytes
-  Total committed: 51 bytes
-  Total consumed:  7 bytes
-  Current size:    44 bytes
-  Capacity:        1017 bytes
-----
-
-== Exercises
-
-1. Add a "high water mark" statistic that tracks maximum buffer size reached
-2. Implement a ring buffer version that never moves data
-3. Add an allocator parameter for custom memory allocation
-
-== Next Steps
-
-* xref:echo-server-corosio.adoc[Echo Server with Corosio] — Real networking

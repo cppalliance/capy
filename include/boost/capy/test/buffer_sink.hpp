@@ -165,6 +165,17 @@ public:
 
             bool await_ready() const noexcept { return true; }
 
+            // This method is required to satisfy Capy's IoAwaitable concept,
+            // but is never called because await_ready() returns true.
+            //
+            // Capy uses a two-layer awaitable system: the promise's
+            // await_transform wraps awaitables in a transform_awaiter whose
+            // standard await_suspend(coroutine_handle) calls this custom
+            // 3-argument overload, passing the executor and stop_token from
+            // the coroutine's context. For synchronous test awaitables like
+            // this one, the coroutine never suspends, so this is not invoked.
+            // The signature exists to allow the same awaitable type to work
+            // with both synchronous (test) and asynchronous (real I/O) code.
             void await_suspend(
                 coro,
                 executor_ref,
@@ -212,6 +223,9 @@ public:
 
             bool await_ready() const noexcept { return true; }
 
+            // This method is required to satisfy Capy's IoAwaitable concept,
+            // but is never called because await_ready() returns true.
+            // See the comment on commit(std::size_t) for a detailed explanation.
             void await_suspend(
                 coro,
                 executor_ref,
@@ -258,6 +272,9 @@ public:
 
             bool await_ready() const noexcept { return true; }
 
+            // This method is required to satisfy Capy's IoAwaitable concept,
+            // but is never called because await_ready() returns true.
+            // See the comment on commit(std::size_t) for a detailed explanation.
             void await_suspend(
                 coro,
                 executor_ref,

@@ -111,5 +111,5 @@ endif ()
 #
 #-------------------------------------------------
 if (BOOST_CAPY_BUILD_EXAMPLES)
-    # add_subdirectory(example)
+    add_subdirectory(example)
 endif ()
