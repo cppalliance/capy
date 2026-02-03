@@ -82,6 +82,13 @@ add_library(boost_capy include/boost/capy.hpp build/Jamfile ${BOOST_CAPY_HEADERS
 add_library(Boost::capy ALIAS boost_capy)
 boost_capy_setup_properties(boost_capy)
 
+# Disable IPO/LTCG - causes LNK2016 errors with MSVC
+set_target_properties(boost_capy PROPERTIES
+    INTERPROCEDURAL_OPTIMIZATION OFF
+    INTERPROCEDURAL_OPTIMIZATION_RELEASE OFF
+    INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO OFF
+    INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL OFF)
+
 #-------------------------------------------------
 #
 # Benchmarks
