@@ -1,4 +1,5 @@
 * xref:index.adoc[Introduction]
+* xref:why-capy.adoc[Why Capy?]
 * xref:quick-start.adoc[Quick Start]
 * Introduction To C++20 Coroutines
 ** xref:cpp20-coroutines/foundations.adoc[Part I: Foundations]
