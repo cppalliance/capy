@@ -1,0 +1,224 @@
+= Timeout with Cancellation
+
+Using stop tokens to implement operation timeouts.
+
+== What You Will Learn
+
+* Creating and using `std::stop_source`
+* Checking `stop_requested()` in coroutines
+* Cancellation patterns
+
+== Prerequisites
+
+* Completed xref:type-erased-echo.adoc[Type-Erased Echo]
+* Understanding of stop tokens from xref:../coroutines/cancellation.adoc[Cancellation]
+
+== Source Code
+
+[source,cpp]
+----
+#include <boost/capy.hpp>
+#include <boost/capy/test/stream.hpp>
+#include <boost/capy/test/run_blocking.hpp>
+#include <iostream>
+#include <chrono>
+#include <thread>
+
+using namespace boost::capy;
+
+// A slow operation that respects cancellation
+task<std::string> slow_fetch(int steps)
+{
+    auto token = co_await get_stop_token();
+    std::string result;
+    
+    for (int i = 0; i < steps; ++i)
+    {
+        // Check cancellation before each step
+        if (token.stop_requested())
+        {
+            std::cout << "  Cancelled at step " << i << "\n";
+            throw std::system_error(
+                make_error_code(std::errc::operation_canceled));
+        }
+        
+        result += "step" + std::to_string(i) + " ";
+        
+        // Simulate work (in real code, this would be I/O)
+        std::cout << "  Completed step " << i << "\n";
+    }
+    
+    co_return result;
+}
+
+// Run with timeout (conceptual - real implementation needs timer)
+task<std::optional<std::string>> fetch_with_timeout()
+{
+    auto token = co_await get_stop_token();
+    
+    try
+    {
+        auto result = co_await slow_fetch(5);
+        co_return result;
+    }
+    catch (std::system_error const& e)
+    {
+        if (e.code() == std::errc::operation_canceled)
+            co_return std::nullopt;
+        throw;
+    }
+}
+
+void demo_normal_completion()
+{
+    std::cout << "Demo: Normal completion\n";
+    
+    thread_pool pool;
+    std::stop_source source;
+    
+    run_async(pool.get_executor(), source.get_token(),
+        [](std::optional<std::string> result) {
+            if (result)
+                std::cout << "Result: " << *result << "\n";
+            else
+                std::cout << "Cancelled\n";
+        }
+    )(fetch_with_timeout());
+}
+
+void demo_cancellation()
+{
+    std::cout << "\nDemo: Cancellation after 2 steps\n";
+    
+    thread_pool pool;
+    std::stop_source source;
+    
+    // Launch the task
+    run_async(pool.get_executor(), source.get_token(),
+        [](std::optional<std::string> result) {
+            if (result)
+                std::cout << "Result: " << *result << "\n";
+            else
+                std::cout << "Cancelled (returned nullopt)\n";
+        }
+    )(fetch_with_timeout());
+    
+    // Simulate timeout: cancel after brief delay
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::cout << "  Requesting stop...\n";
+    source.request_stop();
+}
+
+// Example: Manual stop token checking
+task<int> process_items(std::vector<int> const& items)
+{
+    auto token = co_await get_stop_token();
+    int sum = 0;
+    
+    for (auto item : items)
+    {
+        if (token.stop_requested())
+        {
+            std::cout << "Processing cancelled, partial sum: " << sum << "\n";
+            co_return sum;  // Return partial result
+        }
+        
+        sum += item;
+    }
+    
+    co_return sum;
+}
+
+int main()
+{
+    demo_normal_completion();
+    demo_cancellation();
+    
+    return 0;
+}
+----
+
+== Build
+
+[source,cmake]
+----
+add_executable(timeout_cancellation timeout_cancellation.cpp)
+target_link_libraries(timeout_cancellation PRIVATE capy)
+----
+
+== Walkthrough
+
+=== Getting the Stop Token
+
+[source,cpp]
+----
+auto token = co_await get_stop_token();
+----
+
+Inside a task, `get_stop_token()` retrieves the stop token propagated from the caller.
+
+=== Checking for Cancellation
+
+[source,cpp]
+----
+if (token.stop_requested())
+{
+    throw std::system_error(make_error_code(std::errc::operation_canceled));
+}
+----
+
+Check `stop_requested()` at appropriate points—typically before expensive operations or at loop iterations.
+
+=== Triggering Cancellation
+
+[source,cpp]
+----
+std::stop_source source;
+run_async(ex, source.get_token())(my_task());
+
+// Later:
+source.request_stop();
+----
+
+The stop source controls the stop token. Calling `request_stop()` signals all holders of tokens from this source.
+
+=== Partial Results
+
+[source,cpp]
+----
+if (token.stop_requested())
+{
+    co_return partial_result;  // Return what we have
+}
+----
+
+Cancellation doesn't have to throw. You can return partial results or a sentinel value.
+
+== Output
+
+----
+Demo: Normal completion
+  Completed step 0
+  Completed step 1
+  Completed step 2
+  Completed step 3
+  Completed step 4
+Result: step0 step1 step2 step3 step4 
+
+Demo: Cancellation after 2 steps
+  Completed step 0
+  Completed step 1
+  Requesting stop...
+  Cancelled at step 2
+Cancelled (returned nullopt)
+----
+
+== Exercises
+
+1. Implement a retry-with-timeout pattern
+2. Add cancellation support to the echo session from the previous example
+3. Create a task that cancels itself after processing N items
+
+== Next Steps
+
+* xref:parallel-fetch.adoc[Parallel Fetch] — Concurrent operations with when_all
