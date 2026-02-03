@@ -247,10 +247,16 @@ struct run_blocking_test
     void
     testInlineExecutorDispatch()
     {
+        // dispatch() now returns void and resumes inline
         inline_executor ex;
-        coro dummy = std::noop_coroutine();
-        coro result = ex.dispatch(dummy);
-        BOOST_TEST(result == dummy);
+        bool resumed = false;
+        auto checker = [&]() -> task<> {
+            resumed = true;
+            co_return;
+        };
+        auto t = checker();
+        ex.dispatch(t.handle());
+        BOOST_TEST(resumed);
     }
 
     //----------------------------------------------------------
@@ -281,10 +287,10 @@ struct run_blocking_test
             void on_work_started() const noexcept {}
             void on_work_finished() const noexcept {}
 
-            coro dispatch(coro h) const
+            void dispatch(coro h) const
             {
                 ++(*count_);
-                return h;
+                h.resume();
             }
 
             void post(coro h) const

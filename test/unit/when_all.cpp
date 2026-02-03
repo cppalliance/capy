@@ -552,10 +552,10 @@ struct when_all_test
         void on_work_started() const noexcept {}
         void on_work_finished() const noexcept {}
 
-        coro dispatch(coro h) const
+        void dispatch(coro h) const
         {
             ++(*dispatch_count_);
-            return h;
+            h.resume();
         }
 
         void post(coro h) const
@@ -751,7 +751,6 @@ struct when_all_test
         // Basic functionality
         testResultType();
         testAllSucceed();
-#if 0
         testThreeTasksSucceed();
         testMixedTypes();
         testSingleTask();
@@ -788,7 +787,6 @@ struct when_all_test
         // Frame allocator tests - skipped: allocator is currently ignored per design
         // testWhenAllUsesAllocator();
         // testNestedWhenAllUsesAllocator();
-#endif
     }
 
     //----------------------------------------------------------

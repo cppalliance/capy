@@ -152,7 +152,7 @@ public:
             auto* waiter = head_;
             head_ = head_->next_;
             if(waiter->ex_)
-                waiter->ex_.dispatch(coro{waiter->h_}).resume();
+                waiter->ex_.dispatch(waiter->h_);
             else
                 waiter->h_.resume();
         }

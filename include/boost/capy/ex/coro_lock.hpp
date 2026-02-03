@@ -251,7 +251,7 @@ public:
                 tail_ = nullptr;
             // Lock ownership transfers to next waiter
             if(waiter->ex_)
-                waiter->ex_.dispatch(coro{waiter->h_}).resume();
+                waiter->ex_.dispatch(waiter->h_);
             else
                 waiter->h_.resume();
         }

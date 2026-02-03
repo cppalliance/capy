@@ -62,10 +62,10 @@ struct guard_test_executor
         --ctx_->work_count;
     }
 
-    std::coroutine_handle<>
+    void
     dispatch(std::coroutine_handle<> h) const
     {
-        return h;
+        h.resume();
     }
 
     void

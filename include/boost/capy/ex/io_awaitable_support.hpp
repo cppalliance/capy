@@ -254,7 +254,8 @@ public:
         If no continuation was set, returns `std::noop_coroutine()`.
         If the coroutine's executor matches the caller's executor, returns
         the continuation directly for symmetric transfer.
-        Otherwise, dispatches through the caller's executor first.
+        Otherwise, dispatches through the caller's executor and returns
+        `std::noop_coroutine()`.
 
         Call this from your `final_suspend` awaiter's `await_suspend`.
 
@@ -266,7 +267,8 @@ public:
             return std::noop_coroutine();
         if(executor_ == caller_ex_)
             return std::exchange(cont_, nullptr);
-        return caller_ex_.dispatch(std::exchange(cont_, nullptr));
+        caller_ex_.dispatch(std::exchange(cont_, nullptr));
+        return std::noop_coroutine();
     }
 
     /** Store a stop token for later retrieval.

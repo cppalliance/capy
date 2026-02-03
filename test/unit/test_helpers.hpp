@@ -94,12 +94,12 @@ struct test_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    coro
+    void
     dispatch(coro h) const
     {
         if(dispatch_count_)
             ++(*dispatch_count_);
-        return h;
+        h.resume();
     }
 
     void

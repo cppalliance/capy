@@ -383,7 +383,7 @@ public:
         task_promise.set_stop_token(st_);
 
         // Resume task through executor
-        p.ex_.dispatch(task_h).resume();
+        p.ex_.dispatch(task_h);
     }
 };
 

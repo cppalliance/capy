@@ -91,13 +91,11 @@ struct inline_executor
     /** Dispatch work for immediate inline execution.
 
         @param h The coroutine handle to execute.
-
-        @return The same handle for symmetric transfer.
     */
-    coro
+    void
     dispatch(coro h) const
     {
-        return h;
+        h.resume();
     }
 
     /** Post work for deferred execution.

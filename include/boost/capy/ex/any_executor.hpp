@@ -93,7 +93,7 @@ class any_executor
         virtual execution_context& context() const noexcept = 0;
         virtual void on_work_started() const noexcept = 0;
         virtual void on_work_finished() const noexcept = 0;
-        virtual std::coroutine_handle<> dispatch(std::coroutine_handle<>) const = 0;
+        virtual void dispatch(std::coroutine_handle<>) const = 0;
         virtual void post(std::coroutine_handle<>) const = 0;
         virtual bool equals(impl_base const*) const noexcept = 0;
         virtual std::type_info const& target_type() const noexcept = 0;
@@ -125,9 +125,9 @@ class any_executor
             ex_.on_work_finished();
         }
 
-        std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const override
+        void dispatch(std::coroutine_handle<> h) const override
         {
-            return ex_.dispatch(h);
+            ex_.dispatch(h);
         }
 
         void post(std::coroutine_handle<> h) const override
@@ -245,20 +245,17 @@ public:
     /** Dispatches a coroutine handle through the wrapped executor.
 
         Invokes the executor's `dispatch()` operation with the given
-        coroutine handle, returning a handle suitable for symmetric
-        transfer.
+        coroutine handle. If running in the executor's thread, resumes
+        the coroutine inline via a normal function call. Otherwise,
+        posts the coroutine for later execution.
 
         @param h The coroutine handle to dispatch for resumption.
 
-        @return A coroutine handle that the caller may use for symmetric
-                transfer, or `std::noop_coroutine()` if the executor
-                posted the work for later execution.
-
         @pre This instance holds a valid executor.
     */
-    coro dispatch(coro h) const
+    void dispatch(coro h) const
     {
-        return p_->dispatch(h);
+        p_->dispatch(h);
     }
 
     /** Posts a coroutine handle to the wrapped executor.

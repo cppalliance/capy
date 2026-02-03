@@ -81,9 +81,9 @@ public:
     }
 
     // Executor interface - dispatch inline
-    coro dispatch(coro h) const
+    void dispatch(coro h) const
     {
-        return h;
+        h.resume();
     }
 
     // Post interface - resume inline for benchmarking

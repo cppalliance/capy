@@ -133,12 +133,14 @@ struct when_all_state
     /** Signal that a task has completed.
 
         The last child to complete triggers resumption of the parent.
+        Dispatch handles thread affinity: resumes inline if on same
+        thread, otherwise posts to the caller's executor.
     */
     coro signal_completion()
     {
         auto remaining = remaining_count_.fetch_sub(1, std::memory_order_acq_rel);
         if(remaining == 1)
-            return caller_ex_.dispatch(continuation_);
+            caller_ex_.dispatch(continuation_);
         return std::noop_coroutine();
     }
 
@@ -351,7 +353,7 @@ private:
 
         coro ch{h};
         state_->runner_handles_[I] = ch;
-        state_->caller_ex_.dispatch(ch).resume();
+        state_->caller_ex_.dispatch(ch);
     }
 };
 

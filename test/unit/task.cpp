@@ -61,12 +61,12 @@ struct tracking_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    coro dispatch(coro h) const
+    void dispatch(coro h) const
     {
         ++(*dispatch_count_);
         if (dispatch_log)
             dispatch_log->push_back(id);
-        return h;  // Inline execution
+        h.resume();
     }
 
     void post(coro h) const
@@ -103,10 +103,9 @@ struct queuing_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    coro dispatch(coro h) const
+    void dispatch(coro h) const
     {
         queue_->push(h);
-        return std::noop_coroutine();
     }
 
     void post(coro h) const

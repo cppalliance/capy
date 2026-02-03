@@ -37,8 +37,7 @@ class execution_context;
         from `execution_context`, `noexcept`
     @li `e.on_work_started()` must be valid and `noexcept`
     @li `e.on_work_finished()` must be valid and `noexcept`
-    @li `e.dispatch(h)` must return a type convertible to
-        `std::coroutine_handle<>`
+    @li `e.dispatch(h)` must be a valid expression
     @li `e.post(h)` must be valid
 
     @par Semantic Requirements
@@ -58,10 +57,11 @@ class execution_context;
 
     The `dispatch` operation executes immediately if safe:
 
-    @li May execute the coroutine inline if the executor determines
-        it is safe (e.g., already on the correct thread)
-    @li May block the caller until execution completes
-    @li Returns a coroutine handle (possibly `noop_coroutine()`)
+    @li If the executor determines it is safe (e.g., already on the
+        correct thread), resumes the coroutine inline via a normal
+        function call
+    @li The call returns when the coroutine suspends
+    @li If not safe, posts the coroutine for later execution
 
     The `post` operation queues for later execution:
 
@@ -91,7 +91,7 @@ class execution_context;
         void on_work_started() const noexcept;
         void on_work_finished() const noexcept;
 
-        std::coroutine_handle<> dispatch( std::coroutine_handle<> h ) const;
+        void dispatch( std::coroutine_handle<> h ) const;
         void post( std::coroutine_handle<> h ) const;
 
         bool operator==( E const& ) const noexcept;
@@ -126,7 +126,7 @@ concept Executor =
         { ce.on_work_started() } noexcept;
         { ce.on_work_finished() } noexcept;
 
-        { ce.dispatch(h) } -> std::convertible_to<std::coroutine_handle<>>;
+        { ce.dispatch(h) };
         { ce.post(h) };
     };
 
