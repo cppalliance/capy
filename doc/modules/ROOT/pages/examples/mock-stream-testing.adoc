@@ -1,0 +1,204 @@
+= Mock Stream Testing
+
+Unit testing protocol code with mock streams and error injection.
+
+== What You Will Learn
+
+* Using `test::read_stream` and `test::write_stream`
+* Error injection with `fuse`
+* Synchronous testing with `run_blocking`
+
+== Prerequisites
+
+* Completed xref:buffer-composition.adoc[Buffer Composition]
+* Understanding of streams from xref:../streams/streams.adoc[Streams]
+
+== Source Code
+
+[source,cpp]
+----
+#include <boost/capy.hpp>
+#include <boost/capy/test/read_stream.hpp>
+#include <boost/capy/test/write_stream.hpp>
+#include <boost/capy/test/fuse.hpp>
+#include <boost/capy/test/run_blocking.hpp>
+#include <iostream>
+#include <cassert>
+
+using namespace boost::capy;
+
+// A simple protocol: read until newline, echo back uppercase
+task<bool> echo_line_uppercase(any_stream& stream)
+{
+    std::string line;
+    char c;
+    
+    // Read character by character until newline
+    while (true)
+    {
+        auto [ec, n] = co_await stream.read_some(mutable_buffer(&c, 1));
+        
+        if (ec.failed())
+            co_return false;
+        
+        if (c == '\n')
+            break;
+        
+        line += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    
+    line += '\n';
+    
+    // Echo uppercase
+    auto [ec, n] = co_await write(stream, make_buffer(line));
+    
+    co_return !ec.failed();
+}
+
+void test_happy_path()
+{
+    std::cout << "Test: happy path\n";
+    
+    test::stream mock;
+    mock.provide("hello\n");
+    
+    any_stream stream{mock};
+    
+    bool result = test::run_blocking(echo_line_uppercase(stream));
+    
+    assert(result == true);
+    assert(mock.output() == "HELLO\n");
+    
+    std::cout << "  PASSED\n";
+}
+
+void test_partial_reads()
+{
+    std::cout << "Test: partial reads (1 byte at a time)\n";
+    
+    // Mock returns at most 1 byte per read_some
+    test::stream mock(1);  // max_read_size = 1
+    mock.provide("hi\n");
+    
+    any_stream stream{mock};
+    
+    bool result = test::run_blocking(echo_line_uppercase(stream));
+    
+    assert(result == true);
+    assert(mock.output() == "HI\n");
+    
+    std::cout << "  PASSED\n";
+}
+
+void test_with_error_injection()
+{
+    std::cout << "Test: error injection\n";
+    
+    // fuse::armed runs the test repeatedly, failing at each
+    // operation point until all paths are covered
+    test::fuse::armed([](test::fuse& f) {
+        test::stream mock;
+        mock.provide("test\n");
+        
+        // Associate fuse with mock for error injection
+        mock.set_fuse(&f);
+        
+        any_stream stream{mock};
+        
+        // Run the protocol - fuse will inject errors at each step
+        auto result = test::run_blocking(echo_line_uppercase(stream));
+        
+        // Either succeeds with correct output, or fails cleanly
+        if (result)
+        {
+            f.expect(mock.output() == "TEST\n");
+        }
+    });
+    
+    std::cout << "  PASSED (all error paths tested)\n";
+}
+
+int main()
+{
+    test_happy_path();
+    test_partial_reads();
+    test_with_error_injection();
+    
+    std::cout << "\nAll tests passed!\n";
+    return 0;
+}
+----
+
+== Build
+
+[source,cmake]
+----
+add_executable(mock_stream_testing mock_stream_testing.cpp)
+target_link_libraries(mock_stream_testing PRIVATE capy)
+----
+
+== Walkthrough
+
+=== Mock Streams
+
+[source,cpp]
+----
+test::stream mock;
+mock.provide("hello\n");
+----
+
+`test::stream` is a bidirectional mock that satisfies both `ReadStream` and `WriteStream`:
+
+* `provide(data)` — Supplies data for reads
+* `output()` — Returns data written to the mock
+* Constructor parameter controls max bytes per operation
+
+=== Synchronous Testing
+
+[source,cpp]
+----
+bool result = test::run_blocking(echo_line_uppercase(stream));
+----
+
+`run_blocking` executes a coroutine synchronously, blocking until complete. This enables traditional unit test patterns with coroutines.
+
+=== Error Injection
+
+[source,cpp]
+----
+test::fuse::armed([](test::fuse& f) {
+    mock.set_fuse(&f);
+    // ... run test ...
+});
+----
+
+`fuse::armed` runs the test function repeatedly, injecting errors at each operation point:
+
+1. First run: error at operation 1
+2. Second run: error at operation 2
+3. ...and so on until all operations succeed
+
+This systematically tests all error handling paths.
+
+== Output
+
+----
+Test: happy path
+  PASSED
+Test: partial reads (1 byte at a time)
+  PASSED
+Test: error injection
+  PASSED (all error paths tested)
+
+All tests passed!
+----
+
+== Exercises
+
+1. Add a test for EOF handling (what if input doesn't end with newline?)
+2. Test with different max_read_size values
+3. Add a test for write errors using `test::write_stream`
+
+== Next Steps
+
+* xref:type-erased-echo.adoc[Type-Erased Echo] — Compilation firewall pattern

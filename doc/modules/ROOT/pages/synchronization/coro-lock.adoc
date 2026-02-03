@@ -1,0 +1,284 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Coro Lock
+
+This page explains how to use `coro_lock` for coroutine-friendly mutual exclusion.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== The Problem
+
+Standard mutexes block the calling thread. In a coroutine context, this wastes
+resources—a blocked thread could be running other coroutines. What you need is
+a mutex that _suspends_ the coroutine instead of blocking the thread.
+
+[source,cpp]
+----
+// BAD: Blocks the thread
+std::mutex m;
+
+task<void> bad_example()
+{
+    std::lock_guard lock(m);  // Thread blocked while waiting
+    // ... critical section ...
+    co_return;
+}
+
+// GOOD: Suspends the coroutine
+coro_lock cm;
+
+task<void> good_example()
+{
+    co_await cm.lock();  // Coroutine suspends, thread is free
+    // ... critical section ...
+    cm.unlock();
+    co_return;
+}
+----
+
+== What is coro_lock?
+
+A `coro_lock` provides mutual exclusion for coroutines. When a coroutine
+attempts to acquire a locked mutex, it suspends and joins a wait queue. When
+the holder unlocks, the next waiter is resumed.
+
+[source,cpp]
+----
+#include <boost/capy/ex/coro_lock.hpp>
+
+coro_lock cm;
+
+task<void> protected_operation()
+{
+    co_await cm.lock();
+    // Only one coroutine executes this section at a time
+    do_work();
+    cm.unlock();
+}
+----
+
+== Zero Allocation
+
+The wait queue uses intrusive linking—no heap allocation occurs when waiting.
+The queue node is stored in the awaiter, which lives on the coroutine frame:
+
+----
+Coroutine Frame: [...state...] [awaiter with queue node]
+----
+
+This makes `coro_lock` suitable for high-frequency locking scenarios.
+
+== Basic Usage
+
+=== Manual Lock/Unlock
+
+[source,cpp]
+----
+coro_lock cm;
+
+task<void> example()
+{
+    co_await cm.lock();
+    // Critical section
+    cm.unlock();
+}
+----
+
+WARNING: Forgetting to call `unlock()` deadlocks all waiters.
+
+=== RAII with scoped_lock
+
+Use `scoped_lock()` for automatic unlocking:
+
+[source,cpp]
+----
+coro_lock cm;
+
+task<void> example()
+{
+    auto guard = co_await cm.scoped_lock();
+    // Critical section
+    // Guard unlocks automatically on scope exit
+}
+----
+
+The `lock_guard` is move-only and releases the lock when destroyed.
+
+== lock_guard
+
+The `lock_guard` class provides RAII semantics:
+
+[source,cpp]
+----
+coro_lock::lock_guard guard = co_await cm.scoped_lock();
+
+// Move to extend lifetime
+coro_lock::lock_guard g2 = std::move(guard);
+
+// Guard unlocks in destructor
+----
+
+A moved-from guard is empty and does not unlock.
+
+== Query Lock State
+
+Check if the mutex is currently held:
+
+[source,cpp]
+----
+if (cm.is_locked())
+{
+    // Someone holds the lock
+}
+----
+
+This is informational only—the state may change before you act on it.
+
+== Thread Safety
+
+IMPORTANT: `coro_lock` is NOT thread-safe. It is designed for single-threaded
+use where multiple coroutines may contend for a resource.
+
+For multi-threaded scenarios, combine with a strand:
+
+[source,cpp]
+----
+// All access through the same strand
+strand s(pool.get_executor());
+coro_lock cm;
+
+task<void> multi_threaded_safe()
+{
+    co_await run(s)([&]() -> task<void> {
+        auto guard = co_await cm.scoped_lock();
+        // Now safe: strand serializes, mutex excludes
+        co_return;
+    }());
+}
+----
+
+== Example: Protecting Shared State
+
+[source,cpp]
+----
+class shared_counter
+{
+    coro_lock cm_;
+    int value_ = 0;
+
+public:
+    task<void> increment()
+    {
+        auto guard = co_await cm_.scoped_lock();
+        ++value_;
+    }
+
+    task<int> get()
+    {
+        auto guard = co_await cm_.scoped_lock();
+        co_return value_;
+    }
+};
+----
+
+== Example: Serializing I/O
+
+[source,cpp]
+----
+class serial_writer
+{
+    coro_lock cm_;
+    file& file_;
+
+public:
+    explicit serial_writer(file& f) : file_(f) {}
+
+    task<void> write(std::string_view data)
+    {
+        auto guard = co_await cm_.scoped_lock();
+        // Only one write at a time
+        co_await file_.async_write(data);
+    }
+};
+----
+
+== coro_lock vs Strand
+
+Both provide serialization, but differ in scope:
+
+[cols="1,2,2"]
+|===
+| Feature | coro_lock | Strand
+
+| Scope
+| Single resource
+| All operations through the strand
+
+| Overhead
+| Per-lock wait
+| Per-operation dispatch
+
+| Use case
+| Fine-grained locking
+| Coarse-grained serialization
+
+| Thread safety
+| Single-threaded only
+| Multi-threaded safe
+|===
+
+Use `coro_lock` for protecting specific resources. Use strands for broader
+serialization of all operations.
+
+== When NOT to Use coro_lock
+
+Use `coro_lock` when:
+
+* You need fine-grained mutual exclusion
+* Lock contention is expected
+* Critical sections are short
+
+Do NOT use `coro_lock` when:
+
+* Operations are multi-threaded — combine with a strand
+* Critical sections are long — consider restructuring
+* You need condition variable semantics — not yet available
+* A strand provides sufficient serialization — simpler is better
+
+== Summary
+
+[cols="1,3"]
+|===
+| Feature | Description
+
+| `coro_lock`
+| Non-blocking mutex for coroutines
+
+| `lock()`
+| Awaitable that acquires the mutex
+
+| `unlock()`
+| Releases the mutex
+
+| `scoped_lock()`
+| Returns `lock_guard` for RAII
+
+| `is_locked()`
+| Query current state
+
+| `lock_guard`
+| RAII wrapper for automatic unlock
+|===
+
+== Next Steps
+
+* xref:../execution/strand.adoc[Strands] — Coarse-grained serialization
+* xref:../coroutines/when-all.adoc[Concurrent Composition] — Running tasks in parallel
+* xref:../execution/thread-pool.adoc[Thread Pool] — Multi-threaded execution

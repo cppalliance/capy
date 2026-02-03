@@ -1,0 +1,247 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Frame Allocators
+
+This section explains how to optimize coroutine frame allocation.
+
+NOTE: Code examples assume `using namespace boost::capy;` is in effect.
+
+== Default Allocation
+
+By default, coroutine frames are heap-allocated:
+
+[source,cpp]
+----
+task<int> compute()  // Frame allocated with new
+{
+    int x = 42;
+    co_return x;
+}
+----
+
+For most applications, this is fine. Optimize only when profiling shows
+allocation overhead.
+
+== Frame Recycling
+
+Capy's frame allocator recycles frames through a thread-local free list:
+
+----
+Thread-Local Free List:
+┌─────────┐    ┌─────────┐    ┌─────────┐
+│  128B   │ -> │  128B   │ -> │  128B   │ -> null
+└─────────┘    └─────────┘    └─────────┘
+┌─────────┐
+│  256B   │ -> null
+└─────────┘
+----
+
+When a coroutine completes:
+
+1. Frame returned to free list (binned by size)
+2. Next coroutine of similar size reuses the frame
+3. No heap allocation for steady-state operation
+
+This is automatic when using `run_async`.
+
+== How It Works
+
+`run_async` manages the allocation window:
+
+[source,cpp]
+----
+run_async(pool.get_executor())(my_task());
+//        ↑ sets TLS allocator ↑↑ task created with allocator ↑
+----
+
+The two-call syntax ensures:
+
+1. First call sets thread-local allocator
+2. Second call creates task (frame uses TLS)
+3. TLS cleared after task creation
+
+=== Propagation to Children
+
+Child coroutines inherit the allocator:
+
+[source,cpp]
+----
+task<void> child()
+{
+    // Uses parent's allocator
+    co_return;
+}
+
+task<void> parent()
+{
+    co_await child();  // child uses our allocator
+}
+
+run_async(ex)(parent());  // Sets up allocator for entire tree
+----
+
+The mechanism:
+
+1. `parent`'s `initial_suspend` captures TLS allocator
+2. When awaiting `child`, TLS is restored before creation
+3. `child` uses the same allocator
+4. TLS restored for `parent` after `child` completes
+
+== Custom Allocators
+
+For special requirements, provide a custom allocator:
+
+[source,cpp]
+----
+struct my_allocator
+{
+    void* allocate(std::size_t size)
+    {
+        return my_pool_.allocate(size);
+    }
+
+    void deallocate(void* ptr, std::size_t size)
+    {
+        my_pool_.deallocate(ptr, size);
+    }
+
+private:
+    memory_pool my_pool_;
+};
+
+// Use with run_async
+my_allocator alloc;
+run_async(ex, alloc)(my_task());
+----
+
+Your allocator must satisfy `FrameAllocator`:
+
+[source,cpp]
+----
+template<typename A>
+concept FrameAllocator = requires(A& a, std::size_t size, void* ptr)
+{
+    { a.allocate(size) } -> std::same_as<void*>;
+    a.deallocate(ptr, size);
+};
+----
+
+== HALO Optimization
+
+Heap Allocation eLision Optimization lets compilers avoid allocation entirely:
+
+[source,cpp]
+----
+task<int> leaf()
+{
+    co_return 42;
+}
+
+task<int> parent()
+{
+    // Compiler may place leaf's frame in parent's frame
+    int x = co_await leaf();
+    co_return x;
+}
+----
+
+=== Enabling HALO
+
+* Use `[[clang::coro_await_elidable]]` on task types (Clang)
+* Keep coroutine lifetimes scoped to the caller
+* Don't store task objects in containers
+* Don't return tasks from functions that await them
+
+Capy's `task<T>` includes the attribute when available.
+
+=== When HALO Applies
+
+HALO works when the compiler can prove:
+
+* The child coroutine's lifetime is bounded by the parent
+* The child doesn't escape (not stored, not returned)
+* The frame fits in the caller's frame
+
+HALO is opportunistic—you can't force it, but you can enable it.
+
+== Profiling Allocation
+
+Before optimizing, measure:
+
+[source,cpp]
+----
+// Count allocations
+std::atomic<int> alloc_count{0};
+
+struct counting_allocator
+{
+    void* allocate(std::size_t size)
+    {
+        ++alloc_count;
+        return ::operator new(size);
+    }
+
+    void deallocate(void* ptr, std::size_t size)
+    {
+        ::operator delete(ptr, size);
+    }
+};
+
+// Run benchmark
+counting_allocator alloc;
+for (int i = 0; i < 10000; ++i)
+    run_async(ex, alloc)(benchmark_task());
+
+std::cout << "Allocations: " << alloc_count << "\n";
+----
+
+If allocation is the bottleneck:
+
+1. Check HALO eligibility first (free optimization)
+2. Use frame recycling (default with `run_async`)
+3. Consider custom allocators for specific patterns
+
+== When to Optimize
+
+**Default allocator is fine when:**
+
+* Typical request rates (< 100K/sec)
+* Mixed workloads
+* Simplicity is preferred
+
+**Optimize allocation when:**
+
+* Very high throughput (> 100K coroutines/sec)
+* Allocation shows up in profiles
+* Memory fragmentation is a concern
+
+== Summary
+
+[cols="1,3"]
+|===
+| Technique | Benefit
+
+| Frame recycling
+| Reuse frames via thread-local free list
+
+| HALO
+| Compiler eliminates allocation entirely
+
+| Custom allocator
+| Application-specific allocation strategy
+
+| Two-call syntax
+| Ensures allocator is active during creation
+|===
+
+== Next Steps
+
+* xref:executors.adoc[Executors and Strands] — Execution contexts
+* xref:../io-awaitables/allocator.adoc[The Allocator] — Allocation window details

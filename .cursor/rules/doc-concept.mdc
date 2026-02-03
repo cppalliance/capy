@@ -1,0 +1,22 @@
+---
+description: doc javadoc for concept declaration
+alwaysApply: false
+---
+
+- Keep the ascii-art to a minimum, only add dividers if the class declaration is very long
+- Don't emit @tparam for deduced types or concepts
+- Don't use C-style /* */ comments inside C-style comments
+- Never list std::bad_alloc
+- Don't document detail:: or implementation symbols
+
+**Rules for concept javadocs:**
+
+- **Brief** — One sentence naming the concept and stating what a conforming type does. E.g. "Concept for types that consume buffer data using callee-owned buffers."
+- **Extended description** — A short paragraph summarizing the pattern the concept models, its purpose, and how it contrasts with related concepts.
+- **`@tparam`** — One entry per template parameter to the concept.
+- **`@par Syntactic Requirements`** — Bulleted `@li` list of every expression that must be valid. For each, state the member name, its arguments, and what it returns (including whether the return type must satisfy another concept like `IoAwaitable`). State the decomposed result tuple.
+- **`@par Semantic Requirements`** — Grouped by operation. For each operation, a bulleted `@li` list describing its behavior, preconditions, postconditions, success/error semantics, and any state transitions (e.g. "no further operations are permitted after EOF").
+- **`@par Buffer Lifetime`** (or equivalent resource lifetime section) — If the concept involves borrowed resources (buffers, handles, views), state exactly when they are valid and what invalidates them.
+- **`@par Conforming Signatures`** — A single `@code` block showing the canonical signatures using pseudo-syntax (e.g. `IoAwaitable auto`). This is the quick-reference that implementers copy from.
+- **`@par Example`** — A `@code` block showing a generic algorithm templated on the concept, demonstrating typical usage with destructuring, error handling, and interaction with related concepts.
+- **`@see`** — Always last. Cross-references to related concepts, concrete models, and foundational concepts the signatures depend on.

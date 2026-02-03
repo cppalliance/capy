@@ -1,0 +1,300 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Synchronization Primitives
+
+This section explains coroutine-friendly synchronization primitives.
+
+NOTE: Code examples assume `using namespace boost::capy;` is in effect.
+
+== Why Coroutine-Specific Primitives?
+
+Standard mutexes block the entire thread:
+
+[source,cpp]
+----
+std::mutex mtx;
+
+task<void> bad_example()
+{
+    std::lock_guard lock(mtx);  // Blocks thread!
+    co_await some_operation();  // Still holding lock
+}  // Other coroutines on this thread can't run
+----
+
+Coroutine-aware primitives suspend the coroutine instead:
+
+[source,cpp]
+----
+coro_lock cm;
+
+task<void> good_example()
+{
+    auto lock = co_await cm.lock();  // Suspends coroutine, not thread
+    co_await some_operation();
+}  // Other coroutines can run while we wait
+----
+
+== coro_lock
+
+A mutex that suspends waiting coroutines instead of blocking threads:
+
+[source,cpp]
+----
+#include <boost/capy/ex/coro_lock.hpp>
+
+coro_lock cm;
+
+task<void> critical_section()
+{
+    auto lock = co_await cm.lock();
+    // Exclusive access to protected resource
+    modify_shared_data();
+}  // Lock released when lock goes out of scope
+----
+
+=== Usage
+
+**Acquire lock:**
+[source,cpp]
+----
+auto lock = co_await cm.lock();
+----
+
+**RAII release:**
+[source,cpp]
+----
+{
+    auto lock = co_await cm.lock();
+    // ... protected region ...
+}  // Lock released here
+----
+
+**Manual release:**
+[source,cpp]
+----
+auto lock = co_await cm.lock();
+// ...
+lock.unlock();  // Release early
+----
+
+=== Try Lock
+
+Attempt to acquire without waiting:
+
+[source,cpp]
+----
+if (auto lock = cm.try_lock())
+{
+    // Got the lock
+    use_resource();
+}
+else
+{
+    // Lock held by another coroutine
+}
+----
+
+=== Fair Queuing
+
+`coro_lock` uses FIFO ordering—waiters are granted the lock in order:
+
+----
+Time →
+C1 locks → C2 waits → C3 waits → C1 unlocks → C2 gets lock → C2 unlocks → C3 gets lock
+----
+
+This prevents starvation.
+
+== async_event
+
+A single-shot event for coroutine synchronization:
+
+[source,cpp]
+----
+#include <boost/capy/ex/async_event.hpp>
+
+async_event event;
+
+task<void> waiter()
+{
+    co_await event.wait();  // Suspends until signaled
+    // Event was signaled
+}
+
+task<void> signaler()
+{
+    // Do some work...
+    event.set();  // Wake all waiters
+}
+----
+
+=== Usage
+
+**Wait for event:**
+[source,cpp]
+----
+co_await event.wait();
+----
+
+**Signal event:**
+[source,cpp]
+----
+event.set();  // Wake all waiting coroutines
+----
+
+**Reset for reuse:**
+[source,cpp]
+----
+event.reset();  // Clear signaled state
+----
+
+=== One-Shot vs Reusable
+
+`async_event` can be reset for reuse, but care is needed:
+
+[source,cpp]
+----
+// Safe pattern: signal once
+event.set();  // All waiters wake
+
+// Reuse pattern: reset before new waiters
+event.reset();
+// Now coroutines can wait again
+co_await event.wait();
+----
+
+WARNING: Don't reset while coroutines are actively waiting—they may miss
+the signal.
+
+== Patterns
+
+=== Producer-Consumer
+
+[source,cpp]
+----
+coro_lock cm;
+std::queue<item> queue;
+async_event not_empty;
+
+task<void> producer()
+{
+    while (running)
+    {
+        auto item = co_await produce();
+        {
+            auto lock = co_await cm.lock();
+            queue.push(item);
+        }
+        not_empty.set();
+    }
+}
+
+task<void> consumer()
+{
+    while (running)
+    {
+        co_await not_empty.wait();
+        item i;
+        {
+            auto lock = co_await cm.lock();
+            if (!queue.empty())
+            {
+                i = queue.front();
+                queue.pop();
+                if (queue.empty())
+                    not_empty.reset();
+            }
+        }
+        co_await consume(i);
+    }
+}
+----
+
+=== Initialization Gate
+
+[source,cpp]
+----
+async_event initialized;
+shared_resource resource;
+
+task<void> initialize()
+{
+    resource = co_await load_resource();
+    initialized.set();
+}
+
+task<void> use_resource()
+{
+    co_await initialized.wait();
+    // resource is ready
+    resource.do_something();
+}
+----
+
+=== Scoped Lock Pattern
+
+[source,cpp]
+----
+template<typename F>
+task<void> with_lock(coro_lock& cm, F&& f)
+{
+    auto lock = co_await cm.lock();
+    co_await f();
+}
+
+// Usage:
+co_await with_lock(cm, [&]() -> task<void> {
+    co_await modify_shared_state();
+});
+----
+
+== When NOT to Use
+
+**Prefer `strand` when:**
+
+* You need serialized access to an object
+* Operations naturally form a sequence
+* You want to avoid explicit locking
+
+**Prefer standard primitives when:**
+
+* Blocking is acceptable
+* No coroutines are involved
+* Performance is critical (no await overhead)
+
+== Summary
+
+[cols="1,3"]
+|===
+| Primitive | Purpose
+
+| `coro_lock`
+| Mutual exclusion without blocking threads
+
+| `async_event`
+| Signal completion to waiting coroutines
+
+| `lock()`
+| Acquire mutex, suspending if held
+
+| `try_lock()`
+| Attempt to acquire without waiting
+
+| `set()`
+| Signal event, wake all waiters
+
+| `wait()`
+| Suspend until event is signaled
+|===
+
+== Next Steps
+
+* xref:executors.adoc[Executors and Strands] — Alternative serialization
+* xref:when-all.adoc[Concurrent Composition] — Coordinate parallel tasks

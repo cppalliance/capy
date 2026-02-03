@@ -1,0 +1,236 @@
+= Streams (Partial I/O)
+
+This section explains the `ReadStream` and `WriteStream` concepts for partial I/O operations.
+
+== Prerequisites
+
+* Completed xref:overview.adoc[Stream Concepts Overview]
+* Understanding of the six stream concept categories
+
+== ReadStream
+
+A type satisfies `ReadStream` if it provides partial read operations via `read_some`:
+
+[source,cpp]
+----
+template<typename T>
+concept ReadStream =
+    requires(T& stream, mutable_buffer_archetype buffers) {
+        { stream.read_some(buffers) } -> IoAwaitable;
+    };
+----
+
+=== read_some Semantics
+
+[source,cpp]
+----
+template<MutableBufferSequence MB>
+IoAwaitable auto read_some(MB const& buffers);
+----
+
+Returns an awaitable yielding `(error_code, std::size_t)`:
+
+* On success: `!ec.failed()`, and `n >= 1` bytes were read
+* On error: `ec.failed()`, and `n == 0`
+* On EOF: `ec == cond::eof`, and `n == 0`
+
+If `buffer_empty(buffers)` is true, completes immediately with `n == 0` and no error.
+
+=== Partial Transfer
+
+`read_some` may return fewer bytes than the buffer can hold:
+
+[source,cpp]
+----
+char buf[1024];
+auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
+// n might be 1, might be 500, might be 1024
+// The only guarantee: if !ec.failed() && n > 0
+----
+
+This matches underlying OS behavior—reads return when *some* data is available.
+
+=== Example
+
+[source,cpp]
+----
+template<ReadStream Stream>
+task<> dump_stream(Stream& stream)
+{
+    char buf[256];
+    
+    for (;;)
+    {
+        auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
+        
+        if (ec == cond::eof)
+            break;  // End of stream
+        
+        if (ec.failed())
+            throw std::system_error(ec);
+        
+        std::cout.write(buf, n);
+    }
+}
+----
+
+== WriteStream
+
+A type satisfies `WriteStream` if it provides partial write operations via `write_some`:
+
+[source,cpp]
+----
+template<typename T>
+concept WriteStream =
+    requires(T& stream, const_buffer_archetype buffers) {
+        { stream.write_some(buffers) } -> IoAwaitable;
+    };
+----
+
+=== write_some Semantics
+
+[source,cpp]
+----
+template<ConstBufferSequence CB>
+IoAwaitable auto write_some(CB const& buffers);
+----
+
+Returns an awaitable yielding `(error_code, std::size_t)`:
+
+* On success: `!ec.failed()`, and `n >= 1` bytes were written
+* On error: `ec.failed()`, and `n` indicates bytes written before error (may be 0)
+
+If `buffer_empty(buffers)` is true, completes immediately with `n == 0` and no error.
+
+=== Partial Transfer
+
+`write_some` may write fewer bytes than provided:
+
+[source,cpp]
+----
+auto [ec, n] = co_await stream.write_some(make_buffer(large_data));
+// n might be less than large_data.size()
+----
+
+To write all data, loop until complete (or use the `write()` composed operation).
+
+== Type-Erasing Wrappers
+
+=== any_read_stream
+
+Wraps any `ReadStream` in a type-erased container:
+
+[source,cpp]
+----
+#include <boost/capy/io/any_read_stream.hpp>
+
+template<ReadStream S>
+any_read_stream(S& stream);
+----
+
+The wrapped stream is referenced—the original must outlive the wrapper.
+
+=== any_write_stream
+
+Wraps any `WriteStream`:
+
+[source,cpp]
+----
+#include <boost/capy/io/any_write_stream.hpp>
+
+template<WriteStream S>
+any_write_stream(S& stream);
+----
+
+=== any_stream
+
+Wraps bidirectional streams (both `ReadStream` and `WriteStream`):
+
+[source,cpp]
+----
+#include <boost/capy/io/any_stream.hpp>
+
+template<ReadStream S>
+    requires WriteStream<S>
+any_stream(S& stream);
+----
+
+=== Wrapper Characteristics
+
+All wrappers share these properties:
+
+* *Reference semantics* — Wrap existing objects without ownership
+* *Preallocated coroutine frame* — Zero steady-state allocation
+* *Move-only* — Non-copyable; moving transfers the cached frame
+* *Lifetime requirement* — Wrapped object must outlive wrapper
+
+Example usage:
+
+[source,cpp]
+----
+void process_stream(any_stream& stream);
+
+tcp::socket socket;
+// ... connect socket ...
+
+any_stream wrapped{socket};  // Type erasure here
+process_stream(wrapped);      // process_stream doesn't know about tcp::socket
+----
+
+== Example: Echo Server with any_stream
+
+[source,cpp]
+----
+// echo.hpp - Header only declares the signature
+task<> handle_connection(any_stream& stream);
+
+// echo.cpp - Implementation in separate translation unit
+task<> handle_connection(any_stream& stream)
+{
+    char buf[1024];
+    
+    for (;;)
+    {
+        // Read some data
+        auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
+        
+        if (ec == cond::eof)
+            co_return;  // Client closed connection
+        
+        if (ec.failed())
+            throw std::system_error(ec);
+        
+        // Echo it back
+        auto [wec, wn] = co_await write(stream, const_buffer(buf, n));
+        
+        if (wec.failed())
+            throw std::system_error(wec);
+    }
+}
+----
+
+The implementation doesn't know the concrete stream type. It compiles once and works with any transport.
+
+== Reference
+
+[cols="1,3"]
+|===
+| Header | Description
+
+| `<boost/capy/concept/read_stream.hpp>`
+| ReadStream concept definition
+
+| `<boost/capy/concept/write_stream.hpp>`
+| WriteStream concept definition
+
+| `<boost/capy/io/any_read_stream.hpp>`
+| Type-erased read stream wrapper
+
+| `<boost/capy/io/any_write_stream.hpp>`
+| Type-erased write stream wrapper
+
+| `<boost/capy/io/any_stream.hpp>`
+| Type-erased bidirectional stream wrapper
+|===
+
+You have now learned the stream concepts for partial I/O. Continue to xref:sources-sinks.adoc[Sources and Sinks] to learn about complete I/O with EOF signaling.

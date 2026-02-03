@@ -1,0 +1,8 @@
+---
+description: javadoc documentation comment
+globs: 
+alwaysApply: true
+---
+
+- Return io_result<T1,T2,T3> documented as "An awaitable yielding `(error_code, T1 ,T2, T3)`" ONLY type names (no inside spaces)
+- io_result params (T1,T2,T3) meaning explained last in description

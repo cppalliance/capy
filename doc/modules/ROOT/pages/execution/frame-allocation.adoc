@@ -1,0 +1,211 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Frame Allocation
+
+This page explains coroutine frame allocation and how to optimize memory usage.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== What is a Coroutine Frame?
+
+Every coroutine requires memory for its _frame_—the compiler-generated structure
+holding local variables, parameters, and suspension state. By default, frames
+are allocated with `::operator new`.
+
+For high-frequency coroutine creation, custom allocators can significantly
+reduce allocation overhead.
+
+== The frame_allocator Concept
+
+A type satisfying `frame_allocator` provides:
+
+[source,cpp]
+----
+template<class A>
+concept frame_allocator =
+    std::copy_constructible<A> &&
+    requires(A& a, void* p, std::size_t n) {
+        { a.allocate(n) } -> std::same_as<void*>;
+        { a.deallocate(p, n) };
+    };
+----
+
+Frame allocators must be cheaply copyable handles to an underlying memory
+resource (e.g., a pointer to a pool).
+
+== Default Frame Allocator
+
+The `default_frame_allocator` passes through to global new/delete:
+
+[source,cpp]
+----
+struct default_frame_allocator
+{
+    void* allocate(std::size_t n)
+    {
+        return ::operator new(n);
+    }
+
+    void deallocate(void* p, std::size_t)
+    {
+        ::operator delete(p);
+    }
+};
+----
+
+== Recycling Frame Allocator
+
+By default, `run_async` uses a recycling frame allocator that caches deallocated
+frames for reuse. This eliminates most allocation overhead for typical coroutine
+patterns where frames are created and destroyed in LIFO order.
+
+The recycling allocator:
+
+* Maintains a thread-local free list
+* Reuses frames of matching size
+* Falls back to global new/delete for mismatched sizes
+
+== Custom Allocators with run_async
+
+Pass a custom allocator as the second argument to `run_async`:
+
+[source,cpp]
+----
+my_pool_allocator alloc{pool};
+
+run_async(ex, alloc)(my_task());
+----
+
+The allocator is used for all coroutine frames in the launched call tree.
+
+== Implementing a Custom Allocator
+
+[source,cpp]
+----
+class pool_frame_allocator
+{
+    memory_pool* pool_;
+
+public:
+    explicit pool_frame_allocator(memory_pool& pool)
+        : pool_(&pool)
+    {
+    }
+
+    void* allocate(std::size_t n)
+    {
+        return pool_->allocate(n);
+    }
+
+    void deallocate(void* p, std::size_t n)
+    {
+        pool_->deallocate(p, n);
+    }
+};
+
+static_assert(frame_allocator<pool_frame_allocator>);
+----
+
+== Memory Layout
+
+Coroutine frames have this layout:
+
+----
+First frame:  [coroutine frame | tagged_ptr | allocator_wrapper]
+Child frames: [coroutine frame | ptr]
+----
+
+The pointer at the end of each frame enables correct deallocation regardless
+of which allocator was active at allocation time. A tag bit distinguishes the
+first frame (with embedded wrapper) from child frames.
+
+=== First Frame
+
+The first frame in a call tree (created by `run_async`) contains an embedded
+`frame_allocator_wrapper` that holds a copy of the allocator. This ensures the
+allocator outlives all frames that use it.
+
+=== Child Frames
+
+Child frames store only a pointer to the wrapper in the first frame. This
+minimizes per-frame overhead while maintaining correct deallocation.
+
+== The frame_allocating_base Mixin
+
+Derive your promise type from `frame_allocating_base` to enable custom frame
+allocation:
+
+[source,cpp]
+----
+struct my_promise : frame_allocating_base
+{
+    // ... promise implementation ...
+};
+----
+
+This mixin provides `operator new` and `operator delete` that use the
+thread-local allocator when available.
+
+== Thread-Local State
+
+The allocation mechanism uses thread-local storage:
+
+[source,cpp]
+----
+// Set allocator for subsequent allocations
+frame_allocating_base::set_frame_allocator(alloc);
+
+// Clear allocator (revert to global new)
+frame_allocating_base::clear_frame_allocator();
+
+// Get current allocator (may be nullptr)
+auto* alloc = frame_allocating_base::get_frame_allocator();
+----
+
+The `run_async` function manages this automatically—you rarely need to call
+these directly.
+
+== When NOT to Use Custom Allocators
+
+Use custom allocators when:
+
+* Profiling shows allocation is a bottleneck
+* You have a custom memory pool available
+* You need deterministic allocation behavior
+
+Do NOT use custom allocators when:
+
+* The default recycling allocator is sufficient (it usually is)
+* Your coroutines are long-lived (allocation amortizes over time)
+* You're unsure — measure first, optimize second
+
+== Summary
+
+[cols="1,3"]
+|===
+| Component | Purpose
+
+| `frame_allocator`
+| Concept for custom allocators
+
+| `default_frame_allocator`
+| Pass-through to global new/delete
+
+| Recycling allocator
+| Default: caches deallocated frames
+
+| `frame_allocating_base`
+| Promise mixin enabling custom allocation
+|===
+
+== Next Steps
+
+* xref:../utilities/containers.adoc[Containers] — Type-erased storage
+* xref:../performance-tuning/high-performance-allocators.adoc[High-Performance Allocators] — System-wide memory optimization
