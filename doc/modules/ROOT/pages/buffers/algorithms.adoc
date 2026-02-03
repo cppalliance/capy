@@ -1,0 +1,262 @@
+= Buffer Algorithms
+
+This section covers algorithms for measuring and manipulating buffer sequences.
+
+== Prerequisites
+
+* Completed xref:sequences.adoc[Buffer Sequences]
+* Understanding of `ConstBufferSequence` and iteration
+
+== Measuring Buffers
+
+=== buffer_size
+
+Returns the total number of bytes across all buffers in a sequence:
+
+[source,cpp]
+----
+template<ConstBufferSequence CB>
+std::size_t buffer_size(CB const& buffers);
+----
+
+Example:
+
+[source,cpp]
+----
+auto buf1 = make_buffer("hello");  // 5 bytes
+auto buf2 = make_buffer("world");  // 5 bytes
+auto combined = std::array{buf1, buf2};
+
+std::size_t total = buffer_size(combined);  // 10
+----
+
+Note: `buffer_size` returns the sum of bytes, not the count of buffers.
+
+=== buffer_empty
+
+Checks if a buffer sequence contains no data:
+
+[source,cpp]
+----
+template<ConstBufferSequence CB>
+bool buffer_empty(CB const& buffers);
+----
+
+A buffer sequence is empty if:
+
+* It contains no buffers, OR
+* All buffers have size zero
+
+[source,cpp]
+----
+const_buffer empty_buf;
+buffer_empty(empty_buf);  // true
+
+const_buffer non_empty("data", 4);
+buffer_empty(non_empty);  // false
+----
+
+=== buffer_length
+
+Returns the number of buffers in a sequence:
+
+[source,cpp]
+----
+template<ConstBufferSequence CB>
+std::size_t buffer_length(CB const& buffers);
+----
+
+Example:
+
+[source,cpp]
+----
+auto single = make_buffer("hello");
+buffer_length(single);  // 1
+
+auto arr = std::array{buf1, buf2, buf3};
+buffer_length(arr);  // 3
+----
+
+Note the distinction:
+
+* `buffer_size` — total bytes (data measurement)
+* `buffer_length` — number of buffers (sequence length)
+
+== Copying Buffers
+
+=== buffer_copy
+
+Copies data from one buffer sequence to another:
+
+[source,cpp]
+----
+template<MutableBufferSequence Target, ConstBufferSequence Source>
+std::size_t buffer_copy(Target const& target, Source const& source);
+
+template<MutableBufferSequence Target, ConstBufferSequence Source>
+std::size_t buffer_copy(Target const& target, Source const& source, 
+                        std::size_t at_most);
+----
+
+Returns the number of bytes copied.
+
+Example:
+
+[source,cpp]
+----
+char source_data[] = "hello world";
+char dest_data[20];
+
+const_buffer src(source_data, 11);
+mutable_buffer dst(dest_data, 20);
+
+std::size_t copied = buffer_copy(dst, src);  // 11
+----
+
+=== Partial Copy with at_most
+
+Limit the number of bytes copied:
+
+[source,cpp]
+----
+std::size_t copied = buffer_copy(dst, src, 5);  // Copy at most 5 bytes
+----
+
+This is useful for implementing protocols with size limits.
+
+=== Cross-Sequence Copy
+
+`buffer_copy` handles sequences with different structure:
+
+[source,cpp]
+----
+// Source: 3 buffers
+std::array<const_buffer, 3> src = {buf1, buf2, buf3};
+
+// Target: 2 buffers with different sizes
+std::array<mutable_buffer, 2> dst = {large_buf, small_buf};
+
+// Copies across buffer boundaries as needed
+std::size_t copied = buffer_copy(dst, src);
+----
+
+The algorithm fills target buffers sequentially, reading from source buffers as needed, handling cases where a single source buffer spans multiple target buffers or vice versa.
+
+== Real I/O Patterns
+
+=== Read Loop
+
+[source,cpp]
+----
+template<ReadStream Stream, MutableBufferSequence Buffers>
+task<std::size_t> read_full(Stream& stream, Buffers buffers)
+{
+    consuming_buffers<Buffers> remaining(buffers);
+    std::size_t total = 0;
+    
+    while (buffer_size(remaining) > 0)
+    {
+        auto [ec, n] = co_await stream.read_some(remaining);
+        if (ec.failed())
+            co_return total;  // Return partial read on error
+        
+        remaining.consume(n);
+        total += n;
+    }
+    
+    co_return total;
+}
+----
+
+=== Write Loop
+
+[source,cpp]
+----
+template<WriteStream Stream, ConstBufferSequence Buffers>
+task<std::size_t> write_full(Stream& stream, Buffers buffers)
+{
+    consuming_buffers<Buffers> remaining(buffers);
+    std::size_t total = 0;
+    
+    while (buffer_size(remaining) > 0)
+    {
+        auto [ec, n] = co_await stream.write_some(remaining);
+        if (ec.failed())
+            co_return total;
+        
+        remaining.consume(n);
+        total += n;
+    }
+    
+    co_return total;
+}
+----
+
+== Practical Benefits of Concept-Based Design
+
+=== Zero-Copy I/O
+
+Data never moves unnecessarily. The buffer sequence points to existing data, and the OS reads directly from those locations:
+
+[source,cpp]
+----
+std::string header = build_header();
+std::vector<char> body = load_body();
+
+// No copying—header and body are written directly
+co_await write(stream, cat(make_buffer(header), make_buffer(body)));
+----
+
+=== Scatter/Gather Operations
+
+Multiple buffers transfer in a single operation:
+
+[source,cpp]
+----
+std::array buffers = {header_buf, separator_buf, body_buf, footer_buf};
+co_await write(stream, buffers);  // Single system call
+----
+
+=== Custom Allocators and Memory-Mapped Buffers
+
+Any memory region can be a buffer:
+
+[source,cpp]
+----
+// Memory-mapped file
+void* mapped = mmap(...);
+const_buffer file_buf(mapped, file_size);
+co_await write(socket, file_buf);  // Zero-copy network transmission
+----
+
+=== User-Defined Buffer Types
+
+Create custom types that satisfy the concepts:
+
+[source,cpp]
+----
+class chunked_buffer_sequence
+{
+    std::vector<std::vector<char>> chunks_;
+    
+public:
+    auto begin() const { /* return iterator over chunks as buffers */ }
+    auto end() const { /* return end iterator */ }
+};
+// Satisfies ConstBufferSequence—works with all algorithms
+----
+
+== Reference
+
+[cols="1,3"]
+|===
+| Header | Description
+
+| `<boost/capy/buffers.hpp>`
+| Measurement algorithms (`buffer_size`, `buffer_empty`, `buffer_length`)
+
+| `<boost/capy/buffers/buffer_copy.hpp>`
+| Copy algorithm
+|===
+
+You have now learned how to measure and copy buffer sequences. Continue to xref:dynamic.adoc[Dynamic Buffers] to learn about growable buffer storage.

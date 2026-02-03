@@ -1,0 +1,272 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Strands
+
+This page explains how to use strands to serialize coroutine execution.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== The Problem
+
+When multiple coroutines access shared state concurrently, you need
+synchronization. Traditional mutexes block threads, wasting resources.
+Strands provide an alternative: guarantee that only one coroutine runs
+at a time without blocking.
+
+[source,cpp]
+----
+// Without synchronization: data race
+int counter = 0;
+
+task<void> increment()
+{
+    ++counter;  // UNSAFE: concurrent access
+    co_return;
+}
+
+// Running on a thread pool with 4 threads
+run_async(pool.get_executor())(when_all(
+    increment(),
+    increment(),
+    increment()
+));
+----
+
+== What is a Strand?
+
+A strand wraps an executor and ensures that coroutines dispatched through
+it never run concurrently. At most one coroutine executes within the strand
+at any given time:
+
+[source,cpp]
+----
+#include <boost/capy/ex/strand.hpp>
+
+thread_pool pool(4);
+strand s(pool.get_executor());
+
+// These coroutines will never run concurrently
+s.post(coro1);
+s.post(coro2);
+s.post(coro3);
+// They may run on different threads, but one at a time
+----
+
+== Creating a Strand
+
+Construct a strand by wrapping an existing executor:
+
+[source,cpp]
+----
+thread_pool pool(4);
+
+// Create a strand from the pool's executor
+strand s(pool.get_executor());
+
+// Or use the deduction guide
+strand s2{pool.get_executor()};
+----
+
+The strand type is templated on the inner executor:
+
+[source,cpp]
+----
+strand<thread_pool::executor_type> s(pool.get_executor());
+----
+
+== Strand as Executor
+
+Strands satisfy the `Executor` concept and can be used anywhere an executor
+is expected:
+
+[source,cpp]
+----
+strand s(pool.get_executor());
+
+// Use strand with run_async
+run_async(s)(my_task());
+
+// Use strand with run
+co_await run(s)(other_task());
+----
+
+== Post vs Dispatch
+
+Strands provide two methods for submitting coroutines:
+
+[cols="1,3"]
+|===
+| Method | Behavior
+
+| `post(h)`
+| Always queues the coroutine, guaranteeing FIFO ordering
+
+| `dispatch(h)`
+| If already in the strand, resumes immediately; otherwise queues
+|===
+
+=== FIFO Ordering with post
+
+Use `post` when ordering matters:
+
+[source,cpp]
+----
+s.post(first);
+s.post(second);
+s.post(third);
+// Execution order: first, second, third (guaranteed)
+----
+
+=== Inline Execution with dispatch
+
+Use `dispatch` for performance when ordering doesn't matter:
+
+[source,cpp]
+----
+// If we're already in the strand, dispatch resumes inline
+s.dispatch(continuation);  // May run immediately
+----
+
+Dispatch provides symmetric transfer when the caller is already in the
+strand's execution context, avoiding unnecessary queuing.
+
+== Protecting Shared State
+
+Use a strand to serialize access to shared data:
+
+[source,cpp]
+----
+class counter
+{
+    strand<thread_pool::executor_type> strand_;
+    int value_ = 0;
+
+public:
+    explicit counter(thread_pool& pool)
+        : strand_(pool.get_executor())
+    {
+    }
+
+    // Increment must run on the strand
+    task<void> increment()
+    {
+        co_await run(strand_)([this]() -> task<void> {
+            ++value_;  // Safe: only one coroutine at a time
+            co_return;
+        }());
+    }
+
+    // Read also runs on the strand
+    task<int> get()
+    {
+        co_return co_await run(strand_)([this]() -> task<int> {
+            co_return value_;
+        }());
+    }
+};
+----
+
+== Strand Identity
+
+Strands are lightweight handles. Copies share the same serialization state:
+
+[source,cpp]
+----
+strand s1(pool.get_executor());
+strand s2 = s1;  // Same strand, same serialization
+
+s1.post(coro1);
+s2.post(coro2);
+// coro1 and coro2 are serialized with respect to each other
+----
+
+Compare strands to check if they serialize:
+
+[source,cpp]
+----
+if (s1 == s2)
+{
+    // Same strand — coroutines will be serialized
+}
+----
+
+== running_in_this_thread
+
+Check if the current thread is executing within a strand:
+
+[source,cpp]
+----
+strand s(pool.get_executor());
+
+void callback()
+{
+    if (s.running_in_this_thread())
+    {
+        // We're in the strand — safe to access protected data
+    }
+    else
+    {
+        // Not in strand — need to post/dispatch
+    }
+}
+----
+
+== Implementation Notes
+
+Capy's strand uses a fixed pool of 211 implementation objects. New strands
+hash to select an impl from the pool. Strands that hash to the same index
+share serialization:
+
+* This is harmless — just extra serialization
+* Rare with 211 buckets
+* No allocation for strand creation
+
+This design trades minimal extra serialization for zero per-strand allocation.
+
+== When NOT to Use Strands
+
+Use strands when:
+
+* Coroutines share mutable state
+* You want to avoid blocking threads
+* Operations are I/O-bound (not CPU-intensive)
+
+Do NOT use strands when:
+
+* You need fine-grained locking (use `coro_lock` instead)
+* Operations are CPU-intensive — one long operation blocks others
+* You need cross-context synchronization — strands are per-executor
+
+== Summary
+
+[cols="1,3"]
+|===
+| Feature | Description
+
+| `strand<Ex>`
+| Wraps executor `Ex` with serialization
+
+| `post(h)`
+| Always queue (strict FIFO)
+
+| `dispatch(h)`
+| Inline if in strand, else queue
+
+| `running_in_this_thread()`
+| Check if caller is in the strand
+
+| Copies
+| Share serialization state
+|===
+
+== Next Steps
+
+* xref:../coroutines/affinity.adoc[Executor Affinity] — How `run` changes executors
+* xref:thread-pool.adoc[Thread Pool] — The underlying executor

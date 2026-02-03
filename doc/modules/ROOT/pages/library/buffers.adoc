@@ -1,0 +1,150 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Buffers
+
+Capy's buffer system enables efficient I/O operations through lightweight
+memory views, scatter/gather I/O, and growable storage containers.
+
+== Overview
+
+Buffers are the foundation of all I/O in Capy. They represent regions of
+memory that can be read from or written to, enabling zero-copy data transfer
+and platform-agnostic I/O algorithms.
+
+== Quick Example
+
+[source,cpp]
+----
+#include <boost/capy/buffers.hpp>
+#include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/read.hpp>
+#include <boost/capy/write.hpp>
+
+using namespace boost::capy;
+
+task<void> echo(ReadStream auto& in, WriteStream auto& out)
+{
+    char buffer[4096];
+    for (;;)
+    {
+        auto [ec1, n] = co_await in.read_some(make_buffer(buffer));
+        if (ec1 == cond::eof)
+            break;
+        if (ec1.failed())
+            co_return;
+
+        auto [ec2, _] = co_await write(out, make_buffer(buffer, n));
+        if (ec2.failed())
+            co_return;
+    }
+}
+----
+
+== Topics
+
+[cols="1,3"]
+|===
+| Topic | Description
+
+| xref:../buffers/overview.adoc[Buffers and I/O]
+| Why buffers exist and how they enable efficient I/O
+
+| xref:../buffers/index.adoc[Buffer Types]
+| `const_buffer`, `mutable_buffer`, and `make_buffer`
+
+| xref:../buffers/sequences.adoc[Buffer Sequences]
+| Scatter/gather I/O with multiple buffers
+
+| xref:../buffers/algorithms.adoc[Buffer Algorithms]
+| `buffer_copy`, `buffer_size`, `buffer_empty`
+
+| xref:../buffers/dynamic.adoc[Dynamic Buffers]
+| Growable buffers with producer/consumer model
+|===
+
+== Key Types
+
+[cols="1,3"]
+|===
+| Type | Purpose
+
+| `const_buffer`
+| Read-only view of contiguous bytes
+
+| `mutable_buffer`
+| Writable view of contiguous bytes
+
+| `flat_dynamic_buffer`
+| Growable contiguous buffer
+
+| `circular_dynamic_buffer`
+| Ring buffer for streaming
+
+| `string_dynamic_buffer`
+| Adapter for `std::string`
+
+| `vector_dynamic_buffer`
+| Adapter for `std::vector<unsigned char>`
+|===
+
+== Key Concepts
+
+[cols="1,3"]
+|===
+| Concept | Description
+
+| `ConstBufferSequence`
+| Range of read-only buffers
+
+| `MutableBufferSequence`
+| Range of writable buffers
+
+| `DynamicBuffer`
+| Resizable buffer with prepare/commit semantics
+
+| `DynamicBufferParam`
+| Safe parameter passing for coroutines
+|===
+
+== Headers
+
+[cols="1,3"]
+|===
+| Header | Contents
+
+| `<boost/capy/buffers.hpp>`
+| Core buffer types and concepts
+
+| `<boost/capy/buffers/make_buffer.hpp>`
+| `make_buffer` helper function
+
+| `<boost/capy/buffers/buffer_copy.hpp>`
+| `buffer_copy` algorithm
+
+| `<boost/capy/buffers/consuming_buffers.hpp>`
+| Incremental buffer consumption
+
+| `<boost/capy/buffers/flat_dynamic_buffer.hpp>`
+| Contiguous dynamic buffer
+
+| `<boost/capy/buffers/circular_dynamic_buffer.hpp>`
+| Ring buffer implementation
+
+| `<boost/capy/buffers/string_dynamic_buffer.hpp>`
+| String adapter
+
+| `<boost/capy/buffers/vector_dynamic_buffer.hpp>`
+| Vector adapter
+|===
+
+== Navigation
+
+[.text-center]
+xref:../buffers/overview.adoc[Next: Buffers and I/O →]
