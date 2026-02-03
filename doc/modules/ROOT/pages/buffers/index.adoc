@@ -1,0 +1,264 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Buffer Types
+
+This page covers the fundamental buffer types and the `make_buffer` helper
+for creating buffers from common data structures.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== const_buffer and mutable_buffer
+
+Capy provides two buffer types representing contiguous memory regions:
+
+[cols="1,3"]
+|===
+| Type | Description
+
+| `const_buffer`
+| Read-only view of contiguous bytes
+
+| `mutable_buffer`
+| Writable view of contiguous bytes
+|===
+
+Both are lightweight (pointer + size) and do not own memory.
+
+=== const_buffer
+
+A `const_buffer` represents memory that can be read but not modified:
+
+[source,cpp]
+----
+char const data[] = "Hello, World!";
+const_buffer buf(data, sizeof(data) - 1);
+
+void const* p = buf.data();   // Pointer to first byte
+std::size_t n = buf.size();   // Number of bytes (13)
+----
+
+Use `const_buffer` when:
+
+* Sending data over a network
+* Writing to a file
+* Passing data to any operation that only reads
+
+=== mutable_buffer
+
+A `mutable_buffer` represents memory that can be written:
+
+[source,cpp]
+----
+char data[1024];
+mutable_buffer buf(data, sizeof(data));
+
+void* p = buf.data();         // Pointer to first byte
+std::size_t n = buf.size();   // Number of bytes (1024)
+----
+
+Use `mutable_buffer` when:
+
+* Receiving data from a network
+* Reading from a file
+* Any operation that writes into the buffer
+
+=== Implicit Conversion
+
+A `mutable_buffer` implicitly converts to `const_buffer`:
+
+[source,cpp]
+----
+void process_data(const_buffer buf);
+
+char data[100];
+mutable_buffer mb(data, sizeof(data));
+
+process_data(mb);  // OK: implicit conversion to const_buffer
+----
+
+The reverse is not allowed—you cannot write to read-only memory.
+
+=== Advancing Buffers
+
+Use `operator+=` to consume bytes from the front:
+
+[source,cpp]
+----
+const_buffer buf(data, 100);
+buf += 10;  // Now points to data+10, size is 90
+----
+
+This is useful when processing data incrementally.
+
+== Creating Buffers with make_buffer
+
+The `make_buffer` function creates buffers from common types without
+manual pointer/size calculation.
+
+=== From Pointer and Size
+
+[source,cpp]
+----
+#include <boost/capy/buffers/make_buffer.hpp>
+
+char data[1024];
+auto mb = make_buffer(data, sizeof(data));     // mutable_buffer
+auto cb = make_buffer("Hello", 5);              // const_buffer
+----
+
+=== From C Arrays
+
+[source,cpp]
+----
+char storage[256];
+auto mb = make_buffer(storage);                 // mutable_buffer, size 256
+
+char const message[] = "Hello";
+auto cb = make_buffer(message);                 // const_buffer, size 6 (includes null)
+----
+
+=== From std::array
+
+[source,cpp]
+----
+std::array<char, 64> arr;
+auto mb = make_buffer(arr);                     // mutable_buffer, size 64
+
+std::array<char, 64> const carr = { /* ... */ };
+auto cb = make_buffer(carr);                    // const_buffer, size 64
+----
+
+=== From std::vector
+
+[source,cpp]
+----
+std::vector<unsigned char> vec(1024);
+auto mb = make_buffer(vec);                     // mutable_buffer
+
+std::vector<unsigned char> const cvec = { 0x01, 0x02, 0x03 };
+auto cb = make_buffer(cvec);                    // const_buffer, size 3
+----
+
+=== From std::string and std::string_view
+
+[source,cpp]
+----
+std::string str = "Hello, World!";
+auto mb = make_buffer(str);                     // mutable_buffer
+
+std::string const cstr = "Readonly";
+auto cb = make_buffer(cstr);                    // const_buffer
+
+std::string_view sv = "View";
+auto cb2 = make_buffer(sv);                     // const_buffer
+----
+
+=== With Maximum Size
+
+All `make_buffer` overloads accept an optional maximum size:
+
+[source,cpp]
+----
+std::vector<char> large_buffer(10000);
+auto limited = make_buffer(large_buffer, 1024);  // At most 1024 bytes
+----
+
+== Using Buffers with I/O
+
+Buffers become useful when combined with stream operations.
+
+=== Reading Data
+
+[source,cpp]
+----
+task<void> receive_message(ReadStream auto& stream)
+{
+    char header[4];
+    auto [ec, n] = co_await read(stream, mutable_buffer(header, 4));
+    if (ec.failed())
+        co_return;
+
+    // Parse length from header
+    std::uint32_t len = parse_length(header);
+
+    // Read the body
+    std::vector<char> body(len);
+    auto [ec2, n2] = co_await read(stream, make_buffer(body));
+    if (ec2.failed())
+        co_return;
+
+    process_message(body);
+}
+----
+
+=== Writing Data
+
+[source,cpp]
+----
+task<void> send_response(WriteStream auto& stream, std::string_view body)
+{
+    // Write headers
+    std::string headers = "HTTP/1.1 200 OK\r\nContent-Length: "
+        + std::to_string(body.size()) + "\r\n\r\n";
+
+    auto [ec1, n1] = co_await write(stream, make_buffer(headers));
+    if (ec1.failed())
+        co_return;
+
+    // Write body
+    auto [ec2, n2] = co_await write(stream, make_buffer(body));
+}
+----
+
+=== Partial Operations
+
+The `read_some` and `write_some` methods may transfer fewer bytes than
+requested. Use them when you want to process data as it arrives:
+
+[source,cpp]
+----
+task<void> echo_loop(ReadStream auto& in, WriteStream auto& out)
+{
+    char buffer[4096];
+    for (;;)
+    {
+        auto [ec1, n] = co_await in.read_some(make_buffer(buffer));
+        if (ec1 == cond::eof)
+            break;
+        if (ec1.failed())
+            co_return;
+
+        auto [ec2, written] = co_await write(out, make_buffer(buffer, n));
+        if (ec2.failed())
+            co_return;
+    }
+}
+----
+
+== Summary
+
+[cols="1,3"]
+|===
+| Type | Purpose
+
+| `const_buffer`
+| Read-only view for sending/writing data
+
+| `mutable_buffer`
+| Writable view for receiving/reading data
+
+| `make_buffer`
+| Create buffers from arrays, vectors, strings, and more
+|===
+
+== Navigation
+
+[.text-center]
+xref:overview.adoc[← Buffers and I/O] | xref:sequences.adoc[Next: Buffer Sequences →]

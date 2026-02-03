@@ -1,0 +1,146 @@
+//
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= High-Performance Allocators
+
+This page explains how to link a high-performance memory allocator as a
+replacement for the default allocator (`malloc`/`free` and `new`/`delete`).
+
+NOTE: Replacing the global allocator is a system-wide optimization that affects
+all allocations, not just coroutine frames. For coroutine-specific allocation
+tuning, see xref:../execution/frame-allocation.adoc[Frame Allocation].
+
+== Why Replace the Default Allocator?
+
+The default memory allocator provided by most C++ standard library implementations
+is general-purpose, but not always optimal for high-throughput applications.
+Common issues include:
+
+* Lock contention in multi-threaded allocation
+* Memory fragmentation over time
+* Suboptimal cache locality
+* Higher per-allocation overhead
+
+High-performance allocators address these issues through techniques like
+per-thread caching, size-class segregation, and reduced lock contention.
+
+== When to Replace the Default Allocator
+
+Consider replacing the global allocator when:
+
+* Profiling shows allocation/deallocation as a bottleneck
+* You have many short-lived allocations (e.g., high coroutine churn)
+* Multi-threaded allocation contention is measurable
+* You need lower allocation latency variance
+
+== Interaction with frame_allocator
+
+Boost.Capy's `frame_allocator` mechanism allows you to provide custom allocators
+specifically for coroutine frames. This is orthogonal to replacing the default
+allocator.
+
+You can use both approaches together:
+
+* **Global replacement** — Handles all allocations (containers, strings, etc.)
+* **frame_allocator** — Optimizes coroutine frame allocation specifically
+
+For applications dominated by coroutine creation, a custom `frame_allocator`
+(like the built-in recycling allocator) may provide better results than just
+replacing the global allocator.
+
+See xref:../execution/frame-allocation.adoc[Frame Allocation] for details.
+
+== Popular Replacement Allocators
+
+Several production-ready allocators are available:
+
+[cols="1,2,2"]
+|===
+| Allocator | Characteristics | Best For
+
+| https://github.com/microsoft/mimalloc[mimalloc]
+| Compact, excellent performance, easy integration
+| General-purpose, recommended starting point
+
+| https://github.com/jemalloc/jemalloc[jemalloc]
+| Mature, fragmentation-resistant, extensive tuning options
+| Long-running services, memory-constrained systems
+
+| https://github.com/google/tcmalloc[tcmalloc]
+| Google's allocator, strong multi-threaded performance
+| Highly concurrent applications
+
+| https://github.com/mjansson/rpmalloc[rpmalloc]
+| Lock-free, very low overhead
+| Extreme performance requirements
+|===
+
+== Linking a Replacement Allocator
+
+Most high-performance allocators automatically override the default allocator
+when linked. The general approach is:
+
+1. Build or install the allocator library
+2. Link the library into your application
+3. The allocator automatically interposes on global allocation functions
+
+NOTE: Always consult the documentation for your chosen allocator for specific
+installation, linking, and configuration instructions.
+
+== Performance Considerations
+
+When using a replacement allocator:
+
+* **Benchmark your specific workload** — allocator performance varies by
+  allocation pattern
+* **Monitor memory usage** — some allocators trade memory for speed
+* **Consider configuration** — most allocators have tunable parameters
+* **Test under load** — benefits are most visible under concurrent allocation
+
+== Impact on Capy Coroutines
+
+While Capy provides xref:../execution/frame-allocation.adoc[custom frame allocators]
+for fine-grained control, a global allocator replacement provides:
+
+* Improved performance for the default frame allocator
+* Better allocation behavior for all non-frame allocations
+* Simpler deployment (single change affects everything)
+
+For most applications, linking a high-performance allocator is the recommended
+first step before exploring custom frame allocators.
+
+== Summary
+
+[cols="1,3"]
+|===
+| Approach | When to Use
+
+| Link allocator library
+| Production deployment, best performance
+
+| `LD_PRELOAD`
+| Quick testing, legacy binaries
+
+| mimalloc
+| Recommended starting point, excellent defaults
+
+| jemalloc
+| Long-running services, tuning needs
+
+| tcmalloc
+| Google ecosystem, profiling integration
+
+| rpmalloc
+| Lock-free requirements, very low overhead
+|===
+
+== Next Steps
+
+* xref:../execution/frame-allocation.adoc[Frame Allocation] — Coroutine-specific memory tuning
+* xref:../coroutines/launching.adoc[Launching Tasks] — Running coroutines efficiently
