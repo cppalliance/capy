@@ -22,11 +22,6 @@ on:
       - master
       - develop
 
-
-concurrency:
-  group: ${{format('{0}:{1}', github.repository, github.ref)}}
-  cancel-in-progress: true
-
 env:
   GIT_FETCH_JOBS: 8
   NET_RETRY_COUNT: 5
@@ -46,10 +41,6 @@ jobs:
 
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runs-on }}
-    env:
-        GITHUB_REPOSITORY: ${{ github.github_repository }}
-        GITHUB_REPOSITORY_OWNER: ${{ github.github_repository_name }}
-        GITHUB_REF_NAME: ${{ github.github_ref_name }}
     timeout-minutes: 120
 
     steps:
@@ -59,19 +50,16 @@ jobs:
       - name: Get Branch
         run: |
             set -xe
+            git config --global user.name cppalliance-bot
+            git config --global user.email cppalliance-bot@example.com
             git fetch origin
             if git branch -r | grep origin/code-coverage; then
                 echo "The code-coverage branch exists. Continuing."
             else
                 echo "The code-coverage branch does not exist. Creating it."
-                cd ..
-                REPONAME=$(basename ${GITHUB_REPOSITORY}) 
-                cp -rp $REPONAME $REPONAME.bck
-                cd $REPONAME.bck
-                echo -e "<html>\n<head>\n</head>\n<body>\n<a href=develop/index.html>develop</a><br>\n<a href=master/index.html>master</a><br>\n</body>\n</html>\n" > index.html
                 git checkout -b code-coverage
                 git push origin code-coverage
-                cd ../$REPONAME
+                git checkout $GITHUB_REF_NAME
             fi
 
       - name: Install Python
