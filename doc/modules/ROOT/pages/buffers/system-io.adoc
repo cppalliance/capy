@@ -1,0 +1,205 @@
+= System I/O Integration
+
+This section explains how buffer sequences interface with operating system I/O operations.
+
+== Prerequisites
+
+* Completed xref:sequences.adoc[Buffer Sequences]
+* Understanding of buffer sequence concepts
+
+== The Virtual Boundary
+
+User-facing APIs use concepts for composition flexibility. But at type-erasure boundaries—where virtual functions are needed—concrete types are required.
+
+Capy's design:
+
+* *User-facing API* — Accepts `ConstBufferSequence` or `MutableBufferSequence` concepts
+* *Internal boundary* — Converts to concrete arrays for virtual dispatch
+* *OS interface* — Translates to platform-specific structures
+
+The library handles all conversions automatically.
+
+== Platform Buffer Structures
+
+=== POSIX: iovec
+
+[source,c]
+----
+struct iovec {
+    void*  iov_base;  // Pointer to data
+    size_t iov_len;   // Length of data
+};
+----
+
+Used with `readv()`, `writev()`, `recvmsg()`, `sendmsg()`.
+
+=== Windows: WSABUF
+
+[source,c]
+----
+typedef struct _WSABUF {
+    ULONG  len;  // Length (note: first!)
+    CHAR*  buf;  // Pointer
+} WSABUF;
+----
+
+Used with `WSARecv()`, `WSASend()`.
+
+Note the different member order—Capy handles this platform difference internally.
+
+== Translation Process
+
+When you call an I/O function with a buffer sequence:
+
+[source,cpp]
+----
+template<ConstBufferSequence Buffers>
+io_result<std::size_t> write_some(Buffers const& buffers);
+----
+
+Internally, Capy:
+
+1. Counts the number of buffers in the sequence
+2. Allocates space for platform buffer structures (on stack for small sequences)
+3. Copies buffer descriptors (pointer/size pairs) to platform structures
+4. Calls the OS function with the platform array
+5. Returns the result
+
+== Stack-Based Conversion
+
+For common cases (small numbers of buffers), conversion happens on the stack:
+
+[source,cpp]
+----
+// Pseudocode of internal implementation
+template<ConstBufferSequence Buffers>
+auto platform_write(Buffers const& buffers)
+{
+    std::size_t count = buffer_length(buffers);
+    
+    if (count <= 8)  // Small buffer optimization
+    {
+        iovec iovecs[8];
+        fill_iovecs(iovecs, buffers, count);
+        return writev(fd, iovecs, count);
+    }
+    else  // Heap fallback
+    {
+        std::vector<iovec> iovecs(count);
+        fill_iovecs(iovecs.data(), buffers, count);
+        return writev(fd, iovecs.data(), count);
+    }
+}
+----
+
+Most real-world code uses fewer than 8 buffers, so heap allocation is rarely needed.
+
+== Scatter/Gather Benefits
+
+Using vectored I/O provides:
+
+=== Fewer System Calls
+
+Without scatter/gather:
+
+[source,cpp]
+----
+write(fd, header, header_len);  // syscall 1
+write(fd, body, body_len);      // syscall 2
+----
+
+With scatter/gather:
+
+[source,cpp]
+----
+iovec iov[2] = {{header, header_len}, {body, body_len}};
+writev(fd, iov, 2);  // single syscall
+----
+
+=== Zero-Copy Transmission
+
+Data doesn't need to be copied into a single contiguous buffer. The OS reads directly from each buffer in sequence.
+
+=== Atomic Operations
+
+The vectored write is atomic at the file offset level—other processes see either none or all of the data.
+
+== Registered Buffers
+
+Advanced platforms offer registered buffer optimizations:
+
+=== io_uring (Linux 5.1+)
+
+Buffers can be pre-registered with the kernel, eliminating per-operation address translation:
+
+[source,cpp]
+----
+// Registration (done once)
+io_uring_register_buffers(ring, buffers, count);
+
+// Use (fast path - no translation)
+io_uring_prep_write_fixed(sqe, fd, buf, len, offset, buf_index);
+----
+
+=== IOCP (Windows)
+
+Similar optimization with pre-registered memory regions for zero-copy I/O.
+
+Capy's Corosio library exposes these optimizations where available.
+
+== Writing Efficient Code
+
+=== Minimize Buffer Count
+
+Fewer buffers means less translation overhead:
+
+[source,cpp]
+----
+// Prefer: single buffer when possible
+auto buf = assemble_message();  // Build in one buffer
+write(stream, buf);
+
+// Avoid: many tiny buffers
+std::array<const_buffer, 100> tiny_bufs;
+write(stream, tiny_bufs);  // 100-element translation
+----
+
+=== Reuse Buffer Structures
+
+For repeated I/O with the same structure, consider caching the platform buffer array:
+
+[source,cpp]
+----
+// Build once, use many times
+struct message_buffers
+{
+    std::array<iovec, 3> iovecs;
+    
+    void set_header(void const* p, std::size_t n);
+    void set_body(void const* p, std::size_t n);
+    void set_footer(void const* p, std::size_t n);
+};
+----
+
+=== Profile Before Optimizing
+
+Buffer translation is rarely the bottleneck. Focus on:
+
+* Network latency
+* Disk I/O time
+* Data processing logic
+
+Not buffer descriptor copying.
+
+== Reference
+
+The buffer sequence concepts and translation utilities are in:
+
+[source,cpp]
+----
+#include <boost/capy/buffers.hpp>
+----
+
+OS-specific I/O is handled by Corosio, which builds on Capy's buffer model.
+
+You have now learned how buffer sequences integrate with operating system I/O. Continue to xref:algorithms.adoc[Buffer Algorithms] to learn about measuring and copying buffers.

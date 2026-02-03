@@ -1,0 +1,16 @@
+{
+    "key": "capy",
+    "name": "Runtime Services",
+    "authors": [
+        "Vinnie Falco"
+    ],
+    "description": "Runtime Services for C++11 and greater",
+    "category": [
+        "system",
+        "programing"
+    ],
+    "maintainers": [
+        "Vinnie Falco <vinnie.falco@gmail.com>"
+    ],
+    "cxxstd": "11"
+}

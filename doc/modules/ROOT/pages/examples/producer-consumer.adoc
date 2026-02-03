@@ -1,0 +1,145 @@
+= Producer-Consumer
+
+Two tasks communicating via an async event.
+
+== What You Will Learn
+
+* Using `async_event` for coroutine synchronization
+* Running multiple concurrent tasks with `when_all`
+* Task-to-task communication patterns
+
+== Prerequisites
+
+* Completed xref:hello-task.adoc[Hello Task]
+* Understanding of basic task creation and launching
+
+== Source Code
+
+[source,cpp]
+----
+#include <boost/capy.hpp>
+#include <iostream>
+
+using namespace boost::capy;
+
+async_event data_ready;
+int shared_value = 0;
+
+task<> producer()
+{
+    std::cout << "Producer: preparing data...\n";
+    
+    // Simulate work
+    shared_value = 42;
+    
+    std::cout << "Producer: data ready, signaling\n";
+    data_ready.set();
+    
+    co_return;
+}
+
+task<> consumer()
+{
+    std::cout << "Consumer: waiting for data...\n";
+    
+    co_await data_ready.wait();
+    
+    std::cout << "Consumer: received value " << shared_value << "\n";
+    
+    co_return;
+}
+
+task<> run_both()
+{
+    co_await when_all(producer(), consumer());
+}
+
+int main()
+{
+    thread_pool pool;
+    run_async(pool.get_executor())(run_both());
+    return 0;
+}
+----
+
+== Build
+
+[source,cmake]
+----
+add_executable(producer_consumer producer_consumer.cpp)
+target_link_libraries(producer_consumer PRIVATE capy)
+----
+
+== Walkthrough
+
+=== The Event
+
+[source,cpp]
+----
+async_event data_ready;
+----
+
+`async_event` is a one-shot signaling mechanism. One task can `set()` it; other tasks can `wait()` for it. When set, all waiting tasks resume.
+
+=== Producer
+
+[source,cpp]
+----
+task<> producer()
+{
+    shared_value = 42;
+    data_ready.set();
+    co_return;
+}
+----
+
+The producer prepares data and signals completion by calling `set()`.
+
+=== Consumer
+
+[source,cpp]
+----
+task<> consumer()
+{
+    co_await data_ready.wait();
+    std::cout << "Consumer: received value " << shared_value << "\n";
+    co_return;
+}
+----
+
+The consumer waits until the event is set. The `co_await data_ready.wait()` suspends until `set()` is called.
+
+=== Running Both
+
+[source,cpp]
+----
+task<> run_both()
+{
+    co_await when_all(producer(), consumer());
+}
+----
+
+`when_all` runs both tasks concurrently. It completes when both tasks have finished.
+
+The order of execution depends on scheduling, but synchronization ensures the consumer sees the producer's data.
+
+== Output
+
+----
+Producer: preparing data...
+Consumer: waiting for data...
+Producer: data ready, signaling
+Consumer: received value 42
+----
+
+(Output order may vary due to concurrent execution)
+
+== Exercises
+
+1. Add multiple consumers that all wait for the same event
+2. Create a producer that sets the event multiple times (use a loop with a new event each iteration)
+3. Add error handling—what happens if the producer throws?
+
+== Next Steps
+
+* xref:buffer-composition.adoc[Buffer Composition] — Zero-allocation buffer composition

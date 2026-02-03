@@ -1,0 +1,466 @@
+= Part IV: Advanced Topics
+
+This section covers advanced coroutine topics: symmetric transfer for efficient resumption, coroutine allocation strategies, and exception handling. These concepts are essential for building production-quality coroutine types.
+
+== Prerequisites
+
+* Completed xref:machinery.adoc[Part III: Coroutine Machinery]
+* Understanding of promise types, coroutine handles, and generators
+
+== Symmetric Transfer
+
+When a coroutine completes or awaits another coroutine, control must transfer somewhere. The naive approach—simply calling `handle.resume()`—has a problem: each nested coroutine adds a frame to the call stack. With deep nesting, you risk stack overflow.
+
+*Symmetric transfer* solves this by returning a coroutine handle from `await_suspend`. Instead of resuming the target coroutine via a function call, the compiler generates a tail call that transfers control without growing the stack.
+
+=== The Problem: Stack Accumulation
+
+Consider a chain of coroutines where each awaits the next:
+
+[source,cpp]
+----
+task<> a() { co_await b(); }
+task<> b() { co_await c(); }
+task<> c() { co_return; }
+----
+
+Without symmetric transfer, when `a` awaits `b`:
+
+1. `a` calls into the awaiter's `await_suspend`
+2. `await_suspend` calls `b.handle.resume()`
+3. `b` runs, calls into its awaiter's `await_suspend`
+4. That calls `c.handle.resume()`
+5. The stack now has frames for `a`'s suspension, `b`'s suspension, and `c`'s execution
+
+Each suspension adds a stack frame. With thousands of nested coroutines, the stack overflows.
+
+=== The Solution: Return the Handle
+
+`await_suspend` can return a `std::coroutine_handle<>`:
+
+[source,cpp]
+----
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h)
+{
+    // store continuation for later
+    continuation_ = h;
+    
+    // return handle to resume (instead of calling resume())
+    return next_coroutine_;
+}
+----
+
+When `await_suspend` returns a handle, the compiler generates code equivalent to:
+
+[source,cpp]
+----
+auto next = awaiter.await_suspend(current);
+if (next != std::noop_coroutine())
+    next.resume();  // tail call, doesn't grow stack
+----
+
+The key insight: returning a handle enables the compiler to implement the resumption as a tail call. The current stack frame is reused for the next coroutine.
+
+=== Return Types for await_suspend
+
+`await_suspend` can return three types:
+
+`void`::
+Always suspend. The coroutine is suspended and some external mechanism must resume it.
+
+`bool`::
+Conditional suspension. Return `true` to suspend, `false` to continue without suspending.
+
+`std::coroutine_handle<>`::
+Symmetric transfer. The returned handle is resumed; returning `std::noop_coroutine()` suspends without resuming anything.
+
+=== Using Symmetric Transfer in Generators
+
+A production generator uses symmetric transfer at `final_suspend` to return to whoever is iterating:
+
+[source,cpp]
+----
+auto final_suspend() noexcept
+{
+    struct awaiter
+    {
+        promise_type* p_;
+        
+        bool await_ready() const noexcept { return false; }
+        
+        std::coroutine_handle<> await_suspend(std::coroutine_handle<>) noexcept
+        {
+            // Return to the consumer that called resume()
+            return p_->consumer_handle_;
+        }
+        
+        void await_resume() const noexcept {}
+    };
+    return awaiter{this};
+}
+----
+
+== Coroutine Allocation
+
+Every coroutine needs memory for its *coroutine frame*—the heap-allocated structure holding local variables, parameters, and suspension state.
+
+=== Default Allocation
+
+By default, coroutines allocate their frames using `operator new`. The frame size depends on:
+
+* Local variables in the coroutine
+* Parameters (copied into the frame)
+* Promise type members
+* Compiler-generated bookkeeping
+
+=== Heap Allocation eLision Optimization (HALO)
+
+Compilers can sometimes eliminate coroutine frame allocation entirely through *HALO* (Heap Allocation eLision Optimization). When the compiler can prove that:
+
+* The coroutine's lifetime is contained within the caller's lifetime
+* The frame size is known at compile time
+
+...it may allocate the frame on the caller's stack instead of the heap.
+
+HALO is most effective when:
+
+* Coroutines are awaited immediately after creation
+* The coroutine type is marked with `[[clang::coro_await_elidable]]` (Clang extension)
+* Optimization is enabled (`-O2` or higher)
+
+[source,cpp]
+----
+// HALO might apply here because the task is awaited immediately
+co_await compute_something();
+
+// HALO cannot apply here because the task escapes
+auto task = compute_something();
+store_for_later(std::move(task));
+----
+
+=== Custom Allocators
+
+Promise types can customize allocation by providing `operator new` and `operator delete`:
+
+[source,cpp]
+----
+struct promise_type
+{
+    // Custom allocation
+    static void* operator new(std::size_t size)
+    {
+        return my_allocator.allocate(size);
+    }
+    
+    static void operator delete(void* ptr, std::size_t size)
+    {
+        my_allocator.deallocate(ptr, size);
+    }
+    
+    // ... rest of promise type
+};
+----
+
+The promise's `operator new` receives only the frame size. To access allocator arguments passed to the coroutine, use the leading allocator convention with `std::allocator_arg_t` as the first parameter.
+
+== Exception Handling
+
+Exceptions in coroutines require special handling because a coroutine can suspend and resume across different call stacks.
+
+=== The Exception Flow
+
+When an exception is thrown inside a coroutine and not caught:
+
+1. The exception is caught by an implicit try-catch surrounding the coroutine body
+2. `promise.unhandled_exception()` is called while the exception is active
+3. After `unhandled_exception()` returns, `co_await promise.final_suspend()` executes
+4. The coroutine completes (suspended or destroyed, depending on `final_suspend`)
+
+=== Options in unhandled_exception()
+
+*Terminate the program:*
+
+[source,cpp]
+----
+void unhandled_exception()
+{
+    std::terminate();
+}
+----
+
+*Store for later retrieval:*
+
+[source,cpp]
+----
+void unhandled_exception()
+{
+    exception_ = std::current_exception();
+}
+----
+
+*Rethrow immediately:*
+
+[source,cpp]
+----
+void unhandled_exception()
+{
+    throw;  // propagates to whoever resumed the coroutine
+}
+----
+
+*Swallow the exception:*
+
+[source,cpp]
+----
+void unhandled_exception()
+{
+    // silently ignored - almost always a mistake
+}
+----
+
+=== The Store-and-Rethrow Pattern
+
+For tasks and generators where callers expect results, store the exception and rethrow it when results are requested:
+
+[source,cpp]
+----
+struct promise_type
+{
+    std::exception_ptr exception_;
+    
+    void unhandled_exception()
+    {
+        exception_ = std::current_exception();
+    }
+};
+
+// In the return object's result accessor:
+T get_result()
+{
+    if (handle_.promise().exception_)
+        std::rethrow_exception(handle_.promise().exception_);
+    return std::move(handle_.promise().result_);
+}
+----
+
+=== Exception Example
+
+[source,cpp]
+----
+#include <coroutine>
+#include <exception>
+#include <iostream>
+#include <stdexcept>
+
+struct Task
+{
+    struct promise_type
+    {
+        std::exception_ptr exception;
+        
+        Task get_return_object()
+        {
+            return Task{std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+        
+        std::suspend_always initial_suspend() { return {}; }
+        std::suspend_always final_suspend() noexcept { return {}; }
+        void return_void() {}
+        
+        void unhandled_exception()
+        {
+            exception = std::current_exception();
+        }
+    };
+    
+    std::coroutine_handle<promise_type> handle;
+    
+    Task(std::coroutine_handle<promise_type> h) : handle(h) {}
+    ~Task() { if (handle) handle.destroy(); }
+    
+    void run() { handle.resume(); }
+    
+    void check_exception()
+    {
+        if (handle.promise().exception)
+            std::rethrow_exception(handle.promise().exception);
+    }
+};
+
+Task risky_operation()
+{
+    std::cout << "Starting risky operation" << std::endl;
+    throw std::runtime_error("Something went wrong");
+    co_return;  // never reached
+}
+
+int main()
+{
+    Task task = risky_operation();
+    
+    try
+    {
+        task.run();
+        task.check_exception();
+        std::cout << "Operation completed successfully" << std::endl;
+    }
+    catch (std::exception const& e)
+    {
+        std::cout << "Operation failed: " << e.what() << std::endl;
+    }
+}
+----
+
+*Output:*
+
+----
+Starting risky operation
+Operation failed: Something went wrong
+----
+
+=== Initialization Exceptions
+
+Exceptions thrown before the first suspension point (before `initial_suspend` completes) propagate directly to the caller without going through `unhandled_exception()`. If `initial_suspend()` returns `suspend_always`, the coroutine suspends before any user code runs, avoiding this edge case.
+
+== Building a Production Generator
+
+With all these concepts, here is a production-quality generic generator:
+
+[source,cpp]
+----
+#include <coroutine>
+#include <exception>
+#include <utility>
+
+template<typename T>
+class Generator
+{
+public:
+    struct promise_type
+    {
+        T value_;
+        std::exception_ptr exception_;
+        
+        Generator get_return_object()
+        {
+            return Generator{Handle::from_promise(*this)};
+        }
+        
+        std::suspend_always initial_suspend() noexcept { return {}; }
+        std::suspend_always final_suspend() noexcept { return {}; }
+        
+        std::suspend_always yield_value(T v)
+        {
+            value_ = std::move(v);
+            return {};
+        }
+        
+        void return_void() noexcept {}
+        
+        void unhandled_exception()
+        {
+            exception_ = std::current_exception();
+        }
+        
+        // Prevent co_await inside generators
+        template<typename U>
+        std::suspend_never await_transform(U&&) = delete;
+    };
+    
+    using Handle = std::coroutine_handle<promise_type>;
+    
+    class iterator
+    {
+        Handle handle_;
+        
+    public:
+        using iterator_category = std::input_iterator_tag;
+        using value_type = T;
+        using difference_type = std::ptrdiff_t;
+        
+        iterator() : handle_(nullptr) {}
+        explicit iterator(Handle h) : handle_(h) {}
+        
+        iterator& operator++()
+        {
+            handle_.resume();
+            if (handle_.done())
+            {
+                auto& promise = handle_.promise();
+                handle_ = nullptr;
+                if (promise.exception_)
+                    std::rethrow_exception(promise.exception_);
+            }
+            return *this;
+        }
+        
+        T& operator*() const { return handle_.promise().value_; }
+        bool operator==(iterator const& other) const
+        {
+            return handle_ == other.handle_;
+        }
+    };
+    
+    iterator begin()
+    {
+        if (handle_)
+        {
+            handle_.resume();
+            if (handle_.done())
+            {
+                auto& promise = handle_.promise();
+                if (promise.exception_)
+                    std::rethrow_exception(promise.exception_);
+                return iterator{};
+            }
+        }
+        return iterator{handle_};
+    }
+    
+    iterator end() { return iterator{}; }
+    
+    ~Generator() { if (handle_) handle_.destroy(); }
+    
+    Generator(Generator const&) = delete;
+    Generator& operator=(Generator const&) = delete;
+    
+    Generator(Generator&& other) noexcept
+        : handle_(std::exchange(other.handle_, nullptr)) {}
+    
+    Generator& operator=(Generator&& other) noexcept
+    {
+        if (this != &other)
+        {
+            if (handle_) handle_.destroy();
+            handle_ = std::exchange(other.handle_, nullptr);
+        }
+        return *this;
+    }
+
+private:
+    Handle handle_;
+    
+    explicit Generator(Handle h) : handle_(h) {}
+};
+----
+
+This generator:
+
+* Provides a standard iterator interface for range-based for loops
+* Stores and rethrows exceptions during iteration
+* Prevents `co_await` inside generators via deleted `await_transform`
+* Manages coroutine lifetime with RAII
+* Supports move semantics
+
+== Conclusion
+
+You have now learned the complete mechanics of C++20 coroutines:
+
+* *Keywords* — `co_await`, `co_yield`, and `co_return` transform functions into coroutines
+* *Promise types* — Control coroutine behavior at initialization, suspension, completion, and error handling
+* *Coroutine handles* — Lightweight references for resuming, querying, and destroying coroutines
+* *Symmetric transfer* — Efficient control flow without stack accumulation
+* *Allocation* — Custom allocation and HALO optimization
+* *Exception handling* — Capturing and propagating exceptions across suspension points
+
+These fundamentals prepare you for understanding Capy's `task<T>` type and the IoAwaitable protocol, which build on standard coroutine machinery with executor affinity and stop token propagation.

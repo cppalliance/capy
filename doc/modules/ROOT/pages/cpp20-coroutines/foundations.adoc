@@ -1,0 +1,145 @@
+= Part I: Foundations
+
+This section introduces the fundamental concepts you need before working with C++20 coroutines. You will learn how normal functions work, what makes coroutines different, and why coroutines exist as a language feature.
+
+== Prerequisites
+
+Before beginning this tutorial, you should have:
+
+* A C++ compiler with C++20 support (GCC 10+, Clang 14+, or MSVC 2019 16.8+)
+* Familiarity with basic C++ concepts: functions, classes, templates, and lambdas
+* Understanding of how function calls work: the call stack, local variables, and return values
+
+The examples in this tutorial use standard C++20 features. Compile with:
+
+* GCC: `g++ -std=c++20 -fcoroutines your_file.cpp`
+* Clang: `clang++ -std=c++20 your_file.cpp`
+* MSVC: `cl /std:c++20 your_file.cpp`
+
+== Functions and the Call Stack
+
+When you call a regular function, the system allocates space on the *call stack* for the function's local variables and parameters. This stack space is called a *stack frame*. When the function returns, this stack space is reclaimed. The function's state exists only during the call.
+
+Consider this function:
+
+[source,cpp]
+----
+int compute(int x, int y)
+{
+    int result = x * y + 42;
+    return result;
+}
+----
+
+When `compute` is called:
+
+1. A stack frame is allocated containing `x`, `y`, and `result`
+2. The function body executes
+3. The return value is passed back to the caller
+4. The stack frame is deallocated
+
+This model has a fundamental constraint: *run-to-completion*. Once a function starts, it must finish before control returns to the caller. The function cannot pause midway, let other code run, and resume later.
+
+== What Is a Coroutine?
+
+A *coroutine* is a function that can suspend its execution and resume later from exactly where it left off. Think of it as a bookmark in a book of instructions—instead of reading the entire book in one sitting, you can mark your place, do something else, and return to continue reading.
+
+When a coroutine suspends:
+
+* Its local variables are preserved
+* The instruction pointer (where you are in the code) is saved
+* Control returns to the caller or some other code
+
+When a coroutine resumes:
+
+* Local variables are restored to their previous values
+* Execution continues from the suspension point
+
+This capability is implemented through a *coroutine frame*—a heap-allocated block of memory that stores the coroutine's state. Unlike stack frames, coroutine frames persist across suspension points because they live on the heap rather than the stack.
+
+[source,cpp]
+----
+// Conceptual illustration (not real syntax)
+task<int> fetch_and_process()
+{
+    auto data = co_await fetch_from_network();  // suspends here
+    // When resumed, 'data' contains the fetched result
+    return process(data);
+}
+----
+
+The variable `data` maintains its value even though the function may have suspended and resumed. This is the fundamental capability that coroutines provide.
+
+== Why Coroutines?
+
+=== The Problem: Asynchronous Programming Without Coroutines
+
+Consider a server application that handles network requests. The server must read a request, query a database, compute a response, and send it back. Each step might take time to complete.
+
+In traditional synchronous code:
+
+[source,cpp]
+----
+void handle_request(connection& conn)
+{
+    std::string request = conn.read();      // blocks until data arrives
+    auto parsed = parse_request(request);
+    auto data = database.query(parsed.id);  // blocks until database responds
+    auto response = compute_response(data);
+    conn.write(response);                   // blocks until write completes
+}
+----
+
+This code reads naturally from top to bottom. But while waiting for the network or database, this function blocks the entire thread. If you have thousands of concurrent connections, you would need thousands of threads, each consuming memory and requiring operating system scheduling.
+
+=== The Callback Approach
+
+The traditional solution uses callbacks:
+
+[source,cpp]
+----
+void handle_request(connection& conn)
+{
+    conn.async_read([&conn](std::string request) {
+        auto parsed = parse_request(request);
+        database.async_query(parsed.id, [&conn](auto data) {
+            auto response = compute_response(data);
+            conn.async_write(response, [&conn]() {
+                // request complete
+            });
+        });
+    });
+}
+----
+
+This code does not block. Each operation starts, registers a callback, and returns immediately. When the operation completes, the callback runs.
+
+But look what has happened to the code: three levels of nesting, logic scattered across multiple lambda functions, and local variables that cannot be shared between callbacks without careful lifetime management. A single logical operation becomes fragmented across multiple functions.
+
+=== The Coroutine Solution
+
+Coroutines restore linear code structure while maintaining asynchronous behavior:
+
+[source,cpp]
+----
+task<void> handle_request(connection& conn)
+{
+    std::string request = co_await conn.async_read();
+    auto parsed = parse_request(request);
+    auto data = co_await database.async_query(parsed.id);
+    auto response = compute_response(data);
+    co_await conn.async_write(response);
+}
+----
+
+This code reads like the original blocking version. Local variables like `request`, `parsed`, and `data` exist naturally in their scope. Yet the function suspends at each `co_await` point, allowing other work to proceed while waiting.
+
+=== Beyond Asynchrony
+
+Coroutines also enable:
+
+* *Generators* — Functions that produce sequences of values on demand, computing each value only when requested
+* *State machines* — Complex control flow expressed as linear code with suspension points
+* *Cooperative multitasking* — Multiple logical tasks interleaved on a single thread
+
+You have now learned what coroutines are and why they exist. In the next section, you will learn the C++20 syntax for creating coroutines.
