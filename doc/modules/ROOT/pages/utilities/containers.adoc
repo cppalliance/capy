@@ -1,0 +1,247 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Containers
+
+This page documents the container and smart pointer utilities in Capy.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== polystore
+
+A container of type-erased objects indexed by their type:
+
+[source,cpp]
+----
+polystore ps;
+
+// Insert and retrieve by type
+A& a = ps.emplace<A>();
+B& b = ps.insert(B{});
+
+A& found = ps.get<A>();  // Throws if not found
+A* maybe = ps.find<A>(); // Returns nullptr if not found
+----
+
+=== Key Type Aliasing
+
+Types can specify a nested `key_type` to register under a base class:
+
+[source,cpp]
+----
+struct derived : base
+{
+    using key_type = base;
+};
+
+ps.emplace<derived>();
+base* b = ps.find<base>();  // Returns derived*
+----
+
+=== Dependency Injection
+
+The `invoke` function calls a callable with arguments from the store:
+
+[source,cpp]
+----
+ps.emplace<database>();
+ps.emplace<logger>();
+
+invoke(ps, [](database& db, logger& log) {
+    // Arguments are looked up by type
+});
+----
+
+== datastore
+
+A `polystore` with an explicit `clear()` method:
+
+[source,cpp]
+----
+datastore ctx;
+ctx.emplace<my_service>();
+// ... use services ...
+ctx.clear();  // Destroy all stored objects
+----
+
+Commonly used as a service container.
+
+== application
+
+A `polystore` with lifecycle management for application components:
+
+[source,cpp]
+----
+application app;
+
+// Construct parts
+app.emplace<http_server>();
+app.emplace<database_pool>();
+
+// Start all parts (calls start() on each)
+app.start();
+
+// ... run until shutdown ...
+
+// Stop all parts (calls stop() on each in reverse order)
+app.stop();
+
+// Wait for completion
+app.join();
+----
+
+Parts should implement `start()` and `stop()` methods.
+
+== intrusive_list
+
+A doubly-linked list where elements derive from `intrusive_list<T>::node`:
+
+[source,cpp]
+----
+struct my_item : intrusive_list<my_item>::node
+{
+    int value;
+};
+
+intrusive_list<my_item> list;
+my_item item;
+
+list.push_back(&item);
+my_item* front = list.pop_front();
+list.remove(&item);
+----
+
+=== When to Use
+
+* Elements are already allocated elsewhere
+* Need O(1) removal from middle
+* Cannot afford node allocation overhead
+
+== intrusive_queue
+
+A FIFO queue where elements derive from `intrusive_queue<T>::node`:
+
+[source,cpp]
+----
+struct work_item : intrusive_queue<work_item>::node
+{
+    std::function<void()> fn;
+};
+
+intrusive_queue<work_item> queue;
+work_item item;
+
+queue.push(&item);
+work_item* next = queue.pop();
+----
+
+=== Operations
+
+[cols="1,3"]
+|===
+| Operation | Description
+
+| `push(item*)`
+| Add to back
+
+| `pop()`
+| Remove from front (returns nullptr if empty)
+
+| `empty()`
+| Check if queue is empty
+
+| `splice(other)`
+| Move all items from another queue
+|===
+
+== small_unique_ptr
+
+A smart pointer with small buffer optimization:
+
+[source,cpp]
+----
+// Uses SBO if Derived fits in 32-byte buffer
+auto p = make_small_unique<Base, 32, Derived>(constructor_args...);
+
+// Access like unique_ptr
+p->method();
+Base& ref = *p;
+----
+
+=== SBO Requirements
+
+The small buffer path requires:
+
+* Object size ≤ buffer size
+* Object alignment ≤ `alignof(std::max_align_t)`
+* Type is nothrow move constructible
+
+Objects that don't meet these requirements are heap-allocated.
+
+=== Factory Function
+
+[source,cpp]
+----
+template<class T, std::size_t N, class U, class... Args>
+small_unique_ptr<T, N> make_small_unique(Args&&... args);
+----
+
+* `T` — Base type for the smart pointer
+* `N` — Buffer size in bytes
+* `U` — Concrete type to construct
+* `Args` — Constructor arguments
+
+== embed
+
+A utility for embedding string literals:
+
+[source,cpp]
+----
+embed text(R"(
+Hello "world"
+This has quotes and )
+)");
+
+std::string_view sv = text;  // Implicit conversion
+----
+
+The first character (typically newline) is removed, enabling clean formatting
+in source code.
+
+== Summary
+
+[cols="1,3"]
+|===
+| Class | Purpose
+
+| `polystore`
+| Type-erased container indexed by type
+
+| `datastore`
+| Polystore with clear()
+
+| `application`
+| Lifecycle management for app components
+
+| `intrusive_list<T>`
+| Doubly-linked list without node allocation
+
+| `intrusive_queue<T>`
+| FIFO queue without node allocation
+
+| `small_unique_ptr<T, N>`
+| Unique pointer with small buffer optimization
+
+| `embed`
+| String literal embedding helper
+|===
+
+== Next Steps
+
+* xref:file-io.adoc[File I/O] — Platform-independent file operations
