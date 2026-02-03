@@ -1,0 +1,270 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= The Allocator
+
+This section explains how Capy manages coroutine frame allocation and how to
+optimize allocation for high-throughput scenarios.
+
+== The Timing Problem
+
+Coroutine frames are allocated before the coroutine body runs:
+
+[source,cpp]
+----
+task<void> work(allocator& alloc)
+{
+    // Problem: by the time we get here, the frame is already allocated!
+    // We can't use 'alloc' for our frame allocation
+    co_return;
+}
+----
+
+The compiler calls `promise_type::operator new()` _before_ evaluating
+coroutine parameters. This creates a timing constraint: how do we provide
+an allocator to a coroutine if we can't pass it through parameters?
+
+== Thread-Local Propagation
+
+Capy solves this with thread-local state. Before creating a coroutine, a
+launcher sets up the frame allocator in thread-local storage:
+
+[source,cpp]
+----
+// Conceptually:
+thread_local frame_allocator* current_allocator = nullptr;
+
+void* promise_type::operator new(std::size_t size)
+{
+    if (current_allocator)
+        return current_allocator->allocate(size);
+    return ::operator new(size);
+}
+----
+
+The _allocation window_ is the period when thread-local state is active:
+
+----
+[launcher sets TLS] → [coroutine created] → [frame allocated] → [TLS cleared]
+        ↑                                                              ↑
+   window opens                                                  window closes
+----
+
+== The FrameAllocator Concept
+
+A frame allocator provides allocation and deallocation:
+
+[source,cpp]
+----
+template<typename A>
+concept FrameAllocator = requires(A& a, std::size_t size, void* ptr)
+{
+    { a.allocate(size) } -> std::same_as<void*>;
+    a.deallocate(ptr, size);
+};
+----
+
+=== allocate(size)
+
+Returns a pointer to `size` bytes of memory suitable for a coroutine frame.
+Must not throw (can return nullptr to fall back to default allocation).
+
+=== deallocate(ptr, size)
+
+Frees memory previously allocated by `allocate()`.
+
+Reference: `<boost/capy/concept/frame_allocator.hpp>`
+
+== Frame Recycling
+
+The default frame allocator recycles frames through a thread-local free list:
+
+----
+Thread-Local Free List:
+┌─────────┐    ┌─────────┐    ┌─────────┐
+│  128B   │ -> │  128B   │ -> │  128B   │ -> null
+└─────────┘    └─────────┘    └─────────┘
+┌─────────┐    ┌─────────┐
+│  256B   │ -> │  256B   │ -> null
+└─────────┘    └─────────┘
+----
+
+When a coroutine completes:
+
+1. Frame is returned to the free list (binned by size)
+2. Next coroutine of similar size reuses the frame
+3. No heap allocation needed for steady-state operation
+
+This dramatically reduces allocation overhead for programs that repeatedly
+create and destroy coroutines.
+
+== Using run_async with Allocators
+
+The `run_async` function manages the allocation window:
+
+[source,cpp]
+----
+#include <boost/capy/ex/run_async.hpp>
+
+thread_pool pool(4);
+
+// The () syntax ensures allocator is active when task is created
+run_async(pool.get_executor())(my_task());
+//        └─── sets up TLS ───┘└── task created while TLS active ──┘
+----
+
+The two-call syntax (`run_async(ex)(task)`) is deliberate:
+
+1. First call sets up thread-local allocator
+2. Second call creates the task (frame allocated using TLS)
+3. TLS is cleared after task creation
+
+WARNING: Don't split the calls:
+
+[source,cpp]
+----
+// WRONG: TLS state may be lost between calls
+auto launcher = run_async(ex);  // Sets TLS
+// ... other code might interfere ...
+launcher(my_task());            // TLS may no longer be valid
+----
+
+== Propagation Through Coroutine Chains
+
+Child coroutines inherit the parent's allocator:
+
+[source,cpp]
+----
+task<void> child()
+{
+    // Uses same allocator as parent
+    co_return;
+}
+
+task<void> parent()
+{
+    // Allocator propagates to children
+    co_await child();  // child uses our allocator
+}
+
+run_async(ex)(parent());
+----
+
+The mechanism:
+
+1. `parent`'s `initial_suspend` captures TLS allocator
+2. When `parent` awaits `child`, it sets TLS before `child` is created
+3. `child`'s frame uses the same allocator
+4. TLS is restored after `child` completes
+
+== Custom Allocators
+
+For special requirements, provide a custom allocator:
+
+[source,cpp]
+----
+struct my_allocator
+{
+    void* allocate(std::size_t size)
+    {
+        return my_pool_.allocate(size);
+    }
+
+    void deallocate(void* ptr, std::size_t size)
+    {
+        my_pool_.deallocate(ptr, size);
+    }
+
+private:
+    memory_pool my_pool_;
+};
+
+// Use with run_async
+my_allocator alloc;
+run_async(ex, alloc)(my_task());
+----
+
+== HALO: Heap Allocation eLision Optimization
+
+Compilers can sometimes eliminate frame allocation entirely:
+
+[source,cpp]
+----
+task<int> leaf()
+{
+    co_return 42;
+}
+
+task<int> parent()
+{
+    // If the compiler can prove leaf's lifetime is bounded by parent,
+    // it may allocate leaf's frame inside parent's frame
+    int x = co_await leaf();  // Potential HALO
+    co_return x;
+}
+----
+
+HALO requirements:
+
+* Coroutine lifetime bounded by caller
+* Compiler can prove frame doesn't escape
+* Await elidable attribute helps (Clang: `[[clang::coro_await_elidable]]`)
+
+You can't force HALO, but you can enable it:
+
+* Keep coroutine lifetimes scoped
+* Use `[[clang::coro_await_elidable]]` on task types
+* Avoid storing task objects
+
+== When to Optimize Allocation
+
+**Use default allocator when:**
+
+* Typical request rates (< 100K/sec)
+* Mixed workloads
+* Simplicity is preferred
+
+**Use custom allocator when:**
+
+* Very high throughput (> 100K coroutines/sec)
+* Allocation shows up in profiles
+* Memory fragmentation is a concern
+
+**Rely on HALO when:**
+
+* Deep coroutine nesting
+* Simple, scoped coroutine lifetimes
+* Compiler supports await elision
+
+== Summary
+
+[cols="1,3"]
+|===
+| Component | Purpose
+
+| Allocation window
+| Period when thread-local allocator is active
+
+| `FrameAllocator` concept
+| Interface for custom allocators
+
+| Frame recycling
+| Thread-local free list for frame reuse
+
+| `run_async(ex)(task)`
+| Two-call syntax ensures proper TLS setup
+
+| HALO
+| Compiler optimization eliminating heap allocation
+|===
+
+== Next Steps
+
+* xref:launching.adoc[Launching Coroutines] — `run_async` and `run` in detail
+* xref:../library/frame-allocators.adoc[Frame Allocators] — Advanced allocation patterns

@@ -1,0 +1,246 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= File I/O
+
+This page documents the portable file operations in Capy.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== file
+
+A platform-independent file handle for reading and writing:
+
+[source,cpp]
+----
+#include <boost/capy/file.hpp>
+
+file f("data.txt", file_mode::read);
+
+// Read data
+std::vector<char> buf(1024);
+std::size_t n = f.read(buf.data(), buf.size());
+
+// Query file info
+std::uint64_t sz = f.size();
+std::uint64_t pos = f.pos();
+
+// Seek to position
+f.seek(100);
+----
+
+=== Construction
+
+[source,cpp]
+----
+// Open on construction
+file f("data.txt", file_mode::read);
+
+// Default construct, then open
+file f2;
+f2.open("data.txt", file_mode::write);
+----
+
+Files automatically close when destroyed.
+
+=== File Modes
+
+[cols="1,2,2"]
+|===
+| Mode | Access | Behavior
+
+| `file_mode::read`
+| Read-only
+| Must exist, random access
+
+| `file_mode::scan`
+| Read-only
+| Must exist, sequential access
+
+| `file_mode::write`
+| Read/Write
+| Create or truncate, random access
+
+| `file_mode::write_new`
+| Read/Write
+| Must not exist, random access
+
+| `file_mode::write_existing`
+| Read/Write
+| Must exist, random access
+
+| `file_mode::append`
+| Write-only
+| Create or truncate, sequential
+
+| `file_mode::append_existing`
+| Write-only
+| Must exist, sequential
+|===
+
+=== Reading
+
+[source,cpp]
+----
+std::size_t n = f.read(buffer, size);
+// Returns bytes read (0 on EOF)
+----
+
+Read operations advance the file position.
+
+=== Writing
+
+[source,cpp]
+----
+std::size_t n = f.write(data, size);
+// Returns bytes written
+----
+
+Write operations advance the file position.
+
+=== Seeking
+
+[source,cpp]
+----
+f.seek(offset);         // Seek to absolute position
+std::uint64_t p = f.pos();  // Get current position
+----
+
+Seeking is available in random-access modes (`read`, `write`, `write_new`,
+`write_existing`).
+
+=== File Information
+
+[source,cpp]
+----
+std::uint64_t sz = f.size();  // Total file size
+bool open = f.is_open();      // Check if open
+----
+
+=== Native Handle
+
+Access the platform-specific handle for advanced operations:
+
+[source,cpp]
+----
+auto handle = f.native_handle();
+
+// Set a handle (closes current file if open)
+f.native_handle(some_handle);
+----
+
+The handle type varies by platform:
+
+* **Windows:** `HANDLE`
+* **POSIX:** `int` (file descriptor)
+* **Fallback:** `FILE*`
+
+== Error Handling
+
+Two error handling styles are available:
+
+=== Exception Style
+
+[source,cpp]
+----
+try {
+    file f("data.txt", file_mode::read);
+    f.read(buf, n);
+} catch (system::system_error const& e) {
+    std::cerr << "Error: " << e.what() << "\n";
+}
+----
+
+Methods throw `system::system_error` on failure.
+
+=== Error Code Style
+
+[source,cpp]
+----
+system::error_code ec;
+f.open("data.txt", file_mode::read, ec);
+if (ec)
+{
+    std::cerr << "Error: " << ec.message() << "\n";
+    return;
+}
+
+std::size_t n = f.read(buf, size, ec);
+if (ec)
+{
+    // Handle error
+}
+----
+
+Error code overloads never throw.
+
+== Platform Implementation
+
+The `file` class automatically selects the best implementation:
+
+* **Windows:** Uses Win32 API (`CreateFile`, `ReadFile`, `WriteFile`)
+* **POSIX:** Uses POSIX API (`open`, `read`, `write`)
+* **Fallback:** Uses standard C library (`fopen`, `fread`, `fwrite`)
+
+All implementations provide the same interface.
+
+== Example: Copy File
+
+[source,cpp]
+----
+void copy_file(char const* src, char const* dst)
+{
+    file in(src, file_mode::read);
+    file out(dst, file_mode::write);
+
+    char buf[4096];
+    while (true)
+    {
+        std::size_t n = in.read(buf, sizeof(buf));
+        if (n == 0)
+            break;
+        out.write(buf, n);
+    }
+}
+----
+
+== Example: Append to Log
+
+[source,cpp]
+----
+void log_message(char const* path, std::string_view msg)
+{
+    file f(path, file_mode::append);
+    f.write(msg.data(), msg.size());
+    f.write("\n", 1);
+}
+----
+
+== Summary
+
+[cols="1,3"]
+|===
+| Class | Purpose
+
+| `file`
+| Platform-independent file handle
+
+| `file_mode`
+| Open mode enumeration (read, write, append, etc.)
+
+| Exception methods
+| Throw on error
+
+| Error code methods
+| Return error via out parameter
+|===
+
+== Next Steps
+
+* xref:containers.adoc[Containers] — Type-erased containers
