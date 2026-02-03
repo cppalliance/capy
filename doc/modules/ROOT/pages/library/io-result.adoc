@@ -1,0 +1,309 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Error Handling with io_result
+
+This section explains how to handle errors from I/O operations using `io_result`
+and structured bindings.
+
+== The Problem: Exceptions vs Error Codes
+
+I/O operations can fail. Two common approaches:
+
+**Exceptions:**
+[source,cpp]
+----
+auto n = co_await socket.read_some(buffer);  // Throws on error
+----
+
+Clean syntax, but:
+
+* Performance overhead on the error path
+* Error handling can be far from the call site
+* Every operation needs try/catch
+
+**Error codes:**
+[source,cpp]
+----
+error_code ec;
+auto n = co_await socket.read_some(buffer, ec);  // Sets ec on error
+if (ec) handle_error(ec);
+----
+
+Explicit, but:
+
+* Extra parameter on every call
+* Easy to forget to check
+* Clutters the API
+
+== io_result: The Best of Both
+
+`io_result<Args...>` combines an error code with optional result values:
+
+[source,cpp]
+----
+#include <boost/capy/io_result.hpp>
+
+// Returns error code + bytes transferred
+auto [ec, n] = co_await stream.read_some(buffer);
+if (ec.failed())
+    handle_error(ec);
+process_data(buffer, n);
+----
+
+Features:
+
+* Structured bindings for clean syntax
+* Error code is always present
+* Additional values (bytes transferred, etc.) included
+* `[[nodiscard]]` prevents ignoring results
+
+== io_result Variants
+
+`io_result` supports 0-3 additional values:
+
+=== io_result<> (Error Only)
+
+Operations that succeed or fail without a result value:
+
+[source,cpp]
+----
+auto [ec] = co_await socket.connect(endpoint);
+if (ec.failed())
+    co_return handle_connection_error(ec);
+----
+
+=== io_result<T1> (Error + One Value)
+
+Operations returning a single value, like bytes transferred:
+
+[source,cpp]
+----
+auto [ec, n] = co_await stream.read_some(buffer);
+if (ec.failed())
+    co_return;
+buffer.commit(n);  // n bytes were read
+----
+
+=== io_result<T1, T2> (Error + Two Values)
+
+Operations returning two values:
+
+[source,cpp]
+----
+auto [ec, bytes_read, endpoint] = co_await socket.receive_from(buffer);
+----
+
+=== io_result<T1, T2, T3> (Error + Three Values)
+
+Operations returning three values:
+
+[source,cpp]
+----
+auto [ec, v1, v2, v3] = co_await complex_operation();
+----
+
+== Using Structured Bindings
+
+C++17 structured bindings make `io_result` ergonomic:
+
+[source,cpp]
+----
+// Destructure into separate variables
+auto [ec, n] = co_await read_some(buffer);
+
+// ec is system::error_code
+// n is std::size_t (or whatever the operation returns)
+----
+
+The binding order matches the template parameters:
+
+[source,cpp]
+----
+io_result<std::size_t>           → [ec, n]
+io_result<std::size_t, endpoint> → [ec, n, ep]
+io_result<>                      → [ec]
+----
+
+== Error Checking Idioms
+
+=== Check and Handle
+
+[source,cpp]
+----
+auto [ec, n] = co_await stream.read_some(buffer);
+if (ec.failed())
+{
+    log_error(ec);
+    co_return;  // Or throw, or return error
+}
+// Continue with n bytes
+----
+
+=== Ignore Specific Errors
+
+[source,cpp]
+----
+auto [ec, n] = co_await stream.read_some(buffer);
+if (ec.failed() && ec != error::operation_aborted)
+{
+    // Handle unexpected errors
+    throw system_error(ec);
+}
+// operation_aborted is expected (e.g., from cancellation)
+----
+
+=== Propagate as Exception
+
+[source,cpp]
+----
+auto [ec, n] = co_await stream.read_some(buffer);
+if (ec.failed())
+    throw system_error(ec);
+----
+
+== Returning io_result from Functions
+
+Custom awaitables can return `io_result`:
+
+[source,cpp]
+----
+task<io_result<std::size_t>> read_all(stream& s, buffer& buf)
+{
+    std::size_t total = 0;
+    while (buf.size() < buf.max_size())
+    {
+        auto [ec, n] = co_await s.read_some(buf.prepare(1024));
+        if (ec.failed())
+            co_return {ec, total};  // Return partial progress
+        buf.commit(n);
+        total += n;
+    }
+    co_return {{}, total};  // Success with total bytes
+}
+----
+
+== Error Code vs Exception Trade-offs
+
+**Prefer error codes when:**
+
+* Errors are expected (EOF, timeout, cancellation)
+* Performance in error path matters
+* Caller needs to handle specific errors differently
+
+**Prefer exceptions when:**
+
+* Errors are truly exceptional
+* Error handling is centralized (top-level catch)
+* Code would be cluttered with error checks
+
+**Capy's recommendation:** Use `io_result` for I/O operations (errors are
+common) and exceptions for programmer errors (bugs, invariant violations).
+
+== Converting Between Styles
+
+=== Error Code to Exception
+
+[source,cpp]
+----
+auto [ec, n] = co_await stream.read_some(buffer);
+if (ec.failed())
+    throw system_error(ec, "read failed");
+// Continue...
+----
+
+=== Wrap in Exception-Throwing Helper
+
+[source,cpp]
+----
+template<typename... Args>
+auto throw_on_error(io_result<Args...> result)
+{
+    auto& [ec, rest...] = result;
+    if (ec.failed())
+        throw system_error(ec);
+    return std::tie(rest...);
+}
+
+// Usage:
+auto [n] = throw_on_error(co_await stream.read_some(buffer));
+----
+
+== Common Patterns
+
+=== Read Loop
+
+[source,cpp]
+----
+task<void> read_all(stream& s, dynamic_buffer& buf)
+{
+    while (true)
+    {
+        auto [ec, n] = co_await s.read_some(buf.prepare(1024));
+        if (ec == error::end_of_stream)
+            co_return;  // Normal completion
+        if (ec.failed())
+            throw system_error(ec);
+        buf.commit(n);
+    }
+}
+----
+
+=== Write with Retry
+
+[source,cpp]
+----
+task<io_result<>> write_with_retry(stream& s, const_buffer data, int retries)
+{
+    for (int i = 0; i < retries; ++i)
+    {
+        auto [ec, n] = co_await s.write_some(data);
+        if (!ec.failed())
+        {
+            data += n;
+            if (data.size() == 0)
+                co_return {};  // All written
+        }
+        // Retry on transient errors
+        if (ec != error::resource_unavailable_try_again)
+            co_return {ec};
+    }
+    co_return {error::timed_out};
+}
+----
+
+== Summary
+
+[cols="1,3"]
+|===
+| Type | Contents
+
+| `io_result<>`
+| Error code only
+
+| `io_result<T1>`
+| Error code + one value
+
+| `io_result<T1, T2>`
+| Error code + two values
+
+| `io_result<T1, T2, T3>`
+| Error code + three values
+
+| Structured bindings
+| `auto [ec, n] = ...`
+
+| Error check
+| `ec.failed()` (not `ec` or `!!ec`)
+|===
+
+== Next Steps
+
+* xref:buffers.adoc[Buffers] — Memory management for I/O
+* xref:streams.adoc[Stream Concepts] — Generic read/write operations

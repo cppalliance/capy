@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html class="theme-green">
+
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+    <title>src/buffers/buffer_pair.cpp - capy</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <script>
+      // Apply theme and font size immediately to prevent flash
+      (function() {
+        document.documentElement.classList.add('no-transitions');
+
+        var saved = localStorage.getItem('gcovr-theme');
+        var theme = (saved === 'light' || saved === 'dark') ? saved
+          : window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.style.backgroundColor = theme === 'light' ? '#ffffff' : '#0d1117';
+
+        // Apply flat mode immediately to prevent sidebar flash
+        if (localStorage.getItem('gcovr-view-mode') === 'flat') {
+          document.documentElement.classList.add('early-flat-mode');
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="index.css"/>
+    <script src="index.js"></script>
+  </head>
+
+  <body>
+    <div class="app-container">
+      <!-- Sidebar -->
+      <aside class="sidebar" id="sidebar"><script>if(localStorage.getItem('sidebar-collapsed')==='true'){document.currentScript.parentElement.classList.add('collapsed');}else{var sw=localStorage.getItem('gcovr-sidebar-width');if(sw)document.documentElement.style.setProperty('--sidebar-width',sw+'px');}</script>
+        <div class="sidebar-header">
+          <div class="sidebar-header-row">
+            <a href="index.html" class="sidebar-logo" title="Back to index">
+              <svg viewBox="150 150 700 160" class="boost-wordmark"><path fill="#ffa000" d="M292.45,152.89h-93.18l-46.59,80,12.63,21.69,46.57-79.99h47.07c20.07,0,36.38,16.18,36.38,36.07,0,8.46-3.54,18.29-10.84,22.4,7.11,5.3,10.54,13.73,10.54,22.01,0,19.88-16.32,36.06-36.38,36.06h-61.71l16.12-27.7h45.59c4.66,0,8.45-3.75,8.45-8.36s-3.57-8.16-8.05-8.35c-.13-.02-36.25,0-36.25,0l16.14-27.71s20.22.02,20.31,0c1.9-.06,3.63-.74,5-1.85,1.93-1.53,3.15-3.87,3.15-6.5,0-4.62-3.79-8.37-8.45-8.37h-30.03l-47.04,80.75,17.39,29.85h93.18l46.59-80-46.59-80h0Z"/><path fill="currentColor" d="M550.81,291.93c-9.23,0-17.31-2.01-24.23-6.04s-12.29-9.63-16.1-16.83c-3.81-7.19-5.72-15.4-5.72-24.63s1.9-17.6,5.72-24.79c3.81-7.19,9.18-12.82,16.1-16.91,6.92-4.08,15-6.12,24.23-6.12s17.44,2.04,24.31,6.12,12.21,9.72,16.02,16.91,5.72,15.46,5.72,24.79-1.91,17.44-5.72,24.63-9.15,12.8-16.02,16.83c-6.87,4.02-14.97,6.04-24.31,6.04ZM550.81,272.45c5.37,0,9.79-1.23,13.28-3.7,3.49-2.47,6.12-5.82,7.89-10.06s2.66-8.99,2.66-14.25-.89-10.2-2.66-14.49c-1.77-4.29-4.4-7.7-7.89-10.22-3.49-2.52-7.92-3.78-13.28-3.78s-9.82,1.26-13.36,3.78c-3.54,2.52-6.2,5.93-7.97,10.22-1.77,4.29-2.66,9.12-2.66,14.49s.89,10.01,2.66,14.25c1.77,4.24,4.43,7.59,7.97,10.06s7.99,3.7,13.36,3.7Z"/><path fill="currentColor" d="M648.53,291.93c-9.23,0-17.31-2.01-24.23-6.04s-12.29-9.63-16.1-16.83c-3.81-7.19-5.72-15.4-5.72-24.63s1.9-17.6,5.72-24.79c3.81-7.19,9.18-12.82,16.1-16.91,6.92-4.08,15-6.12,24.23-6.12s17.44,2.04,24.31,6.12,12.21,9.72,16.02,16.91,5.72,15.46,5.72,24.79-1.91,17.44-5.72,24.63-9.15,12.8-16.02,16.83c-6.87,4.02-14.97,6.04-24.31,6.04ZM648.53,272.45c5.37,0,9.79-1.23,13.28-3.7,3.49-2.47,6.12-5.82,7.89-10.06s2.66-8.99,2.66-14.25-.89-10.2-2.66-14.49c-1.77-4.29-4.4-7.7-7.89-10.22-3.49-2.52-7.92-3.78-13.28-3.78s-9.82,1.26-13.36,3.78c-3.54,2.52-6.2,5.93-7.97,10.22-1.77,4.29-2.66,9.12-2.66,14.49s.89,10.01,2.66,14.25c1.77,4.24,4.43,7.59,7.97,10.06s7.99,3.7,13.36,3.7Z"/><path fill="currentColor" d="M722.75,260.85c.54,4.62,2.55,7.86,6.04,9.74s7.49,2.82,11.99,2.82,8.21-.8,11.11-2.41c2.9-1.61,4.35-4.24,4.35-7.89,0-2.25-.99-4-2.98-5.23s-4.56-2.2-7.73-2.9c-3.17-.7-6.66-1.37-10.46-2.01-3.81-.64-7.65-1.5-11.51-2.58-3.86-1.07-7.41-2.58-10.63-4.51-3.22-1.93-5.8-4.53-7.73-7.81-1.93-3.27-2.9-7.49-2.9-12.64,0-4.83,1.55-9.47,4.67-13.93,3.11-4.45,7.49-8.05,13.12-10.79,5.63-2.74,12.1-4.11,19.4-4.11,6.55,0,12.61,1.32,18.19,3.95,5.58,2.63,10.06,6.25,13.44,10.87s5.07,9.98,5.07,16.1h-21.41c-.43-4.61-2.15-7.86-5.15-9.74-3.01-1.88-6.6-2.82-10.79-2.82-4.94,0-8.69.99-11.27,2.98s-3.86,4.48-3.86,7.49c0,2.47.99,4.4,2.98,5.8,1.98,1.4,4.56,2.47,7.73,3.22,3.16.75,6.68,1.42,10.55,2.01,3.86.59,7.7,1.4,11.51,2.42,3.81,1.02,7.33,2.47,10.55,4.35s5.8,4.4,7.73,7.57,2.9,7.27,2.9,12.32c0,5.69-1.56,10.71-4.67,15.05-3.11,4.35-7.49,7.73-13.12,10.14-5.64,2.42-12.26,3.62-19.88,3.62-7.08,0-13.52-1.37-19.32-4.11s-10.44-6.44-13.93-11.11c-3.49-4.67-5.34-9.95-5.55-15.86h21.57,0Z"/><path fill="currentColor" d="M815.48,264.84v-47.29h17.55v-18.35h-17.55v-21.78l-34.42,40.14h12.84v51.81c0,11.05,8.95,20,20,20h21.7v-18.52h-14.12c-3.31,0-6-2.69-6-6h0Z"/><path fill="currentColor" d="M494.62,242.26c-2.36-3.92-5.58-7.03-9.66-9.34-1.08-.61-2.19-1.14-3.33-1.61.7-.44,1.36-.91,1.96-1.45,2.95-2.63,5.1-5.82,6.44-9.58,1.34-3.76,2.01-7.35,2.01-10.79,0-8.69-1.99-15.4-5.96-20.12s-9.31-8.02-16.02-9.9c-6.71-1.88-14.14-2.82-22.3-2.82h-34.29v112.7h40.41c8.16,0,15.59-.99,22.3-2.98,6.71-1.98,12.05-5.45,16.02-10.38,3.97-4.94,5.96-11.7,5.96-20.29,0-5.04-1.18-9.53-3.54-13.44ZM472.48,264.8c-1.88,2.09-4.46,3.52-7.73,4.27-3.28.75-6.9,1.13-10.87,1.13h-18.51v-74.54h12.4c4.08,0,7.73.32,10.95.97,3.22.64,5.77,1.96,7.65,3.95,1.88,1.99,2.82,4.91,2.82,8.77s-.94,6.79-2.82,8.78c-1.88,1.99-4.46,3.3-7.73,3.94-1.87.37-3.86.62-5.96.78l-11.25,19.19h12.46c4.08,0,7.73.35,10.95,1.05,3.22.7,5.77,2.01,7.65,3.94s2.82,4.83,2.82,8.69-.94,7-2.82,9.1v-.02Z"/></svg>
+            </a>
+            <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">
+            <svg class="icon-collapse" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"/></svg>
+            <svg class="icon-expand" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"/></svg>
+          </button>
+          </div>
+          <div class="sidebar-title-group">
+            <span class="sidebar-library">capy</span>
+          </div>
+        </div>
+        <div class="sidebar-search">
+          <input type="text" id="file-search" placeholder="Search files..." autocomplete="off">
+          <button class="search-clear" id="search-clear" type="button" aria-label="Clear search">&times;</button>
+        </div>
+        <div class="tree-controls">
+          <button class="tree-control-btn" id="expand-all" title="Expand all">
+            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 01.5.5v5h5a.5.5 0 010 1h-5v5a.5.5 0 01-1 0v-5h-5a.5.5 0 010-1h5v-5A.5.5 0 018 1z"/></svg>
+            Expand
+          </button>
+          <button class="tree-control-btn" id="collapse-all" title="Collapse all">
+            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 8a.5.5 0 01.5-.5h11a.5.5 0 010 1h-11A.5.5 0 012 8z"/></svg>
+            Collapse
+          </button>
+        </div>
+        <nav class="sidebar-nav" id="file-tree">
+<div class="tree-item">
+  <div class="tree-item-header">
+    <a href="index.html" class="tree-toggle" title="Back to directory">
+      <span class="toggle-icon">&larr;</span>
+    </a>
+    <span class="tree-icon folder">
+      <svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M1.75 1A1.75 1.75 0 000 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0016 13.25v-8.5A1.75 1.75 0 0014.25 3H7.5a.25.25 0 01-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75z"></path></svg>
+    </span>
+    <a class="tree-label" href="index.html">Back to Index</a>
+  </div>
+</div>
+<div class="tree-item active">
+  <div class="tree-item-header">
+    <span class="tree-toggle-spacer"></span>
+    <span class="tree-icon file">
+      <svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M3.75 1.5a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 019 4.25V1.5H3.75zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938zM2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75z"></path></svg>
+    </span>
+    <span class="tree-label">src/buffers/buffer_pair.cpp</span>
+  </div>
+</div>
+        </nav>
+        <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>
+      </aside>
+
+      <!-- Mobile sidebar backdrop -->
+      <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+      <!-- Main Content -->
+      <main class="main-content">
+        <header class="main-header">
+          <button class="mobile-menu-btn" id="mobile-menu-btn" title="Open menu">
+            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5z"/></svg>
+          </button>
+          <div class="breadcrumb">
+<a href="index.html" class="breadcrumb-home">Index</a><span class="separator">/</span><span class="current">src / buffers / buffer_pair.cpp</span>          </div>
+          <div class="header-actions">
+          </div>
+          <div class="view-toggle" id="view-toggle" style="display:none">
+            <button class="view-btn active" data-view="nested">Nested</button>
+            <button class="view-btn" data-view="flat">Flat</button>
+          </div>
+          <button class="theme-toggle" id="theme-toggle" title="Toggle theme">
+            <svg class="icon-moon" viewBox="0 0 16 16" fill="currentColor"><path d="M6 .278a.768.768 0 0 1 .08.858 7.208 7.208 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 0 1 .81.316.733.733 0 0 1-.031.893A8.349 8.349 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 0 1 6 .278z"/></svg>
+            <svg class="icon-sun" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0zm0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13zm8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zM3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8zm10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0zm-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0zm9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707zM4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708z"/></svg>
+          </button>
+        </header>
+
+        <div class="content-wrapper">
+          <section class="summary-section">
+<div class="source-summary">
+  <div class="source-info">
+    <h2 class="source-filename">src/buffers/buffer_pair.cpp</h2>
+    <div class="source-stats">
+      <span class="stat coverage-high">
+        <strong>100.0%</strong> Lines (44/44)
+      </span>
+      <span class="stat coverage-high">
+        <strong>100.0%</strong> Functions (2/2)
+      </span>
+    </div>
+  </div>
+</div>          </section>
+
+          <section class="main-section">
+<div class="source-container no-branches">
+  <div class="source-header">
+    <div class="source-title">src/buffers/buffer_pair.cpp</div>
+    <div class="source-line-filters">
+      <button type="button" class="btn btn-sm button_toggle_coveredLine show_coveredLine" value="coveredLine" title="Toggle covered lines">
+        <span class="btn-count">44</span> covered
+      </button>
+      <button type="button" class="btn btn-sm button_toggle_uncoveredLine show_uncoveredLine" value="uncoveredLine" title="Toggle uncovered lines">
+        <span class="btn-count">0</span> uncovered
+      </button>
+    </div>
+    <div class="source-column-filters">
+      <button type="button" class="btn btn-sm col-toggle show-col" data-col="tla" title="Toggle TLA column">TLA</button>
+      <button type="button" class="btn btn-sm col-toggle show-col" data-col="count" title="Toggle Hits column">Hits</button>
+    </div>
+    <div class="source-nav-links">
+      <a class="nav-link nav-prev" href="index.buffer_array.cpp.3944b7e8cf36d5fb8509cd79a24c4f4a.html" title="Previous file">
+        <svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M9.78 12.78a.75.75 0 01-1.06 0L4.47 8.53a.75.75 0 010-1.06l4.25-4.25a.75.75 0 011.06 1.06L6.06 8l3.72 3.72a.75.75 0 010 1.06z"></path></svg>
+        Prev
+      </a>
+      <a class="nav-link nav-index" href="index.html" title="Back to index">
+        <svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M6.906.664a1.749 1.749 0 012.187 0l5.25 4.2c.415.332.657.835.657 1.367v7.019A1.75 1.75 0 0113.25 15h-3.5a.75.75 0 01-.75-.75V9H7v5.25a.75.75 0 01-.75.75h-3.5A1.75 1.75 0 011 13.25V6.23c0-.531.242-1.034.657-1.366l5.25-4.2z"></path></svg>
+        Index
+      </a>
+      <a class="nav-link nav-next" href="index.circular_dynamic_buffer.cpp.56cfc4793085b51ee5fd594c544cc13f.html" title="Next file">
+        Next
+        <svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M6.22 3.22a.75.75 0 011.06 0l4.25 4.25a.75.75 0 010 1.06l-4.25 4.25a.75.75 0 01-1.06-1.06L9.94 8 6.22 4.28a.75.75 0 010-1.06z"></path></svg>
+      </a>
+    </div>
+  </div>
+
+  <div class="source-table-container">
+    <table class="source-table">
+      <thead>
+        <tr>
+          <th class="col-lineno">Line</th>
+          <th class="col-tla">TLA</th>
+          <th class="col-count">Hits</th>
+          <th class="col-source">Source Code</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l1" href="#l1">1</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="c1">//</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l2" href="#l2">2</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="c1">// Copyright (c) 2023 Vinnie Falco (vinnie.falco@gmail.com)</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l3" href="#l3">3</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="c1">//</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l4" href="#l4">4</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="c1">// Distributed under the Boost Software License, Version 1.0. (See accompanying</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l5" href="#l5">5</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="c1">// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l6" href="#l6">6</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="c1">//</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l7" href="#l7">7</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="c1">// Official repository: https://github.com/cppalliance/capy</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l8" href="#l8">8</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="c1">//</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l9" href="#l9">9</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l10" href="#l10">10</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;boost/capy/buffers/buffer_pair.hpp&gt;</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l11" href="#l11">11</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;boost/capy/buffers/slice.hpp&gt;</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l12" href="#l12">12</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l13" href="#l13">13</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="k">namespace</span><span class="w"> </span><span class="nn">boost</span><span class="w"> </span><span class="p">{</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l14" href="#l14">14</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="k">namespace</span><span class="w"> </span><span class="nn">capy</span><span class="w"> </span><span class="p">{</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l15" href="#l15">15</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l16" href="#l16">16</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="kt">void</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l17" href="#l17">17</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+1040          </td>
+          <td class="col-source"><span class="nf">tag_invoke</span><span class="p">(</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l18" href="#l18">18</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="n">slice_tag</span><span class="w"> </span><span class="k">const</span><span class="o">&amp;</span><span class="p">,</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l19" href="#l19">19</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="n">const_buffer_pair</span><span class="o">&amp;</span><span class="w"> </span><span class="n">bs</span><span class="p">,</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l20" href="#l20">20</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="n">slice_how</span><span class="w"> </span><span class="n">how</span><span class="p">,</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l21" href="#l21">21</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">size_t</span><span class="w"> </span><span class="n">n</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l22" href="#l22">22</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="p">{</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l23" href="#l23">23</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+1040          </td>
+          <td class="col-source"><span class="w">    </span><span class="k">switch</span><span class="p">(</span><span class="n">how</span><span class="p">)</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l24" href="#l24">24</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="p">{</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l25" href="#l25">25</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+512          </td>
+          <td class="col-source"><span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="no">slice_how</span><span class="o">::</span><span class="no">remove_prefix</span><span class="p">:</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l26" href="#l26">26</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="p">{</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l27" href="#l27">27</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+512          </td>
+          <td class="col-source"><span class="w">        </span><span class="k">auto</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">bs</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l28" href="#l28">28</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+512          </td>
+          <td class="col-source"><span class="w">        </span><span class="k">if</span><span class="p">(</span><span class="n">n</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">p</span><span class="o">-&gt;</span><span class="n">size</span><span class="p">())</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l29" href="#l29">29</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">        </span><span class="p">{</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l30" href="#l30">30</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+225          </td>
+          <td class="col-source"><span class="w">            </span><span class="n">remove_prefix</span><span class="p">(</span><span class="o">*</span><span class="n">p</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">);</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l31" href="#l31">31</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+225          </td>
+          <td class="col-source"><span class="w">            </span><span class="k">return</span><span class="p">;</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l32" href="#l32">32</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">        </span><span class="p">}</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l33" href="#l33">33</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">        </span><span class="n">n</span><span class="w"> </span><span class="o">-=</span><span class="w"> </span><span class="n">p</span><span class="o">-&gt;</span><span class="n">size</span><span class="p">();</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l34" href="#l34">34</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">        </span><span class="o">*</span><span class="n">p</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">bs</span><span class="p">[</span><span class="mi">1</span><span class="p">];</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l35" href="#l35">35</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">        </span><span class="n">bs</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{};</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l36" href="#l36">36</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">        </span><span class="n">remove_prefix</span><span class="p">(</span><span class="o">*</span><span class="n">p</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">);</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l37" href="#l37">37</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">        </span><span class="k">return</span><span class="p">;</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l38" href="#l38">38</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="p">}</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l39" href="#l39">39</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l40" href="#l40">40</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+528          </td>
+          <td class="col-source"><span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="no">slice_how</span><span class="o">::</span><span class="no">keep_prefix</span><span class="p">:</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l41" href="#l41">41</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="p">{</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l42" href="#l42">42</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+528          </td>
+          <td class="col-source"><span class="w">        </span><span class="k">auto</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">bs</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l43" href="#l43">43</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+528          </td>
+          <td class="col-source"><span class="w">        </span><span class="k">if</span><span class="p">(</span><span class="n">n</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="n">p</span><span class="o">-&gt;</span><span class="n">size</span><span class="p">())</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l44" href="#l44">44</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">        </span><span class="p">{</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l45" href="#l45">45</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">            </span><span class="n">keep_prefix</span><span class="p">(</span><span class="o">*</span><span class="n">p</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">);</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l46" href="#l46">46</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">            </span><span class="n">bs</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{};</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l47" href="#l47">47</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">            </span><span class="k">return</span><span class="p">;</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l48" href="#l48">48</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">        </span><span class="p">}</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l49" href="#l49">49</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+241          </td>
+          <td class="col-source"><span class="w">        </span><span class="n">n</span><span class="w"> </span><span class="o">-=</span><span class="w"> </span><span class="n">p</span><span class="o">-&gt;</span><span class="n">size</span><span class="p">();</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l50" href="#l50">50</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+241          </td>
+          <td class="col-source"><span class="w">        </span><span class="o">++</span><span class="n">p</span><span class="p">;</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l51" href="#l51">51</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+241          </td>
+          <td class="col-source"><span class="w">        </span><span class="n">keep_prefix</span><span class="p">(</span><span class="o">*</span><span class="n">p</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">);</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l52" href="#l52">52</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+241          </td>
+          <td class="col-source"><span class="w">        </span><span class="k">return</span><span class="p">;</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l53" href="#l53">53</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="p">}</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l54" href="#l54">54</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="p">}</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l55" href="#l55">55</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="p">}</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l56" href="#l56">56</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l57" href="#l57">57</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="kt">void</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l58" href="#l58">58</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+1040          </td>
+          <td class="col-source"><span class="nf">tag_invoke</span><span class="p">(</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l59" href="#l59">59</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="n">slice_tag</span><span class="w"> </span><span class="k">const</span><span class="o">&amp;</span><span class="p">,</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l60" href="#l60">60</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="n">mutable_buffer_pair</span><span class="o">&amp;</span><span class="w"> </span><span class="n">bs</span><span class="p">,</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l61" href="#l61">61</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="n">slice_how</span><span class="w"> </span><span class="n">how</span><span class="p">,</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l62" href="#l62">62</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">size_t</span><span class="w"> </span><span class="n">n</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l63" href="#l63">63</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="p">{</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l64" href="#l64">64</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+1040          </td>
+          <td class="col-source"><span class="w">    </span><span class="k">switch</span><span class="p">(</span><span class="n">how</span><span class="p">)</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l65" href="#l65">65</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="p">{</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l66" href="#l66">66</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+512          </td>
+          <td class="col-source"><span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="no">slice_how</span><span class="o">::</span><span class="no">remove_prefix</span><span class="p">:</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l67" href="#l67">67</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="p">{</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l68" href="#l68">68</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+512          </td>
+          <td class="col-source"><span class="w">        </span><span class="k">auto</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">bs</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l69" href="#l69">69</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+512          </td>
+          <td class="col-source"><span class="w">        </span><span class="k">if</span><span class="p">(</span><span class="n">n</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="n">p</span><span class="o">-&gt;</span><span class="n">size</span><span class="p">())</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l70" href="#l70">70</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">        </span><span class="p">{</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l71" href="#l71">71</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+225          </td>
+          <td class="col-source"><span class="w">            </span><span class="n">remove_prefix</span><span class="p">(</span><span class="o">*</span><span class="n">p</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">);</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l72" href="#l72">72</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+225          </td>
+          <td class="col-source"><span class="w">            </span><span class="k">return</span><span class="p">;</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l73" href="#l73">73</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">        </span><span class="p">}</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l74" href="#l74">74</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">        </span><span class="n">n</span><span class="w"> </span><span class="o">-=</span><span class="w"> </span><span class="n">p</span><span class="o">-&gt;</span><span class="n">size</span><span class="p">();</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l75" href="#l75">75</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">        </span><span class="o">*</span><span class="n">p</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">bs</span><span class="p">[</span><span class="mi">1</span><span class="p">];</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l76" href="#l76">76</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">        </span><span class="n">bs</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{};</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l77" href="#l77">77</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">        </span><span class="n">remove_prefix</span><span class="p">(</span><span class="o">*</span><span class="n">p</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">);</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l78" href="#l78">78</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">        </span><span class="k">return</span><span class="p">;</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l79" href="#l79">79</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="p">}</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l80" href="#l80">80</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l81" href="#l81">81</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+528          </td>
+          <td class="col-source"><span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="no">slice_how</span><span class="o">::</span><span class="no">keep_prefix</span><span class="p">:</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l82" href="#l82">82</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="p">{</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l83" href="#l83">83</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+528          </td>
+          <td class="col-source"><span class="w">        </span><span class="k">auto</span><span class="w"> </span><span class="n">p</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">bs</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l84" href="#l84">84</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+528          </td>
+          <td class="col-source"><span class="w">        </span><span class="k">if</span><span class="p">(</span><span class="n">n</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="n">p</span><span class="o">-&gt;</span><span class="n">size</span><span class="p">())</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l85" href="#l85">85</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">        </span><span class="p">{</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l86" href="#l86">86</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">            </span><span class="n">keep_prefix</span><span class="p">(</span><span class="o">*</span><span class="n">p</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">);</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l87" href="#l87">87</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">            </span><span class="n">bs</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{};</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l88" href="#l88">88</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+287          </td>
+          <td class="col-source"><span class="w">            </span><span class="k">return</span><span class="p">;</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l89" href="#l89">89</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">        </span><span class="p">}</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l90" href="#l90">90</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+241          </td>
+          <td class="col-source"><span class="w">        </span><span class="n">n</span><span class="w"> </span><span class="o">-=</span><span class="w"> </span><span class="n">p</span><span class="o">-&gt;</span><span class="n">size</span><span class="p">();</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l91" href="#l91">91</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+241          </td>
+          <td class="col-source"><span class="w">        </span><span class="o">++</span><span class="n">p</span><span class="p">;</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l92" href="#l92">92</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+241          </td>
+          <td class="col-source"><span class="w">        </span><span class="n">keep_prefix</span><span class="p">(</span><span class="o">*</span><span class="n">p</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">);</span></td>
+        </tr>
+        <tr class="source-line coveredLine show_coveredLine">
+          <td class="col-lineno">
+            <a id="l93" href="#l93">93</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count coveredLine">
+241          </td>
+          <td class="col-source"><span class="w">        </span><span class="k">return</span><span class="p">;</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l94" href="#l94">94</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="p">}</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l95" href="#l95">95</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="w">    </span><span class="p">}</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l96" href="#l96">96</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="p">}</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l97" href="#l97">97</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l98" href="#l98">98</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="p">}</span><span class="w"> </span><span class="c1">// capy</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l99" href="#l99">99</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"><span class="p">}</span><span class="w"> </span><span class="c1">// boost</span></td>
+        </tr>
+        <tr class="source-line">
+          <td class="col-lineno">
+            <a id="l100" href="#l100">100</a>
+          </td>
+          <td class="col-tla"></td>
+          <td class="col-count">
+          </td>
+          <td class="col-source"></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>          </section>
+        </div>
+
+        <footer class="main-footer">
+          Created using <a href="http://gcovr.com/en/8.6">GCOVR (Version 8.6)</a>
+          at 2026-02-21 23:37:57
+        </footer>
+      </main>
+    </div>
+  <script>window.GCOVR_TREE_DATA=[{"name": "include", "coverage": "94.2", "coverageClass": "coverage-high", "linesTotal": "3084", "linesExec": "2904", "linesCoverage": "94.2", "linesClass": "coverage-high", "functionsCoverage": "90.4", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": true, "link": "index.include.d436eb0fd9de10b54a828ce6435f7e81.html", "children": [{"name": "buffers", "coverage": "98.9", "coverageClass": "coverage-high", "linesTotal": "647", "linesExec": "640", "linesCoverage": "98.9", "linesClass": "coverage-high", "functionsCoverage": "99.7", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": true, "link": "index.buffers.38f127d0edd594a2706520d325a9e771.html", "children": [{"name": "buffer_array.hpp", "coverage": "99.1", "coverageClass": "coverage-high", "linesTotal": "107", "linesExec": "106", "linesCoverage": "99.1", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.buffer_array.hpp.8bac7c136c11abbd10a0920e35eb0054.html", "children": []}, {"name": "buffer_copy.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "36", "linesExec": "36", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.buffer_copy.hpp.34e3716bbe44e989ab4a6f8c42af4440.html", "children": []}, {"name": "buffer_param.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "31", "linesExec": "31", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "97.5", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.buffer_param.hpp.dd4c0f98fe69407f84e6801b22bd4665.html", "children": []}, {"name": "circular_dynamic_buffer.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "17", "linesExec": "17", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.circular_dynamic_buffer.hpp.537907c0315811263b495cc2b3f466dd.html", "children": []}, {"name": "consuming_buffers.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "46", "linesExec": "46", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.consuming_buffers.hpp.2860eca2e21d14e28a0a5b82b7e7d14d.html", "children": []}, {"name": "flat_dynamic_buffer.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "35", "linesExec": "35", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.flat_dynamic_buffer.hpp.42996dadaa9e62741a25b851f1ddbf53.html", "children": []}, {"name": "make_buffer.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "105", "linesExec": "105", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.make_buffer.hpp.0b5191be327d1df5306d419e4fbd7a4f.html", "children": []}, {"name": "slice.hpp", "coverage": "97.0", "coverageClass": "coverage-high", "linesTotal": "166", "linesExec": "161", "linesCoverage": "97.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.slice.hpp.f85ae64fb388ff92aead1c4df6ceff56.html", "children": []}, {"name": "string_dynamic_buffer.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "53", "linesExec": "53", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.string_dynamic_buffer.hpp.763d1cd31ae554f6eac21385dca732b7.html", "children": []}, {"name": "vector_dynamic_buffer.hpp", "coverage": "98.0", "coverageClass": "coverage-high", "linesTotal": "51", "linesExec": "50", "linesCoverage": "98.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.vector_dynamic_buffer.hpp.b0343a8f9ccfd3c519274dc554e47f63.html", "children": []}]}, {"name": "detail", "coverage": "95.7", "coverageClass": "coverage-high", "linesTotal": "138", "linesExec": "132", "linesCoverage": "95.7", "linesClass": "coverage-high", "functionsCoverage": "55.3", "functionsClass": "coverage-low", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": true, "link": "index.detail.2427ad8b285090028a707090faec2f5d.html", "children": [{"name": "await_suspend_helper.hpp", "coverage": "50.0", "coverageClass": "coverage-low", "linesTotal": "4", "linesExec": "2", "linesCoverage": "50.0", "linesClass": "coverage-low", "functionsCoverage": "-", "functionsClass": "coverage-unknown", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.await_suspend_helper.hpp.8b7ff23e2ccd515acf4a752ce8d73603.html", "children": []}, {"name": "frame_memory_resource.hpp", "coverage": "81.8", "coverageClass": "coverage-medium", "linesTotal": "11", "linesExec": "9", "linesCoverage": "81.8", "linesClass": "coverage-medium", "functionsCoverage": "42.1", "functionsClass": "coverage-low", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.frame_memory_resource.hpp.0f2def30855cadd7c9014f2db396bacd.html", "children": []}, {"name": "intrusive.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "78", "linesExec": "78", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.intrusive.hpp.c2369106b5448bd1df29f7990777fa73.html", "children": []}, {"name": "run.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "4", "linesExec": "4", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.run.hpp.80826a4038222b772691e3d1e7a0e2b9.html", "children": []}, {"name": "run_callbacks.hpp", "coverage": "92.6", "coverageClass": "coverage-high", "linesTotal": "27", "linesExec": "25", "linesCoverage": "92.6", "linesClass": "coverage-high", "functionsCoverage": "52.6", "functionsClass": "coverage-low", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.run_callbacks.hpp.30199c30457c68d35a46bb322f251caf.html", "children": []}, {"name": "thread_local_ptr.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "12", "linesExec": "12", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.thread_local_ptr.hpp.1d18d329ea5fe4a9e15cb2b5e959af69.html", "children": []}, {"name": "type_id.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "2", "linesExec": "2", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.type_id.hpp.e496de65857f7dcba917ee9964b2fb42.html", "children": []}]}, {"name": "ex", "coverage": "93.5", "coverageClass": "coverage-high", "linesTotal": "814", "linesExec": "761", "linesCoverage": "93.5", "linesClass": "coverage-high", "functionsCoverage": "92.4", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": true, "link": "index.ex.e698ef32095988fba8036e7b68c06e57.html", "children": [{"name": "any_executor.hpp", "coverage": "75.5", "coverageClass": "coverage-medium", "linesTotal": "53", "linesExec": "40", "linesCoverage": "75.5", "linesClass": "coverage-medium", "functionsCoverage": "81.8", "functionsClass": "coverage-medium", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.any_executor.hpp.4d4d2368eecdf0d1aca9ace9dc0360f0.html", "children": []}, {"name": "async_event.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "68", "linesExec": "68", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.async_event.hpp.29453227df0cac28b84f2d9372f12e75.html", "children": []}, {"name": "async_mutex.hpp", "coverage": "98.9", "coverageClass": "coverage-high", "linesTotal": "94", "linesExec": "93", "linesCoverage": "98.9", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.async_mutex.hpp.7e55e22c6eeeb7ce305e8887243efb4b.html", "children": []}, {"name": "execution_context.hpp", "coverage": "98.1", "coverageClass": "coverage-high", "linesTotal": "52", "linesExec": "51", "linesCoverage": "98.1", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.execution_context.hpp.eff3a48db9644ffdc1377de0ca7a8be0.html", "children": []}, {"name": "executor_ref.hpp", "coverage": "78.9", "coverageClass": "coverage-medium", "linesTotal": "38", "linesExec": "30", "linesCoverage": "78.9", "linesClass": "coverage-medium", "functionsCoverage": "40.0", "functionsClass": "coverage-low", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.executor_ref.hpp.f39a9bdcd6839b078c2bc4dea57c20da.html", "children": []}, {"name": "frame_allocator.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "7", "linesExec": "7", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.frame_allocator.hpp.fc27441cb76bf9d6bacc04bfa3e557f6.html", "children": []}, {"name": "immediate.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "22", "linesExec": "22", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "84.0", "functionsClass": "coverage-medium", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.immediate.hpp.fe94226635754ba10b5c09bd7041396e.html", "children": []}, {"name": "io_awaitable_promise_base.hpp", "coverage": "96.4", "coverageClass": "coverage-high", "linesTotal": "56", "linesExec": "54", "linesCoverage": "96.4", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.io_awaitable_promise_base.hpp.7cd520b7ab8bf46438c68934a802a51d.html", "children": []}, {"name": "recycling_memory_resource.hpp", "coverage": "80.4", "coverageClass": "coverage-medium", "linesTotal": "51", "linesExec": "41", "linesCoverage": "80.4", "linesClass": "coverage-medium", "functionsCoverage": "90.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.recycling_memory_resource.hpp.55c9fffd026133071320d62223eecd35.html", "children": []}, {"name": "run.hpp", "coverage": "99.5", "coverageClass": "coverage-high", "linesTotal": "186", "linesExec": "185", "linesCoverage": "99.5", "linesClass": "coverage-high", "functionsCoverage": "99.2", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.run.hpp.c52bb307158f9b104255d8e364986d4c.html", "children": []}, {"name": "run_async.hpp", "coverage": "85.2", "coverageClass": "coverage-medium", "linesTotal": "115", "linesExec": "98", "linesCoverage": "85.2", "linesClass": "coverage-medium", "functionsCoverage": "92.6", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.run_async.hpp.ab296551cbf8717971100f39f0826a97.html", "children": []}, {"name": "strand.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "25", "linesExec": "25", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.strand.hpp.a47df7a8d160f5274aded9311019536a.html", "children": []}, {"name": "thread_pool.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "16", "linesExec": "16", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.thread_pool.hpp.8e9a8fdede6a75d756c9f8225848c78f.html", "children": []}, {"name": "work_guard.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "31", "linesExec": "31", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.work_guard.hpp.0f8bd2583144748024d0667ea72ae45e.html", "children": []}]}, {"name": "io", "coverage": "90.6", "coverageClass": "coverage-high", "linesTotal": "1005", "linesExec": "911", "linesCoverage": "90.6", "linesClass": "coverage-high", "functionsCoverage": "90.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": true, "link": "index.io.8dd6dc18bc986ac5e08f7c465f508b51.html", "children": [{"name": "any_buffer_sink.hpp", "coverage": "89.5", "coverageClass": "coverage-medium", "linesTotal": "256", "linesExec": "229", "linesCoverage": "89.5", "linesClass": "coverage-medium", "functionsCoverage": "88.7", "functionsClass": "coverage-medium", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.any_buffer_sink.hpp.385c03aaebc97771e1fb671943037253.html", "children": []}, {"name": "any_buffer_source.hpp", "coverage": "87.7", "coverageClass": "coverage-medium", "linesTotal": "163", "linesExec": "143", "linesCoverage": "87.7", "linesClass": "coverage-medium", "functionsCoverage": "90.7", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.any_buffer_source.hpp.8700c9eb013f712349e5e41961bd7346.html", "children": []}, {"name": "any_read_source.hpp", "coverage": "91.2", "coverageClass": "coverage-high", "linesTotal": "91", "linesExec": "83", "linesCoverage": "91.2", "linesClass": "coverage-high", "functionsCoverage": "92.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.any_read_source.hpp.a0c3c4bef1d1ef40a7bf2b5d7288cbcc.html", "children": []}, {"name": "any_read_stream.hpp", "coverage": "87.4", "coverageClass": "coverage-medium", "linesTotal": "95", "linesExec": "83", "linesCoverage": "87.4", "linesClass": "coverage-medium", "functionsCoverage": "81.6", "functionsClass": "coverage-medium", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.any_read_stream.hpp.c1874ab4ea88b65e6f22c65ae1bfac25.html", "children": []}, {"name": "any_stream.hpp", "coverage": "89.8", "coverageClass": "coverage-medium", "linesTotal": "49", "linesExec": "44", "linesCoverage": "89.8", "linesClass": "coverage-medium", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.any_stream.hpp.27453f689d0af034a945b47a5e1e2fd0.html", "children": []}, {"name": "any_write_sink.hpp", "coverage": "93.2", "coverageClass": "coverage-high", "linesTotal": "176", "linesExec": "164", "linesCoverage": "93.2", "linesClass": "coverage-high", "functionsCoverage": "93.3", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.any_write_sink.hpp.bd9fbb6434796c1ad86ae6391f2d73d4.html", "children": []}, {"name": "any_write_stream.hpp", "coverage": "94.1", "coverageClass": "coverage-high", "linesTotal": "101", "linesExec": "95", "linesCoverage": "94.1", "linesClass": "coverage-high", "functionsCoverage": "85.7", "functionsClass": "coverage-medium", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.any_write_stream.hpp.4ff939454650c77b58b1e023d9132049.html", "children": []}, {"name": "pull_from.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "4", "linesExec": "4", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.pull_from.hpp.3a0a1e7f6d1cadded13e182f0e9b00f6.html", "children": []}, {"name": "push_to.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "4", "linesExec": "4", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.push_to.hpp.3c0e80e46605024fb40082f53f9929c9.html", "children": []}, {"name": "write_now.hpp", "coverage": "93.9", "coverageClass": "coverage-high", "linesTotal": "66", "linesExec": "62", "linesCoverage": "93.9", "linesClass": "coverage-high", "functionsCoverage": "96.2", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.write_now.hpp.d4d4286e69caa0c9af16a34a2932e3b6.html", "children": []}]}, {"name": "buffers.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "91", "linesExec": "91", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.buffers.hpp.519279fcf62d09d3a03b359051b03049.html", "children": []}, {"name": "cond.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "3", "linesExec": "3", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.cond.hpp.9721a0a2fa9e7762a7ddc39ddb6de9ed.html", "children": []}, {"name": "decomposes_to.hpp", "coverage": "0.0", "coverageClass": "coverage-low", "linesTotal": "2", "linesExec": "0", "linesCoverage": "0.0", "linesClass": "coverage-none", "functionsCoverage": "0.0", "functionsClass": "coverage-none", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.decomposes_to.hpp.4e035c93864630e817ede6fd4b5b2517.html", "children": []}, {"name": "error.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "3", "linesExec": "3", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.error.hpp.1d165fc5fd869abebacca69baa425b9b.html", "children": []}, {"name": "read.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "6", "linesExec": "6", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.read.hpp.1a2705195a5c9e77e26def5db36457c6.html", "children": []}, {"name": "read_until.hpp", "coverage": "81.8", "coverageClass": "coverage-medium", "linesTotal": "66", "linesExec": "54", "linesCoverage": "81.8", "linesClass": "coverage-medium", "functionsCoverage": "85.0", "functionsClass": "coverage-medium", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.read_until.hpp.e5f555aa07a4e2cd6ec7d7416cec73bd.html", "children": []}, {"name": "task.hpp", "coverage": "97.4", "coverageClass": "coverage-high", "linesTotal": "77", "linesExec": "75", "linesCoverage": "97.4", "linesClass": "coverage-high", "functionsCoverage": "92.1", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.task.hpp.c5223cf33aaf82e234b701a6aa444ddc.html", "children": []}, {"name": "when_all.hpp", "coverage": "96.9", "coverageClass": "coverage-high", "linesTotal": "98", "linesExec": "95", "linesCoverage": "96.9", "linesClass": "coverage-high", "functionsCoverage": "91.3", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.when_all.hpp.590c7248e848f72c035876f2c83741aa.html", "children": []}, {"name": "when_any.hpp", "coverage": "99.2", "coverageClass": "coverage-high", "linesTotal": "132", "linesExec": "131", "linesCoverage": "99.2", "linesClass": "coverage-high", "functionsCoverage": "96.4", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.when_any.hpp.c0e4177c3dfb23edea7f4103d4478841.html", "children": []}, {"name": "write.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "2", "linesExec": "2", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.write.hpp.9f1360bb97ada4d6fa104ab9eb9f735a.html", "children": []}]}, {"name": "src", "coverage": "86.1", "coverageClass": "coverage-medium", "linesTotal": "526", "linesExec": "453", "linesCoverage": "86.1", "linesClass": "coverage-medium", "functionsCoverage": "86.6", "functionsClass": "coverage-medium", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": true, "link": "index.src.25d902c24283ab8cfbac54dfa101ad31.html", "children": [{"name": "buffers", "coverage": "94.1", "coverageClass": "coverage-high", "linesTotal": "135", "linesExec": "127", "linesCoverage": "94.1", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": true, "link": "index.buffers.4f79c9e5ce456b11fd9080cc7175b203.html", "children": [{"name": "buffer_array.cpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "58", "linesExec": "58", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.buffer_array.cpp.3944b7e8cf36d5fb8509cd79a24c4f4a.html", "children": []}, {"name": "buffer_pair.cpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "44", "linesExec": "44", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.buffer_pair.cpp.b84be319e52ebd90c4e7a544a7bb8e8b.html", "children": []}, {"name": "circular_dynamic_buffer.cpp", "coverage": "75.8", "coverageClass": "coverage-medium", "linesTotal": "33", "linesExec": "25", "linesCoverage": "75.8", "linesClass": "coverage-medium", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.circular_dynamic_buffer.cpp.56cfc4793085b51ee5fd594c544cc13f.html", "children": []}]}, {"name": "ex", "coverage": "89.2", "coverageClass": "coverage-medium", "linesTotal": "334", "linesExec": "298", "linesCoverage": "89.2", "linesClass": "coverage-medium", "functionsCoverage": "92.6", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": true, "link": "index.ex.2b6503f49da1d89e22bf32803574820d.html", "children": [{"name": "detail", "coverage": "87.3", "coverageClass": "coverage-medium", "linesTotal": "157", "linesExec": "137", "linesCoverage": "87.3", "linesClass": "coverage-medium", "functionsCoverage": "91.7", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": true, "link": "index.detail.c17ca3bd931bf88752cb60e2b40b7c11.html", "children": [{"name": "strand_queue.hpp", "coverage": "74.2", "coverageClass": "coverage-low", "linesTotal": "66", "linesExec": "49", "linesCoverage": "74.2", "linesClass": "coverage-low", "functionsCoverage": "85.7", "functionsClass": "coverage-medium", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.strand_queue.hpp.c781f88a7d24ec177721c7d79450e226.html", "children": []}, {"name": "strand_service.cpp", "coverage": "96.7", "coverageClass": "coverage-high", "linesTotal": "91", "linesExec": "88", "linesCoverage": "96.7", "linesClass": "coverage-high", "functionsCoverage": "95.5", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.strand_service.cpp.bf429b9a050f274aa122b488f6ce3407.html", "children": []}]}, {"name": "execution_context.cpp", "coverage": "91.4", "coverageClass": "coverage-high", "linesTotal": "70", "linesExec": "64", "linesCoverage": "91.4", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.execution_context.cpp.9850ddb4ba842c507c64a28e64b9bbd6.html", "children": []}, {"name": "recycling_memory_resource.cpp", "coverage": "92.3", "coverageClass": "coverage-high", "linesTotal": "26", "linesExec": "24", "linesCoverage": "92.3", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.recycling_memory_resource.cpp.8ff974fc1a4fa4705f2be85827171c0c.html", "children": []}, {"name": "system_context.cpp", "coverage": "100.0", "coverageClass": "coverage-high", "linesTotal": "3", "linesExec": "3", "linesCoverage": "100.0", "linesClass": "coverage-high", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.system_context.cpp.99ec24b3001d71d684a726221f158a08.html", "children": []}, {"name": "thread_pool.cpp", "coverage": "89.7", "coverageClass": "coverage-medium", "linesTotal": "78", "linesExec": "70", "linesCoverage": "89.7", "linesClass": "coverage-medium", "functionsCoverage": "87.5", "functionsClass": "coverage-medium", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.thread_pool.cpp.c775b997894b725dc2823fc39c684d1c.html", "children": []}]}, {"name": "cond.cpp", "coverage": "69.2", "coverageClass": "coverage-low", "linesTotal": "26", "linesExec": "18", "linesCoverage": "69.2", "linesClass": "coverage-low", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.cond.cpp.5cd054a222a124c8353604a80d404c16.html", "children": []}, {"name": "error.cpp", "coverage": "54.5", "coverageClass": "coverage-low", "linesTotal": "11", "linesExec": "6", "linesCoverage": "54.5", "linesClass": "coverage-low", "functionsCoverage": "100.0", "functionsClass": "coverage-high", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.error.cpp.d3b44edfe5b0e6a13719399208fd02ce.html", "children": []}, {"name": "except.cpp", "coverage": "20.0", "coverageClass": "coverage-low", "linesTotal": "20", "linesExec": "4", "linesCoverage": "20.0", "linesClass": "coverage-low", "functionsCoverage": "20.0", "functionsClass": "coverage-low", "branchesCoverage": "-", "branchesClass": "coverage-unknown", "isDirectory": false, "link": "index.except.cpp.4645be379eebfa472ccd344a47a6674d.html", "children": []}]}];</script>
+</body>
+
+</html>

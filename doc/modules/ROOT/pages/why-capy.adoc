@@ -1,0 +1,423 @@
+= Why Capy?
+
+Boost.Asio is currently the world leader in portable asynchronous I/O. The standard is silent here. The global ecosystem offers nothing comparable.
+
+*Capy is the first offering which surpasses Boost.Asio in its domain*
+
+The sections that follow will demonstrate this claim. Each section examines a domain where Capy innovates—not by reinventing what works, but by solving problems that have remained unsolved.
+
+== Coroutine-Only Stream Concepts
+
+When Asio introduced `AsyncReadStream` and `AsyncWriteStream`, it was revolutionary. For the first time, {cpp} had formal concepts for buffer-oriented I/O. You could write algorithms that worked with any stream—TCP sockets, SSL connections, serial ports—without knowing the concrete type.
+
+But Asio made a pragmatic choice: support every continuation style. Callbacks. Futures. Coroutines. This "universal model" meant the same async operation could complete in any of these ways. Flexibility came at a cost. The implementation had to handle all cases. Optimizations specific to one model were off the table.
+
+Capy makes a different choice. It commits fully to coroutines. This isn't a limitation—it's a liberation. When you know the continuation is always a coroutine, you can optimize in ways that hybrid approaches cannot. The frame is always there. The executor context propagates naturally. Cancellation flows downward without ceremony.
+
+No other library in existence offers coroutine-only stream concepts. Capy is the first.
+
+=== What Capy Offers
+
+* `ReadStream`, `WriteStream`, `Stream` — partial I/O (returns what's available)
+* `ReadSource`, `WriteSink` — complete I/O with EOF signaling
+* `BufferSource`, `BufferSink` — zero-copy callee-owns-buffers pattern
+
+=== Comparison
+
+[cols="1,1,1,1"]
+|===
+| Capy | Asio | std | World
+
+| `ReadStream`
+| `AsyncReadStream`*
+|
+|
+
+| `WriteStream`
+| `AsyncWriteStream`*
+|
+|
+
+| `Stream`
+|
+|
+|
+
+| `ReadSource`
+|
+|
+|
+
+| `WriteSink`
+|
+|
+|
+
+| `BufferSource`
+|
+|
+|
+
+| `BufferSink`
+|
+|
+|
+|===
+
+*Asio's concepts are hybrid (callbacks/futures/coroutines), not coroutine-only
+
+== Type-Erasing Stream Wrappers
+
+Every {cpp} developer who has worked with Asio knows the pain. You write a function that accepts a stream. But which stream? `tcp::socket`? `ssl::stream<tcp::socket>`? `websocket::stream<ssl::stream<tcp::socket>>`? Each layer wraps the previous one, and the type grows. Your function signature becomes a template. Your header includes explode. Your compile times suffer. Your error messages become novels.
+
+Asio does offer type-erasure—but at the wrong level. `any_executor` erases the executor. `any_completion_handler` erases the callback. These help, but they don't address the fundamental problem: the stream type itself propagates everywhere.
+
+Why hasn't anyone type-erased the stream? Because with callbacks and futures, it's expensive. The completion handler type is part of the stream's operation signature. Erasing it means virtual calls on the hot path—for every continuation, not just every I/O operation.
+
+Coroutines change this equation. A coroutine's continuation is always the same thing: a handle to resume. The caller doesn't need to know what type will resume it. This is structural type-erasure—built into the language. Capy exploits this. Type-erasing a stream costs one virtual call per I/O operation. That's it. No per-callback overhead. No template instantiation cascades.
+
+Write `any_stream&` and accept any stream. Your function compiles once. It links anywhere. Your build times drop. Your binaries shrink. Your error messages become readable. And because coroutines are ordinary functions (not templates), you get natural ABI stability. Link against a new stream implementation without recompiling your code.
+
+No other library in the world does this. Boost would be first.
+
+=== What Capy Offers
+
+* `any_read_stream`, `any_write_stream`, `any_stream` — type-erased partial I/O
+* `any_read_source`, `any_write_sink` — type-erased complete I/O
+* `any_buffer_source`, `any_buffer_sink` — type-erased zero-copy
+* `read`, `write`, `read_until`, `push_to`, `pull_from` — algorithms that work with erased or concrete streams
+
+=== Comparison
+
+[cols="1,1,1,1"]
+|===
+| Capy | Asio | std | World
+
+| `any_read_stream`
+|
+|
+|
+
+| `any_write_stream`
+|
+|
+|
+
+| `any_stream`
+|
+|
+|
+
+| `any_read_source`
+|
+|
+|
+
+| `any_write_sink`
+|
+|
+|
+
+| `any_buffer_source`
+|
+|
+|
+
+| `any_buffer_sink`
+|
+|
+|
+
+| `read`
+| `async_read`*
+|
+|
+
+| `write`
+| `async_write`*
+|
+|
+
+| `read_until`
+| `async_read_until`*
+|
+|
+
+| `push_to`
+|
+|
+|
+
+| `pull_from`
+|
+|
+|
+|===
+
+*Asio's algorithms only support `AsyncReadStream` and `AsyncWriteStream`
+
+== Buffer Sequences
+
+Asio got buffer sequences right. The concept-driven approach—`ConstBufferSequence`, `MutableBufferSequence`—enables scatter/gather I/O without allocation. You can combine buffers from different sources and pass them to a single write call. The operating system handles them as one logical transfer. This is how high-performance networking works.
+
+Capy doesn't reinvent this. We adopt Asio's buffer sequence model because it works.
+
+But we improve on it. Asio provides the basics; Capy extends them. Need to trim bytes from the front of a buffer sequence? Asio makes you work for it. Capy provides `slice`, `front`, `consuming_buffers`—customization points for efficient byte-level manipulation. Need a circular buffer for protocol parsing? Capy has `circular_dynamic_buffer`. Need to compose two buffers without copying? `buffer_pair`.
+
+And then there's the `DynamicBuffer` mess. If you've used Asio, you've encountered the confusing split between `DynamicBuffer_v1` and `DynamicBuffer_v2`. This exists because of a fundamental problem: when an async operation takes a buffer by value and completes via callback, who owns the buffer? The original design had flaws. The "fix" created two incompatible versions. (See https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p1100r0.html[P1100R0] for the full story.)
+
+Coroutines eliminate this problem entirely. The coroutine frame owns the buffer. There's no decay-copy. There's no ownership transfer. The buffer lives in the frame until the coroutine completes. Capy has one `DynamicBuffer` concept. It works.
+
+One more thing: `std::ranges` cannot help here. `ranges::size` returns the number of buffers, not the total bytes. Range views can drop entire elements, but buffer sequences need byte-level trimming. The abstractions don't match. Buffer sequences need their own concepts.
+
+=== What Capy Offers
+
+* `ConstBufferSequence`, `MutableBufferSequence`, `DynamicBuffer` — core concepts (Asio-compatible)
+* `flat_dynamic_buffer`, `circular_dynamic_buffer`, `buffer_pair` — additional concrete types
+* `slice`, `front`, `some_buffers`, `consuming_buffers` — byte-level manipulation utilities
+
+=== Comparison
+
+[cols="1,1,1,1"]
+|===
+| Capy | Asio | std | World
+
+| `ConstBufferSequence`
+| `ConstBufferSequence`
+|
+|
+
+| `MutableBufferSequence`
+| `MutableBufferSequence`
+|
+|
+
+| `DynamicBuffer`
+| `DynamicBuffer_v1`/`v2`*
+|
+|
+
+| `const_buffer`
+| `const_buffer`
+|
+|
+
+| `mutable_buffer`
+| `mutable_buffer`
+|
+|
+
+| `flat_dynamic_buffer`
+|
+|
+|
+
+| `circular_dynamic_buffer`
+|
+|
+|
+
+| `vector_dynamic_buffer`
+| `dynamic_vector_buffer`
+|
+|
+
+| `string_dynamic_buffer`
+| `dynamic_string_buffer`
+|
+|
+
+| `buffer_pair`
+|
+|
+|
+
+| `consuming_buffers`
+|
+|
+|
+
+| `slice`
+|
+|
+|
+
+| `front`
+|
+|
+|
+
+| `some_buffers`
+|
+|
+|
+
+| `buffer_copy`
+| `buffer_copy`
+|
+|
+
+| Byte-level trimming
+|
+|
+|
+|===
+
+*Asio has confusing v1/v2 split due to callback composition problems
+
+== Coroutine Execution Model
+
+When you write a coroutine, three questions arise immediately. Where does it run? How do you cancel it? How is its frame allocated?
+
+These seem like simple questions. They are not. The answers determine whether your coroutine system is usable in production.
+
+*Where does it run?* A coroutine needs an executor—something that schedules its resumption. When coroutine A awaits coroutine B, B needs to know A's executor so completions dispatch to the right place. This context must flow downward through the call chain. Pass it explicitly to every function? Your APIs become cluttered. Query it from the caller's promise? Your awaitables become tightly coupled to specific promise types.
+
+*How do you cancel it?* A user clicks Cancel. A timeout expires. The server is shutting down. Your coroutine needs to stop—gracefully, without leaking resources. {cpp}20 gives us `std::stop_token`, a beautiful one-shot notification mechanism. But how does a nested coroutine receive the token? Pass it explicitly? More API clutter. And what about pending I/O operations—can they be cancelled at the OS level, or do you wait for them to complete naturally?
+
+*How is its frame allocated?* Coroutine frames live on the heap by default. For high-throughput servers handling thousands of concurrent operations, allocation overhead matters. You want to reuse frames. You want custom allocators. But here's the catch: the frame is allocated before the coroutine body runs. The allocator can't be a parameter—parameters live in the frame. How do you pass an allocator to something that allocates before it can receive parameters?
+
+Asio has answers to these questions, but they're constrained. Asio must support callbacks and futures alongside coroutines. It cannot assume the continuation is always a coroutine. It cannot build an execution model optimized for coroutines alone. And it bundles everything together—execution model, networking, timers, platform abstractions—in one monolithic library.
+
+The standard has `std::execution` (P2300), the sender/receiver model. It's powerful and general. It's also complex, academic, and not designed for coroutines first. It has the "late binding problem"—allocators flow backward, determined at the point of connection rather than at the point of creation. Ergonomic allocator control is difficult. P3552R3 proposes a `task` type, but it's built on sender/receiver and inherits its limitations.
+
+Capy takes a different path. It builds an execution model purpose-built for coroutines and I/O.
+
+The *IoAwaitable protocol* solves context propagation. When you `co_await`, the caller passes its executor and stop token to the child through an extended `await_suspend` signature. No explicit parameters. No promise coupling. Context flows forward, naturally.
+
+*Stop tokens propagate automatically.* Cancel at the top of your coroutine tree, and every nested operation receives the signal. Capy integrates with OS-level cancellation—`CancelIoEx` on Windows, `IORING_OP_ASYNC_CANCEL` on Linux. Pending I/O operations cancel immediately.
+
+*Frame allocation uses forward flow.* The two-call syntax of `run_async(executor)(my_task())` sets a thread-local allocator before the task is evaluated. The task's `operator new` reads it. No late binding. No backward flow. Ergonomic control over where every frame is allocated.
+
+And Capy *separates execution from platform*. The execution model—executors, cancellation, allocation—lives in Capy. Platform abstractions—sockets, `io_uring`, IOCP—live in Corosio. Clean boundaries. Testable components. You can use Capy's execution model with a different I/O backend if you choose.
+
+Most importantly, Capy defines a *taxonomy of awaitables*. `IoAwaitable` is the base protocol. `IoAwaitableTask` adds promise-level context storage. `IoLaunchableTask` adds the interface for launch functions. This hierarchy means you can write your own task types that integrate with Capy's execution model. Asio's `awaitable<T>` is a concrete type, not a concept. You use it or you don't. Capy gives you building blocks.
+
+No other solution like this exists. Not Asio. Not `std::execution`. Not anywhere in the global ecosystem. Capy is the first.
+
+=== What Capy Offers
+
+* `IoAwaitable`, `IoAwaitableTask`, `IoLaunchableTask` — taxonomy of awaitable concepts
+* `task<T>` — concrete task type implementing the protocol (user-defined tasks also supported)
+* `run`, `run_async` — launch functions with forward-flow allocator control
+* `strand`, `thread_pool`, `coro_lock`, `async_event` — concurrency primitives
+* `frame_allocator`, `recycling_memory_resource` — coroutine-optimized allocation
+
+=== Comparison
+
+[cols="1,1,1,1"]
+|===
+| Capy | Asio | std | World
+
+| `IoAwaitable`
+|
+|
+|
+
+| `IoAwaitableTask`
+|
+|
+|
+
+| `IoLaunchableTask`
+|
+|
+|
+
+| `task<T>`
+| `awaitable<T>`*
+| P3552R3**
+|
+
+| `run`
+|
+|
+|
+
+| `run_async`
+| `co_spawn`*
+|
+|
+
+| `strand`
+| `strand`
+|
+|
+
+| `executor_ref`
+| `any_executor`
+|
+|
+
+| `thread_pool`
+| `thread_pool`
+| `static_thread_pool`
+|
+
+| `execution_context`
+| `execution_context`
+|
+|
+
+| `frame_allocator`
+|
+|
+|
+
+| `recycling_memory_resource`
+|
+|
+|
+
+| `coro_lock`
+|
+|
+|
+
+| `async_event`
+|
+|
+|
+
+| `stop_token` propagation
+|
+| `stop_token`***
+|
+
+| User-defined task types
+|
+|
+|
+
+| Execution/platform isolation
+|
+|
+|
+
+| Forward-flow allocator control
+|
+|
+|
+|===
+
+*Asio's are not extensible, no concept taxonomy
+
+**P3552R3 is sender/receiver based, has allocator timing issue
+
+***std has the token but no automatic propagation
+
+== The Road Ahead
+
+For twenty five years, Boost.Asio has stood alone. It defined what portable asynchronous I/O looks like in {cpp}. No serious competitor offering its depth of offerings has appeared. It defined the promising Networking TS. Asio earned its place through years of production use, careful evolution, and relentless focus on real problems faced by real developers.
+
+Capy builds on Asio's foundation—the buffer sequences, the executor model, the hard-won lessons about what works. But where Asio must preserve compatibility with over decades of existing code, Capy is free to commit fully to the future. {cpp}20 coroutines are not an afterthought here. They are the foundation.
+
+The result is something new. Stream concepts designed for coroutines alone. Type-erasure at the level where it matters most. A simple execution model discovered through use-case-first design. Clean separation between execution and platform. A taxonomy of awaitables that invites extension rather than mandating a single concrete type.
+
+Meanwhile, the {cpp} standards committee has produced `std::execution`—a sender/receiver model of considerable theoretical elegance. It is general. It is powerful. It is also complex, and its relationship to the I/O problems that most {cpp} developers face daily remains unclear. The community watches, waits, and wonders when the abstractions will connect to the work they need to accomplish.
+
+Boost has always been where the practical meets the principled. Where real-world feedback shapes design. Where code ships before papers standardize. Capy continues this tradition.
+
+If you are reading this as a Boost contributor, know what you are part of. This is the first library to advance beyond Asio in the domains where they overlap. Not by abandoning what works, but by building on it. Not by chasing theoretical purity, but by solving the problems that have frustrated {cpp} developers for years: template explosion, compile-time costs, error message novels, ergonomic concurrency, and more.
+
+The coroutine era has arrived. And Boost, as it has so many times before, is leading the way.

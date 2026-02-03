@@ -1,0 +1,325 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= The Executor
+
+This section explains how executors control where coroutines resume and how
+affinity propagates automatically through awaitable chains.
+
+== What Is an Executor?
+
+An executor is an object that can run work. When an I/O operation completes,
+the executor determines _where_ and _when_ the coroutine resumes:
+
+[source,cpp]
+----
+// Completion arrives on I/O thread
+void on_io_complete(std::coroutine_handle<> h)
+{
+    executor.dispatch(h).resume();  // Resume on executor's context
+}
+----
+
+Without an executor, completions arrive on arbitrary threads (often the kernel's
+I/O completion thread), forcing you to add synchronization everywhere.
+
+== The Executor Concept
+
+Capy's `Executor` concept requires two operations:
+
+[source,cpp]
+----
+template<typename Ex>
+concept Executor = requires(Ex const& ex, std::coroutine_handle<> h)
+{
+    { ex.dispatch(h) } -> std::same_as<std::coroutine_handle<>>;
+    { ex.post(h) } -> std::same_as<void>;
+};
+----
+
+=== dispatch()
+
+Returns a handle to resume. The implementation decides whether to:
+
+* Resume inline (if we're already on the right thread)
+* Queue for later execution (if we need to switch contexts)
+
+[source,cpp]
+----
+std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
+{
+    if (running_in_this_context())
+        return h;  // Resume inline
+    queue_work(h);
+    return std::noop_coroutine();  // Don't resume now
+}
+----
+
+The returned handle enables symmetric transfer without stack growth.
+
+=== post()
+
+Always queues, never executes inline:
+
+[source,cpp]
+----
+void post(std::coroutine_handle<> h) const
+{
+    queue_work(h);  // Always queue, never inline
+}
+----
+
+Use `post()` when you explicitly want deferred execution.
+
+Reference: `<boost/capy/concept/executor.hpp>`
+
+== executor_ref: Type-Erased Executor
+
+Tasks work with any executor type through `executor_ref`, a type-erased wrapper:
+
+[source,cpp]
+----
+#include <boost/capy/ex/executor_ref.hpp>
+
+// Store any executor
+thread_pool pool(4);
+executor_ref ex = pool.get_executor();
+
+// Use uniformly
+ex.dispatch(handle);
+ex.post(handle);
+----
+
+=== Why Type Erasure?
+
+Without type erasure, every coroutine type would need to template on the
+executor type:
+
+[source,cpp]
+----
+// Without type erasure (bad)
+template<typename T, typename Executor>
+struct task { /* ... */ };
+
+task<int, thread_pool::executor_type> compute();  // Verbose!
+----
+
+With `executor_ref`:
+
+[source,cpp]
+----
+// With type erasure (good)
+task<int> compute();  // Clean, works with any executor
+----
+
+The indirection cost (one virtual call) is negligible for I/O-bound code.
+
+=== executor_ref Operations
+
+[source,cpp]
+----
+executor_ref ex = some_executor;
+
+// Check if valid
+if (ex)
+    ex.dispatch(h);
+
+// Compare (pointer equality on underlying executor)
+executor_ref ex2 = some_executor;
+if (ex == ex2)  // Same underlying executor?
+    // Can use symmetric transfer optimization
+
+// Access underlying context
+execution_context* ctx = ex.context();
+----
+
+Reference: `<boost/capy/ex/executor_ref.hpp>`
+
+== How Affinity Propagates
+
+When you launch a coroutine with an executor, that executor propagates
+through the entire call chain:
+
+[source,cpp]
+----
+task<void> leaf()
+{
+    // Inherits parent's executor
+    co_await io_operation();  // Completes on parent's executor
+}
+
+task<void> middle()
+{
+    // Inherits parent's executor
+    co_await leaf();  // leaf inherits our executor
+}
+
+task<void> root()
+{
+    co_await middle();
+}
+
+// Launch with specific executor
+run_async(pool.get_executor())(root());
+// Every coroutine in the chain uses pool's executor
+----
+
+=== The Propagation Mechanism
+
+1. `run_async` sets the executor in `root`'s promise
+2. `root` awaits `middle`
+3. `root`'s `await_transform` wraps `middle`
+4. The wrapper's `await_suspend` passes executor to `middle`
+5. `middle`'s promise stores the executor
+6. Process repeats for `leaf`
+
+All implicit—no manual passing required.
+
+== Changing Affinity with run
+
+Sometimes a subtree needs a different executor:
+
+[source,cpp]
+----
+#include <boost/capy/ex/run.hpp>
+
+task<void> compute_heavy()
+{
+    // CPU-intensive work on compute pool
+    expensive_calculation();
+    co_return;
+}
+
+task<void> io_task()
+{
+    // Running on io_pool's executor
+    auto data = co_await read_data();
+
+    // Switch to compute_pool for heavy work
+    co_await run(compute_pool.get_executor())(compute_heavy());
+
+    // Back on io_pool's executor
+    co_await write_results();
+}
+----
+
+`run(ex)(task)` binds `task` to executor `ex`, overriding inheritance.
+
+=== Flow Diagram Notation
+
+Use this notation to reason about executor flow:
+
+[cols="1,2"]
+|===
+| Symbol | Meaning
+
+| `c`, `c1`, `c2`
+| Coroutines
+
+| `!c`
+| Coroutine with explicit executor binding
+
+| `io`
+| I/O operation
+
+| `->`
+| `co_await`
+|===
+
+**Example: Simple chain**
+----
+!c1 -> c2 -> io
+----
+
+* `c1` has explicit affinity (from `run_async`)
+* `c2` inherits from `c1`
+* `io` completes on `c1`'s executor
+
+**Example: Changed affinity**
+----
+!c1 -> !c2 -> io -> c3
+----
+
+* `c1` bound to `ex1`
+* `c2` explicitly bound to `ex2` (via `run_on`)
+* `io` completes on `ex2`
+* `c3` (if any) would inherit `c2`'s `ex2`
+
+When `c2` completes, `c1` resumes on `ex1` (its own affinity).
+
+== Symmetric Transfer Optimization
+
+When caller and callee share the same executor, completion uses symmetric
+transfer (direct tail call):
+
+[source,cpp]
+----
+std::coroutine_handle<> complete()
+{
+    if (continuation_ && caller_ex_ == executor_)
+        return continuation_;  // Same executor: direct transfer
+    return caller_ex_.dispatch(continuation_);  // Different: dispatch
+}
+----
+
+The check uses pointer equality on `executor_ref`—same underlying executor
+means we can skip the dispatch overhead.
+
+== Querying the Current Executor
+
+Inside a coroutine, retrieve the current executor:
+
+[source,cpp]
+----
+task<void> example()
+{
+    executor_ref ex = co_await this_coro::executor;
+
+    if (!ex)
+    {
+        // No executor set (shouldn't happen in normal usage)
+    }
+
+    // Use for manual dispatch
+    ex.post(some_handle);
+}
+----
+
+`this_coro::executor` is a tag that `await_transform` intercepts. It never
+actually suspends—`await_ready()` returns `true`.
+
+== Summary
+
+[cols="1,3"]
+|===
+| Component | Purpose
+
+| `Executor` concept
+| `dispatch()` and `post()` for coroutine resumption
+
+| `executor_ref`
+| Type-erased executor wrapper
+
+| `dispatch(h)`
+| Resume inline if safe, queue otherwise
+
+| `post(h)`
+| Always queue, never inline
+
+| `run(ex)(task)`
+| Override inherited executor for a subtask
+
+| `this_coro::executor`
+| Query current executor inside coroutine
+|===
+
+== Next Steps
+
+* xref:stop-token.adoc[The Stop Token] — Cancellation propagation
+* xref:launching.adoc[Launching Coroutines] — `run_async` and `run` details

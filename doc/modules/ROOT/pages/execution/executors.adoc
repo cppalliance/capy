@@ -1,0 +1,228 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Executors
+
+This page explains the executor and dispatcher concepts that underpin Capy's
+execution model.
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== Two Concepts, Two Levels
+
+Capy distinguishes between two related but different concepts:
+
+[cols="1,2,2"]
+|===
+| Concept | Purpose | Typical Use
+
+| `dispatcher`
+| Schedule a coroutine handle for resumption
+| Internal plumbing in awaitables
+
+| `executor`
+| Full execution context interface
+| User-facing API for work submission
+|===
+
+A dispatcher is simpler: just a callable that accepts a coroutine handle. An
+executor adds work tracking, context access, and multiple submission methods.
+
+== The Dispatcher Concept
+
+A dispatcher is a callable that schedules coroutine resumption:
+
+[source,cpp]
+----
+template<typename D, typename P = void>
+concept dispatcher = requires(D const& d, std::coroutine_handle<P> h) {
+    { d(h) } -> std::convertible_to<coro>;
+};
+----
+
+When invoked with a coroutine handle, the dispatcher:
+
+1. Schedules the handle for resumption (inline or queued)
+2. Returns a handle suitable for symmetric transfer
+
+=== Example Dispatcher
+
+[source,cpp]
+----
+struct inline_dispatcher
+{
+    coro operator()(coro h) const
+    {
+        return h;  // Resume inline via symmetric transfer
+    }
+};
+
+struct queuing_dispatcher
+{
+    work_queue* queue_;
+
+    coro operator()(coro h) const
+    {
+        queue_->push(h);
+        return std::noop_coroutine();  // Caller returns to event loop
+    }
+};
+----
+
+== The Executor Concept
+
+An executor provides the full interface for scheduling work:
+
+[source,cpp]
+----
+template<class E>
+concept executor =
+    std::copy_constructible<E> &&
+    std::equality_comparable<E> &&
+    requires(E const& ce, std::coroutine_handle<> h) {
+        { ce.context() } -> /* reference to execution context */;
+        { ce.on_work_started() } noexcept;
+        { ce.on_work_finished() } noexcept;
+        { ce(h) } -> std::convertible_to<std::coroutine_handle<>>;
+        { ce.post(h) };
+        { ce.defer(h) };
+    };
+----
+
+=== Scheduling Operations
+
+[cols="1,3"]
+|===
+| Operation | Behavior
+
+| `operator()(h)`
+| Run inline if safe, otherwise queue. Cheapest path. Also serves as dispatcher interface.
+
+| `post(h)`
+| Always queue, never inline. Guaranteed asynchrony.
+
+| `defer(h)`
+| Always queue with "this is my continuation" hint. Enables optimizations.
+|===
+
+**When to use each:**
+
+* `operator()` — Default choice. Allows the executor to optimize.
+* `post` — When you need guaranteed asynchrony (e.g., releasing a lock first).
+* `defer` — When posting your own continuation (enables thread-local queuing).
+
+=== Work Tracking
+
+The `on_work_started()` and `on_work_finished()` calls track outstanding work.
+This enables `run()` to know when to stop:
+
+[source,cpp]
+----
+executor ex = ctx.get_executor();
+
+ex.on_work_started();   // Increment work count
+// ... submit work ...
+ex.on_work_finished();  // Decrement work count
+----
+
+The `executor_work_guard` RAII wrapper simplifies this pattern.
+
+== Affine Awaitable Concept
+
+Awaitables that participate in affinity propagation implement `affine_awaitable`:
+
+[source,cpp]
+----
+template<typename A, typename D, typename P = void>
+concept affine_awaitable =
+    dispatcher<D, P> &&
+    requires(A a, std::coroutine_handle<P> h, D const& d) {
+        a.await_suspend(h, d);
+    };
+----
+
+The awaitable receives the dispatcher in `await_suspend` and uses it to
+resume the caller when the operation completes.
+
+== Stoppable Awaitable Concept
+
+Awaitables with cancellation support implement `stoppable_awaitable`:
+
+[source,cpp]
+----
+template<typename A, typename D, typename P = void>
+concept stoppable_awaitable =
+    affine_awaitable<A, D, P> &&
+    requires(A a, std::coroutine_handle<P> h, D const& d, std::stop_token t) {
+        a.await_suspend(h, d, t);
+    };
+----
+
+Stoppable awaitables provide _both_ overloads of `await_suspend`.
+
+== Thread Safety
+
+Executors have specific thread safety guarantees:
+
+* Copy constructor, comparison, `context()` — always thread-safe
+* `operator()`, `post`, `defer` — thread-safe for concurrent calls
+* `on_work_started`, `on_work_finished` — thread-safe, must not throw
+
+== Executor Validity
+
+An executor becomes invalid when its execution context shuts down:
+
+[source,cpp]
+----
+thread_pool pool;
+auto ex = pool.get_executor();
+// When pool is destroyed, ex becomes invalid
+
+// WARNING: Calling ex() after pool destruction is undefined behavior
+----
+
+The copy constructor and `context()` remain valid until the context is
+destroyed, but work submission functions become undefined.
+
+== When NOT to Use Executors Directly
+
+Use executors directly when:
+
+* Implementing custom I/O operations
+* Building framework-level abstractions
+* Integrating with external event loops
+
+Do NOT use executors directly when:
+
+* Writing application code — use `run_async` and `task<T>` instead
+* You just need to run some code later — use the higher-level abstractions
+
+== Summary
+
+[cols="1,3"]
+|===
+| Concept | Purpose
+
+| `dispatcher`
+| Minimal interface for coroutine resumption
+
+| `executor`
+| Full work submission with tracking
+
+| `affine_awaitable`
+| Awaitable that accepts dispatcher for affinity
+
+| `stoppable_awaitable`
+| Awaitable that also accepts stop token
+|===
+
+== Next Steps
+
+* xref:contexts.adoc[Execution Contexts] — Service management and thread pools
+* xref:strand.adoc[Strands] — Serializing coroutine execution

@@ -1,0 +1,387 @@
+//
+// Copyright (c) 2026 Michael Vandeberg
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Racing Tasks
+
+In this tutorial, you will learn how to race multiple concurrent tasks using `when_any`, returning as soon as the first task completes. This pattern is essential for implementing timeouts, redundant requests, and speculative execution.
+
+By the end of this page, you will understand how to use both the variadic and range-based overloads of `when_any`, handle the result types correctly, and manage cancellation of sibling tasks.
+
+== Prerequisites
+
+* Completed xref:tasks.adoc[The task Type]
+* Completed xref:cancellation.adoc[Stop Tokens and Cancellation]
+* Familiarity with `std::variant` and structured bindings
+
+NOTE: Code snippets assume `using namespace boost::capy;` is in effect.
+
+== The Problem
+
+Sometimes you need the result from whichever task finishes first, not all of them. Common scenarios include:
+
+* Racing requests to multiple servers, using the first response
+* Implementing timeouts by racing against a timer
+* Speculative execution of multiple algorithms
+* Waiting for first available resource from a pool
+
+== when_any
+
+The `when_any` function launches multiple tasks concurrently and returns when
+the first one completes:
+
+[source,cpp]
+----
+#include <boost/capy/when_any.hpp>
+
+task<void> race()
+{
+    auto [index, result] = co_await when_any(
+        fetch_from_primary(),
+        fetch_from_backup()
+    );
+}
+----
+
+The return value is a `std::pair` containing two elements: `index` indicates which task completed first (0 for the first argument, 1 for the second), and `result` holds the winning task's return value in a variant.
+
+The winning task's result is returned immediately. All sibling tasks receive
+a stop request and are allowed to complete before `when_any` returns.
+
+== Return Value
+
+`when_any` returns a `std::pair` containing the winner's index and result.
+
+=== Heterogeneous Tasks (Variadic)
+
+When racing tasks with different return types, the result is a variant:
+
+[source,cpp]
+----
+auto [index, result] = co_await when_any(
+    task_returning_int(),     // task<int>
+    task_returning_string()   // task<std::string>
+);
+
+if (index == 0)
+    std::cout << "Got int: " << std::get<int>(result) << "\n";
+else
+    std::cout << "Got string: " << std::get<std::string>(result) << "\n";
+----
+
+The `result` variable is a `std::variant<int, std::string>`. Use `index` to determine which alternative is active, then extract the value with `std::get`.
+
+=== Void Tasks
+
+Void tasks contribute `std::monostate` to the variant:
+
+[source,cpp]
+----
+auto [index, result] = co_await when_any(
+    task_returning_int(),  // task<int>
+    task_void()            // task<void>
+);
+
+if (index == 0)
+    std::cout << "Got int: " << std::get<int>(result) << "\n";
+else
+    std::cout << "Void task completed\n";
+----
+
+Tasks returning `void` contribute `std::monostate` to the variant. In this example, `result` has type `std::variant<int, std::monostate>`. When the void task wins, check for `std::monostate` or use the index to detect it.
+
+=== Duplicate Types
+
+The variant is deduplicated. When racing tasks with the same return type,
+use the index to identify which task won:
+
+[source,cpp]
+----
+auto [index, result] = co_await when_any(
+    fetch_from_server_a(),  // task<Response>
+    fetch_from_server_b(),  // task<Response>
+    fetch_from_server_c()   // task<Response>
+);
+
+auto response = std::get<Response>(result);
+std::cout << "Server " << index << " responded first\n";
+----
+
+When multiple tasks share the same return type, the variant is deduplicated to contain only unique types. Here, `result` is `std::variant<Response>` with a single alternative. The `index` value (0, 1, or 2) tells you which server responded first.
+
+=== Homogeneous Tasks (Vector)
+
+For a dynamic number of tasks with the same type, use the vector overload:
+
+[source,cpp]
+----
+std::vector<task<Response>> requests;
+for (auto& server : servers)
+    requests.push_back(fetch_from(server));
+
+auto [index, response] = co_await when_any(std::move(requests));
+std::cout << "Server " << index << " responded: " << response << "\n";
+----
+
+The vector overload accepts any sized input range of awaitables with the same result type. Since all tasks return `Response`, the result is `std::pair<std::size_t, Response>` directly—no variant wrapper is needed.
+
+For void tasks in a vector, only the winner's index is returned:
+
+[source,cpp]
+----
+std::vector<task<void>> tasks;
+// ... populate tasks
+
+std::size_t winner = co_await when_any(std::move(tasks));
+std::cout << "Task " << winner << " completed first\n";
+----
+
+Since void tasks produce no result value, the return type is `std::size_t` rather than a pair.
+
+== Error Handling
+
+Exceptions are treated as valid completions. If the winning task throws,
+that exception is rethrown from `when_any`:
+
+[source,cpp]
+----
+task<void> handle_errors()
+{
+    try {
+        auto [index, result] = co_await when_any(
+            might_fail(),
+            might_succeed()
+        );
+        // If we get here, the winner succeeded
+    } catch (std::exception const& e) {
+        // The winning task threw this exception
+        std::cerr << "Winner failed: " << e.what() << "\n";
+    }
+}
+----
+
+=== First-Completion Semantics
+
+Unlike `when_all` (which captures the first _error_), `when_any` returns
+whichever task completes first, whether it succeeds or fails. Exceptions
+from non-winning tasks are discarded.
+
+=== Stop Propagation
+
+When a winner is determined, `when_any` requests stop for all sibling tasks.
+Tasks that support cancellation can exit early:
+
+[source,cpp]
+----
+task<Response> fetch_with_cancel_support()
+{
+    auto token = co_await get_stop_token();
+
+    for (auto& chunk : data_source)
+    {
+        if (token.stop_requested())
+            co_return partial_response();  // Exit early
+        co_await send_chunk(chunk);
+    }
+    co_return complete_response();
+}
+
+task<void> example()
+{
+    // When one fetch wins, the other sees stop_requested
+    auto [index, response] = co_await when_any(
+        fetch_with_cancel_support(),
+        fetch_with_cancel_support()
+    );
+}
+----
+
+Tasks that ignore the stop token will run to completion. `when_any` always
+waits for all tasks to finish before returning, ensuring proper cleanup.
+
+== Parent Stop Token
+
+`when_any` forwards the parent's stop token to children. If the parent is
+cancelled, all children see the request:
+
+[source,cpp]
+----
+task<void> parent()
+{
+    auto [index, result] = co_await when_any(
+        child_a(),  // Sees parent's stop token
+        child_b()   // Sees parent's stop token
+    );
+}
+
+std::stop_source source;
+run_async(ex, source.get_token())(parent());
+
+// Later: cancel everything
+source.request_stop();
+----
+
+== Execution Model
+
+All child tasks inherit the parent's executor affinity:
+
+[source,cpp]
+----
+task<void> parent()  // Running on executor ex
+{
+    auto [index, result] = co_await when_any(
+        child_a(),  // Runs on ex
+        child_b()   // Runs on ex
+    );
+}
+----
+
+Children are launched via `dispatch()` on the executor, which may run them
+inline or queue them depending on the executor implementation.
+
+=== True Concurrency
+
+With a multi-threaded executor, tasks race in parallel:
+
+[source,cpp]
+----
+thread_pool pool(4);
+run_async(pool.get_executor())(parent());
+
+// Tasks may complete in any order based on actual execution time
+----
+
+With a single-threaded executor, tasks interleave at suspension points but
+execute sequentially.
+
+== Example: Redundant Requests
+
+Race requests to multiple servers for reliability:
+
+[source,cpp]
+----
+task<Response> fetch_with_redundancy(Request req)
+{
+    auto [index, response] = co_await when_any(
+        fetch_from(primary_server, req),
+        fetch_from(backup_server, req)
+    );
+
+    std::cout << (index == 0 ? "Primary" : "Backup")
+              << " server responded\n";
+    co_return std::get<Response>(response);
+}
+----
+
+== Example: Timeout Pattern
+
+Race an operation against a timer:
+
+[source,cpp]
+----
+task<Data> fetch_with_timeout(Request req)
+{
+    auto [index, result] = co_await when_any(
+        fetch_data(req),
+        timeout_after<Data>(100ms)
+    );
+
+    if (index == 1)
+        throw timeout_error{"Request timed out"};
+
+    co_return std::get<Data>(result);
+}
+
+// Helper that waits then throws
+template<typename T>
+task<T> timeout_after(std::chrono::milliseconds ms)
+{
+    co_await sleep(ms);
+    throw timeout_error{"Timeout"};
+}
+----
+
+The `timeout_after` helper waits for the specified duration then throws an exception. If `fetch_data` completes before the timer, its result is returned. If the timer wins, the timeout exception propagates from `when_any`.
+
+== Example: First Available Resource
+
+Wait for the first available connection from a pool:
+
+[source,cpp]
+----
+task<Connection> get_connection(std::vector<ConnectionPool>& pools)
+{
+    std::vector<task<Connection>> attempts;
+    for (auto& pool : pools)
+        attempts.push_back(pool.acquire());
+
+    auto [index, conn] = co_await when_any(std::move(attempts));
+
+    std::cout << "Got connection from pool " << index << "\n";
+    co_return conn;
+}
+----
+
+This function creates an acquire task for each pool, then races them. Whichever pool provides a connection first wins, and the remaining acquire attempts are cancelled. The `index` indicates which pool provided the connection.
+
+== Comparison with when_all
+
+[cols="1,2,2"]
+|===
+| Aspect | `when_all` | `when_any`
+
+| Completion
+| Waits for all tasks
+| Returns on first completion
+
+| Return type
+| Tuple of results
+| Pair of (index, variant/value)
+
+| Error handling
+| First exception wins, siblings get stop
+| Exceptions are valid completions
+
+| Use case
+| Need all results
+| Need fastest result
+|===
+
+== Summary
+
+[cols="1,3"]
+|===
+| Feature | Description
+
+| `when_any(tasks...)`
+| Race tasks, return first completion
+
+| `when_any(vector<task<T>>)`
+| Race homogeneous tasks from a vector
+
+| Return type (variadic)
+| `pair<size_t, variant<...>>` with deduplicated types
+
+| Return type (vector)
+| `pair<size_t, T>` or `size_t` for void
+
+| Error handling
+| Winner's exception propagated, others discarded
+
+| Stop propagation
+| Siblings receive stop request on winner
+
+| Cleanup
+| All tasks complete before returning
+|===
+
+== Next Steps
+
+* xref:when-all.adoc[Concurrent Composition] — Wait for all tasks
+* xref:cancellation.adoc[Cancellation] — Stop token propagation
+* xref:../execution/thread-pool.adoc[Thread Pool] — Multi-threaded execution

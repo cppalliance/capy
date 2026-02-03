@@ -1,0 +1,345 @@
+= Why Not TooManyCooks?
+
+You want to write async code in {cpp}. You've heard about coroutines. Two libraries exist: Capy and TooManyCooks (TMC). Both let you write `co_await`. Both run on multiple threads.
+
+One was designed for network I/O. The other was designed for compute tasks. Choosing the wrong one creates friction. This document helps you choose.
+
+== The Simple Version
+
+*Capy:*
+
+* Built for waiting on things (network, files, timers)
+* When data arrives, your code wakes up in the right place automatically
+* Cancellation works - if you stop waiting, pending operations stop too
+* Handles data buffers natively - the bytes flowing through your program
+
+*TMC:*
+
+* Built for doing things (calculations, parallel work)
+* Multi-threaded work pool that keeps CPUs busy
+* Priority levels so important work runs first (16 of them, to be precise)
+* No built-in I/O - you add that separately (via Asio integration)
+
+If you're building a network server, one of these is swimming upstream.
+
+NOTE: *On priorities:* Capy defines executors using a concept. Nothing stops you from implementing a priority-enforcing executor. You could have 24 priority levels, if 16 somehow felt insufficient.
+
+== Where Does Your Code Run?
+
+When async code finishes waiting, it needs to resume somewhere. Where?
+
+*Capy's answer:* The same place it started. Automatically.
+
+* Information flows forward through your code
+* No global state, no thread-local magic
+* Your coroutine started on executor X? It resumes on executor X.
+
+*TMC's answer:* Wherever a worker thread picks it up.
+
+* Thread-local variables track the current executor
+* Works fine... until you cross boundaries
+* Integrating external I/O requires careful coordination
+
+TMC's Asio integration headers (`ex_asio.hpp`, `aw_asio.hpp`) exist because this coordination is non-trivial.
+
+== Stopping Things
+
+What happens when you need to cancel an operation?
+
+*Capy:* Stop tokens propagate automatically through the call chain.
+
+* Cancel at the top, everything below receives the signal
+* Pending I/O operations cancel at the OS level (`CancelIoEx`, `IORING_OP_ASYNC_CANCEL`)
+* Clean shutdown, no leaked resources
+
+*TMC:* You manage cancellation yourself.
+
+* Stop tokens exist in {cpp}20 but TMC doesn't propagate them automatically
+* Pending work completes, or you wait for it
+
+== Keeping Things Orderly
+
+Both libraries support multi-threaded execution. Sometimes you need guarantees: "these operations must not overlap."
+
+*Capy's strand:*
+
+* Wraps any executor
+* Coroutines dispatched through a strand never run concurrently
+* Even if one suspends (waits for I/O), ordering is preserved
+* When you resume, the world is as you left it
+
+*TMC's ex_braid:*
+
+* Also serializes execution
+* But: when a coroutine suspends, the lock is released
+* Another coroutine may enter and begin executing
+* When you resume, the state may have changed
+
+TMC's documentation describes this as "optimized for higher throughput with many serialized tasks." This is a design choice. Whether it matches your mental model is a separate question.
+
+== Working with Data
+
+Network code moves bytes around. A lot of bytes. Efficiently.
+
+*Capy provides:*
+
+* Buffer sequences (scatter/gather I/O without copying)
+* Algorithms: slice, copy, concatenate, consume
+* Dynamic buffers that grow as needed
+* Type-erased streams: write code once, use with any stream type
+
+*TMC provides:*
+
+* Nothing. TMC is not an I/O library.
+* You use Asio's buffers through the integration layer.
+
+== Getting Technical: The IoAwaitable Protocol
+
+When you write `co_await something`, what happens?
+
+*Standard {cpp}20:*
+
+[source,cpp]
+----
+void await_suspend(std::coroutine_handle<> h);
+// or
+bool await_suspend(std::coroutine_handle<> h);
+// or
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h);
+----
+
+The awaitable receives a handle to resume. That's all. No information about where to resume, no cancellation mechanism.
+
+*Capy extends this:*
+
+[source,cpp]
+----
+auto await_suspend(coro h, executor_ref ex, std::stop_token token);
+----
+
+The awaitable receives:
+
+* `h` - The handle (for resumption)
+* `ex` - The executor (where to resume)
+* `token` - A stop token (for cancellation)
+
+This is _forward propagation_. Context flows down the call chain, explicitly.
+
+*TMC's approach:*
+
+Standard signature. Context comes from thread-local storage:
+
+* `this_thread::executor` holds the current executor
+* `this_thread::prio` holds the current priority
+* Works within TMC's ecosystem
+* Crossing to external systems requires the integration headers
+
+== Type Erasure
+
+*Capy:*
+
+* `any_stream`, `any_read_stream`, `any_write_stream`
+* Write a function taking `any_stream&` - it compiles once
+* One virtual call per I/O operation
+* Clean ABI boundaries
+
+*TMC:*
+
+* Traits-based: `executor_traits<T>` specializations
+* Type-erased executor: `ex_any` (function pointers, not virtuals)
+* No stream abstractions (not an I/O library)
+
+== Which Library Is More Fundamental?
+
+A natural question: could one library be built on top of the other? The answer reveals which design is more fundamental.
+
+=== The Standard {cpp}20 Awaitable Signature
+
+[source,cpp]
+----
+void await_suspend(std::coroutine_handle<> h);
+----
+
+The awaitable receives only the coroutine handle. Nothing else. No information about where to resume, no cancellation mechanism.
+
+=== Capy's IoAwaitable Protocol
+
+From `<boost/capy/concept/io_awaitable.hpp>`:
+
+[source,cpp]
+----
+template<typename A>
+concept IoAwaitable =
+    requires(A a, coro h, executor_ref ex, std::stop_token token)
+    {
+        a.await_suspend(h, ex, token);
+    };
+----
+
+The conforming signature:
+
+[source,cpp]
+----
+auto await_suspend(coro h, executor_ref ex, std::stop_token token);
+----
+
+The awaitable receives:
+
+* `h` - The coroutine handle (same as standard)
+* `ex` - An `executor_ref` specifying where to resume
+* `token` - A `std::stop_token` for cooperative cancellation
+
+This is _forward propagation_. Context flows explicitly through the call chain.
+
+=== TMC's Approach
+
+TMC uses the standard signature. Context comes from thread-local state:
+
+[source,cpp]
+----
+// From TMC's thread_locals.hpp
+inline bool exec_prio_is(ex_any const* const Executor, size_t const Priority) noexcept {
+  return Executor == executor && Priority == this_task.prio;
+}
+----
+
+TMC tracks `this_thread::executor` and `this_task.prio` in thread-local variables. When integrating with external I/O (Asio), the integration headers must carefully manage these thread-locals:
+
+[quote]
+____
+"Sets `this_thread::executor` so TMC knows about this executor"
+
+— TMC documentation on `ex_asio`
+____
+
+=== The Asymmetry
+
+Capy's signature carries strictly _more information_ than the standard signature.
+
+[cols="1,1,1"]
+|===
+| Information | Standard {cpp}20 | Capy IoAwaitable
+
+| Coroutine handle
+| Yes
+| Yes
+
+| Executor
+| No
+| Yes (`executor_ref`)
+
+| Stop token
+| No
+| Yes (`std::stop_token`)
+|===
+
+=== Can TMC's abstractions be built on Capy's protocol?
+
+Yes. You would:
+
+. Receive `executor_ref` and `stop_token` from Capy's `await_suspend`
+. Store them in thread-local variables (as TMC does now)
+. Implement work-stealing executors that satisfy Capy's executor concept
+. Ignore the stop token if you prefer manual cancellation
+
+You can always _discard_ information you don't need.
+
+=== Can Capy's protocol be built on TMC's?
+
+No. TMC's `await_suspend` does not receive executor or stop token. To obtain them, you would need to:
+
+* Query thread-local state (violating Capy's explicit-flow design)
+* Or query the caller's promise type (tight coupling Capy avoids)
+
+You cannot _conjure_ information that was never passed.
+
+=== Conclusion
+
+Capy's IoAwaitable protocol is a _superset_ of the standard protocol. TMC's work-stealing scheduler, priority levels, and `ex_braid` are executor _implementations_ - they could implement Capy's executor concept. But Capy's forward-propagation semantics cannot be retrofitted onto a protocol that doesn't carry the context.
+
+Capy is the more fundamental library.
+
+== Corosio: Proof It Works
+
+Capy is a foundation. Corosio builds real networking on it:
+
+* TCP sockets, acceptors
+* TLS streams (WolfSSL)
+* Timers, DNS resolution, signal handling
+* Native backends: IOCP (Windows), epoll (Linux), io_uring (planned)
+
+All built on Capy's IoAwaitable protocol. Coroutines only. No callbacks.
+
+== When to Use Each
+
+*Choose TMC if:*
+
+* CPU-bound parallel algorithms
+* Compute workloads needing TMC's specific priority model (1-16 levels)
+* Work-stealing benefits your access patterns
+* You're already using Asio and want a scheduler on top
+
+*Choose Capy if:*
+
+* Network servers or clients
+* Protocol implementations
+* I/O-bound workloads
+* You want cancellation that propagates
+* You want buffers and streams as first-class concepts
+* You prefer explicit context flow over thread-local state
+* You want to implement your own executor (Capy uses concepts, not concrete types)
+
+== Summary
+
+[cols="1,1,1"]
+|===
+| Aspect | Capy | TooManyCooks
+
+| Primary purpose
+| I/O foundation
+| Compute scheduling
+
+| Threading
+| Multi-threaded (`thread_pool`)
+| Multi-threaded (work-stealing)
+
+| Serialization
+| `strand` (ordering preserved across suspend)
+| `ex_braid` (lock released on suspend)
+
+| Context propagation
+| Forward (IoAwaitable protocol)
+| Thread-local state
+
+| Cancellation
+| Automatic propagation
+| Manual
+
+| Buffer sequences
+| Yes
+| No (use Asio)
+
+| Stream concepts
+| Yes (`ReadStream`, `WriteStream`, etc.)
+| No
+
+| Type-erased streams
+| Yes (`any_stream`)
+| No
+
+| I/O support
+| Via Corosio (native IOCP/epoll/io_uring)
+| Via Asio integration headers
+
+| Priority scheduling
+| Implement your own (24 levels, if you wish)
+| Yes (1-16 levels)
+
+| Work-stealing
+| No
+| Yes
+
+| Executor model
+| Concept-based (user-extensible)
+| Traits-based (`executor_traits<T>`)
+|===
