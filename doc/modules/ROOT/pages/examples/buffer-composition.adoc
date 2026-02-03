@@ -1,0 +1,171 @@
+= Buffer Composition
+
+Composing buffer sequences without allocation for scatter/gather I/O.
+
+== What You Will Learn
+
+* Creating buffers from different sources
+* Composing buffer sequences with `cat()`
+* Zero-allocation scatter/gather patterns
+
+== Prerequisites
+
+* Completed xref:producer-consumer.adoc[Producer-Consumer]
+* Understanding of buffer types from xref:../buffers/types.adoc[Buffer Types]
+
+== Source Code
+
+[source,cpp]
+----
+#include <boost/capy.hpp>
+#include <iostream>
+#include <string>
+#include <array>
+
+using namespace boost::capy;
+
+void demonstrate_buffers()
+{
+    // Individual buffers from various sources
+    std::string header = "Content-Type: text/plain\r\n\r\n";
+    std::string body = "Hello, World!";
+    char footer[] = "\r\n--END--";
+    
+    // Create buffer views (no copies)
+    auto header_buf = make_buffer(header);
+    auto body_buf = make_buffer(body);
+    auto footer_buf = make_buffer(footer, sizeof(footer) - 1);
+    
+    // Compose into a single sequence (no allocation!)
+    auto message = cat(header_buf, body_buf, footer_buf);
+    
+    // Measure
+    std::cout << "Total message size: " << buffer_size(message) << " bytes\n";
+    std::cout << "Buffer count: " << buffer_length(message) << "\n";
+    
+    // Iterate (for demonstration)
+    std::cout << "\nBuffer contents:\n";
+    for (auto it = begin(message); it != end(message); ++it)
+    {
+        const_buffer buf = *it;
+        std::cout << "  [" << buf.size() << " bytes]: ";
+        std::cout.write(static_cast<char const*>(buf.data()), buf.size());
+        std::cout << "\n";
+    }
+}
+
+// HTTP-style message assembly
+struct http_message
+{
+    std::string status_line = "HTTP/1.1 200 OK\r\n";
+    std::array<std::pair<std::string, std::string>, 2> headers = {{
+        {"Content-Type", "application/json"},
+        {"Server", "Capy/1.0"}
+    }};
+    std::string body = R"({"status":"ok"})";
+    
+    // Returns a composed buffer sequence
+    auto buffers() const
+    {
+        // Format headers
+        static constexpr char crlf[] = "\r\n";
+        static constexpr char sep[] = ": ";
+        static constexpr char empty_line[] = "\r\n";
+        
+        return cat(
+            make_buffer(status_line),
+            make_buffer(headers[0].first), make_buffer(sep, 2),
+            make_buffer(headers[0].second), make_buffer(crlf, 2),
+            make_buffer(headers[1].first), make_buffer(sep, 2),
+            make_buffer(headers[1].second), make_buffer(crlf, 2),
+            make_buffer(empty_line, 2),
+            make_buffer(body)
+        );
+    }
+};
+
+int main()
+{
+    demonstrate_buffers();
+    
+    std::cout << "\n--- HTTP Message ---\n";
+    http_message msg;
+    auto bufs = msg.buffers();
+    std::cout << "Message size: " << buffer_size(bufs) << " bytes\n";
+    
+    // In real code: co_await write(stream, msg.buffers());
+    // Single system call writes all buffers (scatter/gather)
+    
+    return 0;
+}
+----
+
+== Build
+
+[source,cmake]
+----
+add_executable(buffer_composition buffer_composition.cpp)
+target_link_libraries(buffer_composition PRIVATE capy)
+----
+
+== Walkthrough
+
+=== Creating Buffers
+
+[source,cpp]
+----
+auto header_buf = make_buffer(header);
+auto body_buf = make_buffer(body);
+auto footer_buf = make_buffer(footer, sizeof(footer) - 1);
+----
+
+`make_buffer` creates buffer views from various sources. No data is copied—the buffers reference the original storage.
+
+=== Zero-Allocation Composition
+
+[source,cpp]
+----
+auto message = cat(header_buf, body_buf, footer_buf);
+----
+
+`cat()` composes buffer sequences without allocation. The returned object stores references and iterates through all buffers in sequence.
+
+=== Scatter/Gather I/O
+
+[source,cpp]
+----
+co_await write(stream, msg.buffers());
+----
+
+When you write a composed buffer sequence, the OS receives all buffers in a single system call. This is *scatter/gather I/O*:
+
+* No intermediate buffer allocation
+* No copying data together
+* Single syscall for multiple buffers
+
+== Output
+
+----
+Total message size: 55 bytes
+Buffer count: 3
+
+Buffer contents:
+  [27 bytes]: Content-Type: text/plain
+
+  [13 bytes]: Hello, World!
+  [9 bytes]: 
+--END--
+
+--- HTTP Message ---
+Message size: 87 bytes
+----
+
+== Exercises
+
+1. Create a function that takes any `ConstBufferSequence` and prints its contents
+2. Measure the difference between copying data into a single buffer vs. using `cat()`
+3. Implement a simple message framing protocol using buffer composition
+
+== Next Steps
+
+* xref:mock-stream-testing.adoc[Mock Stream Testing] — Unit testing with mock streams

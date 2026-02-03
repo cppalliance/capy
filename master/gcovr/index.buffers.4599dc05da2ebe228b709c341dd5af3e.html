@@ -1,0 +1,3238 @@
+<!DOCTYPE html>
+<html class="theme-green">
+
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+    <title>libs/capy/src/buffers/ - capy</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <script>
+      // Apply theme and font size immediately to prevent flash
+      (function() {
+        document.documentElement.classList.add('no-transitions');
+
+        var saved = localStorage.getItem('gcovr-theme');
+        var theme = (saved === 'light' || saved === 'dark') ? saved
+          : window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+
+      })();
+    </script>
+    <style type="text/css">
+/* ===========================================
+   GCOVR Custom Theme - Boost Brand
+   =========================================== */
+
+@charset "utf-8";
+
+:root {
+  /* ===========================================
+     Brand Colors (from Boost website mockup)
+     =========================================== */
+  --brand-gold: #C9A227;
+  --brand-gold-hover: #B8922A;
+  --brand-gold-light: #F5EBBC;
+  --brand-teal: #1F7788;
+  --brand-teal-light: #A7F7E8;
+
+  /* ===========================================
+     Dark Theme (default)
+     =========================================== */
+
+  /* Backgrounds */
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-tertiary: #21262d;
+  --bg-hover: #30363d;
+  --bg-active: rgba(88, 166, 255, 0.15);
+
+  /* Text */
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted: #6e7681;
+
+  /* Borders */
+  --border-color: #30363d;
+  --border-muted: #21262d;
+
+  /* Accent colors */
+  --accent-brand: var(--brand-gold);
+  --accent-link: var(--brand-teal-light);
+  --accent-blue: #58a6ff;
+  --accent-green: #3fb950;
+  --accent-yellow: #d29922;
+  --accent-red: #f85149;
+  --accent-purple: #a371f7;
+
+  /* Coverage colors */
+  --coverage-high: #3fb950;
+  --coverage-high-bg: rgba(63, 185, 80, 0.15);
+  --coverage-medium: #d29922;
+  --coverage-medium-bg: rgba(210, 153, 34, 0.15);
+  --coverage-low: #f85149;
+  --coverage-low-bg: rgba(248, 81, 73, 0.15);
+  --coverage-unknown: #6e7681;
+
+  /* Buttons */
+  --btn-primary-bg: var(--brand-gold);
+  --btn-primary-text: #0d1117;
+  --btn-primary-hover: var(--brand-gold-hover);
+  --btn-secondary-bg: var(--bg-tertiary);
+  --btn-secondary-text: var(--text-primary);
+  --btn-secondary-hover: var(--bg-hover);
+
+  /* Tags/Pills */
+  --tag-bg: var(--bg-tertiary);
+  --tag-text: var(--text-secondary);
+
+  /* Code */
+  --code-bg: var(--bg-secondary);
+  --code-keyword: var(--brand-teal-light);
+  --code-string: #a5d6ff;
+
+  /* ===========================================
+     Layout
+     =========================================== */
+  --sidebar-width: 320px;
+  --sidebar-collapsed-width: 64px;
+  --header-height: 56px;
+
+  /* ===========================================
+     Typography
+     =========================================== */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', 'Fira Code', Consolas, 'Liberation Mono', Menlo, monospace;
+
+  /* Font sizes - base scale (can be adjusted via JS) */
+  --font-size-base: 16px;
+  --font-size-xs: calc(var(--font-size-base) * 0.75);
+  --font-size-sm: calc(var(--font-size-base) * 0.867);
+  --font-size-md: var(--font-size-base);
+  --font-size-lg: calc(var(--font-size-base) * 1.067);
+  --font-size-xl: calc(var(--font-size-base) * 1.2);
+  --font-size-code: calc(var(--font-size-base) * 0.9375);
+
+  /* ===========================================
+     Radius
+     =========================================== */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-pill: 20px;
+
+  /* ===========================================
+     Transitions
+     =========================================== */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s ease;
+}
+
+/* ===========================================
+   Light Mode
+   =========================================== */
+:root[data-theme="light"] {
+  /* Backgrounds */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f6f8fa;
+  --bg-tertiary: #eaeef2;
+  --bg-hover: #e5e9ed;
+  --bg-active: rgba(88, 166, 255, 0.15);
+
+  /* Text */
+  --text-primary: #1f2328;
+  --text-secondary: #656d76;
+  --text-muted: #8c959f;
+
+  /* Borders */
+  --border-color: #d0d7de;
+  --border-muted: #eaeef2;
+
+  /* Accent colors */
+  --accent-brand: #9A7B1A;
+  --accent-link: var(--brand-teal);
+  --accent-blue: #0969da;
+  --accent-green: #1a7f37;
+  --accent-yellow: #9a6700;
+  --accent-red: #cf222e;
+  --accent-purple: #8250df;
+
+  /* Coverage colors */
+  --coverage-high: #1a7f37;
+  --coverage-high-bg: rgba(26, 127, 55, 0.15);
+  --coverage-medium: #9a6700;
+  --coverage-medium-bg: rgba(154, 103, 0, 0.15);
+  --coverage-low: #cf222e;
+  --coverage-low-bg: rgba(207, 34, 46, 0.15);
+
+  /* Buttons */
+  --btn-primary-bg: var(--accent-brand);
+  --btn-primary-text: #ffffff;
+  --btn-primary-hover: #7A6115;
+  --btn-secondary-bg: var(--bg-tertiary);
+  --btn-secondary-text: var(--text-primary);
+  --btn-secondary-hover: var(--bg-hover);
+
+  /* Tags/Pills */
+  --tag-bg: var(--bg-tertiary);
+  --tag-text: var(--text-secondary);
+
+  /* Code */
+  --code-bg: var(--bg-secondary);
+  --code-keyword: var(--brand-teal);
+  --code-string: #0550ae;
+}
+
+/* Suppress transitions on initial load to prevent flash */
+html.no-transitions,
+html.no-transitions *,
+html.no-transitions *::before,
+html.no-transitions *::after {
+  transition: none !important;
+}
+
+/* Smooth theme transitions */
+body, .sidebar, .main-content, .main-header, .main-footer,
+.sidebar-header, .sidebar-nav,
+.summary-card, .file-list-container, .source-container,
+.tree-item-header, .coverage-badge, .tree-coverage,
+.btn, .nav-link, input {
+  transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
+}
+
+/* Coverage class colors */
+.coverage-high { color: var(--coverage-high) !important; }
+.coverage-medium { color: var(--coverage-medium) !important; }
+.coverage-low, .coverage-none { color: var(--coverage-low) !important; }
+.coverage-unknown { color: var(--coverage-unknown) !important; }
+
+/* Reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-md);
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  overflow-x: hidden;
+}
+
+a {
+  color: var(--accent-blue);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: #79c0ff;
+  text-decoration: underline;
+}
+
+/* ===========================================
+   App Layout
+   =========================================== */
+
+.app-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ===========================================
+   Sidebar
+   =========================================== */
+
+.sidebar {
+  position: fixed;
+  left: 12px;
+  top: 12px;
+  bottom: 12px;
+  width: var(--sidebar-width);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  overflow: visible;
+  transition: width var(--transition-normal);
+}
+
+/* Collapsed state */
+.sidebar.collapsed {
+  width: var(--sidebar-collapsed-width);
+  overflow: visible;
+}
+
+/* Expand on hover when collapsed - only for content area, not header */
+.sidebar.collapsed.hover-expand {
+  width: var(--sidebar-width);
+}
+
+/* Sidebar Resize Handle */
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  width: 29px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 101;
+}
+
+.sidebar-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 5px;
+  height: 100%;
+  border-radius: 2.5px;
+  background: var(--bg-tertiary);
+  transform: translateX(-50%);
+  transition: background var(--transition-fast);
+}
+
+.sidebar-resize-handle:hover::after {
+  background: var(--border-color);
+}
+
+.sidebar.collapsed .sidebar-resize-handle {
+  display: none;
+}
+
+body.sidebar-resizing {
+  user-select: none;
+  cursor: col-resize;
+}
+
+body.sidebar-resizing .sidebar,
+body.sidebar-resizing .main-content {
+  transition: none;
+}
+
+/* Sidebar Header */
+.sidebar-header {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sidebar-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.sidebar-logo:hover {
+  text-decoration: none;
+}
+
+.sidebar-logo:hover .boost-logo {
+  transform: scale(1.05);
+}
+
+.sidebar-logo .boost-wordmark {
+  height: 28px;
+  width: auto;
+  flex-shrink: 0;
+  transition: transform var(--transition-fast);
+  color: var(--text-primary);
+}
+
+/* Light mode: dark text for wordmark */
+:root[data-theme="light"] .sidebar-logo .boost-wordmark {
+  color: #050816;
+}
+
+.sidebar-title-group {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.sidebar-library {
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-subtitle {
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.sidebar.collapsed .sidebar-title-group {
+  display: none;
+}
+
+.sidebar.collapsed.hover-expand .sidebar-title-group {
+  display: flex;
+}
+
+/* Hide logo when collapsed, center toggle (show on hover) */
+.sidebar.collapsed .sidebar-logo {
+  display: none;
+}
+
+.sidebar.collapsed.hover-expand .sidebar-logo {
+  display: flex;
+}
+
+.sidebar.collapsed:not(.hover-expand) .sidebar-header {
+  padding: 10px;
+  align-items: center;
+}
+
+.sidebar.collapsed:not(.hover-expand) .sidebar-header-row {
+  justify-content: center;
+  width: 100%;
+}
+
+.sidebar.collapsed .sidebar-logo {
+  display: none;
+}
+
+.sidebar.collapsed.hover-expand .sidebar-header-row {
+  justify-content: space-between;
+}
+
+.sidebar.collapsed.hover-expand .sidebar-logo {
+  display: flex;
+}
+
+
+/* Sidebar Toggle Button */
+.sidebar-toggle {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.sidebar-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.sidebar-toggle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sidebar-toggle .icon-expand { display: none; }
+.sidebar-toggle .icon-collapse { display: block; }
+
+.sidebar.collapsed .sidebar-toggle .icon-expand { display: block; }
+.sidebar.collapsed .sidebar-toggle .icon-collapse { display: none; }
+
+/* Sidebar Search */
+.sidebar-search {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.sidebar-search input {
+  width: 100%;
+  padding: 8px 28px 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.search-clear {
+  position: absolute;
+  right: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  display: none;
+}
+
+.search-clear:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.sidebar-search.has-query .search-clear {
+  display: block;
+}
+
+.sidebar-search input:focus {
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+}
+
+.sidebar-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-highlight {
+  background: var(--accent-yellow, #e3b341);
+  color: var(--bg-primary);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.search-no-results {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+/* Hide elements when collapsed (show on hover) */
+.sidebar.collapsed .sidebar-search,
+.sidebar.collapsed .tree-controls,
+.sidebar.collapsed .sidebar-nav {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar.collapsed.hover-expand .sidebar-search,
+.sidebar.collapsed.hover-expand .tree-controls,
+.sidebar.collapsed.hover-expand .sidebar-nav {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Theme Toggle (in header) */
+.theme-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.theme-toggle svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Theme icons - visibility managed by JS */
+.theme-toggle .icon-sun { display: none; }
+.theme-toggle .icon-moon { display: none; }
+
+/* Theme Selector Dropdown */
+
+/* Tree Controls */
+.tree-controls {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.tree-control-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.tree-control-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.tree-control-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+.sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding: 8px 0;
+  scrollbar-gutter: stable;
+}
+
+
+.coverage-summary-mini {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.coverage-badge {
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+}
+
+.coverage-badge.coverage-high {
+  background: var(--coverage-high-bg);
+}
+
+.coverage-badge.coverage-medium {
+  background: var(--coverage-medium-bg);
+}
+
+.coverage-badge.coverage-low {
+  background: var(--coverage-low-bg);
+}
+
+.coverage-label {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+/* Tree View */
+.tree-loading {
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.tree-item {
+  user-select: none;
+}
+
+.tree-item-header {
+  display: flex;
+  align-items: center;
+  padding: 2px 12px 2px 8px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+  gap: 4px;
+  /* Extend background full width */
+  margin-left: -200px;
+  padding-left: 208px;
+  margin-right: -12px;
+  padding-right: 24px;
+}
+
+.tree-item-header:hover {
+  background: var(--bg-hover);
+}
+
+.tree-item-header.active,
+.tree-item.active > .tree-item-header {
+  background: var(--bg-active);
+}
+
+.tree-item.active > .tree-item-header .tree-label {
+  color: var(--accent-blue);
+  font-weight: 500;
+}
+
+/* Folder toggle button (+/-) - minimal style */
+.tree-folder-toggle {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  font-weight: 400;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+  text-decoration: none;
+  line-height: 1;
+  margin-right: 2px;
+  padding: 0;
+}
+
+.tree-folder-toggle:hover {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+/* Spacer for files (no toggle) */
+.tree-spacer {
+  width: 20px;
+  flex-shrink: 0;
+}
+
+/* Legacy toggle classes */
+.tree-toggle {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  padding: 0;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.tree-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent-blue);
+  text-decoration: none;
+}
+
+.tree-toggle .toggle-icon {
+  display: block;
+  color: var(--text-primary);
+  font-size: var(--font-size-md);
+  line-height: 1;
+}
+
+.tree-toggle-spacer {
+  width: 18px;
+  flex-shrink: 0;
+}
+
+.tree-item.no-children .tree-toggle {
+  visibility: hidden;
+}
+
+.tree-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.tree-icon-folder {
+  color: var(--accent-blue);
+}
+
+.tree-icon-file {
+  color: var(--text-muted);
+}
+
+/* Legacy classes */
+.tree-icon.folder {
+  color: var(--accent-blue);
+}
+
+.tree-icon.file {
+  color: var(--text-secondary);
+}
+
+.tree-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+}
+
+.tree-coverage {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+
+.tree-coverage.coverage-high {
+  background: var(--coverage-high-bg);
+}
+
+.tree-coverage.coverage-medium {
+  background: var(--coverage-medium-bg);
+}
+
+.tree-coverage.coverage-low {
+  background: var(--coverage-low-bg);
+}
+
+.tree-children {
+  display: none;
+  margin-left: 20px;
+  position: relative;
+}
+
+.tree-item.expanded > .tree-children {
+  display: block;
+}
+
+/* .tree-children-inner reserved for animation support */
+
+
+/* ===========================================
+   Main Content
+   =========================================== */
+
+.main-content {
+  flex: 1;
+  margin-left: calc(var(--sidebar-width) + 41px);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  transition: margin-left var(--transition-normal);
+}
+
+.sidebar.collapsed ~ .main-content {
+  margin-left: calc(var(--sidebar-collapsed-width) + 41px);
+}
+
+.main-header {
+  position: sticky;
+  top: 12px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 12px 12px 0 0;
+  padding: 12px 10px 12px 24px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  height: var(--header-height);
+}
+
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  font-size: var(--font-size-md);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.breadcrumb a,
+.breadcrumb span {
+  display: inline;
+  white-space: nowrap;
+}
+
+.breadcrumb a {
+  color: var(--accent-blue);
+}
+
+.breadcrumb a:hover {
+  color: var(--accent-blue);
+}
+
+.breadcrumb .separator {
+  color: var(--text-muted);
+  padding: 0 6px;
+}
+
+.breadcrumb .current {
+  color: var(--text-primary);
+  visibility: hidden;
+}
+
+.breadcrumb .current.ready {
+  visibility: visible;
+}
+
+.breadcrumb-home {
+  font-weight: 600;
+  color: var(--accent-brand);
+}
+
+.breadcrumb-home:hover {
+  color: var(--accent-brand);
+  opacity: 0.8;
+  text-decoration: none;
+}
+
+.breadcrumb-title {
+  font-weight: 600;
+  font-size: var(--font-size-lg);
+  color: var(--text-primary);
+  margin-right: 8px;
+}
+
+.breadcrumb-label {
+  font-weight: 400;
+  font-size: var(--font-size-md);
+  color: var(--text-secondary);
+}
+
+.header-actions {
+  margin-left: auto;
+}
+
+.content-wrapper {
+  flex: 1;
+  padding: 24px;
+  padding-right: 12px;
+  padding-left: 0;
+  width: 100%;
+  margin-left: 0;
+}
+
+.main-footer {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  border-top: 1px solid var(--border-color);
+}
+
+.main-footer a {
+  color: var(--text-muted);
+}
+
+/* ===========================================
+   Summary Cards
+   =========================================== */
+
+.summary-section {
+  margin-bottom: 24px;
+}
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.summary-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.summary-card-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+}
+
+.summary-card-header h3 {
+  margin: 0;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.summary-card-body {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.coverage-ring {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+}
+
+.coverage-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.coverage-ring .ring-bg {
+  fill: none;
+  stroke: var(--bg-tertiary);
+  stroke-width: 3;
+}
+
+.coverage-ring .ring-fill {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dasharray var(--transition-normal);
+}
+
+.coverage-ring.coverage-high .ring-fill { stroke: var(--coverage-high); }
+.coverage-ring.coverage-medium .ring-fill { stroke: var(--coverage-medium); }
+.coverage-ring.coverage-low .ring-fill { stroke: var(--coverage-low); }
+
+.coverage-ring .ring-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: var(--font-size-md);
+  font-weight: 600;
+}
+
+.summary-stats {
+  flex: 1;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: var(--font-size-sm);
+}
+
+.stat-row .stat-label {
+  color: var(--text-secondary);
+}
+
+.stat-row .stat-value {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.coverage-legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.legend-item {
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+}
+
+.legend-item.coverage-high {
+  background: var(--coverage-high-bg);
+  color: var(--coverage-high);
+}
+
+.legend-item.coverage-medium {
+  background: var(--coverage-medium-bg);
+  color: var(--coverage-medium);
+}
+
+.legend-item.coverage-low {
+  background: var(--coverage-low-bg);
+  color: var(--coverage-low);
+}
+
+/* ===========================================
+   File List
+   =========================================== */
+
+.file-list-container {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.file-list-header {
+  display: grid;
+  grid-template-columns: minmax(200px, 2fr) minmax(150px, 1fr) 100px 100px 100px;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.file-list-header > div {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.file-list-header .sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.file-list-header .sortable:hover {
+  color: var(--text-primary);
+}
+
+.file-list-header .sorted-ascending::after {
+  content: ' ↑';
+}
+
+.file-list-header .sorted-descending::after {
+  content: ' ↓';
+}
+
+.file-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 2fr) minmax(150px, 1fr) 100px 100px 100px;
+  gap: 8px;
+  padding: 4px 16px;
+  border-bottom: 1px solid var(--border-muted);
+  align-items: center;
+  transition: background var(--transition-fast);
+}
+
+.file-row:last-child {
+  border-bottom: none;
+}
+
+.file-row:hover {
+  background: var(--bg-hover);
+}
+
+/* Adjust grid when columns are hidden */
+.no-functions.no-branches .file-list-header,
+.no-functions.no-branches .file-row {
+  grid-template-columns: minmax(200px, 2fr) minmax(150px, 1fr) 100px;
+}
+
+.no-functions:not(.no-branches) .file-list-header,
+.no-functions:not(.no-branches) .file-row {
+  grid-template-columns: minmax(200px, 2fr) minmax(150px, 1fr) 100px 100px;
+}
+
+.no-branches:not(.no-functions) .file-list-header,
+.no-branches:not(.no-functions) .file-row {
+  grid-template-columns: minmax(200px, 2fr) minmax(150px, 1fr) 100px 100px;
+}
+
+.file-row:nth-child(even) {
+  background: rgba(56, 139, 253, 0.03);
+}
+
+.file-row:nth-child(even):hover {
+  background: var(--bg-hover);
+}
+
+.col-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.file-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.file-icon svg {
+  display: block;
+}
+
+.file-row.directory .file-icon {
+  color: var(--accent-blue);
+}
+
+.col-name a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.col-name .no-link {
+  color: var(--text-secondary);
+}
+
+.col-coverage {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.coverage-bar-container {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.coverage-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width var(--transition-normal);
+}
+
+.coverage-bar.coverage-high { background: var(--coverage-high); }
+.coverage-bar.coverage-medium { background: var(--coverage-medium); }
+.coverage-bar.coverage-low { background: var(--coverage-low); }
+
+.coverage-percent {
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  min-width: 48px;
+  text-align: right;
+}
+
+.col-lines, .col-functions, .col-branches {
+  text-align: right;
+  font-size: var(--font-size-sm);
+}
+
+.file-list-header .col-lines,
+.file-list-header .col-functions,
+.file-list-header .col-branches {
+  justify-content: flex-end;
+}
+
+.stat-value {
+  font-weight: 500;
+}
+
+.stat-separator {
+  color: var(--text-muted);
+  margin: 0 2px;
+}
+
+.stat-total {
+  color: var(--text-secondary);
+}
+
+/* ===========================================
+   Source Code View
+   =========================================== */
+
+.source-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.source-info h2 {
+  margin: 0 0 8px 0;
+  font-size: var(--font-size-xl);
+  font-weight: 600;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.source-stats {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.source-stats .stat {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+}
+
+.source-stats .stat strong {
+  margin-right: 4px;
+}
+
+.source-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.btn.btn-sm {
+  padding: 4px 10px;
+  font-size: var(--font-size-xs);
+}
+
+.btn-count {
+  font-weight: 600;
+}
+
+.btn-toggle {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.btn-toggle.show_coveredLine,
+.btn-toggle.show_uncoveredLine,
+.btn-toggle.show_partialCoveredLine,
+.btn-toggle.show_excludedLine {
+  text-decoration: none;
+  opacity: 1;
+}
+
+.color-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.color-dot.covered { background: var(--coverage-high); }
+.color-dot.uncovered { background: var(--coverage-low); }
+
+.source-container {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.source-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.source-title {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.source-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.source-table-container {
+  overflow-x: auto;
+}
+
+.source-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-code);
+  line-height: 1.2;
+}
+
+.source-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.source-table th {
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font-weight: 600;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.source-table th.col-lineno,
+.source-table th.col-count,
+.source-table th.col-branch {
+  text-align: right;
+}
+
+.source-table td {
+  padding: 4px 12px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.source-table .col-lineno {
+  background: var(--bg-tertiary);
+  border-right: 1px solid var(--border-color);
+  text-align: right;
+  user-select: none;
+  white-space: nowrap;
+  width: 1%;
+  padding: 4px 6px;
+}
+
+.source-table .col-lineno a {
+  color: var(--text-muted);
+  text-decoration: none;
+  display: block;
+  padding: 0;
+}
+
+.source-table .col-lineno a:hover {
+  color: var(--accent-blue);
+}
+
+.source-table .col-branch,
+.source-table .col-condition,
+.source-table .col-decision,
+.source-table .col-call {
+  background: var(--bg-tertiary);
+  border-right: 1px solid var(--border-color);
+  text-align: center;
+  width: 50px;
+}
+
+.source-table .col-count {
+  text-align: right;
+  white-space: nowrap;
+  width: 1%;
+  color: var(--text-muted);
+  padding: 4px 6px;
+}
+
+.source-table .col-source {
+  white-space: pre;
+  padding-left: 16px;
+}
+
+/* Line coverage highlighting */
+.source-line.coveredLine.show_coveredLine td.col-source,
+.source-line.coveredLine.show_coveredLine td.col-count {
+  background: var(--coverage-high-bg);
+}
+
+.source-line.uncoveredLine.show_uncoveredLine td.col-source,
+.source-line.uncoveredLine.show_uncoveredLine td.col-count {
+  background: var(--coverage-low-bg);
+}
+
+.source-line.partialCoveredLine.show_partialCoveredLine td.col-source,
+.source-line.partialCoveredLine.show_partialCoveredLine td.col-count {
+  background: var(--coverage-medium-bg);
+}
+
+.source-line.excludedLine.show_excludedLine td.col-source,
+.source-line.excludedLine.show_excludedLine td.col-count {
+  background: rgba(110, 118, 129, 0.15);
+}
+
+.hit-miss {
+  color: var(--coverage-low);
+  font-weight: bold;
+}
+
+.hit-excluded {
+  color: var(--text-muted);
+}
+
+/* Branch/condition popup */
+.branch-details, .condition-details, .decision-details, .call-details {
+  position: relative;
+}
+
+.branch-summary, .condition-summary, .decision-summary, .call-summary {
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+}
+
+.branch-summary:hover, .condition-summary:hover, .decision-summary:hover, .call-summary:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+
+.branch-popup, .condition-popup, .decision-popup, .call-popup {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  min-width: 250px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: var(--font-size-xs);
+  line-height: 1.6;
+  text-align: left;
+}
+
+.function-name {
+  font-weight: 600;
+  color: var(--accent-blue);
+  margin-bottom: 4px;
+}
+
+.branch-taken, .condition-covered, .decision-taken, .call-invoked {
+  color: var(--coverage-high);
+}
+
+.branch-not-taken, .condition-not-covered, .decision-not-taken, .call-not-invoked {
+  color: var(--coverage-low);
+}
+
+.branch-excluded, .condition-excluded, .decision-uncheckable, .call-excluded {
+  color: var(--text-muted);
+}
+
+/* ===========================================
+   Navigation
+   =========================================== */
+
+.nav-links {
+  display: flex;
+  gap: 12px;
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  transition: all var(--transition-fast);
+}
+
+.nav-link:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.nav-link svg {
+  flex-shrink: 0;
+}
+
+/* ===========================================
+   Functions Page
+   =========================================== */
+
+.summary-inline {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  margin-bottom: 24px;
+}
+
+.summary-inline .summary-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.summary-inline .stat-label {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.summary-inline .stat-value {
+  font-weight: 600;
+  font-size: var(--font-size-md);
+}
+
+.summary-inline .stat-detail {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.functions-container {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.functions-header {
+  display: grid;
+  grid-template-columns: 2fr 120px 80px 80px;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border-color);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.function-row {
+  display: grid;
+  grid-template-columns: 2fr 120px 80px 80px;
+  gap: 16px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-muted);
+  align-items: center;
+  transition: background var(--transition-fast);
+}
+
+.function-row:hover {
+  background: var(--bg-hover);
+}
+
+.function-row .col-function a {
+  display: block;
+}
+
+.function-name {
+  font-weight: 500;
+  display: block;
+}
+
+.function-location {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.function-row .excluded {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.function-row .not-called {
+  color: var(--coverage-low);
+}
+
+.function-row .called {
+  color: var(--coverage-high);
+  font-weight: 500;
+}
+
+/* ===========================================
+   Mobile Menu Button & Backdrop
+   =========================================== */
+
+/* Mobile menu button - hidden on desktop */
+.mobile-menu-btn {
+  display: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
+  padding: 0;
+  flex-shrink: 0;
+  margin-right: 12px;
+}
+
+.mobile-menu-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.mobile-menu-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Sidebar backdrop for mobile */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 99;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--transition-normal), visibility var(--transition-normal);
+}
+
+/* ===========================================
+   Responsive
+   =========================================== */
+
+@media (max-width: 1024px) {
+  /* Mobile sidebar - hidden off-screen by default */
+  .sidebar {
+    transform: translateX(-100%);
+    width: var(--sidebar-width);
+    left: 0;
+    top: 0;
+    bottom: 0;
+    border-radius: 0;
+    transition: transform var(--transition-normal);
+  }
+
+  /* Show sidebar when mobile-open */
+  .sidebar.mobile-open {
+    transform: translateX(0);
+  }
+
+  /* Main content takes full width */
+  .main-content {
+    margin-left: 0 !important;
+  }
+
+  .main-header {
+    margin: 0;
+    border-radius: 0;
+    top: 0;
+  }
+
+  /* Show hamburger menu button */
+  .mobile-menu-btn {
+    display: flex;
+  }
+
+  /* Hide sidebar toggle (pin) button and resize handle */
+  .sidebar-toggle {
+    display: none;
+  }
+
+  .sidebar-resize-handle {
+    display: none;
+  }
+
+  /* Show backdrop when sidebar open */
+  .sidebar.mobile-open ~ .sidebar-backdrop {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .content-wrapper {
+    padding: 16px;
+  }
+
+  .file-list-header,
+  .file-row {
+    grid-template-columns: 1fr 120px 80px;
+  }
+
+  .col-functions,
+  .col-branches {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .summary-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .file-list-header,
+  .file-row {
+    grid-template-columns: 1fr 100px;
+  }
+
+  .col-lines,
+  .col-functions,
+  .col-branches {
+    display: none !important;
+  }
+
+  .source-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+
+/* ===========================================
+   Syntax Highlighting (Dark Theme)
+   =========================================== */
+
+/* Dark theme syntax highlighting */
+.c { color: #8b949e; font-style: italic; } /* Comment */
+.k { color: #ff7b72; font-weight: bold; } /* Keyword */
+.o { color: #79c0ff; } /* Operator */
+.cm { color: #8b949e; font-style: italic; } /* Comment.Multiline */
+.cp { color: #d29922; } /* Comment.Preproc */
+.c1 { color: #8b949e; font-style: italic; } /* Comment.Single */
+.cs { color: #8b949e; font-weight: bold; } /* Comment.Special */
+.gd { color: #f85149; } /* Generic.Deleted */
+.gi { color: #3fb950; } /* Generic.Inserted */
+.kc { color: #79c0ff; } /* Keyword.Constant */
+.kd { color: #ff7b72; } /* Keyword.Declaration */
+.kn { color: #ff7b72; } /* Keyword.Namespace */
+.kt { color: #ffa657; } /* Keyword.Type */
+.m { color: #a5d6ff; } /* Literal.Number */
+.s { color: #a5d6ff; } /* Literal.String */
+.na { color: #79c0ff; } /* Name.Attribute */
+.nb { color: #ffa657; } /* Name.Builtin */
+.nc { color: #ffa657; font-weight: bold; } /* Name.Class */
+.nf { color: #d2a8ff; } /* Name.Function */
+.nn { color: #ffa657; } /* Name.Namespace */
+.nt { color: #7ee787; } /* Name.Tag */
+.nv { color: #79c0ff; } /* Name.Variable */
+.ow { color: #ff7b72; font-weight: bold; } /* Operator.Word */
+.s1 { color: #a5d6ff; } /* Literal.String.Single */
+.s2 { color: #a5d6ff; } /* Literal.String.Double */
+
+/* Light theme syntax highlighting */
+:root[data-theme="light"] .c { color: #6e7781; }
+:root[data-theme="light"] .k { color: #cf222e; }
+:root[data-theme="light"] .o { color: #0550ae; }
+:root[data-theme="light"] .cm { color: #6e7781; }
+:root[data-theme="light"] .cp { color: #9a6700; }
+:root[data-theme="light"] .c1 { color: #6e7781; }
+:root[data-theme="light"] .cs { color: #6e7781; }
+:root[data-theme="light"] .gd { color: #cf222e; }
+:root[data-theme="light"] .gi { color: #1a7f37; }
+:root[data-theme="light"] .kc { color: #0550ae; }
+:root[data-theme="light"] .kd { color: #cf222e; }
+:root[data-theme="light"] .kn { color: #cf222e; }
+:root[data-theme="light"] .kt { color: #953800; }
+:root[data-theme="light"] .m { color: #0550ae; }
+:root[data-theme="light"] .s { color: #0a3069; }
+:root[data-theme="light"] .na { color: #0550ae; }
+:root[data-theme="light"] .nb { color: #953800; }
+:root[data-theme="light"] .nc { color: #953800; }
+:root[data-theme="light"] .nf { color: #8250df; }
+:root[data-theme="light"] .nn { color: #953800; }
+:root[data-theme="light"] .nt { color: #1a7f37; }
+:root[data-theme="light"] .nv { color: #0550ae; }
+:root[data-theme="light"] .ow { color: #cf222e; }
+:root[data-theme="light"] .s1 { color: #0a3069; }
+:root[data-theme="light"] .s2 { color: #0a3069; }
+
+/* ===========================================
+   Scrollbar
+   =========================================== */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--bg-hover);
+}
+
+/* Button toggle classes for gcovr compatibility */
+.button_toggle_coveredLine,
+.button_toggle_uncoveredLine,
+.button_toggle_partialCoveredLine,
+.button_toggle_excludedLine {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+.button_toggle_coveredLine.show_coveredLine,
+.button_toggle_uncoveredLine.show_uncoveredLine,
+.button_toggle_partialCoveredLine.show_partialCoveredLine,
+.button_toggle_excludedLine.show_excludedLine {
+  text-decoration: none;
+  opacity: 1;
+}    </style>
+    <script>
+/* GCOVR Custom JavaScript - Tree View & Interactivity */
+
+(function() {
+  'use strict';
+
+  // Wait for DOM ready
+  document.addEventListener('DOMContentLoaded', function() {
+    initTheme();
+    initSidebar();
+    initSidebarResize();
+    initMobileMenu();
+    initFileTree();
+    initBreadcrumbs();
+    initSearch();
+    initSorting();
+    initToggleButtons();
+    initTreeControls();
+
+    // Re-enable transitions after all init (including search restore)
+    // has completed so the first paint is the final state
+    requestAnimationFrame(function() {
+      requestAnimationFrame(function() {
+        document.documentElement.classList.remove('no-transitions');
+      });
+    });
+  });
+
+  // ===========================================
+  // Breadcrumb Links
+  // ===========================================
+
+  // Find a node in the tree by its link (HTML filename) and return
+  // the full ancestor path as an array of nodes from root to target.
+  function findPathInTree(nodes, targetLink) {
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      if (node.link === targetLink) {
+        return [node];
+      }
+      if (node.children) {
+        var childPath = findPathInTree(node.children, targetLink);
+        if (childPath) {
+          return [node].concat(childPath);
+        }
+      }
+    }
+    return null;
+  }
+
+  function initBreadcrumbs() {
+    var currentSpan = document.querySelector('.breadcrumb .current');
+    if (!currentSpan || !window.GCOVR_TREE_DATA) {
+      if (currentSpan) currentSpan.classList.add('ready');
+      return;
+    }
+
+    // Find current page in tree by its HTML filename — this is unambiguous
+    // since each page only appears once in the tree.
+    var currentPage = window.location.pathname.split('/').pop() || 'index.html';
+    var treePath = findPathInTree(window.GCOVR_TREE_DATA, currentPage);
+
+    if (!treePath || treePath.length === 0) {
+      currentSpan.classList.add('ready');
+      return;
+    }
+
+    // Build breadcrumb from the tree path (ancestor nodes → current node)
+    var fragment = document.createDocumentFragment();
+    var matchedSegments = [];
+
+    for (var i = 0; i < treePath.length; i++) {
+      var node = treePath[i];
+      var isLast = (i === treePath.length - 1);
+
+      if (i > 0) {
+        var sep = document.createElement('span');
+        sep.className = 'separator';
+        sep.textContent = '/';
+        fragment.appendChild(sep);
+      }
+
+      matchedSegments.push(node.name);
+
+      if (node.link && !isLast) {
+        var a = document.createElement('a');
+        a.href = node.link;
+        a.textContent = node.name;
+        fragment.appendChild(a);
+      } else {
+        var span = document.createElement('span');
+        span.className = 'current-file';
+        span.textContent = node.name;
+        fragment.appendChild(span);
+      }
+    }
+
+    currentSpan.innerHTML = '';
+    currentSpan.appendChild(fragment);
+    currentSpan.classList.add('ready');
+
+    // Update source-filename to match breadcrumb path
+    var sourceFilename = document.querySelector('.source-filename');
+    if (sourceFilename) {
+      sourceFilename.textContent = matchedSegments.join('/');
+    }
+  }
+
+  // ===========================================
+  // Theme Toggle
+  // ===========================================
+
+  function initTheme() {
+    const toggle = document.getElementById('theme-toggle');
+    const iconSun = toggle ? toggle.querySelector('.icon-sun') : null;
+    const iconMoon = toggle ? toggle.querySelector('.icon-moon') : null;
+
+    // Get system preference
+    function getSystemTheme() {
+      return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+
+    // Get effective theme: saved preference or OS default
+    function getEffectiveTheme() {
+      var saved = localStorage.getItem('gcovr-theme');
+      return (saved === 'light' || saved === 'dark') ? saved : getSystemTheme();
+    }
+
+    // Apply theme to document
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      if (iconSun) iconSun.style.display = (theme === 'dark') ? 'block' : 'none';
+      if (iconMoon) iconMoon.style.display = (theme === 'light') ? 'block' : 'none';
+    }
+
+    // Apply current theme
+    applyTheme(getEffectiveTheme());
+
+    // Listen for system theme changes — only apply if no stored preference
+    window.matchMedia('(prefers-color-scheme: light)').addEventListener('change', function() {
+      var saved = localStorage.getItem('gcovr-theme');
+      if (saved !== 'light' && saved !== 'dark') {
+        applyTheme(getSystemTheme());
+      }
+    });
+
+    // Toggle between light and dark on click
+    if (toggle) {
+      toggle.addEventListener('click', function() {
+        var current = getEffectiveTheme();
+        var next = (current === 'dark') ? 'light' : 'dark';
+        localStorage.setItem('gcovr-theme', next);
+        applyTheme(next);
+      });
+    }
+  }
+
+  // ===========================================
+  // Tree Controls (Expand/Collapse All)
+  // ===========================================
+
+  function initTreeControls() {
+    var expandBtn = document.getElementById('expand-all');
+    var collapseBtn = document.getElementById('collapse-all');
+
+    if (expandBtn) {
+      expandBtn.addEventListener('click', function() {
+        document.querySelectorAll('.tree-item').forEach(function(item) {
+          if (!item.classList.contains('no-children')) {
+            item.classList.add('expanded');
+            var toggle = item.querySelector(':scope > .tree-item-header > .tree-folder-toggle');
+            if (toggle) toggle.textContent = '−';
+          }
+        });
+        saveExpandedFolders();
+      });
+    }
+
+    if (collapseBtn) {
+      collapseBtn.addEventListener('click', function() {
+        document.querySelectorAll('.tree-item').forEach(function(item) {
+          item.classList.remove('expanded');
+          var toggle = item.querySelector(':scope > .tree-item-header > .tree-folder-toggle');
+          if (toggle) toggle.textContent = '+';
+        });
+        saveExpandedFolders();
+      });
+    }
+  }
+
+  // ===========================================
+  // Sidebar Toggle
+  // ===========================================
+
+  function initSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const toggle = document.getElementById('sidebar-toggle');
+    const header = sidebar ? sidebar.querySelector('.sidebar-header') : null;
+
+    if (!sidebar) return;
+
+    // Load saved state
+    const isCollapsed = localStorage.getItem('sidebar-collapsed') === 'true';
+    if (isCollapsed) {
+      sidebar.classList.add('collapsed');
+    }
+
+    // Toggle button
+    if (toggle) {
+      toggle.addEventListener('click', function() {
+        sidebar.classList.toggle('collapsed');
+        sidebar.classList.remove('hover-expand');
+        var isNowCollapsed = sidebar.classList.contains('collapsed');
+        localStorage.setItem('sidebar-collapsed', isNowCollapsed);
+        // Restore custom width when un-collapsing
+        if (!isNowCollapsed) {
+          var savedWidth = localStorage.getItem('gcovr-sidebar-width');
+          if (savedWidth) {
+            document.documentElement.style.setProperty('--sidebar-width', savedWidth + 'px');
+          }
+        }
+      });
+    }
+
+    // Hover expand - expands when hovering sidebar content (not header or no-expand zones)
+    var hoverTimeout = null;
+    var HOVER_DELAY = 150; // ms delay before expanding
+    var isOverContent = false;
+
+    // Check if element is within a no-expand zone
+    function isInNoExpandZone(el) {
+      while (el && el !== sidebar) {
+        if (el.classList && el.classList.contains('no-expand')) {
+          return true;
+        }
+        el = el.parentElement;
+      }
+      return false;
+    }
+
+    function scheduleExpand() {
+      if (hoverTimeout) return; // already scheduled
+      if (sidebar.classList.contains('hover-expand')) return; // already expanded
+      hoverTimeout = setTimeout(function() {
+        if (isOverContent) {
+          sidebar.classList.add('hover-expand');
+        }
+        hoverTimeout = null;
+      }, HOVER_DELAY);
+    }
+
+    function cancelExpand() {
+      if (hoverTimeout) {
+        clearTimeout(hoverTimeout);
+        hoverTimeout = null;
+      }
+      sidebar.classList.remove('hover-expand');
+    }
+
+    sidebar.addEventListener('mouseenter', function(e) {
+      if (!sidebar.classList.contains('collapsed')) return;
+      // Check if entering over content area (not header or no-expand zones)
+      if (!header.contains(e.target) && !isInNoExpandZone(e.target)) {
+        isOverContent = true;
+        scheduleExpand();
+      }
+    });
+
+    sidebar.addEventListener('mousemove', function(e) {
+      if (!sidebar.classList.contains('collapsed')) return;
+      var wasOverContent = isOverContent;
+      isOverContent = !header.contains(e.target) && !isInNoExpandZone(e.target);
+
+      if (isOverContent && !wasOverContent && !sidebar.classList.contains('hover-expand')) {
+        scheduleExpand();
+      }
+    });
+
+    sidebar.addEventListener('mouseleave', function() {
+      isOverContent = false;
+      cancelExpand();
+    });
+  }
+
+  // ===========================================
+  // Sidebar Resize
+  // ===========================================
+
+  function initSidebarResize() {
+    var sidebar = document.getElementById('sidebar');
+    var handle = document.getElementById('sidebar-resize-handle');
+    if (!sidebar || !handle) return;
+
+    var MIN_WIDTH = 200;
+    var startX, startWidth;
+
+    // Restore saved width
+    var savedWidth = localStorage.getItem('gcovr-sidebar-width');
+    if (savedWidth && !sidebar.classList.contains('collapsed')) {
+      var w = parseInt(savedWidth, 10);
+      if (w >= MIN_WIDTH) {
+        document.documentElement.style.setProperty('--sidebar-width', w + 'px');
+      }
+    }
+
+    function getMaxWidth() {
+      return Math.floor(window.innerWidth * 0.5);
+    }
+
+    function onMouseMove(e) {
+      var newWidth = startWidth + (e.clientX - startX);
+      var maxW = getMaxWidth();
+      if (newWidth < MIN_WIDTH) newWidth = MIN_WIDTH;
+      if (newWidth > maxW) newWidth = maxW;
+      document.documentElement.style.setProperty('--sidebar-width', newWidth + 'px');
+    }
+
+    function onMouseUp() {
+      document.body.classList.remove('sidebar-resizing');
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      // Save the current width
+      var computed = parseInt(getComputedStyle(sidebar).width, 10);
+      localStorage.setItem('gcovr-sidebar-width', computed);
+    }
+
+    handle.addEventListener('mousedown', function(e) {
+      if (sidebar.classList.contains('collapsed')) return;
+      e.preventDefault();
+      startX = e.clientX;
+      startWidth = parseInt(getComputedStyle(sidebar).width, 10);
+      document.body.classList.add('sidebar-resizing');
+      document.addEventListener('mousemove', onMouseMove);
+      document.addEventListener('mouseup', onMouseUp);
+    });
+
+    // Double-click to reset to default width
+    var DEFAULT_WIDTH = 320;
+    handle.addEventListener('dblclick', function() {
+      if (sidebar.classList.contains('collapsed')) return;
+      document.documentElement.style.setProperty('--sidebar-width', DEFAULT_WIDTH + 'px');
+      localStorage.setItem('gcovr-sidebar-width', DEFAULT_WIDTH);
+    });
+  }
+
+  // ===========================================
+  // Mobile Menu
+  // ===========================================
+
+  function initMobileMenu() {
+    var sidebar = document.getElementById('sidebar');
+    var menuBtn = document.getElementById('mobile-menu-btn');
+    var backdrop = document.getElementById('sidebar-backdrop');
+
+    if (!menuBtn || !sidebar) return;
+
+    // Open sidebar on hamburger click
+    menuBtn.addEventListener('click', function() {
+      sidebar.classList.add('mobile-open');
+    });
+
+    // Close on backdrop click
+    if (backdrop) {
+      backdrop.addEventListener('click', function() {
+        sidebar.classList.remove('mobile-open');
+      });
+    }
+
+    // Close when clicking a navigation link
+    sidebar.addEventListener('click', function(e) {
+      if (e.target.closest('a[href]')) {
+        sidebar.classList.remove('mobile-open');
+      }
+    });
+
+    // Close on escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && sidebar.classList.contains('mobile-open')) {
+        sidebar.classList.remove('mobile-open');
+      }
+    });
+  }
+
+  // ===========================================
+  // File Tree - Load from tree.json
+  // ===========================================
+
+  function initFileTree() {
+    var treeContainer = document.getElementById('file-tree');
+    if (!treeContainer) return;
+
+    // Check for embedded tree data first (works for local file:// access)
+    if (window.GCOVR_TREE_DATA) {
+      window.GCOVR_TREE_DATA = normalizeTree(window.GCOVR_TREE_DATA);
+      deduplicateTree(window.GCOVR_TREE_DATA);
+      collapseSingleChildDirs(window.GCOVR_TREE_DATA);
+      deduplicateTree(window.GCOVR_TREE_DATA);
+      renderTree(treeContainer, window.GCOVR_TREE_DATA);
+      return;
+    }
+
+    // Fallback: try to load tree.json for full hierarchy
+    fetch('tree.json')
+      .then(function(response) {
+        if (!response.ok) throw new Error('No tree.json');
+        return response.json();
+      })
+      .then(function(tree) {
+        window.GCOVR_TREE_DATA = normalizeTree(tree);
+        deduplicateTree(window.GCOVR_TREE_DATA);
+        collapseSingleChildDirs(window.GCOVR_TREE_DATA);
+        deduplicateTree(window.GCOVR_TREE_DATA);
+        renderTree(treeContainer, window.GCOVR_TREE_DATA);
+        // Re-run breadcrumbs and search now that the tree exists
+        initBreadcrumbs();
+        initSearch();
+      })
+      .catch(function(err) {
+        console.log('tree.json not found, using static sidebar');
+        // Keep existing static content from Jinja template
+      });
+  }
+
+  // Collapse single-child directory chains: if a directory has exactly
+  // one child and that child is also a directory, absorb the grandchildren.
+  // e.g. include > boost > capy > [items] becomes include > [items]
+  function collapseSingleChildDirs(nodes) {
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      if (!node.isDirectory || !node.children) continue;
+      while (node.children.length === 1 && node.children[0].isDirectory &&
+             node.children[0].children && node.children[0].children.length > 0) {
+        var child = node.children[0];
+        if (!node.link && child.link) node.link = child.link;
+        node.children = child.children;
+      }
+      collapseSingleChildDirs(node.children);
+    }
+  }
+
+  // Deduplicate tree: when a node has a child with the same name
+  // (e.g. include > include), merge the child's children upward.
+  // This happens when gcovr directory pages list entries with paths
+  // that include the parent directory name.
+  function deduplicateTree(nodes) {
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      if (!node.children || node.children.length === 0) continue;
+      for (var j = node.children.length - 1; j >= 0; j--) {
+        var child = node.children[j];
+        if (child.name === node.name && child.isDirectory) {
+          node.children.splice(j, 1);
+          if (!node.link && child.link) node.link = child.link;
+          if (!node.coverage && child.coverage) node.coverage = child.coverage;
+          if (!node.coverageClass && child.coverageClass) node.coverageClass = child.coverageClass;
+          if (child.children) {
+            for (var k = 0; k < child.children.length; k++) {
+              node.children.push(child.children[k]);
+            }
+          }
+        }
+      }
+      deduplicateTree(node.children);
+    }
+  }
+
+  // Normalize tree: expand multi-segment node names (e.g. "capy/buffers")
+  // into proper nested directory structures so the tree and breadcrumbs
+  // display correctly.
+  function normalizeTree(nodes) {
+    if (!nodes || nodes.length === 0) return nodes;
+
+    var groups = {};
+    var order = [];
+
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      var slashIdx = node.name.indexOf('/');
+
+      if (slashIdx === -1) {
+        // Simple name — add directly or merge with existing group
+        if (groups[node.name]) {
+          var existing = groups[node.name];
+          if (node.link) existing.link = node.link;
+          if (node.coverage) existing.coverage = node.coverage;
+          if (node.coverageClass) existing.coverageClass = node.coverageClass;
+          if (node.children && node.children.length > 0) {
+            existing.children = (existing.children || []).concat(node.children);
+          }
+        } else {
+          var copy = {};
+          for (var key in node) {
+            if (node.hasOwnProperty(key)) copy[key] = node[key];
+          }
+          groups[node.name] = copy;
+          order.push(node.name);
+        }
+      } else {
+        // Multi-segment name — split on first '/' and group
+        var prefix = node.name.substring(0, slashIdx);
+        var rest = node.name.substring(slashIdx + 1);
+
+        if (!groups[prefix]) {
+          groups[prefix] = {
+            name: prefix,
+            isDirectory: true,
+            children: []
+          };
+          order.push(prefix);
+        }
+        if (!groups[prefix].children) groups[prefix].children = [];
+
+        // Create child node with remaining path as name
+        var childNode = {};
+        for (var key in node) {
+          if (node.hasOwnProperty(key)) childNode[key] = node[key];
+        }
+        childNode.name = rest;
+        groups[prefix].children.push(childNode);
+      }
+    }
+
+    // Build result with recursive normalization
+    var result = [];
+    for (var i = 0; i < order.length; i++) {
+      var node = groups[order[i]];
+      if (node.children && node.children.length > 0) {
+        node.children = normalizeTree(node.children);
+      }
+      result.push(node);
+    }
+    return result;
+  }
+
+  // Save expanded folder paths to localStorage
+  function saveExpandedFolders() {
+    var paths = [];
+    document.querySelectorAll('.tree-item.expanded[data-tree-path]').forEach(function(el) {
+      paths.push(el.getAttribute('data-tree-path'));
+    });
+    localStorage.setItem('gcovr-expanded-folders', JSON.stringify(paths));
+  }
+
+  function renderTree(container, tree) {
+    container.innerHTML = '';
+
+    if (!tree || tree.length === 0) {
+      container.innerHTML = '<div class="tree-loading">No files found</div>';
+      return;
+    }
+
+    tree.forEach(function(item) {
+      container.appendChild(createTreeItem(item, ''));
+    });
+
+    // Auto-expand to current file and highlight it
+    expandToCurrentFile(container);
+  }
+
+  function expandToCurrentFile(container) {
+    // Get current page filename
+    var currentPage = window.location.pathname.split('/').pop() || 'index.html';
+
+    // Find the link matching current page
+    var currentLink = container.querySelector('a[href="' + currentPage + '"]');
+
+    if (currentLink) {
+      // Mark as active
+      var treeItem = currentLink.closest('.tree-item');
+      if (treeItem) {
+        treeItem.classList.add('active');
+      }
+
+      // Expand all parent folders
+      var parent = currentLink.closest('.tree-children');
+      while (parent) {
+        var parentItem = parent.closest('.tree-item');
+        if (parentItem) {
+          parentItem.classList.add('expanded');
+          var toggle = parentItem.querySelector(':scope > .tree-item-header > .tree-folder-toggle');
+          if (toggle) toggle.textContent = '−';
+        }
+        parent = parentItem ? parentItem.parentElement.closest('.tree-children') : null;
+      }
+    }
+
+    // Restore previously expanded folders from localStorage
+    try {
+      var saved = localStorage.getItem('gcovr-expanded-folders');
+      if (saved) {
+        var paths = JSON.parse(saved);
+        paths.forEach(function(path) {
+          var el = container.querySelector('.tree-item[data-tree-path="' + CSS.escape(path) + '"]');
+          if (el && !el.classList.contains('no-children')) {
+            el.classList.add('expanded');
+            var toggle = el.querySelector(':scope > .tree-item-header > .tree-folder-toggle');
+            if (toggle) toggle.textContent = '−';
+          }
+        });
+      }
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+
+    // Scroll active item into view instantly
+    if (currentLink) {
+      currentLink.scrollIntoView({ block: 'center', behavior: 'instant' });
+    }
+  }
+
+  // Clean relative path prefixes like '../../../' from names
+  function cleanPathName(name) {
+    if (!name) return 'unknown';
+    // Remove leading ./ or ../
+    while (name.indexOf('./') === 0 || name.indexOf('../') === 0) {
+      if (name.indexOf('./') === 0) {
+        name = name.substring(2);
+      } else if (name.indexOf('../') === 0) {
+        name = name.substring(3);
+      }
+    }
+    return name || 'unknown';
+  }
+
+  // Get just the filename from a path
+  function getDisplayName(name) {
+    var cleaned = cleanPathName(name);
+    var lastSlash = cleaned.lastIndexOf('/');
+    return lastSlash >= 0 ? cleaned.substring(lastSlash + 1) : cleaned;
+  }
+
+  function createTreeItem(item, parentPath) {
+    var hasChildren = item.children && item.children.length > 0;
+    var isDirectory = item.isDirectory || hasChildren;
+    var cleanedName = cleanPathName(item.name);
+    var treePath = parentPath ? (parentPath + '/' + cleanedName) : cleanedName;
+
+    var div = document.createElement('div');
+    div.className = 'tree-item' + (isDirectory ? ' is-folder' : '') + (hasChildren ? '' : ' no-children');
+    div.setAttribute('data-tree-path', treePath);
+
+    var header = document.createElement('div');
+    header.className = 'tree-item-header';
+    var toggle = null;
+
+    // Toggle button (+/-) for folders with children
+    if (hasChildren) {
+      toggle = document.createElement('button');
+      toggle.className = 'tree-folder-toggle';
+      toggle.textContent = '+';
+      toggle.setAttribute('aria-label', 'Toggle folder');
+      toggle.addEventListener('click', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        var isExpanded = div.classList.toggle('expanded');
+        toggle.textContent = isExpanded ? '−' : '+';
+        saveExpandedFolders();
+      });
+      header.appendChild(toggle);
+
+      // Make entire header clickable to expand/collapse
+      header.style.cursor = 'pointer';
+      header.addEventListener('click', function(e) {
+        // If clicking directly on a link, let it navigate
+        if (e.target.closest('a')) return;
+        e.preventDefault();
+        var isExpanded = div.classList.toggle('expanded');
+        toggle.textContent = isExpanded ? '−' : '+';
+        saveExpandedFolders();
+      });
+    } else {
+      var spacer = document.createElement('span');
+      spacer.className = 'tree-spacer';
+      header.appendChild(spacer);
+    }
+
+    // Icon - different for folders vs files
+    var icon = document.createElement('span');
+    if (isDirectory) {
+      icon.className = 'tree-icon tree-icon-folder';
+      icon.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M1.75 1A1.75 1.75 0 000 2.75v10.5C0 14.216.784 15 1.75 15h12.5A1.75 1.75 0 0016 13.25v-8.5A1.75 1.75 0 0014.25 3H7.5a.25.25 0 01-.2-.1l-.9-1.2C6.07 1.26 5.55 1 5 1H1.75z"/></svg>';
+    } else {
+      icon.className = 'tree-icon tree-icon-file';
+      icon.innerHTML = '<svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M3.75 1.5a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 019 4.25V1.5H3.75zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938zM2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75z"/></svg>';
+    }
+    header.appendChild(icon);
+
+    // Label (with link if available)
+    // Clean the display name to remove relative path prefixes like '../../../'
+    var displayName = getDisplayName(item.name);
+    var tooltipText = cleanPathName(item.fullPath || item.name);
+    var label = document.createElement('span');
+    label.className = 'tree-label';
+    label.title = tooltipText;
+    if (item.link) {
+      var link = document.createElement('a');
+      link.href = item.link;
+      link.textContent = displayName;
+      link.title = tooltipText;
+      label.appendChild(link);
+    } else {
+      label.textContent = displayName;
+    }
+    header.appendChild(label);
+
+    div.appendChild(header);
+
+    // Children container (for expand/collapse)
+    if (hasChildren) {
+      var childrenWrapper = document.createElement('div');
+      childrenWrapper.className = 'tree-children';
+
+      var childrenInner = document.createElement('div');
+      childrenInner.className = 'tree-children-inner';
+      item.children.forEach(function(child) {
+        childrenInner.appendChild(createTreeItem(child, treePath));
+      });
+
+      childrenWrapper.appendChild(childrenInner);
+      div.appendChild(childrenWrapper);
+    }
+
+    return div;
+  }
+
+  // ===========================================
+  // Search
+  // ===========================================
+
+  function initSearch() {
+    const searchInput = document.getElementById('file-search');
+    const fileTree = document.getElementById('file-tree');
+    const clearBtn = document.getElementById('search-clear');
+    const searchContainer = searchInput ? searchInput.closest('.sidebar-search') : null;
+    if (!searchInput || !fileTree) return;
+
+    // Store pre-search expanded state so we can restore it
+    var preSearchExpanded = null;
+
+    // Create no-results message
+    var noResults = document.createElement('div');
+    noResults.className = 'search-no-results';
+    noResults.textContent = 'No matching files';
+    noResults.style.display = 'none';
+    fileTree.appendChild(noResults);
+
+    function updateClearButton() {
+      if (searchContainer) {
+        searchContainer.classList.toggle('has-query', searchInput.value.trim() !== '');
+      }
+    }
+
+    // Clear button
+    if (clearBtn) {
+      clearBtn.addEventListener('click', function() {
+        searchInput.value = '';
+        sessionStorage.removeItem('gcovr-search');
+        updateClearButton();
+        performSearch('');
+        searchInput.focus();
+      });
+    }
+
+    var debounceTimer = null;
+    searchInput.addEventListener('input', function() {
+      updateClearButton();
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(function() {
+        var val = searchInput.value;
+        if (val.trim() !== '') {
+          sessionStorage.setItem('gcovr-search', val);
+        } else {
+          sessionStorage.removeItem('gcovr-search');
+        }
+        performSearch(val);
+      }, 150);
+    });
+
+    // Restore search state from sessionStorage on page load (synchronous
+    // since initFileTree has already built the tree before initSearch runs)
+    var savedSearch = sessionStorage.getItem('gcovr-search');
+    if (savedSearch) {
+      searchInput.value = savedSearch;
+      updateClearButton();
+      performSearch(savedSearch);
+    }
+
+    function performSearch(value) {
+      var query = value.toLowerCase().trim();
+      var allItems = fileTree.querySelectorAll('.tree-item');
+
+      // Clear all highlights
+      fileTree.querySelectorAll('.search-highlight').forEach(function(mark) {
+        var parent = mark.parentNode;
+        parent.replaceChild(document.createTextNode(mark.textContent), mark);
+        parent.normalize();
+      });
+
+      // If query is empty, restore original state
+      if (query === '') {
+        noResults.style.display = 'none';
+        allItems.forEach(function(item) {
+          item.style.display = '';
+          item.classList.remove('search-match');
+        });
+        // Restore pre-search expanded state
+        if (preSearchExpanded !== null) {
+          allItems.forEach(function(item) {
+            var path = item.getAttribute('data-tree-path');
+            var toggle = item.querySelector(':scope > .tree-item-header > .tree-folder-toggle');
+            if (toggle) {
+              if (preSearchExpanded.indexOf(path) >= 0) {
+                item.classList.add('expanded');
+                toggle.textContent = '\u2212';
+              } else {
+                item.classList.remove('expanded');
+                toggle.textContent = '+';
+              }
+            }
+          });
+          preSearchExpanded = null;
+        }
+        return;
+      }
+
+      // Save expanded state before first search
+      if (preSearchExpanded === null) {
+        preSearchExpanded = [];
+        allItems.forEach(function(item) {
+          if (item.classList.contains('expanded')) {
+            preSearchExpanded.push(item.getAttribute('data-tree-path'));
+          }
+        });
+      }
+
+      // Determine which items match (check full path and display name)
+      var matchSet = new Set();
+
+      allItems.forEach(function(item) {
+        var path = (item.getAttribute('data-tree-path') || '').toLowerCase();
+        var label = item.querySelector(':scope > .tree-item-header > .tree-label');
+        var text = label ? label.textContent.toLowerCase() : '';
+        if (path.includes(query) || text.includes(query)) {
+          matchSet.add(item);
+        }
+      });
+
+      // Also mark all ancestor items of matches as visible
+      var visibleSet = new Set(matchSet);
+      matchSet.forEach(function(item) {
+        var parent = item.parentElement;
+        while (parent && parent !== fileTree) {
+          if (parent.classList && parent.classList.contains('tree-item')) {
+            visibleSet.add(parent);
+          }
+          parent = parent.parentElement;
+        }
+      });
+
+      // Apply visibility, expand parents of matches, highlight text
+      var anyVisible = false;
+      allItems.forEach(function(item) {
+        var isVisible = visibleSet.has(item);
+        item.style.display = isVisible ? '' : 'none';
+        item.classList.toggle('search-match', matchSet.has(item));
+
+        if (isVisible) {
+          anyVisible = true;
+          // Auto-expand folders that contain matches
+          var toggle = item.querySelector(':scope > .tree-item-header > .tree-folder-toggle');
+          if (toggle && visibleSet.has(item) && !matchSet.has(item) || (toggle && matchSet.has(item) && item.classList.contains('is-folder'))) {
+            item.classList.add('expanded');
+            toggle.textContent = '\u2212';
+          }
+        }
+
+        // Highlight matched text in label
+        if (matchSet.has(item)) {
+          var label = item.querySelector(':scope > .tree-item-header > .tree-label');
+          if (label) {
+            highlightText(label, query);
+          }
+        }
+      });
+
+      noResults.style.display = anyVisible ? 'none' : '';
+    }
+
+    function highlightText(container, query) {
+      // Walk text nodes inside the label (may be inside an <a> tag)
+      var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null, false);
+      var textNodes = [];
+      while (walker.nextNode()) {
+        textNodes.push(walker.currentNode);
+      }
+      textNodes.forEach(function(node) {
+        var text = node.textContent;
+        var lowerText = text.toLowerCase();
+        var idx = lowerText.indexOf(query);
+        if (idx === -1) return;
+
+        var frag = document.createDocumentFragment();
+        var lastIdx = 0;
+        while (idx !== -1) {
+          if (idx > lastIdx) {
+            frag.appendChild(document.createTextNode(text.substring(lastIdx, idx)));
+          }
+          var mark = document.createElement('mark');
+          mark.className = 'search-highlight';
+          mark.textContent = text.substring(idx, idx + query.length);
+          frag.appendChild(mark);
+          lastIdx = idx + query.length;
+          idx = lowerText.indexOf(query, lastIdx);
+        }
+        if (lastIdx < text.length) {
+          frag.appendChild(document.createTextNode(text.substring(lastIdx)));
+        }
+        node.parentNode.replaceChild(frag, node);
+      });
+    }
+  }
+
+  // ===========================================
+  // Sorting
+  // ===========================================
+
+  function initSorting() {
+    const headers = document.querySelectorAll('.file-list-header .sortable, .functions-header .sortable');
+
+    headers.forEach(function(header) {
+      header.addEventListener('click', function() {
+        const sortKey = this.dataset.sort;
+        const isAscending = this.classList.contains('sorted-ascending');
+
+        // Remove sorted class from all headers
+        headers.forEach(function(h) {
+          h.classList.remove('sorted-ascending', 'sorted-descending');
+        });
+
+        // Toggle sort direction
+        this.classList.add(isAscending ? 'sorted-descending' : 'sorted-ascending');
+
+        // Sort the list
+        sortList(sortKey, !isAscending);
+      });
+    });
+
+    // Initial sort: directories first, then by filename
+    sortList('filename', true);
+  }
+
+  function sortList(key, ascending) {
+    const container = document.getElementById('file-list') || document.querySelector('.functions-body');
+    if (!container) return;
+
+    const rows = Array.from(container.children);
+
+    rows.sort(function(a, b) {
+      // Directories always come first
+      const aIsDir = a.classList.contains('directory');
+      const bIsDir = b.classList.contains('directory');
+      if (aIsDir && !bIsDir) return -1;
+      if (!aIsDir && bIsDir) return 1;
+
+      let aVal = a.dataset[key] || a.querySelector('[data-sort]')?.dataset.sort || '';
+      let bVal = b.dataset[key] || b.querySelector('[data-sort]')?.dataset.sort || '';
+
+      // Try to parse as numbers
+      const aNum = parseFloat(aVal);
+      const bNum = parseFloat(bVal);
+
+      if (!isNaN(aNum) && !isNaN(bNum)) {
+        return ascending ? aNum - bNum : bNum - aNum;
+      }
+
+      // String comparison
+      return ascending ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+    });
+
+    rows.forEach(function(row) {
+      container.appendChild(row);
+    });
+  }
+
+  // ===========================================
+  // Toggle Buttons (Coverage Lines)
+  // ===========================================
+
+  function initToggleButtons() {
+    const buttons = document.querySelectorAll('.button_toggle_coveredLine, .button_toggle_uncoveredLine, .button_toggle_partialCoveredLine, .button_toggle_excludedLine');
+
+    buttons.forEach(function(button) {
+      button.addEventListener('click', function() {
+        const lineClass = this.value;
+        const showClass = 'show_' + lineClass;
+
+        // Toggle the button state
+        this.classList.toggle(showClass);
+
+        // Toggle visibility of lines
+        const lines = document.querySelectorAll('.' + lineClass);
+        lines.forEach(function(line) {
+          line.classList.toggle(showClass);
+        });
+      });
+    });
+
+    // Also handle simpler toggle buttons
+    const simpleToggles = document.querySelectorAll('.btn-toggle');
+    simpleToggles.forEach(function(button) {
+      button.addEventListener('click', function() {
+        // Use data attribute to get line class (persists after toggle)
+        const lineClass = this.dataset.lineClass;
+        if (!lineClass) return;
+
+        const showClass = 'show_' + lineClass;
+        this.classList.toggle(showClass);
+        const lines = document.querySelectorAll('.' + lineClass);
+        lines.forEach(function(line) {
+          line.classList.toggle(showClass);
+        });
+      });
+    });
+  }
+
+})();    </script>
+  </head>
+
+  <body>
+    <div class="app-container">
+      <!-- Sidebar -->
+      <aside class="sidebar" id="sidebar"><script>if(localStorage.getItem('sidebar-collapsed')==='true'){document.currentScript.parentElement.classList.add('collapsed');}else{var sw=localStorage.getItem('gcovr-sidebar-width');if(sw)document.documentElement.style.setProperty('--sidebar-width',sw+'px');}</script>
+        <div class="sidebar-header">
+          <div class="sidebar-header-row">
+            <a href="index.html" class="sidebar-logo" title="Back to index">
+              <svg viewBox="150 150 700 160" class="boost-wordmark"><path fill="#ffa000" d="M292.45,152.89h-93.18l-46.59,80,12.63,21.69,46.57-79.99h47.07c20.07,0,36.38,16.18,36.38,36.07,0,8.46-3.54,18.29-10.84,22.4,7.11,5.3,10.54,13.73,10.54,22.01,0,19.88-16.32,36.06-36.38,36.06h-61.71l16.12-27.7h45.59c4.66,0,8.45-3.75,8.45-8.36s-3.57-8.16-8.05-8.35c-.13-.02-36.25,0-36.25,0l16.14-27.71s20.22.02,20.31,0c1.9-.06,3.63-.74,5-1.85,1.93-1.53,3.15-3.87,3.15-6.5,0-4.62-3.79-8.37-8.45-8.37h-30.03l-47.04,80.75,17.39,29.85h93.18l46.59-80-46.59-80h0Z"/><path fill="currentColor" d="M550.81,291.93c-9.23,0-17.31-2.01-24.23-6.04s-12.29-9.63-16.1-16.83c-3.81-7.19-5.72-15.4-5.72-24.63s1.9-17.6,5.72-24.79c3.81-7.19,9.18-12.82,16.1-16.91,6.92-4.08,15-6.12,24.23-6.12s17.44,2.04,24.31,6.12,12.21,9.72,16.02,16.91,5.72,15.46,5.72,24.79-1.91,17.44-5.72,24.63-9.15,12.8-16.02,16.83c-6.87,4.02-14.97,6.04-24.31,6.04ZM550.81,272.45c5.37,0,9.79-1.23,13.28-3.7,3.49-2.47,6.12-5.82,7.89-10.06s2.66-8.99,2.66-14.25-.89-10.2-2.66-14.49c-1.77-4.29-4.4-7.7-7.89-10.22-3.49-2.52-7.92-3.78-13.28-3.78s-9.82,1.26-13.36,3.78c-3.54,2.52-6.2,5.93-7.97,10.22-1.77,4.29-2.66,9.12-2.66,14.49s.89,10.01,2.66,14.25c1.77,4.24,4.43,7.59,7.97,10.06s7.99,3.7,13.36,3.7Z"/><path fill="currentColor" d="M648.53,291.93c-9.23,0-17.31-2.01-24.23-6.04s-12.29-9.63-16.1-16.83c-3.81-7.19-5.72-15.4-5.72-24.63s1.9-17.6,5.72-24.79c3.81-7.19,9.18-12.82,16.1-16.91,6.92-4.08,15-6.12,24.23-6.12s17.44,2.04,24.31,6.12,12.21,9.72,16.02,16.91,5.72,15.46,5.72,24.79-1.91,17.44-5.72,24.63-9.15,12.8-16.02,16.83c-6.87,4.02-14.97,6.04-24.31,6.04ZM648.53,272.45c5.37,0,9.79-1.23,13.28-3.7,3.49-2.47,6.12-5.82,7.89-10.06s2.66-8.99,2.66-14.25-.89-10.2-2.66-14.49c-1.77-4.29-4.4-7.7-7.89-10.22-3.49-2.52-7.92-3.78-13.28-3.78s-9.82,1.26-13.36,3.78c-3.54,2.52-6.2,5.93-7.97,10.22-1.77,4.29-2.66,9.12-2.66,14.49s.89,10.01,2.66,14.25c1.77,4.24,4.43,7.59,7.97,10.06s7.99,3.7,13.36,3.7Z"/><path fill="currentColor" d="M722.75,260.85c.54,4.62,2.55,7.86,6.04,9.74s7.49,2.82,11.99,2.82,8.21-.8,11.11-2.41c2.9-1.61,4.35-4.24,4.35-7.89,0-2.25-.99-4-2.98-5.23s-4.56-2.2-7.73-2.9c-3.17-.7-6.66-1.37-10.46-2.01-3.81-.64-7.65-1.5-11.51-2.58-3.86-1.07-7.41-2.58-10.63-4.51-3.22-1.93-5.8-4.53-7.73-7.81-1.93-3.27-2.9-7.49-2.9-12.64,0-4.83,1.55-9.47,4.67-13.93,3.11-4.45,7.49-8.05,13.12-10.79,5.63-2.74,12.1-4.11,19.4-4.11,6.55,0,12.61,1.32,18.19,3.95,5.58,2.63,10.06,6.25,13.44,10.87s5.07,9.98,5.07,16.1h-21.41c-.43-4.61-2.15-7.86-5.15-9.74-3.01-1.88-6.6-2.82-10.79-2.82-4.94,0-8.69.99-11.27,2.98s-3.86,4.48-3.86,7.49c0,2.47.99,4.4,2.98,5.8,1.98,1.4,4.56,2.47,7.73,3.22,3.16.75,6.68,1.42,10.55,2.01,3.86.59,7.7,1.4,11.51,2.42,3.81,1.02,7.33,2.47,10.55,4.35s5.8,4.4,7.73,7.57,2.9,7.27,2.9,12.32c0,5.69-1.56,10.71-4.67,15.05-3.11,4.35-7.49,7.73-13.12,10.14-5.64,2.42-12.26,3.62-19.88,3.62-7.08,0-13.52-1.37-19.32-4.11s-10.44-6.44-13.93-11.11c-3.49-4.67-5.34-9.95-5.55-15.86h21.57,0Z"/><path fill="currentColor" d="M815.48,264.84v-47.29h17.55v-18.35h-17.55v-21.78l-34.42,40.14h12.84v51.81c0,11.05,8.95,20,20,20h21.7v-18.52h-14.12c-3.31,0-6-2.69-6-6h0Z"/><path fill="currentColor" d="M494.62,242.26c-2.36-3.92-5.58-7.03-9.66-9.34-1.08-.61-2.19-1.14-3.33-1.61.7-.44,1.36-.91,1.96-1.45,2.95-2.63,5.1-5.82,6.44-9.58,1.34-3.76,2.01-7.35,2.01-10.79,0-8.69-1.99-15.4-5.96-20.12s-9.31-8.02-16.02-9.9c-6.71-1.88-14.14-2.82-22.3-2.82h-34.29v112.7h40.41c8.16,0,15.59-.99,22.3-2.98,6.71-1.98,12.05-5.45,16.02-10.38,3.97-4.94,5.96-11.7,5.96-20.29,0-5.04-1.18-9.53-3.54-13.44ZM472.48,264.8c-1.88,2.09-4.46,3.52-7.73,4.27-3.28.75-6.9,1.13-10.87,1.13h-18.51v-74.54h12.4c4.08,0,7.73.32,10.95.97,3.22.64,5.77,1.96,7.65,3.95,1.88,1.99,2.82,4.91,2.82,8.77s-.94,6.79-2.82,8.78c-1.88,1.99-4.46,3.3-7.73,3.94-1.87.37-3.86.62-5.96.78l-11.25,19.19h12.46c4.08,0,7.73.35,10.95,1.05,3.22.7,5.77,2.01,7.65,3.94s2.82,4.83,2.82,8.69-.94,7-2.82,9.1v-.02Z"/></svg>
+            </a>
+            <button class="sidebar-toggle" id="sidebar-toggle" title="Toggle sidebar">
+            <svg class="icon-collapse" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z"/></svg>
+            <svg class="icon-expand" viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M4.646 1.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1 0 .708l-6 6a.5.5 0 0 1-.708-.708L10.293 8 4.646 2.354a.5.5 0 0 1 0-.708z"/></svg>
+          </button>
+          </div>
+          <div class="sidebar-title-group">
+            <span class="sidebar-library">capy</span>
+          </div>
+        </div>
+        <div class="sidebar-search">
+          <input type="text" id="file-search" placeholder="Search files..." autocomplete="off">
+          <button class="search-clear" id="search-clear" type="button" aria-label="Clear search">&times;</button>
+        </div>
+        <div class="tree-controls">
+          <button class="tree-control-btn" id="expand-all" title="Expand all">
+            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a.5.5 0 01.5.5v5h5a.5.5 0 010 1h-5v5a.5.5 0 01-1 0v-5h-5a.5.5 0 010-1h5v-5A.5.5 0 018 1z"/></svg>
+            Expand
+          </button>
+          <button class="tree-control-btn" id="collapse-all" title="Collapse all">
+            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 8a.5.5 0 01.5-.5h11a.5.5 0 010 1h-11A.5.5 0 012 8z"/></svg>
+            Collapse
+          </button>
+        </div>
+        <nav class="sidebar-nav" id="file-tree">
+<div class="tree-item ">
+  <div class="tree-item-header">
+    <span class="tree-spacer"></span>
+    <svg class="tree-icon tree-icon-file" viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M3.75 1.5a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 019 4.25V1.5H3.75zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938zM2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75z"></path></svg>
+    <a class="tree-label" href="index.circular_dynamic_buffer.cpp.4da36e343f8c941bd0eae94d41271572.html" title="circular_dynamic_buffer.cpp">circular_dynamic_buffer.cpp</a>
+  </div>
+</div>
+<div class="tree-item ">
+  <div class="tree-item-header">
+    <span class="tree-spacer"></span>
+    <svg class="tree-icon tree-icon-file" viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M3.75 1.5a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 019 4.25V1.5H3.75zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938zM2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75z"></path></svg>
+    <a class="tree-label" href="index.buffer_array.cpp.2094807074afa51532ccbdd4a086212f.html" title="buffer_array.cpp">buffer_array.cpp</a>
+  </div>
+</div>
+<div class="tree-item ">
+  <div class="tree-item-header">
+    <span class="tree-spacer"></span>
+    <svg class="tree-icon tree-icon-file" viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M3.75 1.5a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 019 4.25V1.5H3.75zm6.75.062V4.25c0 .138.112.25.25.25h2.688l-2.938-2.938zM2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75z"></path></svg>
+    <a class="tree-label" href="index.buffer_pair.cpp.a9519b510ec4d5caf14dd1b5cb10af62.html" title="buffer_pair.cpp">buffer_pair.cpp</a>
+  </div>
+</div>
+        </nav>
+        <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>
+      </aside>
+
+      <!-- Mobile sidebar backdrop -->
+      <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+
+      <!-- Main Content -->
+      <main class="main-content">
+        <header class="main-header">
+          <button class="mobile-menu-btn" id="mobile-menu-btn" title="Open menu">
+            <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5z"/></svg>
+          </button>
+          <div class="breadcrumb">
+<a href="index.html" class="breadcrumb-home">capy</a><span class="separator">/</span><span class="current">libs / capy / src / buffers / </span>          </div>
+          <div class="header-actions">
+          </div>
+          <button class="theme-toggle" id="theme-toggle" title="Toggle theme">
+            <svg class="icon-moon" viewBox="0 0 16 16" fill="currentColor"><path d="M6 .278a.768.768 0 0 1 .08.858 7.208 7.208 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 0 1 .81.316.733.733 0 0 1-.031.893A8.349 8.349 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 0 1 6 .278z"/></svg>
+            <svg class="icon-sun" viewBox="0 0 16 16" fill="currentColor"><path d="M8 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0zm0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13zm8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zM3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8zm10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0zm-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0zm9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707zM4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708z"/></svg>
+          </button>
+        </header>
+
+        <div class="content-wrapper">
+          <section class="summary-section">
+<div class="summary-cards">
+  <div class="summary-card">
+    <div class="summary-card-header">
+      <h3>Lines</h3>
+    </div>
+    <div class="summary-card-body">
+      <div class="coverage-ring coverage-high">
+        <svg viewBox="0 0 36 36">
+          <path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+          <path class="ring-fill" stroke-dasharray="92.6, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+        </svg>
+        <span class="ring-text">92.6%</span>
+      </div>
+      <div class="summary-stats">
+        <div class="stat-row">
+          <span class="stat-label">Hit</span>
+          <span class="stat-value">3161</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Total</span>
+          <span class="stat-value">3415</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="summary-card">
+    <div class="summary-card-header">
+      <h3>Functions</h3>
+    </div>
+    <div class="summary-card-body">
+      <div class="coverage-ring coverage-medium">
+        <svg viewBox="0 0 36 36">
+          <path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+          <path class="ring-fill" stroke-dasharray="89.7, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+        </svg>
+        <span class="ring-text">89.7%</span>
+      </div>
+      <div class="summary-stats">
+        <div class="stat-row">
+          <span class="stat-label">Hit</span>
+          <span class="stat-value">5041</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Total</span>
+          <span class="stat-value">5625</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="summary-card">
+    <div class="summary-card-header">
+      <h3>Branches</h3>
+    </div>
+    <div class="summary-card-body">
+      <div class="coverage-ring coverage-medium">
+        <svg viewBox="0 0 36 36">
+          <path class="ring-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+          <path class="ring-fill" stroke-dasharray="77.9, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+        </svg>
+        <span class="ring-text">77.9%</span>
+      </div>
+      <div class="summary-stats">
+        <div class="stat-row">
+          <span class="stat-label">Hit</span>
+          <span class="stat-value">805</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Total</span>
+          <span class="stat-value">1034</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="coverage-legend">
+  <span class="legend-item coverage-high">High: &ge; 90.0%</span>
+  <span class="legend-item coverage-medium">Medium: &ge; 75.0%</span>
+  <span class="legend-item coverage-low">Low: &lt; 75.0%</span>
+</div>          </section>
+
+          <section class="main-section">
+<div class="file-list-container">
+  <div class="file-list-header">
+    <div class="col-name sortable" data-sort="filename">
+      Name
+    </div>
+    <div class="col-coverage sortable sorted-ascending" data-sort="lines">
+      Coverage
+    </div>
+    <div class="col-lines sortable" data-sort="lines">
+      Lines
+    </div>
+    <div class="col-functions sortable" data-sort="functions">
+      Functions
+    </div>
+    <div class="col-branches sortable" data-sort="branches">
+      Branches
+    </div>
+  </div>
+
+  <div class="file-list-body" id="file-list">
+    <div class="file-row file"
+         data-filename="circular_dynamic_buffer.cpp"
+         data-coverage="75.8"
+         data-lines="33"
+         data-functions="100.0"
+         data-branches="66.7">
+      <div class="col-name">
+        <span class="file-icon">
+          <svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M3.75 1.5a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 019 4.25V1.5H3.75zm6.75.062V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75z"></path></svg>
+        </span>
+        <a href="index.circular_dynamic_buffer.cpp.4da36e343f8c941bd0eae94d41271572.html" title="circular_dynamic_buffer.cpp">circular_dynamic_buffer.cpp</a>
+      </div>
+
+      <div class="col-coverage">
+        <div class="coverage-bar-container">
+          <div class="coverage-bar coverage-medium" style="width: 75.8%"></div>
+        </div>
+        <span class="coverage-percent coverage-medium">75.8%</span>
+      </div>
+
+      <div class="col-lines">
+        <span class="stat-value">25</span>
+        <span class="stat-separator">/</span>
+        <span class="stat-total">33</span>
+      </div>
+
+      <div class="col-functions">
+        <span class="stat-value coverage-high">100.0%</span>
+      </div>
+
+      <div class="col-branches">
+        <span class="stat-value coverage-low">66.7%</span>
+      </div>
+    </div>
+    <div class="file-row file"
+         data-filename="buffer_array.cpp"
+         data-coverage="100.0"
+         data-lines="58"
+         data-functions="100.0"
+         data-branches="92.9">
+      <div class="col-name">
+        <span class="file-icon">
+          <svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M3.75 1.5a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 019 4.25V1.5H3.75zm6.75.062V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75z"></path></svg>
+        </span>
+        <a href="index.buffer_array.cpp.2094807074afa51532ccbdd4a086212f.html" title="buffer_array.cpp">buffer_array.cpp</a>
+      </div>
+
+      <div class="col-coverage">
+        <div class="coverage-bar-container">
+          <div class="coverage-bar coverage-high" style="width: 100.0%"></div>
+        </div>
+        <span class="coverage-percent coverage-high">100.0%</span>
+      </div>
+
+      <div class="col-lines">
+        <span class="stat-value">58</span>
+        <span class="stat-separator">/</span>
+        <span class="stat-total">58</span>
+      </div>
+
+      <div class="col-functions">
+        <span class="stat-value coverage-high">100.0%</span>
+      </div>
+
+      <div class="col-branches">
+        <span class="stat-value coverage-high">92.9%</span>
+      </div>
+    </div>
+    <div class="file-row file"
+         data-filename="buffer_pair.cpp"
+         data-coverage="100.0"
+         data-lines="44"
+         data-functions="100.0"
+         data-branches="85.7">
+      <div class="col-name">
+        <span class="file-icon">
+          <svg viewBox="0 0 16 16" width="16" height="16"><path fill="currentColor" d="M3.75 1.5a.25.25 0 00-.25.25v12.5c0 .138.112.25.25.25h9.5a.25.25 0 00.25-.25V6h-2.75A1.75 1.75 0 019 4.25V1.5H3.75zm6.75.062V4.25c0 .138.112.25.25.25h2.688a.252.252 0 00-.011-.013l-2.914-2.914a.272.272 0 00-.013-.011zM2 1.75C2 .784 2.784 0 3.75 0h6.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0113.25 16h-9.5A1.75 1.75 0 012 14.25V1.75z"></path></svg>
+        </span>
+        <a href="index.buffer_pair.cpp.a9519b510ec4d5caf14dd1b5cb10af62.html" title="buffer_pair.cpp">buffer_pair.cpp</a>
+      </div>
+
+      <div class="col-coverage">
+        <div class="coverage-bar-container">
+          <div class="coverage-bar coverage-high" style="width: 100.0%"></div>
+        </div>
+        <span class="coverage-percent coverage-high">100.0%</span>
+      </div>
+
+      <div class="col-lines">
+        <span class="stat-value">44</span>
+        <span class="stat-separator">/</span>
+        <span class="stat-total">44</span>
+      </div>
+
+      <div class="col-functions">
+        <span class="stat-value coverage-high">100.0%</span>
+      </div>
+
+      <div class="col-branches">
+        <span class="stat-value coverage-medium">85.7%</span>
+      </div>
+    </div>
+  </div>
+</div>          </section>
+        </div>
+
+        <footer class="main-footer">
+          Created using <a href="http://gcovr.com/en/8.6">GCOVR (Version 8.6)</a>
+          at 2026-02-08 15:48:35
+        </footer>
+      </main>
+    </div>
+  <script>window.GCOVR_TREE_DATA=[{"name": "boost", "coverage": "94.0", "coverageClass": "coverage-high", "isDirectory": true, "link": "index.boost.99d6df7b870935548ca9349c37ad45b7.html", "children": [{"name": "../libs/capy/include/boost/capy/buffers", "coverage": "98.9", "coverageClass": "coverage-high", "isDirectory": true, "link": "index.buffers.07d76feabccd321bb5bbc6b739f4da82.html", "children": [{"name": "buffer_array.hpp", "coverage": "99.1", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.buffer_array.hpp.ce525eba19bd9cb972746b76530fef27.html", "children": []}, {"name": "buffer_copy.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.buffer_copy.hpp.272eac115b108920d3e1ca3ad668065c.html", "children": []}, {"name": "buffer_param.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.buffer_param.hpp.a1dff3fa4cdcb2f17570d3580553f0fe.html", "children": []}, {"name": "circular_dynamic_buffer.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.circular_dynamic_buffer.hpp.f27efd3f50a0adf8f6de87f8c4fa1368.html", "children": []}, {"name": "consuming_buffers.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.consuming_buffers.hpp.d6da945326ef9fa498b2ab6e5b8bf453.html", "children": []}, {"name": "flat_dynamic_buffer.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.flat_dynamic_buffer.hpp.cabfe1b434ceae506cd4cfad6397282c.html", "children": []}, {"name": "make_buffer.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.make_buffer.hpp.e5cfb13eecc83f83cc8a6138264a8301.html", "children": []}, {"name": "slice.hpp", "coverage": "97.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.slice.hpp.388a5558bcc7c4e072bb7f1207a92aa8.html", "children": []}, {"name": "string_dynamic_buffer.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.string_dynamic_buffer.hpp.9c98b623e752448f4e0d03aa5cda0f09.html", "children": []}, {"name": "vector_dynamic_buffer.hpp", "coverage": "98.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.vector_dynamic_buffer.hpp.5926845ff7c6a71ab9c5ffbb41b13723.html", "children": []}]}, {"name": "../libs/capy/include/boost/capy/detail", "coverage": "95.6", "coverageClass": "coverage-high", "isDirectory": true, "link": "index.detail.31566fe9ab01833ee81849b1e9aca19a.html", "children": [{"name": "await_suspend_helper.hpp", "coverage": "50.0", "coverageClass": "coverage-low", "isDirectory": false, "link": "index.await_suspend_helper.hpp.dc9959e3f8d39e8338d07ce597c67390.html", "children": []}, {"name": "frame_memory_resource.hpp", "coverage": "81.8", "coverageClass": "coverage-medium", "isDirectory": false, "link": "index.frame_memory_resource.hpp.3cb6fe36e07a4c87168179cc4c3e3243.html", "children": []}, {"name": "intrusive.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.intrusive.hpp.0f8d70e8caf41f918da8017379b7b08c.html", "children": []}, {"name": "run.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.run.hpp.16e608c83e46925c4e2c4d6289f54c53.html", "children": []}, {"name": "run_callbacks.hpp", "coverage": "92.6", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.run_callbacks.hpp.80703ca4cd028cf580ba29f217b62576.html", "children": []}, {"name": "thread_local_ptr.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.thread_local_ptr.hpp.1a1aa25a3ef58f7d22017968deffcf22.html", "children": []}, {"name": "type_id.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.type_id.hpp.4c95f8ed217c34c6f699e3fb843a1baa.html", "children": []}]}, {"name": "../libs/capy/include/boost/capy/ex", "coverage": "92.6", "coverageClass": "coverage-high", "isDirectory": true, "link": "index.ex.80779145b47fee6b41b2699713cce449.html", "children": [{"name": "any_executor.hpp", "coverage": "76.4", "coverageClass": "coverage-medium", "isDirectory": false, "link": "index.any_executor.hpp.31afb56a98c4e96725b2ba44dd2b331b.html", "children": []}, {"name": "async_event.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.async_event.hpp.b915cf20ceccb2fc5a6ea99d7013f195.html", "children": []}, {"name": "execution_context.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.execution_context.hpp.4728245a718adf31e400368908ccd2a7.html", "children": []}, {"name": "executor_ref.hpp", "coverage": "78.8", "coverageClass": "coverage-medium", "isDirectory": false, "link": "index.executor_ref.hpp.f2814496c4ee4acdd46b02aaf9430f8b.html", "children": []}, {"name": "executor_work_guard.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.executor_work_guard.hpp.4d071e788988e7c25f9ddd8e548e31f5.html", "children": []}, {"name": "frame_allocator.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.frame_allocator.hpp.67746286aef9e5a12017d3d53b396b2e.html", "children": []}, {"name": "immediate.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.immediate.hpp.ae0c5ffdcd61a940b1e7901c2af2168b.html", "children": []}, {"name": "io_awaitable_support.hpp", "coverage": "97.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.io_awaitable_support.hpp.d7e6e2f32535add4300a477195225ee7.html", "children": []}, {"name": "recycling_memory_resource.hpp", "coverage": "85.5", "coverageClass": "coverage-medium", "isDirectory": false, "link": "index.recycling_memory_resource.hpp.4e4b3972238248d18dda9112d7864907.html", "children": []}, {"name": "run.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.run.hpp.0c917c1bdb5b801e8ff443a7352bb3de.html", "children": []}, {"name": "run_async.hpp", "coverage": "84.7", "coverageClass": "coverage-medium", "isDirectory": false, "link": "index.run_async.hpp.88fa3e4e621a087dfd1be62d589542b6.html", "children": []}, {"name": "strand.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.strand.hpp.9508332c46270c9e9f222526715749c7.html", "children": []}, {"name": "thread_pool.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.thread_pool.hpp.94c5032fc963e5efdd773a019ee4c118.html", "children": []}]}, {"name": "../libs/capy/include/boost/capy/io", "coverage": "90.7", "coverageClass": "coverage-high", "isDirectory": true, "link": "index.io.044ae378a55b6807d00a88c434600208.html", "children": [{"name": "any_buffer_sink.hpp", "coverage": "89.5", "coverageClass": "coverage-medium", "isDirectory": false, "link": "index.any_buffer_sink.hpp.18e1973cd737d48297c455fc0df1b36b.html", "children": []}, {"name": "any_buffer_source.hpp", "coverage": "87.7", "coverageClass": "coverage-medium", "isDirectory": false, "link": "index.any_buffer_source.hpp.bbedfe8fa5d8487a196bc2f00a1ed7bb.html", "children": []}, {"name": "any_read_source.hpp", "coverage": "91.2", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.any_read_source.hpp.724b07de52b5325f29c67154d7469bee.html", "children": []}, {"name": "any_read_stream.hpp", "coverage": "87.4", "coverageClass": "coverage-medium", "isDirectory": false, "link": "index.any_read_stream.hpp.2dac39a28731487649855b41b6959bdf.html", "children": []}, {"name": "any_stream.hpp", "coverage": "89.8", "coverageClass": "coverage-medium", "isDirectory": false, "link": "index.any_stream.hpp.bbd575ba6dab414bd4e6eb8e0da4b1c7.html", "children": []}, {"name": "any_write_sink.hpp", "coverage": "93.2", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.any_write_sink.hpp.23a3a8ab221782c293962d09d31fec11.html", "children": []}, {"name": "any_write_stream.hpp", "coverage": "94.1", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.any_write_stream.hpp.b640d3dafbc79eab3ac1232313b6a810.html", "children": []}, {"name": "pull_from.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.pull_from.hpp.561a3eab0d03906424017545c6317937.html", "children": []}, {"name": "push_to.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.push_to.hpp.188b175e2a428238057b104e8a8ca627.html", "children": []}, {"name": "write_now.hpp", "coverage": "94.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.write_now.hpp.b991d4fa255a28d76d9f60f09b57b6f7.html", "children": []}]}, {"name": "../libs/capy/include/boost/capy/buffers.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.buffers.hpp.f6cb4bca774fc1a91f7827cea78eb895.html", "children": []}, {"name": "../libs/capy/include/boost/capy/concept/decomposes_to.hpp", "coverage": "0.0", "coverageClass": "coverage-low", "isDirectory": false, "link": "index.decomposes_to.hpp.547c83e8501f9a768626f2687938bc46.html", "children": []}, {"name": "../libs/capy/include/boost/capy/cond.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.cond.hpp.8e95a66016c2484a13abd9f412b18da1.html", "children": []}, {"name": "../libs/capy/include/boost/capy/error.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.error.hpp.acdee3167528e7d60924ca3cbd1ed0b4.html", "children": []}, {"name": "../libs/capy/include/boost/capy/read.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.read.hpp.49063eb7ffb55bbf369e0c663f1e1cd1.html", "children": []}, {"name": "../libs/capy/include/boost/capy/read_until.hpp", "coverage": "81.8", "coverageClass": "coverage-medium", "isDirectory": false, "link": "index.read_until.hpp.7a3bc2c00ca75885f6c53269726e3e56.html", "children": []}, {"name": "../libs/capy/include/boost/capy/task.hpp", "coverage": "97.2", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.task.hpp.63f9140889d9a86fbd97e602c5ad572b.html", "children": []}, {"name": "../libs/capy/include/boost/capy/when_all.hpp", "coverage": "96.9", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.when_all.hpp.3f5cc839a2bd8197f171ba8959fdf35b.html", "children": []}, {"name": "../libs/capy/include/boost/capy/when_any.hpp", "coverage": "99.2", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.when_any.hpp.558eee45295d442f261d8a54a1f0b2ba.html", "children": []}, {"name": "../libs/capy/include/boost/capy/write.hpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.write.hpp.e62c949f83c3b25e7370647937221fca.html", "children": []}]}, {"name": "libs", "coverage": "84.3", "coverageClass": "coverage-medium", "isDirectory": true, "link": "index.libs.cb4cb2401e6e43cf74a54523b8da5f02.html", "children": [{"name": "capy/src/buffers", "coverage": "94.1", "coverageClass": "coverage-high", "isDirectory": true, "link": "index.buffers.4599dc05da2ebe228b709c341dd5af3e.html", "children": [{"name": "buffer_array.cpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.buffer_array.cpp.2094807074afa51532ccbdd4a086212f.html", "children": []}, {"name": "buffer_pair.cpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.buffer_pair.cpp.a9519b510ec4d5caf14dd1b5cb10af62.html", "children": []}, {"name": "circular_dynamic_buffer.cpp", "coverage": "75.8", "coverageClass": "coverage-medium", "isDirectory": false, "link": "index.circular_dynamic_buffer.cpp.4da36e343f8c941bd0eae94d41271572.html", "children": []}]}, {"name": "capy/src/ex", "coverage": "87.5", "coverageClass": "coverage-medium", "isDirectory": true, "link": "index.ex.50647209ae83a67f0c5c48a008baaedd.html", "children": [{"name": "detail", "coverage": "86.6", "coverageClass": "coverage-medium", "isDirectory": true, "link": "index.detail.20a87ce439699acda7093ddaffb6f8ff.html", "children": [{"name": "strand_queue.hpp", "coverage": "74.2", "coverageClass": "coverage-low", "isDirectory": false, "link": "index.strand_queue.hpp.8a77ee35122b2fe1286f56cfaf77188a.html", "children": []}, {"name": "strand_service.cpp", "coverage": "95.6", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.strand_service.cpp.9f4902203675634e7479885d06225beb.html", "children": []}]}, {"name": "execution_context.cpp", "coverage": "85.7", "coverageClass": "coverage-medium", "isDirectory": false, "link": "index.execution_context.cpp.a37af7329a8db23b8e4bc65e053c7c5b.html", "children": []}, {"name": "recycling_memory_resource.cpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.recycling_memory_resource.cpp.e64c7799415a31b69c735115812f4922.html", "children": []}, {"name": "system_context.cpp", "coverage": "100.0", "coverageClass": "coverage-high", "isDirectory": false, "link": "index.system_context.cpp.a6c8e7bb11aa4fb517a88502f7a548b0.html", "children": []}, {"name": "thread_pool.cpp", "coverage": "89.7", "coverageClass": "coverage-medium", "isDirectory": false, "link": "index.thread_pool.cpp.48553b14d14c1429411ef446583a3c46.html", "children": []}]}, {"name": "capy/src/cond.cpp", "coverage": "69.2", "coverageClass": "coverage-low", "isDirectory": false, "link": "index.cond.cpp.6bbd1fc45a57d8028b5b0a0b09068747.html", "children": []}, {"name": "capy/src/detail/except.cpp", "coverage": "20.0", "coverageClass": "coverage-low", "isDirectory": false, "link": "index.except.cpp.b632620feda333fa9897787683769904.html", "children": []}, {"name": "capy/src/error.cpp", "coverage": "27.3", "coverageClass": "coverage-low", "isDirectory": false, "link": "index.error.cpp.d74e47291e3a88dae1346d314bfd0193.html", "children": []}]}];</script>
+</body>
+
+</html>
