@@ -224,17 +224,18 @@ running_in_this_thread(strand_impl& impl) noexcept
     return impl.dispatch_thread_.load() == std::this_thread::get_id();
 }
 
-coro
+void
 strand_service::
 dispatch(strand_impl& impl, executor_ref ex, coro h)
 {
     if(running_in_this_thread(impl))
-        return h;
+    {
+        h.resume();
+        return;
+    }
 
     if(strand_service_impl::enqueue(impl, h))
         ex.post(strand_service_impl::make_invoker(impl).h_);
-
-    return std::noop_coroutine();
 }
 
 void

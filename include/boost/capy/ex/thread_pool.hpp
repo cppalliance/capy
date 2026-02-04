@@ -143,19 +143,20 @@ public:
 
     /** Dispatch a coroutine for execution.
 
-        Posts the coroutine to the thread pool and returns
-        immediately. The caller should suspend after calling
-        this function.
+        Posts the coroutine to the thread pool for execution on a
+        worker thread. Unlike single-threaded contexts, thread pools
+        never execute inline because no single thread "owns" the pool.
+
+        After this function returns, the state of `h` is unspecified.
+        The coroutine may have already started executing on another
+        thread, or may be queued for later execution.
 
         @param h The coroutine handle to execute.
-
-        @return A noop coroutine handle to resume.
     */
-    coro
+    void
     dispatch(coro h) const
     {
         post(h);
-        return std::noop_coroutine();
     }
 
     /** Post a coroutine to the thread pool.

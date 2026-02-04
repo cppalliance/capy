@@ -66,8 +66,8 @@ public:
     static bool
     running_in_this_thread(strand_impl& impl) noexcept;
 
-    /** Dispatch through strand, returns handle for symmetric transfer. */
-    static coro
+    /** Dispatch through strand; may resume inline if running in strand. */
+    static void
     dispatch(strand_impl& impl, executor_ref ex, coro h);
 
     /** Post to strand queue. */

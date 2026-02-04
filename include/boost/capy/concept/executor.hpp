@@ -60,8 +60,33 @@ class execution_context;
     @li If the executor determines it is safe (e.g., already on the
         correct thread), resumes the coroutine inline via a normal
         function call
-    @li The call returns when the coroutine suspends
+    @li The call returns when the coroutine suspends or completes
     @li If not safe, posts the coroutine for later execution
+
+    A conforming implementation might look like:
+
+    @code
+    void dispatch( std::coroutine_handle<> h ) const
+    {
+        if( ctx_.is_running_on_this_thread() )
+            h.resume();  // inline execution
+        else
+            post( h );   // deferred execution
+    }
+    @endcode
+
+    After `dispatch(h)` returns, the state of `h` is unspecified.
+    The coroutine may have completed, been destroyed, or suspended
+    at a different suspension point. Callers must not assume `h`
+    remains valid or in its original state after calling `dispatch`.
+
+    @par Note
+    Because `dispatch` may call `h.resume()` before returning,
+    it cannot be used to implement symmetric transfer from
+    `await_suspend`. Patterns like `return ex.dispatch(h)` are
+    ill-formed since `dispatch` returns `void`, and even if it
+    returned the handle, the coroutine would have already been
+    resumed, leading to undefined behavior.
 
     The `post` operation queues for later execution:
 

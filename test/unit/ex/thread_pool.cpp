@@ -186,9 +186,8 @@ struct thread_pool_test
         thread_pool pool(1);
         auto ex = pool.get_executor();
 
-        // dispatch() returns noop_coroutine (always posts for thread_pool)
-        auto result = ex.dispatch(std::noop_coroutine());
-        BOOST_TEST(result == std::noop_coroutine());
+        // dispatch() always posts for thread_pool (returns void)
+        ex.dispatch(std::noop_coroutine());
     }
 
     void

@@ -216,24 +216,33 @@ public:
     /** Dispatch a coroutine through the strand.
 
         If the calling thread is already executing within this strand,
-        the coroutine is resumed immediately via symmetric transfer,
-        bypassing the queue. This provides optimal performance but
-        means the coroutine may execute before previously queued work.
+        the coroutine is resumed immediately by calling `h.resume()`.
+        The call returns when the coroutine suspends or completes.
+        This provides optimal performance but means the coroutine may
+        execute before previously queued work.
 
         Otherwise, the coroutine is queued and will execute in FIFO
         order relative to other queued coroutines.
+
+        After this function returns, the state of `h` is unspecified.
+        The coroutine may have completed, been destroyed, or suspended
+        at a different suspension point. Callers must not assume `h`
+        remains valid after calling `dispatch`.
 
         @par Ordering
         Callers requiring strict FIFO ordering should use post()
         instead, which always queues the coroutine.
 
+        @note Because this function may call `h.resume()` before
+        returning, it cannot be used to implement symmetric transfer
+        from `await_suspend`.
+
         @param h The coroutine handle to dispatch.
-        @return A coroutine handle for symmetric transfer.
     */
-    coro
+    void
     dispatch(coro h) const
     {
-        return detail::strand_service::dispatch(*impl_, executor_ref(ex_), h);
+        detail::strand_service::dispatch(*impl_, executor_ref(ex_), h);
     }
 };
 
