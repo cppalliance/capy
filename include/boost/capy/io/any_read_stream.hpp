@@ -298,7 +298,11 @@ any_read_stream::~any_read_stream()
         ::operator delete(storage_);
     }
     if(cached_awaitable_)
+    {
+        if(active_ops_)
+            active_ops_->destroy(cached_awaitable_);
         ::operator delete(cached_awaitable_);
+    }
 }
 
 inline any_read_stream&
@@ -312,7 +316,11 @@ any_read_stream::operator=(any_read_stream&& other) noexcept
             ::operator delete(storage_);
         }
         if(cached_awaitable_)
+        {
+            if(active_ops_)
+                active_ops_->destroy(cached_awaitable_);
             ::operator delete(cached_awaitable_);
+        }
         stream_ = std::exchange(other.stream_, nullptr);
         vt_ = std::exchange(other.vt_, nullptr);
         cached_awaitable_ = std::exchange(other.cached_awaitable_, nullptr);
