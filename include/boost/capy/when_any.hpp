@@ -231,14 +231,7 @@ struct when_any_core
         winner_exception_ = ep;
     }
 
-    /** Last task to complete resumes the parent via symmetric transfer. */
-    coro signal_completion()
-    {
-        auto remaining = remaining_count_.fetch_sub(1, std::memory_order_acq_rel);
-        if(remaining == 1)
-            caller_ex_.dispatch(continuation_);
-        return std::noop_coroutine();
-    }
+    // Runners signal completion directly via final_suspend; no member function needed.
 };
 
 /** Shared state for heterogeneous when_any operation.
@@ -268,12 +261,7 @@ struct when_any_state
     {
     }
 
-    ~when_any_state()
-    {
-        for(auto h : runner_handles_)
-            if(h)
-                h.destroy();
-    }
+    // Runners self-destruct in final_suspend. No destruction needed here.
 
     /** @pre core_.try_win() returned true.
         @note Uses in_place_type (not index) because variant is deduplicated.
@@ -326,7 +314,26 @@ struct when_any_runner
             {
                 promise_type* p_;
                 bool await_ready() const noexcept { return false; }
-                coro await_suspend(coro) noexcept { return p_->state_->core_.signal_completion(); }
+                void await_suspend(coro h) noexcept
+                {
+                    // Extract everything needed for signaling before
+                    // self-destruction. Inline dispatch may destroy
+                    // state, so we can't access members after.
+                    auto& core = p_->state_->core_;
+                    auto* counter = &core.remaining_count_;
+                    auto caller_ex = core.caller_ex_;
+                    auto cont = core.continuation_;
+
+                    // Self-destruct first - state no longer destroys runners
+                    h.destroy();
+
+                    // Signal completion. If last, dispatch parent.
+                    // Uses only local copies - safe even if state
+                    // is destroyed during inline dispatch.
+                    auto remaining = counter->fetch_sub(1, std::memory_order_acq_rel);
+                    if(remaining == 1)
+                        caller_ex.dispatch(cont);
+                }
                 void await_resume() const noexcept {}
             };
             return awaiter{this};
@@ -678,12 +685,7 @@ struct when_any_homogeneous_state
     {
     }
 
-    ~when_any_homogeneous_state()
-    {
-        for(auto h : runner_handles_)
-            if(h)
-                h.destroy();
-    }
+    // Runners self-destruct in final_suspend. No destruction needed here.
 
     /** @pre core_.try_win() returned true. */
     void set_winner_result(T value)
@@ -706,12 +708,7 @@ struct when_any_homogeneous_state<void>
     {
     }
 
-    ~when_any_homogeneous_state()
-    {
-        for(auto h : runner_handles_)
-            if(h)
-                h.destroy();
-    }
+    // Runners self-destruct in final_suspend. No destruction needed here.
 
     // No set_winner_result - void tasks have no result to store
 };
@@ -742,7 +739,11 @@ public:
 
     /** CRITICAL: If the last task finishes synchronously, parent resumes and
         destroys this object before await_suspend returns. Must not reference
-        `this` after the final launch_one call.
+        `this` after dispatching begins.
+
+        Two-phase approach:
+        1. Create all runners (safe - no dispatch yet)
+        2. Dispatch all runners (any may complete synchronously)
     */
     template<Executor Ex>
     coro await_suspend(coro continuation, Ex const& caller_ex, std::stop_token parent_token = {})
@@ -761,37 +762,38 @@ public:
         }
 
         auto token = state_->core_.stop_source_.get_token();
+
+        // Phase 1: Create all runners without dispatching.
+        // This iterates over *range_ safely because no runners execute yet.
         std::size_t index = 0;
         for(auto&& a : *range_)
         {
-            launch_one(index, std::move(a), caller_ex, token);
+            auto runner = make_when_any_runner(
+                std::move(a), state_, index);
+
+            auto h = runner.release();
+            h.promise().state_ = state_;
+            h.promise().index_ = index;
+            h.promise().ex_ = caller_ex;
+            h.promise().stop_token_ = token;
+
+            state_->runner_handles_[index] = coro{h};
             ++index;
         }
+
+        // Phase 2: Dispatch all runners. Any may complete synchronously.
+        // After last dispatch, state_ and this may be destroyed.
+        // Use raw pointer/count captured before dispatching.
+        coro* handles = state_->runner_handles_.data();
+        std::size_t count = state_->runner_handles_.size();
+        for(std::size_t i = 0; i < count; ++i)
+            caller_ex.dispatch(handles[i]);
 
         return std::noop_coroutine();
     }
 
     void await_resume() const noexcept
     {
-    }
-
-private:
-    /** @pre Ex::dispatch() and coro::resume() must not throw (handle may leak). */
-    template<Executor Ex>
-    void launch_one(std::size_t index, Awaitable&& awaitable, Ex const& caller_ex, std::stop_token token)
-    {
-        auto runner = make_when_any_runner(
-            std::move(awaitable), state_, index);
-
-        auto h = runner.release();
-        h.promise().state_ = state_;
-        h.promise().index_ = index;
-        h.promise().ex_ = caller_ex;
-        h.promise().stop_token_ = token;
-
-        coro ch{h};
-        state_->runner_handles_[index] = ch;
-        caller_ex.dispatch(ch);
     }
 };
 
