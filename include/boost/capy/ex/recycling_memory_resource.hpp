@@ -80,6 +80,18 @@ class recycling_memory_resource : public std::pmr::memory_resource
                 return ptrs[--count];
             }
 
+            // Peter Dimov's idea
+            void* pop(bucket& b) noexcept
+            {
+                if(count == 0)
+                    return nullptr;
+                for(std::size_t i = 0; i < count; ++i)
+                    b.ptrs[i] = ptrs[i];
+                b.count = count - 1;
+                count = 0;
+                return b.ptrs[b.count];
+            }
+
             bool push(void* p) noexcept
             {
                 if(count >= bucket_capacity)
@@ -135,7 +147,7 @@ protected:
 
         {
             std::lock_guard<std::mutex> lock(global_mutex());
-            if(auto* p = global().buckets[idx].pop())
+            if(auto* p = global().buckets[idx].pop(local().buckets[idx]))
                 return p;
         }
 
