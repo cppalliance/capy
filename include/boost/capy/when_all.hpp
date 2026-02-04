@@ -113,12 +113,7 @@ struct when_all_state
     {
     }
 
-    ~when_all_state()
-    {
-        for(auto h : runner_handles_)
-            if(h)
-                h.destroy();
-    }
+    // Runners self-destruct in final_suspend. No destruction needed here.
 
     /** Capture an exception (first one wins).
     */
@@ -128,20 +123,6 @@ struct when_all_state
         if(has_exception_.compare_exchange_strong(
             expected, true, std::memory_order_relaxed))
             first_exception_ = ep;
-    }
-
-    /** Signal that a task has completed.
-
-        The last child to complete triggers resumption of the parent.
-        Dispatch handles thread affinity: resumes inline if on same
-        thread, otherwise posts to the caller's executor.
-    */
-    coro signal_completion()
-    {
-        auto remaining = remaining_count_.fetch_sub(1, std::memory_order_acq_rel);
-        if(remaining == 1)
-            caller_ex_.dispatch(continuation_);
-        return std::noop_coroutine();
     }
 
 };
@@ -181,10 +162,25 @@ struct when_all_runner
                     return false;
                 }
 
-                coro await_suspend(coro) noexcept
+                void await_suspend(coro h) noexcept
                 {
-                    // Signal completion; last task resumes parent
-                    return p_->state_->signal_completion();
+                    // Extract everything needed for signaling before
+                    // self-destruction. Inline dispatch may destroy
+                    // when_all_state, so we can't access members after.
+                    auto* state = p_->state_;
+                    auto* counter = &state->remaining_count_;
+                    auto caller_ex = state->caller_ex_;
+                    auto cont = state->continuation_;
+
+                    // Self-destruct first - state no longer destroys runners
+                    h.destroy();
+
+                    // Signal completion. If last, dispatch parent.
+                    // Uses only local copies - safe even if state
+                    // is destroyed during inline dispatch.
+                    auto remaining = counter->fetch_sub(1, std::memory_order_acq_rel);
+                    if(remaining == 1)
+                        caller_ex.dispatch(cont);
                 }
 
                 void await_resume() const noexcept
