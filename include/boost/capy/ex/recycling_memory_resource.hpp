@@ -95,6 +95,10 @@ class recycling_memory_resource : public std::pmr::memory_resource
     struct local_pool
     {
         block* head = nullptr;
+        std::size_t count = 0;
+
+        // Spill to global pool when local exceeds this threshold
+        static constexpr std::size_t max_local_blocks = 8;
 
         ~local_pool()
         {
@@ -110,6 +114,7 @@ class recycling_memory_resource : public std::pmr::memory_resource
         {
             b->next = head;
             head = b;
+            ++count;
         }
 
         block* pop(std::size_t n)
@@ -121,11 +126,17 @@ class recycling_memory_resource : public std::pmr::memory_resource
                 {
                     block* p = *pp;
                     *pp = p->next;
+                    --count;
                     return p;
                 }
                 pp = &(*pp)->next;
             }
             return nullptr;
+        }
+
+        bool should_spill() const noexcept
+        {
+            return count >= max_local_blocks;
         }
     };
 
@@ -165,7 +176,12 @@ protected:
         auto* b = static_cast<block*>(
             static_cast<void*>(static_cast<char*>(p) - sizeof(block)));
         b->next = nullptr;
-        local().push(b);
+
+        auto& loc = local();
+        if(loc.should_spill())
+            global().push(b);  // Spill to global for cross-thread reuse
+        else
+            loc.push(b);
     }
 
     bool
