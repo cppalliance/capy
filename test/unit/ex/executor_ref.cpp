@@ -12,6 +12,7 @@
 
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
+#include <boost/capy/test/run_blocking.hpp>
 
 #include "test_suite.hpp"
 
@@ -236,6 +237,26 @@ struct executor_ref_test
     }
 
     void
+    testTypeId()
+    {
+        thread_pool pool1(1);
+        thread_pool pool2(1);
+        auto executor1 = pool1.get_executor();
+        auto executor2 = pool2.get_executor();
+
+        executor_ref ex1(executor1);
+        executor_ref ex2(executor2);
+
+        // Same executor type returns equal type_info
+        BOOST_TEST(ex1.type_id() == ex2.type_id());
+
+        // Different executor type returns different type_info
+        test::inline_executor ie;
+        executor_ref ex3(ie);
+        BOOST_TEST(ex1.type_id() != ex3.type_id());
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -244,6 +265,7 @@ struct executor_ref_test
         testDispatch();
         testPost();
         testMultiplePost();
+        testTypeId();
     }
 };
 

@@ -11,6 +11,7 @@
 #define BOOST_CAPY_EXECUTOR_REF_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/detail/type_id.hpp>
 #include <boost/capy/coro.hpp>
 
 #include <concepts>
@@ -34,6 +35,7 @@ struct executor_vtable
     void (*post)(void const*, std::coroutine_handle<>);
     void (*dispatch)(void const*, std::coroutine_handle<>);
     bool (*equals)(void const*, void const*) noexcept;
+    detail::type_info const* type_id;
 };
 
 /** Vtable instance for a specific executor type. */
@@ -62,7 +64,9 @@ inline constexpr executor_vtable vtable_for = {
     // equals
     [](void const* a, void const* b) noexcept -> bool {
         return *static_cast<Ex const*>(a) == *static_cast<Ex const*>(b);
-    }
+    },
+    // type_id
+    &detail::type_id<Ex>()
 };
 
 } // detail
@@ -243,6 +247,17 @@ public:
         if (vt_ != other.vt_)
             return false;
         return vt_->equals(ex_, other.ex_);
+    }
+
+    /** Returns the type info of the underlying executor type.
+
+        @return A reference to the type_info for the wrapped executor.
+
+        @pre This instance was constructed with a valid executor.
+    */
+    detail::type_info const& type_id() const noexcept
+    {
+        return *vt_->type_id;
     }
 };
 

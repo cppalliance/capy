@@ -209,7 +209,7 @@ using type_index = std::type_index;
 
 /// Returns type_info for type T
 template<typename T>
-inline type_info const&
+inline constexpr type_info const&
 type_id() noexcept
 {
     return typeid(T);
