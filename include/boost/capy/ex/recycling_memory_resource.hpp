@@ -12,6 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 
+#include <bit>
 #include <cstddef>
 #include <memory_resource>
 #include <mutex>
@@ -19,14 +20,15 @@
 namespace boost {
 namespace capy {
 
-/** Recycling memory resource with thread-local and global pools.
+/** Recycling memory resource with size-class buckets.
 
-    This memory resource recycles memory blocks to reduce allocation
-    overhead for coroutine frames. It maintains a thread-local pool
-    for fast lock-free access and a global pool for cross-thread
+    This memory resource recycles memory blocks using power-of-two
+    size classes for O(1) allocation lookup. It maintains a thread-local
+    pool for fast lock-free access and a global pool for cross-thread
     block sharing.
 
-    Blocks are tracked by size to avoid returning undersized blocks.
+    Size classes: 64, 128, 256, 512, 1024, 2048 bytes.
+    Allocations larger than 2048 bytes bypass the pools entirely.
 
     This is the default allocator used by run_async when no allocator
     is specified.
@@ -46,142 +48,122 @@ namespace capy {
 */
 class recycling_memory_resource : public std::pmr::memory_resource
 {
-    struct block
+    static constexpr std::size_t num_classes = 6;
+    static constexpr std::size_t min_class_size = 64;   // 2^6
+    static constexpr std::size_t max_class_size = 2048; // 2^11
+    static constexpr std::size_t bucket_capacity = 16;
+
+    static std::size_t
+    round_up_pow2(std::size_t n) noexcept
     {
-        block* next;
-        std::size_t size;
-    };
-
-    struct global_pool
-    {
-        std::mutex mtx;
-        block* head = nullptr;
-
-        ~global_pool()
-        {
-            while(head)
-            {
-                auto p = head;
-                head = head->next;
-                ::operator delete(p);
-            }
-        }
-
-        void push(block* b)
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            b->next = head;
-            head = b;
-        }
-
-        block* pop(std::size_t n)
-        {
-            std::lock_guard<std::mutex> lock(mtx);
-            block** pp = &head;
-            while(*pp)
-            {
-                if((*pp)->size >= n + sizeof(block))
-                {
-                    block* p = *pp;
-                    *pp = p->next;
-                    return p;
-                }
-                pp = &(*pp)->next;
-            }
-            return nullptr;
-        }
-    };
-
-    struct local_pool
-    {
-        block* head = nullptr;
-        std::size_t count = 0;
-
-        // Spill to global pool when local exceeds this threshold
-        static constexpr std::size_t max_local_blocks = 8;
-
-        ~local_pool()
-        {
-            while(head)
-            {
-                auto p = head;
-                head = head->next;
-                ::operator delete(p);
-            }
-        }
-
-        void push(block* b)
-        {
-            b->next = head;
-            head = b;
-            ++count;
-        }
-
-        block* pop(std::size_t n)
-        {
-            block** pp = &head;
-            while(*pp)
-            {
-                if((*pp)->size >= n + sizeof(block))
-                {
-                    block* p = *pp;
-                    *pp = p->next;
-                    --count;
-                    return p;
-                }
-                pp = &(*pp)->next;
-            }
-            return nullptr;
-        }
-
-        bool should_spill() const noexcept
-        {
-            return count >= max_local_blocks;
-        }
-    };
-
-    static local_pool& local()
-    {
-        static thread_local local_pool pool;
-        return pool;
+        return n <= min_class_size ? min_class_size : std::bit_ceil(n);
     }
 
-    static global_pool& global()
+    static std::size_t
+    get_class_index(std::size_t rounded) noexcept
     {
-        static global_pool pool;
-        return pool;
+        std::size_t idx = std::countr_zero(rounded) - 6;  // 64 = 2^6
+        return idx < num_classes ? idx : num_classes;
+    }
+
+    struct pool
+    {
+        struct bucket
+        {
+            std::size_t count = 0;
+            void* ptrs[bucket_capacity];
+
+            void* pop() noexcept
+            {
+                if(count == 0)
+                    return nullptr;
+                return ptrs[--count];
+            }
+
+            bool push(void* p) noexcept
+            {
+                if(count >= bucket_capacity)
+                    return false;
+                ptrs[count++] = p;
+                return true;
+            }
+        };
+
+        bucket buckets[num_classes];
+
+        ~pool()
+        {
+            for(auto& b : buckets)
+                while(b.count > 0)
+                    ::operator delete(b.pop());
+        }
+    };
+
+    static pool&
+    local() noexcept
+    {
+        static thread_local pool p;
+        return p;
+    }
+
+    static pool&
+    global() noexcept
+    {
+        static pool p;
+        return p;
+    }
+
+    static std::mutex&
+    global_mutex() noexcept
+    {
+        static std::mutex mtx;
+        return mtx;
     }
 
 protected:
     void*
     do_allocate(std::size_t bytes, std::size_t) override
     {
-        std::size_t total = bytes + sizeof(block);
+        std::size_t rounded = round_up_pow2(bytes);
+        std::size_t idx = get_class_index(rounded);
 
-        if(auto* b = local().pop(bytes))
-            return static_cast<char*>(static_cast<void*>(b)) + sizeof(block);
+        if(idx >= num_classes)
+            return ::operator new(bytes);
 
-        if(auto* b = global().pop(bytes))
-            return static_cast<char*>(static_cast<void*>(b)) + sizeof(block);
+        if(auto* p = local().buckets[idx].pop())
+            return p;
 
-        auto* b = static_cast<block*>(::operator new(total));
-        b->next = nullptr;
-        b->size = total;
-        return static_cast<char*>(static_cast<void*>(b)) + sizeof(block);
+        {
+            std::lock_guard<std::mutex> lock(global_mutex());
+            if(auto* p = global().buckets[idx].pop())
+                return p;
+        }
+
+        return ::operator new(rounded);
     }
 
     void
-    do_deallocate(void* p, std::size_t, std::size_t) override
+    do_deallocate(void* p, std::size_t bytes, std::size_t) override
     {
-        auto* b = static_cast<block*>(
-            static_cast<void*>(static_cast<char*>(p) - sizeof(block)));
-        b->next = nullptr;
+        std::size_t rounded = round_up_pow2(bytes);
+        std::size_t idx = get_class_index(rounded);
 
-        auto& loc = local();
-        if(loc.should_spill())
-            global().push(b);  // Spill to global for cross-thread reuse
-        else
-            loc.push(b);
+        if(idx >= num_classes)
+        {
+            ::operator delete(p);
+            return;
+        }
+
+        if(local().buckets[idx].push(p))
+            return;
+
+        {
+            std::lock_guard<std::mutex> lock(global_mutex());
+            if(global().buckets[idx].push(p))
+                return;
+        }
+
+        ::operator delete(p);
     }
 
     bool
