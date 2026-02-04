@@ -41,6 +41,7 @@ seh_code_string(DWORD code) noexcept
     case EXCEPTION_NONCONTINUABLE_EXCEPTION: return "NONCONTINUABLE_EXCEPTION";
     case EXCEPTION_PRIV_INSTRUCTION:         return "PRIV_INSTRUCTION";
     case EXCEPTION_STACK_OVERFLOW:           return "STACK_OVERFLOW";
+    case 0xE06D7363:                         return "C++ Exception";
     default:                                 return "UNKNOWN";
     }
 }
@@ -49,6 +50,15 @@ LONG WINAPI
 seh_exception_handler(EXCEPTION_POINTERS* info) noexcept
 {
     DWORD code = info->ExceptionRecord->ExceptionCode;
+
+    // C++ exceptions that escaped - less alarming output
+    if(code == 0xE06D7363)
+    {
+        std::fprintf(stderr, "An unhandled C++ exception occurred\n");
+        std::fflush(stderr);
+        return EXCEPTION_EXECUTE_HANDLER;
+    }
+
     void* addr = info->ExceptionRecord->ExceptionAddress;
 
     std::fprintf(stderr,
