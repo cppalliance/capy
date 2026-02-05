@@ -63,7 +63,7 @@ namespace test {
 */
 class buffer_source
 {
-    fuse* f_;
+    fuse f_;
     std::string data_;
     std::size_t pos_ = 0;
     std::size_t max_pull_size_;
@@ -77,9 +77,9 @@ public:
         Use to simulate chunked delivery.
     */
     explicit buffer_source(
-        fuse& f,
+        fuse f = {},
         std::size_t max_pull_size = std::size_t(-1)) noexcept
-        : f_(&f)
+        : f_(std::move(f))
         , max_pull_size_(max_pull_size)
     {
     }
@@ -174,7 +174,7 @@ public:
             io_result<std::span<const_buffer>>
             await_resume()
             {
-                auto ec = self_->f_->maybe_fail();
+                auto ec = self_->f_.maybe_fail();
                 if(ec)
                     return {ec, {}};
 

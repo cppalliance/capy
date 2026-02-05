@@ -60,7 +60,7 @@ namespace capy {
         auto [ec, n] = co_await read( stream, mutable_buffer( header ) );
         if( ec == cond::eof )
             co_return;  // Connection closed
-        if( ec.failed() )
+        if( ec )
             detail::throw_system_error( ec );
         // header contains exactly 16 bytes
     }
@@ -123,7 +123,7 @@ read(
     {
         std::string body;
         auto [ec, n] = co_await read( stream, string_dynamic_buffer( &body ) );
-        if( ec.failed() )
+        if( ec )
             detail::throw_system_error( ec );
         return body;
     }
@@ -189,7 +189,7 @@ read(
     {
         std::string body;
         auto [ec, n] = co_await read( source, string_dynamic_buffer( &body ) );
-        if( ec.failed() )
+        if( ec )
             detail::throw_system_error( ec );
         return body;
     }

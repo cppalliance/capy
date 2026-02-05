@@ -54,7 +54,7 @@ namespace capy {
     task<> send_response( WriteStream auto& stream, std::string_view body )
     {
         auto [ec, n] = co_await write( stream, make_buffer( body ) );
-        if( ec.failed() )
+        if( ec )
             detail::throw_system_error( ec );
         // All bytes written successfully
     }

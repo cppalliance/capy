@@ -31,7 +31,7 @@ namespace capy {
         // handle cancellation
     else if( ec == cond::eof )
         // handle end of stream
-    else if( ec.failed() )
+    else if( ec )
         // handle other errors
     @endcode
 

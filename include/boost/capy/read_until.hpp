@@ -273,7 +273,7 @@ struct match_delim
                     *hint = 3;  // partial "\r\n\r" possible
                 return std::string_view::npos;
             } );
-        if( ec.failed() )
+        if( ec )
             detail::throw_system_error( ec );
         // header contains data through "\r\n\r\n"
     }
@@ -343,7 +343,7 @@ read_until(
             stream, string_dynamic_buffer( &line ), "\r\n" );
         if( ec == cond::eof )
             co_return line;  // partial line at EOF
-        if( ec.failed() )
+        if( ec )
             detail::throw_system_error( ec );
         line.resize( n - 2 );  // remove "\r\n"
         co_return line;

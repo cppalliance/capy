@@ -68,7 +68,7 @@ namespace test {
 */
 class buffer_sink
 {
-    fuse* f_;
+    fuse f_;
     std::string data_;
     std::string prepare_buf_;
     std::size_t prepare_size_ = 0;
@@ -84,9 +84,9 @@ public:
         Use to simulate limited buffer space.
     */
     explicit buffer_sink(
-        fuse& f,
+        fuse f = {},
         std::size_t max_prepare_size = 4096) noexcept
-        : f_(&f)
+        : f_(std::move(f))
         , max_prepare_size_(max_prepare_size)
     {
         prepare_buf_.resize(max_prepare_size_);
@@ -186,7 +186,7 @@ public:
             io_result<>
             await_resume()
             {
-                auto ec = self_->f_->maybe_fail();
+                auto ec = self_->f_.maybe_fail();
                 if(ec)
                     return {ec};
 
@@ -236,7 +236,7 @@ public:
             io_result<>
             await_resume()
             {
-                auto ec = self_->f_->maybe_fail();
+                auto ec = self_->f_.maybe_fail();
                 if(ec)
                     return {ec};
 
@@ -285,7 +285,7 @@ public:
             io_result<>
             await_resume()
             {
-                auto ec = self_->f_->maybe_fail();
+                auto ec = self_->f_.maybe_fail();
                 if(ec)
                     return {ec};
 

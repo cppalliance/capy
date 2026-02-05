@@ -18,154 +18,200 @@
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/capy/read.hpp>
+#include <boost/capy/task.hpp>
 #include <boost/capy/test/fuse.hpp>
+#include <boost/capy/test/run_blocking.hpp>
 
-#include <algorithm>
+#include <memory>
 #include <stop_token>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace boost {
 namespace capy {
 namespace test {
 
-/** A mock stream for testing both read and write operations.
+/** A connected stream for testing bidirectional I/O.
 
-    Use this to verify code that performs reads and writes without
-    needing real I/O. Call @ref provide to supply data for reads,
-    then @ref read_some to consume it. Call @ref write_some to write
-    data, then @ref data to retrieve what was written. The associated
-    @ref fuse enables error injection at controlled points. Optional
-    `max_read_size` and `max_write_size` constructor parameters limit
-    bytes per operation to simulate chunked delivery.
+    Streams are created in pairs via @ref make_stream_pair.
+    Data written to one end becomes available for reading on
+    the other. If no data is available when @ref read_some
+    is called, the calling coroutine suspends until the peer
+    calls @ref write_some. The shared @ref fuse enables error
+    injection at controlled points in both directions.
+
+    When the fuse injects an error or throws on one end, the
+    other end is automatically closed: any suspended reader is
+    resumed with `error::eof`, and subsequent operations on
+    both ends return `error::eof`. Calling @ref close on one
+    end signals eof to the peer's reads after draining any
+    buffered data, while the peer may still write.
 
     @par Thread Safety
-    Not thread-safe.
+    Single-threaded only. Both ends of the pair must be
+    accessed from the same thread. Concurrent access is
+    undefined behavior.
 
     @par Example
     @code
     fuse f;
-    old_stream s( f );
-    s.provide( "Hello, " );
-    s.provide( "World!" );
+    auto [a, b] = make_stream_pair( f );
 
-    auto r = f.armed( [&]( fuse& ) -> task<void> {
-        char buf[32];
-        auto [ec, n] = co_await s.read_some(
-            mutable_buffer( buf, sizeof( buf ) ) );
+    auto r = f.armed( [&]( fuse& ) -> task<> {
+        auto [ec, n] = co_await a.write_some(
+            const_buffer( "hello", 5 ) );
         if( ec )
             co_return;
-        // buf contains "Hello, World!"
 
-        auto [ec2, n2] = co_await s.write_some(
-            const_buffer( "Response", 8 ) );
+        char buf[32];
+        auto [ec2, n2] = co_await b.read_some(
+            mutable_buffer( buf, sizeof( buf ) ) );
         if( ec2 )
             co_return;
-        // s.data() returns "Response"
+        // buf contains "hello"
     } );
     @endcode
 
-    @see fuse, read_stream, write_stream
+    @see make_stream_pair, fuse
 */
-class old_stream
+class stream
 {
-    fuse* f_;
-    std::string read_data_;
-    std::size_t read_pos_ = 0;
-    std::string write_data_;
-    std::string expect_;
-    std::size_t max_read_size_;
-    std::size_t max_write_size_;
+    // Single-threaded only. No concurrent access to either
+    // end of the pair. Both streams and all operations must
+    // run on the same thread.
 
-    std::error_code
-    consume_match_() noexcept
+    struct half
     {
-        if(write_data_.empty() || expect_.empty())
-            return {};
-        std::size_t const n = (std::min)(write_data_.size(), expect_.size());
-        if(std::string_view(write_data_.data(), n) !=
-            std::string_view(expect_.data(), n))
-            return error::test_failure;
-        write_data_.erase(0, n);
-        expect_.erase(0, n);
-        return {};
+        std::string buf;
+        std::size_t max_read_size = std::size_t(-1);
+        coro pending_h{};
+        executor_ref pending_ex;
+        bool eof = false;
+    };
+
+    struct state
+    {
+        fuse f;
+        bool closed = false;
+        half sides[2];
+
+        explicit state(fuse f_) noexcept
+            : f(std::move(f_))
+        {
+        }
+
+        // Set closed and resume any suspended readers
+        // with eof on both sides.
+        void close() noexcept
+        {
+            closed = true;
+            for(auto& side : sides)
+            {
+                if(side.pending_h)
+                {
+                    auto h = side.pending_h;
+                    side.pending_h = {};
+                    auto ex = side.pending_ex;
+                    side.pending_ex = {};
+                    ex.dispatch(h);
+                }
+            }
+        }
+    };
+
+    // Wraps the maybe_fail() call. If the guard is
+    // not disarmed before destruction (fuse returned
+    // an error, or threw an exception), closes both
+    // ends so any suspended peer gets eof.
+    struct close_guard
+    {
+        state* st;
+        bool armed = true;
+        void disarm() noexcept { armed = false; }
+        ~close_guard() { if(armed) st->close(); }
+    };
+
+    std::shared_ptr<state> state_;
+    int index_;
+
+    stream(
+        std::shared_ptr<state> sp,
+        int index) noexcept
+        : state_(std::move(sp))
+        , index_(index)
+    {
     }
+
+    friend std::pair<stream, stream>
+    make_stream_pair(fuse);
+    friend void provide(stream&, std::string_view);
+    friend std::pair<std::error_code, bool>
+    expect(stream&, std::string_view);
+    friend std::string_view data(stream&) noexcept;
 
 public:
-    /** Construct a stream.
+    stream(stream const&) = delete;
+    stream& operator=(stream const&) = delete;
+    stream(stream&&) = default;
+    stream& operator=(stream&&) = default;
 
-        @param f The fuse used to inject errors during operations.
+    /** Signal end-of-stream to the peer.
 
-        @param max_read_size Maximum bytes returned per read.
-        Use to simulate chunked network delivery.
-
-        @param max_write_size Maximum bytes transferred per write.
-        Use to simulate chunked network delivery.
-    */
-    explicit old_stream(
-        fuse& f,
-        std::size_t max_read_size = std::size_t(-1),
-        std::size_t max_write_size = std::size_t(-1)) noexcept
-        : f_(&f)
-        , max_read_size_(max_read_size)
-        , max_write_size_(max_write_size)
-    {
-    }
-
-    //--------------------------------------------
-    //
-    // Read operations
-    //
-    //--------------------------------------------
-
-    /** Append data to be returned by subsequent reads.
-
-        Multiple calls accumulate data that @ref read_some returns.
-
-        @param sv The data to append.
+        Marks the peer's read direction as closed.
+        If the peer is suspended in @ref read_some,
+        it is resumed. The peer drains any buffered
+        data before receiving `error::eof`. Writes
+        from the peer are unaffected.
     */
     void
-    provide(std::string_view sv)
+    close() noexcept
     {
-        read_data_.append(sv);
+        int peer = 1 - index_;
+        auto& side = state_->sides[peer];
+        side.eof = true;
+        if(side.pending_h)
+        {
+            auto h = side.pending_h;
+            side.pending_h = {};
+            auto ex = side.pending_ex;
+            side.pending_ex = {};
+            ex.dispatch(h);
+        }
     }
 
-    /// Clear all read data and reset the read position.
+    /** Set the maximum bytes returned per read.
+
+        Limits how many bytes @ref read_some returns in
+        a single call, simulating chunked network delivery.
+        The default is unlimited.
+
+        @param n Maximum bytes per read.
+    */
     void
-    clear() noexcept
+    set_max_read_size(std::size_t n) noexcept
     {
-        read_data_.clear();
-        read_pos_ = 0;
-    }
-
-    /// Return the number of bytes available for reading.
-    std::size_t
-    available() const noexcept
-    {
-        return read_data_.size() - read_pos_;
+        state_->sides[index_].max_read_size = n;
     }
 
     /** Asynchronously read data from the stream.
 
-        Transfers up to `buffer_size( buffers )` bytes from the internal
-        buffer to the provided mutable buffer sequence. If no data remains,
-        returns `error::eof`. Before every read, the attached @ref fuse is
-        consulted to possibly inject an error for testing fault scenarios.
-        The returned `std::size_t` is the number of bytes transferred.
-
-        @par Effects
-        On success, advances the internal read position by the number of
-        bytes copied. If an error is injected by the fuse, the read position
-        remains unchanged.
-
-        @par Exception Safety
-        No-throw guarantee.
+        Transfers up to `buffer_size(buffers)` bytes from
+        data written by the peer. If no data is available,
+        the calling coroutine suspends until the peer calls
+        @ref write_some. Before every read, the attached
+        @ref fuse is consulted to possibly inject an error.
+        If the fuse fires, the peer is automatically closed.
+        If the stream is closed, returns `error::eof`.
+        The returned `std::size_t` is the number of bytes
+        transferred.
 
         @param buffers The mutable buffer sequence to receive data.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
 
-        @see fuse
+        @see fuse, close
     */
     template<MutableBufferSequence MB>
     auto
@@ -173,110 +219,78 @@ public:
     {
         struct awaitable
         {
-            old_stream* self_;
+            stream* self_;
             MB buffers_;
 
-            bool await_ready() const noexcept { return true; }
-
-            // This method is required to satisfy Capy's IoAwaitable concept,
-            // but is never called because await_ready() returns true.
-            //
-            // Capy uses a two-layer awaitable system: the promise's
-            // await_transform wraps awaitables in a transform_awaiter whose
-            // standard await_suspend(coroutine_handle) calls this custom
-            // 3-argument overload, passing the executor and stop_token from
-            // the coroutine's context. For synchronous test awaitables like
-            // this one, the coroutine never suspends, so this is not invoked.
-            // The signature exists to allow the same awaitable type to work
-            // with both synchronous (test) and asynchronous (real I/O) code.
-            void await_suspend(
-                coro,
-                executor_ref,
-                std::stop_token) const noexcept
+            bool await_ready() const noexcept
             {
+                auto* st = self_->state_.get();
+                auto& side = st->sides[self_->index_];
+                return st->closed || side.eof ||
+                    !side.buf.empty();
+            }
+
+            coro await_suspend(
+                coro h,
+                executor_ref ex,
+                std::stop_token) noexcept
+            {
+                auto& side = self_->state_->sides[
+                    self_->index_];
+                side.pending_h = h;
+                side.pending_ex = ex;
+                return std::noop_coroutine();
             }
 
             io_result<std::size_t>
             await_resume()
             {
-                auto ec = self_->f_->maybe_fail();
-                if(ec)
-                    return {ec, 0};
+                auto* st = self_->state_.get();
+                auto& side = st->sides[
+                    self_->index_];
 
-                if(self_->read_pos_ >= self_->read_data_.size())
+                if(st->closed)
                     return {error::eof, 0};
 
-                std::size_t avail = self_->read_data_.size() - self_->read_pos_;
-                if(avail > self_->max_read_size_)
-                    avail = self_->max_read_size_;
-                auto src = make_buffer(
-                    self_->read_data_.data() + self_->read_pos_, avail);
-                std::size_t const n = buffer_copy(buffers_, src);
-                self_->read_pos_ += n;
+                if(side.eof && side.buf.empty())
+                    return {error::eof, 0};
+
+                if(!side.eof)
+                {
+                    close_guard g{st};
+                    auto ec = st->f.maybe_fail();
+                    if(ec)
+                        return {ec, 0};
+                    g.disarm();
+                }
+
+                std::size_t const n = buffer_copy(
+                    buffers_, make_buffer(side.buf),
+                    side.max_read_size);
+                side.buf.erase(0, n);
                 return {{}, n};
             }
         };
         return awaitable{this, buffers};
     }
 
-    //--------------------------------------------
-    //
-    // Write operations
-    //
-    //--------------------------------------------
-
-    /// Return the written data as a string view.
-    std::string_view
-    data() const noexcept
-    {
-        return write_data_;
-    }
-
-    /** Set the expected data for subsequent writes.
-
-        Stores the expected data and immediately tries to match
-        against any data already written. Matched data is consumed
-        from both buffers.
-
-        @param sv The expected data.
-
-        @return An error if existing data does not match.
-    */
-    std::error_code
-    expect(std::string_view sv)
-    {
-        expect_.assign(sv);
-        return consume_match_();
-    }
-
-    /// Return the number of bytes written.
-    std::size_t
-    size() const noexcept
-    {
-        return write_data_.size();
-    }
-
     /** Asynchronously write data to the stream.
 
-        Transfers up to `buffer_size( buffers )` bytes from the provided
-        const buffer sequence to the internal buffer. Before every write,
-        the attached @ref fuse is consulted to possibly inject an error
-        for testing fault scenarios. The returned `std::size_t` is the
-        number of bytes transferred.
+        Transfers up to `buffer_size(buffers)` bytes to the
+        peer's incoming buffer. If the peer is suspended in
+        @ref read_some, it is resumed. Before every write,
+        the attached @ref fuse is consulted to possibly inject
+        an error. If the fuse fires, the peer is automatically
+        closed. If the stream is closed, returns `error::eof`.
+        The returned `std::size_t` is the number of bytes
+        transferred.
 
-        @par Effects
-        On success, appends the written bytes to the internal buffer.
-        If an error is injected by the fuse, the internal buffer remains
-        unchanged.
-
-        @par Exception Safety
-        No-throw guarantee.
-
-        @param buffers The const buffer sequence containing data to write.
+        @param buffers The const buffer sequence containing
+            data to write.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
 
-        @see fuse
+        @see fuse, close
     */
     template<ConstBufferSequence CB>
     auto
@@ -284,22 +298,11 @@ public:
     {
         struct awaitable
         {
-            old_stream* self_;
+            stream* self_;
             CB buffers_;
 
             bool await_ready() const noexcept { return true; }
 
-            // This method is required to satisfy Capy's IoAwaitable concept,
-            // but is never called because await_ready() returns true.
-            //
-            // Capy uses a two-layer awaitable system: the promise's
-            // await_transform wraps awaitables in a transform_awaiter whose
-            // standard await_suspend(coroutine_handle) calls this custom
-            // 3-argument overload, passing the executor and stop_token from
-            // the coroutine's context. For synchronous test awaitables like
-            // this one, the coroutine never suspends, so this is not invoked.
-            // The signature exists to allow the same awaitable type to work
-            // with both synchronous (test) and asynchronous (real I/O) code.
             void await_suspend(
                 coro,
                 executor_ref,
@@ -310,23 +313,38 @@ public:
             io_result<std::size_t>
             await_resume()
             {
-                auto ec = self_->f_->maybe_fail();
-                if(ec)
-                    return {ec, 0};
-
                 std::size_t n = buffer_size(buffers_);
-                n = (std::min)(n, self_->max_write_size_);
                 if(n == 0)
                     return {{}, 0};
 
-                std::size_t const old_size = self_->write_data_.size();
-                self_->write_data_.resize(old_size + n);
-                buffer_copy(make_buffer(
-                    self_->write_data_.data() + old_size, n), buffers_, n);
+                auto* st = self_->state_.get();
 
-                ec = self_->consume_match_();
+                if(st->closed)
+                    return {error::eof, 0};
+
+                close_guard g{st};
+                auto ec = st->f.maybe_fail();
                 if(ec)
-                    return {ec, n};
+                    return {ec, 0};
+                g.disarm();
+
+                int peer = 1 - self_->index_;
+                auto& side = st->sides[peer];
+
+                std::size_t const old_size = side.buf.size();
+                side.buf.resize(old_size + n);
+                buffer_copy(make_buffer(
+                    side.buf.data() + old_size, n),
+                    buffers_, n);
+
+                if(side.pending_h)
+                {
+                    auto h = side.pending_h;
+                    side.pending_h = {};
+                    auto ex = side.pending_ex;
+                    side.pending_ex = {};
+                    ex.dispatch(h);
+                }
 
                 return {{}, n};
             }
@@ -334,6 +352,110 @@ public:
         return awaitable{this, buffers};
     }
 };
+
+/** Create a connected pair of test streams.
+
+    Data written to one stream becomes readable on the other.
+    If a coroutine calls @ref stream::read_some when no data
+    is available, it suspends until the peer writes. Before
+    every read or write, the @ref fuse is consulted to
+    possibly inject an error for testing fault scenarios.
+    When the fuse fires, the peer is automatically closed.
+
+    @param f The fuse used to inject errors during operations.
+
+    @return A pair of connected streams.
+
+    @see stream, fuse
+*/
+inline std::pair<stream, stream>
+make_stream_pair(fuse f = {})
+{
+    auto sp = std::make_shared<stream::state>(std::move(f));
+    return {stream(sp, 0), stream(sp, 1)};
+}
+
+/** Inject data into a stream's peer for reading.
+
+    Appends data directly to the peer's incoming buffer,
+    bypassing the fuse. If the peer is suspended in
+    @ref stream::read_some, it is resumed. This is test
+    setup, not an operation under test.
+
+    @param s The stream whose peer receives the data.
+    @param sv The data to inject.
+
+    @see stream, make_stream_pair
+*/
+inline void
+provide(stream& s, std::string_view sv)
+{
+    int peer = 1 - s.index_;
+    auto& side = s.state_->sides[peer];
+    side.buf.append(sv);
+    if(side.pending_h)
+    {
+        auto h = side.pending_h;
+        side.pending_h = {};
+        auto ex = side.pending_ex;
+        side.pending_ex = {};
+        ex.dispatch(h);
+    }
+}
+
+/** Read from a stream and verify the content.
+
+    Reads exactly `expected.size()` bytes from the stream
+    and compares against the expected string. The read goes
+    through the normal path including the fuse.
+
+    @param s The stream to read from.
+    @param expected The expected content.
+
+    @return A pair of `(error_code, bool)`. The error_code
+        is set if a read error occurs (e.g. fuse injection).
+        The bool is true if the data matches.
+
+    @see stream, provide
+*/
+inline std::pair<std::error_code, bool>
+expect(stream& s, std::string_view expected)
+{
+    std::error_code result;
+    bool match = false;
+    run_blocking()([&]() -> task<> {
+        std::string buf(expected.size(), '\0');
+        auto [ec, n] = co_await read(
+            s, mutable_buffer(
+                buf.data(), buf.size()));
+        if(ec)
+        {
+            result = ec;
+            co_return;
+        }
+        match = (std::string_view(
+            buf.data(), n) == expected);
+    }());
+    return {result, match};
+}
+
+/** Return the stream's pending read data.
+
+    Returns a view of the data waiting to be read
+    from this stream. This is a direct peek at the
+    internal buffer, bypassing the fuse.
+
+    @param s The stream to inspect.
+
+    @return A view of the pending data.
+
+    @see stream, provide, expect
+*/
+inline std::string_view
+data(stream& s) noexcept
+{
+    return s.state_->sides[s.index_].buf;
+}
 
 } // test
 } // capy

@@ -59,7 +59,7 @@ namespace test {
 */
 class write_stream
 {
-    fuse* f_;
+    fuse f_;
     std::string data_;
     std::string expect_;
     std::size_t max_write_size_;
@@ -87,9 +87,9 @@ public:
         Use to simulate chunked network delivery.
     */
     explicit write_stream(
-        fuse& f,
+        fuse f = {},
         std::size_t max_write_size = std::size_t(-1)) noexcept
-        : f_(&f)
+        : f_(std::move(f))
         , max_write_size_(max_write_size)
     {
     }
@@ -179,7 +179,7 @@ public:
             io_result<std::size_t>
             await_resume()
             {
-                auto ec = self_->f_->maybe_fail();
+                auto ec = self_->f_.maybe_fail();
                 if(ec)
                     return {ec, 0};
 

@@ -67,19 +67,16 @@ void test_happy_path()
 {
     std::cout << "Test: happy path\n";
     
-    // Use fuse in disarmed mode (no error injection) for happy path
-    test::fuse f;  // test::fuse
-    test::old_stream mock(f);  // test::old_stream
-    mock.provide("hello\n");
+    auto [a, b] = test::make_stream_pair();
+    test::provide(b, "hello\n");
     
-    // Wrap mock in any_stream using pointer construction for reference semantics
-    any_stream stream{&mock};  // any_stream
+    any_stream stream{&a};  // any_stream
     
     bool result = false;  // bool
     test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
     
     assert(result == true);
-    assert(mock.data() == "HELLO\n");
+    assert(test::data(b) == "HELLO\n");
     
     std::cout << "  PASSED\n";
 }
@@ -88,20 +85,17 @@ void test_partial_reads()
 {
     std::cout << "Test: partial reads (1 byte at a time)\n";
     
-    // Use fuse in disarmed mode (no error injection)
-    test::fuse f;  // test::fuse
-    // Mock returns at most 1 byte per read_some
-    test::old_stream mock(f, 1);  // test::old_stream, max_read_size = 1
-    mock.provide("hi\n");
+    auto [a, b] = test::make_stream_pair();
+    a.set_max_read_size(1);
+    test::provide(b, "hi\n");
     
-    // Wrap mock in any_stream using pointer construction for reference semantics
-    any_stream stream{&mock};  // any_stream
+    any_stream stream{&a};  // any_stream
     
     bool result = false;  // bool
     test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
     
     assert(result == true);
-    assert(mock.data() == "HI\n");
+    assert(test::data(b) == "HI\n");
     
     std::cout << "  PASSED\n";
 }
@@ -117,11 +111,10 @@ void test_with_error_injection()
     // operation point until all paths are covered
     test::fuse f;  // test::fuse
     auto r = f.armed([&](test::fuse&) -> task<> {  // fuse::result
-        test::old_stream mock(f);  // test::old_stream
-        mock.provide("test\n");
+        auto [a, b] = test::make_stream_pair(f);
+        test::provide(b, "test\n");
         
-        // Wrap mock in any_stream using pointer construction for reference semantics
-        any_stream stream{&mock};  // any_stream
+        any_stream stream{&a};  // any_stream
         
         // Run the protocol - fuse will inject errors at each step
         bool result = co_await echo_line_uppercase(stream);  // bool
@@ -130,7 +123,7 @@ void test_with_error_injection()
         if (result)
         {
             ++success_count;
-            assert(mock.data() == "TEST\n");
+            assert(test::data(b) == "TEST\n");
         }
         else
         {

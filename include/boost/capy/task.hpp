@@ -79,7 +79,7 @@ struct task_return_base<void>
     task<int> compute_value()
     {
         auto [ec, n] = co_await stream.read_some( buf );
-        if( ec.failed() )
+        if( ec )
             co_return 0;
         co_return process( buf, n );
     }

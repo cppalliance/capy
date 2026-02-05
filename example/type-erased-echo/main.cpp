@@ -18,18 +18,17 @@ using namespace boost::capy;
 
 void test_with_mock()
 {
-    test::fuse f;
-    test::old_stream mock(f);
-    mock.provide("Hello, ");
-    mock.provide("World!\n");
-    // Stream returns eof when no more data is available
+    auto [a, b] = test::make_stream_pair();
+    test::provide(b, "Hello, ");
+    test::provide(b, "World!\n");
+    b.close();
     
-    // Using pointer construction (&mock) for reference semantics - the
-    // wrapper does not take ownership, so mock must outlive stream.
-    any_stream stream{&mock};  // any_stream
+    // Using pointer construction (&a) for reference semantics - the
+    // wrapper does not take ownership, so a must outlive stream.
+    any_stream stream{&a};  // any_stream
     test::run_blocking()(myapp::echo_session(stream));
     
-    std::cout << "Echo output: " << mock.data() << "\n";
+    std::cout << "Echo output: " << test::data(b) << "\n";
 }
 
 // With real sockets (using Corosio), you would write:
