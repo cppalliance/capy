@@ -25,8 +25,8 @@ namespace boost {
 namespace capy {
 namespace test {
 
-static_assert(ReadStream<stream>);
-static_assert(WriteStream<stream>);
+static_assert(ReadStream<old_stream>);
+static_assert(WriteStream<old_stream>);
 
 class stream_test
 {
@@ -36,7 +36,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) {
-            stream s(f);
+            old_stream s(f);
             BOOST_TEST(s.available() == 0);
             BOOST_TEST(s.size() == 0);
             BOOST_TEST(s.data().empty());
@@ -55,7 +55,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) {
-            stream s(f);
+            old_stream s(f);
             s.provide("hello");
             BOOST_TEST_EQ(s.available(), 5u);
 
@@ -70,7 +70,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) {
-            stream s(f);
+            old_stream s(f);
             s.provide("data");
             BOOST_TEST_EQ(s.available(), 4u);
 
@@ -85,7 +85,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
-            stream s(f);
+            old_stream s(f);
             s.provide("hello world");
 
             char buf[32] = {};
@@ -103,7 +103,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
-            stream s(f);
+            old_stream s(f);
             s.provide("hello world");
 
             char buf[5] = {};
@@ -122,7 +122,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
-            stream s(f);
+            old_stream s(f);
             s.provide("abcdefghij");
 
             char buf[3] = {};
@@ -159,7 +159,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
-            stream s(f);
+            old_stream s(f);
 
             char buf[32] = {};
             auto [ec, n] = co_await s.read_some(make_buffer(buf));
@@ -176,7 +176,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
-            stream s(f);
+            old_stream s(f);
             s.provide("x");
 
             char buf[32] = {};
@@ -200,7 +200,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
-            stream s(f);
+            old_stream s(f);
             s.provide("helloworld");
 
             char buf1[5] = {};
@@ -225,7 +225,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
-            stream s(f);
+            old_stream s(f);
             s.provide("data");
 
             auto [ec, n] = co_await s.read_some(mutable_buffer());
@@ -242,7 +242,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
-            stream s(f, 3);
+            old_stream s(f, 3);
             s.provide("hello world");
 
             char buf[32] = {};
@@ -261,7 +261,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
-            stream s(f, 4);
+            old_stream s(f, 4);
             s.provide("abcdefghij");
 
             char buf[32] = {};
@@ -298,7 +298,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
-            stream s(f);
+            old_stream s(f);
 
             auto [ec, n] = co_await s.write_some(
                 make_buffer("hello world", 11));
@@ -315,7 +315,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
-            stream s(f);
+            old_stream s(f);
 
             auto [ec1, n1] = co_await s.write_some(
                 make_buffer("hello", 5));
@@ -346,7 +346,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
-            stream s(f);
+            old_stream s(f);
 
             std::array<const_buffer, 2> buffers = {{
                 make_buffer("hello", 5),
@@ -367,7 +367,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
-            stream s(f);
+            old_stream s(f);
 
             auto [ec, n] = co_await s.write_some(const_buffer());
             if(ec)
@@ -383,7 +383,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
-            stream s(f);
+            old_stream s(f);
             auto ec = s.expect("hello");
             BOOST_TEST(! ec);
 
@@ -402,7 +402,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
-            stream s(f);
+            old_stream s(f);
             auto ec = s.expect("hello");
             BOOST_TEST(! ec);
 
@@ -420,7 +420,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
-            stream s(f);
+            old_stream s(f);
 
             auto [ec, n] = co_await s.write_some(
                 make_buffer("hello", 5));
@@ -440,7 +440,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
-            stream s(f);
+            old_stream s(f);
 
             auto [ec, n] = co_await s.write_some(
                 make_buffer("hello", 5));
@@ -458,7 +458,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
-            stream s(f);
+            old_stream s(f);
             auto ec = s.expect("helloworld");
             BOOST_TEST(! ec);
 
@@ -484,7 +484,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
-            stream s(f);
+            old_stream s(f);
             auto ec = s.expect("hi");
             BOOST_TEST(! ec);
 
@@ -503,7 +503,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
-            stream s(f, std::size_t(-1), 3);
+            old_stream s(f, std::size_t(-1), 3);
 
             auto [ec, n] = co_await s.write_some(
                 make_buffer("hello world", 11));
@@ -520,7 +520,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
-            stream s(f, std::size_t(-1), 4);
+            old_stream s(f, std::size_t(-1), 4);
 
             auto [ec1, n1] = co_await s.write_some(
                 make_buffer("abcdefghij", 10));
@@ -557,7 +557,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
-            stream s(f);
+            old_stream s(f);
             s.provide("request");
 
             char buf[32] = {};
@@ -582,7 +582,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
-            stream s(f, 4, 4);
+            old_stream s(f, 4, 4);
             s.provide("hello world!");
 
             std::string received;
@@ -612,7 +612,7 @@ public:
 
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
-            stream s(f);
+            old_stream s(f);
             s.provide("test data");
 
             char buf[32] = {};
@@ -638,7 +638,7 @@ public:
 
         fuse f;
         auto r = f.armed([&](fuse&) -> task<void> {
-            stream s(f);
+            old_stream s(f);
 
             auto [ec, n] = co_await s.write_some(
                 make_buffer("test data", 9));
@@ -660,7 +660,7 @@ public:
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
-            stream s(f);
+            old_stream s(f);
             s.provide("first");
 
             char buf[32] = {};

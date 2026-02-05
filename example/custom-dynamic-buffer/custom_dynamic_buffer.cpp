@@ -137,7 +137,7 @@ private:
 };
 
 // Demonstrate using the custom buffer
-task<> read_into_tracked_buffer(test::stream& stream, tracked_buffer& buffer)
+task<> read_into_tracked_buffer(test::old_stream& stream, tracked_buffer& buffer)
 {
     // Read data in chunks
     while (true)
@@ -165,7 +165,7 @@ void demo_tracked_buffer()
     
     // Setup mock stream with test data
     test::fuse f;
-    test::stream mock(f);
+    test::old_stream mock(f);
     mock.provide("Hello, ");
     mock.provide("World! ");
     mock.provide("This is a test of the custom buffer.\n");

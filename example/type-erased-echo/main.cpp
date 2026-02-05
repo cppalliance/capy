@@ -19,7 +19,7 @@ using namespace boost::capy;
 void test_with_mock()
 {
     test::fuse f;
-    test::stream mock(f);
+    test::old_stream mock(f);
     mock.provide("Hello, ");
     mock.provide("World!\n");
     // Stream returns eof when no more data is available

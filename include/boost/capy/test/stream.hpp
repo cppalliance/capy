@@ -45,7 +45,7 @@ namespace test {
     @par Example
     @code
     fuse f;
-    stream s( f );
+    old_stream s( f );
     s.provide( "Hello, " );
     s.provide( "World!" );
 
@@ -67,7 +67,7 @@ namespace test {
 
     @see fuse, read_stream, write_stream
 */
-class stream
+class old_stream
 {
     fuse* f_;
     std::string read_data_;
@@ -102,7 +102,7 @@ public:
         @param max_write_size Maximum bytes transferred per write.
         Use to simulate chunked network delivery.
     */
-    explicit stream(
+    explicit old_stream(
         fuse& f,
         std::size_t max_read_size = std::size_t(-1),
         std::size_t max_write_size = std::size_t(-1)) noexcept
@@ -173,7 +173,7 @@ public:
     {
         struct awaitable
         {
-            stream* self_;
+            old_stream* self_;
             MB buffers_;
 
             bool await_ready() const noexcept { return true; }
@@ -284,7 +284,7 @@ public:
     {
         struct awaitable
         {
-            stream* self_;
+            old_stream* self_;
             CB buffers_;
 
             bool await_ready() const noexcept { return true; }

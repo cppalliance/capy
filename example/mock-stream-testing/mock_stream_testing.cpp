@@ -69,7 +69,7 @@ void test_happy_path()
     
     // Use fuse in disarmed mode (no error injection) for happy path
     test::fuse f;  // test::fuse
-    test::stream mock(f);  // test::stream
+    test::old_stream mock(f);  // test::old_stream
     mock.provide("hello\n");
     
     // Wrap mock in any_stream using pointer construction for reference semantics
@@ -91,7 +91,7 @@ void test_partial_reads()
     // Use fuse in disarmed mode (no error injection)
     test::fuse f;  // test::fuse
     // Mock returns at most 1 byte per read_some
-    test::stream mock(f, 1);  // test::stream, max_read_size = 1
+    test::old_stream mock(f, 1);  // test::old_stream, max_read_size = 1
     mock.provide("hi\n");
     
     // Wrap mock in any_stream using pointer construction for reference semantics
@@ -117,7 +117,7 @@ void test_with_error_injection()
     // operation point until all paths are covered
     test::fuse f;  // test::fuse
     auto r = f.armed([&](test::fuse&) -> task<> {  // fuse::result
-        test::stream mock(f);  // test::stream
+        test::old_stream mock(f);  // test::old_stream
         mock.provide("test\n");
         
         // Wrap mock in any_stream using pointer construction for reference semantics
