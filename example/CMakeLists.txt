@@ -21,3 +21,5 @@ add_subdirectory(stream-pipeline)
 if(TARGET Boost::corosio)
     add_subdirectory(echo-server-corosio)
 endif()
+
+add_subdirectory(asio)
