@@ -174,7 +174,7 @@ One more thing: `std::ranges` cannot help here. `ranges::size` returns the numbe
 
 * `ConstBufferSequence`, `MutableBufferSequence`, `DynamicBuffer` — core concepts (Asio-compatible)
 * `flat_dynamic_buffer`, `circular_dynamic_buffer`, `buffer_pair` — additional concrete types
-* `slice`, `front`, `some_buffers`, `consuming_buffers` — byte-level manipulation utilities
+* `slice`, `front`, `buffer_array`, `consuming_buffers` — byte-level manipulation utilities
 
 === Comparison
 
@@ -247,7 +247,7 @@ One more thing: `std::ranges` cannot help here. `ranges::size` returns the numbe
 |
 |
 
-| `some_buffers`
+| `buffer_array`
 |
 |
 |

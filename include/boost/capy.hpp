@@ -43,8 +43,7 @@
 #include <boost/capy/buffers/front.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/buffers/slice.hpp>
-#include <boost/capy/buffers/some_buffers.hpp>
-#include <boost/capy/buffers/span.hpp>
+#include <boost/capy/buffers/buffer_array.hpp>
 #include <boost/capy/buffers/string_dynamic_buffer.hpp>
 #include <boost/capy/buffers/vector_dynamic_buffer.hpp>
 
