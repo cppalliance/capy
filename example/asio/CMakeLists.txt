@@ -92,7 +92,7 @@ endif ()
 
 #-------------------------------------------------
 #
-# Example executable
+# Example executables
 #
 #-------------------------------------------------
 file(GLOB_RECURSE PFILES CONFIGURE_DEPENDS *.cpp *.hpp
@@ -101,11 +101,29 @@ file(GLOB_RECURSE PFILES CONFIGURE_DEPENDS *.cpp *.hpp
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} PREFIX "" FILES ${PFILES})
 
-add_executable(capy_example_any_stream ${PFILES})
+# any_stream example (coroutine-based)
+add_executable(capy_example_any_stream
+    any_stream.cpp
+    api/capy_streams.cpp
+    api/capy_streams.hpp)
 
 set_property(TARGET capy_example_any_stream
     PROPERTY FOLDER "examples")
 
 target_link_libraries(capy_example_any_stream
+    Boost::capy
+    Boost::asio)
+
+# asio_callbacks example (callback-based with uni_stream)
+add_executable(capy_example_asio_callbacks
+    asio_callbacks.cpp
+    api/capy_streams.cpp
+    api/capy_streams.hpp
+    api/uni_stream.hpp)
+
+set_property(TARGET capy_example_asio_callbacks
+    PROPERTY FOLDER "examples")
+
+target_link_libraries(capy_example_asio_callbacks
     Boost::capy
     Boost::asio)

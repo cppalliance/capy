@@ -31,6 +31,7 @@
 #include <boost/capy/buffers.hpp>
 
 #include <span>
+#include <type_traits>
 
 namespace boost {
 namespace capy {
@@ -124,13 +125,16 @@ namespace capy {
 
     @see ConstBufferSequence, MutableBufferSequence
 */
-template<class BS>
+template<class BS, bool MakeConst = false>
     requires ConstBufferSequence<BS> || MutableBufferSequence<BS>
 class buffer_param
 {
 public:
     /// The buffer type (const_buffer or mutable_buffer)
-    using buffer_type = capy::buffer_type<BS>;
+    using buffer_type = std::conditional_t<
+        MakeConst,
+        const_buffer,
+        capy::buffer_type<BS>>;
 
 private:
     decltype(begin(std::declval<BS const&>())) it_;
@@ -220,6 +224,10 @@ public:
 // CTAD deduction guide
 template<class BS>
 buffer_param(BS const&) -> buffer_param<BS>;
+
+/// Alias for buffer_param that always uses const_buffer storage.
+template<class BS>
+using const_buffer_param = buffer_param<BS, true>;
 
 } // namespace capy
 } // namespace boost

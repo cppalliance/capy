@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef CAPY_EXAMPLE_ASIO_HPP
-#define CAPY_EXAMPLE_ASIO_HPP
+#ifndef CAPY_EXAMPLE_CAPY_STREAMS_HPP
+#define CAPY_EXAMPLE_CAPY_STREAMS_HPP
 
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>

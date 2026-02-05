@@ -7,7 +7,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#include "asio.hpp"
+#include "capy_streams.hpp"
 
 #include <boost/asio/bind_cancellation_slot.hpp>
 #include <boost/asio/cancellation_signal.hpp>

@@ -375,7 +375,7 @@ any_write_stream::write_some(CB buffers)
     struct awaitable
     {
         any_write_stream* self_;
-        buffer_param<CB> bp_;
+        const_buffer_param<CB> bp_;
 
         bool
         await_ready() const noexcept
@@ -415,7 +415,7 @@ any_write_stream::write_some(CB buffers)
                 self_->cached_awaitable_);
         }
     };
-    return awaitable{this, buffer_param<CB>(buffers)};
+    return awaitable{this, const_buffer_param<CB>(buffers)};
 }
 
 } // namespace capy

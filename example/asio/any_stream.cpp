@@ -7,9 +7,10 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#include "asio.hpp"
+#include "api/capy_streams.hpp"
 
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/when_all.hpp>
@@ -33,8 +34,7 @@ writer(
     while(written < total)
     {
         std::size_t chunk = (std::min)(sizeof(buf), total - written);
-        capy::const_buffer cb(buf, chunk);
-        auto [ec, n] = co_await stream.write_some(std::span(&cb, 1));
+        auto [ec, n] = co_await stream.write_some(capy::make_buffer(buf, chunk));
         if(ec)
         {
             std::printf("writer error: %s\n", ec.message().c_str());
@@ -56,8 +56,7 @@ reader(
     std::size_t read_total = 0;
     while(read_total < total)
     {
-        capy::mutable_buffer mb(buf, sizeof(buf));
-        auto [ec, n] = co_await stream.read_some(std::span(&mb, 1));
+        auto [ec, n] = co_await stream.read_some(capy::make_buffer(buf));
         if(ec)
         {
             std::printf("reader error: %s\n", ec.message().c_str());
