@@ -15,8 +15,7 @@
 #include <boost/capy/concept/buffer_source.hpp>
 #include <boost/capy/concept/write_sink.hpp>
 #include <boost/capy/concept/write_stream.hpp>
-#include <boost/capy/io_result.hpp>
-#include <boost/capy/task.hpp>
+#include <boost/capy/io_task.hpp>
 
 #include <cstddef>
 #include <span>
@@ -59,7 +58,7 @@ namespace capy {
     @see BufferSource, WriteSink
 */
 template<BufferSource Src, WriteSink Sink>
-task<io_result<std::size_t>>
+io_task<std::size_t>
 push_to(Src& source, Sink& sink)
 {
     const_buffer arr[detail::max_iovec_];
@@ -124,7 +123,7 @@ push_to(Src& source, Sink& sink)
     @see BufferSource, WriteStream, pull_from
 */
 template<BufferSource Src, WriteStream Stream>
-task<io_result<std::size_t>>
+io_task<std::size_t>
 push_to(Src& source, Stream& stream)
 {
     const_buffer arr[detail::max_iovec_];

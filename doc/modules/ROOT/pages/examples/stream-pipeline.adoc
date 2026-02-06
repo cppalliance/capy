@@ -68,7 +68,7 @@ public:
     }
     
     // BufferSource::pull - returns task<> to enable co_await on upstream
-    task<io_result<std::span<const_buffer>>>
+    io_task<std::span<const_buffer>>
     pull(std::span<const_buffer> dest)
     {
         // Already have unconsumed data?
@@ -155,7 +155,7 @@ public:
         }
     }
     
-    task<io_result<std::span<const_buffer>>>
+    io_task<std::span<const_buffer>>
     pull(std::span<const_buffer> dest)
     {
         if (consumed_ < buffer_.size())
@@ -332,7 +332,7 @@ Data flows through the pipeline:
 
 [source,cpp]
 ----
-task<io_result<std::span<const_buffer>>>
+io_task<std::span<const_buffer>>
 pull(std::span<const_buffer> dest)
 {
     // Pull from upstream

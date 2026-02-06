@@ -37,7 +37,7 @@
         void fill(DynamicBuffer auto& buffers);
 
     - COROUTINE: Use `DynamicBufferParam auto&&` (forwarding ref)
-        task<io_result<size_t>> read(DynamicBufferParam auto&& buffers);
+        io_task<size_t> read(DynamicBufferParam auto&& buffers);
 
     DynamicBufferParam enforces safe passing at compile time:
     accepts lvalues of any DynamicBuffer, but rvalues only for adapters.
@@ -82,7 +82,7 @@ namespace capy {
     plain `DynamicBuffer` in coroutines allows dangerous rvalue passing
     that compiles but silently loses data on suspend.
     @code
-    task<io_result<std::size_t>>
+    io_task<std::size_t>
     read( ReadSource auto& src, DynamicBufferParam auto&& buffers );
     @endcode
 
@@ -130,7 +130,7 @@ concept DynamicBuffer =
     @par Conforming Signatures
     For coroutine functions, use a forwarding reference:
     @code
-    task<io_result<std::size_t>>
+    io_task<std::size_t>
     read( ReadSource auto& source, DynamicBufferParam auto&& buffers );
     @endcode
 

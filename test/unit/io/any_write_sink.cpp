@@ -165,7 +165,7 @@ public:
     }
 
     void
-    testWriteWithEofFalse()
+    testWriteEofWithBuffers()
     {
         test::fuse f;
         auto r = f.armed([&](test::fuse&) -> task<> {
@@ -173,29 +173,8 @@ public:
 
             any_write_sink aws(&ws);
 
-            auto [ec, n] = co_await aws.write(
-                make_buffer("hello", 5), false);
-            if(ec)
-                co_return;
-
-            BOOST_TEST_EQ(n, 5u);
-            BOOST_TEST_EQ(ws.data(), "hello");
-            BOOST_TEST(!ws.eof_called());
-        });
-        BOOST_TEST(r.success);
-    }
-
-    void
-    testWriteWithEofTrue()
-    {
-        test::fuse f;
-        auto r = f.armed([&](test::fuse&) -> task<> {
-            test::write_sink ws(f);
-
-            any_write_sink aws(&ws);
-
-            auto [ec, n] = co_await aws.write(
-                make_buffer("hello", 5), true);
+            auto [ec, n] = co_await aws.write_eof(
+                make_buffer("hello", 5));
             if(ec)
                 co_return;
 
@@ -207,7 +186,7 @@ public:
     }
 
     void
-    testWriteWithEofEmpty()
+    testWriteEofWithEmptyBuffers()
     {
         test::fuse f;
         auto r = f.armed([&](test::fuse&) -> task<> {
@@ -215,7 +194,7 @@ public:
 
             any_write_sink aws(&ws);
 
-            auto [ec, n] = co_await aws.write(const_buffer(), true);
+            auto [ec, n] = co_await aws.write_eof(const_buffer());
             if(ec)
                 co_return;
 
@@ -316,7 +295,7 @@ public:
     }
 
     void
-    testWriteWithEofPartial()
+    testWriteEofWithBuffersPartial()
     {
         // Verify that any_write_sink loops to consume all data
         // and signals eof even when underlying sink has max_write_size
@@ -326,8 +305,8 @@ public:
 
             any_write_sink aws(&ws);
 
-            auto [ec, n] = co_await aws.write(
-                make_buffer("hello world", 11), true);
+            auto [ec, n] = co_await aws.write_eof(
+                make_buffer("hello world", 11));
             if(ec)
                 co_return;
 
@@ -347,14 +326,13 @@ public:
         testWriteMultiple();
         testWriteBufferSequence();
         testWriteSingleBuffer();
-        testWriteWithEofFalse();
-        testWriteWithEofTrue();
-        testWriteWithEofEmpty();
+        testWriteEofWithBuffers();
+        testWriteEofWithEmptyBuffers();
         testWriteEof();
         testWriteThenWriteEof();
         testWriteArray();
         testWritePartial();
-        testWriteWithEofPartial();
+        testWriteEofWithBuffersPartial();
     }
 };
 

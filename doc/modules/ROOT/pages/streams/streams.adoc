@@ -24,14 +24,14 @@ concept ReadStream =
 
 [source,cpp]
 ----
-template<MutableBufferSequence MB>
-IoAwaitable auto read_some(MB const& buffers);
+template<MutableBufferSequence Buffers>
+IoAwaitable auto read_some(Buffers buffers);
 ----
 
 Returns an awaitable yielding `(error_code, std::size_t)`:
 
-* On success: `!ec.failed()`, and `n >= 1` bytes were read
-* On error: `ec.failed()`, and `n == 0`
+* On success: `!ec`, and `n >= 1` bytes were read
+* On error: `ec`, and `n == 0`
 * On EOF: `ec == cond::eof`, and `n == 0`
 
 If `buffer_empty(buffers)` is true, completes immediately with `n == 0` and no error.
@@ -45,7 +45,7 @@ If `buffer_empty(buffers)` is true, completes immediately with `n == 0` and no e
 char buf[1024];
 auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
 // n might be 1, might be 500, might be 1024
-// The only guarantee: if !ec.failed() && n > 0
+// The only guarantee: if !ec && n > 0
 ----
 
 This matches underlying OS behavior—reads return when *some* data is available.
@@ -66,7 +66,7 @@ task<> dump_stream(Stream& stream)
         if (ec == cond::eof)
             break;  // End of stream
         
-        if (ec.failed())
+        if (ec)
             throw std::system_error(ec);
         
         std::cout.write(buf, n);
@@ -91,14 +91,14 @@ concept WriteStream =
 
 [source,cpp]
 ----
-template<ConstBufferSequence CB>
-IoAwaitable auto write_some(CB const& buffers);
+template<ConstBufferSequence Buffers>
+IoAwaitable auto write_some(Buffers buffers);
 ----
 
 Returns an awaitable yielding `(error_code, std::size_t)`:
 
-* On success: `!ec.failed()`, and `n >= 1` bytes were written
-* On error: `ec.failed()`, and `n` indicates bytes written before error (may be 0)
+* On success: `!ec`, and `n >= 1` bytes were written
+* On error: `ec`, and `n == 0`
 
 If `buffer_empty(buffers)` is true, completes immediately with `n == 0` and no error.
 
@@ -197,13 +197,13 @@ task<> handle_connection(any_stream& stream)
         if (ec == cond::eof)
             co_return;  // Client closed connection
         
-        if (ec.failed())
+        if (ec)
             throw std::system_error(ec);
         
         // Echo it back
         auto [wec, wn] = co_await write(stream, const_buffer(buf, n));
         
-        if (wec.failed())
+        if (wec)
             throw std::system_error(wec);
     }
 }

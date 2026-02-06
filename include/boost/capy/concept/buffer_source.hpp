@@ -81,7 +81,7 @@ namespace capy {
 
     @code
     template<BufferSource Source, WriteStream Stream>
-    task<io_result<std::size_t>> transfer( Source& source, Stream& stream )
+    io_task<std::size_t> transfer( Source& source, Stream& stream )
     {
         const_buffer arr[16];
         std::size_t total = 0;

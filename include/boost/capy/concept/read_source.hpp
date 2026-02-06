@@ -14,6 +14,7 @@
 #include <boost/capy/concept/buffer_archetype.hpp>
 #include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/read_stream.hpp>
 #include <system_error>
 
 #include <concepts>
@@ -22,43 +23,48 @@
 namespace boost {
 namespace capy {
 
-/** Concept for types that provide awaitable read operations from a source.
+/** Concept for types providing complete reads from a data source.
 
-    A type satisfies `ReadSource` if it provides a `read` member function
-    that accepts any @ref MutableBufferSequence and is an @ref IoAwaitable
-    whose return value decomposes to `(error_code, std::size_t)`.
+    A type satisfies `ReadSource` if it satisfies @ref ReadStream
+    and additionally provides a `read` member function that accepts
+    any @ref MutableBufferSequence and is an @ref IoAwaitable whose
+    return value decomposes to `(error_code, std::size_t)`.
 
-    Use this concept when you need to produce data asynchronously, such
-    as reading HTTP request bodies, streaming file contents, or generating
-    data through transformations like decompression.
+    `ReadSource` refines `ReadStream`. Every `ReadSource` is a
+    `ReadStream`. Algorithms constrained on `ReadStream` accept both
+    raw streams and sources.
 
     @tparam T The source type.
 
     @par Syntactic Requirements
 
+    @li `T` must satisfy @ref ReadStream (provides `read_some`)
     @li `T` must provide a `read` member function template accepting
         any @ref MutableBufferSequence
-    @li The return type must satisfy @ref IoAwaitable
+    @li The return type of `read` must satisfy @ref IoAwaitable
     @li The awaitable must decompose to `(error_code, std::size_t)`
         via structured bindings
 
     @par Semantic Requirements
 
-    The `read` operation transfers data into the buffer sequence. On
-    return, exactly one of the following is true:
+    The inherited `read_some` operation reads one or more bytes
+    (partial read). See @ref ReadStream.
 
-    @li **Success**: `ec` is `false` and `n` equals
-        `buffer_size( buffers )`. The entire buffer sequence was filled.
-    @li **End-of-stream or Error**: `ec` is `true` and `n`
-        indicates the number of bytes transferred before the failure.
+    The `read` operation fills the entire buffer sequence. On return,
+    exactly one of the following is true:
 
-    If the source reaches end-of-stream before filling the buffer,
-    the operation returns with `ec` equal to `true`. Successful
-    partial reads are not permitted; either the entire buffer is filled
-    or the operation fails with any partial data reported in `n`.
+    @li **Success**: `!ec` and `n` equals `buffer_size( buffers )`.
+        The entire buffer sequence was filled.
+    @li **End-of-stream**: `ec == cond::eof` and `n` indicates the
+        number of bytes transferred before EOF was reached.
+    @li **Error**: `ec` and `n` indicates the number of bytes
+        transferred before the error.
+
+    Successful partial reads are not permitted; either the entire
+    buffer is filled or the operation returns with an error.
 
     If `buffer_empty( buffers )` is `true`, the operation completes
-    immediately with `ec` equal to `false` and `n` equal to 0.
+    immediately with `!ec` and `n` equal to 0.
 
     When the buffer sequence contains multiple buffers, each buffer is
     filled completely before proceeding to the next.
@@ -71,13 +77,11 @@ namespace capy {
     @par Conforming Signatures
 
     @code
-    template<MutableBufferSequence MB>
-    some_io_awaitable<io_result<std::size_t>>
-    read( MB const& buffers );
+    template< MutableBufferSequence MB >
+    IoAwaitable auto read_some( MB buffers );   // inherited from ReadStream
 
-    template<MutableBufferSequence MB>
-    some_io_awaitable<io_result<std::size_t>>
-    read( MB buffers );  // by-value also permitted
+    template< MutableBufferSequence MB >
+    IoAwaitable auto read( MB buffers );
     @endcode
 
     @warning **Coroutine Buffer Lifetime**: When implementing coroutine
@@ -91,28 +95,24 @@ namespace capy {
     @par Example
 
     @code
-    template<ReadSource Source>
-    task<std::string> read_all( Source& source )
+    template< ReadSource Source >
+    task<> read_header( Source& source )
     {
-        std::string result;
-        char buf[1024];
-        for(;;)
-        {
-            auto [ec, n] = co_await source.read( mutable_buffer( buf ) );
-            if( ec == cond::eof )
-                break;
-            if( ec )
-                co_return {};
-            result.append( buf, n );
-        }
-        co_return result;
+        char header[16];
+        auto [ec, n] = co_await source.read(
+            mutable_buffer( header ) );
+        if( ec )
+            co_return;
+        // header contains exactly 16 bytes
     }
     @endcode
 
-    @see IoAwaitable, MutableBufferSequence, awaitable_decomposes_to
+    @see ReadStream, IoAwaitable, MutableBufferSequence,
+        awaitable_decomposes_to
 */
 template<typename T>
 concept ReadSource =
+    ReadStream<T> &&
     requires(T& source, mutable_buffer_archetype buffers)
     {
         { source.read(buffers) } -> IoAwaitable;

@@ -19,7 +19,7 @@
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/io_result.hpp>
-#include <boost/capy/task.hpp>
+#include <boost/capy/io_task.hpp>
 
 #include <concepts>
 #include <coroutine>
@@ -183,15 +183,29 @@ public:
         return has_value();
     }
 
-    /** Initiate an asynchronous write operation.
+    /** Initiate a partial write operation.
+
+        Writes one or more bytes from the provided buffer sequence.
+        May consume less than the full sequence.
+
+        @param buffers The buffer sequence containing data to write.
+
+        @return An awaitable yielding `(error_code,std::size_t)`.
+
+        @par Preconditions
+        The wrapper must contain a valid sink (`has_value() == true`).
+    */
+    template<ConstBufferSequence CB>
+    io_task<std::size_t>
+    write_some(CB buffers);
+
+    /** Initiate a complete write operation.
 
         Writes data from the provided buffer sequence. The operation
         completes when all bytes have been consumed, or an error
         occurs.
 
         @param buffers The buffer sequence containing data to write.
-            Passed by value to ensure the sequence lives in the
-            coroutine frame across suspension points.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
 
@@ -199,22 +213,16 @@ public:
         The wrapper must contain a valid sink (`has_value() == true`).
     */
     template<ConstBufferSequence CB>
-    task<io_result<std::size_t>>
+    io_task<std::size_t>
     write(CB buffers);
 
-    /** Initiate an asynchronous write operation with optional EOF.
+    /** Atomically write data and signal end-of-stream.
 
-        Writes data from the provided buffer sequence, optionally
-        finalizing the sink afterwards. The operation completes when
-        all bytes have been consumed and (if eof is true) the sink
-        is finalized, or an error occurs.
+        Writes all data from the buffer sequence and then signals
+        end-of-stream. The operation completes when all bytes have
+        been consumed and the sink is finalized, or an error occurs.
 
         @param buffers The buffer sequence containing data to write.
-            Passed by value to ensure the sequence lives in the
-            coroutine frame across suspension points.
-
-        @param eof If `true`, the sink is finalized after writing
-            the data.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
 
@@ -222,8 +230,8 @@ public:
         The wrapper must contain a valid sink (`has_value() == true`).
     */
     template<ConstBufferSequence CB>
-    task<io_result<std::size_t>>
-    write(CB buffers, bool eof);
+    io_task<std::size_t>
+    write_eof(CB buffers);
 
     /** Signal end of data.
 
@@ -263,7 +271,7 @@ protected:
 
 private:
     auto
-    write_some_(std::span<const_buffer const> buffers, bool eof);
+    write_some_(std::span<const_buffer const> buffers);
 };
 
 //----------------------------------------------------------
@@ -292,8 +300,7 @@ struct any_write_sink::vtable
     write_awaitable_ops const* (*construct_write_awaitable)(
         void* sink,
         void* storage,
-        std::span<const_buffer const> buffers,
-        bool eof);
+        std::span<const_buffer const> buffers);
     eof_awaitable_ops const* (*construct_eof_awaitable)(
         void* sink,
         void* storage);
@@ -302,8 +309,8 @@ struct any_write_sink::vtable
 template<WriteSink S>
 struct any_write_sink::vtable_for_impl
 {
-    using WriteAwaitable = decltype(std::declval<S&>().write(
-        std::span<const_buffer const>{}, false));
+    using WriteAwaitable = decltype(std::declval<S&>().write_some(
+        std::span<const_buffer const>{}));
     using EofAwaitable = decltype(std::declval<S&>().write_eof());
 
     static void
@@ -316,11 +323,10 @@ struct any_write_sink::vtable_for_impl
     construct_write_awaitable_impl(
         void* sink,
         void* storage,
-        std::span<const_buffer const> buffers,
-        bool eof)
+        std::span<const_buffer const> buffers)
     {
         auto& s = *static_cast<S*>(sink);
-        ::new(storage) WriteAwaitable(s.write(buffers, eof));
+        ::new(storage) WriteAwaitable(s.write_some(buffers));
 
         static constexpr write_awaitable_ops ops = {
             +[](void* p) {
@@ -461,14 +467,12 @@ any_write_sink::any_write_sink(S* s)
 
 inline auto
 any_write_sink::write_some_(
-    std::span<const_buffer const> buffers,
-    bool eof)
+    std::span<const_buffer const> buffers)
 {
     struct awaitable
     {
         any_write_sink* self_;
         std::span<const_buffer const> buffers_;
-        bool eof_;
 
         bool
         await_ready() const noexcept
@@ -483,8 +487,7 @@ any_write_sink::write_some_(
             self_->active_write_ops_ = self_->vt_->construct_write_awaitable(
                 self_->sink_,
                 self_->cached_awaitable_,
-                buffers_,
-                eof_);
+                buffers_);
 
             // Check if underlying is immediately ready
             if(self_->active_write_ops_->await_ready(self_->cached_awaitable_))
@@ -509,7 +512,7 @@ any_write_sink::write_some_(
                 self_->cached_awaitable_);
         }
     };
-    return awaitable{this, buffers, eof};
+    return awaitable{this, buffers};
 }
 
 inline auto
@@ -560,15 +563,19 @@ any_write_sink::write_eof()
 }
 
 template<ConstBufferSequence CB>
-task<io_result<std::size_t>>
-any_write_sink::write(CB buffers)
+io_task<std::size_t>
+any_write_sink::write_some(CB buffers)
 {
-    return write(buffers, false);
+    buffer_param<CB> bp(buffers);
+    auto bufs = bp.data();
+    if(bufs.empty())
+        co_return {{}, 0};
+    co_return co_await write_some_(bufs);
 }
 
 template<ConstBufferSequence CB>
-task<io_result<std::size_t>>
-any_write_sink::write(CB buffers, bool eof)
+io_task<std::size_t>
+any_write_sink::write(CB buffers)
 {
     buffer_param<CB> bp(buffers);
     std::size_t total = 0;
@@ -579,19 +586,39 @@ any_write_sink::write(CB buffers, bool eof)
         if(bufs.empty())
             break;
 
-        auto [ec, n] = co_await write_some_(bufs, false);
+        auto [ec, n] = co_await write_some_(bufs);
         if(ec)
             co_return {ec, total + n};
         bp.consume(n);
         total += n;
     }
 
-    if(eof)
+    co_return {{}, total};
+}
+
+template<ConstBufferSequence CB>
+io_task<std::size_t>
+any_write_sink::write_eof(CB buffers)
+{
+    buffer_param<CB> bp(buffers);
+    std::size_t total = 0;
+
+    for(;;)
     {
-        auto [ec] = co_await write_eof();
+        auto bufs = bp.data();
+        if(bufs.empty())
+            break;
+
+        auto [ec, n] = co_await write_some_(bufs);
         if(ec)
-            co_return {ec, total};
+            co_return {ec, total + n};
+        bp.consume(n);
+        total += n;
     }
+
+    auto [ec] = co_await write_eof();
+    if(ec)
+        co_return {ec, total};
 
     co_return {{}, total};
 }

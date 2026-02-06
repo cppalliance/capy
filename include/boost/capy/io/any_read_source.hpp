@@ -19,7 +19,7 @@
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/io_result.hpp>
-#include <boost/capy/task.hpp>
+#include <boost/capy/io_task.hpp>
 
 #include <concepts>
 #include <coroutine>
@@ -178,15 +178,29 @@ public:
         return has_value();
     }
 
-    /** Initiate an asynchronous read operation.
+    /** Initiate a partial read operation.
+
+        Reads one or more bytes into the provided buffer sequence.
+        May fill less than the full sequence.
+
+        @param buffers The buffer sequence to read into.
+
+        @return An awaitable yielding `(error_code,std::size_t)`.
+
+        @par Preconditions
+        The wrapper must contain a valid source (`has_value() == true`).
+    */
+    template<MutableBufferSequence MB>
+    io_task<std::size_t>
+    read_some(MB buffers);
+
+    /** Initiate a complete read operation.
 
         Reads data into the provided buffer sequence. The operation
         completes when the entire buffer sequence is filled, end-of-file
         is reached, or an error occurs.
 
-        @param buffers The buffer sequence to read into. Passed by
-            value to ensure the sequence lives in the coroutine frame
-            across suspension points.
+        @param buffers The buffer sequence to read into.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
 
@@ -201,7 +215,7 @@ public:
         The wrapper must contain a valid source (`has_value() == true`).
     */
     template<MutableBufferSequence MB>
-    task<io_result<std::size_t>>
+    io_task<std::size_t>
     read(MB buffers);
 
 protected:
@@ -255,7 +269,7 @@ struct any_read_source::vtable
 template<ReadSource S>
 struct any_read_source::vtable_for_impl
 {
-    using Awaitable = decltype(std::declval<S&>().read(
+    using Awaitable = decltype(std::declval<S&>().read_some(
         std::span<mutable_buffer const>{}));
 
     static void
@@ -271,7 +285,7 @@ struct any_read_source::vtable_for_impl
         std::span<mutable_buffer const> buffers)
     {
         auto& s = *static_cast<S*>(source);
-        ::new(storage) Awaitable(s.read(buffers));
+        ::new(storage) Awaitable(s.read_some(buffers));
 
         static constexpr awaitable_ops ops = {
             +[](void* p) {
@@ -422,7 +436,18 @@ any_read_source::read_some_(std::span<mutable_buffer const> buffers)
 }
 
 template<MutableBufferSequence MB>
-task<io_result<std::size_t>>
+io_task<std::size_t>
+any_read_source::read_some(MB buffers)
+{
+    buffer_param<MB> bp(std::move(buffers));
+    auto bufs = bp.data();
+    if(bufs.empty())
+        co_return {{}, 0};
+    co_return co_await read_some_(bufs);
+}
+
+template<MutableBufferSequence MB>
+io_task<std::size_t>
 any_read_source::read(MB buffers)
 {
     buffer_param<MB> bp(std::move(buffers));

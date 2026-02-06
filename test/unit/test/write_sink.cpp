@@ -128,32 +128,14 @@ public:
     }
 
     void
-    testWriteWithEofFalse()
+    testWriteEofWithBuffers()
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
             write_sink ws(f);
 
-            auto [ec, n] = co_await ws.write(
-                make_buffer("hello", 5), false);
-            if(ec)
-                co_return;
-            BOOST_TEST_EQ(n, 5u);
-            BOOST_TEST_EQ(ws.data(), "hello");
-            BOOST_TEST(! ws.eof_called());
-        });
-        BOOST_TEST(r.success);
-    }
-
-    void
-    testWriteWithEofTrue()
-    {
-        fuse f;
-        auto r = f.armed([&](fuse&) -> task<> {
-            write_sink ws(f);
-
-            auto [ec, n] = co_await ws.write(
-                make_buffer("hello", 5), true);
+            auto [ec, n] = co_await ws.write_eof(
+                make_buffer("hello", 5));
             if(ec)
                 co_return;
             BOOST_TEST_EQ(n, 5u);
@@ -164,13 +146,13 @@ public:
     }
 
     void
-    testWriteWithEofEmpty()
+    testWriteEofWithEmptyBuffers()
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
             write_sink ws(f);
 
-            auto [ec, n] = co_await ws.write(const_buffer(), true);
+            auto [ec, n] = co_await ws.write_eof(const_buffer());
             if(ec)
                 co_return;
             BOOST_TEST_EQ(n, 0u);
@@ -393,14 +375,14 @@ public:
     }
 
     void
-    testWriteWithEofPartial()
+    testWriteEofWithBuffersPartial()
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
             write_sink ws(f, 5); // max 5 bytes per write
 
-            auto [ec, n] = co_await ws.write(
-                make_buffer("hello world", 11), true);
+            auto [ec, n] = co_await ws.write_eof(
+                make_buffer("hello world", 11));
             if(ec)
                 co_return;
             BOOST_TEST_EQ(n, 5u);
@@ -418,9 +400,8 @@ public:
         testWriteMultiple();
         testWriteBufferSequence();
         testWriteEmpty();
-        testWriteWithEofFalse();
-        testWriteWithEofTrue();
-        testWriteWithEofEmpty();
+        testWriteEofWithBuffers();
+        testWriteEofWithEmptyBuffers();
         testWriteEof();
         testWriteThenWriteEof();
         testFuseErrorInjection();
@@ -431,7 +412,7 @@ public:
         testExpectMismatchWithExistingData();
         testClear();
         testWritePartial();
-        testWriteWithEofPartial();
+        testWriteEofWithBuffersPartial();
     }
 };
 

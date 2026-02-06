@@ -11,7 +11,7 @@
 #include <boost/capy/ex/immediate.hpp>
 
 #include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/task.hpp>
+#include <boost/capy/io_task.hpp>
 
 #include "test/unit/test_helpers.hpp"
 
@@ -125,7 +125,7 @@ struct immediate_test
 
         // co_await immediate<io_result<std::size_t>>
         {
-            auto coro = []() -> task<io_result<std::size_t>> {
+            auto coro = []() -> io_task<std::size_t> {
                 co_return co_await immediate<io_result<std::size_t>>{{{}, 100}};
             };
             auto result = run_task(coro());

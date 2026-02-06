@@ -71,7 +71,7 @@ public:
     }
     
     // BufferSource::pull - returns task<> to enable co_await on upstream
-    task<io_result<std::span<const_buffer>>>
+    io_task<std::span<const_buffer>>
     pull(std::span<const_buffer> dest)
     {
         // Already have unconsumed data?
@@ -170,7 +170,7 @@ public:
     }
     
     // BufferSource::pull - returns task<> to enable co_await on upstream
-    task<io_result<std::span<const_buffer>>>
+    io_task<std::span<const_buffer>>
     pull(std::span<const_buffer> dest)
     {
         // Already have unconsumed data?

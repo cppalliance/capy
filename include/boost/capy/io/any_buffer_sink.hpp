@@ -21,7 +21,7 @@
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/io_result.hpp>
-#include <boost/capy/task.hpp>
+#include <boost/capy/io_task.hpp>
 
 #include <concepts>
 #include <coroutine>
@@ -252,15 +252,27 @@ public:
     auto
     commit_eof();
 
-    /** Write data from a buffer sequence.
+    /** Write some data from a buffer sequence.
+
+        Writes one or more bytes from the buffer sequence to the
+        underlying sink. May consume less than the full sequence.
+
+        @param buffers The buffer sequence to write.
+
+        @return An awaitable yielding `(error_code,std::size_t)`.
+
+        @par Preconditions
+        The wrapper must contain a valid sink (`has_value() == true`).
+    */
+    template<ConstBufferSequence CB>
+    io_task<std::size_t>
+    write_some(CB buffers);
+
+    /** Write all data from a buffer sequence.
 
         Writes all data from the buffer sequence to the underlying
         sink. This method satisfies the @ref WriteSink concept.
 
-        @note This operation copies data from the caller's buffers
-        into the sink's internal buffers. For zero-copy writes,
-        use @ref prepare and @ref commit directly.
-
         @param buffers The buffer sequence to write.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
@@ -269,21 +281,15 @@ public:
         The wrapper must contain a valid sink (`has_value() == true`).
     */
     template<ConstBufferSequence CB>
-    task<io_result<std::size_t>>
+    io_task<std::size_t>
     write(CB buffers);
 
-    /** Write data with optional end-of-stream.
+    /** Atomically write data and signal end-of-stream.
 
         Writes all data from the buffer sequence to the underlying
-        sink, optionally finalizing it afterwards. This method
-        satisfies the @ref WriteSink concept.
-
-        @note This operation copies data from the caller's buffers
-        into the sink's internal buffers. For zero-copy writes,
-        use @ref prepare and @ref commit directly.
+        sink and then signals end-of-stream.
 
         @param buffers The buffer sequence to write.
-        @param eof If true, finalize the sink after writing.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
 
@@ -291,8 +297,8 @@ public:
         The wrapper must contain a valid sink (`has_value() == true`).
     */
     template<ConstBufferSequence CB>
-    task<io_result<std::size_t>>
-    write(CB buffers, bool eof);
+    io_task<std::size_t>
+    write_eof(CB buffers);
 
     /** Signal end-of-stream.
 
@@ -640,15 +646,37 @@ any_buffer_sink::commit_eof()
 //----------------------------------------------------------
 
 template<ConstBufferSequence CB>
-task<io_result<std::size_t>>
-any_buffer_sink::write(CB buffers)
+io_task<std::size_t>
+any_buffer_sink::write_some(CB buffers)
 {
-    return write(buffers, false);
+    buffer_param<CB> bp(buffers);
+    auto src = bp.data();
+    if(src.empty())
+        co_return {{}, 0};
+
+    mutable_buffer arr[detail::max_iovec_];
+    auto dst_bufs = prepare(arr);
+    if(dst_bufs.empty())
+    {
+        auto [ec] = co_await commit(0);
+        if(ec)
+            co_return {ec, 0};
+        // Retry after flush
+        dst_bufs = prepare(arr);
+        if(dst_bufs.empty())
+            co_return {{}, 0};
+    }
+
+    auto n = buffer_copy(dst_bufs, src);
+    auto [ec] = co_await commit(n);
+    if(ec)
+        co_return {ec, 0};
+    co_return {{}, n};
 }
 
 template<ConstBufferSequence CB>
-task<io_result<std::size_t>>
-any_buffer_sink::write(CB buffers, bool eof)
+io_task<std::size_t>
+any_buffer_sink::write(CB buffers)
 {
     buffer_param<CB> bp(buffers);
     std::size_t total = 0;
@@ -677,12 +705,43 @@ any_buffer_sink::write(CB buffers, bool eof)
         total += n;
     }
 
-    if(eof)
+    co_return {{}, total};
+}
+
+template<ConstBufferSequence CB>
+io_task<std::size_t>
+any_buffer_sink::write_eof(CB buffers)
+{
+    buffer_param<CB> bp(buffers);
+    std::size_t total = 0;
+
+    for(;;)
     {
-        auto [ec] = co_await commit_eof();
+        auto src = bp.data();
+        if(src.empty())
+            break;
+
+        mutable_buffer arr[detail::max_iovec_];
+        auto dst_bufs = prepare(arr);
+        if(dst_bufs.empty())
+        {
+            auto [ec] = co_await commit(0);
+            if(ec)
+                co_return {ec, total};
+            continue;
+        }
+
+        auto n = buffer_copy(dst_bufs, src);
+        auto [ec] = co_await commit(n);
         if(ec)
             co_return {ec, total};
+        bp.consume(n);
+        total += n;
     }
+
+    auto [ec] = co_await commit_eof();
+    if(ec)
+        co_return {ec, total};
 
     co_return {{}, total};
 }

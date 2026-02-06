@@ -35,9 +35,10 @@ namespace test {
     to consume it. The associated @ref fuse enables error injection
     at controlled points.
 
-    Unlike @ref read_stream which provides partial reads via `read_some`,
-    this class satisfies the @ref ReadSource concept by providing complete
-    reads that fill the entire buffer sequence before returning.
+    This class satisfies the @ref ReadSource concept by providing both
+    partial reads via `read_some` (inherited from @ref ReadStream) and
+    complete reads via `read` that fill the entire buffer sequence
+    before returning.
 
     @par Thread Safety
     Not thread-safe.
@@ -109,6 +110,60 @@ public:
     available() const noexcept
     {
         return data_.size() - pos_;
+    }
+
+    /** Asynchronously read some data from the source.
+
+        Transfers up to `buffer_size( buffers )` bytes from the internal
+        buffer to the provided mutable buffer sequence. If no data
+        remains, returns `error::eof`. Before every read, the attached
+        @ref fuse is consulted to possibly inject an error for testing
+        fault scenarios.
+
+        @param buffers The mutable buffer sequence to receive data.
+
+        @return An awaitable yielding `(error_code,std::size_t)`.
+
+        @see fuse
+    */
+    template<MutableBufferSequence MB>
+    auto
+    read_some(MB buffers)
+    {
+        struct awaitable
+        {
+            read_source* self_;
+            MB buffers_;
+
+            bool await_ready() const noexcept { return true; }
+
+            void await_suspend(
+                coro,
+                executor_ref,
+                std::stop_token) const noexcept
+            {
+            }
+
+            io_result<std::size_t>
+            await_resume()
+            {
+                auto ec = self_->f_.maybe_fail();
+                if(ec)
+                    return {ec, 0};
+
+                if(self_->pos_ >= self_->data_.size())
+                    return {error::eof, 0};
+
+                std::size_t avail = self_->data_.size() - self_->pos_;
+                if(avail > self_->max_read_size_)
+                    avail = self_->max_read_size_;
+                auto src = make_buffer(self_->data_.data() + self_->pos_, avail);
+                std::size_t const n = buffer_copy(buffers_, src);
+                self_->pos_ += n;
+                return {{}, n};
+            }
+        };
+        return awaitable{this, buffers};
     }
 
     /** Asynchronously read data from the source.

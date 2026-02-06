@@ -45,4 +45,9 @@
 ** xref:examples/custom-dynamic-buffer.adoc[Custom Dynamic Buffer]
 ** xref:examples/echo-server-corosio.adoc[Echo Server with Corosio]
 ** xref:examples/stream-pipeline.adoc[Stream Pipeline]
+* Design
+** xref:design/ReadStream.adoc[ReadStream]
+** xref:design/ReadSource.adoc[ReadSource]
+** xref:design/WriteStream.adoc[WriteStream]
+** xref:design/WriteSink.adoc[WriteSink]
 * xref:reference:boost/capy.adoc[Reference]

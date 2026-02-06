@@ -22,7 +22,7 @@
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/io_result.hpp>
-#include <boost/capy/task.hpp>
+#include <boost/capy/io_task.hpp>
 
 #include <concepts>
 #include <coroutine>
@@ -222,16 +222,31 @@ public:
     auto
     pull(std::span<const_buffer> dest);
 
+    /** Read some data into a mutable buffer sequence.
+
+        Reads one or more bytes by pulling from the underlying source
+        and copying into the caller's buffers. May fill less than
+        the full sequence.
+
+        @param buffers The buffer sequence to fill.
+
+        @return An awaitable yielding `(error_code,std::size_t)`.
+
+        @par Preconditions
+        The wrapper must contain a valid source (`has_value() == true`).
+
+        @see pull, consume
+    */
+    template<MutableBufferSequence MB>
+    io_task<std::size_t>
+    read_some(MB buffers);
+
     /** Read data into a mutable buffer sequence.
 
         Fills the provided buffer sequence by pulling data from the
         underlying source and copying it into the caller's buffers.
         This satisfies @ref ReadSource but incurs a copy; for zero-copy
         access, use @ref pull and @ref consume instead.
-
-        @note This operation copies data from the source's internal
-        buffers into the caller's buffers. For zero-copy reads,
-        use @ref pull and @ref consume directly.
 
         @param buffers The buffer sequence to fill.
 
@@ -245,7 +260,7 @@ public:
         @see pull, consume
     */
     template<MutableBufferSequence MB>
-    task<io_result<std::size_t>>
+    io_task<std::size_t>
     read(MB buffers);
 
 protected:
@@ -476,7 +491,26 @@ any_buffer_source::pull(std::span<const_buffer> dest)
 }
 
 template<MutableBufferSequence MB>
-task<io_result<std::size_t>>
+io_task<std::size_t>
+any_buffer_source::read_some(MB buffers)
+{
+    if(buffer_empty(buffers))
+        co_return {{}, 0};
+
+    const_buffer arr[detail::max_iovec_];
+    auto [ec, bufs] = co_await pull(arr);
+    if(ec)
+        co_return {ec, 0};
+    if(bufs.empty())
+        co_return {error::eof, 0};
+
+    auto n = buffer_copy(buffers, bufs);
+    consume(n);
+    co_return {{}, n};
+}
+
+template<MutableBufferSequence MB>
+io_task<std::size_t>
 any_buffer_source::read(MB buffers)
 {
     std::size_t total = 0;

@@ -36,9 +36,9 @@ namespace test {
     what was written. The associated @ref fuse enables error injection
     at controlled points.
 
-    Unlike @ref write_stream which provides partial writes via `write_some`,
-    this class satisfies the @ref WriteSink concept by providing complete
-    writes and EOF signaling.
+    This class satisfies the @ref WriteSink concept by providing partial
+    writes via `write_some` (inherited from @ref WriteStream), complete
+    writes via `write`, and EOF signaling via `write_eof`.
 
     @par Thread Safety
     Not thread-safe.
@@ -147,6 +147,63 @@ public:
         eof_called_ = false;
     }
 
+    /** Asynchronously write some data to the sink.
+
+        Transfers up to `buffer_size( buffers )` bytes from the provided
+        const buffer sequence to the internal buffer. Before every write,
+        the attached @ref fuse is consulted to possibly inject an error.
+
+        @param buffers The const buffer sequence containing data to write.
+
+        @return An awaitable yielding `(error_code,std::size_t)`.
+
+        @see fuse
+    */
+    template<ConstBufferSequence CB>
+    auto
+    write_some(CB buffers)
+    {
+        struct awaitable
+        {
+            write_sink* self_;
+            CB buffers_;
+
+            bool await_ready() const noexcept { return true; }
+
+            void await_suspend(
+                coro,
+                executor_ref,
+                std::stop_token) const noexcept
+            {
+            }
+
+            io_result<std::size_t>
+            await_resume()
+            {
+                auto ec = self_->f_.maybe_fail();
+                if(ec)
+                    return {ec, 0};
+
+                std::size_t n = buffer_size(buffers_);
+                n = (std::min)(n, self_->max_write_size_);
+                if(n == 0)
+                    return {{}, 0};
+
+                std::size_t const old_size = self_->data_.size();
+                self_->data_.resize(old_size + n);
+                buffer_copy(make_buffer(
+                    self_->data_.data() + old_size, n), buffers_, n);
+
+                ec = self_->consume_match_();
+                if(ec)
+                    return {ec, n};
+
+                return {{}, n};
+            }
+        };
+        return awaitable{this, buffers};
+    }
+
     /** Asynchronously write data to the sink.
 
         Transfers all bytes from the provided const buffer sequence to
@@ -225,17 +282,16 @@ public:
         return awaitable{this, buffers};
     }
 
-    /** Asynchronously write data to the sink with optional EOF.
+    /** Atomically write data and signal end-of-stream.
 
         Transfers all bytes from the provided const buffer sequence to
-        the internal buffer, optionally signaling end-of-stream. Before
-        every write, the attached @ref fuse is consulted to possibly
-        inject an error for testing fault scenarios. The returned
-        `std::size_t` is the number of bytes transferred.
+        the internal buffer and signals end-of-stream. Before the write,
+        the attached @ref fuse is consulted to possibly inject an error
+        for testing fault scenarios.
 
         @par Effects
-        On success, appends the written bytes to the internal buffer.
-        If `eof` is `true`, marks the sink as finalized.
+        On success, appends the written bytes to the internal buffer
+        and marks the sink as finalized.
         If an error is injected by the fuse, the internal buffer remains
         unchanged.
 
@@ -243,7 +299,6 @@ public:
         No-throw guarantee.
 
         @param buffers The const buffer sequence containing data to write.
-        @param eof If true, signals end-of-stream after writing.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
 
@@ -251,19 +306,15 @@ public:
     */
     template<ConstBufferSequence CB>
     auto
-    write(CB buffers, bool eof)
+    write_eof(CB buffers)
     {
         struct awaitable
         {
             write_sink* self_;
             CB buffers_;
-            bool eof_;
 
             bool await_ready() const noexcept { return true; }
 
-            // This method is required to satisfy Capy's IoAwaitable concept,
-            // but is never called because await_ready() returns true.
-            // See the comment on write(CB buffers) for a detailed explanation.
             void await_suspend(
                 coro,
                 executor_ref,
@@ -292,13 +343,12 @@ public:
                         return {ec, n};
                 }
 
-                if(eof_)
-                    self_->eof_called_ = true;
+                self_->eof_called_ = true;
 
                 return {{}, n};
             }
         };
-        return awaitable{this, buffers, eof};
+        return awaitable{this, buffers};
     }
 
     /** Signal end-of-stream.

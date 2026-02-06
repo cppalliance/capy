@@ -174,7 +174,7 @@ Custom awaitables can return `io_result`:
 
 [source,cpp]
 ----
-task<io_result<std::size_t>> read_all(stream& s, buffer& buf)
+io_task<std::size_t> read_all(stream& s, buffer& buf)
 {
     std::size_t total = 0;
     while (buf.size() < buf.max_size())
@@ -259,7 +259,7 @@ task<void> read_all(stream& s, dynamic_buffer& buf)
 
 [source,cpp]
 ----
-task<io_result<>> write_with_retry(stream& s, const_buffer data, int retries)
+io_task<> write_with_retry(stream& s, const_buffer data, int retries)
 {
     for (int i = 0; i < retries; ++i)
     {

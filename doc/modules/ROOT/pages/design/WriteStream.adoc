@@ -1,0 +1,355 @@
+= WriteStream Concept Design
+
+== Overview
+
+This document describes the design of the `WriteStream` concept: the
+fundamental partial-write primitive in the concept hierarchy. It explains
+why `write_some` is the correct building block, how algorithms expressed
+directly in terms of `write_some` can outperform composed complete-write
+algorithms like `write_now`, and when each approach is appropriate.
+
+== Definition
+
+[source,cpp]
+----
+template<typename T>
+concept WriteStream =
+    requires(T& stream, const_buffer_archetype buffers)
+    {
+        { stream.write_some(buffers) } -> IoAwaitable;
+        requires awaitable_decomposes_to<
+            decltype(stream.write_some(buffers)),
+            std::error_code, std::size_t>;
+    };
+----
+
+A `WriteStream` provides a single operation:
+
+=== `write_some(buffers)` -- Partial Write
+
+Writes one or more bytes from the buffer sequence. Returns
+`(error_code, std::size_t)` where `n` is the number of bytes written.
+
+==== Semantics
+
+- On success: `!ec`, `n >= 1` and `n \<= buffer_size(buffers)`.
+- On error: `ec`, `n == 0`.
+- If `buffer_empty(buffers)`: completes immediately, `!ec`, `n == 0`.
+
+The caller must not assume that all bytes are consumed. `write_some`
+may write fewer bytes than offered. This is the defining property of a
+partial-write primitive.
+
+==== Buffer Lifetime
+
+The caller must ensure that the memory referenced by `buffers` remains
+valid until the `co_await` expression returns.
+
+==== Conforming Signatures
+
+[source,cpp]
+----
+template<ConstBufferSequence Buffers>
+IoAwaitable auto write_some(Buffers buffers);
+----
+
+Buffer sequences should be accepted by value when the member function
+is a coroutine, to ensure the sequence lives in the coroutine frame
+across suspension points.
+
+== Concept Hierarchy
+
+`WriteStream` is the base of the write-side hierarchy:
+
+----
+WriteStream   { write_some }
+    |
+    v
+WriteSink     { write_some, write, write_eof(buffers), write_eof() }
+----
+
+Every `WriteSink` is a `WriteStream`. Algorithms constrained on
+`WriteStream` accept both raw streams and sinks. The `WriteSink`
+concept adds complete-write and EOF signaling on top of the partial-write
+primitive. See the WriteSink design document for details.
+
+== Composed Algorithms
+
+Two composed algorithms build complete-write behavior on top of
+`write_some`:
+
+=== `write` (free function)
+
+[source,cpp]
+----
+auto write(WriteStream auto& stream,
+           ConstBufferSequence auto const& buffers)
+    -> io_task<std::size_t>;
+----
+
+Loops `write_some` until the entire buffer sequence is consumed. Always
+suspends (returns `task`). No frame caching.
+
+=== `write_now` (class template)
+
+[source,cpp]
+----
+template<WriteStream Stream>
+class write_now
+{
+public:
+    explicit write_now(Stream& s) noexcept;
+
+    IoAwaitable auto operator()(ConstBufferSequence auto buffers);
+};
+----
+
+Loops `write_some` until the entire buffer sequence is consumed, with
+two advantages over the free function:
+
+1. **Eager completion**: if every `write_some` returns synchronously
+   (its `await_ready` returns `true`), the entire operation completes
+   in `await_ready` with zero coroutine suspensions.
+2. **Frame caching**: the internal coroutine frame is allocated once and
+   reused across calls.
+
+== Buffer Top-Up: Why `write_some` Can Outperform `write_now`
+
+The critical design insight behind `write_some` as a primitive is that
+the caller retains control after each partial write. This enables a
+pattern called _buffer top-up_: after a partial write consumes some data,
+the caller refills the buffer before the next write, keeping the buffer
+as full as possible. This maximizes the payload of each system call.
+
+A composed algorithm like `write_now` cannot do this. It receives a fixed
+buffer sequence and drains it to completion. When the kernel accepts only
+part of the data, `write_now` must send the remainder in a second call --
+even though the remainder may be small. The caller has no opportunity to
+read more data from the source between iterations.
+
+=== Diagram: Relaying 100KB from a ReadSource through a TCP Socket
+
+Consider relaying 100KB from a `ReadSource` to a TCP socket. The kernel's
+send buffer accepts at most 40KB per call. Compare two approaches:
+
+==== Approach A: `write_some` with Top-Up (3 syscalls)
+
+----
+          buffer contents          syscall        kernel accepts
+Step 1:   [======== 64KB ========] write_some --> 40KB, read 40KB from source
+Step 2:   [======== 64KB ========] write_some --> 40KB, read 20KB (source done)
+Step 3:   [===== 44KB =====]       write_some --> 44KB
+          done. 100KB in 3 syscalls, every call near-full.
+----
+
+==== Approach B: `write_now` Without Top-Up (4 syscalls)
+
+----
+          buffer contents          syscall        kernel accepts
+Step 1:   [======== 64KB ========] write_some --> 40KB  (write_now, read 64KB)
+Step 2:   [=== 24KB ===]           write_some --> 24KB  (write_now, small payload)
+Step 3:   [====== 36KB ======]     write_some --> 20KB  (write_now, read 36KB)
+Step 4:   [== 16KB ==]             write_some --> 16KB  (write_now, small payload)
+          done. 100KB in 4 syscalls, two calls undersized.
+----
+
+Every time `write_now` partially drains a buffer, the remainder is a
+small payload that wastes a syscall. With top-up, the caller refills
+the ring buffer between calls, keeping each syscall near capacity.
+
+=== Code: `write_some` with Buffer Top-Up
+
+This example reads from a `ReadSource` and writes to a `WriteStream`
+using a `circular_dynamic_buffer`. After each partial write frees space
+in the ring buffer, the caller reads more data from the source to refill
+it before calling `write_some` again.
+
+[source,cpp]
+----
+template<ReadSource Source, WriteStream Stream>
+task<> relay_with_topup(Source& src, Stream& dest)
+{
+    char storage[65536];
+    circular_dynamic_buffer cb(storage, sizeof(storage));
+
+    for(;;)
+    {
+        // Fill: read from source into free space
+        auto mb = cb.prepare(cb.capacity());
+        auto [rec, nr] = co_await src.read(mb);
+        cb.commit(nr);
+        if(rec && rec != cond::eof && nr == 0)
+            co_return;
+
+        // Drain: write_some from the ring buffer
+        while(cb.size() > 0)
+        {
+            auto [wec, nw] = co_await dest.write_some(
+                cb.data());
+            if(wec)
+                co_return;
+
+            // consume only what was written
+            cb.consume(nw);
+
+            // Top-up: refill freed space before next
+            // write_some, so the next call presents
+            // the largest possible payload
+            if(cb.capacity() > 0 && rec != cond::eof)
+            {
+                auto mb2 = cb.prepare(cb.capacity());
+                auto [rec2, nr2] = co_await src.read(mb2);
+                cb.commit(nr2);
+                rec = rec2;
+            }
+            // write_some now sees a full (or nearly full)
+            // ring buffer, maximizing the syscall payload
+        }
+
+        if(rec == cond::eof)
+            co_return;
+    }
+}
+----
+
+After `write_some` accepts 40KB of a 64KB buffer, `consume(40KB)` frees
+40KB. The caller immediately reads more data from the source into that
+freed space. The next `write_some` again presents a full 64KB payload.
+
+=== Code: `write_now` Without Top-Up
+
+This example reads from a `ReadSource` and writes to a `WriteStream`
+using `write_now`. Each chunk is drained to completion before the caller
+can read more from the source.
+
+[source,cpp]
+----
+template<ReadSource Source, WriteStream Stream>
+task<> relay_with_write_now(Source& src, Stream& dest)
+{
+    char buf[65536];
+    write_now wn(dest);
+
+    for(;;)
+    {
+        // Read a chunk from the source
+        auto [rec, nr] = co_await src.read(
+            mutable_buffer(buf, sizeof(buf)));
+        if(rec == cond::eof && nr == 0)
+            co_return;
+
+        // write_now drains the chunk to completion.
+        // If the kernel accepts 40KB of 64KB, write_now
+        // internally calls write_some(24KB) for the
+        // remainder -- a small write that wastes a
+        // syscall. The caller cannot top up between
+        // write_now's internal iterations.
+        auto [wec, nw] = co_await wn(
+            const_buffer(buf, nr));
+        if(wec)
+            co_return;
+
+        if(rec == cond::eof)
+            co_return;
+    }
+}
+----
+
+After the kernel accepts 40KB of a 64KB chunk, `write_now` must send
+the remaining 24KB in a second `write_some`. The caller cannot intervene
+to refill the buffer because `write_now` owns the loop. That 24KB write
+wastes an opportunity to send a full 64KB payload.
+
+== When to Use Each Approach
+
+[cols="1,2,2"]
+|===
+| Approach | Best For | Trade-off
+
+| `write_some` directly
+| High-throughput relays, producer-consumer loops where the
+  caller has more data available and can top up after partial writes.
+| Caller manages the loop and buffer refill.
+
+| `write_now`
+| Writing discrete complete payloads (a single HTTP header, a
+  serialized message) where there is no additional data to top up with,
+  or where the write is expected to complete in one call.
+| Cannot top up between iterations. Small remainders
+  waste syscall payloads.
+
+| `WriteSink::write`
+| Sink-oriented code where the concrete type implements complete-write
+  natively (buffered writer, file, compressor) and the caller does not
+  manage the loop.
+| Requires `WriteSink`, not just `WriteStream`.
+|===
+
+=== Rule of Thumb
+
+- If the caller reads from a source and relays to a raw byte stream
+  (TCP socket), use `write_some` with a `circular_dynamic_buffer`
+  for buffer top-up.
+- If the caller has a discrete, bounded payload and wants zero-fuss
+  complete-write semantics, use `write_now`.
+- If the destination is a `WriteSink`, use `write` directly.
+
+== Conforming Types
+
+Examples of types that satisfy `WriteStream`:
+
+- **TCP sockets**: `write_some` maps to a single `send()` or
+  `WSASend()` call. Partial writes are normal under load.
+- **TLS streams**: `write_some` encrypts and sends one TLS record.
+- **Buffered write streams**: `write_some` appends to an internal
+  buffer and returns immediately when space is available, or drains
+  to the underlying stream when full.
+- **QUIC streams**: `write_some` sends one or more QUIC frames.
+- **Test mock streams**: `write_some` records data and returns
+  configurable results for testing.
+
+All of these types also naturally extend to `WriteSink` by adding
+`write`, `write_eof(buffers)`, and `write_eof()`.
+
+== Relationship to `ReadStream`
+
+The read-side counterpart is `ReadStream`, which requires `read_some`.
+The same partial-transfer / composed-algorithm decomposition applies:
+
+[cols="1,1"]
+|===
+| Write Side | Read Side
+
+| `WriteStream::write_some`
+| `ReadStream::read_some`
+
+| `write_now` (composed)
+| `read` free function (composed)
+
+| `WriteSink::write`
+| `ReadSource::read`
+|===
+
+The asymmetry is that the read side does not have a `read_now` with
+eager completion, because reads depend on data arriving from the
+network -- the synchronous fast path is less reliably useful than
+for writes into a buffered stream.
+
+== Summary
+
+`WriteStream` provides `write_some` as the single partial-write
+primitive. This is deliberately minimal:
+
+- Algorithms that need complete-write semantics use `write_now` (for
+  `WriteStream`) or `write` (for `WriteSink`).
+- Algorithms that need maximum throughput use `write_some` directly
+  with buffer top-up, achieving fewer syscalls than composed algorithms
+  by keeping the buffer full between iterations.
+- The concept is the base of the hierarchy. `WriteSink` refines it by
+  adding `write`, `write_eof(buffers)`, and `write_eof()`.
+
+The choice between `write_some`, `write_now`, and `WriteSink::write`
+is a throughput-versus-convenience trade-off. `write_some` gives the
+caller maximum control. `write_now` gives the caller maximum simplicity.
+`WriteSink::write` gives the concrete type maximum implementation
+freedom.

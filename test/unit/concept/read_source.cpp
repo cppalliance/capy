@@ -112,9 +112,16 @@ struct mock_source_awaitable_not_io
 // Mock source types
 //----------------------------------------------------------
 
-// Valid ReadSource with templated read (pair)
+// Valid ReadSource with both read_some and read (pair)
 struct valid_read_source_pair
 {
+    template<MutableBufferSequence MB>
+    mock_source_awaitable_pair
+    read_some(MB const&)
+    {
+        return {};
+    }
+
     template<MutableBufferSequence MB>
     mock_source_awaitable_pair
     read(MB const&)
@@ -123,9 +130,16 @@ struct valid_read_source_pair
     }
 };
 
-// Valid ReadSource with templated read (tuple)
+// Valid ReadSource with both read_some and read (tuple)
 struct valid_read_source_tuple
 {
+    template<MutableBufferSequence MB>
+    mock_source_awaitable_tuple
+    read_some(MB const&)
+    {
+        return {};
+    }
+
     template<MutableBufferSequence MB>
     mock_source_awaitable_tuple
     read(MB const&)
@@ -138,7 +152,35 @@ struct valid_read_source_tuple
 struct valid_read_source_not_templated
 {
     mock_source_awaitable_pair
+    read_some(mutable_buffer const&)
+    {
+        return {};
+    }
+
+    mock_source_awaitable_pair
     read(mutable_buffer const&)
+    {
+        return {};
+    }
+};
+
+// Invalid: has read but no read_some (does not satisfy ReadStream)
+struct invalid_read_source_no_read_some
+{
+    template<MutableBufferSequence MB>
+    mock_source_awaitable_pair
+    read(MB const&)
+    {
+        return {};
+    }
+};
+
+// Invalid: has read_some but no read
+struct invalid_read_source_no_read
+{
+    template<MutableBufferSequence MB>
+    mock_source_awaitable_pair
+    read_some(MB const&)
     {
         return {};
     }
@@ -148,6 +190,13 @@ struct valid_read_source_not_templated
 struct invalid_read_source_wrong_type
 {
     template<MutableBufferSequence MB>
+    mock_source_awaitable_pair
+    read_some(MB const&)
+    {
+        return {};
+    }
+
+    template<MutableBufferSequence MB>
     mock_source_awaitable_wrong_type
     read(MB const&)
     {
@@ -155,14 +204,21 @@ struct invalid_read_source_wrong_type
     }
 };
 
-// Invalid: missing read
-struct invalid_read_source_no_read
+// Invalid: missing both read_some and read
+struct invalid_read_source_empty
 {
 };
 
 // Invalid: read is not IoAwaitable
 struct invalid_read_source_not_io
 {
+    template<MutableBufferSequence MB>
+    mock_source_awaitable_pair
+    read_some(MB const&)
+    {
+        return {};
+    }
+
     template<MutableBufferSequence MB>
     mock_source_awaitable_not_io
     read(MB const&)
@@ -174,6 +230,13 @@ struct invalid_read_source_not_io
 // Invalid: read returns non-awaitable
 struct invalid_read_source_returns_int
 {
+    template<MutableBufferSequence MB>
+    mock_source_awaitable_pair
+    read_some(MB const&)
+    {
+        return {};
+    }
+
     template<MutableBufferSequence MB>
     int read(MB const&) { return 0; }
 };
@@ -189,11 +252,17 @@ static_assert(ReadSource<valid_read_source_pair>);
 static_assert(ReadSource<valid_read_source_tuple>);
 static_assert(ReadSource<valid_read_source_not_templated>);
 
+// Has read but no read_some: does not satisfy ReadSource
+static_assert(!ReadSource<invalid_read_source_no_read_some>);
+
+// Has read_some but no read: does not satisfy ReadSource
+static_assert(!ReadSource<invalid_read_source_no_read>);
+
 // Wrong return type does not satisfy ReadSource
 static_assert(!ReadSource<invalid_read_source_wrong_type>);
 
-// Missing read does not satisfy ReadSource
-static_assert(!ReadSource<invalid_read_source_no_read>);
+// Missing everything does not satisfy ReadSource
+static_assert(!ReadSource<invalid_read_source_empty>);
 
 // Non-IoAwaitable does not satisfy ReadSource
 static_assert(!ReadSource<invalid_read_source_not_io>);

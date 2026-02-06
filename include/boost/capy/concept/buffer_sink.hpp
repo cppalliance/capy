@@ -95,7 +95,7 @@ namespace capy {
 
     @code
     template<BufferSource Source, BufferSink Sink>
-    task<io_result<std::size_t>> transfer( Source& source, Sink& sink )
+    io_task<std::size_t> transfer( Source& source, Sink& sink )
     {
         const_buffer src_arr[16];
         mutable_buffer dst_arr[16];

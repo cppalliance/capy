@@ -16,8 +16,7 @@
 #include <boost/capy/concept/buffer_sink.hpp>
 #include <boost/capy/concept/read_source.hpp>
 #include <boost/capy/concept/read_stream.hpp>
-#include <boost/capy/io_result.hpp>
-#include <boost/capy/task.hpp>
+#include <boost/capy/io_task.hpp>
 
 #include <cstddef>
 #include <span>
@@ -61,7 +60,7 @@ namespace capy {
     @see ReadSource, BufferSink, push_to
 */
 template<ReadSource Src, BufferSink Sink>
-task<io_result<std::size_t>>
+io_task<std::size_t>
 pull_from(Src& source, Sink& sink)
 {
     mutable_buffer dst_arr[detail::max_iovec_];
@@ -142,7 +141,7 @@ pull_from(Src& source, Sink& sink)
     @see ReadStream, BufferSink, push_to
 */
 template<ReadStream Src, BufferSink Sink>
-task<io_result<std::size_t>>
+io_task<std::size_t>
 pull_from(Src& source, Sink& sink)
 {
     mutable_buffer dst_arr[detail::max_iovec_];

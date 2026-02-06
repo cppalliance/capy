@@ -70,7 +70,7 @@ auto [ec, n] = co_await source.read(buffer);
 // n == buffer_size(buffer), or ec indicates why not
 
 // WriteSink: writes all data, with explicit EOF
-co_await sink.write(buffers, true);  // true = EOF after this
+co_await sink.write_eof(buffers);  // atomic write + EOF signal
 ----
 
 These are higher-level abstractions built on streams.
@@ -167,11 +167,11 @@ task<> echo(any_stream& stream)
     for (;;)
     {
         auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
-        if (ec.failed())
+        if (ec)
             co_return;
         
         auto [wec, wn] = co_await write(stream, const_buffer(buf, n));
-        if (wec.failed())
+        if (wec)
             co_return;
     }
 }

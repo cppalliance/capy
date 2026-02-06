@@ -14,6 +14,7 @@
 #include <boost/capy/concept/buffer_archetype.hpp>
 #include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/write_stream.hpp>
 #include <system_error>
 
 #include <concepts>
@@ -22,57 +23,58 @@
 namespace boost {
 namespace capy {
 
-/** Concept for types that provide awaitable write operations to a sink.
+/** Concept for types providing complete writes with EOF signaling.
 
-    A type satisfies `WriteSink` if it provides `write` and `write_eof`
-    member functions that are @ref IoAwaitable and whose return values
-    decompose to `(error_code)` or `(error_code,std::size_t)`.
+    A type satisfies `WriteSink` if it satisfies @ref WriteStream
+    and additionally provides `write`, `write_eof(buffers)`, and
+    `write_eof()` member functions that are @ref IoAwaitable.
 
-    Use this concept when you need to consume data asynchronously, such
-    as writing HTTP response bodies, streaming file contents, or piping
-    data through transformations like compression.
+    `WriteSink` refines `WriteStream`. Every `WriteSink` is a
+    `WriteStream`. Algorithms constrained on `WriteStream` accept
+    both raw streams and sinks.
 
     @tparam T The sink type.
 
     @par Syntactic Requirements
 
+    @li `T` must satisfy @ref WriteStream (provides `write_some`)
     @li `T` must provide a `write` member function template accepting
         any @ref ConstBufferSequence, returning an awaitable that
         decomposes to `(error_code,std::size_t)`
-    @li `T` must provide a `write` member function template accepting
-        any @ref ConstBufferSequence and a `bool eof` parameter,
-        returning an awaitable that decomposes to `(error_code,std::size_t)`
-    @li `T` must provide a `write_eof` member function taking no arguments,
-        returning an awaitable that decomposes to `(error_code)`
+    @li `T` must provide a `write_eof` member function template
+        accepting any @ref ConstBufferSequence, returning an awaitable
+        that decomposes to `(error_code,std::size_t)`
+    @li `T` must provide a `write_eof` member function taking no
+        arguments, returning an awaitable that decomposes to
+        `(error_code)`
     @li All return types must satisfy @ref IoAwaitable
 
     @par Semantic Requirements
 
-    The `write` operation consumes data from the buffer sequence:
+    The inherited `write_some` operation writes one or more bytes
+    (partial write). See @ref WriteStream.
 
-    @li On success: `ec` is `false`, and all bytes from the buffer
-        sequence have been consumed.
-    @li On error: `ec` is `true`.
+    The `write` operation consumes the entire buffer sequence:
 
-    The `write` operation with `eof` combines data writing with end-of-stream
-    signaling:
+    @li On success: `!ec`, and `n` equals `buffer_size( buffers )`.
+    @li On error: `ec`, and `n` indicates the number of bytes
+        written before the error.
 
-    @li If `eof` is `false`, behaves identically to `write(buffers)`.
-    @li If `eof` is `true`, writes the data and then finalizes the sink
-        as if `write_eof()` were called.
-    @li On success: `ec` is `false`, and `n` indicates the number
-        of bytes written from the caller's buffer.
-    @li On error: `ec` is `true`, and `n` indicates the number of
-        bytes written from the caller's buffer before the error occurred.
+    The `write_eof(buffers)` operation writes the entire buffer
+    sequence and signals end-of-stream atomically:
 
-    The `write_eof` operation signals that no more data will be written:
+    @li On success: `!ec`, `n` equals `buffer_size( buffers )`,
+        and the sink is finalized.
+    @li On error: `ec`, and `n` indicates the number of bytes
+        written before the error.
 
-    @li On success: `ec` is `false`, and the sink is finalized.
-    @li On error: `ec` is `true`.
+    The `write_eof()` operation signals end-of-stream with no data:
 
-    After `write_eof` returns successfully, or after `write(buffers, true)`
-    returns successfully, no further calls to `write` or `write_eof` are
-    permitted.
+    @li On success: `!ec`, and the sink is finalized.
+    @li On error: `ec`.
+
+    After `write_eof` (either overload) returns successfully, no
+    further writes or EOF signals are permitted.
 
     @par Buffer Lifetime
 
@@ -83,10 +85,13 @@ namespace capy {
 
     @code
     template< ConstBufferSequence Buffers >
+    IoAwaitable auto write_some( Buffers buffers );  // inherited
+
+    template< ConstBufferSequence Buffers >
     IoAwaitable auto write( Buffers buffers );
 
     template< ConstBufferSequence Buffers >
-    IoAwaitable auto write( Buffers buffers, bool eof );
+    IoAwaitable auto write_eof( Buffers buffers );
 
     IoAwaitable auto write_eof();
     @endcode
@@ -105,33 +110,38 @@ namespace capy {
     template< WriteSink Sink >
     task<> send_body( Sink& sink, std::string_view data )
     {
-        auto [ec, n] = co_await sink.write( make_buffer( data ) );
+        // Atomic: write all data and signal EOF
+        auto [ec, n] = co_await sink.write_eof(
+            make_buffer( data ) );
+    }
+
+    // Or separately:
+    template< WriteSink Sink >
+    task<> send_body2( Sink& sink, std::string_view data )
+    {
+        auto [ec, n] = co_await sink.write(
+            make_buffer( data ) );
         if( ec )
             co_return;
         auto [ec2] = co_await sink.write_eof();
     }
-
-    // Or equivalently using the combined overload:
-    template< WriteSink Sink >
-    task<> send_body2( Sink& sink, std::string_view data )
-    {
-        auto [ec, n] = co_await sink.write( make_buffer( data ), true );
-    }
     @endcode
 
-    @see IoAwaitable, ConstBufferSequence, awaitable_decomposes_to
+    @see WriteStream, IoAwaitable, ConstBufferSequence,
+        awaitable_decomposes_to
 */
 template<typename T>
 concept WriteSink =
-    requires(T& sink, const_buffer_archetype buffers, bool eof)
+    WriteStream<T> &&
+    requires(T& sink, const_buffer_archetype buffers)
     {
         { sink.write(buffers) } -> IoAwaitable;
         requires awaitable_decomposes_to<
             decltype(sink.write(buffers)),
             std::error_code, std::size_t>;
-        { sink.write(buffers, eof) } -> IoAwaitable;
+        { sink.write_eof(buffers) } -> IoAwaitable;
         requires awaitable_decomposes_to<
-            decltype(sink.write(buffers, eof)),
+            decltype(sink.write_eof(buffers)),
             std::error_code, std::size_t>;
         { sink.write_eof() } -> IoAwaitable;
         requires awaitable_decomposes_to<

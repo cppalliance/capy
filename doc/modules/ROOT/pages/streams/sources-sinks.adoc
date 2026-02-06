@@ -15,6 +15,7 @@ A `ReadSource` provides complete read operations that fill buffers entirely or s
 ----
 template<typename T>
 concept ReadSource =
+    ReadStream<T> &&
     requires(T& source, mutable_buffer_archetype buffers) {
         { source.read(buffers) } -> IoAwaitable;
     };
@@ -24,15 +25,15 @@ concept ReadSource =
 
 [source,cpp]
 ----
-template<MutableBufferSequence MB>
-IoAwaitable auto read(MB const& buffers);
+template<MutableBufferSequence Buffers>
+IoAwaitable auto read(Buffers buffers);
 ----
 
 Returns an awaitable yielding `(error_code, std::size_t)`:
 
-* On success: `!ec.failed()`, and `n == buffer_size(buffers)` (buffer completely filled)
+* On success: `!ec`, and `n == buffer_size(buffers)` (buffer completely filled)
 * On EOF: `ec == cond::eof`, and `n` is bytes read before EOF (partial read)
-* On error: `ec.failed()`, and `n` is bytes read before error
+* On error: `ec`, and `n` is bytes read before error
 
 The key difference from `ReadStream`: a successful read fills the buffer completely.
 
@@ -57,14 +58,14 @@ task<std::optional<message>> read_message(Source& source)
     if (ec == cond::eof && n == 0)
         co_return std::nullopt;  // Clean EOF
     
-    if (ec.failed())
+    if (ec)
         throw std::system_error(ec);
     
     // Read variable-size body
     std::vector<char> body(header.body_size);
     auto [ec2, n2] = co_await source.read(make_buffer(body));
     
-    if (ec2.failed())
+    if (ec2)
         throw std::system_error(ec2);
     
     co_return message{header, std::move(body)};
@@ -79,9 +80,10 @@ A `WriteSink` provides complete write operations with explicit EOF signaling:
 ----
 template<typename T>
 concept WriteSink =
+    WriteStream<T> &&
     requires(T& sink, const_buffer_archetype buffers) {
         { sink.write(buffers) } -> IoAwaitable;
-        { sink.write(buffers, bool{}) } -> IoAwaitable;
+        { sink.write_eof(buffers) } -> IoAwaitable;
         { sink.write_eof() } -> IoAwaitable;
     };
 ----
@@ -90,21 +92,25 @@ concept WriteSink =
 
 [source,cpp]
 ----
-// Write data
-template<ConstBufferSequence CB>
-IoAwaitable auto write(CB const& buffers);
+// Partial write (inherited from WriteStream)
+template<ConstBufferSequence Buffers>
+IoAwaitable auto write_some(Buffers buffers);
 
-// Write data with optional EOF
-template<ConstBufferSequence CB>
-IoAwaitable auto write(CB const& buffers, bool eof);
+// Complete write
+template<ConstBufferSequence Buffers>
+IoAwaitable auto write(Buffers buffers);
+
+// Atomic final write + EOF signal
+template<ConstBufferSequence Buffers>
+IoAwaitable auto write_eof(Buffers buffers);
 
 // Signal EOF without data
 IoAwaitable auto write_eof();
 ----
 
-The `eof` parameter signals end-of-stream after the data is written.
+`write` consumes the entire buffer sequence before returning. `write_eof(buffers)` atomically writes the buffer sequence and signals end-of-stream in a single operation, enabling protocol-level optimizations (e.g., HTTP chunked encoding terminal, compression trailers).
 
-After calling `write_eof()` or `write(buffers, true)`, no further writes are permitted.
+After calling `write_eof(buffers)` or `write_eof()`, no further writes are permitted.
 
 === Use Cases
 
@@ -121,10 +127,14 @@ task<> send_response(Sink& sink, response const& resp)
 {
     // Write headers
     auto headers = format_headers(resp);
-    co_await sink.write(make_buffer(headers));
+    auto [ec, n] = co_await sink.write(make_buffer(headers));
+    if (ec)
+        co_return;
     
-    // Write body with EOF
-    co_await sink.write(make_buffer(resp.body), true);  // EOF after body
+    // Write body and signal EOF atomically
+    auto [ec2, n2] = co_await sink.write_eof(make_buffer(resp.body));
+    if (ec2)
+        co_return;
 }
 ----
 
@@ -165,7 +175,7 @@ task<> send_body(any_write_sink& body, std::string_view data)
     // - Compressed stream
     // - Test mock
     
-    co_await body.write(make_buffer(data), true);
+    co_await body.write_eof(make_buffer(data));
 }
 ----
 
@@ -198,7 +208,7 @@ Same `send_body` function, different transfer encodings—the library handles th
 
 | EOF handling
 | Implicit (read returns 0)
-| Explicit (`write_eof()`, EOF flag)
+| Explicit (`write_eof()`, `write_eof(buffers)`)
 
 | Use case
 | Raw I/O, incremental processing
