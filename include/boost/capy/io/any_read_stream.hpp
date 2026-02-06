@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/buffer_param.hpp>
+#include <boost/capy/buffers/buffer_array.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/coro.hpp>
@@ -51,6 +51,11 @@ namespace capy {
     so memory usage can be measured up front, rather than
     allocating piecemeal as traffic arrives.
 
+    @par Immediate Completion
+    When the underlying stream's awaitable reports ready immediately
+    (e.g. buffered data already available), the wrapper skips
+    coroutine suspension entirely and returns the result inline.
+
     @par Thread Safety
     Not thread-safe. Concurrent operations on the same wrapper
     are undefined behavior.
@@ -65,7 +70,7 @@ namespace capy {
     any_read_stream stream(&sock);
 
     mutable_buffer buf(data, size);
-    auto [ec, n] = co_await stream.read_some(std::span(&buf, 1));
+    auto [ec, n] = co_await stream.read_some(buf);
     @endcode
 
     @see any_write_stream, any_stream, ReadStream
@@ -73,16 +78,16 @@ namespace capy {
 class any_read_stream
 {
     struct vtable;
-    struct awaitable_ops;
 
     template<ReadStream S>
     struct vtable_for_impl;
 
+    // ordered for cache line coherence
     void* stream_ = nullptr;
     vtable const* vt_ = nullptr;
     void* cached_awaitable_ = nullptr;
     void* storage_ = nullptr;
-    awaitable_ops const* active_ops_ = nullptr;
+    bool awaitable_active_ = false;
 
 public:
     /** Destructor.
@@ -119,7 +124,7 @@ public:
         , vt_(std::exchange(other.vt_, nullptr))
         , cached_awaitable_(std::exchange(other.cached_awaitable_, nullptr))
         , storage_(std::exchange(other.storage_, nullptr))
-        , active_ops_(std::exchange(other.active_ops_, nullptr))
+        , awaitable_active_(std::exchange(other.awaitable_active_, false))
     {
     }
 
@@ -189,8 +194,19 @@ public:
 
         @return An awaitable yielding `(error_code,std::size_t)`.
 
+        @par Immediate Completion
+        The operation completes immediately without suspending
+        the calling coroutine when the underlying stream's
+        awaitable reports immediate readiness via `await_ready`.
+
+        @note This is a partial operation and may not process the
+        entire buffer sequence. Use the composed @ref read algorithm
+        for guaranteed complete transfer.
+
         @par Preconditions
         The wrapper must contain a valid stream (`has_value() == true`).
+        The caller must not call this function again after a prior
+        call returned an error (including EOF).
     */
     template<MutableBufferSequence MB>
     auto
@@ -221,23 +237,20 @@ protected:
 
 //----------------------------------------------------------
 
-struct any_read_stream::awaitable_ops
-{
-    bool (*await_ready)(void*);
-    coro (*await_suspend)(void*, coro, executor_ref, std::stop_token);
-    io_result<std::size_t> (*await_resume)(void*);
-    void (*destroy)(void*) noexcept;
-};
-
 struct any_read_stream::vtable
 {
-    void (*destroy)(void*) noexcept;
-    std::size_t awaitable_size;
-    std::size_t awaitable_align;
-    awaitable_ops const* (*construct_awaitable)(
+    // ordered by call frequency for cache line coherence
+    void (*construct_awaitable)(
         void* stream,
         void* storage,
         std::span<mutable_buffer const> buffers);
+    bool (*await_ready)(void*);
+    coro (*await_suspend)(void*, coro, executor_ref, std::stop_token);
+    io_result<std::size_t> (*await_resume)(void*);
+    void (*destroy_awaitable)(void*) noexcept;
+    std::size_t awaitable_size;
+    std::size_t awaitable_align;
+    void (*destroy)(void*) noexcept;
 };
 
 template<ReadStream S>
@@ -252,7 +265,7 @@ struct any_read_stream::vtable_for_impl
         static_cast<S*>(stream)->~S();
     }
 
-    static awaitable_ops const*
+    static void
     construct_awaitable_impl(
         void* stream,
         void* storage,
@@ -260,30 +273,26 @@ struct any_read_stream::vtable_for_impl
     {
         auto& s = *static_cast<S*>(stream);
         ::new(storage) Awaitable(s.read_some(buffers));
-
-        static constexpr awaitable_ops ops = {
-            +[](void* p) {
-                return static_cast<Awaitable*>(p)->await_ready();
-            },
-            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
-                return detail::call_await_suspend(
-                    static_cast<Awaitable*>(p), h, ex, token);
-            },
-            +[](void* p) {
-                return static_cast<Awaitable*>(p)->await_resume();
-            },
-            +[](void* p) noexcept {
-                static_cast<Awaitable*>(p)->~Awaitable();
-            }
-        };
-        return &ops;
     }
 
     static constexpr vtable value = {
-        &do_destroy_impl,
+        &construct_awaitable_impl,
+        +[](void* p) {
+            return static_cast<Awaitable*>(p)->await_ready();
+        },
+        +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+            return detail::call_await_suspend(
+                static_cast<Awaitable*>(p), h, ex, token);
+        },
+        +[](void* p) {
+            return static_cast<Awaitable*>(p)->await_resume();
+        },
+        +[](void* p) noexcept {
+            static_cast<Awaitable*>(p)->~Awaitable();
+        },
         sizeof(Awaitable),
         alignof(Awaitable),
-        &construct_awaitable_impl
+        &do_destroy_impl
     };
 };
 
@@ -299,8 +308,8 @@ any_read_stream::~any_read_stream()
     }
     if(cached_awaitable_)
     {
-        if(active_ops_)
-            active_ops_->destroy(cached_awaitable_);
+        if(awaitable_active_)
+            vt_->destroy_awaitable(cached_awaitable_);
         ::operator delete(cached_awaitable_);
     }
 }
@@ -317,15 +326,15 @@ any_read_stream::operator=(any_read_stream&& other) noexcept
         }
         if(cached_awaitable_)
         {
-            if(active_ops_)
-                active_ops_->destroy(cached_awaitable_);
+            if(awaitable_active_)
+                vt_->destroy_awaitable(cached_awaitable_);
             ::operator delete(cached_awaitable_);
         }
         stream_ = std::exchange(other.stream_, nullptr);
         vt_ = std::exchange(other.vt_, nullptr);
         cached_awaitable_ = std::exchange(other.cached_awaitable_, nullptr);
         storage_ = std::exchange(other.storage_, nullptr);
-        active_ops_ = std::exchange(other.active_ops_, nullptr);
+        awaitable_active_ = std::exchange(other.awaitable_active_, false);
     }
     return *this;
 }
@@ -372,32 +381,30 @@ template<MutableBufferSequence MB>
 auto
 any_read_stream::read_some(MB buffers)
 {
+    // VFALCO in theory, we could use if constexpr to detect a
+    // span and then pass that through to read_some without the array
     struct awaitable
     {
         any_read_stream* self_;
-        buffer_param<MB> bp_;
+        mutable_buffer_array<detail::max_iovec_> ba_;
 
         bool
-        await_ready() const noexcept
+        await_ready()
         {
-            return false;
+            self_->vt_->construct_awaitable(
+                self_->stream_,
+                self_->cached_awaitable_,
+                ba_.to_span());
+            self_->awaitable_active_ = true;
+
+            return self_->vt_->await_ready(
+                self_->cached_awaitable_);
         }
 
         coro
         await_suspend(coro h, executor_ref ex, std::stop_token token)
         {
-            // Construct the underlying awaitable into cached storage
-            self_->active_ops_ = self_->vt_->construct_awaitable(
-                self_->stream_,
-                self_->cached_awaitable_,
-                bp_.data());
-
-            // Check if underlying is immediately ready
-            if(self_->active_ops_->await_ready(self_->cached_awaitable_))
-                return h;
-
-            // Forward to underlying awaitable
-            return self_->active_ops_->await_suspend(
+            return self_->vt_->await_suspend(
                 self_->cached_awaitable_, h, ex, token);
         }
 
@@ -407,15 +414,16 @@ any_read_stream::read_some(MB buffers)
             struct guard {
                 any_read_stream* self;
                 ~guard() {
-                    self->active_ops_->destroy(self->cached_awaitable_);
-                    self->active_ops_ = nullptr;
+                    self->vt_->destroy_awaitable(self->cached_awaitable_);
+                    self->awaitable_active_ = false;
                 }
             } g{self_};
-            return self_->active_ops_->await_resume(
+            return self_->vt_->await_resume(
                 self_->cached_awaitable_);
         }
     };
-    return awaitable{this, buffer_param<MB>(buffers)};
+    return awaitable{this,
+        mutable_buffer_array<detail::max_iovec_>(buffers)};
 }
 
 } // namespace capy

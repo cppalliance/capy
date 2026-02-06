@@ -32,11 +32,13 @@ namespace test {
 /** A mock stream for testing write operations.
 
     Use this to verify code that performs writes without needing
-    real I/O. Call @ref write_some to write data, then @ref str
-    or @ref data to retrieve what was written. The associated
-    @ref fuse enables error injection at controlled points. An
-    optional `max_write_size` constructor parameter limits bytes
-    per write to simulate chunked delivery.
+    real I/O. Call @ref write_some to write data, then @ref data
+    to retrieve what was written. The associated @ref fuse enables
+    error injection at controlled points. An optional
+    `max_write_size` constructor parameter limits bytes per write
+    to simulate chunked delivery.
+
+    This class satisfies the @ref WriteStream concept.
 
     @par Thread Safety
     Not thread-safe.
@@ -51,11 +53,11 @@ namespace test {
             const_buffer( "Hello", 5 ) );
         if( ec )
             co_return;
-        // ws.str() returns "Hello"
+        // ws.data() returns "Hello"
     } );
     @endcode
 
-    @see fuse
+    @see fuse, WriteStream
 */
 class write_stream
 {
@@ -179,14 +181,15 @@ public:
             io_result<std::size_t>
             await_resume()
             {
+                if(buffer_empty(buffers_))
+                    return {{}, 0};
+
                 auto ec = self_->f_.maybe_fail();
                 if(ec)
                     return {ec, 0};
 
                 std::size_t n = buffer_size(buffers_);
                 n = (std::min)(n, self_->max_write_size_);
-                if(n == 0)
-                    return {{}, 0};
 
                 std::size_t const old_size = self_->data_.size();
                 self_->data_.resize(old_size + n);
@@ -195,7 +198,10 @@ public:
 
                 ec = self_->consume_match_();
                 if(ec)
-                    return {ec, n};
+                {
+                    self_->data_.resize(old_size);
+                    return {ec, 0};
+                }
 
                 return {{}, n};
             }

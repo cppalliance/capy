@@ -200,26 +200,26 @@ public:
         return awaitable{this, n};
     }
 
-    /** Commit bytes written with optional end-of-stream.
+    /** Commit final bytes and signal end-of-stream.
 
         Transfers `n` bytes from the prepared buffer to the internal
-        data buffer. If `eof` is true, marks the sink as finalized.
+        data buffer and marks the sink as finalized. Before committing,
+        the attached @ref fuse is consulted to possibly inject an error
+        for testing fault scenarios.
 
         @param n The number of bytes to commit.
-        @param eof If true, signals end-of-stream after committing.
 
         @return An awaitable yielding `(error_code)`.
 
         @see fuse
     */
     auto
-    commit(std::size_t n, bool eof)
+    commit_eof(std::size_t n)
     {
         struct awaitable
         {
             buffer_sink* self_;
             std::size_t n_;
-            bool eof_;
 
             bool await_ready() const noexcept { return true; }
 
@@ -244,56 +244,11 @@ public:
                 self_->data_.append(self_->prepare_buf_.data(), to_commit);
                 self_->prepare_size_ = 0;
 
-                if(eof_)
-                    self_->eof_called_ = true;
-
-                return {};
-            }
-        };
-        return awaitable{this, n, eof};
-    }
-
-    /** Signal end-of-stream.
-
-        Marks the sink as finalized, indicating no more data will be
-        written. Before signaling, the attached @ref fuse is consulted
-        to possibly inject an error for testing fault scenarios.
-
-        @return An awaitable yielding `(error_code)`.
-
-        @see fuse
-    */
-    auto
-    commit_eof()
-    {
-        struct awaitable
-        {
-            buffer_sink* self_;
-
-            bool await_ready() const noexcept { return true; }
-
-            // This method is required to satisfy Capy's IoAwaitable concept,
-            // but is never called because await_ready() returns true.
-            // See the comment on commit(std::size_t) for a detailed explanation.
-            void await_suspend(
-                coro,
-                executor_ref,
-                std::stop_token) const noexcept
-            {
-            }
-
-            io_result<>
-            await_resume()
-            {
-                auto ec = self_->f_.maybe_fail();
-                if(ec)
-                    return {ec};
-
                 self_->eof_called_ = true;
                 return {};
             }
         };
-        return awaitable{this};
+        return awaitable{this, n};
     }
 };
 

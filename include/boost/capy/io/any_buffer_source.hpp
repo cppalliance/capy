@@ -14,6 +14,7 @@
 #include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_copy.hpp>
+#include <boost/capy/buffers/buffer_param.hpp>
 #include <boost/capy/buffers/slice.hpp>
 #include <boost/capy/concept/buffer_source.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
@@ -41,21 +42,30 @@ namespace capy {
 
     This class provides type erasure for any type satisfying the
     @ref BufferSource concept, enabling runtime polymorphism for
-    buffer pull operations. The wrapper also satisfies @ref ReadSource,
-    allowing it to be used with code expecting either interface.
-    It uses cached awaitable storage to achieve zero steady-state
-    allocation after construction.
+    buffer pull operations. It uses cached awaitable storage to achieve
+    zero steady-state allocation after construction.
 
-    The wrapper also satisfies @ref ReadSource through the templated
-    @ref read method. This method copies data from the source's
-    internal buffers into the caller's buffers, incurring one extra
-    buffer copy compared to using @ref pull and @ref consume directly.
+    The wrapper also satisfies @ref ReadSource. When the wrapped type
+    satisfies only @ref BufferSource, the read operations are
+    synthesized using @ref pull and @ref consume with an extra
+    buffer copy. When the wrapped type satisfies both @ref BufferSource
+    and @ref ReadSource, the native read operations are forwarded
+    directly across the virtual boundary, avoiding the copy.
 
     The wrapper supports two construction modes:
     - **Owning**: Pass by value to transfer ownership. The wrapper
       allocates storage and owns the source.
     - **Reference**: Pass a pointer to wrap without ownership. The
       pointed-to source must outlive this wrapper.
+
+    Within each mode, the vtable is populated at compile time based
+    on whether the wrapped type also satisfies @ref ReadSource:
+    - **BufferSource only**: @ref read_some and @ref read are
+      synthesized from @ref pull and @ref consume, incurring one
+      buffer copy per operation.
+    - **BufferSource + ReadSource**: All read operations are
+      forwarded natively through the type-erased boundary with
+      no extra copy.
 
     @par Awaitable Preallocation
     The constructor preallocates storage for the type-erased awaitable.
@@ -78,6 +88,10 @@ namespace capy {
 
     const_buffer arr[16];
     auto [ec, bufs] = co_await abs.pull(arr);
+
+    // ReadSource interface also available
+    char buf[64];
+    auto [ec2, n] = co_await abs.read_some(mutable_buffer(buf, 64));
     @endcode
 
     @see any_buffer_sink, BufferSource, ReadSource
@@ -86,15 +100,18 @@ class any_buffer_source
 {
     struct vtable;
     struct awaitable_ops;
+    struct read_awaitable_ops;
 
     template<BufferSource S>
     struct vtable_for_impl;
 
+    // hot-path members first for cache locality
     void* source_ = nullptr;
     vtable const* vt_ = nullptr;
     void* cached_awaitable_ = nullptr;
-    void* storage_ = nullptr;
     awaitable_ops const* active_ops_ = nullptr;
+    read_awaitable_ops const* active_read_ops_ = nullptr;
+    void* storage_ = nullptr;
 
 public:
     /** Destructor.
@@ -130,8 +147,9 @@ public:
         : source_(std::exchange(other.source_, nullptr))
         , vt_(std::exchange(other.vt_, nullptr))
         , cached_awaitable_(std::exchange(other.cached_awaitable_, nullptr))
-        , storage_(std::exchange(other.storage_, nullptr))
         , active_ops_(std::exchange(other.active_ops_, nullptr))
+        , active_read_ops_(std::exchange(other.active_read_ops_, nullptr))
+        , storage_(std::exchange(other.storage_, nullptr))
     {
     }
 
@@ -149,7 +167,9 @@ public:
     /** Construct by taking ownership of a BufferSource.
 
         Allocates storage and moves the source into this wrapper.
-        The wrapper owns the source and will destroy it.
+        The wrapper owns the source and will destroy it. If `S` also
+        satisfies @ref ReadSource, native read operations are
+        forwarded through the virtual boundary.
 
         @param s The source to take ownership of.
     */
@@ -160,7 +180,9 @@ public:
     /** Construct by wrapping a BufferSource without ownership.
 
         Wraps the given source by pointer. The source must remain
-        valid for the lifetime of this wrapper.
+        valid for the lifetime of this wrapper. If `S` also
+        satisfies @ref ReadSource, native read operations are
+        forwarded through the virtual boundary.
 
         @param s Pointer to the source to wrap.
     */
@@ -214,19 +236,24 @@ public:
 
         @return An awaitable yielding `(error_code,std::span<const_buffer>)`.
             On success with data, a non-empty span of filled buffers.
-            On success with empty span, source is exhausted.
+            On EOF, `ec == cond::eof` and span is empty.
 
         @par Preconditions
         The wrapper must contain a valid source (`has_value() == true`).
+        The caller must not call this function again after a prior
+        call returned an error.
     */
     auto
     pull(std::span<const_buffer> dest);
 
     /** Read some data into a mutable buffer sequence.
 
-        Reads one or more bytes by pulling from the underlying source
-        and copying into the caller's buffers. May fill less than
-        the full sequence.
+        Reads one or more bytes into the caller's buffers. May fill
+        less than the full sequence.
+
+        When the wrapped type provides native @ref ReadSource support,
+        the operation forwards directly. Otherwise it is synthesized
+        from @ref pull, @ref buffer_copy, and @ref consume.
 
         @param buffers The buffer sequence to fill.
 
@@ -234,6 +261,8 @@ public:
 
         @par Preconditions
         The wrapper must contain a valid source (`has_value() == true`).
+        The caller must not call this function again after a prior
+        call returned an error (including EOF).
 
         @see pull, consume
     */
@@ -243,10 +272,10 @@ public:
 
     /** Read data into a mutable buffer sequence.
 
-        Fills the provided buffer sequence by pulling data from the
-        underlying source and copying it into the caller's buffers.
-        This satisfies @ref ReadSource but incurs a copy; for zero-copy
-        access, use @ref pull and @ref consume instead.
+        Fills the provided buffer sequence completely. When the
+        wrapped type provides native @ref ReadSource support, each
+        window is forwarded directly. Otherwise the data is
+        synthesized from @ref pull, @ref buffer_copy, and @ref consume.
 
         @param buffers The buffer sequence to fill.
 
@@ -256,6 +285,8 @@ public:
 
         @par Preconditions
         The wrapper must contain a valid source (`has_value() == true`).
+        The caller must not call this function again after a prior
+        call returned an error (including EOF).
 
         @see pull, consume
     */
@@ -284,10 +315,28 @@ protected:
             std::terminate();
         source_ = &new_source;
     }
+
+private:
+    /** Forward a partial read through the vtable.
+
+        Constructs the underlying `read_some` awaitable in
+        cached storage and returns a type-erased awaitable.
+    */
+    auto
+    read_some_(std::span<mutable_buffer const> buffers);
+
+    /** Forward a complete read through the vtable.
+
+        Constructs the underlying `read` awaitable in
+        cached storage and returns a type-erased awaitable.
+    */
+    auto
+    read_(std::span<mutable_buffer const> buffers);
 };
 
 //----------------------------------------------------------
 
+/** Type-erased ops for awaitables yielding `io_result<std::span<const_buffer>>`. */
 struct any_buffer_source::awaitable_ops
 {
     bool (*await_ready)(void*);
@@ -296,8 +345,18 @@ struct any_buffer_source::awaitable_ops
     void (*destroy)(void*) noexcept;
 };
 
+/** Type-erased ops for awaitables yielding `io_result<std::size_t>`. */
+struct any_buffer_source::read_awaitable_ops
+{
+    bool (*await_ready)(void*);
+    coro (*await_suspend)(void*, coro, executor_ref, std::stop_token);
+    io_result<std::size_t> (*await_resume)(void*);
+    void (*destroy)(void*) noexcept;
+};
+
 struct any_buffer_source::vtable
 {
+    // BufferSource ops (always populated)
     void (*destroy)(void*) noexcept;
     void (*do_consume)(void* source, std::size_t n) noexcept;
     std::size_t awaitable_size;
@@ -306,12 +365,22 @@ struct any_buffer_source::vtable
         void* source,
         void* storage,
         std::span<const_buffer> dest);
+
+    // ReadSource forwarding (null when wrapped type is BufferSource-only)
+    read_awaitable_ops const* (*construct_read_some_awaitable)(
+        void* source,
+        void* storage,
+        std::span<mutable_buffer const> buffers);
+    read_awaitable_ops const* (*construct_read_awaitable)(
+        void* source,
+        void* storage,
+        std::span<mutable_buffer const> buffers);
 };
 
 template<BufferSource S>
 struct any_buffer_source::vtable_for_impl
 {
-    using Awaitable = decltype(std::declval<S&>().pull(
+    using PullAwaitable = decltype(std::declval<S&>().pull(
         std::declval<std::span<const_buffer>>()));
 
     static void
@@ -333,33 +402,148 @@ struct any_buffer_source::vtable_for_impl
         std::span<const_buffer> dest)
     {
         auto& s = *static_cast<S*>(source);
-        ::new(storage) Awaitable(s.pull(dest));
+        ::new(storage) PullAwaitable(s.pull(dest));
 
         static constexpr awaitable_ops ops = {
             +[](void* p) {
-                return static_cast<Awaitable*>(p)->await_ready();
+                return static_cast<PullAwaitable*>(p)->await_ready();
             },
             +[](void* p, coro h, executor_ref ex, std::stop_token token) {
                 return detail::call_await_suspend(
-                    static_cast<Awaitable*>(p), h, ex, token);
+                    static_cast<PullAwaitable*>(p), h, ex, token);
             },
             +[](void* p) {
-                return static_cast<Awaitable*>(p)->await_resume();
+                return static_cast<PullAwaitable*>(p)->await_resume();
             },
             +[](void* p) noexcept {
-                static_cast<Awaitable*>(p)->~Awaitable();
+                static_cast<PullAwaitable*>(p)->~PullAwaitable();
             }
         };
         return &ops;
     }
 
-    static constexpr vtable value = {
-        &do_destroy_impl,
-        &do_consume_impl,
-        sizeof(Awaitable),
-        alignof(Awaitable),
-        &construct_awaitable_impl
-    };
+    //------------------------------------------------------
+    // ReadSource forwarding (only instantiated when ReadSource<S>)
+
+    static read_awaitable_ops const*
+    construct_read_some_awaitable_impl(
+        void* source,
+        void* storage,
+        std::span<mutable_buffer const> buffers)
+        requires ReadSource<S>
+    {
+        using Aw = decltype(std::declval<S&>().read_some(
+            std::span<mutable_buffer const>{}));
+        auto& s = *static_cast<S*>(source);
+        ::new(storage) Aw(s.read_some(buffers));
+
+        static constexpr read_awaitable_ops ops = {
+            +[](void* p) {
+                return static_cast<Aw*>(p)->await_ready();
+            },
+            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+                return detail::call_await_suspend(
+                    static_cast<Aw*>(p), h, ex, token);
+            },
+            +[](void* p) {
+                return static_cast<Aw*>(p)->await_resume();
+            },
+            +[](void* p) noexcept {
+                static_cast<Aw*>(p)->~Aw();
+            }
+        };
+        return &ops;
+    }
+
+    static read_awaitable_ops const*
+    construct_read_awaitable_impl(
+        void* source,
+        void* storage,
+        std::span<mutable_buffer const> buffers)
+        requires ReadSource<S>
+    {
+        using Aw = decltype(std::declval<S&>().read(
+            std::span<mutable_buffer const>{}));
+        auto& s = *static_cast<S*>(source);
+        ::new(storage) Aw(s.read(buffers));
+
+        static constexpr read_awaitable_ops ops = {
+            +[](void* p) {
+                return static_cast<Aw*>(p)->await_ready();
+            },
+            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+                return detail::call_await_suspend(
+                    static_cast<Aw*>(p), h, ex, token);
+            },
+            +[](void* p) {
+                return static_cast<Aw*>(p)->await_resume();
+            },
+            +[](void* p) noexcept {
+                static_cast<Aw*>(p)->~Aw();
+            }
+        };
+        return &ops;
+    }
+
+    //------------------------------------------------------
+
+    static consteval std::size_t
+    compute_max_size() noexcept
+    {
+        std::size_t s = sizeof(PullAwaitable);
+        if constexpr (ReadSource<S>)
+        {
+            using RS = decltype(std::declval<S&>().read_some(
+                std::span<mutable_buffer const>{}));
+            using R = decltype(std::declval<S&>().read(
+                std::span<mutable_buffer const>{}));
+
+            if(sizeof(RS) > s) s = sizeof(RS);
+            if(sizeof(R) > s) s = sizeof(R);
+        }
+        return s;
+    }
+
+    static consteval std::size_t
+    compute_max_align() noexcept
+    {
+        std::size_t a = alignof(PullAwaitable);
+        if constexpr (ReadSource<S>)
+        {
+            using RS = decltype(std::declval<S&>().read_some(
+                std::span<mutable_buffer const>{}));
+            using R = decltype(std::declval<S&>().read(
+                std::span<mutable_buffer const>{}));
+
+            if(alignof(RS) > a) a = alignof(RS);
+            if(alignof(R) > a) a = alignof(R);
+        }
+        return a;
+    }
+
+    static consteval vtable
+    make_vtable() noexcept
+    {
+        vtable v{};
+        v.destroy = &do_destroy_impl;
+        v.do_consume = &do_consume_impl;
+        v.awaitable_size = compute_max_size();
+        v.awaitable_align = compute_max_align();
+        v.construct_awaitable = &construct_awaitable_impl;
+        v.construct_read_some_awaitable = nullptr;
+        v.construct_read_awaitable = nullptr;
+
+        if constexpr (ReadSource<S>)
+        {
+            v.construct_read_some_awaitable =
+                &construct_read_some_awaitable_impl;
+            v.construct_read_awaitable =
+                &construct_read_awaitable_impl;
+        }
+        return v;
+    }
+
+    static constexpr vtable value = make_vtable();
 };
 
 //----------------------------------------------------------
@@ -393,6 +577,7 @@ any_buffer_source::operator=(any_buffer_source&& other) noexcept
         cached_awaitable_ = std::exchange(other.cached_awaitable_, nullptr);
         storage_ = std::exchange(other.storage_, nullptr);
         active_ops_ = std::exchange(other.active_ops_, nullptr);
+        active_read_ops_ = std::exchange(other.active_read_ops_, nullptr);
     }
     return *this;
 }
@@ -418,7 +603,6 @@ any_buffer_source::any_buffer_source(S s)
     storage_ = ::operator new(sizeof(S));
     source_ = ::new(storage_) S(std::move(s));
 
-    // Preallocate the awaitable storage
     cached_awaitable_ = ::operator new(vt_->awaitable_size);
 
     g.committed = true;
@@ -429,7 +613,6 @@ any_buffer_source::any_buffer_source(S* s)
     : source_(s)
     , vt_(&vtable_for_impl<S>::value)
 {
-    // Preallocate the awaitable storage
     cached_awaitable_ = ::operator new(vt_->awaitable_size);
 }
 
@@ -450,25 +633,18 @@ any_buffer_source::pull(std::span<const_buffer> dest)
         std::span<const_buffer> dest_;
 
         bool
-        await_ready() const noexcept
+        await_ready()
         {
-            return false;
+            self_->active_ops_ = self_->vt_->construct_awaitable(
+                self_->source_,
+                self_->cached_awaitable_,
+                dest_);
+            return self_->active_ops_->await_ready(self_->cached_awaitable_);
         }
 
         coro
         await_suspend(coro h, executor_ref ex, std::stop_token token)
         {
-            // Construct the underlying awaitable into cached storage
-            self_->active_ops_ = self_->vt_->construct_awaitable(
-                self_->source_,
-                self_->cached_awaitable_,
-                dest_);
-
-            // Check if underlying is immediately ready
-            if(self_->active_ops_->await_ready(self_->cached_awaitable_))
-                return h;
-
-            // Forward to underlying awaitable
             return self_->active_ops_->await_suspend(
                 self_->cached_awaitable_, h, ex, token);
         }
@@ -490,21 +666,132 @@ any_buffer_source::pull(std::span<const_buffer> dest)
     return awaitable{this, dest};
 }
 
+//----------------------------------------------------------
+// Private helpers for native ReadSource forwarding
+
+inline auto
+any_buffer_source::read_some_(
+    std::span<mutable_buffer const> buffers)
+{
+    struct awaitable
+    {
+        any_buffer_source* self_;
+        std::span<mutable_buffer const> buffers_;
+
+        bool
+        await_ready() const noexcept
+        {
+            return false;
+        }
+
+        coro
+        await_suspend(coro h, executor_ref ex, std::stop_token token)
+        {
+            self_->active_read_ops_ =
+                self_->vt_->construct_read_some_awaitable(
+                    self_->source_,
+                    self_->cached_awaitable_,
+                    buffers_);
+
+            if(self_->active_read_ops_->await_ready(
+                self_->cached_awaitable_))
+                return h;
+
+            return self_->active_read_ops_->await_suspend(
+                self_->cached_awaitable_, h, ex, token);
+        }
+
+        io_result<std::size_t>
+        await_resume()
+        {
+            struct guard {
+                any_buffer_source* self;
+                ~guard() {
+                    self->active_read_ops_->destroy(
+                        self->cached_awaitable_);
+                    self->active_read_ops_ = nullptr;
+                }
+            } g{self_};
+            return self_->active_read_ops_->await_resume(
+                self_->cached_awaitable_);
+        }
+    };
+    return awaitable{this, buffers};
+}
+
+inline auto
+any_buffer_source::read_(
+    std::span<mutable_buffer const> buffers)
+{
+    struct awaitable
+    {
+        any_buffer_source* self_;
+        std::span<mutable_buffer const> buffers_;
+
+        bool
+        await_ready() const noexcept
+        {
+            return false;
+        }
+
+        coro
+        await_suspend(coro h, executor_ref ex, std::stop_token token)
+        {
+            self_->active_read_ops_ =
+                self_->vt_->construct_read_awaitable(
+                    self_->source_,
+                    self_->cached_awaitable_,
+                    buffers_);
+
+            if(self_->active_read_ops_->await_ready(
+                self_->cached_awaitable_))
+                return h;
+
+            return self_->active_read_ops_->await_suspend(
+                self_->cached_awaitable_, h, ex, token);
+        }
+
+        io_result<std::size_t>
+        await_resume()
+        {
+            struct guard {
+                any_buffer_source* self;
+                ~guard() {
+                    self->active_read_ops_->destroy(
+                        self->cached_awaitable_);
+                    self->active_read_ops_ = nullptr;
+                }
+            } g{self_};
+            return self_->active_read_ops_->await_resume(
+                self_->cached_awaitable_);
+        }
+    };
+    return awaitable{this, buffers};
+}
+
+//----------------------------------------------------------
+// Public ReadSource methods
+
 template<MutableBufferSequence MB>
 io_task<std::size_t>
 any_buffer_source::read_some(MB buffers)
 {
-    if(buffer_empty(buffers))
+    buffer_param<MB> bp(buffers);
+    auto dest = bp.data();
+    if(dest.empty())
         co_return {{}, 0};
 
+    // Native ReadSource path
+    if(vt_->construct_read_some_awaitable)
+        co_return co_await read_some_(dest);
+
+    // Synthesized path: pull + buffer_copy + consume
     const_buffer arr[detail::max_iovec_];
     auto [ec, bufs] = co_await pull(arr);
     if(ec)
         co_return {ec, 0};
-    if(bufs.empty())
-        co_return {error::eof, 0};
 
-    auto n = buffer_copy(buffers, bufs);
+    auto n = buffer_copy(dest, bufs);
     consume(n);
     co_return {{}, n};
 }
@@ -513,24 +800,44 @@ template<MutableBufferSequence MB>
 io_task<std::size_t>
 any_buffer_source::read(MB buffers)
 {
+    buffer_param<MB> bp(buffers);
     std::size_t total = 0;
-    auto dest = sans_prefix(buffers, 0);
 
-    while(!buffer_empty(dest))
+    // Native ReadSource path
+    if(vt_->construct_read_awaitable)
     {
+        for(;;)
+        {
+            auto dest = bp.data();
+            if(dest.empty())
+                break;
+
+            auto [ec, n] = co_await read_(dest);
+            total += n;
+            if(ec)
+                co_return {ec, total};
+            bp.consume(n);
+        }
+        co_return {{}, total};
+    }
+
+    // Synthesized path: pull + buffer_copy + consume
+    for(;;)
+    {
+        auto dest = bp.data();
+        if(dest.empty())
+            break;
+
         const_buffer arr[detail::max_iovec_];
         auto [ec, bufs] = co_await pull(arr);
 
         if(ec)
             co_return {ec, total};
 
-        if(bufs.empty())
-            co_return {error::eof, total};
-
         auto n = buffer_copy(dest, bufs);
         consume(n);
         total += n;
-        dest = sans_prefix(dest, n);
+        bp.consume(n);
     }
 
     co_return {{}, total};

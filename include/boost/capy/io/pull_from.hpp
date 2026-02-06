@@ -91,7 +91,7 @@ pull_from(Src& source, Sink& sink)
 
         if(ec == cond::eof)
         {
-            auto [eof_ec] = co_await sink.commit_eof();
+            auto [eof_ec] = co_await sink.commit_eof(0);
             co_return {eof_ec, total};
         }
 
@@ -176,7 +176,7 @@ pull_from(Src& source, Sink& sink)
         // Check for EOF condition
         if(ec == cond::eof)
         {
-            auto [eof_ec] = co_await sink.commit_eof();
+            auto [eof_ec] = co_await sink.commit_eof(0);
             co_return {eof_ec, total};
         }
 

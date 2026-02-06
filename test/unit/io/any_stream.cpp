@@ -23,6 +23,10 @@
 
 namespace boost {
 namespace capy {
+
+static_assert(ReadStream<any_stream>);
+static_assert(WriteStream<any_stream>);
+
 namespace {
 
 // Simple bidirectional mock stream for testing any_stream

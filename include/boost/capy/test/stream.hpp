@@ -224,6 +224,8 @@ public:
 
             bool await_ready() const noexcept
             {
+                if(buffer_empty(buffers_))
+                    return true;
                 auto* st = self_->state_.get();
                 auto& side = st->sides[self_->index_];
                 return st->closed || side.eof ||
@@ -245,6 +247,9 @@ public:
             io_result<std::size_t>
             await_resume()
             {
+                if(buffer_empty(buffers_))
+                    return {{}, 0};
+
                 auto* st = self_->state_.get();
                 auto& side = st->sides[
                     self_->index_];

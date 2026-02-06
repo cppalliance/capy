@@ -96,7 +96,7 @@ read_until_match_impl(
         auto [ec, n] = co_await stream.read_some(mb);
         buffers.commit(n);
 
-        if(n > 0)
+        if(!ec)
         {
             auto pos = search_buffer_for_match(buffers.data(), match);
             if(pos != std::string_view::npos)

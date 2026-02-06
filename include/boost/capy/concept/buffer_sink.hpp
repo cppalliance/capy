@@ -43,9 +43,7 @@ namespace capy {
         a `std::span<mutable_buffer>` and returning a span of filled buffers
     @li `T` must provide `commit(n)` returning an @ref IoAwaitable that
         decomposes to `(error_code)`
-    @li `T` must provide `commit(n, eof)` returning an @ref IoAwaitable
-        that decomposes to `(error_code)`
-    @li `T` must provide `commit_eof()` returning an @ref IoAwaitable
+    @li `T` must provide `commit_eof(n)` returning an @ref IoAwaitable
         that decomposes to `(error_code)`
 
     @par Semantic Requirements
@@ -64,15 +62,11 @@ namespace capy {
     @li On success: `ec` is `false`
     @li On error: `ec` is `true`
 
-    The `commit` operation with `eof` combines data commit with end-of-stream:
+    The `commit_eof` operation commits final data and signals end-of-stream:
 
-    @li If `eof` is `false`, behaves identically to `commit(n)`
-    @li If `eof` is `true`, commits data and finalizes the sink
-    @li After success with `eof == true`, no further operations are permitted
-
-    The `commit_eof` operation signals end-of-stream with no data:
-
-    @li Equivalent to `commit(0, true)`
+    @li Commits `n` bytes written to the most recent `prepare` buffers
+        and finalizes the sink
+    @li After success, no further operations are permitted
     @li On success: `ec` is `false`, sink is finalized
     @li On error: `ec` is `true`
 
@@ -87,8 +81,7 @@ namespace capy {
     std::span<mutable_buffer> prepare( std::span<mutable_buffer> dest );
 
     IoAwaitable auto commit( std::size_t n );
-    IoAwaitable auto commit( std::size_t n, bool eof );
-    IoAwaitable auto commit_eof();
+    IoAwaitable auto commit_eof( std::size_t n );
     @endcode
 
     @par Example
@@ -104,14 +97,13 @@ namespace capy {
         for(;;)
         {
             auto [ec1, src_bufs] = co_await source.pull( src_arr );
-            if( ec1 )
-                co_return {ec1, total};
-
-            if( src_bufs.empty() )
+            if( ec1 == cond::eof )
             {
-                auto [eof_ec] = co_await sink.commit_eof();
+                auto [eof_ec] = co_await sink.commit_eof( 0 );
                 co_return {eof_ec, total};
             }
+            if( ec1 )
+                co_return {ec1, total};
 
             auto dst_bufs = sink.prepare( dst_arr );
             std::size_t n = buffer_copy( dst_bufs, src_bufs );
@@ -129,7 +121,7 @@ namespace capy {
 */
 template<typename T>
 concept BufferSink =
-    requires(T& sink, std::span<mutable_buffer> dest, std::size_t n, bool eof)
+    requires(T& sink, std::span<mutable_buffer> dest, std::size_t n)
     {
         // Synchronous: get writable buffers from sink's internal storage
         { sink.prepare(dest) } -> std::same_as<std::span<mutable_buffer>>;
@@ -140,16 +132,10 @@ concept BufferSink =
             decltype(sink.commit(n)),
             std::error_code>;
 
-        // Async: commit n bytes with optional EOF
-        { sink.commit(n, eof) } -> IoAwaitable;
+        // Async: commit n final bytes and signal end of data
+        { sink.commit_eof(n) } -> IoAwaitable;
         requires awaitable_decomposes_to<
-            decltype(sink.commit(n, eof)),
-            std::error_code>;
-
-        // Async: signal end of data
-        { sink.commit_eof() } -> IoAwaitable;
-        requires awaitable_decomposes_to<
-            decltype(sink.commit_eof()),
+            decltype(sink.commit_eof(n)),
             std::error_code>;
     };
 

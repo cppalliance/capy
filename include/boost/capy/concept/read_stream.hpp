@@ -50,6 +50,11 @@ namespace capy {
     Buffers in the sequence are filled completely before proceeding
     to the next buffer.
 
+    @par Design Rationale
+    The requirement that `n` is 0 whenever `ec` is set follows
+    from a consistency constraint with the empty-buffer rule.
+    See the ReadStream design document for a complete derivation.
+
     @par Buffer Lifetime
     The caller must ensure that the memory referenced by `buffers`
     remains valid until the `co_await` expression returns.

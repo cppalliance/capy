@@ -14,6 +14,7 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/coro.hpp>
+#include <boost/capy/error.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/test/fuse.hpp>
@@ -50,11 +51,11 @@ namespace test {
 
     auto r = f.armed( [&]( fuse& ) -> task<void> {
         const_buffer arr[16];
-        auto [ec, count] = co_await bs.pull( arr, 16 );
+        auto [ec, bufs] = co_await bs.pull( arr );
         if( ec )
             co_return;
-        // arr[0..count) contains buffer descriptors
-        std::size_t n = buffer_size( std::span( arr, count ) );
+        // bufs contains buffer descriptors
+        std::size_t n = buffer_size( bufs );
         bs.consume( n );
     } );
     @endcode
@@ -179,7 +180,7 @@ public:
                     return {ec, {}};
 
                 if(self_->pos_ >= self_->data_.size())
-                    return {{}, {}}; // Source exhausted
+                    return {error::eof, {}};
 
                 std::size_t avail = self_->data_.size() - self_->pos_;
                 std::size_t to_return = (std::min)(avail, self_->max_pull_size_);

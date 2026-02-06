@@ -36,6 +36,8 @@ namespace test {
     at controlled points. An optional `max_read_size` constructor
     parameter limits bytes per read to simulate chunked delivery.
 
+    This class satisfies the @ref ReadStream concept.
+
     @par Thread Safety
     Not thread-safe.
 
@@ -56,7 +58,7 @@ namespace test {
     } );
     @endcode
 
-    @see fuse
+    @see fuse, ReadStream
 */
 class read_stream
 {
@@ -162,6 +164,11 @@ public:
             io_result<std::size_t>
             await_resume()
             {
+                // Empty buffer is a no-op regardless of
+                // stream state or fuse.
+                if(buffer_empty(buffers_))
+                    return {{}, 0};
+
                 auto ec = self_->f_.maybe_fail();
                 if(ec)
                     return {ec, 0};

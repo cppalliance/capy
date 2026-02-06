@@ -41,6 +41,11 @@ The caller must not assume the buffer is filled. `read_some` may
 return fewer bytes than the buffer can hold. This is the defining
 property of a partial-read primitive.
 
+Once `read_some` returns an error (including EOF), the caller must
+not call `read_some` again. The stream is done. Not all
+implementations can reproduce a prior error on subsequent calls, so
+the behavior after an error is undefined.
+
 Buffers in the sequence are filled completely before proceeding to the
 next buffer in the sequence.
 
@@ -168,43 +173,6 @@ task<> read_line(Stream& stream)
 
 == Use Cases
 
-=== Reading Fixed-Size Records
-
-When the protocol defines fixed-size messages, the `read` composed
-algorithm fills the buffer exactly.
-
-[source,cpp]
-----
-struct message_header
-{
-    uint32_t type;
-    uint32_t length;
-};
-
-template<ReadStream Stream>
-task<> process_messages(Stream& stream)
-{
-    for(;;)
-    {
-        message_header hdr;
-        auto [ec, n] = co_await read(
-            stream, mutable_buffer(&hdr, sizeof(hdr)));
-        if(ec == cond::eof)
-            co_return;  // clean shutdown
-        if(ec)
-            co_return;
-
-        std::vector<char> body(hdr.length);
-        auto [ec2, n2] = co_await read(
-            stream, mutable_buffer(body));
-        if(ec2)
-            co_return;
-
-        handle_message(hdr, body);
-    }
-}
-----
-
 === Incremental Processing with `read_some`
 
 When processing data as it arrives without waiting for a full buffer,
@@ -231,51 +199,6 @@ task<> echo(Stream& stream, WriteStream auto& dest)
             const_buffer(buf, n));
         if(wec)
             co_return;
-    }
-}
-----
-
-=== Reading into a Dynamic Buffer
-
-When the total size is unknown, read into a dynamic buffer until EOF.
-The buffer grows automatically.
-
-[source,cpp]
-----
-template<ReadStream Stream>
-task<std::string> read_entire_response(Stream& stream)
-{
-    std::string body;
-    auto [ec, n] = co_await read(
-        stream, string_dynamic_buffer(&body));
-    if(ec)
-        co_return {};
-    co_return body;
-}
-----
-
-=== Line-Oriented Protocol
-
-For protocols delimited by `\r\n`, `read_until` scans the stream
-for the delimiter.
-
-[source,cpp]
-----
-template<ReadStream Stream>
-task<> process_commands(Stream& stream)
-{
-    for(;;)
-    {
-        std::string line;
-        auto [ec, n] = co_await read_until(
-            stream, string_dynamic_buffer(&line), "\r\n");
-        if(ec == cond::eof)
-            co_return;
-        if(ec)
-            co_return;
-
-        // line includes the "\r\n" delimiter
-        execute_command(line);
     }
 }
 ----
@@ -323,23 +246,6 @@ Because `ReadSource` refines `ReadStream`, this relay function also
 accepts `ReadSource` types. An HTTP body source or a decompressor
 can be relayed to a `WriteStream` using the same function.
 
-== Conforming Types
-
-Examples of types that satisfy `ReadStream`:
-
-- **TCP sockets**: `read_some` maps to a single `recv()` or
-  `WSARecv()` call. Returns whatever the kernel has buffered.
-- **TLS streams**: `read_some` decrypts and returns one TLS record's
-  worth of application data.
-- **Buffered read streams**: `read_some` returns data from an internal
-  buffer, refilling from the underlying stream when empty.
-- **QUIC streams**: `read_some` returns data from received QUIC frames.
-- **Test mock streams**: `read_some` returns configurable data and
-  error sequences for testing.
-
-All of these types also naturally extend to `ReadSource` by adding
-`read`.
-
 == Relationship to the Write Side
 
 [cols="1,1"]
@@ -359,83 +265,144 @@ All of these types also naturally extend to `ReadSource` by adding
 | `WriteSink::write`
 |===
 
-The read side does not have an eager-completion equivalent of
-`write_now`. Reads depend on data arriving from the network, so the
-synchronous fast path -- where the operation completes in `await_ready`
--- is less reliably useful. Writes into a buffered stream frequently
-complete synchronously (just a `memcpy`), making the eager path
-valuable. Reads rarely have all data pre-buffered.
+== Design Foundations: Why Errors Exclude Data
 
-== Why `read_some` Returns No Data on EOF
+The `read_some` contract requires that `n` is 0 whenever `ec` is set.
+Data and errors are mutually exclusive outcomes. This is the most
+consequential design decision in the `ReadStream` concept, with
+implications for every consumer of `read_some` in the library. The
+rule follows Asio's established `AsyncReadStream` contract, is
+reinforced by the behavior of POSIX and Windows I/O system calls,
+and produces cleaner consumer code. This section explains the design
+and its consequences.
 
-The `read_some` contract requires that when `ec == cond::eof`, `n`
-is always 0. Data and EOF are delivered in separate calls. This is a
-deliberate design decision with consequences for every consumer of
-`read_some` in the library. It merits thorough explanation,
-particularly because the write side offers `write_eof(buffers)` which
-atomically combines the final data with the EOF signal. Why shouldn't
-the read side offer the same?
+=== Reconstructing Kohlhoff's Reasoning
 
-=== The Write-Side Analogy
+Christopher Kohlhoff's Asio library defines an `AsyncReadStream`
+concept with the identical requirement: on error, `bytes_transferred`
+is 0. No design rationale document accompanies this rule. The
+reasoning presented here was reconstructed from three sources:
 
-On the write side, `write_eof(buffers)` exists so the producer can
-atomically deliver its final data together with the EOF signal. A
-natural question follows: if the write side has atomic data-plus-EOF,
-why doesn't the read side allow `read_some` to return `n > 0` with
-`ec == cond::eof`? The source knows it just delivered its last
-bytes -- it could piggyback EOF onto that return, saving the caller
-an extra `co_await` that will only yield `(eof, 0)`.
+- *The Asio source code.* The function `non_blocking_recv1` in
+  `socket_ops.ipp` explicitly sets `bytes_transferred = 0` on every
+  error path. The function `complete_iocp_recv` maps Windows IOCP
+  errors to portable error codes, relying on the operating system's
+  guarantee that failed completions report zero bytes. These are
+  deliberate choices, not accidental pass-through of OS behavior.
+- *A documentation note Kohlhoff left.* Titled "Why EOF is an error,"
+  it gives two reasons: composed operations need EOF-as-error to
+  report contract violations, and EOF-as-error disambiguates the
+  end of a stream from a successful zero-byte read. The note is
+  terse but the implications are deep.
+- *Analysis of the underlying system calls.* POSIX `recv()` and
+  Windows `WSARecv()` both enforce a binary outcome per call: data
+  or error, never both. This is not because the C++ abstraction
+  copied the OS, but because both levels face the same fundamental
+  constraint.
 
-The analogy is real but the symmetry breaks down under examination.
-The two sides of the I/O boundary have fundamentally different
-roles: the writer _decides_ when to signal EOF, while the reader
-_discovers_ it. This asymmetry has deep implications for API design.
+The following sections examine each of these points and their
+consequences.
 
-=== Atomicity Serves Correctness on the Write Side
+=== Alignment with Asio
 
-`write_eof(buffers)` is not merely an optimization. It exists for
-correctness. Protocol framings require the final data and the EOF
-marker to be emitted together so the peer observes a complete
-message:
+Asio's `AsyncReadStream` concept has enforced the same rule for over
+two decades: on error, `bytes_transferred` is 0. This is a deliberate
+design choice, not an accident. The Asio source code explicitly zeroes
+`bytes_transferred` on every error path, and the underlying system
+calls (POSIX `recv()`, Windows IOCP) enforce binary outcomes at the
+OS level. The `read_some` contract follows this established practice.
 
-- **HTTP chunked encoding**: the final data chunk and the terminal
-  `0\r\n\r\n` must be emitted in a single operation to avoid the
-  peer seeing incomplete framing.
-- **Compression (deflate)**: the final `deflate()` call needs
-  `Z_FINISH` to produce the stream trailer. Splitting data and
-  finalization into separate calls would require an extra flush.
-- **TLS close-notify**: coalescing the final application data with
-  the close-notify alert avoids an extra round-trip.
+=== The Empty-Buffer Rule
 
-On the read side, no such correctness requirement exists. Whether
-the last bytes arrive with EOF or on a separate call does not change
-what the reader observes. The reader receives the same bytes in the
-same order regardless. Piggybacking EOF onto the last data delivery
-is purely an optimization -- saving one lightweight call -- not a
-correctness mechanism.
+Every `ReadStream` must support the following:
 
-=== `write_eof` Is a Separate Function, Not a Mode
+[quote]
+`read_some(empty_buffer)` completes immediately with `{success, 0}`.
 
-On the write side, the writer _chooses_ to call `write_eof` instead
-of `write_some`. The two functions have different names and different
-contracts. `write_some` never signals EOF. The caller opts into
-data-plus-EOF explicitly. The call site reads `write_eof(data)` and
-the intent is unambiguous.
+This is a no-op. The caller passed no buffer space, so no I/O is
+attempted. The operation does not inspect the stream's internal state
+because that would require a probe capability -- a way to ask "is
+there data? is the stream at EOF?" -- without actually reading. Not
+every source supports probing. A TCP socket does not know that its
+peer has closed until it calls `recv()` and gets 0 back. A pipe does
+not know it is broken until a read fails. The empty-buffer rule is
+therefore unconditional: return `{success, 0}` regardless of the
+stream's state.
 
-If `read_some` could return `n > 0` with EOF, then every call to
-`read_some` would be _sometimes_ a data-only operation and
-_sometimes_ a data-plus-EOF operation. The caller does not choose
-which mode it gets -- the stream decides at runtime. Every call site
-must therefore handle both modes. This is unlike the write side,
-where the caller selects the mode by choosing which function to call.
+This rule is a natural consequence of the contract, not a proof of
+it. When no I/O is attempted, no state is discovered and no error
+is reported.
 
-The distinction matters because it shifts the burden. On the write
-side, the _caller_ decides to use the combined operation and writes
-code that handles it once, at one call site. On the read side, every
-_consumer_ of `read_some` across the entire codebase would have to
-handle the combined case, whether they want to or not.
+=== Why EOF Is an Error
 
-=== A Clean Trichotomy Simplifies Every Caller
+Kohlhoff's documentation note gives two reasons for making EOF an
+error code rather than a success:
+
+*Composed operations need EOF-as-error to report contract violations.*
+The composed `read(stream, buffer(buf, 100))` promises to fill
+exactly 100 bytes. If the stream ends after 50, the operation did not
+fulfill its contract. Reporting `{success, 50}` would be misleading --
+it suggests the operation completed normally. Reporting `{eof, 50}`
+tells the caller both what happened (50 bytes landed in the buffer)
+and why the operation stopped (the stream ended). EOF-as-error is the
+mechanism by which composed operations explain early termination.
+
+*EOF-as-error disambiguates the empty-buffer no-op from the end of a
+stream.* Without EOF-as-error, both `read_some(empty_buffer)` on a
+live stream and `read_some(non_empty_buffer)` on an exhausted stream
+would produce `{success, 0}`. The caller could not distinguish "I
+passed no buffer" from "the stream is done." Making EOF an error code
+separates these two cases cleanly.
+
+These two reasons reinforce each other. Composed operations need EOF
+to be an error code so they can report early termination. The
+empty-buffer rule needs EOF to be an error code so `{success, 0}`
+is unambiguously a no-op. Together with the rule that errors exclude
+data, `read_some` results form a clean trichotomy: success with
+data, or an error (including EOF) without data.
+
+=== The Write-Side Asymmetry
+
+On the write side, `WriteSink` provides `write_eof(buffers)` to
+atomically combine the final data with the EOF signal. A natural
+question follows: if the write side fuses data with EOF, why does the
+read side forbid it?
+
+The answer is that the two sides of the I/O boundary have different
+roles. The writer _decides_ when to signal EOF. The reader
+_discovers_ it. This asymmetry has three consequences:
+
+*`write_eof` exists for correctness, not convenience.* Protocol
+framings require the final data and the EOF marker to be emitted
+together so the peer observes a complete message. HTTP chunked
+encoding needs the terminal `0\r\n\r\n` coalesced with the final
+data chunk. A TLS session needs the close-notify alert coalesced
+with the final application data. A compressor needs `Z_FINISH`
+applied to the final input. These are correctness requirements, not
+optimizations. On the read side, whether the last bytes arrive with
+EOF or on a separate call does not change what the reader observes.
+The data and the order are identical either way.
+
+*`write_eof` is a separate function the caller explicitly invokes.*
+`write_some` never signals EOF. The writer opts into data-plus-EOF
+by calling a different function. The call site reads `write_eof(data)`
+and the intent is unambiguous. If `read_some` could return data with
+EOF, every call to `read_some` would _sometimes_ be a data-only
+operation and _sometimes_ a data-plus-EOF operation. The stream
+decides which mode the caller gets, at runtime. Every call site must
+handle both possibilities. The burden falls on every consumer in the
+codebase, not on a single call site that opted into the combined
+behavior.
+
+*A hypothetical `read_eof` makes no sense.* On the write side,
+`write_eof` exists because the producer signals the end of data. On
+the read side, the consumer does not tell the stream to end -- it
+discovers that the stream has ended. EOF flows from producer to
+consumer, not the reverse. There is no action the reader can take to
+"read the EOF." The reader discovers EOF as a side effect of
+attempting to read.
+
+=== A Clean Trichotomy
 
 With the current contract, every `read_some` result falls into
 exactly one of three mutually exclusive cases:
@@ -446,8 +413,7 @@ exactly one of three mutually exclusive cases:
 
 Data is present if and only if the operation succeeded. This
 invariant -- _data implies success_ -- eliminates an entire category
-of reasoning from every read loop in the codebase. The common read
-loop becomes trivially simple:
+of reasoning from every read loop. The common pattern is:
 
 [source,cpp]
 ----
@@ -456,9 +422,6 @@ if(ec)
     break;        // EOF or error -- no data to handle
 process(buf, n);  // only reached on success, n >= 1
 ----
-
-The caller tests one condition and either processes data or stops.
-There is no third case where data arrived but the stream also ended.
 
 If `read_some` could return `n > 0` with EOF, the loop becomes:
 
@@ -471,107 +434,105 @@ if(ec)
     break;
 ----
 
-Every consumer of `read_some` in the entire codebase pays this tax:
-an extra branch to handle the "data and EOF together" case. The
-branch is easy to forget, and forgetting it silently drops the final
-bytes of the stream -- a particularly insidious bug because it only
-manifests when the source happens to deliver EOF with its last data
-rather than on a separate call. A TCP socket that receives data in
-one packet and FIN in a separate packet will not trigger the bug. A
-memory source that knows its remaining length will. The
-non-determinism makes the bug difficult to reproduce and diagnose.
+Every consumer pays this tax: an extra branch to handle data
+accompanying EOF. The branch is easy to forget. Forgetting it
+silently drops the final bytes of the stream -- a bug that only
+manifests when the source delivers EOF with its last data rather than
+on a separate call. A TCP socket receiving data in one packet and FIN
+in another will not trigger the bug. A memory source that knows its
+remaining length will. The non-determinism makes the bug difficult to
+reproduce and diagnose.
 
-The clean trichotomy eliminates this class of bugs entirely. No
-caller can accidentally drop data because data never accompanies
-an error or EOF result.
+The clean trichotomy eliminates this class of bugs entirely.
 
-=== Concrete Sources Always Have a Natural Separation
+=== Conforming Sources
 
 Every concrete `ReadStream` implementation naturally separates its
 last data delivery from its EOF signal:
 
-- **TCP sockets**: the kernel delivers buffered bytes on one
-  `recv()` call and returns 0 on the next. The separation is
-  inherent in the POSIX API.
-- **TLS streams**: the TLS record layer delivers decrypted
-  application data. The close-notify alert arrives as a separate
-  record.
-- **HTTP content-length body**: the source delivers bytes up to
-  the content-length limit. Once the limit is reached, the next
-  `read_some` returns EOF. There is always a final call that
-  delivers the limit-reaching bytes and a subsequent call that
-  returns EOF.
+- **TCP sockets**: `read_some` maps to a single `recv()` or
+  `WSARecv()` call, returning whatever the kernel has buffered. The
+  kernel delivers bytes on one call and returns 0 on the next. The
+  separation is inherent in the POSIX and Windows APIs.
+- **TLS streams**: `read_some` decrypts and returns one TLS record's
+  worth of application data. The close-notify alert arrives as a
+  separate record.
+- **HTTP content-length body**: the source delivers bytes up to the
+  content-length limit. Once the limit is reached, the next
+  `read_some` returns EOF.
 - **HTTP chunked body**: the unchunker delivers decoded data from
-  chunks. The terminal `0\r\n\r\n` is parsed on a separate pass
-  that returns EOF.
+  chunks. The terminal `0\r\n\r\n` is parsed on a separate pass that
+  returns EOF.
 - **Compression (inflate)**: the decompressor delivers output bytes.
   When `Z_STREAM_END` is detected, the next read returns EOF.
 - **Memory source**: returns `min(requested, remaining)` bytes. When
   `remaining` reaches 0, the next call returns EOF.
+- **QUIC streams**: `read_some` returns data from received QUIC
+  frames. Stream FIN is delivered as EOF on a subsequent call.
+- **Buffered read streams**: `read_some` returns data from an
+  internal buffer, refilling from the underlying stream when empty.
+  EOF propagates from the underlying stream.
+- **Test mock streams**: `read_some` returns configurable data and
+  error sequences for testing.
 
-No concrete source type is forced into an unnatural pattern by the
-`n == 0` on EOF rule. Every source already has a natural boundary
-between its last data and its EOF indication.
+No source is forced into an unnatural pattern. The `read_some` call
+that discovers EOF is the natural result of attempting to read from
+an exhausted stream -- not a separate probing step. Once the caller
+receives EOF, it stops reading.
 
-=== The Saved Call Is Cheap
+=== Composed Operations and Partial Results
 
-The extra `read_some` that returns `(eof, 0)` is a lightweight
-operation. The source checks its internal state, finds the stream
-exhausted, and returns immediately. There is no system call, no
-network round-trip, no meaningful I/O. For a memory source, it is
-a comparison of an offset against a length. For a TCP socket, the
-kernel already knows the connection is closed and returns 0
-immediately. For a decompressor, the inflater's internal state flag
-is already set.
-
-One coroutine suspend and resume at the tail end of an entire stream
-transfer is negligible. If the stream transferred megabytes of data
-across hundreds of `read_some` calls, one final `(eof, 0)` call adds
-immeasurable overhead. The cost is zero system calls, zero network
-round-trips, and a single coroutine resume that executes a handful of
-instructions.
-
-=== Composed Operations Handle Partial Data on EOF
-
-The `read` composed algorithm (and `ReadSource::read`) _does_ allow
-`n > 0` on EOF, because it is a composed loop that accumulates data
-across multiple internal `read_some` calls. When the underlying
-stream signals EOF mid-accumulation, discarding the bytes already
-gathered would be wrong. The caller needs `n` to know how much valid
-data landed in the buffer.
+The composed `read` algorithm (and `ReadSource::read`) _does_ report
+`n > 0` on EOF, because it accumulates data across multiple internal
+`read_some` calls. When the underlying stream signals EOF
+mid-accumulation, discarding the bytes already gathered would be
+wrong. The caller needs `n` to know how much valid data landed in the
+buffer.
 
 The design separates concerns cleanly: the single-shot primitive
 (`read_some`) delivers unambiguous results with a clean trichotomy.
 Composed operations that accumulate state (`read`) report what they
-accumulated, including partial results on EOF. This layering means
-callers who need partial-on-EOF semantics get them through the
-composed layer, while the primitive layer remains simple.
+accumulated, including partial results on EOF. Callers who need
+partial-on-EOF semantics get them through the composed layer, while
+the primitive layer remains clean.
 
-=== POSIX Precedent
+=== Evidence from the Asio Implementation
 
-The POSIX `read()` system call returns 0 to signal EOF, with no
-bytes transferred. The kernel does not return "here are your last
-5 bytes, and also EOF." It returns the available bytes on one call,
-then returns 0 on the next. This convention is understood by
-millions of programs and decades of systems code. `read_some`
-follows the same model.
+The Asio source code confirms this design at every level.
 
-Every C and C++ programmer who has written a read loop expects
-this behavior. Deviating from it would surprise the majority of
-the target audience and introduce a novel error pattern into code
-that developers have been writing correctly for decades.
+On POSIX platforms, `non_blocking_recv1` in `socket_ops.ipp` calls
+`recv()` and branches on the result. If `recv()` returns a positive
+value, the bytes are reported as a successful transfer. If `recv()`
+returns 0 on a stream socket, EOF is reported. If `recv()` returns
+-1, the function explicitly sets `bytes_transferred = 0` before
+returning the error. The POSIX `recv()` system call itself enforces
+binary outcomes: it returns `N > 0` on success, `0` on EOF, or `-1`
+on error. A single call never returns both data and an error.
 
-== Why No `read_eof`
+On Windows, `complete_iocp_recv` processes the results from
+`GetQueuedCompletionStatus`. It maps `ERROR_NETNAME_DELETED` to
+`connection_reset` and `ERROR_PORT_UNREACHABLE` to
+`connection_refused`. Windows IOCP similarly reports zero
+`bytes_transferred` on failed completions. The operating system
+enforces the same binary outcome per I/O completion.
 
-On the write side, `WriteSink` has `write_eof` because the writer
-signals end-of-data. On the read side, the source signals EOF by
-returning `cond::eof` -- the consumer detects it, it does not signal
-it. The asymmetry is inherent: the producer signals EOF, the consumer
-observes it.
+The one edge case is POSIX signal interruption (`EINTR`). If a signal
+arrives after `recv()` has already copied some bytes, the kernel
+returns the partial byte count as success rather than `-1`/`EINTR`.
+Asio handles this transparently by retrying on `EINTR`, so the
+caller never observes it. Even the kernel does not combine data with
+an error -- it chooses to report the partial data as success.
 
-A hypothetical `read_eof` would make no sense. The reader does not
-tell the stream to end. The reader discovers that the stream has
-ended. EOF flows from producer to consumer, not the other way around.
+=== Convergent Design with POSIX
+
+POSIX `recv()` independently enforces the same rule: `N > 0` on
+success, `-1` on error, `0` on EOF. The kernel never returns "here
+are your last 5 bytes, and also EOF." It delivers the available bytes
+on one call and returns 0 on the next. This is not because the C++
+abstraction copied POSIX semantics. It is because the kernel faces
+the same fundamental constraint: state is discovered through the act
+of I/O. The alignment between `read_some` and `recv()` is convergent
+design, not leaky abstraction.
 
 == Summary
 
@@ -586,7 +547,7 @@ primitive. This is deliberately minimal:
 - `ReadSource` refines `ReadStream` by adding `read` for
   complete-read semantics.
 
-The choice between `read_some` and `read` is a control-versus-convenience
-trade-off. `read_some` gives the caller maximum control over how much
-data is consumed per iteration. `read` gives the caller the guarantee
-that the buffer is completely filled.
+The contract that errors exclude data follows Asio's established
+`AsyncReadStream` contract, aligns with POSIX and Windows system
+call semantics, and produces a clean trichotomy that makes every
+read loop safe by construction.

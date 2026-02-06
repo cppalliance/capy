@@ -13,6 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/buffers/buffer_array.hpp>
 #include <boost/capy/buffers/buffer_param.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/write_sink.hpp>
@@ -52,6 +53,11 @@ namespace capy {
     This reserves all virtual address space at server startup
     so memory usage can be measured up front, rather than
     allocating piecemeal as traffic arrives.
+
+    @par Immediate Completion
+    Operations complete immediately without suspending when the
+    buffer sequence is empty, or when the underlying sink's
+    awaitable reports readiness via `await_ready`.
 
     @par Thread Safety
     Not thread-safe. Concurrent operations on the same wrapper
@@ -192,22 +198,43 @@ public:
 
         @return An awaitable yielding `(error_code,std::size_t)`.
 
+        @par Immediate Completion
+        The operation completes immediately without suspending
+        the calling coroutine when:
+        @li The buffer sequence is empty, returning `{error_code{}, 0}`.
+        @li The underlying sink's awaitable reports immediate
+            readiness via `await_ready`.
+
+        @note This is a partial operation and may not process the
+        entire buffer sequence. Use @ref write for guaranteed
+        complete transfer.
+
         @par Preconditions
         The wrapper must contain a valid sink (`has_value() == true`).
     */
     template<ConstBufferSequence CB>
-    io_task<std::size_t>
+    auto
     write_some(CB buffers);
 
     /** Initiate a complete write operation.
 
         Writes data from the provided buffer sequence. The operation
         completes when all bytes have been consumed, or an error
-        occurs.
+        occurs. Forwards to the underlying sink's `write` operation,
+        windowed through @ref buffer_param when the sequence exceeds
+        the per-call buffer limit.
 
         @param buffers The buffer sequence containing data to write.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
+
+        @par Immediate Completion
+        The operation completes immediately without suspending
+        the calling coroutine when:
+        @li The buffer sequence is empty, returning `{error_code{}, 0}`.
+        @li Every underlying `write` call completes
+            immediately (the wrapped sink reports readiness
+            via `await_ready` on each iteration).
 
         @par Preconditions
         The wrapper must contain a valid sink (`has_value() == true`).
@@ -219,12 +246,25 @@ public:
     /** Atomically write data and signal end-of-stream.
 
         Writes all data from the buffer sequence and then signals
-        end-of-stream. The operation completes when all bytes have
-        been consumed and the sink is finalized, or an error occurs.
+        end-of-stream. The implementation decides how to partition
+        the data across calls to the underlying sink's @ref write
+        and `write_eof`. When the caller's buffer sequence is
+        non-empty, the final call to the underlying sink is always
+        `write_eof` with a non-empty buffer sequence. When the
+        caller's buffer sequence is empty, only `write_eof()` with
+        no data is called.
 
         @param buffers The buffer sequence containing data to write.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
+
+        @par Immediate Completion
+        The operation completes immediately without suspending
+        the calling coroutine when:
+        @li The buffer sequence is empty. Only the @ref write_eof()
+            call is performed.
+        @li All underlying operations complete immediately (the
+            wrapped sink reports readiness via `await_ready`).
 
         @par Preconditions
         The wrapper must contain a valid sink (`has_value() == true`).
@@ -240,6 +280,11 @@ public:
         an error occurs.
 
         @return An awaitable yielding `(error_code)`.
+
+        @par Immediate Completion
+        The operation completes immediately without suspending
+        the calling coroutine when the underlying sink's awaitable
+        reports immediate readiness via `await_ready`.
 
         @par Preconditions
         The wrapper must contain a valid sink (`has_value() == true`).
@@ -272,6 +317,12 @@ protected:
 private:
     auto
     write_some_(std::span<const_buffer const> buffers);
+
+    auto
+    write_(std::span<const_buffer const> buffers);
+
+    auto
+    write_eof_buffers_(std::span<const_buffer const> buffers);
 };
 
 //----------------------------------------------------------
@@ -294,22 +345,34 @@ struct any_write_sink::eof_awaitable_ops
 
 struct any_write_sink::vtable
 {
-    void (*destroy)(void*) noexcept;
-    std::size_t awaitable_size;
-    std::size_t awaitable_align;
+    write_awaitable_ops const* (*construct_write_some_awaitable)(
+        void* sink,
+        void* storage,
+        std::span<const_buffer const> buffers);
     write_awaitable_ops const* (*construct_write_awaitable)(
+        void* sink,
+        void* storage,
+        std::span<const_buffer const> buffers);
+    write_awaitable_ops const* (*construct_write_eof_buffers_awaitable)(
         void* sink,
         void* storage,
         std::span<const_buffer const> buffers);
     eof_awaitable_ops const* (*construct_eof_awaitable)(
         void* sink,
         void* storage);
+    std::size_t awaitable_size;
+    std::size_t awaitable_align;
+    void (*destroy)(void*) noexcept;
 };
 
 template<WriteSink S>
 struct any_write_sink::vtable_for_impl
 {
-    using WriteAwaitable = decltype(std::declval<S&>().write_some(
+    using WriteSomeAwaitable = decltype(std::declval<S&>().write_some(
+        std::span<const_buffer const>{}));
+    using WriteAwaitable = decltype(std::declval<S&>().write(
+        std::span<const_buffer const>{}));
+    using WriteEofBuffersAwaitable = decltype(std::declval<S&>().write_eof(
         std::span<const_buffer const>{}));
     using EofAwaitable = decltype(std::declval<S&>().write_eof());
 
@@ -320,13 +383,40 @@ struct any_write_sink::vtable_for_impl
     }
 
     static write_awaitable_ops const*
+    construct_write_some_awaitable_impl(
+        void* sink,
+        void* storage,
+        std::span<const_buffer const> buffers)
+    {
+        auto& s = *static_cast<S*>(sink);
+        ::new(storage) WriteSomeAwaitable(s.write_some(buffers));
+
+        static constexpr write_awaitable_ops ops = {
+            +[](void* p) {
+                return static_cast<WriteSomeAwaitable*>(p)->await_ready();
+            },
+            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+                return detail::call_await_suspend(
+                    static_cast<WriteSomeAwaitable*>(p), h, ex, token);
+            },
+            +[](void* p) {
+                return static_cast<WriteSomeAwaitable*>(p)->await_resume();
+            },
+            +[](void* p) noexcept {
+                static_cast<WriteSomeAwaitable*>(p)->~WriteSomeAwaitable();
+            }
+        };
+        return &ops;
+    }
+
+    static write_awaitable_ops const*
     construct_write_awaitable_impl(
         void* sink,
         void* storage,
         std::span<const_buffer const> buffers)
     {
         auto& s = *static_cast<S*>(sink);
-        ::new(storage) WriteAwaitable(s.write_some(buffers));
+        ::new(storage) WriteAwaitable(s.write(buffers));
 
         static constexpr write_awaitable_ops ops = {
             +[](void* p) {
@@ -341,6 +431,33 @@ struct any_write_sink::vtable_for_impl
             },
             +[](void* p) noexcept {
                 static_cast<WriteAwaitable*>(p)->~WriteAwaitable();
+            }
+        };
+        return &ops;
+    }
+
+    static write_awaitable_ops const*
+    construct_write_eof_buffers_awaitable_impl(
+        void* sink,
+        void* storage,
+        std::span<const_buffer const> buffers)
+    {
+        auto& s = *static_cast<S*>(sink);
+        ::new(storage) WriteEofBuffersAwaitable(s.write_eof(buffers));
+
+        static constexpr write_awaitable_ops ops = {
+            +[](void* p) {
+                return static_cast<WriteEofBuffersAwaitable*>(p)->await_ready();
+            },
+            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+                return detail::call_await_suspend(
+                    static_cast<WriteEofBuffersAwaitable*>(p), h, ex, token);
+            },
+            +[](void* p) {
+                return static_cast<WriteEofBuffersAwaitable*>(p)->await_resume();
+            },
+            +[](void* p) noexcept {
+                static_cast<WriteEofBuffersAwaitable*>(p)->~WriteEofBuffersAwaitable();
             }
         };
         return &ops;
@@ -372,22 +489,35 @@ struct any_write_sink::vtable_for_impl
         return &ops;
     }
 
+    static constexpr std::size_t max4(
+        std::size_t a, std::size_t b,
+        std::size_t c, std::size_t d) noexcept
+    {
+        std::size_t ab = a > b ? a : b;
+        std::size_t cd = c > d ? c : d;
+        return ab > cd ? ab : cd;
+    }
+
     static constexpr std::size_t max_awaitable_size =
-        sizeof(WriteAwaitable) > sizeof(EofAwaitable)
-            ? sizeof(WriteAwaitable)
-            : sizeof(EofAwaitable);
+        max4(sizeof(WriteSomeAwaitable),
+             sizeof(WriteAwaitable),
+             sizeof(WriteEofBuffersAwaitable),
+             sizeof(EofAwaitable));
 
     static constexpr std::size_t max_awaitable_align =
-        alignof(WriteAwaitable) > alignof(EofAwaitable)
-            ? alignof(WriteAwaitable)
-            : alignof(EofAwaitable);
+        max4(alignof(WriteSomeAwaitable),
+             alignof(WriteAwaitable),
+             alignof(WriteEofBuffersAwaitable),
+             alignof(EofAwaitable));
 
     static constexpr vtable value = {
-        &do_destroy_impl,
+        &construct_write_some_awaitable_impl,
+        &construct_write_awaitable_impl,
+        &construct_write_eof_buffers_awaitable_impl,
+        &construct_eof_awaitable_impl,
         max_awaitable_size,
         max_awaitable_align,
-        &construct_write_awaitable_impl,
-        &construct_eof_awaitable_impl
+        &do_destroy_impl
     };
 };
 
@@ -402,7 +532,13 @@ any_write_sink::~any_write_sink()
         ::operator delete(storage_);
     }
     if(cached_awaitable_)
+    {
+        if(active_write_ops_)
+            active_write_ops_->destroy(cached_awaitable_);
+        else if(active_eof_ops_)
+            active_eof_ops_->destroy(cached_awaitable_);
         ::operator delete(cached_awaitable_);
+    }
 }
 
 inline any_write_sink&
@@ -416,7 +552,13 @@ any_write_sink::operator=(any_write_sink&& other) noexcept
             ::operator delete(storage_);
         }
         if(cached_awaitable_)
+        {
+            if(active_write_ops_)
+                active_write_ops_->destroy(cached_awaitable_);
+            else if(active_eof_ops_)
+                active_eof_ops_->destroy(cached_awaitable_);
             ::operator delete(cached_awaitable_);
+        }
         sink_ = std::exchange(other.sink_, nullptr);
         vt_ = std::exchange(other.vt_, nullptr);
         cached_awaitable_ = std::exchange(other.cached_awaitable_, nullptr);
@@ -483,17 +625,61 @@ any_write_sink::write_some_(
         coro
         await_suspend(coro h, executor_ref ex, std::stop_token token)
         {
-            // Construct the underlying awaitable into cached storage
+            self_->active_write_ops_ = self_->vt_->construct_write_some_awaitable(
+                self_->sink_,
+                self_->cached_awaitable_,
+                buffers_);
+
+            if(self_->active_write_ops_->await_ready(self_->cached_awaitable_))
+                return h;
+
+            return self_->active_write_ops_->await_suspend(
+                self_->cached_awaitable_, h, ex, token);
+        }
+
+        io_result<std::size_t>
+        await_resume()
+        {
+            struct guard {
+                any_write_sink* self;
+                ~guard() {
+                    self->active_write_ops_->destroy(self->cached_awaitable_);
+                    self->active_write_ops_ = nullptr;
+                }
+            } g{self_};
+            return self_->active_write_ops_->await_resume(
+                self_->cached_awaitable_);
+        }
+    };
+    return awaitable{this, buffers};
+}
+
+inline auto
+any_write_sink::write_(
+    std::span<const_buffer const> buffers)
+{
+    struct awaitable
+    {
+        any_write_sink* self_;
+        std::span<const_buffer const> buffers_;
+
+        bool
+        await_ready() const noexcept
+        {
+            return false;
+        }
+
+        coro
+        await_suspend(coro h, executor_ref ex, std::stop_token token)
+        {
             self_->active_write_ops_ = self_->vt_->construct_write_awaitable(
                 self_->sink_,
                 self_->cached_awaitable_,
                 buffers_);
 
-            // Check if underlying is immediately ready
             if(self_->active_write_ops_->await_ready(self_->cached_awaitable_))
                 return h;
 
-            // Forward to underlying awaitable
             return self_->active_write_ops_->await_suspend(
                 self_->cached_awaitable_, h, ex, token);
         }
@@ -562,15 +748,110 @@ any_write_sink::write_eof()
     return awaitable{this};
 }
 
+inline auto
+any_write_sink::write_eof_buffers_(
+    std::span<const_buffer const> buffers)
+{
+    struct awaitable
+    {
+        any_write_sink* self_;
+        std::span<const_buffer const> buffers_;
+
+        bool
+        await_ready() const noexcept
+        {
+            return false;
+        }
+
+        coro
+        await_suspend(coro h, executor_ref ex, std::stop_token token)
+        {
+            self_->active_write_ops_ =
+                self_->vt_->construct_write_eof_buffers_awaitable(
+                    self_->sink_,
+                    self_->cached_awaitable_,
+                    buffers_);
+
+            if(self_->active_write_ops_->await_ready(self_->cached_awaitable_))
+                return h;
+
+            return self_->active_write_ops_->await_suspend(
+                self_->cached_awaitable_, h, ex, token);
+        }
+
+        io_result<std::size_t>
+        await_resume()
+        {
+            struct guard {
+                any_write_sink* self;
+                ~guard() {
+                    self->active_write_ops_->destroy(self->cached_awaitable_);
+                    self->active_write_ops_ = nullptr;
+                }
+            } g{self_};
+            return self_->active_write_ops_->await_resume(
+                self_->cached_awaitable_);
+        }
+    };
+    return awaitable{this, buffers};
+}
+
 template<ConstBufferSequence CB>
-io_task<std::size_t>
+auto
 any_write_sink::write_some(CB buffers)
 {
-    buffer_param<CB> bp(buffers);
-    auto bufs = bp.data();
-    if(bufs.empty())
-        co_return {{}, 0};
-    co_return co_await write_some_(bufs);
+    struct awaitable
+    {
+        any_write_sink* self_;
+        const_buffer_array<detail::max_iovec_> ba_;
+
+        awaitable(
+            any_write_sink* self,
+            CB const& buffers)
+            : self_(self)
+            , ba_(buffers)
+        {
+        }
+
+        bool
+        await_ready() const noexcept
+        {
+            return ba_.to_span().empty();
+        }
+
+        coro
+        await_suspend(coro h, executor_ref ex, std::stop_token token)
+        {
+            self_->active_write_ops_ = self_->vt_->construct_write_some_awaitable(
+                self_->sink_,
+                self_->cached_awaitable_,
+                ba_.to_span());
+
+            if(self_->active_write_ops_->await_ready(self_->cached_awaitable_))
+                return h;
+
+            return self_->active_write_ops_->await_suspend(
+                self_->cached_awaitable_, h, ex, token);
+        }
+
+        io_result<std::size_t>
+        await_resume()
+        {
+            if(ba_.to_span().empty())
+                return {{}, 0};
+
+            struct guard {
+                any_write_sink* self;
+                ~guard() {
+                    self->active_write_ops_->destroy(self->cached_awaitable_);
+                    self->active_write_ops_ = nullptr;
+                }
+            } g{self_};
+            return self_->active_write_ops_->await_resume(
+                self_->cached_awaitable_);
+        }
+    };
+    return awaitable{this, buffers};
 }
 
 template<ConstBufferSequence CB>
@@ -586,11 +867,11 @@ any_write_sink::write(CB buffers)
         if(bufs.empty())
             break;
 
-        auto [ec, n] = co_await write_some_(bufs);
-        if(ec)
-            co_return {ec, total + n};
-        bp.consume(n);
+        auto [ec, n] = co_await write_(bufs);
         total += n;
+        if(ec)
+            co_return {ec, total};
+        bp.consume(n);
     }
 
     co_return {{}, total};
@@ -600,27 +881,32 @@ template<ConstBufferSequence CB>
 io_task<std::size_t>
 any_write_sink::write_eof(CB buffers)
 {
-    buffer_param<CB> bp(buffers);
+    const_buffer_param<CB> bp(buffers);
     std::size_t total = 0;
 
     for(;;)
     {
         auto bufs = bp.data();
         if(bufs.empty())
-            break;
+        {
+            auto [ec] = co_await write_eof();
+            co_return {ec, total};
+        }
 
-        auto [ec, n] = co_await write_some_(bufs);
-        if(ec)
-            co_return {ec, total + n};
-        bp.consume(n);
+        if(! bp.more())
+        {
+            // Last window — send atomically with EOF
+            auto [ec, n] = co_await write_eof_buffers_(bufs);
+            total += n;
+            co_return {ec, total};
+        }
+
+        auto [ec, n] = co_await write_(bufs);
         total += n;
+        if(ec)
+            co_return {ec, total};
+        bp.consume(n);
     }
-
-    auto [ec] = co_await write_eof();
-    if(ec)
-        co_return {ec, total};
-
-    co_return {{}, total};
 }
 
 } // namespace capy

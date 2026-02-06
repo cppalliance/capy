@@ -28,6 +28,7 @@
 #include <cstddef>
 #include <exception>
 #include <new>
+#include <span>
 #include <stop_token>
 #include <system_error>
 #include <utility>
@@ -42,17 +43,26 @@ namespace capy {
     buffer sink operations. It uses cached awaitable storage to achieve
     zero steady-state allocation after construction.
 
-    The wrapper also satisfies @ref WriteSink through templated
-    @ref write methods. These methods copy data from the caller's
-    buffers into the sink's internal storage, incurring one extra
-    buffer copy compared to using @ref prepare and @ref commit
-    directly.
+    The wrapper also satisfies @ref WriteSink. When the wrapped type
+    satisfies only @ref BufferSink, the write operations are
+    synthesized using @ref prepare and @ref commit with an extra
+    buffer copy. When the wrapped type satisfies both @ref BufferSink
+    and @ref WriteSink, the native write operations are forwarded
+    directly across the virtual boundary, avoiding the copy.
 
     The wrapper supports two construction modes:
     - **Owning**: Pass by value to transfer ownership. The wrapper
       allocates storage and owns the sink.
     - **Reference**: Pass a pointer to wrap without ownership. The
       pointed-to sink must outlive this wrapper.
+
+    Within each mode, the vtable is populated at compile time based
+    on whether the wrapped type also satisfies @ref WriteSink:
+    - **BufferSink only**: @ref write_some, @ref write, and
+      @ref write_eof are synthesized from @ref prepare and
+      @ref commit, incurring one buffer copy per operation.
+    - **BufferSink + WriteSink**: All operations are forwarded
+      natively through the type-erased boundary with no extra copy.
 
     @par Awaitable Preallocation
     The constructor preallocates storage for the type-erased awaitable.
@@ -77,7 +87,11 @@ namespace capy {
     auto bufs = abs.prepare(arr);
     // Write data into bufs[0..bufs.size())
     auto [ec] = co_await abs.commit(bytes_written);
-    auto [ec2] = co_await abs.commit_eof();
+    auto [ec2] = co_await abs.commit_eof(0);
+
+    // WriteSink interface also available
+    auto [ec3, n] = co_await abs.write(make_buffer("hello", 5));
+    auto [ec4] = co_await abs.write_eof();
     @endcode
 
     @see any_buffer_source, BufferSink, WriteSink
@@ -86,15 +100,18 @@ class any_buffer_sink
 {
     struct vtable;
     struct awaitable_ops;
+    struct write_awaitable_ops;
 
     template<BufferSink S>
     struct vtable_for_impl;
 
+    // hot-path members first for cache locality
     void* sink_ = nullptr;
     vtable const* vt_ = nullptr;
     void* cached_awaitable_ = nullptr;
-    void* storage_ = nullptr;
     awaitable_ops const* active_ops_ = nullptr;
+    write_awaitable_ops const* active_write_ops_ = nullptr;
+    void* storage_ = nullptr;
 
 public:
     /** Destructor.
@@ -130,8 +147,9 @@ public:
         : sink_(std::exchange(other.sink_, nullptr))
         , vt_(std::exchange(other.vt_, nullptr))
         , cached_awaitable_(std::exchange(other.cached_awaitable_, nullptr))
-        , storage_(std::exchange(other.storage_, nullptr))
         , active_ops_(std::exchange(other.active_ops_, nullptr))
+        , active_write_ops_(std::exchange(other.active_write_ops_, nullptr))
+        , storage_(std::exchange(other.storage_, nullptr))
     {
     }
 
@@ -149,7 +167,9 @@ public:
     /** Construct by taking ownership of a BufferSink.
 
         Allocates storage and moves the sink into this wrapper.
-        The wrapper owns the sink and will destroy it.
+        The wrapper owns the sink and will destroy it. If `S` also
+        satisfies @ref WriteSink, native write operations are
+        forwarded through the virtual boundary.
 
         @param s The sink to take ownership of.
     */
@@ -160,7 +180,9 @@ public:
     /** Construct by wrapping a BufferSink without ownership.
 
         Wraps the given sink by pointer. The sink must remain
-        valid for the lifetime of this wrapper.
+        valid for the lifetime of this wrapper. If `S` also
+        satisfies @ref WriteSink, native write operations are
+        forwarded through the virtual boundary.
 
         @param s Pointer to the sink to wrap.
     */
@@ -221,14 +243,13 @@ public:
     auto
     commit(std::size_t n);
 
-    /** Commit bytes written with optional end-of-stream.
+    /** Commit final bytes and signal end-of-stream.
 
         Commits `n` bytes written to the buffers returned by the
-        most recent call to @ref prepare. If `eof` is true, also
-        signals end-of-stream.
+        most recent call to @ref prepare and finalizes the sink.
+        After success, no further operations are permitted.
 
         @param n The number of bytes to commit.
-        @param eof If true, signals end-of-stream after committing.
 
         @return An awaitable yielding `(error_code)`.
 
@@ -236,26 +257,16 @@ public:
         The wrapper must contain a valid sink (`has_value() == true`).
     */
     auto
-    commit(std::size_t n, bool eof);
-
-    /** Signal end-of-stream.
-
-        Indicates that no more data will be written to the sink.
-        The operation completes when the sink is finalized, or
-        an error occurs.
-
-        @return An awaitable yielding `(error_code)`.
-
-        @par Preconditions
-        The wrapper must contain a valid sink (`has_value() == true`).
-    */
-    auto
-    commit_eof();
+    commit_eof(std::size_t n);
 
     /** Write some data from a buffer sequence.
 
         Writes one or more bytes from the buffer sequence to the
         underlying sink. May consume less than the full sequence.
+
+        When the wrapped type provides native @ref WriteSink support,
+        the operation forwards directly. Otherwise it is synthesized
+        from @ref prepare and @ref commit with a buffer copy.
 
         @param buffers The buffer sequence to write.
 
@@ -273,6 +284,10 @@ public:
         Writes all data from the buffer sequence to the underlying
         sink. This method satisfies the @ref WriteSink concept.
 
+        When the wrapped type provides native @ref WriteSink support,
+        each window is forwarded directly. Otherwise the data is
+        copied into the sink via @ref prepare and @ref commit.
+
         @param buffers The buffer sequence to write.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
@@ -289,6 +304,11 @@ public:
         Writes all data from the buffer sequence to the underlying
         sink and then signals end-of-stream.
 
+        When the wrapped type provides native @ref WriteSink support,
+        the final window is sent atomically via the underlying
+        `write_eof(buffers)`. Otherwise the data is synthesized
+        through @ref prepare, @ref commit, and @ref commit_eof.
+
         @param buffers The buffer sequence to write.
 
         @return An awaitable yielding `(error_code,std::size_t)`.
@@ -304,6 +324,10 @@ public:
 
         Indicates that no more data will be written to the sink.
         This method satisfies the @ref WriteSink concept.
+
+        When the wrapped type provides native @ref WriteSink support,
+        the underlying `write_eof()` is called. Otherwise the
+        operation is implemented as `commit_eof(0)`.
 
         @return An awaitable yielding `(error_code)`.
 
@@ -334,15 +358,50 @@ protected:
             std::terminate();
         sink_ = &new_sink;
     }
+
+private:
+    /** Forward a partial write through the vtable.
+
+        Constructs the underlying `write_some` awaitable in
+        cached storage and returns a type-erased awaitable.
+    */
+    auto
+    write_some_(std::span<const_buffer const> buffers);
+
+    /** Forward a complete write through the vtable.
+
+        Constructs the underlying `write` awaitable in
+        cached storage and returns a type-erased awaitable.
+    */
+    auto
+    write_(std::span<const_buffer const> buffers);
+
+    /** Forward an atomic write-with-EOF through the vtable.
+
+        Constructs the underlying `write_eof(buffers)` awaitable
+        in cached storage and returns a type-erased awaitable.
+    */
+    auto
+    write_eof_buffers_(std::span<const_buffer const> buffers);
 };
 
 //----------------------------------------------------------
 
+/** Type-erased ops for awaitables yielding `io_result<>`. */
 struct any_buffer_sink::awaitable_ops
 {
     bool (*await_ready)(void*);
     coro (*await_suspend)(void*, coro, executor_ref, std::stop_token);
     io_result<> (*await_resume)(void*);
+    void (*destroy)(void*) noexcept;
+};
+
+/** Type-erased ops for awaitables yielding `io_result<std::size_t>`. */
+struct any_buffer_sink::write_awaitable_ops
+{
+    bool (*await_ready)(void*);
+    coro (*await_suspend)(void*, coro, executor_ref, std::stop_token);
+    io_result<std::size_t> (*await_resume)(void*);
     void (*destroy)(void*) noexcept;
 };
 
@@ -357,9 +416,26 @@ struct any_buffer_sink::vtable
     awaitable_ops const* (*construct_commit_awaitable)(
         void* sink,
         void* storage,
-        std::size_t n,
-        bool eof);
-    awaitable_ops const* (*construct_eof_awaitable)(
+        std::size_t n);
+    awaitable_ops const* (*construct_commit_eof_awaitable)(
+        void* sink,
+        void* storage,
+        std::size_t n);
+
+    // WriteSink forwarding (null when wrapped type is BufferSink-only)
+    write_awaitable_ops const* (*construct_write_some_awaitable)(
+        void* sink,
+        void* storage,
+        std::span<const_buffer const> buffers);
+    write_awaitable_ops const* (*construct_write_awaitable)(
+        void* sink,
+        void* storage,
+        std::span<const_buffer const> buffers);
+    write_awaitable_ops const* (*construct_write_eof_buffers_awaitable)(
+        void* sink,
+        void* storage,
+        std::span<const_buffer const> buffers);
+    awaitable_ops const* (*construct_write_eof_awaitable)(
         void* sink,
         void* storage);
 };
@@ -368,8 +444,9 @@ template<BufferSink S>
 struct any_buffer_sink::vtable_for_impl
 {
     using CommitAwaitable = decltype(std::declval<S&>().commit(
-        std::size_t{}, false));
-    using EofAwaitable = decltype(std::declval<S&>().commit_eof());
+        std::size_t{}));
+    using CommitEofAwaitable = decltype(std::declval<S&>().commit_eof(
+        std::size_t{}));
 
     static void
     do_destroy_impl(void* sink) noexcept
@@ -390,11 +467,10 @@ struct any_buffer_sink::vtable_for_impl
     construct_commit_awaitable_impl(
         void* sink,
         void* storage,
-        std::size_t n,
-        bool eof)
+        std::size_t n)
     {
         auto& s = *static_cast<S*>(sink);
-        ::new(storage) CommitAwaitable(s.commit(n, eof));
+        ::new(storage) CommitAwaitable(s.commit(n));
 
         static constexpr awaitable_ops ops = {
             +[](void* p) {
@@ -415,49 +491,233 @@ struct any_buffer_sink::vtable_for_impl
     }
 
     static awaitable_ops const*
-    construct_eof_awaitable_impl(
+    construct_commit_eof_awaitable_impl(
         void* sink,
-        void* storage)
+        void* storage,
+        std::size_t n)
     {
         auto& s = *static_cast<S*>(sink);
-        ::new(storage) EofAwaitable(s.commit_eof());
+        ::new(storage) CommitEofAwaitable(s.commit_eof(n));
 
         static constexpr awaitable_ops ops = {
             +[](void* p) {
-                return static_cast<EofAwaitable*>(p)->await_ready();
+                return static_cast<CommitEofAwaitable*>(p)->await_ready();
             },
             +[](void* p, coro h, executor_ref ex, std::stop_token token) {
                 return detail::call_await_suspend(
-                    static_cast<EofAwaitable*>(p), h, ex, token);
+                    static_cast<CommitEofAwaitable*>(p), h, ex, token);
             },
             +[](void* p) {
-                return static_cast<EofAwaitable*>(p)->await_resume();
+                return static_cast<CommitEofAwaitable*>(p)->await_resume();
             },
             +[](void* p) noexcept {
-                static_cast<EofAwaitable*>(p)->~EofAwaitable();
+                static_cast<CommitEofAwaitable*>(p)->~CommitEofAwaitable();
             }
         };
         return &ops;
     }
 
-    static constexpr std::size_t max_awaitable_size =
-        sizeof(CommitAwaitable) > sizeof(EofAwaitable)
+    //------------------------------------------------------
+    // WriteSink forwarding (only instantiated when WriteSink<S>)
+
+    static write_awaitable_ops const*
+    construct_write_some_awaitable_impl(
+        void* sink,
+        void* storage,
+        std::span<const_buffer const> buffers)
+        requires WriteSink<S>
+    {
+        using Aw = decltype(std::declval<S&>().write_some(
+            std::span<const_buffer const>{}));
+        auto& s = *static_cast<S*>(sink);
+        ::new(storage) Aw(s.write_some(buffers));
+
+        static constexpr write_awaitable_ops ops = {
+            +[](void* p) {
+                return static_cast<Aw*>(p)->await_ready();
+            },
+            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+                return detail::call_await_suspend(
+                    static_cast<Aw*>(p), h, ex, token);
+            },
+            +[](void* p) {
+                return static_cast<Aw*>(p)->await_resume();
+            },
+            +[](void* p) noexcept {
+                static_cast<Aw*>(p)->~Aw();
+            }
+        };
+        return &ops;
+    }
+
+    static write_awaitable_ops const*
+    construct_write_awaitable_impl(
+        void* sink,
+        void* storage,
+        std::span<const_buffer const> buffers)
+        requires WriteSink<S>
+    {
+        using Aw = decltype(std::declval<S&>().write(
+            std::span<const_buffer const>{}));
+        auto& s = *static_cast<S*>(sink);
+        ::new(storage) Aw(s.write(buffers));
+
+        static constexpr write_awaitable_ops ops = {
+            +[](void* p) {
+                return static_cast<Aw*>(p)->await_ready();
+            },
+            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+                return detail::call_await_suspend(
+                    static_cast<Aw*>(p), h, ex, token);
+            },
+            +[](void* p) {
+                return static_cast<Aw*>(p)->await_resume();
+            },
+            +[](void* p) noexcept {
+                static_cast<Aw*>(p)->~Aw();
+            }
+        };
+        return &ops;
+    }
+
+    static write_awaitable_ops const*
+    construct_write_eof_buffers_awaitable_impl(
+        void* sink,
+        void* storage,
+        std::span<const_buffer const> buffers)
+        requires WriteSink<S>
+    {
+        using Aw = decltype(std::declval<S&>().write_eof(
+            std::span<const_buffer const>{}));
+        auto& s = *static_cast<S*>(sink);
+        ::new(storage) Aw(s.write_eof(buffers));
+
+        static constexpr write_awaitable_ops ops = {
+            +[](void* p) {
+                return static_cast<Aw*>(p)->await_ready();
+            },
+            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+                return detail::call_await_suspend(
+                    static_cast<Aw*>(p), h, ex, token);
+            },
+            +[](void* p) {
+                return static_cast<Aw*>(p)->await_resume();
+            },
+            +[](void* p) noexcept {
+                static_cast<Aw*>(p)->~Aw();
+            }
+        };
+        return &ops;
+    }
+
+    static awaitable_ops const*
+    construct_write_eof_awaitable_impl(
+        void* sink,
+        void* storage)
+        requires WriteSink<S>
+    {
+        using Aw = decltype(std::declval<S&>().write_eof());
+        auto& s = *static_cast<S*>(sink);
+        ::new(storage) Aw(s.write_eof());
+
+        static constexpr awaitable_ops ops = {
+            +[](void* p) {
+                return static_cast<Aw*>(p)->await_ready();
+            },
+            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+                return detail::call_await_suspend(
+                    static_cast<Aw*>(p), h, ex, token);
+            },
+            +[](void* p) {
+                return static_cast<Aw*>(p)->await_resume();
+            },
+            +[](void* p) noexcept {
+                static_cast<Aw*>(p)->~Aw();
+            }
+        };
+        return &ops;
+    }
+
+    //------------------------------------------------------
+
+    static consteval std::size_t
+    compute_max_size() noexcept
+    {
+        std::size_t s = sizeof(CommitAwaitable) > sizeof(CommitEofAwaitable)
             ? sizeof(CommitAwaitable)
-            : sizeof(EofAwaitable);
+            : sizeof(CommitEofAwaitable);
+        if constexpr (WriteSink<S>)
+        {
+            using WS = decltype(std::declval<S&>().write_some(
+                std::span<const_buffer const>{}));
+            using W = decltype(std::declval<S&>().write(
+                std::span<const_buffer const>{}));
+            using WEB = decltype(std::declval<S&>().write_eof(
+                std::span<const_buffer const>{}));
+            using WE = decltype(std::declval<S&>().write_eof());
 
-    static constexpr std::size_t max_awaitable_align =
-        alignof(CommitAwaitable) > alignof(EofAwaitable)
+            if(sizeof(WS) > s) s = sizeof(WS);
+            if(sizeof(W) > s) s = sizeof(W);
+            if(sizeof(WEB) > s) s = sizeof(WEB);
+            if(sizeof(WE) > s) s = sizeof(WE);
+        }
+        return s;
+    }
+
+    static consteval std::size_t
+    compute_max_align() noexcept
+    {
+        std::size_t a = alignof(CommitAwaitable) > alignof(CommitEofAwaitable)
             ? alignof(CommitAwaitable)
-            : alignof(EofAwaitable);
+            : alignof(CommitEofAwaitable);
+        if constexpr (WriteSink<S>)
+        {
+            using WS = decltype(std::declval<S&>().write_some(
+                std::span<const_buffer const>{}));
+            using W = decltype(std::declval<S&>().write(
+                std::span<const_buffer const>{}));
+            using WEB = decltype(std::declval<S&>().write_eof(
+                std::span<const_buffer const>{}));
+            using WE = decltype(std::declval<S&>().write_eof());
 
-    static constexpr vtable value = {
-        &do_destroy_impl,
-        &do_prepare_impl,
-        max_awaitable_size,
-        max_awaitable_align,
-        &construct_commit_awaitable_impl,
-        &construct_eof_awaitable_impl
-    };
+            if(alignof(WS) > a) a = alignof(WS);
+            if(alignof(W) > a) a = alignof(W);
+            if(alignof(WEB) > a) a = alignof(WEB);
+            if(alignof(WE) > a) a = alignof(WE);
+        }
+        return a;
+    }
+
+    static consteval vtable
+    make_vtable() noexcept
+    {
+        vtable v{};
+        v.destroy = &do_destroy_impl;
+        v.do_prepare = &do_prepare_impl;
+        v.awaitable_size = compute_max_size();
+        v.awaitable_align = compute_max_align();
+        v.construct_commit_awaitable = &construct_commit_awaitable_impl;
+        v.construct_commit_eof_awaitable = &construct_commit_eof_awaitable_impl;
+        v.construct_write_some_awaitable = nullptr;
+        v.construct_write_awaitable = nullptr;
+        v.construct_write_eof_buffers_awaitable = nullptr;
+        v.construct_write_eof_awaitable = nullptr;
+
+        if constexpr (WriteSink<S>)
+        {
+            v.construct_write_some_awaitable =
+                &construct_write_some_awaitable_impl;
+            v.construct_write_awaitable =
+                &construct_write_awaitable_impl;
+            v.construct_write_eof_buffers_awaitable =
+                &construct_write_eof_buffers_awaitable_impl;
+            v.construct_write_eof_awaitable =
+                &construct_write_eof_awaitable_impl;
+        }
+        return v;
+    }
+
+    static constexpr vtable value = make_vtable();
 };
 
 //----------------------------------------------------------
@@ -491,6 +751,7 @@ any_buffer_sink::operator=(any_buffer_sink&& other) noexcept
         cached_awaitable_ = std::exchange(other.cached_awaitable_, nullptr);
         storage_ = std::exchange(other.storage_, nullptr);
         active_ops_ = std::exchange(other.active_ops_, nullptr);
+        active_write_ops_ = std::exchange(other.active_write_ops_, nullptr);
     }
     return *this;
 }
@@ -516,7 +777,6 @@ any_buffer_sink::any_buffer_sink(S s)
     storage_ = ::operator new(sizeof(S));
     sink_ = ::new(storage_) S(std::move(s));
 
-    // Preallocate the awaitable storage (sized for max of commit/eof)
     cached_awaitable_ = ::operator new(vt_->awaitable_size);
 
     g.committed = true;
@@ -527,7 +787,6 @@ any_buffer_sink::any_buffer_sink(S* s)
     : sink_(s)
     , vt_(&vtable_for_impl<S>::value)
 {
-    // Preallocate the awaitable storage (sized for max of commit/eof)
     cached_awaitable_ = ::operator new(vt_->awaitable_size);
 }
 
@@ -540,35 +799,26 @@ any_buffer_sink::prepare(std::span<mutable_buffer> dest)
 }
 
 inline auto
-any_buffer_sink::commit(std::size_t n, bool eof)
+any_buffer_sink::commit(std::size_t n)
 {
     struct awaitable
     {
         any_buffer_sink* self_;
         std::size_t n_;
-        bool eof_;
 
         bool
-        await_ready() const noexcept
+        await_ready()
         {
-            return false;
+            self_->active_ops_ = self_->vt_->construct_commit_awaitable(
+                self_->sink_,
+                self_->cached_awaitable_,
+                n_);
+            return self_->active_ops_->await_ready(self_->cached_awaitable_);
         }
 
         coro
         await_suspend(coro h, executor_ref ex, std::stop_token token)
         {
-            // Construct the underlying awaitable into cached storage
-            self_->active_ops_ = self_->vt_->construct_commit_awaitable(
-                self_->sink_,
-                self_->cached_awaitable_,
-                n_,
-                eof_);
-
-            // Check if underlying is immediately ready
-            if(self_->active_ops_->await_ready(self_->cached_awaitable_))
-                return h;
-
-            // Forward to underlying awaitable
             return self_->active_ops_->await_suspend(
                 self_->cached_awaitable_, h, ex, token);
         }
@@ -587,21 +837,62 @@ any_buffer_sink::commit(std::size_t n, bool eof)
                 self_->cached_awaitable_);
         }
     };
-    return awaitable{this, n, eof};
+    return awaitable{this, n};
 }
 
 inline auto
-any_buffer_sink::commit(std::size_t n)
-{
-    return commit(n, false);
-}
-
-inline auto
-any_buffer_sink::commit_eof()
+any_buffer_sink::commit_eof(std::size_t n)
 {
     struct awaitable
     {
         any_buffer_sink* self_;
+        std::size_t n_;
+
+        bool
+        await_ready()
+        {
+            self_->active_ops_ = self_->vt_->construct_commit_eof_awaitable(
+                self_->sink_,
+                self_->cached_awaitable_,
+                n_);
+            return self_->active_ops_->await_ready(self_->cached_awaitable_);
+        }
+
+        coro
+        await_suspend(coro h, executor_ref ex, std::stop_token token)
+        {
+            return self_->active_ops_->await_suspend(
+                self_->cached_awaitable_, h, ex, token);
+        }
+
+        io_result<>
+        await_resume()
+        {
+            struct guard {
+                any_buffer_sink* self;
+                ~guard() {
+                    self->active_ops_->destroy(self->cached_awaitable_);
+                    self->active_ops_ = nullptr;
+                }
+            } g{self_};
+            return self_->active_ops_->await_resume(
+                self_->cached_awaitable_);
+        }
+    };
+    return awaitable{this, n};
+}
+
+//----------------------------------------------------------
+// Private helpers for native WriteSink forwarding
+
+inline auto
+any_buffer_sink::write_some_(
+    std::span<const_buffer const> buffers)
+{
+    struct awaitable
+    {
+        any_buffer_sink* self_;
+        std::span<const_buffer const> buffers_;
 
         bool
         await_ready() const noexcept
@@ -612,16 +903,261 @@ any_buffer_sink::commit_eof()
         coro
         await_suspend(coro h, executor_ref ex, std::stop_token token)
         {
-            // Construct the underlying awaitable into cached storage
-            self_->active_ops_ = self_->vt_->construct_eof_awaitable(
-                self_->sink_,
-                self_->cached_awaitable_);
+            self_->active_write_ops_ =
+                self_->vt_->construct_write_some_awaitable(
+                    self_->sink_,
+                    self_->cached_awaitable_,
+                    buffers_);
 
-            // Check if underlying is immediately ready
-            if(self_->active_ops_->await_ready(self_->cached_awaitable_))
+            if(self_->active_write_ops_->await_ready(
+                self_->cached_awaitable_))
                 return h;
 
-            // Forward to underlying awaitable
+            return self_->active_write_ops_->await_suspend(
+                self_->cached_awaitable_, h, ex, token);
+        }
+
+        io_result<std::size_t>
+        await_resume()
+        {
+            struct guard {
+                any_buffer_sink* self;
+                ~guard() {
+                    self->active_write_ops_->destroy(
+                        self->cached_awaitable_);
+                    self->active_write_ops_ = nullptr;
+                }
+            } g{self_};
+            return self_->active_write_ops_->await_resume(
+                self_->cached_awaitable_);
+        }
+    };
+    return awaitable{this, buffers};
+}
+
+inline auto
+any_buffer_sink::write_(
+    std::span<const_buffer const> buffers)
+{
+    struct awaitable
+    {
+        any_buffer_sink* self_;
+        std::span<const_buffer const> buffers_;
+
+        bool
+        await_ready() const noexcept
+        {
+            return false;
+        }
+
+        coro
+        await_suspend(coro h, executor_ref ex, std::stop_token token)
+        {
+            self_->active_write_ops_ =
+                self_->vt_->construct_write_awaitable(
+                    self_->sink_,
+                    self_->cached_awaitable_,
+                    buffers_);
+
+            if(self_->active_write_ops_->await_ready(
+                self_->cached_awaitable_))
+                return h;
+
+            return self_->active_write_ops_->await_suspend(
+                self_->cached_awaitable_, h, ex, token);
+        }
+
+        io_result<std::size_t>
+        await_resume()
+        {
+            struct guard {
+                any_buffer_sink* self;
+                ~guard() {
+                    self->active_write_ops_->destroy(
+                        self->cached_awaitable_);
+                    self->active_write_ops_ = nullptr;
+                }
+            } g{self_};
+            return self_->active_write_ops_->await_resume(
+                self_->cached_awaitable_);
+        }
+    };
+    return awaitable{this, buffers};
+}
+
+inline auto
+any_buffer_sink::write_eof_buffers_(
+    std::span<const_buffer const> buffers)
+{
+    struct awaitable
+    {
+        any_buffer_sink* self_;
+        std::span<const_buffer const> buffers_;
+
+        bool
+        await_ready() const noexcept
+        {
+            return false;
+        }
+
+        coro
+        await_suspend(coro h, executor_ref ex, std::stop_token token)
+        {
+            self_->active_write_ops_ =
+                self_->vt_->construct_write_eof_buffers_awaitable(
+                    self_->sink_,
+                    self_->cached_awaitable_,
+                    buffers_);
+
+            if(self_->active_write_ops_->await_ready(
+                self_->cached_awaitable_))
+                return h;
+
+            return self_->active_write_ops_->await_suspend(
+                self_->cached_awaitable_, h, ex, token);
+        }
+
+        io_result<std::size_t>
+        await_resume()
+        {
+            struct guard {
+                any_buffer_sink* self;
+                ~guard() {
+                    self->active_write_ops_->destroy(
+                        self->cached_awaitable_);
+                    self->active_write_ops_ = nullptr;
+                }
+            } g{self_};
+            return self_->active_write_ops_->await_resume(
+                self_->cached_awaitable_);
+        }
+    };
+    return awaitable{this, buffers};
+}
+
+//----------------------------------------------------------
+// Public WriteSink methods
+
+template<ConstBufferSequence CB>
+io_task<std::size_t>
+any_buffer_sink::write_some(CB buffers)
+{
+    buffer_param<CB> bp(buffers);
+    auto src = bp.data();
+    if(src.empty())
+        co_return {{}, 0};
+
+    // Native WriteSink path
+    if(vt_->construct_write_some_awaitable)
+        co_return co_await write_some_(src);
+
+    // Synthesized path: prepare + buffer_copy + commit
+    mutable_buffer arr[detail::max_iovec_];
+    auto dst_bufs = prepare(arr);
+    if(dst_bufs.empty())
+    {
+        auto [ec] = co_await commit(0);
+        if(ec)
+            co_return {ec, 0};
+        dst_bufs = prepare(arr);
+        if(dst_bufs.empty())
+            co_return {{}, 0};
+    }
+
+    auto n = buffer_copy(dst_bufs, src);
+    auto [ec] = co_await commit(n);
+    if(ec)
+        co_return {ec, 0};
+    co_return {{}, n};
+}
+
+template<ConstBufferSequence CB>
+io_task<std::size_t>
+any_buffer_sink::write(CB buffers)
+{
+    buffer_param<CB> bp(buffers);
+    std::size_t total = 0;
+
+    // Native WriteSink path
+    if(vt_->construct_write_awaitable)
+    {
+        for(;;)
+        {
+            auto bufs = bp.data();
+            if(bufs.empty())
+                break;
+
+            auto [ec, n] = co_await write_(bufs);
+            total += n;
+            if(ec)
+                co_return {ec, total};
+            bp.consume(n);
+        }
+        co_return {{}, total};
+    }
+
+    // Synthesized path: prepare + buffer_copy + commit
+    for(;;)
+    {
+        auto src = bp.data();
+        if(src.empty())
+            break;
+
+        mutable_buffer arr[detail::max_iovec_];
+        auto dst_bufs = prepare(arr);
+        if(dst_bufs.empty())
+        {
+            auto [ec] = co_await commit(0);
+            if(ec)
+                co_return {ec, total};
+            continue;
+        }
+
+        auto n = buffer_copy(dst_bufs, src);
+        auto [ec] = co_await commit(n);
+        if(ec)
+            co_return {ec, total};
+        bp.consume(n);
+        total += n;
+    }
+
+    co_return {{}, total};
+}
+
+inline auto
+any_buffer_sink::write_eof()
+{
+    struct awaitable
+    {
+        any_buffer_sink* self_;
+
+        bool
+        await_ready()
+        {
+            if(self_->vt_->construct_write_eof_awaitable)
+            {
+                // Native WriteSink: forward to underlying write_eof()
+                self_->active_ops_ =
+                    self_->vt_->construct_write_eof_awaitable(
+                        self_->sink_,
+                        self_->cached_awaitable_);
+            }
+            else
+            {
+                // Synthesized: commit_eof(0)
+                self_->active_ops_ =
+                    self_->vt_->construct_commit_eof_awaitable(
+                        self_->sink_,
+                        self_->cached_awaitable_,
+                        0);
+            }
+            return self_->active_ops_->await_ready(
+                self_->cached_awaitable_);
+        }
+
+        coro
+        await_suspend(coro h, executor_ref ex, std::stop_token token)
+        {
             return self_->active_ops_->await_suspend(
                 self_->cached_awaitable_, h, ex, token);
         }
@@ -643,75 +1179,42 @@ any_buffer_sink::commit_eof()
     return awaitable{this};
 }
 
-//----------------------------------------------------------
-
-template<ConstBufferSequence CB>
-io_task<std::size_t>
-any_buffer_sink::write_some(CB buffers)
-{
-    buffer_param<CB> bp(buffers);
-    auto src = bp.data();
-    if(src.empty())
-        co_return {{}, 0};
-
-    mutable_buffer arr[detail::max_iovec_];
-    auto dst_bufs = prepare(arr);
-    if(dst_bufs.empty())
-    {
-        auto [ec] = co_await commit(0);
-        if(ec)
-            co_return {ec, 0};
-        // Retry after flush
-        dst_bufs = prepare(arr);
-        if(dst_bufs.empty())
-            co_return {{}, 0};
-    }
-
-    auto n = buffer_copy(dst_bufs, src);
-    auto [ec] = co_await commit(n);
-    if(ec)
-        co_return {ec, 0};
-    co_return {{}, n};
-}
-
-template<ConstBufferSequence CB>
-io_task<std::size_t>
-any_buffer_sink::write(CB buffers)
-{
-    buffer_param<CB> bp(buffers);
-    std::size_t total = 0;
-
-    for(;;)
-    {
-        auto src = bp.data();
-        if(src.empty())
-            break;
-
-        mutable_buffer arr[detail::max_iovec_];
-        auto dst_bufs = prepare(arr);
-        if(dst_bufs.empty())
-        {
-            auto [ec] = co_await commit(0);
-            if(ec)
-                co_return {ec, total};
-            continue;
-        }
-
-        auto n = buffer_copy(dst_bufs, src);
-        auto [ec] = co_await commit(n);
-        if(ec)
-            co_return {ec, total};
-        bp.consume(n);
-        total += n;
-    }
-
-    co_return {{}, total};
-}
-
 template<ConstBufferSequence CB>
 io_task<std::size_t>
 any_buffer_sink::write_eof(CB buffers)
 {
+    // Native WriteSink path
+    if(vt_->construct_write_eof_buffers_awaitable)
+    {
+        const_buffer_param<CB> bp(buffers);
+        std::size_t total = 0;
+
+        for(;;)
+        {
+            auto bufs = bp.data();
+            if(bufs.empty())
+            {
+                auto [ec] = co_await write_eof();
+                co_return {ec, total};
+            }
+
+            if(!bp.more())
+            {
+                // Last window: send atomically with EOF
+                auto [ec, n] = co_await write_eof_buffers_(bufs);
+                total += n;
+                co_return {ec, total};
+            }
+
+            auto [ec, n] = co_await write_(bufs);
+            total += n;
+            if(ec)
+                co_return {ec, total};
+            bp.consume(n);
+        }
+    }
+
+    // Synthesized path: prepare + buffer_copy + commit + commit_eof
     buffer_param<CB> bp(buffers);
     std::size_t total = 0;
 
@@ -739,21 +1242,16 @@ any_buffer_sink::write_eof(CB buffers)
         total += n;
     }
 
-    auto [ec] = co_await commit_eof();
+    auto [ec] = co_await commit_eof(0);
     if(ec)
         co_return {ec, total};
 
     co_return {{}, total};
 }
 
-inline auto
-any_buffer_sink::write_eof()
-{
-    return commit_eof();
-}
-
 //----------------------------------------------------------
 
+static_assert(BufferSink<any_buffer_sink>);
 static_assert(WriteSink<any_buffer_sink>);
 
 } // namespace capy

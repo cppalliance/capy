@@ -39,6 +39,11 @@ read. May return fewer bytes than the buffer can hold.
 - On error: `ec`, `n == 0`.
 - If `buffer_empty(buffers)`: completes immediately, `!ec`, `n == 0`.
 
+Once `read_some` returns an error (including EOF), the caller must
+not call `read_some` again. The stream is done. Not all
+implementations can reproduce a prior error on subsequent calls, so
+the behavior after an error is undefined.
+
 === `read(buffers)` -- Complete Read
 
 Reads data into the buffer sequence. Either fills the entire buffer
@@ -57,6 +62,11 @@ is the number of bytes read.
 Successful partial reads are not permitted. Either the entire buffer
 is filled, or the operation returns with an error. This is the
 defining property of a complete-read primitive.
+
+Once `read` returns an error (including EOF), the caller must not
+call `read` or `read_some` again. The source is done. Not all
+implementations can reproduce a prior error on subsequent calls, so
+the behavior after an error is undefined.
 
 When the buffer sequence contains multiple buffers, each buffer is
 filled completely before proceeding to the next.
@@ -400,7 +410,7 @@ Examples of types that satisfy `ReadSource`:
 
 The `read_some` contract (inherited from `ReadStream`) requires that
 when `ec == cond::eof`, `n` is always 0. Data and EOF are delivered
-in separate calls. See xref:ReadStream.adoc#_why_read_some_returns_no_data_on_eof[ReadStream: Why `read_some` Returns No Data on EOF]
+in separate calls. See xref:ReadStream.adoc#_design_foundations_why_errors_exclude_data[ReadStream: Why Errors Exclude Data]
 for the full rationale. The key points:
 
 - The clean trichotomy (success/EOF/error, where data implies success)

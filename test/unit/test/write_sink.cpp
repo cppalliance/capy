@@ -360,11 +360,71 @@ public:
     void
     testWritePartial()
     {
+        // write() ignores max_write_size and writes all data
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
-            write_sink ws(f, 5); // max 5 bytes per write
+            write_sink ws(f, 5);
 
             auto [ec, n] = co_await ws.write(
+                make_buffer("hello world", 11));
+            if(ec)
+                co_return;
+            BOOST_TEST_EQ(n, 11u);
+            BOOST_TEST_EQ(ws.data(), "hello world");
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testWriteEofWithBuffersPartial()
+    {
+        // write_eof(buffers) ignores max_write_size and writes all data
+        fuse f;
+        auto r = f.armed([&](fuse&) -> task<> {
+            write_sink ws(f, 5);
+
+            auto [ec, n] = co_await ws.write_eof(
+                make_buffer("hello world", 11));
+            if(ec)
+                co_return;
+            BOOST_TEST_EQ(n, 11u);
+            BOOST_TEST_EQ(ws.data(), "hello world");
+            BOOST_TEST(ws.eof_called());
+        });
+        BOOST_TEST(r.success);
+    }
+
+    //--------------------------------------------
+    //
+    // write_some tests (WriteStream refinement)
+    //
+    //--------------------------------------------
+
+    void
+    testWriteSome()
+    {
+        fuse f;
+        auto r = f.armed([&](fuse&) -> task<> {
+            write_sink ws(f);
+
+            auto [ec, n] = co_await ws.write_some(
+                make_buffer("hello world", 11));
+            if(ec)
+                co_return;
+            BOOST_TEST_EQ(n, 11u);
+            BOOST_TEST_EQ(ws.data(), "hello world");
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testWriteSomePartial()
+    {
+        fuse f;
+        auto r = f.armed([&](fuse&) -> task<> {
+            write_sink ws(f, 5);
+
+            auto [ec, n] = co_await ws.write_some(
                 make_buffer("hello world", 11));
             if(ec)
                 co_return;
@@ -375,21 +435,89 @@ public:
     }
 
     void
-    testWriteEofWithBuffersPartial()
+    testWriteSomeEmpty()
     {
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
-            write_sink ws(f, 5); // max 5 bytes per write
+            write_sink ws(f);
 
-            auto [ec, n] = co_await ws.write_eof(
-                make_buffer("hello world", 11));
+            auto [ec, n] = co_await ws.write_some(const_buffer());
             if(ec)
                 co_return;
-            BOOST_TEST_EQ(n, 5u);
-            BOOST_TEST_EQ(ws.data(), "hello");
-            BOOST_TEST(ws.eof_called());
+            BOOST_TEST_EQ(n, 0u);
+            BOOST_TEST(ws.data().empty());
         });
         BOOST_TEST(r.success);
+    }
+
+    void
+    testWriteSomeBufferSequence()
+    {
+        fuse f;
+        auto r = f.armed([&](fuse&) -> task<> {
+            write_sink ws(f);
+
+            std::array<const_buffer, 2> buffers = {{
+                make_buffer("hello", 5),
+                make_buffer("world", 5)
+            }};
+
+            auto [ec, n] = co_await ws.write_some(buffers);
+            if(ec)
+                co_return;
+            BOOST_TEST_EQ(n, 10u);
+            BOOST_TEST_EQ(ws.data(), "helloworld");
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testWriteSomeMaxWriteSize()
+    {
+        fuse f;
+        auto r = f.armed([&](fuse&) -> task<> {
+            write_sink ws(f, 3);
+
+            auto [ec1, n1] = co_await ws.write_some(
+                make_buffer("abcdefgh", 8));
+            if(ec1)
+                co_return;
+            BOOST_TEST_EQ(n1, 3u);
+            BOOST_TEST_EQ(ws.data(), "abc");
+
+            auto [ec2, n2] = co_await ws.write_some(
+                make_buffer("defgh", 5));
+            if(ec2)
+                co_return;
+            BOOST_TEST_EQ(n2, 3u);
+            BOOST_TEST_EQ(ws.data(), "abcdef");
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testWriteSomeFuseErrorInjection()
+    {
+        int write_success_count = 0;
+        int write_error_count = 0;
+
+        fuse f;
+        auto r = f.armed([&](fuse&) -> task<> {
+            write_sink ws(f);
+
+            auto [ec, n] = co_await ws.write_some(
+                make_buffer("test data", 9));
+            if(ec)
+            {
+                ++write_error_count;
+                co_return;
+            }
+            ++write_success_count;
+        });
+
+        BOOST_TEST(r.success);
+        BOOST_TEST(write_error_count > 0);
+        BOOST_TEST(write_success_count > 0);
     }
 
     void
@@ -413,6 +541,14 @@ public:
         testClear();
         testWritePartial();
         testWriteEofWithBuffersPartial();
+
+        // write_some tests (WriteStream refinement)
+        testWriteSome();
+        testWriteSomePartial();
+        testWriteSomeEmpty();
+        testWriteSomeBufferSequence();
+        testWriteSomeMaxWriteSize();
+        testWriteSomeFuseErrorInjection();
     }
 };
 

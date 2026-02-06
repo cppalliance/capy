@@ -94,13 +94,7 @@ struct valid_buffer_sink
     }
 
     mock_commit_awaitable
-    commit(std::size_t, bool)
-    {
-        return {};
-    }
-
-    mock_commit_awaitable
-    commit_eof()
+    commit_eof(std::size_t)
     {
         return {};
     }
@@ -122,13 +116,7 @@ struct invalid_buffer_sink_wrong_type
     }
 
     mock_commit_awaitable_wrong_type
-    commit(std::size_t, bool)
-    {
-        return {};
-    }
-
-    mock_commit_awaitable_wrong_type
-    commit_eof()
+    commit_eof(std::size_t)
     {
         return {};
     }
@@ -144,13 +132,7 @@ struct invalid_buffer_sink_no_prepare
     }
 
     mock_commit_awaitable
-    commit(std::size_t, bool)
-    {
-        return {};
-    }
-
-    mock_commit_awaitable
-    commit_eof()
+    commit_eof(std::size_t)
     {
         return {};
     }
@@ -166,7 +148,7 @@ struct invalid_buffer_sink_no_commit
     }
 
     mock_commit_awaitable
-    commit_eof()
+    commit_eof(std::size_t)
     {
         return {};
     }
@@ -183,12 +165,6 @@ struct invalid_buffer_sink_no_commit_eof
 
     mock_commit_awaitable
     commit(std::size_t)
-    {
-        return {};
-    }
-
-    mock_commit_awaitable
-    commit(std::size_t, bool)
     {
         return {};
     }
@@ -210,13 +186,7 @@ struct invalid_buffer_sink_not_io
     }
 
     mock_commit_awaitable_not_io
-    commit(std::size_t, bool)
-    {
-        return {};
-    }
-
-    mock_commit_awaitable_not_io
-    commit_eof()
+    commit_eof(std::size_t)
     {
         return {};
     }
@@ -237,13 +207,7 @@ struct invalid_buffer_sink_prepare_returns_void
     }
 
     mock_commit_awaitable
-    commit(std::size_t, bool)
-    {
-        return {};
-    }
-
-    mock_commit_awaitable
-    commit_eof()
+    commit_eof(std::size_t)
     {
         return {};
     }
@@ -265,13 +229,7 @@ struct invalid_buffer_sink_wrong_sig
     }
 
     mock_commit_awaitable
-    commit(std::size_t, bool)
-    {
-        return {};
-    }
-
-    mock_commit_awaitable
-    commit_eof()
+    commit_eof(std::size_t)
     {
         return {};
     }

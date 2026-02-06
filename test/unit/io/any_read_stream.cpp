@@ -12,17 +12,47 @@
 
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/cond.hpp>
+#include <boost/capy/io_result.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/read_stream.hpp>
 
 #include "test/unit/test_helpers.hpp"
 
+#include <boost/capy/detail/config.hpp>
+
 #include <array>
+#include <coroutine>
 #include <string_view>
+#include <vector>
 
 namespace boost {
 namespace capy {
+
+static_assert(ReadStream<any_read_stream>);
+
 namespace {
+
+struct pending_read_awaitable
+{
+    int* counter_;
+    pending_read_awaitable(int* c) : counter_(c) {}
+    pending_read_awaitable(pending_read_awaitable&& o) noexcept
+        : counter_(std::exchange(o.counter_, nullptr)) {}
+    ~pending_read_awaitable() { if(counter_) ++(*counter_); }
+    bool await_ready() const noexcept { return false; }
+    coro await_suspend(coro, executor_ref, std::stop_token)
+        { return std::noop_coroutine(); }
+    io_result<std::size_t> await_resume()
+        { return {{}, 0}; }
+};
+
+struct pending_read_stream
+{
+    int* counter_;
+    pending_read_awaitable read_some(
+        MutableBufferSequence auto)
+        { return pending_read_awaitable{counter_}; }
+};
 
 class any_read_stream_test
 {
@@ -42,6 +72,14 @@ public:
             test::fuse f;
             test::read_stream rs(f);
             any_read_stream ars(&rs);
+            BOOST_TEST(ars.has_value());
+            BOOST_TEST(static_cast<bool>(ars));
+        }
+
+        // Owning construct
+        {
+            test::fuse f;
+            any_read_stream ars(test::read_stream{f});
             BOOST_TEST(ars.has_value());
             BOOST_TEST(static_cast<bool>(ars));
         }
@@ -66,6 +104,21 @@ public:
         ars3 = std::move(ars2);
         BOOST_TEST(ars3.has_value());
         BOOST_TEST(!ars2.has_value());
+
+        // Move assign over live wrapper
+        {
+            test::fuse f2;
+            test::read_stream rs2(f2);
+
+            any_read_stream a(&rs);
+            any_read_stream b(&rs2);
+            BOOST_TEST(a.has_value());
+            BOOST_TEST(b.has_value());
+
+            a = std::move(b);
+            BOOST_TEST(a.has_value());
+            BOOST_TEST(!b.has_value());
+        }
     }
 
     void
@@ -252,6 +305,196 @@ public:
     }
 
     void
+    testReadSomeEmptyBuffer()
+    {
+        test::fuse f;
+        auto r = f.armed([&](test::fuse&) -> task<> {
+            test::read_stream rs(f);
+            rs.provide("data");
+
+            any_read_stream ars(&rs);
+
+            auto [ec, n] = co_await ars.read_some(mutable_buffer());
+            if(ec)
+                co_return;
+
+            BOOST_TEST_EQ(n, 0u);
+            BOOST_TEST_EQ(rs.available(), 4u);
+        });
+        BOOST_TEST(r.success);
+    }
+
+    // Trichotomy conformance: success implies !ec and n >= 1
+    void
+    testTrichotomySuccess()
+    {
+        test::fuse f;
+        auto r = f.inert([&](test::fuse&) -> task<> {
+            test::read_stream rs(f);
+            rs.provide("hello");
+
+            any_read_stream ars(&rs);
+
+            char buf[32] = {};
+            auto [ec, n] = co_await ars.read_some(
+                mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(!ec);
+            BOOST_TEST_GE(n, 1u);
+            BOOST_TEST_EQ(n, 5u);
+        });
+        BOOST_TEST(r.success);
+    }
+
+    // Trichotomy conformance: error implies n == 0
+    void
+    testTrichotomyError()
+    {
+        test::fuse f;
+        auto r = f.armed([&](test::fuse&) -> task<> {
+            test::read_stream rs(f);
+            rs.provide("hello");
+
+            any_read_stream ars(&rs);
+
+            char buf[32] = {};
+            auto [ec, n] = co_await ars.read_some(
+                mutable_buffer(buf, sizeof(buf)));
+            if(ec)
+            {
+                BOOST_TEST_EQ(n, 0u);
+                co_return;
+            }
+            BOOST_TEST_GE(n, 1u);
+        });
+        BOOST_TEST(r.success);
+    }
+
+    // Trichotomy conformance: EOF after draining data
+    // returns {eof, 0}, not {eof, n}
+    void
+    testTrichotomyEofAfterDrain()
+    {
+        test::fuse f;
+        auto r = f.inert([&](test::fuse&) -> task<> {
+            test::read_stream rs(f);
+            rs.provide("hi");
+
+            any_read_stream ars(&rs);
+
+            // Drain all data
+            char buf[32] = {};
+            auto [ec1, n1] = co_await ars.read_some(
+                mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(!ec1);
+            BOOST_TEST_EQ(n1, 2u);
+
+            // Next read discovers EOF
+            auto [ec2, n2] = co_await ars.read_some(
+                mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(ec2 == cond::eof);
+            BOOST_TEST_EQ(n2, 0u);
+        });
+        BOOST_TEST(r.success);
+    }
+
+    // Trichotomy conformance: empty buffer on exhausted
+    // stream returns {success, 0}, not {eof, 0}
+    void
+    testTrichotomyEmptyBufferExhausted()
+    {
+        test::fuse f;
+        auto r = f.inert([&](test::fuse&) -> task<> {
+            test::read_stream rs(f);
+            rs.provide("hi");
+
+            any_read_stream ars(&rs);
+
+            // Drain all data
+            char buf[32] = {};
+            auto [ec1, n1] = co_await ars.read_some(
+                mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(!ec1);
+            BOOST_TEST_EQ(n1, 2u);
+
+            // Empty buffer on exhausted stream is a no-op
+            auto [ec2, n2] = co_await ars.read_some(
+                mutable_buffer());
+            BOOST_TEST(!ec2);
+            BOOST_TEST_EQ(n2, 0u);
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testReadSomeManyBuffers()
+    {
+        // read_some is a partial operation — with more than
+        // max_iovec_ buffers it processes only the first window.
+        constexpr unsigned N = detail::max_iovec_ + 4;
+
+        test::fuse f;
+        auto r = f.armed([&](test::fuse&) -> task<> {
+            std::string data;
+            for(unsigned i = 0; i < N; ++i)
+                data.push_back(static_cast<char>('a' + (i % 26)));
+
+            test::read_stream rs(f);
+            rs.provide(data);
+
+            any_read_stream ars(&rs);
+
+            char storage[N] = {};
+            std::vector<mutable_buffer> buffers;
+            for(unsigned i = 0; i < N; ++i)
+                buffers.emplace_back(&storage[i], 1);
+
+            auto [ec, n] = co_await ars.read_some(buffers);
+            if(ec)
+                co_return;
+
+            // Partial — at most max_iovec_ bytes
+            BOOST_TEST(!ec);
+            BOOST_TEST(n >= 1u);
+            BOOST_TEST(n <= std::size_t(detail::max_iovec_));
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testDestroyWithActiveAwaitable()
+    {
+        // Verify destructor cleans up an in-flight awaitable.
+        // Flat vtable: await_ready constructs the inner awaitable
+        // and sets awaitable_active_ = true.
+        int destroyed = 0;
+        pending_read_stream ps{&destroyed};
+        {
+            any_read_stream ars(&ps);
+            char buf[1];
+            auto aw = ars.read_some(mutable_buffer(buf, 1));
+            BOOST_TEST(!aw.await_ready());
+        }
+        BOOST_TEST_EQ(destroyed, 1);
+    }
+
+    void
+    testMoveAssignWithActiveAwaitable()
+    {
+        int destroyed = 0;
+        pending_read_stream ps{&destroyed};
+        {
+            any_read_stream ars(&ps);
+            char buf[1];
+            auto aw = ars.read_some(mutable_buffer(buf, 1));
+            BOOST_TEST(!aw.await_ready());
+
+            any_read_stream empty;
+            ars = std::move(empty);
+            BOOST_TEST_EQ(destroyed, 1);
+        }
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -263,6 +506,14 @@ public:
         testReadSomeBufferSequence();
         testReadSomeSingleBuffer();
         testReadSomeArray();
+        testReadSomeEmptyBuffer();
+        testTrichotomySuccess();
+        testTrichotomyError();
+        testTrichotomyEofAfterDrain();
+        testTrichotomyEmptyBufferExhausted();
+        testReadSomeManyBuffers();
+        testDestroyWithActiveAwaitable();
+        testMoveAssignWithActiveAwaitable();
     }
 };
 

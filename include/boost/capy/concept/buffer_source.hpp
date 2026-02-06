@@ -12,6 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 
@@ -51,11 +52,12 @@ namespace capy {
     from the current unconsumed position. On return, exactly one of the
     following is true:
 
-    @li **Data available**: `ec` is `false` and `bufs.size() > 0`.
+    @li **Data available**: `!ec` and `bufs.size() > 0`.
         The returned span contains buffer descriptors.
-    @li **Source exhausted**: `ec` is `false` and `bufs.empty()`.
+    @li **Source exhausted**: `ec == cond::eof` and `bufs.empty()`.
         No more data is available; the transfer is complete.
-    @li **Error**: `ec` is `true`. An error occurred.
+    @li **Error**: `ec` is `true` and `ec != cond::eof`.
+        An error occurred.
 
     Calling `pull` multiple times without intervening `consume` returns
     the same unconsumed data. The `consume` operation advances the read
@@ -88,10 +90,10 @@ namespace capy {
         for(;;)
         {
             auto [ec, bufs] = co_await source.pull( arr );
+            if( ec == cond::eof )
+                co_return {{}, total};
             if( ec )
                 co_return {ec, total};
-            if( bufs.empty() )
-                co_return {{}, total};
             auto [write_ec, n] = co_await stream.write_some( bufs );
             if( write_ec )
                 co_return {write_ec, total};

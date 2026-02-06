@@ -26,6 +26,14 @@
 #include <stop_token>
 #include <utility>
 
+#ifndef BOOST_CAPY_WRITE_NOW_WORKAROUND
+# if defined(__GNUC__) && !defined(__clang__)
+#  define BOOST_CAPY_WRITE_NOW_WORKAROUND 1
+# else
+#  define BOOST_CAPY_WRITE_NOW_WORKAROUND 0
+# endif
+#endif
+
 namespace boost {
 namespace capy {
 
@@ -97,9 +105,13 @@ class write_now
                         promise_type>::from_promise(*this)};
             }
 
-            std::suspend_never initial_suspend() noexcept
+            auto initial_suspend() noexcept
             {
-                return {};
+#if BOOST_CAPY_WRITE_NOW_WORKAROUND
+                return std::suspend_always{};
+#else
+                return std::suspend_never{};
+#endif
             }
 
             auto final_suspend() noexcept
@@ -310,41 +322,72 @@ public:
 
         @see write, write_some, WriteStream
     */
+#if BOOST_CAPY_WRITE_NOW_WORKAROUND
+    template<ConstBufferSequence Buffers>
     op_type
-    operator()(ConstBufferSequence auto buffers)
+    operator()(Buffers buffers)
     {
-        consuming_buffers consuming(buffers);
+        std::size_t const total_size = buffer_size(buffers);
+        std::size_t total_written = 0;
+        consuming_buffers cb(buffers);
+        while(total_written < total_size)
+        {
+            auto r =
+                co_await stream_.write_some(cb);
+            if(r.ec)
+                co_return io_result<std::size_t>{
+                    r.ec, total_written};
+            cb.consume(r.t1);
+            total_written += r.t1;
+        }
+        co_return io_result<std::size_t>{
+            {}, total_written};
+    }
+#else
+    template<ConstBufferSequence Buffers>
+    op_type
+    operator()(Buffers buffers)
+    {
         std::size_t const total_size = buffer_size(buffers);
         std::size_t total_written = 0;
 
+        // GCC ICE in expand_expr_real_1 (expr.cc:11376)
+        // when consuming_buffers spans a co_yield, so
+        // the GCC path uses a separate simple coroutine.
+        consuming_buffers cb(buffers);
         while(total_written < total_size)
         {
-            auto inner = stream_.write_some(consuming);
+            auto inner = stream_.write_some(cb);
             if(!inner.await_ready())
                 break;
-            auto [ec, n] = inner.await_resume();
-            if(ec)
-                co_return {ec, total_written};
-            consuming.consume(n);
-            total_written += n;
+            auto r = inner.await_resume();
+            if(r.ec)
+                co_return io_result<std::size_t>{
+                    r.ec, total_written};
+            cb.consume(r.t1);
+            total_written += r.t1;
         }
 
         if(total_written >= total_size)
-            co_return {{}, total_written};
+            co_return io_result<std::size_t>{
+                {}, total_written};
 
         co_yield 0;
 
         while(total_written < total_size)
         {
-            auto [ec, n] =
-                co_await stream_.write_some(consuming);
-            if(ec)
-                co_return {ec, total_written};
-            consuming.consume(n);
-            total_written += n;
+            auto r =
+                co_await stream_.write_some(cb);
+            if(r.ec)
+                co_return io_result<std::size_t>{
+                    r.ec, total_written};
+            cb.consume(r.t1);
+            total_written += r.t1;
         }
-        co_return {{}, total_written};
+        co_return io_result<std::size_t>{
+            {}, total_written};
     }
+#endif
 };
 
 template<WriteStream S>

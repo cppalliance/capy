@@ -190,6 +190,60 @@ public:
         }
     }
 
+    /** Construct from an iterator range.
+
+        Copies up to N non-empty buffer descriptors from the
+        range `[first, last)`. If the range contains more than
+        N non-empty buffers, excess buffers are silently ignored.
+
+        @param first Iterator to the first buffer descriptor.
+        @param last Iterator past the last buffer descriptor.
+    */
+    template<class Iterator>
+    buffer_array(Iterator first, Iterator last) noexcept
+        : dummy_(0)
+    {
+        while(first != last && n_ < N)
+        {
+            value_type b(*first);
+            if(b.size() != 0)
+            {
+                ::new(&arr_[n_++]) value_type(b);
+                size_ += b.size();
+            }
+            ++first;
+        }
+    }
+
+    /** Construct from an iterator range with overflow checking.
+
+        Copies all non-empty buffer descriptors from the range
+        `[first, last)` into the internal array.
+
+        @param first Iterator to the first buffer descriptor.
+        @param last Iterator past the last buffer descriptor.
+
+        @throws std::length_error if the range contains more
+        than N non-empty buffers.
+    */
+    template<class Iterator>
+    buffer_array(std::in_place_t, Iterator first, Iterator last)
+        : dummy_(0)
+    {
+        while(first != last)
+        {
+            value_type b(*first);
+            if(b.size() != 0)
+            {
+                if(n_ >= N)
+                    detail::throw_length_error();
+                ::new(&arr_[n_++]) value_type(b);
+                size_ += b.size();
+            }
+            ++first;
+        }
+    }
+
     /** Destructor.
     */
     ~buffer_array()

@@ -36,7 +36,7 @@ namespace test {
     at controlled points.
 
     This class satisfies the @ref ReadSource concept by providing both
-    partial reads via `read_some` (inherited from @ref ReadStream) and
+    partial reads via `read_some` (satisfying @ref ReadStream) and
     complete reads via `read` that fill the entire buffer sequence
     before returning.
 
@@ -147,6 +147,9 @@ public:
             io_result<std::size_t>
             await_resume()
             {
+                if(buffer_empty(buffers_))
+                    return {{}, 0};
+
                 auto ec = self_->f_.maybe_fail();
                 if(ec)
                     return {ec, 0};
@@ -168,20 +171,15 @@ public:
 
     /** Asynchronously read data from the source.
 
-        Transfers up to `buffer_size( buffers )` bytes from the internal
-        buffer to the provided mutable buffer sequence, filling buffers
-        completely before returning. If no data remains, returns
-        `error::eof`. Before every read, the attached @ref fuse is
-        consulted to possibly inject an error for testing fault scenarios.
-        The returned `std::size_t` is the number of bytes transferred.
+        Fills the entire buffer sequence from the internal data.
+        If the available data is less than the buffer size, returns
+        `error::eof` with the number of bytes transferred. Before
+        every read, the attached @ref fuse is consulted to possibly
+        inject an error for testing fault scenarios.
 
-        @par Effects
-        On success, advances the internal read position by the number of
-        bytes copied. If an error is injected by the fuse, the read position
-        remains unchanged.
-
-        @par Exception Safety
-        No-throw guarantee.
+        Unlike @ref read_some, this ignores `max_read_size` and
+        transfers all available data in a single operation, matching
+        the @ref ReadSource semantic contract.
 
         @param buffers The mutable buffer sequence to receive data.
 
@@ -200,17 +198,6 @@ public:
 
             bool await_ready() const noexcept { return true; }
 
-            // This method is required to satisfy Capy's IoAwaitable concept,
-            // but is never called because await_ready() returns true.
-            //
-            // Capy uses a two-layer awaitable system: the promise's
-            // await_transform wraps awaitables in a transform_awaiter whose
-            // standard await_suspend(coroutine_handle) calls this custom
-            // 3-argument overload, passing the executor and stop_token from
-            // the coroutine's context. For synchronous test awaitables like
-            // this one, the coroutine never suspends, so this is not invoked.
-            // The signature exists to allow the same awaitable type to work
-            // with both synchronous (test) and asynchronous (real I/O) code.
             void await_suspend(
                 coro,
                 executor_ref,
@@ -221,6 +208,9 @@ public:
             io_result<std::size_t>
             await_resume()
             {
+                if(buffer_empty(buffers_))
+                    return {{}, 0};
+
                 auto ec = self_->f_.maybe_fail();
                 if(ec)
                     return {ec, 0};
@@ -229,11 +219,12 @@ public:
                     return {error::eof, 0};
 
                 std::size_t avail = self_->data_.size() - self_->pos_;
-                if(avail > self_->max_read_size_)
-                    avail = self_->max_read_size_;
                 auto src = make_buffer(self_->data_.data() + self_->pos_, avail);
                 std::size_t const n = buffer_copy(buffers_, src);
                 self_->pos_ += n;
+
+                if(n < buffer_size(buffers_))
+                    return {error::eof, n};
                 return {{}, n};
             }
         };

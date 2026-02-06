@@ -88,7 +88,7 @@ public:
         
         // Upstream exhausted?
         if (exhausted_)
-            co_return {std::error_code{}, std::span<const_buffer>{}};
+            co_return {error::eof, std::span<const_buffer>{}};
         
         // Pull from upstream
         buffer_.clear();
@@ -98,14 +98,14 @@ public:
         // ec: std::error_code, bufs: std::span<const_buffer>
         auto [ec, bufs] = co_await source_->pull(upstream);
         
-        if (ec)
-            co_return {ec, std::span<const_buffer>{}};
-        
-        if (bufs.empty())
+        if (ec == cond::eof)
         {
             exhausted_ = true;
-            co_return {std::error_code{}, std::span<const_buffer>{}};
+            co_return {error::eof, std::span<const_buffer>{}};
         }
+
+        if (ec)
+            co_return {ec, std::span<const_buffer>{}};
         
         // Transform: uppercase each byte
         for (auto const& buf : bufs)  // const_buffer const&
@@ -187,7 +187,7 @@ public:
         
         // Upstream exhausted?
         if (exhausted_)
-            co_return {std::error_code{}, std::span<const_buffer>{}};
+            co_return {error::eof, std::span<const_buffer>{}};
         
         // Pull from upstream
         buffer_.clear();
@@ -197,14 +197,14 @@ public:
         // ec: std::error_code, bufs: std::span<const_buffer>
         auto [ec, bufs] = co_await source_->pull(upstream);
         
-        if (ec)
-            co_return {ec, std::span<const_buffer>{}};
-        
-        if (bufs.empty())
+        if (ec == cond::eof)
         {
             exhausted_ = true;
-            co_return {std::error_code{}, std::span<const_buffer>{}};
+            co_return {error::eof, std::span<const_buffer>{}};
         }
+
+        if (ec)
+            co_return {ec, std::span<const_buffer>{}};
         
         // Transform: add line numbers
         for (auto const& buf : bufs)  // const_buffer const&
@@ -253,11 +253,11 @@ task<std::size_t> transfer(any_buffer_source& source, any_write_sink& sink)
         // ec: std::error_code, spans: std::span<const_buffer>
         auto [ec, spans] = co_await source.pull(bufs);
         
+        if (ec == cond::eof)
+            break;
+
         if (ec)
             throw std::system_error(ec);
-        
-        if (spans.empty())
-            break;
         
         // Write each buffer to sink
         for (auto const& buf : spans)  // const_buffer const&

@@ -11,17 +11,50 @@
 #include <boost/capy/io/any_write_stream.hpp>
 
 #include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/io_result.hpp>
 #include <boost/capy/task.hpp>
+#include <boost/capy/test/run_blocking.hpp>
 #include <boost/capy/test/write_stream.hpp>
 
 #include "test/unit/test_helpers.hpp"
 
+#include <boost/capy/detail/config.hpp>
+
 #include <array>
+#include <coroutine>
+#include <stop_token>
 #include <string_view>
+#include <vector>
 
 namespace boost {
 namespace capy {
+
+static_assert(WriteStream<any_write_stream>);
+
 namespace {
+
+struct pending_write_awaitable
+{
+    int* counter_;
+    pending_write_awaitable(int* c) : counter_(c) {}
+    pending_write_awaitable(pending_write_awaitable&& o) noexcept
+        : counter_(std::exchange(o.counter_, nullptr)) {}
+    ~pending_write_awaitable() { if(counter_) ++(*counter_); }
+    bool await_ready() const noexcept { return false; }
+    coro await_suspend(coro, executor_ref, std::stop_token)
+        { return std::noop_coroutine(); }
+    io_result<std::size_t> await_resume()
+        { return {{}, 0}; }
+};
+
+struct pending_write_stream
+{
+    int* counter_;
+    pending_write_awaitable write_some(
+        ConstBufferSequence auto)
+        { return pending_write_awaitable{counter_}; }
+};
 
 class any_write_stream_test
 {
@@ -41,6 +74,14 @@ public:
             test::fuse f;
             test::write_stream ws(f);
             any_write_stream aws(&ws);
+            BOOST_TEST(aws.has_value());
+            BOOST_TEST(static_cast<bool>(aws));
+        }
+
+        // Owning construct
+        {
+            test::fuse f;
+            any_write_stream aws(test::write_stream{f});
             BOOST_TEST(aws.has_value());
             BOOST_TEST(static_cast<bool>(aws));
         }
@@ -65,6 +106,21 @@ public:
         aws3 = std::move(aws2);
         BOOST_TEST(aws3.has_value());
         BOOST_TEST(!aws2.has_value());
+
+        // Move assign over live wrapper
+        {
+            test::fuse f2;
+            test::write_stream ws2(f2);
+
+            any_write_stream a(&ws);
+            any_write_stream b(&ws2);
+            BOOST_TEST(a.has_value());
+            BOOST_TEST(b.has_value());
+
+            a = std::move(b);
+            BOOST_TEST(a.has_value());
+            BOOST_TEST(!b.has_value());
+        }
     }
 
     void
@@ -221,6 +277,165 @@ public:
     }
 
     void
+    testWriteSomeEmptyBuffer()
+    {
+        test::fuse f;
+        auto r = f.armed([&](test::fuse&) -> task<> {
+            test::write_stream ws(f);
+
+            any_write_stream aws(&ws);
+
+            // Empty span of buffers
+            auto [ec, n] = co_await aws.write_some(
+                std::span<const_buffer const>{});
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 0u);
+            BOOST_TEST_EQ(ws.data(), "");
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testWriteSomeZeroSizedBuffer()
+    {
+        test::fuse f;
+        auto r = f.armed([&](test::fuse&) -> task<> {
+            test::write_stream ws(f);
+
+            any_write_stream aws(&ws);
+
+            // Buffer with zero size
+            const_buffer cb(nullptr, 0);
+            auto [ec, n] = co_await aws.write_some(
+                std::span(&cb, 1));
+            BOOST_TEST(!ec);
+            BOOST_TEST_EQ(n, 0u);
+            BOOST_TEST_EQ(ws.data(), "");
+        });
+        BOOST_TEST(r.success);
+    }
+
+    // Trichotomy conformance: success implies !ec and n >= 1
+    void
+    testTrichotomySuccess()
+    {
+        test::fuse f;
+        auto r = f.inert([&](test::fuse&) -> task<> {
+            test::write_stream ws(f);
+
+            any_write_stream aws(&ws);
+
+            char const data[] = "hello";
+            const_buffer cb(data, 5);
+            auto [ec, n] = co_await aws.write_some(
+                std::span(&cb, 1));
+            BOOST_TEST(!ec);
+            BOOST_TEST_GE(n, 1u);
+            BOOST_TEST_EQ(n, 5u);
+        });
+        BOOST_TEST(r.success);
+    }
+
+    // Trichotomy conformance: error implies n == 0
+    void
+    testTrichotomyError()
+    {
+        test::fuse f;
+        auto r = f.armed([&](test::fuse&) -> task<> {
+            test::write_stream ws(f);
+
+            any_write_stream aws(&ws);
+
+            char const data[] = "hello";
+            const_buffer cb(data, 5);
+            auto [ec, n] = co_await aws.write_some(
+                std::span(&cb, 1));
+            if(ec)
+            {
+                BOOST_TEST_EQ(n, 0u);
+                co_return;
+            }
+            BOOST_TEST_GE(n, 1u);
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testWriteSomeManyBuffers()
+    {
+        // write_some is a partial operation — with more than
+        // max_iovec_ buffers it processes only the first window.
+        constexpr unsigned N = detail::max_iovec_ + 4;
+
+        test::fuse f;
+        auto r = f.armed([&](test::fuse&) -> task<> {
+            test::write_stream ws(f);
+            any_write_stream aws(&ws);
+
+            std::vector<std::string> strings;
+            std::vector<const_buffer> buffers;
+            for(unsigned i = 0; i < N; ++i)
+            {
+                strings.push_back(std::string(1,
+                    static_cast<char>('a' + (i % 26))));
+            }
+            for(auto const& s : strings)
+                buffers.emplace_back(s.data(), s.size());
+
+            auto [ec, n] = co_await aws.write_some(buffers);
+            if(ec)
+                co_return;
+
+            // Partial — at most max_iovec_ bytes
+            BOOST_TEST(!ec);
+            BOOST_TEST(n >= 1u);
+            BOOST_TEST(n <= std::size_t(detail::max_iovec_));
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testDestroyWithActiveAwaitable()
+    {
+        // Flat vtable, construct-in-await_suspend variant:
+        // await_suspend constructs the inner awaitable.
+        int destroyed = 0;
+        pending_write_stream ps{&destroyed};
+        {
+            any_write_stream aws(&ps);
+            char const data[] = "x";
+            auto aw = aws.write_some(const_buffer(data, 1));
+            BOOST_TEST(!aw.await_ready());
+
+            test::inline_executor ex;
+            aw.await_suspend(
+                std::noop_coroutine(), executor_ref(ex), {});
+        }
+        BOOST_TEST_EQ(destroyed, 1);
+    }
+
+    void
+    testMoveAssignWithActiveAwaitable()
+    {
+        int destroyed = 0;
+        pending_write_stream ps{&destroyed};
+        {
+            any_write_stream aws(&ps);
+            char const data[] = "x";
+            auto aw = aws.write_some(const_buffer(data, 1));
+            BOOST_TEST(!aw.await_ready());
+
+            test::inline_executor ex;
+            aw.await_suspend(
+                std::noop_coroutine(), executor_ref(ex), {});
+
+            any_write_stream empty;
+            aws = std::move(empty);
+            BOOST_TEST_EQ(destroyed, 1);
+        }
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -231,6 +446,13 @@ public:
         testWriteSomeBufferSequence();
         testWriteSomeSingleBuffer();
         testWriteSomeArray();
+        testWriteSomeEmptyBuffer();
+        testWriteSomeZeroSizedBuffer();
+        testWriteSomeManyBuffers();
+        testTrichotomySuccess();
+        testTrichotomyError();
+        testDestroyWithActiveAwaitable();
+        testMoveAssignWithActiveAwaitable();
     }
 };
 

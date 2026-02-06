@@ -37,7 +37,7 @@ namespace test {
     at controlled points.
 
     This class satisfies the @ref WriteSink concept by providing partial
-    writes via `write_some` (inherited from @ref WriteStream), complete
+    writes via `write_some` (satisfying @ref WriteStream), complete
     writes via `write`, and EOF signaling via `write_eof`.
 
     @par Thread Safety
@@ -180,14 +180,15 @@ public:
             io_result<std::size_t>
             await_resume()
             {
+                if(buffer_empty(buffers_))
+                    return {{}, 0};
+
                 auto ec = self_->f_.maybe_fail();
                 if(ec)
                     return {ec, 0};
 
                 std::size_t n = buffer_size(buffers_);
                 n = (std::min)(n, self_->max_write_size_);
-                if(n == 0)
-                    return {{}, 0};
 
                 std::size_t const old_size = self_->data_.size();
                 self_->data_.resize(old_size + n);
@@ -196,7 +197,10 @@ public:
 
                 ec = self_->consume_match_();
                 if(ec)
-                    return {ec, n};
+                {
+                    self_->data_.resize(old_size);
+                    return {ec, 0};
+                }
 
                 return {{}, n};
             }
@@ -206,19 +210,10 @@ public:
 
     /** Asynchronously write data to the sink.
 
-        Transfers all bytes from the provided const buffer sequence to
-        the internal buffer. Before every write, the attached @ref fuse
-        is consulted to possibly inject an error for testing fault
-        scenarios. The returned `std::size_t` is the number of bytes
-        transferred.
-
-        @par Effects
-        On success, appends the written bytes to the internal buffer.
-        If an error is injected by the fuse, the internal buffer remains
-        unchanged.
-
-        @par Exception Safety
-        No-throw guarantee.
+        Transfers all bytes from the provided const buffer sequence
+        to the internal buffer. Unlike @ref write_some, this ignores
+        `max_write_size` and writes all available data, matching the
+        @ref WriteSink semantic contract.
 
         @param buffers The const buffer sequence containing data to write.
 
@@ -237,17 +232,6 @@ public:
 
             bool await_ready() const noexcept { return true; }
 
-            // This method is required to satisfy Capy's IoAwaitable concept,
-            // but is never called because await_ready() returns true.
-            //
-            // Capy uses a two-layer awaitable system: the promise's
-            // await_transform wraps awaitables in a transform_awaiter whose
-            // standard await_suspend(coroutine_handle) calls this custom
-            // 3-argument overload, passing the executor and stop_token from
-            // the coroutine's context. For synchronous test awaitables like
-            // this one, the coroutine never suspends, so this is not invoked.
-            // The signature exists to allow the same awaitable type to work
-            // with both synchronous (test) and asynchronous (real I/O) code.
             void await_suspend(
                 coro,
                 executor_ref,
@@ -263,14 +247,13 @@ public:
                     return {ec, 0};
 
                 std::size_t n = buffer_size(buffers_);
-                n = (std::min)(n, self_->max_write_size_);
                 if(n == 0)
                     return {{}, 0};
 
                 std::size_t const old_size = self_->data_.size();
                 self_->data_.resize(old_size + n);
                 buffer_copy(make_buffer(
-                    self_->data_.data() + old_size, n), buffers_, n);
+                    self_->data_.data() + old_size, n), buffers_);
 
                 ec = self_->consume_match_();
                 if(ec)
@@ -330,13 +313,12 @@ public:
                     return {ec, 0};
 
                 std::size_t n = buffer_size(buffers_);
-                n = (std::min)(n, self_->max_write_size_);
                 if(n > 0)
                 {
                     std::size_t const old_size = self_->data_.size();
                     self_->data_.resize(old_size + n);
                     buffer_copy(make_buffer(
-                        self_->data_.data() + old_size, n), buffers_, n);
+                        self_->data_.data() + old_size, n), buffers_);
 
                     ec = self_->consume_match_();
                     if(ec)

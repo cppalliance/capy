@@ -12,6 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/concept/buffer_source.hpp>
 #include <boost/capy/concept/write_sink.hpp>
 #include <boost/capy/concept/write_stream.hpp>
@@ -67,14 +68,13 @@ push_to(Src& source, Sink& sink)
     for(;;)
     {
         auto [ec, bufs] = co_await source.pull(arr);
-        if(ec)
-            co_return {ec, total};
-
-        if(bufs.empty())
+        if(ec == cond::eof)
         {
             auto [eof_ec] = co_await sink.write_eof();
             co_return {eof_ec, total};
         }
+        if(ec)
+            co_return {ec, total};
 
         auto [write_ec, n] = co_await sink.write(bufs);
         total += n;
@@ -132,11 +132,10 @@ push_to(Src& source, Stream& stream)
     for(;;)
     {
         auto [ec, bufs] = co_await source.pull(arr);
+        if(ec == cond::eof)
+            co_return {{}, total};
         if(ec)
             co_return {ec, total};
-
-        if(bufs.empty())
-            co_return {{}, total};
 
         auto [write_ec, n] = co_await stream.write_some(bufs);
         if(write_ec)

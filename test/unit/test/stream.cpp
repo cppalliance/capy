@@ -12,6 +12,7 @@
 
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/concept/read_stream.hpp>
+#include <boost/capy/concept/stream.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/task.hpp>
@@ -187,6 +188,24 @@ public:
             BOOST_TEST_EQ(n2, 4u);
             BOOST_TEST_EQ(
                 std::string_view(buf, n2), "data");
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
+    testReadSomeEmptyNoData()
+    {
+        // Empty buffers must complete immediately even
+        // when no data is available (should not suspend).
+        fuse f;
+        auto r = f.armed([&](fuse&) -> task<> {
+            auto [a, b] = make_stream_pair(f);
+
+            auto [ec, n] = co_await a.read_some(
+                mutable_buffer());
+            if(ec)
+                co_return;
+            BOOST_TEST_EQ(n, 0u);
         });
         BOOST_TEST(r.success);
     }
@@ -648,6 +667,7 @@ public:
         testReadSomeEof();
         testReadSomeBufferSequence();
         testReadSomeEmpty();
+        testReadSomeEmptyNoData();
         testMaxReadSize();
         testMaxReadSizeMultiple();
 
@@ -675,6 +695,7 @@ TEST_SUITE(stream_test, "boost.capy.test.stream");
 
 //--------------------------------------------
 
+static_assert(Stream<stream>);
 static_assert(ReadStream<stream>);
 static_assert(WriteStream<stream>);
 

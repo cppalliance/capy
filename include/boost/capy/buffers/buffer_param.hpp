@@ -30,6 +30,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
 
+#include <new>
 #include <span>
 #include <type_traits>
 
@@ -139,7 +140,10 @@ public:
 private:
     decltype(begin(std::declval<BS const&>())) it_;
     decltype(end(std::declval<BS const&>())) end_;
-    buffer_type arr_[detail::max_iovec_];
+    union {
+        int dummy_;
+        buffer_type arr_[detail::max_iovec_];
+    };
     std::size_t size_ = 0;
     std::size_t pos_ = 0;
 
@@ -152,7 +156,7 @@ private:
         {
             buffer_type buf(*it_);
             if(buf.size() > 0)
-                arr_[size_++] = buf;
+                ::new(&arr_[size_++]) buffer_type(buf);
         }
     }
 
@@ -167,6 +171,7 @@ public:
     buffer_param(BS const& bs)
         : it_(begin(bs))
         , end_(end(bs))
+        , dummy_(0)
     {
         refill();
     }
@@ -191,6 +196,21 @@ public:
         if(size_ == 0)
             return {};
         return {arr_ + pos_, size_ - pos_};
+    }
+
+    /** Check if more buffers exist beyond the current window.
+
+        Returns `true` if the underlying buffer sequence has
+        additional buffers that have not yet been loaded into
+        the current window. Call after @ref data to determine
+        whether the current window is the last one.
+
+        @return `true` if more buffers remain in the sequence.
+    */
+    bool
+    more() const noexcept
+    {
+        return it_ != end_;
     }
 
     /** Consume bytes from the buffer sequence.

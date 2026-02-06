@@ -283,6 +283,66 @@ struct buffer_param_test
     }
 
     void
+    testMore()
+    {
+        // Single buffer — no more after first window
+        {
+            std::string data = "Hello";
+            const_buffer buf(data.data(), data.size());
+            buffer_param bp(buf);
+
+            auto bufs = bp.data();
+            BOOST_TEST(! bufs.empty());
+            BOOST_TEST(! bp.more());
+        }
+
+        // Empty sequence — no more
+        {
+            std::vector<const_buffer> bufs;
+            buffer_param bp(bufs);
+            auto d = bp.data();
+            BOOST_TEST(d.empty());
+            BOOST_TEST(! bp.more());
+        }
+
+        // Exactly max_iovec_ buffers — fits in one window
+        {
+            std::vector<std::string> strings(detail::max_iovec_, "x");
+            std::vector<const_buffer> bufs;
+            for(auto const& s : strings)
+                bufs.emplace_back(s.data(), s.size());
+
+            buffer_param bp(bufs);
+            auto d = bp.data();
+            BOOST_TEST(! d.empty());
+            BOOST_TEST(! bp.more());
+        }
+
+        // One more than max_iovec_ — needs two windows
+        {
+            std::vector<std::string> strings(
+                detail::max_iovec_ + 1, "x");
+            std::vector<const_buffer> bufs;
+            for(auto const& s : strings)
+                bufs.emplace_back(s.data(), s.size());
+
+            buffer_param bp(bufs);
+            auto d = bp.data();
+            BOOST_TEST(! d.empty());
+            BOOST_TEST(bp.more());
+
+            bp.consume(total_size(d));
+            d = bp.data();
+            BOOST_TEST(! d.empty());
+            BOOST_TEST(! bp.more());
+
+            bp.consume(total_size(d));
+            d = bp.data();
+            BOOST_TEST(d.empty());
+        }
+    }
+
+    void
     testPartialByteConsumption()
     {
         std::string data = "ABCDEFGHIJ";
@@ -327,6 +387,7 @@ struct buffer_param_test
         testMutableSingleBuffer();
         testMutableMultipleBuffers();
         testBufferType();
+        testMore();
         testPartialByteConsumption();
     }
 };

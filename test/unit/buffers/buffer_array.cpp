@@ -154,6 +154,82 @@ struct buffer_array_test
             BOOST_TEST_EQ(test::make_string(ba), pat);
         }
 
+        // iterator-pair constructor (fits)
+        {
+            std::vector<const_buffer> v;
+            v.emplace_back(pat.data(), 3);
+            v.emplace_back(pat.data() + 3, 5);
+            v.emplace_back(pat.data() + 8, pat.size() - 8);
+            const_buffer_array<4> ba(v.begin(), v.end());
+            BOOST_TEST_EQ(ba.to_span().size(), 3);
+            BOOST_TEST_EQ(buffer_size(ba), pat.size());
+            BOOST_TEST_EQ(test::make_string(ba), pat);
+        }
+
+        // iterator-pair constructor truncates
+        {
+            std::vector<const_buffer> v;
+            v.emplace_back(pat.data(), 3);
+            v.emplace_back(pat.data() + 3, 5);
+            v.emplace_back(pat.data() + 8, pat.size() - 8);
+            const_buffer_array<2> ba(v.begin(), v.end());
+            BOOST_TEST_EQ(ba.to_span().size(), 2);
+            BOOST_TEST_EQ(buffer_size(ba), 8);
+        }
+
+        // iterator-pair empty range
+        {
+            std::vector<const_buffer> v;
+            const_buffer_array<4> ba(v.begin(), v.end());
+            BOOST_TEST_EQ(ba.to_span().size(), 0);
+            BOOST_TEST_EQ(buffer_size(ba), 0);
+        }
+
+        // iterator-pair skips zero-sized buffers
+        {
+            std::vector<const_buffer> v;
+            v.emplace_back(pat.data(), 0);
+            v.emplace_back(pat.data(), 3);
+            v.emplace_back(pat.data() + 3, 0);
+            v.emplace_back(pat.data() + 3, 5);
+            const_buffer_array<4> ba(v.begin(), v.end());
+            BOOST_TEST_EQ(ba.to_span().size(), 2);
+            BOOST_TEST_EQ(buffer_size(ba), 8);
+        }
+
+        // in_place iterator-pair throws on overflow
+        {
+            std::vector<const_buffer> v;
+            v.emplace_back(pat.data(), 3);
+            v.emplace_back(pat.data() + 3, 5);
+            v.emplace_back(pat.data() + 8, pat.size() - 8);
+            bool threw = false;
+            try
+            {
+                const_buffer_array<2> ba(
+                    std::in_place, v.begin(), v.end());
+                (void)ba;
+            }
+            catch(std::length_error const&)
+            {
+                threw = true;
+            }
+            BOOST_TEST(threw);
+        }
+
+        // in_place iterator-pair with exact fit
+        {
+            std::vector<const_buffer> v;
+            v.emplace_back(pat.data(), 3);
+            v.emplace_back(pat.data() + 3, 5);
+            v.emplace_back(pat.data() + 8, pat.size() - 8);
+            const_buffer_array<4> ba(
+                std::in_place, v.begin(), v.end());
+            BOOST_TEST_EQ(ba.to_span().size(), 3);
+            BOOST_TEST_EQ(buffer_size(ba), pat.size());
+            BOOST_TEST_EQ(test::make_string(ba), pat);
+        }
+
         // slice tests
         {
             for(std::size_t i = 0; i <= pat.size(); ++i)
@@ -288,6 +364,82 @@ struct buffer_array_test
             v.emplace_back(pat.data() + 3, 5);
             v.emplace_back(pat.data() + 8, pat.size() - 8);
             mutable_buffer_array<4> ba(std::in_place, v);
+            BOOST_TEST_EQ(ba.to_span().size(), 3);
+            BOOST_TEST_EQ(buffer_size(ba), pat.size());
+            BOOST_TEST_EQ(test::make_string(ba), pat);
+        }
+
+        // iterator-pair constructor (fits)
+        {
+            std::vector<mutable_buffer> v;
+            v.emplace_back(pat.data(), 3);
+            v.emplace_back(pat.data() + 3, 5);
+            v.emplace_back(pat.data() + 8, pat.size() - 8);
+            mutable_buffer_array<4> ba(v.begin(), v.end());
+            BOOST_TEST_EQ(ba.to_span().size(), 3);
+            BOOST_TEST_EQ(buffer_size(ba), pat.size());
+            BOOST_TEST_EQ(test::make_string(ba), pat);
+        }
+
+        // iterator-pair constructor truncates
+        {
+            std::vector<mutable_buffer> v;
+            v.emplace_back(pat.data(), 3);
+            v.emplace_back(pat.data() + 3, 5);
+            v.emplace_back(pat.data() + 8, pat.size() - 8);
+            mutable_buffer_array<2> ba(v.begin(), v.end());
+            BOOST_TEST_EQ(ba.to_span().size(), 2);
+            BOOST_TEST_EQ(buffer_size(ba), 8);
+        }
+
+        // iterator-pair empty range
+        {
+            std::vector<mutable_buffer> v;
+            mutable_buffer_array<4> ba(v.begin(), v.end());
+            BOOST_TEST_EQ(ba.to_span().size(), 0);
+            BOOST_TEST_EQ(buffer_size(ba), 0);
+        }
+
+        // iterator-pair skips zero-sized buffers
+        {
+            std::vector<mutable_buffer> v;
+            v.emplace_back(pat.data(), 0);
+            v.emplace_back(pat.data(), 3);
+            v.emplace_back(pat.data() + 3, 0);
+            v.emplace_back(pat.data() + 3, 5);
+            mutable_buffer_array<4> ba(v.begin(), v.end());
+            BOOST_TEST_EQ(ba.to_span().size(), 2);
+            BOOST_TEST_EQ(buffer_size(ba), 8);
+        }
+
+        // in_place iterator-pair throws on overflow
+        {
+            std::vector<mutable_buffer> v;
+            v.emplace_back(pat.data(), 3);
+            v.emplace_back(pat.data() + 3, 5);
+            v.emplace_back(pat.data() + 8, pat.size() - 8);
+            bool threw = false;
+            try
+            {
+                mutable_buffer_array<2> ba(
+                    std::in_place, v.begin(), v.end());
+                (void)ba;
+            }
+            catch(std::length_error const&)
+            {
+                threw = true;
+            }
+            BOOST_TEST(threw);
+        }
+
+        // in_place iterator-pair with exact fit
+        {
+            std::vector<mutable_buffer> v;
+            v.emplace_back(pat.data(), 3);
+            v.emplace_back(pat.data() + 3, 5);
+            v.emplace_back(pat.data() + 8, pat.size() - 8);
+            mutable_buffer_array<4> ba(
+                std::in_place, v.begin(), v.end());
             BOOST_TEST_EQ(ba.to_span().size(), 3);
             BOOST_TEST_EQ(buffer_size(ba), pat.size());
             BOOST_TEST_EQ(test::make_string(ba), pat);
