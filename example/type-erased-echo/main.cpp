@@ -19,8 +19,8 @@ using namespace boost::capy;
 void test_with_mock()
 {
     auto [a, b] = test::make_stream_pair();
-    test::provide(b, "Hello, ");
-    test::provide(b, "World!\n");
+    b.provide("Hello, ");
+    b.provide("World!\n");
     b.close();
     
     // Using pointer construction (&a) for reference semantics - the
@@ -28,7 +28,7 @@ void test_with_mock()
     any_stream stream{&a};  // any_stream
     test::run_blocking()(myapp::echo_session(stream));
     
-    std::cout << "Echo output: " << test::data(b) << "\n";
+    std::cout << "Echo output: " << b.data() << "\n";
 }
 
 // With real sockets (using Corosio), you would write:

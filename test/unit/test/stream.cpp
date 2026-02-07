@@ -44,7 +44,7 @@ public:
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
             auto [a, b] = make_stream_pair(f);
-            provide(b, "hello world");
+            b.provide("hello world");
 
             char buf[32] = {};
             auto [ec, n] = co_await a.read_some(
@@ -64,7 +64,7 @@ public:
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
             auto [a, b] = make_stream_pair(f);
-            provide(b, "hello world");
+            b.provide("hello world");
 
             char buf[5] = {};
             auto [ec, n] = co_await a.read_some(
@@ -84,7 +84,7 @@ public:
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
             auto [a, b] = make_stream_pair(f);
-            provide(b, "abcdefghij");
+            b.provide("abcdefghij");
 
             char buf[3] = {};
 
@@ -144,7 +144,7 @@ public:
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
             auto [a, b] = make_stream_pair(f);
-            provide(b, "helloworld");
+            b.provide("helloworld");
 
             char buf1[5] = {};
             char buf2[5] = {};
@@ -171,7 +171,7 @@ public:
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
             auto [a, b] = make_stream_pair(f);
-            provide(b, "data");
+            b.provide("data");
 
             auto [ec, n] = co_await a.read_some(
                 mutable_buffer());
@@ -217,7 +217,7 @@ public:
         auto r = f.armed([&](fuse&) -> task<> {
             auto [a, b] = make_stream_pair(f);
             a.set_max_read_size(3);
-            provide(b, "hello world");
+            b.provide("hello world");
 
             char buf[32] = {};
             auto [ec, n] = co_await a.read_some(
@@ -238,7 +238,7 @@ public:
         auto r = f.armed([&](fuse&) -> task<> {
             auto [a, b] = make_stream_pair(f);
             a.set_max_read_size(4);
-            provide(b, "abcdefghij");
+            b.provide("abcdefghij");
 
             char buf[32] = {};
 
@@ -288,7 +288,7 @@ public:
                 co_return;
             BOOST_TEST_EQ(n, 11u);
 
-            auto [ec2, ok] = expect(b, "hello world");
+            auto [ec2, ok] = b.expect("hello world");
             if(ec2)
                 co_return;
             BOOST_TEST(ok);
@@ -321,7 +321,7 @@ public:
                 co_return;
             BOOST_TEST_EQ(n3, 5u);
 
-            auto [ec4, ok] = expect(b, "hello world");
+            auto [ec4, ok] = b.expect("hello world");
             if(ec4)
                 co_return;
             BOOST_TEST(ok);
@@ -346,7 +346,7 @@ public:
                 co_return;
             BOOST_TEST_EQ(n, 10u);
 
-            auto [ec2, ok] = expect(b, "helloworld");
+            auto [ec2, ok] = b.expect("helloworld");
             if(ec2)
                 co_return;
             BOOST_TEST(ok);
@@ -382,7 +382,7 @@ public:
                 co_return;
             BOOST_TEST_EQ(n, 5u);
 
-            auto [ec2, ok] = expect(b, "hello");
+            auto [ec2, ok] = b.expect("hello");
             if(ec2)
                 co_return;
             BOOST_TEST(ok);
@@ -402,7 +402,7 @@ public:
             if(ec)
                 co_return;
 
-            auto [ec2, ok] = expect(b, "hello");
+            auto [ec2, ok] = b.expect("hello");
             if(ec2)
                 co_return;
             BOOST_TEST(! ok);
@@ -429,7 +429,7 @@ public:
                 co_return;
             BOOST_TEST_EQ(n2, 5u);
 
-            auto [ec3, ok] = expect(b, "helloworld");
+            auto [ec3, ok] = b.expect("helloworld");
             if(ec3)
                 co_return;
             BOOST_TEST(ok);
@@ -450,7 +450,7 @@ public:
                 co_return;
             BOOST_TEST_EQ(n1, 8u);
 
-            auto [ec2, ok] = expect(b, "hi");
+            auto [ec2, ok] = b.expect("hi");
             if(ec2)
                 co_return;
             BOOST_TEST(ok);
@@ -549,7 +549,7 @@ public:
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
             auto [a, b] = make_stream_pair(f);
-            provide(b, "request");
+            b.provide("request");
 
             char buf[32] = {};
             auto [ec1, n1] = co_await a.read_some(
@@ -566,7 +566,7 @@ public:
                 co_return;
             BOOST_TEST_EQ(n2, 8u);
 
-            auto [ec3, ok] = expect(b, "response");
+            auto [ec3, ok] = b.expect("response");
             if(ec3)
                 co_return;
             BOOST_TEST(ok);
@@ -581,7 +581,7 @@ public:
         auto r = f.armed([&](fuse&) -> task<> {
             auto [a, b] = make_stream_pair(f);
             a.set_max_read_size(4);
-            provide(b, "hello world!");
+            b.provide("hello world!");
 
             char buf[4];
 
@@ -597,7 +597,7 @@ public:
                     co_return;
             }
 
-            auto [ec, ok] = expect(b, "hello world!");
+            auto [ec, ok] = b.expect("hello world!");
             if(ec)
                 co_return;
             BOOST_TEST(ok);
@@ -614,7 +614,7 @@ public:
         fuse f;
         auto r = f.armed([&](fuse&) -> task<> {
             auto [a, b] = make_stream_pair(f);
-            provide(b, "test data");
+            b.provide("test data");
 
             char buf[32] = {};
             auto [ec, n] = co_await a.read_some(

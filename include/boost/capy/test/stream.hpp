@@ -146,10 +146,6 @@ class stream
 
     friend std::pair<stream, stream>
     make_stream_pair(fuse);
-    friend void provide(stream&, std::string_view);
-    friend std::pair<std::error_code, bool>
-    expect(stream&, std::string_view);
-    friend std::string_view data(stream&) noexcept;
 
 public:
     stream(stream const&) = delete;
@@ -356,6 +352,89 @@ public:
         };
         return awaitable{this, buffers};
     }
+
+    /** Inject data into this stream's peer for reading.
+
+        Appends data directly to the peer's incoming buffer,
+        bypassing the fuse. If the peer is suspended in
+        @ref read_some, it is resumed. This is test setup,
+        not an operation under test.
+
+        @param sv The data to inject.
+
+        @see make_stream_pair
+    */
+    void
+    provide(std::string_view sv)
+    {
+        int peer = 1 - index_;
+        auto& side = state_->sides[peer];
+        side.buf.append(sv);
+        if(side.pending_h)
+        {
+            auto h = side.pending_h;
+            side.pending_h = {};
+            auto ex = side.pending_ex;
+            side.pending_ex = {};
+            ex.dispatch(h);
+        }
+    }
+
+    /** Read from this stream and verify the content.
+
+        Reads exactly `expected.size()` bytes from the stream
+        and compares against the expected string. The read goes
+        through the normal path including the fuse.
+
+        @param expected The expected content.
+
+        @return A pair of `(error_code, bool)`. The error_code
+            is set if a read error occurs (e.g. fuse injection).
+            The bool is true if the data matches.
+
+        @see provide
+    */
+    std::pair<std::error_code, bool>
+    expect(std::string_view expected)
+    {
+        std::error_code result;
+        bool match = false;
+        run_blocking()([](
+            stream& self,
+            std::string_view expected,
+            std::error_code& result,
+            bool& match) -> task<>
+        {
+            std::string buf(expected.size(), '\0');
+            auto [ec, n] = co_await read(
+                self, mutable_buffer(
+                    buf.data(), buf.size()));
+            if(ec)
+            {
+                result = ec;
+                co_return;
+            }
+            match = (std::string_view(
+                buf.data(), n) == expected);
+        }(*this, expected, result, match));
+        return {result, match};
+    }
+
+    /** Return the stream's pending read data.
+
+        Returns a view of the data waiting to be read
+        from this stream. This is a direct peek at the
+        internal buffer, bypassing the fuse.
+
+        @return A view of the pending data.
+
+        @see provide, expect
+    */
+    std::string_view
+    data() const noexcept
+    {
+        return state_->sides[index_].buf;
+    }
 };
 
 /** Create a connected pair of test streams.
@@ -378,88 +457,6 @@ make_stream_pair(fuse f = {})
 {
     auto sp = std::make_shared<stream::state>(std::move(f));
     return {stream(sp, 0), stream(sp, 1)};
-}
-
-/** Inject data into a stream's peer for reading.
-
-    Appends data directly to the peer's incoming buffer,
-    bypassing the fuse. If the peer is suspended in
-    @ref stream::read_some, it is resumed. This is test
-    setup, not an operation under test.
-
-    @param s The stream whose peer receives the data.
-    @param sv The data to inject.
-
-    @see stream, make_stream_pair
-*/
-inline void
-provide(stream& s, std::string_view sv)
-{
-    int peer = 1 - s.index_;
-    auto& side = s.state_->sides[peer];
-    side.buf.append(sv);
-    if(side.pending_h)
-    {
-        auto h = side.pending_h;
-        side.pending_h = {};
-        auto ex = side.pending_ex;
-        side.pending_ex = {};
-        ex.dispatch(h);
-    }
-}
-
-/** Read from a stream and verify the content.
-
-    Reads exactly `expected.size()` bytes from the stream
-    and compares against the expected string. The read goes
-    through the normal path including the fuse.
-
-    @param s The stream to read from.
-    @param expected The expected content.
-
-    @return A pair of `(error_code, bool)`. The error_code
-        is set if a read error occurs (e.g. fuse injection).
-        The bool is true if the data matches.
-
-    @see stream, provide
-*/
-inline std::pair<std::error_code, bool>
-expect(stream& s, std::string_view expected)
-{
-    std::error_code result;
-    bool match = false;
-    run_blocking()([&]() -> task<> {
-        std::string buf(expected.size(), '\0');
-        auto [ec, n] = co_await read(
-            s, mutable_buffer(
-                buf.data(), buf.size()));
-        if(ec)
-        {
-            result = ec;
-            co_return;
-        }
-        match = (std::string_view(
-            buf.data(), n) == expected);
-    }());
-    return {result, match};
-}
-
-/** Return the stream's pending read data.
-
-    Returns a view of the data waiting to be read
-    from this stream. This is a direct peek at the
-    internal buffer, bypassing the fuse.
-
-    @param s The stream to inspect.
-
-    @return A view of the pending data.
-
-    @see stream, provide, expect
-*/
-inline std::string_view
-data(stream& s) noexcept
-{
-    return s.state_->sides[s.index_].buf;
 }
 
 } // test

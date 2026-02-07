@@ -68,7 +68,7 @@ void test_happy_path()
     std::cout << "Test: happy path\n";
     
     auto [a, b] = test::make_stream_pair();
-    test::provide(b, "hello\n");
+    b.provide("hello\n");
     
     any_stream stream{&a};  // any_stream
     
@@ -76,7 +76,7 @@ void test_happy_path()
     test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
     
     assert(result == true);
-    assert(test::data(b) == "HELLO\n");
+    assert(b.data() == "HELLO\n");
     
     std::cout << "  PASSED\n";
 }
@@ -87,7 +87,7 @@ void test_partial_reads()
     
     auto [a, b] = test::make_stream_pair();
     a.set_max_read_size(1);
-    test::provide(b, "hi\n");
+    b.provide("hi\n");
     
     any_stream stream{&a};  // any_stream
     
@@ -95,7 +95,7 @@ void test_partial_reads()
     test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
     
     assert(result == true);
-    assert(test::data(b) == "HI\n");
+    assert(b.data() == "HI\n");
     
     std::cout << "  PASSED\n";
 }
@@ -112,7 +112,7 @@ void test_with_error_injection()
     test::fuse f;  // test::fuse
     auto r = f.armed([&](test::fuse&) -> task<> {  // fuse::result
         auto [a, b] = test::make_stream_pair(f);
-        test::provide(b, "test\n");
+        b.provide("test\n");
         
         any_stream stream{&a};  // any_stream
         
@@ -123,7 +123,7 @@ void test_with_error_injection()
         if (result)
         {
             ++success_count;
-            assert(test::data(b) == "TEST\n");
+            assert(b.data() == "TEST\n");
         }
         else
         {

@@ -164,9 +164,9 @@ void demo_tracked_buffer()
     std::cout << "=== Tracked Buffer Demo ===\n\n";
     
     auto [reader, writer] = test::make_stream_pair();
-    test::provide(writer, "Hello, ");
-    test::provide(writer, "World! ");
-    test::provide(writer, "This is a test of the custom buffer.\n");
+    writer.provide("Hello, ");
+    writer.provide("World! ");
+    writer.provide("This is a test of the custom buffer.\n");
     writer.close();
     
     tracked_buffer buffer;
