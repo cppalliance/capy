@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2021 Vinnie Falco (vinnie dot falco at gmail dot com)
+// Copyright (c) 2021 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
