@@ -141,6 +141,7 @@ pull_from(Src& source, Sink& sink)
     @see ReadStream, BufferSink, push_to
 */
 template<ReadStream Src, BufferSink Sink>
+    requires (!ReadSource<Src>)
 io_task<std::size_t>
 pull_from(Src& source, Sink& sink)
 {

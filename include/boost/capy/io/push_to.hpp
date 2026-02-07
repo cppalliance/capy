@@ -123,6 +123,7 @@ push_to(Src& source, Sink& sink)
     @see BufferSource, WriteStream, pull_from
 */
 template<BufferSource Src, WriteStream Stream>
+    requires (!WriteSink<Stream>)
 io_task<std::size_t>
 push_to(Src& source, Stream& stream)
 {
