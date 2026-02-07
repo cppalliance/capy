@@ -43,26 +43,37 @@ namespace capy {
     buffer sink operations. It uses cached awaitable storage to achieve
     zero steady-state allocation after construction.
 
-    The wrapper also satisfies @ref WriteSink. When the wrapped type
-    satisfies only @ref BufferSink, the write operations are
-    synthesized using @ref prepare and @ref commit with an extra
-    buffer copy. When the wrapped type satisfies both @ref BufferSink
-    and @ref WriteSink, the native write operations are forwarded
-    directly across the virtual boundary, avoiding the copy.
+    The wrapper exposes two interfaces for producing data:
+    the @ref BufferSink interface (`prepare`, `commit`, `commit_eof`)
+    and the @ref WriteSink interface (`write_some`, `write`,
+    `write_eof`). Choose the interface that matches how your data
+    is produced:
 
-    The wrapper supports two construction modes:
+    @par Choosing an Interface
+
+    Use the **BufferSink** interface when you are a generator that
+    produces data into externally-provided buffers. The sink owns
+    the memory; you call @ref prepare to obtain writable buffers,
+    fill them, then call @ref commit or @ref commit_eof.
+
+    Use the **WriteSink** interface when you already have buffers
+    containing the data to write:
+    - If the entire body is available up front, call
+      @ref write_eof(buffers) to send everything atomically.
+    - If data arrives incrementally, call @ref write or
+      @ref write_some in a loop, then @ref write_eof() when done.
+      Prefer `write` (complete) unless your streaming pattern
+      benefits from partial writes via `write_some`.
+
+    If the wrapped type only satisfies @ref BufferSink, the
+    @ref WriteSink operations are provided automatically.
+
+    @par Construction Modes
+
     - **Owning**: Pass by value to transfer ownership. The wrapper
       allocates storage and owns the sink.
     - **Reference**: Pass a pointer to wrap without ownership. The
       pointed-to sink must outlive this wrapper.
-
-    Within each mode, the vtable is populated at compile time based
-    on whether the wrapped type also satisfies @ref WriteSink:
-    - **BufferSink only**: @ref write_some, @ref write, and
-      @ref write_eof are synthesized from @ref prepare and
-      @ref commit, incurring one buffer copy per operation.
-    - **BufferSink + WriteSink**: All operations are forwarded
-      natively through the type-erased boundary with no extra copy.
 
     @par Awaitable Preallocation
     The constructor preallocates storage for the type-erased awaitable.
@@ -83,15 +94,20 @@ namespace capy {
     some_buffer_sink sink;
     any_buffer_sink abs(&sink);
 
+    // BufferSink interface: generate into callee-owned buffers
     mutable_buffer arr[16];
     auto bufs = abs.prepare(arr);
     // Write data into bufs[0..bufs.size())
     auto [ec] = co_await abs.commit(bytes_written);
     auto [ec2] = co_await abs.commit_eof(0);
 
-    // WriteSink interface also available
+    // WriteSink interface: send caller-owned buffers
     auto [ec3, n] = co_await abs.write(make_buffer("hello", 5));
     auto [ec4] = co_await abs.write_eof();
+
+    // Or send everything at once
+    auto [ec5, n2] = co_await abs.write_eof(
+        make_buffer(body_data));
     @endcode
 
     @see any_buffer_source, BufferSink, WriteSink
