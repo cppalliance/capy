@@ -322,6 +322,15 @@ public:
 
         @see write, write_some, WriteStream
     */
+// GCC falsely warns that the coroutine promise's
+// placement operator new(size_t, write_now&, auto&)
+// mismatches operator delete(void*, size_t). Per the
+// standard, coroutine deallocation lookup is separate.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
+#endif
+
 #if BOOST_CAPY_WRITE_NOW_WORKAROUND
     template<ConstBufferSequence Buffers>
     op_type
@@ -387,6 +396,10 @@ public:
         co_return io_result<std::size_t>{
             {}, total_written};
     }
+#endif
+
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
 #endif
 };
 

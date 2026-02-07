@@ -73,22 +73,6 @@ jobs:
             shared: true
             build-type: "Release"
 
-          - compiler: "mingw"
-            version: "*"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++"
-            cc: "gcc"
-            runs-on: "windows-2022"
-            b2-toolset: "gcc"
-            generator: "MinGW Makefiles"
-            is-latest: true
-            is-earliest: true
-            name: "MinGW: C++20"
-            shared: false
-            build-type: "Release"
-            build-cmake: true
-
           # macOS (2 configurations)
 
           - compiler: "apple-clang"
