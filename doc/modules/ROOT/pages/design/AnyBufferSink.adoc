@@ -1,0 +1,409 @@
+= any_buffer_sink Design
+
+== Overview
+
+This document describes the design of `any_buffer_sink`, a type-erased
+wrapper that satisfies both `BufferSink` and `WriteSink`. The central
+design goal is to serve two fundamentally different data-production
+patterns through a single runtime interface, with no performance
+compromise for either.
+
+Data producers fall into two categories:
+
+- **Generators** produce data on demand. They do not hold the data
+  in advance; they compute or serialize it into memory that someone
+  else provides. An HTTP header serializer, a JSON encoder, and a
+  compression engine are generators.
+
+- **Buffered sources** already have data sitting in buffers. A
+  memory-mapped file, a ring buffer that received data from a socket,
+  and a pre-serialized response body are buffered sources.
+
+These two patterns require different buffer ownership models.
+Generators need writable memory from the sink (the `BufferSink`
+pattern). Buffered sources need to hand their existing buffers to
+the sink (the `WriteSink` pattern). Forcing either pattern through
+the other's interface introduces an unnecessary copy.
+
+`any_buffer_sink` exposes both interfaces. The caller chooses the
+one that matches how its data is produced. The wrapper dispatches
+to the underlying concrete sink through the optimal path, achieving
+zero-copy when the concrete type supports it and falling back to a
+synthesized path when it does not.
+
+== The Two Interfaces
+
+=== BufferSink: Callee-Owned Buffers
+
+The `BufferSink` interface (`prepare`, `commit`, `commit_eof`) is
+designed for generators. The sink owns the memory. The generator
+asks for writable space, fills it, and commits:
+
+[source,cpp]
+----
+any_buffer_sink abs(concrete_sink{});
+
+mutable_buffer arr[16];
+auto bufs = abs.prepare(arr);
+// serialize directly into bufs
+auto [ec] = co_await abs.commit(bytes_written);
+----
+
+The data lands in the sink's internal storage with no intermediate
+copy. If the concrete sink is backed by a kernel page, a DMA
+descriptor, or a ring buffer, the bytes go directly to their final
+destination.
+
+=== WriteSink: Caller-Owned Buffers
+
+The `WriteSink` interface (`write_some`, `write`, `write_eof`) is
+designed for buffered sources. The caller already has the data in
+buffers and passes them to the sink:
+
+[source,cpp]
+----
+any_buffer_sink abs(concrete_sink{});
+
+// Data already in buffers -- pass them directly
+auto [ec, n] = co_await abs.write(existing_buffers);
+
+// Or atomically write and signal EOF
+auto [ec2, n2] = co_await abs.write_eof(final_buffers);
+----
+
+When the concrete sink natively supports `WriteSink`, the caller's
+buffers propagate directly through the type-erased boundary. The
+sink receives the original buffer descriptors pointing to the
+caller's memory. No data is copied into an intermediate staging
+area.
+
+== Dispatch Strategy
+
+The vtable records whether the wrapped concrete type satisfies
+`WriteSink` in addition to `BufferSink`. This determination is made
+at compile time when the vtable is constructed. At runtime, each
+`WriteSink` operation checks a single nullable function pointer to
+select its path.
+
+=== Native Forwarding (BufferSink + WriteSink)
+
+When the concrete type satisfies both concepts, the `WriteSink`
+vtable slots are populated with functions that construct the
+concrete type's own `write_some`, `write`, `write_eof(buffers)`,
+and `write_eof()` awaitables in the cached storage. The caller's
+buffer descriptors pass straight through:
+
+----
+caller buffers → vtable → concrete write(buffers) → I/O
+----
+
+No `prepare`, no `buffer_copy`, no `commit`. The concrete type
+receives the caller's buffers and can submit them directly to the
+operating system, the compression library, or the next pipeline
+stage.
+
+This is the zero-copy path for buffered sources writing to a sink
+that natively accepts caller-owned buffers.
+
+=== Synthesized Path (BufferSink Only)
+
+When the concrete type satisfies only `BufferSink`, the `WriteSink`
+vtable slots are null. The wrapper synthesizes the `WriteSink`
+operations from the `BufferSink` primitives:
+
+----
+caller buffers → prepare → buffer_copy → commit → I/O
+----
+
+For `write_some`:
+
+1. Call `prepare` to get writable space from the sink.
+2. Copy data from the caller's buffers into the prepared space
+   with `buffer_copy`.
+3. Call `commit` to finalize.
+
+For `write` and `write_eof`: the same loop, repeated until all
+data is consumed. `write_eof` finishes with `commit_eof` to signal
+end-of-stream.
+
+This path incurs one buffer copy, which is unavoidable: the
+concrete sink only knows how to accept data through its own
+`prepare`/`commit` protocol, so the caller's buffers must be copied
+into the sink's internal storage.
+
+== Why This Matters
+
+=== No Compromise
+
+A naive design would pick one interface and synthesize the other
+unconditionally. If the wrapper only exposed `BufferSink`, every
+buffered source would pay a copy to move its data into the sink's
+prepared buffers. If the wrapper only exposed `WriteSink`, every
+generator would need to allocate its own intermediate buffer, fill
+it, then hand it to the sink -- paying a copy that the `BufferSink`
+path avoids.
+
+`any_buffer_sink` avoids both penalties. Each data-production
+pattern uses the interface designed for it. The only copy that
+occurs is the one that is structurally unavoidable: when a
+`WriteSink` operation targets a concrete type that only speaks
+`BufferSink`.
+
+=== True Zero-Copy for Buffered Sources
+
+Consider an HTTP server where the response body is a memory-mapped
+file. The file's pages are already in memory. Through the
+`WriteSink` interface, those pages can propagate directly to the
+underlying transport:
+
+[source,cpp]
+----
+// body_source is a BufferSource backed by mmap pages
+// response_sink wraps a concrete type satisfying both concepts
+
+any_buffer_sink response_sink(&concrete);
+
+const_buffer arr[16];
+for(;;)
+{
+    auto [ec, bufs] = co_await body_source.pull(arr);
+    if(ec == cond::eof)
+    {
+        auto [ec2] = co_await response_sink.write_eof();
+        break;
+    }
+    if(ec)
+        break;
+    // bufs point directly into mmap pages
+    // write() propagates them through the vtable to the concrete sink
+    auto [ec2, n] = co_await response_sink.write(bufs);
+    if(ec2)
+        break;
+    body_source.consume(n);
+}
+----
+
+The mapped pages flow from `body_source.pull` through
+`response_sink.write` to the concrete transport with no
+intermediate copy. If the concrete sink can scatter-gather those
+buffers into a `writev` system call, the data moves from the
+page cache to the network card without touching user-space memory
+a second time.
+
+=== Generators Write In-Place
+
+An HTTP header serializer generates bytes on the fly. It does not
+hold the output in advance. Through the `BufferSink` interface, it
+writes directly into whatever memory the concrete sink provides:
+
+[source,cpp]
+----
+task<> serialize_headers(
+    any_buffer_sink& sink,
+    response const& resp)
+{
+    mutable_buffer arr[16];
+
+    for(auto const& field : resp.fields())
+    {
+        auto bufs = sink.prepare(arr);
+        // serialize field directly into bufs
+        std::size_t n = format_field(bufs, field);
+        auto [ec] = co_await sink.commit(n);
+        if(ec)
+            co_return;
+    }
+    // headers done; body follows through the same sink
+}
+----
+
+The serializer never allocates a scratch buffer for the formatted
+output. The bytes land directly in the sink's internal storage,
+which might be a chunked-encoding buffer, a TLS record buffer, or
+a circular buffer feeding a socket.
+
+== Awaitable Caching
+
+`any_buffer_sink` uses the split vtable pattern described in
+xref:TypeEraseAwaitable.adoc[Type-Erasing Awaitables]. Multiple
+async operations (`commit`, `commit_eof`, plus the four `WriteSink`
+operations when the concrete type supports them) share a single
+cached awaitable storage region.
+
+The constructor computes the maximum size and alignment across all
+awaitable types that the concrete type can produce and allocates
+that storage once. This reserves all virtual address space at
+construction time, so memory usage is measurable at server startup
+rather than growing piecemeal as requests arrive.
+
+Two separate `awaitable_ops` structs are used:
+
+- `awaitable_ops` for operations yielding `io_result<>`
+  (`commit`, `commit_eof`, `write_eof()`)
+- `write_awaitable_ops` for operations yielding
+  `io_result<std::size_t>` (`write_some`, `write`,
+  `write_eof(buffers)`)
+
+Each `construct_*` function in the vtable creates the concrete
+awaitable in the cached storage and returns a pointer to the
+matching `static constexpr` ops table. The wrapper stores this
+pointer as `active_ops_` or `active_write_ops_` and uses it for
+`await_ready`, `await_suspend`, `await_resume`, and destruction.
+
+== Ownership Modes
+
+=== Owning
+
+[source,cpp]
+----
+any_buffer_sink abs(my_concrete_sink{args...});
+----
+
+The wrapper allocates storage for the concrete sink and moves it
+in. The wrapper owns the sink and destroys it in its destructor.
+The awaitable cache is allocated separately.
+
+If either allocation fails, the constructor cleans up via an
+internal guard and propagates the exception.
+
+=== Non-Owning (Reference)
+
+[source,cpp]
+----
+my_concrete_sink sink;
+any_buffer_sink abs(&sink);
+----
+
+The wrapper stores a pointer without allocating storage for the
+sink. The concrete sink must outlive the wrapper. Only the
+awaitable cache is allocated.
+
+This mode is useful when the concrete sink is managed by a
+higher-level object (e.g., an HTTP connection that owns the
+transport) and the wrapper is a short-lived handle passed to a
+body-production function.
+
+== Relationship to any_buffer_source
+
+`any_buffer_source` is the read-side counterpart, satisfying both
+`BufferSource` and `ReadSource`. The same dual-interface principle
+applies in mirror image:
+
+[cols="1,1,1"]
+|===
+| Direction | Primary concept | Secondary concept
+
+| Writing (any_buffer_sink)
+| `BufferSink` (callee-owned)
+| `WriteSink` (caller-owned)
+
+| Reading (any_buffer_source)
+| `BufferSource` (callee-owned)
+| `ReadSource` (caller-owned)
+|===
+
+Both wrappers enable the same design philosophy: the caller
+chooses the interface that matches its data-production or
+data-consumption pattern, and the wrapper dispatches optimally.
+
+== Alternatives Considered
+
+=== WriteSink-Only Wrapper
+
+A design where the type-erased wrapper satisfied only `WriteSink`
+was considered. Generators would allocate their own scratch buffer,
+serialize into it, and call `write`. This was rejected because:
+
+- Every generator pays a buffer copy that the `BufferSink` path
+  avoids. For high-throughput paths (HTTP header serialization,
+  compression output), this copy is measurable.
+- Generators must manage scratch buffer lifetime and sizing.
+  The `prepare`/`commit` protocol pushes this responsibility to
+  the sink, which knows its own buffer topology.
+- The `commit_eof(n)` optimization (coalescing final data with
+  stream termination) is lost. A generator calling `write` cannot
+  signal that its last write is the final one without a separate
+  `write_eof()` call, preventing the sink from combining them.
+
+=== BufferSink-Only Wrapper
+
+A design where the wrapper satisfied only `BufferSink` was
+considered. Buffered sources would copy their data into the
+sink's prepared buffers via `prepare` + `buffer_copy` + `commit`.
+This was rejected because:
+
+- Every buffered source pays a copy that native `WriteSink`
+  forwarding avoids. When the source is a memory-mapped file and
+  the sink is a socket, this eliminates the zero-copy path
+  entirely.
+- The `buffer_copy` step becomes the bottleneck for large
+  transfers, dominating what would otherwise be a pure I/O
+  operation.
+- Buffered sources that produce scatter-gather buffer sequences
+  (multiple non-contiguous regions) must copy each region
+  individually into prepared buffers, losing the ability to pass
+  the entire scatter-gather list to a `writev` system call.
+
+=== Separate Wrapper Types
+
+A design with two distinct wrappers (`any_buffer_sink` satisfying
+only `BufferSink` and `any_write_sink` satisfying only `WriteSink`)
+was considered. The caller would choose which wrapper to construct
+based on its data-production pattern. This was rejected because:
+
+- The caller and the sink are often decoupled. An HTTP server
+  framework provides the sink; the user provides the body
+  producer. The framework cannot know at compile time whether the
+  user will call `prepare`/`commit` or `write`/`write_eof`.
+- Requiring two wrapper types forces the framework to either
+  pick one (losing the other pattern) or expose both (complicating
+  the API).
+- A single wrapper that satisfies both concepts lets the
+  framework hand one object to the body producer, which uses
+  whichever interface is natural. No choice is imposed on the
+  framework or the user.
+
+=== Always Synthesizing WriteSink
+
+A design where the `WriteSink` operations were always synthesized
+from `prepare` + `buffer_copy` + `commit`, even when the concrete
+type natively supports `WriteSink`, was considered. This would
+simplify the vtable by removing the nullable write-forwarding
+slots. This was rejected because:
+
+- The buffer copy is measurable. For a concrete type that can
+  accept caller-owned buffers directly (e.g., a socket wrapper
+  with `writev` support), the synthesized path adds a copy that
+  native forwarding avoids.
+- The `write_eof(buffers)` atomicity guarantee is lost. The
+  synthesized path must decompose it into `prepare` +
+  `buffer_copy` + `commit_eof`, which the concrete type cannot
+  distinguish from a non-final commit followed by an empty
+  `commit_eof`. This prevents optimizations like coalescing the
+  last data chunk with a chunked-encoding terminator.
+
+== Summary
+
+`any_buffer_sink` satisfies both `BufferSink` and `WriteSink`
+behind a single type-erased interface. The dual API lets each
+data-production pattern use the interface designed for it:
+
+[cols="1,2,2"]
+|===
+| Producer type | Interface | Data path
+
+| Generator (produces on demand)
+| `prepare` / `commit` / `commit_eof`
+| Writes directly into sink's internal storage. Zero copy.
+
+| Buffered source (data already in memory)
+| `write_some` / `write` / `write_eof`
+| Buffers propagate through the vtable. Zero copy when the concrete
+  type natively supports `WriteSink`. One copy (synthesized) when
+  it does not.
+|===
+
+The dispatch is determined at construction time through nullable
+vtable slots. At runtime, a single pointer check selects the native
+or synthesized path. Neither pattern pays for the other's
+existence.
