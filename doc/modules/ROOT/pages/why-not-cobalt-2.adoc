@@ -1,0 +1,581 @@
+= Write Stream Design: A Side-by-Side Analysis
+
+Both Capy and Cobalt allow you to write a non-template coroutine algorithm that operates on a type-erased write stream. The function signatures look similar:
+
+[source,cpp]
+----
+// Capy
+capy::task<> my_algo(capy::any_write_stream& stream);
+
+// Cobalt
+cobalt::task<> my_algo(cobalt::io::write_stream& stream);
+----
+
+Both designs solve the same problem. The caller passes a type-erased stream, and the algorithm writes to it without knowing the concrete type. The differences lie in how each library defines the stream abstraction, specifies its contract, propagates context, and manages allocation.
+
+Each section below examines one design choice and its technical consequences.
+
+== Task Requirements
+
+Capy formally defines what makes a task type conforming. Three C++20 concepts form a refinement hierarchy:
+
+....
+IoAwaitable
+    |
+    v
+IoAwaitableTask
+    |
+    v
+IoLaunchableTask
+....
+
+`IoAwaitable` is the base. It requires a single syntactic property -- the `await_suspend` signature must accept an executor and stop token as explicit parameters:
+
+[source,cpp]
+----
+template<typename A>
+concept IoAwaitable =
+    requires(A a, coro h, executor_ref ex, std::stop_token token)
+    {
+        a.await_suspend(h, ex, token);
+    };
+----
+
+`IoAwaitableTask` refines `IoAwaitable` with promise-level context storage. The promise must provide `set_executor`, `set_stop_token`, `set_continuation`, and their accessors:
+
+[source,cpp]
+----
+template<typename T>
+concept IoAwaitableTask =
+    IoAwaitable<T> &&
+    requires { typename T::promise_type; } &&
+    requires(
+        typename T::promise_type& p,
+        typename T::promise_type const& cp,
+        executor_ref ex,
+        std::stop_token st,
+        coro cont)
+    {
+        { p.set_executor(ex) } noexcept;
+        { p.set_stop_token(st) } noexcept;
+        { p.set_continuation(cont, ex) } noexcept;
+        { cp.executor() } noexcept -> std::same_as<executor_ref>;
+        { cp.stop_token() } noexcept -> std::same_as<std::stop_token const&>;
+        { cp.complete() } noexcept -> std::same_as<coro>;
+    };
+----
+
+`IoLaunchableTask` adds operations needed to start a task from non-coroutine contexts: `handle()`, `release()`, `exception()`, and `result()`.
+
+Each concept has documented syntactic requirements, semantic requirements, conforming signatures, and examples. A user who wants to create a custom task type can read the concept definition and know exactly what to provide. The compiler enforces the syntactic requirements at constraint-check time.
+
+=== Cobalt's Approach
+
+Cobalt uses an associator pattern inherited from Asio. The full documentation for this pattern, from `cobalt/doc/design/associators.adoc`, reads:
+
+____
+`cobalt` uses the `associator` concept of asio, but simplifies it. That is, it has three associators that are member functions of an awaiting promise.
+
+* `const executor_type & get_executor()` (always `executor`, must return by const ref)
+* `allocator_type get_allocator()` (always `pmr::polymorphic_allocator<void>`)
+* `cancellation_slot_type get_cancellation_slot()` (must have the same IF as `asio::cancellation_slot`)
+
+`cobalt` uses concepts to check if those are present in its `await_suspend` functions.
+
+That way custom coroutines can support cancellation, executors and allocators.
+
+In a custom awaitable you can obtain them like this:
+____
+
+[source,cpp]
+----
+struct my_awaitable
+{
+    bool await_ready();
+    template<typename Promise>
+    void await_suspend(std::coroutine_handle<Promise> h)
+    {
+        if constexpr (requires (Promise p) {p.get_executor();})
+            handle_executor(h.promise().get_executor());
+
+        if constexpr (requires (Promise p) {p.get_cancellation_slot();})
+            if ((cl = h.promise().get_cancellation_slot()).is_connected())
+                cl.emplace<my_cancellation>();
+    }
+
+    void await_resume();
+};
+----
+
+The associators are optional member functions on the promise. Each awaitable probes for them independently using `if constexpr`. There is no single named concept that collects these requirements, and no compiler-enforced check that a task type provides them all.
+
+[cols="1,1,1"]
+|===
+| Aspect | Capy | Cobalt
+
+| Task requirements
+| Named concepts (`IoAwaitable`, `IoAwaitableTask`, `IoLaunchableTask`)
+| Implicit associators probed via `if constexpr`
+
+| Specification
+| Documented syntactic + semantic requirements
+| Prose description of three member functions
+
+| Compiler enforcement
+| Constraint failure at concept check
+| No diagnostic if associator is missing
+
+| Refinement hierarchy
+| Yes (three levels)
+|
+
+| User-authored task types
+| Implement against documented concept
+| Reverse-engineer from `if constexpr` probes
+|===
+
+== Context Propagation
+
+The task requirements directly determine how executor and cancellation context reach child operations.
+
+Capy's `IoAwaitable` protocol passes executor and stop token as explicit parameters to `await_suspend`:
+
+[source,cpp]
+----
+auto await_suspend(coro h, executor_ref ex, std::stop_token token);
+----
+
+The executor and stop token flow forward structurally through the call chain. If a task's machinery does not provide them, the code does not compile. There is no fallback.
+
+Cobalt's approach probes the calling promise. The relevant code from `cobalt/detail/task.hpp`:
+
+[source,cpp]
+----
+template<typename Promise>
+std::coroutine_handle<void> await_suspend(std::coroutine_handle<Promise> h)
+{
+    // ...
+    if constexpr (requires {h.promise().get_cancellation_slot();})
+        if ((cl = h.promise().get_cancellation_slot()).is_connected())
+            cl.emplace<forward_cancellation>(self->promise->signal);
+
+    if constexpr (requires {h.promise().get_executor();})
+        self->promise->exec.emplace(h.promise().get_executor());
+    else
+        self->promise->exec.emplace(this_thread::get_executor());
+    // ...
+}
+----
+
+Two things happen when a promise does not provide an associator:
+
+* If `get_executor()` is absent, the code falls back to `this_thread::get_executor()` -- a thread-local global. The child task receives whatever executor was last set on the current thread, which may not be the executor the caller intended.
+
+* If `get_cancellation_slot()` is absent, the entire cancellation wiring block is skipped. The child task's cancellation signal is never connected. Child operations become uncancellable.
+
+This is intentional behavior, as confirmed by the author: a task without `get_cancellation_slot()` simply does not propagate cancellation to its children. The trade-off is that both cases produce no compile-time diagnostic. A custom task that omits an associator will compile and run, but with silently different context propagation.
+
+In Capy, the equivalent of "no cancellation" is passing `std::stop_token{}` (a never-stop token) explicitly. This is a deliberate choice expressed in code, not an implicit consequence of a missing member function.
+
+[cols="1,1,1"]
+|===
+| Aspect | Capy | Cobalt
+
+| Mechanism
+| Explicit `await_suspend` parameters
+| Promise probing via `if constexpr`
+
+| Missing executor
+| Compile error
+| Silent fallback to `this_thread::get_executor()`
+
+| Missing cancellation
+| Compile error (pass `std::stop_token{}` to opt out)
+| Silently skipped (child becomes uncancellable)
+
+| Diagnostic on omission
+| Yes (constraint failure)
+| No
+|===
+
+== Buffer Sequences
+
+Cobalt's `write_stream` accepts buffers through a concrete type:
+
+[source,cpp]
+----
+struct write_stream
+{
+    virtual ~write_stream() = default;
+    virtual write_op write_some(const_buffer_sequence buffer) = 0;
+};
+----
+
+`const_buffer_sequence` is a fixed type that accepts either a single `asio::const_buffer` or a `std::span<const asio::const_buffer>`:
+
+[source,cpp]
+----
+struct const_buffer_sequence
+{
+    const_buffer_sequence(asio::const_buffer head);
+    const_buffer_sequence(asio::mutable_buffer head);
+
+    template<typename T>
+        requires (std::constructible_from<
+            std::span<const asio::const_buffer>, const T&>)
+    const_buffer_sequence(const T& value);
+
+    const_buffer_sequence(std::span<const asio::const_buffer> spn);
+    // ...
+};
+----
+
+This is a subset of Asio's full `ConstBufferSequence` concept. Buffer sequence types that do not convert to `const_buffer` or `span<const asio::const_buffer>` cannot be passed through this interface.
+
+Capy's `WriteStream` concept requires `write_some` to accept any `ConstBufferSequence`:
+
+[source,cpp]
+----
+template<typename T>
+concept WriteStream =
+    requires(T& stream, const_buffer_archetype buffers)
+    {
+        { stream.write_some(buffers) } -> IoAwaitable;
+        // ...
+    };
+----
+
+The type-erased wrapper `any_write_stream` also models the `WriteStream` concept. Its `write_some` is a template that accepts any `ConstBufferSequence`:
+
+[source,cpp]
+----
+template<ConstBufferSequence CB>
+auto
+any_write_stream::write_some(CB buffers);
+----
+
+Both the concept and the wrapper accept full buffer sequences. Type erasure does not narrow the interface.
+
+[cols="1,1,1"]
+|===
+| Aspect | Capy | Cobalt
+
+| `write_some` parameter
+| `template<ConstBufferSequence CB>`
+| `const_buffer_sequence` (concrete type)
+
+| Accepted buffer types
+| Any `ConstBufferSequence`
+| `const_buffer`, `span<const const_buffer>`
+
+| Type-erased wrapper accepts full concept
+| Yes
+|
+
+| Custom buffer sequence types
+| Accepted
+| Must convert to supported representations
+|===
+
+== Semantic Specification
+
+Cobalt's entire documentation for `write_stream`, from `cobalt/doc/reference/io/stream.adoc`, is:
+
+____
+A stream is an io object that allows reads and writes, such as a tcp socket.
+____
+
+Followed by the struct definition:
+
+[source,cpp]
+----
+struct write_stream
+{
+    virtual ~write_stream() = default;
+    virtual write_op write_some(const_buffer_sequence buffer) = 0;
+};
+----
+
+The documentation does not specify what `write_some` does when the buffer is empty, how errors are reported, what guarantees exist about partial writes, whether buffers are consumed in order, or what the caller can assume about buffer lifetime during the operation.
+
+Capy's `WriteStream` concept includes semantic requirements in the concept's documentation:
+
+[source,cpp]
+----
+// From capy/concept/write_stream.hpp
+
+// Semantic Requirements:
+//
+// If buffer_size( buffers ) > 0, the operation writes one or more
+// bytes of data to the stream from the buffer sequence:
+//
+//   On success: !ec, and n is the number of bytes written.
+//   On error: ec, and n is 0.
+//
+// If buffer_empty( buffers ) is true, the operation completes
+// immediately. !ec, and n is 0.
+//
+// Buffers in the sequence are written completely before proceeding
+// to the next buffer.
+//
+// Buffer Lifetime:
+//
+// The caller must ensure that the memory referenced by buffers
+// remains valid until the co_await expression returns.
+----
+
+The concept also includes a coroutine-specific warning about buffer lifetime:
+
+[source,cpp]
+----
+// Warning: When implementing coroutine member functions, prefer
+// accepting buffer sequences by value rather than by reference.
+// Buffer sequences passed by reference may become dangling if
+// the caller's stack frame is destroyed before the coroutine
+// completes.
+----
+
+[cols="1,1,1"]
+|===
+| Specification | Capy | Cobalt
+
+| Empty buffer behavior
+| Documented (immediate completion, no error)
+|
+
+| Error reporting semantics
+| Documented (`ec` + `n == 0`)
+|
+
+| Partial write guarantees
+| Documented (buffers consumed in order)
+|
+
+| Buffer lifetime requirements
+| Documented
+|
+
+| Coroutine buffer lifetime warning
+| Yes
+|
+
+| Conforming signature examples
+| Yes
+|
+|===
+
+== Operation Implementation
+
+Cobalt's `write_stream::write_some` returns `write_op`, a concrete operation type. The `write_op` struct from `cobalt/io/ops.hpp`:
+
+[source,cpp]
+----
+struct write_op final : op<system::error_code, std::size_t>
+{
+    const_buffer_sequence buffer;
+
+    using     implementation_t =
+        void(void*, const_buffer_sequence,
+             completion_handler<system::error_code, std::size_t>);
+    using try_implementation_t =
+        void(void*, const_buffer_sequence,
+             handler<system::error_code, std::size_t>);
+
+    write_op(const_buffer_sequence buffer,
+             void* this_,
+             implementation_t* implementation,
+             try_implementation_t* try_implementation = nullptr);
+
+    void initiate(
+        completion_handler<system::error_code, std::size_t> handler) final;
+    void ready(
+        handler<system::error_code, std::size_t> handler) final;
+};
+----
+
+Implementing `write_stream` requires constructing a `write_op` with two function pointers and a `void*`. The full documentation for these function pointers, from `cobalt/doc/reference/io/ops.adoc`, is:
+
+____
+Most functionality in this wrapper is implemented with operations.
+
+They are type-erase, but not by using `virtual`. This makes devirtualization easier. The `implementation` function must be provided, where as `try_implementation_t` is optional and will be used in the `ready` function. Both will be called with `void *this` as the first parameter.
+____
+
+The documentation does not specify what the `implementation` function must do with the buffer, what completion semantics to follow, how to report errors through the `completion_handler`, or under what conditions `try_implementation` should complete synchronously.
+
+In Capy, the implementation contract lives in the `WriteStream` concept definition. A type satisfies `WriteStream` by providing a `write_some` member function template that returns an `IoAwaitable` decomposing to `(error_code, std::size_t)`. The semantic requirements are part of the concept. There is no separate operation type to construct and no function pointers to provide.
+
+[cols="1,1,1"]
+|===
+| Aspect | Capy | Cobalt
+
+| How to implement
+| Satisfy the `WriteStream` concept
+| Construct `write_op` with function pointers + `void*`
+
+| Contract location
+| Concept definition (javadoc)
+| Prose paragraph in ops reference
+
+| Implementation function semantics
+| Specified (in concept)
+| Not specified
+
+| Intermediate types required
+| None (concept is the contract)
+| `write_op`, `completion_handler`, `handler`
+|===
+
+== Awaitable Allocation
+
+Every `co_await` on a `write_op` in Cobalt allocates a fixed-size buffer in the coroutine frame. The chain is:
+
+1. `write_stream::write_some` returns `write_op`
+2. `write_op final : op<system::error_code, std::size_t>`
+3. `op<>::operator co_await()` returns `op<>::awaitable`
+4. `op<>::awaitable` contains a 4096-byte SBO buffer:
+
+[source,cpp]
+----
+// cobalt/op.hpp
+struct awaitable : awaitable_base
+{
+    char buffer[BOOST_COBALT_SBO_BUFFER_SIZE]; // default: 4096
+    detail::sbo_resource resource{buffer, sizeof(buffer)};
+
+    awaitable(op<Args...>* op_) : awaitable_base(op_, &resource) {}
+    // ...
+};
+----
+
+`write_op` is `final`. The return type of `write_stream::write_some` is fixed. Subclasses of `write_stream` cannot change the return type, the allocation strategy, or the SBO buffer size. Every `co_await stream.write_some(buf)` places this 4096-byte awaitable in the coroutine frame regardless of whether the underlying implementation needs it.
+
+Capy's `any_write_stream` takes a different approach. The constructor preallocates storage sized exactly to the wrapped stream's awaitable type:
+
+[source,cpp]
+----
+// capy/io/any_write_stream.hpp
+template<WriteStream S>
+    requires (!std::same_as<std::decay_t<S>, any_write_stream>)
+any_write_stream::any_write_stream(S s)
+    : vt_(&vtable_for_impl<S>::value)
+{
+    // ...
+    storage_ = ::operator new(sizeof(S));
+    stream_ = ::new(storage_) S(std::move(s));
+
+    // Preallocate the awaitable storage
+    cached_awaitable_ = ::operator new(vt_->awaitable_size);
+    // ...
+}
+----
+
+After construction, each `co_await stream.write_some(buf)` reuses this preallocated storage. There is no per-operation allocation and no fixed-size buffer in the coroutine frame.
+
+If users prefer a different allocation strategy, they can write algorithms directly against the `WriteStream` concept and build their own wrapper. The concept and the type-erased wrapper are separate layers. Cobalt's abstract base class fuses the abstraction and the allocation strategy into one type.
+
+[cols="1,1,1"]
+|===
+| Aspect | Capy | Cobalt
+
+| Per-operation allocation
+| None (preallocated at construction)
+| 4096-byte SBO buffer per `co_await`
+
+| Storage sizing
+| Exact (sized to wrapped type)
+| Fixed (`BOOST_COBALT_SBO_BUFFER_SIZE`)
+
+| Configurable by subclass
+| N/A (concept + wrapper are separate)
+| No (`write_op` is `final`)
+
+| Custom allocation strategy
+| Write against `WriteStream` concept
+| Not possible (return type is fixed)
+|===
+
+== Concept vs. Abstract Base Class
+
+The preceding sections each examined a specific design choice. A common thread runs through them.
+
+Cobalt's `write_stream` is an abstract base class. The abstraction and the runtime wrapper are the same type. Writing against the abstraction means using virtual dispatch. The return type (`write_op`), the buffer parameter type (`const_buffer_sequence`), the allocation strategy (4096-byte SBO), and the context propagation mechanism (promise probing) are all fixed by the base class definition.
+
+Capy separates the abstraction from the wrapper. `WriteStream` is a C++20 concept:
+
+[source,cpp]
+----
+template<typename T>
+concept WriteStream =
+    requires(T& stream, const_buffer_archetype buffers)
+    {
+        { stream.write_some(buffers) } -> IoAwaitable;
+        requires awaitable_decomposes_to<
+            decltype(stream.write_some(buffers)),
+            std::error_code, std::size_t>;
+    };
+----
+
+`any_write_stream` is a type-erased wrapper that satisfies this concept. It is one possible reification, not the only one. Users can:
+
+* Write generic algorithms constrained by `WriteStream` -- these work with any conforming stream, with no virtual dispatch overhead.
+* Use `any_write_stream` when runtime polymorphism is needed -- it provides type erasure with preallocated awaitable storage.
+* Build a custom wrapper with a different allocation or dispatch strategy -- the concept defines the contract independently of any particular wrapper.
+
+This separation is the architectural root of the differences examined in this document. It is what enables full buffer sequence support at the type-erased layer, formal semantic specification in a concept definition, user-selectable allocation strategies, and explicit context propagation through `await_suspend` parameters.
+
+[cols="1,1,1"]
+|===
+| Aspect | Capy | Cobalt
+
+| Abstraction mechanism
+| C++20 concept (`WriteStream`)
+| Abstract base class (`write_stream`)
+
+| Runtime wrapper
+| Separate (`any_write_stream`)
+| Same type as abstraction
+
+| Generic algorithms (no type erasure)
+| Yes (constrain on concept)
+| No (must use virtual dispatch)
+
+| Custom wrappers
+| Yes (concept is independent)
+| No (locked to `write_op` return type)
+|===
+
+== Summary
+
+[cols="1,1,1"]
+|===
+| Design Choice | Capy | Cobalt
+
+| Task requirements
+| Named concept hierarchy (`IoAwaitable` -> `IoAwaitableTask` -> `IoLaunchableTask`)
+| Implicit associators (`get_executor`, `get_cancellation_slot`, `get_allocator`)
+
+| Context propagation
+| Explicit `await_suspend` parameters
+| Promise probing via `if constexpr` with thread-local fallback
+
+| Buffer sequence support
+| Full `ConstBufferSequence` (concept + wrapper)
+| `const_buffer_sequence` (concrete subset)
+
+| Semantic specification
+| Documented in concept (empty buffers, errors, ordering, lifetime)
+| Struct definition and one-sentence description
+
+| Operation implementation
+| Satisfy concept; wrapper handles the rest
+| Construct `write_op` with function pointers + `void*`
+
+| Awaitable allocation
+| Preallocated at construction (exact size)
+| 4096-byte SBO per `co_await` (fixed, `final`)
+
+| Abstraction mechanism
+| Concept (compile-time) + wrapper (runtime), separable
+| Abstract base class (fused)
+|===

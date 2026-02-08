@@ -374,9 +374,11 @@ No thread-local state. No ambient context. The executor and stop token flow forw
 
 == Cancellation
 
-Capy propagates `std::stop_token` automatically through coroutine chains via the IoAwaitable protocol. Cancel at the top of your coroutine tree, and every nested operation receives the signal. Pending I/O operations cancel at the OS level — `CancelIoEx` on Windows, `IORING_OP_ASYNC_CANCEL` on Linux.
+Both libraries propagate cancellation automatically through coroutine chains. Both support OS-level cancellation of pending I/O operations (`CancelIoEx` on Windows, `IORING_OP_ASYNC_CANCEL` on Linux).
 
-Cobalt uses Asio's `cancellation_signal` and `cancellation_slot`. Cancellation of pending I/O operations is handled by Asio at the OS level. Propagation through the coroutine chain requires explicit management via `this_coro::cancellation_state`.
+Capy uses `std::stop_token`, propagated as a parameter via the IoAwaitable protocol. The token is part of the `await_suspend` signature — it flows forward structurally alongside the executor.
+
+Cobalt uses Asio's `cancellation_signal` and `cancellation_slot`. Propagation is wired automatically in `await_suspend` via `forward_cancellation`. `this_coro::cancellation_state` provides filtering control over which cancellation types pass through.
 
 [cols="1,1,1"]
 |===
@@ -387,8 +389,12 @@ Cobalt uses Asio's `cancellation_signal` and `cancellation_slot`. Cancellation o
 | `asio::cancellation_signal`
 
 | Propagation
-| Automatic (IoAwaitable protocol)
-| Manual (`this_coro::cancellation_state`)
+| Automatic (IoAwaitable parameters)
+| Automatic (slot/signal wiring)
+
+| Filtering
+| Application-level
+| `this_coro::cancellation_state`
 
 | OS-level cancellation
 | Yes (via Corosio)
@@ -399,7 +405,7 @@ Cobalt uses Asio's `cancellation_signal` and `cancellation_slot`. Cancellation o
 
 Capy adopts Asio's buffer sequence model — `ConstBufferSequence`, `MutableBufferSequence` — because it works. Capy's buffer types are fully compatible with Asio's. You can pass Capy buffers to Asio operations and vice versa, seamlessly. Then Capy extends the model with additional types and algorithms, while still achieving the Dimovian Ideal — none of this requires exposing Asio headers to consumers.
 
-Cobalt uses Asio's buffer types directly and inherits the `DynamicBuffer_v1`/`DynamicBuffer_v2` split.
+Cobalt does not provide buffer sequence types or dynamic buffer support. Users who need these features use Asio's types directly, inheriting the `DynamicBuffer_v1`/`DynamicBuffer_v2` split.
 
 Capy has one `DynamicBuffer` concept. The v1/v2 split in Asio exists because of a fundamental ownership problem: when an async operation takes a buffer by value and completes via callback, who owns the buffer? The original design had flaws, and the fix created two incompatible versions. By going coroutines-only, Capy avoids this entirely. The coroutine frame owns the buffer. Parameters have their lifetimes extended by the suspended frame, and the awaitable lives in the frame alongside them. There is no decay-copy, no ownership transfer, no ambiguity. One concept is sufficient.
 
@@ -417,7 +423,7 @@ Capy has one `DynamicBuffer` concept. The v1/v2 split in Asio exists because of 
 
 | `DynamicBuffer`
 | Unified
-| Asio's v1/v2 split
+| None (use Asio directly)
 
 | `flat_dynamic_buffer`
 | Yes
@@ -563,12 +569,12 @@ Capy separates them. The execution model — executors, cancellation, allocation
 | Thread-local
 
 | Cancellation
-| Automatic propagation, OS-level
-| Manual propagation, OS-level (via Asio)
+| `std::stop_token`, automatic, OS-level
+| `cancellation_signal`, automatic, OS-level
 
 | Buffer sequences
 | Extended, unified `DynamicBuffer`
-| Asio's (v1/v2 split)
+| None (use Asio directly)
 
 | Allocator control
 | Per-task, forward-flow
