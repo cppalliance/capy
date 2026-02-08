@@ -131,7 +131,7 @@ ex.on_work_started();   // Increment work count
 ex.on_work_finished();  // Decrement work count
 ----
 
-The `executor_work_guard` RAII wrapper simplifies this pattern.
+The `work_guard` RAII wrapper simplifies this pattern.
 
 == Affine Awaitable Concept
 

@@ -172,12 +172,12 @@ ex.on_work_started();   // Increment work count
 ex.on_work_finished();  // Decrement work count
 ----
 
-The `executor_work_guard` RAII wrapper simplifies this:
+The `work_guard` RAII wrapper simplifies this:
 
 [source,cpp]
 ----
 {
-    executor_work_guard guard(ex);
+    work_guard guard(ex);
     // Work count incremented
     
     // ... do work ...

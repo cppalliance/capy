@@ -229,14 +229,14 @@ ex.on_work_started();   // Increment
 ex.on_work_finished();  // Decrement
 ----
 
-Use `executor_work_guard` for RAII:
+Use `work_guard` for RAII:
 
 [source,cpp]
 ----
-#include <boost/capy/ex/executor_work_guard.hpp>
+#include <boost/capy/ex/work_guard.hpp>
 
 {
-    executor_work_guard guard(ex);
+    work_guard guard(ex);
     // Work count incremented
 }  // Work count decremented
 ----

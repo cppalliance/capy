@@ -18,6 +18,7 @@
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/recycling_memory_resource.hpp>
+#include <boost/capy/ex/work_guard.hpp>
 
 #include <coroutine>
 #include <memory_resource>
@@ -84,7 +85,7 @@ struct run_async_trampoline
 
     struct promise_type
     {
-        Ex ex_;
+        work_guard<Ex> wg_;
         Handlers handlers_;
         frame_memory_resource<Alloc> resource_;
         invoke_fn invoke_ = nullptr;
@@ -92,7 +93,7 @@ struct run_async_trampoline
         std::coroutine_handle<> task_h_;
 
         promise_type(Ex& ex, Handlers& h, Alloc& a) noexcept
-            : ex_(std::move(ex))
+            : wg_(std::move(ex))
             , handlers_(std::move(h))
             , resource_(std::move(a))
         {
@@ -190,7 +191,7 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
 
     struct promise_type
     {
-        Ex ex_;
+        work_guard<Ex> wg_;
         Handlers handlers_;
         std::pmr::memory_resource* mr_;
         invoke_fn invoke_ = nullptr;
@@ -199,7 +200,7 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
 
         promise_type(
             Ex& ex, Handlers& h, std::pmr::memory_resource* mr) noexcept
-            : ex_(std::move(ex))
+            : wg_(std::move(ex))
             , handlers_(std::move(h))
             , mr_(mr)
         {
@@ -378,12 +379,12 @@ public:
         p.task_h_ = task_h;
 
         // Setup task's continuation to return to run_async_trampoline
-        task_promise.set_continuation(tr_.h_, p.ex_);
-        task_promise.set_executor(p.ex_);
+        task_promise.set_continuation(tr_.h_, p.wg_.executor());
+        task_promise.set_executor(p.wg_.executor());
         task_promise.set_stop_token(st_);
 
         // Resume task through executor
-        p.ex_.dispatch(task_h);
+        p.wg_.executor().dispatch(task_h);
     }
 };
 

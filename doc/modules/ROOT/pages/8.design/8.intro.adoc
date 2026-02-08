@@ -33,4 +33,6 @@ Each page in this section examines one concept or facility in depth. You will fi
 
 * **xref:8i.any_buffer_sink.adoc[AnyBufferSink]** -- A type-erased buffer sink. Combining the `BufferSink` concept with type erasure for runtime polymorphism.
 
+* **xref:8j.Executor.adoc[Executor]** -- The executor concept. Why `dispatch` returns `void`, why `defer` was dropped, how `executor_ref` achieves zero-allocation type erasure, and the I/O completion pattern that motivates the design.
+
 These documents are reference material for library contributors and advanced users. They assume familiarity with the tutorial sections and focus on design reasoning rather than usage.

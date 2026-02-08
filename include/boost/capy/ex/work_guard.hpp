@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_EXECUTOR_WORK_GUARD_HPP
-#define BOOST_CAPY_EXECUTOR_WORK_GUARD_HPP
+#ifndef BOOST_CAPY_WORK_GUARD_HPP
+#define BOOST_CAPY_WORK_GUARD_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/ex/execution_context.hpp>
@@ -60,12 +60,17 @@ namespace capy {
     t.join();
     @endcode
 
+    @note The executor is returned by reference, allowing callers to
+    manage the executor's lifetime directly. This is essential in
+    coroutine-first designs where the executor often outlives individual
+    coroutine frames.
+
     @tparam Ex A type satisfying the Executor concept.
 
     @see make_work_guard, Executor
 */
 template<Executor Ex>
-class executor_work_guard
+class work_guard
 {
     Ex ex_;
     bool owns_;
@@ -84,12 +89,12 @@ public:
 
         @par Postconditions
         @li `owns_work() == true`
-        @li `get_executor() == ex`
+        @li `executor() == ex`
 
         @param ex The executor to hold work on. Moved into the guard.
     */
     explicit
-    executor_work_guard(Ex ex) noexcept
+    work_guard(Ex ex) noexcept
         : ex_(std::move(ex))
         , owns_(true)
     {
@@ -106,11 +111,11 @@ public:
 
         @par Postconditions
         @li `owns_work() == other.owns_work()`
-        @li `get_executor() == other.get_executor()`
+        @li `executor() == other.executor()`
 
         @param other The work guard to copy from.
     */
-    executor_work_guard(executor_work_guard const& other) noexcept
+    work_guard(work_guard const& other) noexcept
         : ex_(other.ex_)
         , owns_(other.owns_)
     {
@@ -132,7 +137,7 @@ public:
 
         @param other The work guard to move from.
     */
-    executor_work_guard(executor_work_guard&& other) noexcept
+    work_guard(work_guard&& other) noexcept
         : ex_(std::move(other.ex_))
         , owns_(other.owns_)
     {
@@ -147,23 +152,26 @@ public:
         @par Exception Safety
         No-throw guarantee.
     */
-    ~executor_work_guard()
+    ~work_guard()
     {
         if(owns_)
             ex_.on_work_finished();
     }
 
-    executor_work_guard& operator=(executor_work_guard const&) = delete;
+    work_guard& operator=(work_guard const&) = delete;
 
-    /** Return the underlying executor.
+    /** Return the underlying executor by reference.
+
+        The reference remains valid for the lifetime of this guard,
+        enabling callers to manage executor lifetime explicitly.
 
         @par Exception Safety
         No-throw guarantee.
 
-        @return A copy of the stored executor.
+        @return A reference to the stored executor.
     */
-    executor_type
-    get_executor() const noexcept
+    executor_type const&
+    executor() const noexcept
     {
         return ex_;
     }
@@ -214,15 +222,15 @@ public:
 
     @param ex The executor to create the guard for.
 
-    @return An `executor_work_guard` holding work on `ex`.
+    @return A `work_guard` holding work on `ex`.
 
-    @see executor_work_guard
+    @see work_guard
 */
 template<Executor Ex>
-executor_work_guard<Ex>
+work_guard<Ex>
 make_work_guard(Ex ex)
 {
-    return executor_work_guard<Ex>(std::move(ex));
+    return work_guard<Ex>(std::move(ex));
 }
 
 } // capy

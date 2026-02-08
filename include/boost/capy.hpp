@@ -73,7 +73,7 @@
 #include <boost/capy/ex/coro_lock.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/ex/executor_work_guard.hpp>
+#include <boost/capy/ex/work_guard.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/immediate.hpp>
 #include <boost/capy/ex/io_awaitable_support.hpp>

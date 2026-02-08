@@ -54,6 +54,11 @@ class execution_context;
         matching `on_work_finished`
     @li The context uses this count to determine when shutdown
         is complete
+    @li These are not intended for direct use by callers. They
+        are public so that work guards can invoke them. This
+        enables user-defined guards with additional tracking
+        behaviors, without the library needing to grant friendship
+        to types it cannot anticipate
 
     The `dispatch` operation executes immediately if safe:
 

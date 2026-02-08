@@ -8,10 +8,11 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/ex/executor_work_guard.hpp>
+#include <boost/capy/ex/work_guard.hpp>
 
 #include <boost/capy/ex/execution_context.hpp>
 
+#include <type_traits>
 #include <utility>
 
 #include "test_suite.hpp"
@@ -77,7 +78,7 @@ struct guard_test_executor
 // Verify Executor concept
 static_assert(Executor<guard_test_executor>);
 
-struct executor_work_guard_test
+struct work_guard_test
 {
     void
     run()
@@ -89,7 +90,7 @@ struct executor_work_guard_test
 
             {
                 guard_test_executor ex(ctx);
-                executor_work_guard<guard_test_executor> guard(ex);
+                work_guard<guard_test_executor> guard(ex);
                 BOOST_TEST(ctx.work_count == 1);
                 BOOST_TEST(guard.owns_work());
             }
@@ -103,7 +104,7 @@ struct executor_work_guard_test
 
             {
                 guard_test_executor ex(ctx);
-                executor_work_guard<guard_test_executor> guard(ex);
+                work_guard<guard_test_executor> guard(ex);
                 BOOST_TEST(ctx.work_count == 1);
             }
 
@@ -115,15 +116,15 @@ struct executor_work_guard_test
             guard_test_context ctx;
             guard_test_executor ex(ctx);
 
-            executor_work_guard<guard_test_executor> guard1(ex);
+            work_guard<guard_test_executor> guard1(ex);
             BOOST_TEST(ctx.work_count == 1);
 
             {
-                executor_work_guard<guard_test_executor> guard2(guard1);
+                work_guard<guard_test_executor> guard2(guard1);
                 BOOST_TEST(ctx.work_count == 2);
                 BOOST_TEST(guard1.owns_work());
                 BOOST_TEST(guard2.owns_work());
-                BOOST_TEST(guard1.get_executor() == guard2.get_executor());
+                BOOST_TEST(guard1.executor() == guard2.executor());
             }
 
             BOOST_TEST(ctx.work_count == 1);
@@ -134,10 +135,10 @@ struct executor_work_guard_test
             guard_test_context ctx;
             guard_test_executor ex(ctx);
 
-            executor_work_guard<guard_test_executor> guard1(ex);
+            work_guard<guard_test_executor> guard1(ex);
             BOOST_TEST(ctx.work_count == 1);
 
-            executor_work_guard<guard_test_executor> guard2(std::move(guard1));
+            work_guard<guard_test_executor> guard2(std::move(guard1));
             BOOST_TEST(ctx.work_count == 1);  // No change
             BOOST_TEST(!guard1.owns_work());
             BOOST_TEST(guard2.owns_work());
@@ -148,7 +149,7 @@ struct executor_work_guard_test
             guard_test_context ctx;
             guard_test_executor ex(ctx);
 
-            executor_work_guard<guard_test_executor> guard(ex);
+            work_guard<guard_test_executor> guard(ex);
             BOOST_TEST(ctx.work_count == 1);
             BOOST_TEST(guard.owns_work());
 
@@ -167,21 +168,41 @@ struct executor_work_guard_test
             guard_test_context ctx;
             guard_test_executor ex(ctx);
 
-            executor_work_guard<guard_test_executor> guard(ex);
+            work_guard<guard_test_executor> guard(ex);
             BOOST_TEST(guard.owns_work() == true);
 
             guard.reset();
             BOOST_TEST(guard.owns_work() == false);
         }
 
-        // get_executor() returns correct executor
+        // executor() returns correct executor
         {
             guard_test_context ctx;
             guard_test_executor ex(ctx);
 
-            executor_work_guard<guard_test_executor> guard(ex);
-            BOOST_TEST(guard.get_executor() == ex);
-            BOOST_TEST(&guard.get_executor().context() == &ctx);
+            work_guard<guard_test_executor> guard(ex);
+            BOOST_TEST(guard.executor() == ex);
+            BOOST_TEST(&guard.executor().context() == &ctx);
+        }
+
+        // executor() returns a stable reference
+        {
+            guard_test_context ctx;
+            guard_test_executor ex(ctx);
+
+            work_guard<guard_test_executor> guard(ex);
+            auto const& ref1 = guard.executor();
+            auto const& ref2 = guard.executor();
+            BOOST_TEST(&ref1 == &ref2);
+        }
+
+        // executor() returns a const lvalue reference
+        {
+            using guard_type =
+                work_guard<guard_test_executor>;
+            static_assert(std::is_same_v<
+                decltype(std::declval<guard_type const&>().executor()),
+                guard_test_executor const&>);
         }
 
         // make_work_guard(Executor) factory function
@@ -192,7 +213,7 @@ struct executor_work_guard_test
             auto guard = make_work_guard(ex);
             BOOST_TEST(ctx.work_count == 1);
             BOOST_TEST(guard.owns_work());
-            BOOST_TEST(guard.get_executor() == ex);
+            BOOST_TEST(guard.executor() == ex);
         }
 
         // Copy from guard that doesn't own work
@@ -200,11 +221,11 @@ struct executor_work_guard_test
             guard_test_context ctx;
             guard_test_executor ex(ctx);
 
-            executor_work_guard<guard_test_executor> guard1(ex);
+            work_guard<guard_test_executor> guard1(ex);
             guard1.reset();
             BOOST_TEST(ctx.work_count == 0);
 
-            executor_work_guard<guard_test_executor> guard2(guard1);
+            work_guard<guard_test_executor> guard2(guard1);
             BOOST_TEST(ctx.work_count == 0);  // No increment
             BOOST_TEST(!guard2.owns_work());
         }
@@ -212,8 +233,8 @@ struct executor_work_guard_test
 };
 
 TEST_SUITE(
-    executor_work_guard_test,
-    "boost.capy.executor_work_guard");
+    work_guard_test,
+    "boost.capy.work_guard");
 
 } // capy
 } // boost
