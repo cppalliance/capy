@@ -107,7 +107,7 @@ struct my_awaitable
 };
 ----
 
-The associators are optional member functions on the promise. Each awaitable probes for them independently using `if constexpr`. There is no single named concept that collects these requirements, and no compiler-enforced check that a task type provides them all.
+The associators are optional member functions on the promise. Each awaitable probes for them independently using `if constexpr`. This design treats executor, allocator, and cancellation support as independent, opt-in capabilities rather than a single bundled requirement.
 
 [cols="1,1,1"]
 |===
@@ -123,7 +123,7 @@ The associators are optional member functions on the promise. Each awaitable pro
 
 | Compiler enforcement
 | Constraint failure at concept check
-| No diagnostic if associator is missing
+| Associators are optional; absent ones use defined defaults
 
 | Refinement hierarchy
 | Yes (three levels)
@@ -131,7 +131,7 @@ The associators are optional member functions on the promise. Each awaitable pro
 
 | User-authored task types
 | Implement against documented concept
-| Reverse-engineer from `if constexpr` probes
+| Follow associator pattern (documented in design guide)
 |===
 
 == Context Propagation
@@ -169,13 +169,13 @@ std::coroutine_handle<void> await_suspend(std::coroutine_handle<Promise> h)
 
 Two things happen when a promise does not provide an associator:
 
-* If `get_executor()` is absent, the code falls back to `this_thread::get_executor()` -- a thread-local global. The child task receives whatever executor was last set on the current thread, which may not be the executor the caller intended.
+* If `get_executor()` is absent, the code falls back to `this_thread::get_executor()` -- a thread-local global. The child task receives the executor most recently set on the current thread.
 
-* If `get_cancellation_slot()` is absent, the entire cancellation wiring block is skipped. The child task's cancellation signal is never connected. Child operations become uncancellable.
+* If `get_cancellation_slot()` is absent, the cancellation wiring block is skipped. The child task operates without cancellation support.
 
-This is intentional behavior, as confirmed by the author: a task without `get_cancellation_slot()` simply does not propagate cancellation to its children. The trade-off is that both cases produce no compile-time diagnostic. A custom task that omits an associator will compile and run, but with silently different context propagation.
+Both behaviors are intentional. Cobalt treats associators as optional capabilities -- a task without `get_cancellation_slot()` simply does not propagate cancellation to its children. This is a design choice that favors flexibility: tasks can participate in the system without implementing every associator. The trade-off is that omitting an associator produces no compile-time diagnostic, so the behavior difference must be understood by the author of the custom task.
 
-In Capy, the equivalent of "no cancellation" is passing `std::stop_token{}` (a never-stop token) explicitly. This is a deliberate choice expressed in code, not an implicit consequence of a missing member function.
+In Capy, the equivalent of "no cancellation" is passing `std::stop_token{}` (a never-stop token) explicitly. Both designs support uncancellable operations; they differ in whether that choice is expressed through presence of a parameter or absence of a member function.
 
 [cols="1,1,1"]
 |===
@@ -187,15 +187,15 @@ In Capy, the equivalent of "no cancellation" is passing `std::stop_token{}` (a n
 
 | Missing executor
 | Compile error
-| Silent fallback to `this_thread::get_executor()`
+| Falls back to `this_thread::get_executor()`
 
 | Missing cancellation
 | Compile error (pass `std::stop_token{}` to opt out)
-| Silently skipped (child becomes uncancellable)
+| Skipped by design (child uses no cancellation)
 
 | Diagnostic on omission
 | Yes (constraint failure)
-| No
+| No (optional by design)
 |===
 
 == Buffer Sequences
@@ -296,7 +296,7 @@ struct write_stream
 };
 ----
 
-The documentation does not specify what `write_some` does when the buffer is empty, how errors are reported, what guarantees exist about partial writes, whether buffers are consumed in order, or what the caller can assume about buffer lifetime during the operation.
+The documentation describes what a stream is but does not specify behavioral details for `write_some`: empty buffer handling, error reporting conventions, partial write guarantees, buffer consumption order, or buffer lifetime assumptions. These details are left to the implementor's judgment or inferred from Asio conventions.
 
 Capy's `WriteStream` concept includes semantic requirements in the concept's documentation:
 
@@ -401,7 +401,7 @@ Most functionality in this wrapper is implemented with operations.
 They are type-erase, but not by using `virtual`. This makes devirtualization easier. The `implementation` function must be provided, where as `try_implementation_t` is optional and will be used in the `ready` function. Both will be called with `void *this` as the first parameter.
 ____
 
-The documentation does not specify what the `implementation` function must do with the buffer, what completion semantics to follow, how to report errors through the `completion_handler`, or under what conditions `try_implementation` should complete synchronously.
+The documentation describes the mechanical role of each function pointer but does not specify what the `implementation` function must do with the buffer, what completion semantics to follow, how to report errors through the `completion_handler`, or under what conditions `try_implementation` should complete synchronously. Implementors can look to the existing I/O wrappers (e.g., `stream_socket`) as reference implementations.
 
 In Capy, the implementation contract lives in the `WriteStream` concept definition. A type satisfies `WriteStream` by providing a `write_some` member function template that returns an `IoAwaitable` decomposing to `(error_code, std::size_t)`. The semantic requirements are part of the concept. There is no separate operation type to construct and no function pointers to provide.
 
@@ -419,7 +419,7 @@ In Capy, the implementation contract lives in the `WriteStream` concept definiti
 
 | Implementation function semantics
 | Specified (in concept)
-| Not specified
+| Inferred from existing wrappers
 
 | Intermediate types required
 | None (concept is the contract)
@@ -565,7 +565,7 @@ This separation is the architectural root of the differences examined in this do
 
 | Semantic specification
 | Documented in concept (empty buffers, errors, ordering, lifetime)
-| Struct definition and one-sentence description
+| Struct definition; semantics follow Asio conventions
 
 | Operation implementation
 | Satisfy concept; wrapper handles the rest
