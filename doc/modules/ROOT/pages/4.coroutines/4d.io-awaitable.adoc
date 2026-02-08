@@ -1,0 +1,187 @@
+= The IoAwaitable Protocol
+
+This section explains the IoAwaitable protocol—Capy's mechanism for propagating execution context through coroutine chains.
+
+== Prerequisites
+
+* Completed xref:4c.executors.adoc[Executors and Execution Contexts]
+* Understanding of standard awaiter protocol (`await_ready`, `await_suspend`, `await_resume`)
+
+== The Problem: Context Propagation
+
+Standard C++20 coroutines define awaiters with this `await_suspend` signature:
+
+[source,cpp]
+----
+void await_suspend(std::coroutine_handle<> h);
+// or
+bool await_suspend(std::coroutine_handle<> h);
+// or
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h);
+----
+
+The awaiter receives only a handle to the suspended coroutine. But real I/O code needs more:
+
+* *Executor* — Where should completions be dispatched?
+* *Stop token* — Should this operation support cancellation?
+* *Allocator* — Where should memory be allocated?
+
+How does an awaitable get this information?
+
+=== Backward Query Approach
+
+One approach: the awaitable queries the calling coroutine's promise for context. This requires the awaitable to know the promise type, creating tight coupling.
+
+=== Forward Propagation Approach
+
+Capy uses *forward propagation*: the caller passes context to the awaitable through an extended `await_suspend` signature.
+
+== The Three-Argument await_suspend
+
+The IoAwaitable protocol extends `await_suspend` to receive context:
+
+[source,cpp]
+----
+coro await_suspend(coro h, executor_ref ex, std::stop_token token);
+----
+
+This signature receives:
+
+* `h` — The coroutine handle (as in standard awaiters)
+* `ex` — The caller's executor for dispatching completions
+* `token` — A stop token for cooperative cancellation
+
+The return type enables symmetric transfer.
+
+== IoAwaitable Concept
+
+An awaitable satisfies `IoAwaitable` if:
+
+[source,cpp]
+----
+template<typename T>
+concept IoAwaitable = requires(T& t, coro h, executor_ref ex, std::stop_token st) {
+    { t.await_ready() } -> std::convertible_to<bool>;
+    { t.await_suspend(h, ex, st) } -> std::same_as<coro>;
+    t.await_resume();
+};
+----
+
+The key difference from standard awaitables is the three-argument `await_suspend`.
+
+== IoAwaitableTask Concept
+
+A task type satisfies `IoAwaitableTask` if its promise provides:
+
+* `set_executor(executor_ref)` — Store the propagated executor
+* `executor()` — Retrieve the stored executor
+* `set_stop_token(std::stop_token)` — Store the propagated stop token
+* `stop_token()` — Retrieve the stored stop token
+
+Capy's `task<T>` satisfies this concept.
+
+== IoLaunchableTask Concept
+
+For tasks that can be launched (not just awaited), the `IoLaunchableTask` concept adds:
+
+* `handle()` — Access the coroutine handle
+* `release()` — Transfer ownership of the handle
+* `exception()` — Check for captured exceptions
+* `result()` — Access the result value
+
+These methods enable `run_async` to manage task lifecycle.
+
+== How Context Flows
+
+When you write `co_await child_task()` inside a `task<T>`:
+
+1. The parent task's `await_transform` intercepts the awaitable
+2. It wraps the child in a transform awaiter
+3. The transform awaiter's `await_suspend` passes context:
+
+[source,cpp]
+----
+template<class Awaitable>
+auto await_suspend(std::coroutine_handle<Promise> h)
+{
+    // Forward caller's context to child
+    return awaitable_.await_suspend(h, promise_.executor(), promise_.stop_token());
+}
+----
+
+The child receives the parent's executor and stop token automatically.
+
+== Why Forward Propagation?
+
+Forward propagation offers several advantages:
+
+* *Decoupling* — Awaitables don't need to know caller's promise type
+* *Composability* — Any IoAwaitable works with any IoAwaitableTask
+* *Explicit flow* — Context flows downward through the call chain, not queried upward
+
+This design enables Capy's type-erased wrappers (`any_stream`, etc.) to work without knowing the concrete executor type.
+
+== Implementing Custom IoAwaitables
+
+To create a custom IoAwaitable:
+
+[source,cpp]
+----
+struct my_awaitable
+{
+    bool await_ready() const noexcept
+    {
+        return false;  // Or true if result is immediately available
+    }
+    
+    coro await_suspend(coro h, executor_ref ex, std::stop_token token)
+    {
+        // Store continuation and context
+        continuation_ = h;
+        executor_ = ex;
+        stop_token_ = token;
+        
+        // Start async operation...
+        start_operation();
+        
+        // Return noop to suspend
+        return std::noop_coroutine();
+    }
+    
+    result_type await_resume()
+    {
+        return result_;
+    }
+    
+private:
+    void on_completion()
+    {
+        // Resume on caller's executor
+        executor_.dispatch(continuation_).resume();
+    }
+};
+----
+
+The key points:
+
+1. Store the continuation and executor in `await_suspend`
+2. Use the executor to dispatch completion
+3. Respect the stop token for cancellation
+
+== Reference
+
+[cols="1,3"]
+|===
+| Header | Description
+
+| `<boost/capy/concept/io_awaitable.hpp>`
+| The IoAwaitable concept definition
+
+| `<boost/capy/concept/io_awaitable_task.hpp>`
+| The IoAwaitableTask concept for task types
+
+| `<boost/capy/concept/io_launchable_task.hpp>`
+| The IoLaunchableTask concept for launchable tasks
+|===
+
+You have now learned how the IoAwaitable protocol enables context propagation through coroutine chains. In the next section, you will learn about stop tokens and cooperative cancellation.

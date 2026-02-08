@@ -1,0 +1,36 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Design
+
+Capy's public interface--tasks, buffers, streams--is intentionally small. Behind that interface are design decisions that determine how concepts compose, where responsibility boundaries fall, and what guarantees the library can make. This section documents those decisions.
+
+Each page in this section examines one concept or facility in depth. You will find the formal concept definition, the rationale for its design, the alternatives that were considered, and the tradeoffs that were made. If you have ever wondered _why_ `ReadStream` requires `read_some` instead of `read`, or why buffer sinks and sources exist as separate concepts from streams, the answers are here.
+
+== What You Will Find
+
+* **xref:8a.ReadStream.adoc[ReadStream]** -- The partial-read concept. Why `read_some` is the correct primitive, how it composes with algorithms, and its relationship to `ReadSource`.
+
+* **xref:8b.ReadSource.adoc[ReadSource]** -- The complete-read concept. Guaranteed delivery semantics, EOF handling, and the contract between sources and consumers.
+
+* **xref:8c.BufferSource.adoc[BufferSource]** -- Pairing complete reads with dynamic buffers. How protocol parsers use `BufferSource` to accumulate data incrementally.
+
+* **xref:8d.WriteStream.adoc[WriteStream]** -- The partial-write concept. Symmetric design with `ReadStream`, and how write algorithms handle short writes.
+
+* **xref:8e.WriteSink.adoc[WriteSink]** -- The complete-write concept. Guaranteed delivery for outbound data, and the composition with serialization layers.
+
+* **xref:8f.BufferSink.adoc[BufferSink]** -- Dynamic buffer output. How message builders and serializers produce output without knowing the transport.
+
+* **xref:8g.RunApi.adoc[Run API]** -- The entry points for executing coroutines: `run`, `run_async`, and the bridge between synchronous and asynchronous worlds.
+
+* **xref:8h.TypeEraseAwaitable.adoc[Type-Erasing Awaitables]** -- Erasing the concrete type of an awaitable behind a uniform interface. When type erasure is worth the cost, and how Capy implements it.
+
+* **xref:8i.any_buffer_sink.adoc[AnyBufferSink]** -- A type-erased buffer sink. Combining the `BufferSink` concept with type erasure for runtime polymorphism.
+
+These documents are reference material for library contributors and advanced users. They assume familiarity with the tutorial sections and focus on design reasoning rather than usage.

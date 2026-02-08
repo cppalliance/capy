@@ -1,0 +1,32 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Buffer Sequences
+
+Every I/O operation ultimately comes down to moving bytes between your program and the outside world--a socket, a file, a pipe. The question is: how do you describe where those bytes live in memory?
+
+The obvious answer is a pointer and a size. And for a single contiguous buffer, that works. But real I/O is rarely that tidy. An HTTP response has headers in one buffer and a body in another. A message might be assembled from a protocol header, a payload, and a checksum--each produced by different parts of your code, each sitting in its own memory. The operating system even supports scatter/gather I/O specifically to handle this: a single system call that reads into or writes from _multiple_ non-contiguous buffers.
+
+Capy's buffer model is designed for this reality. Instead of forcing you to copy data into a single contiguous allocation, Capy uses _buffer sequences_--lightweight, zero-copy abstractions that let you describe any arrangement of memory and pass it directly to the OS. The design is concept-driven, meaning the compiler verifies correctness at compile time with no runtime overhead.
+
+== What You Will Learn
+
+* **xref:5a.overview.adoc[Why Concepts, Not Spans]** -- Why `std::span` falls short for I/O, how scatter/gather operations work, and the design reasoning behind Capy's concept-based approach.
+
+* **xref:5b.types.adoc[Buffer Types]** -- `const_buffer`, `mutable_buffer`, and `make_buffer`--the fundamental building blocks for describing contiguous memory regions.
+
+* **xref:5c.sequences.adoc[Buffer Sequences]** -- How to compose multiple buffers into sequences that I/O operations consume in a single call, without copying.
+
+* **xref:5d.system-io.adoc[System I/O Integration]** -- How buffer sequences map to operating system primitives like `readv` and `writev`, and why this matters for performance.
+
+* **xref:5e.algorithms.adoc[Buffer Algorithms]** -- Operations on buffer sequences: copying, prefix/suffix extraction, and the tools that make working with scattered data practical.
+
+* **xref:5f.dynamic.adoc[Dynamic Buffers]** -- Resizable buffers that grow as data arrives. The `DynamicBuffer` concept and how it integrates with stream operations for protocol parsing and message assembly.
+
+Understanding buffers is essential for everything that follows. Streams, I/O operations, and protocol implementations all build on the abstractions introduced here.

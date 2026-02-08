@@ -1,0 +1,241 @@
+= Sources and Sinks (Complete I/O)
+
+This section explains the `ReadSource` and `WriteSink` concepts for complete I/O operations with EOF signaling.
+
+== Prerequisites
+
+* Completed xref:6b.streams.adoc[Streams (Partial I/O)]
+* Understanding of partial I/O with `ReadStream` and `WriteStream`
+
+== ReadSource
+
+A `ReadSource` provides complete read operations that fill buffers entirely or signal EOF:
+
+[source,cpp]
+----
+template<typename T>
+concept ReadSource =
+    ReadStream<T> &&
+    requires(T& source, mutable_buffer_archetype buffers) {
+        { source.read(buffers) } -> IoAwaitable;
+    };
+----
+
+=== read Semantics
+
+[source,cpp]
+----
+template<MutableBufferSequence Buffers>
+IoAwaitable auto read(Buffers buffers);
+----
+
+Returns an awaitable yielding `(error_code, std::size_t)`:
+
+* On success: `!ec`, and `n == buffer_size(buffers)` (buffer completely filled)
+* On EOF: `ec == cond::eof`, and `n` is bytes read before EOF (partial read)
+* On error: `ec`, and `n` is bytes read before error
+
+The key difference from `ReadStream`: a successful read fills the buffer completely.
+
+=== Use Cases
+
+* Reading fixed-size records
+* Reading message frames with known sizes
+* Filling buffers for batch processing
+
+=== Example
+
+[source,cpp]
+----
+template<ReadSource Source>
+task<std::optional<message>> read_message(Source& source)
+{
+    // Read fixed-size header
+    message_header header;
+    auto [ec, n] = co_await source.read(
+        mutable_buffer(&header, sizeof(header)));
+    
+    if (ec == cond::eof && n == 0)
+        co_return std::nullopt;  // Clean EOF
+    
+    if (ec)
+        throw std::system_error(ec);
+    
+    // Read variable-size body
+    std::vector<char> body(header.body_size);
+    auto [ec2, n2] = co_await source.read(make_buffer(body));
+    
+    if (ec2)
+        throw std::system_error(ec2);
+    
+    co_return message{header, std::move(body)};
+}
+----
+
+== WriteSink
+
+A `WriteSink` provides complete write operations with explicit EOF signaling:
+
+[source,cpp]
+----
+template<typename T>
+concept WriteSink =
+    WriteStream<T> &&
+    requires(T& sink, const_buffer_archetype buffers) {
+        { sink.write(buffers) } -> IoAwaitable;
+        { sink.write_eof(buffers) } -> IoAwaitable;
+        { sink.write_eof() } -> IoAwaitable;
+    };
+----
+
+=== write Semantics
+
+[source,cpp]
+----
+// Partial write (inherited from WriteStream)
+template<ConstBufferSequence Buffers>
+IoAwaitable auto write_some(Buffers buffers);
+
+// Complete write
+template<ConstBufferSequence Buffers>
+IoAwaitable auto write(Buffers buffers);
+
+// Atomic final write + EOF signal
+template<ConstBufferSequence Buffers>
+IoAwaitable auto write_eof(Buffers buffers);
+
+// Signal EOF without data
+IoAwaitable auto write_eof();
+----
+
+`write` consumes the entire buffer sequence before returning. `write_eof(buffers)` atomically writes the buffer sequence and signals end-of-stream in a single operation, enabling protocol-level optimizations (e.g., HTTP chunked encoding terminal, compression trailers).
+
+After calling `write_eof(buffers)` or `write_eof()`, no further writes are permitted.
+
+=== Use Cases
+
+* Writing complete messages
+* HTTP body transmission (content-length or chunked)
+* Protocol framing with explicit termination
+
+=== Example
+
+[source,cpp]
+----
+template<WriteSink Sink>
+task<> send_response(Sink& sink, response const& resp)
+{
+    // Write headers
+    auto headers = format_headers(resp);
+    auto [ec, n] = co_await sink.write(make_buffer(headers));
+    if (ec)
+        co_return;
+    
+    // Write body and signal EOF atomically
+    auto [ec2, n2] = co_await sink.write_eof(make_buffer(resp.body));
+    if (ec2)
+        co_return;
+}
+----
+
+== Type-Erasing Wrappers
+
+=== any_read_source
+
+[source,cpp]
+----
+#include <boost/capy/io/any_read_source.hpp>
+
+template<ReadSource S>
+any_read_source(S& source);
+----
+
+=== any_write_sink
+
+[source,cpp]
+----
+#include <boost/capy/io/any_write_sink.hpp>
+
+template<WriteSink S>
+any_write_sink(S& sink);
+----
+
+== Example: HTTP Body Handler
+
+The HTTP library uses `any_write_sink` for body transmission:
+
+[source,cpp]
+----
+// HTTP response handler doesn't know the underlying transport
+task<> send_body(any_write_sink& body, std::string_view data)
+{
+    // Works whether body is:
+    // - Direct socket write (content-length)
+    // - Chunked encoding wrapper
+    // - Compressed stream
+    // - Test mock
+    
+    co_await body.write_eof(make_buffer(data));
+}
+----
+
+The caller decides the concrete implementation:
+
+[source,cpp]
+----
+// Content-length mode
+content_length_sink cl_sink(socket, data.size());
+any_write_sink body{cl_sink};
+send_body(body, data);
+
+// Chunked mode
+chunked_sink ch_sink(socket);
+any_write_sink body{ch_sink};
+send_body(body, data);
+----
+
+Same `send_body` function, different transfer encodings—the library handles the difference.
+
+== Streams vs Sources/Sinks
+
+[cols="1,1,1"]
+|===
+| Aspect | Streams | Sources/Sinks
+
+| Transfer amount
+| Partial (whatever is available)
+| Complete (fill buffer or EOF)
+
+| EOF handling
+| Implicit (read returns 0)
+| Explicit (`write_eof()`, `write_eof(buffers)`)
+
+| Use case
+| Raw I/O, incremental processing
+| Message-oriented protocols
+
+| Abstraction level
+| Lower (closer to OS)
+| Higher (application-friendly)
+|===
+
+== Reference
+
+[cols="1,3"]
+|===
+| Header | Description
+
+| `<boost/capy/concept/read_source.hpp>`
+| ReadSource concept definition
+
+| `<boost/capy/concept/write_sink.hpp>`
+| WriteSink concept definition
+
+| `<boost/capy/io/any_read_source.hpp>`
+| Type-erased read source wrapper
+
+| `<boost/capy/io/any_write_sink.hpp>`
+| Type-erased write sink wrapper
+|===
+
+You have now learned about sources and sinks for complete I/O. Continue to xref:6d.buffer-concepts.adoc[Buffer Sources and Sinks] to learn about the callee-owns-buffers pattern.

@@ -1,0 +1,195 @@
+= Type-Erased Echo
+
+Echo server demonstrating the compilation firewall pattern.
+
+== What You Will Learn
+
+* Using `any_stream` for transport-independent code
+* Physical isolation through separate compilation
+* Build time benefits of type erasure
+
+== Prerequisites
+
+* Completed xref:7d.mock-stream-testing.adoc[Mock Stream Testing]
+* Understanding of type erasure from xref:../6.streams/6f.isolation.adoc[Physical Isolation]
+
+== Source Code
+
+=== echo.hpp
+
+[source,cpp]
+----
+#ifndef ECHO_HPP
+#define ECHO_HPP
+
+#include <boost/capy/io/any_stream.hpp>
+#include <boost/capy/task.hpp>
+
+namespace myapp {
+
+// Type-erased interface: no template dependencies
+boost::capy::task<> echo_session(boost::capy::any_stream& stream);
+
+} // namespace myapp
+
+#endif
+----
+
+=== echo.cpp
+
+[source,cpp]
+----
+#include "echo.hpp"
+#include <boost/capy/read.hpp>
+#include <boost/capy/write.hpp>
+#include <boost/capy/cond.hpp>
+#include <boost/capy/buffers/make_buffer.hpp>
+
+namespace myapp {
+
+using namespace boost::capy;
+
+task<> echo_session(any_stream& stream)
+{
+    char buffer[1024];
+    
+    for (;;)
+    {
+        // Read some data
+        // ec: std::error_code, n: std::size_t
+        auto [ec, n] = co_await stream.read_some(make_buffer(buffer));
+        
+        if (ec == cond::eof)
+            co_return;  // Client closed connection
+        
+        if (ec)
+            throw std::system_error(ec);
+        
+        // Echo it back
+        // wec: std::error_code, wn: std::size_t
+        auto [wec, wn] = co_await write(stream, const_buffer(buffer, n));
+        
+        if (wec)
+            throw std::system_error(wec);
+    }
+}
+
+} // namespace myapp
+----
+
+=== main.cpp
+
+[source,cpp]
+----
+#include "echo.hpp"
+#include <boost/capy.hpp>
+#include <boost/capy/test/stream.hpp>
+#include <boost/capy/test/fuse.hpp>
+#include <boost/capy/test/run_blocking.hpp>
+#include <iostream>
+
+using namespace boost::capy;
+
+void test_with_mock()
+{
+    test::fuse f;
+    test::stream mock(f);
+    mock.provide("Hello, ");
+    mock.provide("World!\n");
+    // Stream returns eof when no more data is available
+    
+    // Using pointer construction (&mock) for reference semantics - the
+    // wrapper does not take ownership, so mock must outlive stream.
+    any_stream stream{&mock};  // any_stream
+    test::run_blocking()(myapp::echo_session(stream));
+    
+    std::cout << "Echo output: " << mock.data() << "\n";
+}
+
+// With real sockets (using Corosio), you would write:
+//
+// task<> handle_client(corosio::tcp::socket socket)
+// {
+//     // Value construction moves socket into wrapper (transfers ownership)
+//     any_stream stream{std::move(socket)};
+//     co_await myapp::echo_session(stream);
+// }
+
+int main()
+{
+    test_with_mock();
+    return 0;
+}
+----
+
+== Build
+
+[source,cmake]
+----
+add_library(echo_lib echo.cpp)
+target_link_libraries(echo_lib PUBLIC capy)
+
+add_executable(echo_demo main.cpp)
+target_link_libraries(echo_demo PRIVATE echo_lib)
+----
+
+== Walkthrough
+
+=== The Interface
+
+[source,cpp]
+----
+// echo.hpp
+task<> echo_session(any_stream& stream);
+----
+
+The header declares only the signature. It includes `any_stream` and `task`, but no concrete transport types.
+
+Clients of this header:
+
+* Can call `echo_session` with any stream
+* Do not depend on implementation details
+* Do not recompile when implementation changes
+
+=== The Implementation
+
+[source,cpp]
+----
+// echo.cpp
+task<> echo_session(any_stream& stream)
+{
+    // Full implementation here
+}
+----
+
+The implementation:
+
+* Lives in a separate `.cpp` file
+* Compiles once
+* Can include any headers it needs internally
+
+=== Build Isolation
+
+When you change `echo.cpp`:
+
+* Only `echo.cpp` recompiles
+* `main.cpp` and other clients do not recompile
+* Link step updates the binary
+
+This scales: in large projects, changes to implementation files don't cascade through dependencies.
+
+== Output
+
+----
+Echo output: Hello, World!
+----
+
+== Exercises
+
+1. Add logging to `echo_session` and observe that clients don't recompile
+2. Create a second implementation file with different behavior (e.g., uppercase echo)
+3. Measure compile times with and without type erasure in a larger project
+
+== Next Steps
+
+* xref:7f.timeout-cancellation.adoc[Timeout with Cancellation] — Stop tokens for timeout

@@ -1,0 +1,34 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Coroutines in Capy
+
+You know how C++20 coroutines work at the language level. You understand threads, synchronization, and the problems that concurrency introduces. Now it is time to see how Capy brings these together into a practical, high-performance library.
+
+Capy's coroutine model is built around a single principle: asynchronous code should look like synchronous code. You write a function that reads from a socket, processes the data, and writes a response--top to bottom, with local variables and normal control flow. Capy handles suspension, resumption, thread scheduling, and cancellation behind the scenes. The result is code that is both easier to read and harder to get wrong.
+
+But this is not magic, and it is not a black box. Every piece of Capy's coroutine infrastructure is designed to be transparent. You can see how tasks are scheduled, control where they run, propagate cancellation, compose concurrent operations, and tune memory allocation. Understanding these mechanisms is what separates someone who uses the library from someone who uses it _well_.
+
+== What You Will Learn
+
+* **xref:4a.tasks.adoc[The task Type]** -- Capy's fundamental coroutine type. Lazy execution, symmetric transfer, executor inheritance, and stop token propagation--everything a `task<T>` gives you out of the box.
+
+* **xref:4b.launching.adoc[Launching Coroutines]** -- How to start tasks running: `co_await`, `spawn`, `run_async`, and the differences between them. When to use each, and what happens to exceptions and cancellation.
+
+* **xref:4c.executors.adoc[Executors and Execution Contexts]** -- Where your coroutines run. Thread pools, strands, executor binding, and how Capy ensures your code executes on the right thread.
+
+* **xref:4d.io-awaitable.adoc[The IoAwaitable Protocol]** -- The contract between I/O operations and the coroutine runtime. How `io_result` works, what the compiler sees, and how to write your own awaitable operations.
+
+* **xref:4e.cancellation.adoc[Stop Tokens and Cancellation]** -- Cooperative cancellation that propagates through your entire call tree. How to check for cancellation, respond to it gracefully, and design operations that clean up properly.
+
+* **xref:4f.composition.adoc[Concurrent Composition]** -- Running multiple operations simultaneously with `when_all` and `when_any`. Fan-out/fan-in patterns, timeouts, and racing operations against each other.
+
+* **xref:4g.allocators.adoc[Frame Allocators]** -- Controlling where coroutine frames are allocated. Custom allocators, arena strategies, and the techniques that eliminate allocation overhead in hot paths.
+
+This section is the bridge between theory and practice. By the end, you will be writing real asynchronous programs with Capy.

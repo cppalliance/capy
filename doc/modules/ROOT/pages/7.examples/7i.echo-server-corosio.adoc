@@ -1,0 +1,242 @@
+= Echo Server with Corosio
+
+A complete echo server using Corosio for real network I/O.
+
+== What You Will Learn
+
+* Integrating Capy with Corosio networking
+* Accepting TCP connections
+* Handling multiple clients concurrently
+
+== Prerequisites
+
+* Completed xref:7h.custom-dynamic-buffer.adoc[Custom Dynamic Buffer]
+* Corosio library installed
+* Understanding of TCP networking basics
+
+== Source Code
+
+[source,cpp]
+----
+#include <boost/capy.hpp>
+#include <boost/corosio.hpp>
+#include <iostream>
+
+using namespace boost::capy;
+namespace tcp = boost::corosio::tcp;
+
+// Echo handler: receives data and sends it back
+task<> echo_session(any_stream& stream, std::string client_info)
+{
+    std::cout << "[" << client_info << "] Session started\n";
+    
+    char buffer[1024];
+    std::size_t total_bytes = 0;
+    
+    try
+    {
+        for (;;)
+        {
+            // Read some data
+            auto [ec, n] = co_await stream.read_some(mutable_buffer(buffer));
+            
+            if (ec == cond::eof)
+            {
+                std::cout << "[" << client_info << "] Client disconnected\n";
+                break;
+            }
+            
+            if (ec.failed())
+            {
+                std::cout << "[" << client_info << "] Read error: " 
+                          << ec.message() << "\n";
+                break;
+            }
+            
+            total_bytes += n;
+            
+            // Echo it back
+            auto [wec, wn] = co_await write(stream, const_buffer(buffer, n));
+            
+            if (wec.failed())
+            {
+                std::cout << "[" << client_info << "] Write error: " 
+                          << wec.message() << "\n";
+                break;
+            }
+        }
+    }
+    catch (std::exception const& e)
+    {
+        std::cout << "[" << client_info << "] Exception: " << e.what() << "\n";
+    }
+    
+    std::cout << "[" << client_info << "] Session ended, "
+              << total_bytes << " bytes echoed\n";
+}
+
+// Accept loop: accepts connections and spawns handlers
+task<> accept_loop(tcp::acceptor& acceptor, executor_ref ex)
+{
+    std::cout << "Server listening on port " 
+              << acceptor.local_endpoint().port() << "\n";
+    
+    int connection_id = 0;
+    
+    for (;;)
+    {
+        // Accept a connection
+        auto [ec, socket] = co_await acceptor.async_accept();
+        
+        if (ec.failed())
+        {
+            std::cout << "Accept error: " << ec.message() << "\n";
+            continue;
+        }
+        
+        // Build client info string
+        auto remote = socket.remote_endpoint();
+        std::string client_info = 
+            std::to_string(++connection_id) + ":" +
+            remote.address().to_string() + ":" +
+            std::to_string(remote.port());
+        
+        std::cout << "[" << client_info << "] Connection accepted\n";
+        
+        // Wrap socket and spawn handler
+        // Note: socket ownership transfers to the lambda
+        run_async(ex)(
+            [](tcp::socket sock, std::string info) -> task<> {
+                any_stream stream{sock};
+                co_await echo_session(stream, std::move(info));
+            }(std::move(socket), std::move(client_info))
+        );
+    }
+}
+
+int main(int argc, char* argv[])
+{
+    try
+    {
+        // Parse port from command line
+        unsigned short port = 8080;
+        if (argc > 1)
+            port = static_cast<unsigned short>(std::stoi(argv[1]));
+        
+        // Create I/O context and thread pool
+        boost::corosio::io_context ioc;
+        thread_pool pool(4);
+        
+        // Create acceptor
+        tcp::endpoint endpoint(tcp::v4(), port);
+        tcp::acceptor acceptor(ioc, endpoint);
+        acceptor.set_option(tcp::acceptor::reuse_address(true));
+        
+        std::cout << "Starting echo server...\n";
+        
+        // Run accept loop
+        run_async(pool.get_executor())(
+            accept_loop(acceptor, pool.get_executor())
+        );
+        
+        // Run the I/O context (this blocks)
+        ioc.run();
+    }
+    catch (std::exception const& e)
+    {
+        std::cerr << "Error: " << e.what() << "\n";
+        return 1;
+    }
+    
+    return 0;
+}
+----
+
+== Build
+
+[source,cmake]
+----
+find_package(Corosio REQUIRED)
+
+add_executable(echo_server echo_server.cpp)
+target_link_libraries(echo_server PRIVATE capy Corosio::corosio)
+----
+
+== Walkthrough
+
+=== TCP Acceptor
+
+[source,cpp]
+----
+tcp::endpoint endpoint(tcp::v4(), port);
+tcp::acceptor acceptor(ioc, endpoint);
+----
+
+The acceptor listens for incoming connections on the specified port.
+
+=== Accept Loop
+
+[source,cpp]
+----
+for (;;)
+{
+    auto [ec, socket] = co_await acceptor.async_accept();
+    // ... handle connection ...
+}
+----
+
+The accept loop runs forever, accepting connections and spawning handlers. Each connection runs in its own task.
+
+=== Type Erasure
+
+[source,cpp]
+----
+any_stream stream{sock};
+co_await echo_session(stream, std::move(info));
+----
+
+The `echo_session` function accepts `any_stream&`. The concrete `tcp::socket` is wrapped at the call site. This keeps the echo logic transport-independent.
+
+=== Concurrent Clients
+
+Each client connection spawns a new task via `run_async`. Multiple clients are handled concurrently on the thread pool.
+
+== Testing
+
+Start the server:
+
+----
+$ ./echo_server 8080
+Starting echo server...
+Server listening on port 8080
+----
+
+Connect with netcat:
+
+----
+$ nc localhost 8080
+Hello
+Hello
+World
+World
+^C
+----
+
+Server output:
+
+----
+[1:127.0.0.1:54321] Connection accepted
+[1:127.0.0.1:54321] Session started
+[1:127.0.0.1:54321] Client disconnected
+[1:127.0.0.1:54321] Session ended, 12 bytes echoed
+----
+
+== Exercises
+
+1. Add a connection limit with graceful rejection
+2. Implement a simple command protocol (e.g., ECHO, QUIT, STATS)
+3. Add TLS support using Corosio's TLS streams
+
+== Next Steps
+
+* xref:7j.stream-pipeline.adoc[Stream Pipeline] — Data transformation chains

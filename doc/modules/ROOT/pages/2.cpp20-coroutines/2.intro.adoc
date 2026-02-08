@@ -1,0 +1,30 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Introduction To C++20 Coroutines
+
+Every C++ function you have ever written follows the same contract: it runs from start to finish, then returns. The caller waits. The stack frame lives and dies in lockstep with that single invocation. This model has served us well for decades, but it forces a hard tradeoff when programs need to wait--for a network response, a disk read, a timer, or another thread. The function either blocks (wasting a thread) or you restructure your code into callbacks, state machines, or futures that scatter your logic across multiple places.
+
+C++20 coroutines change the rules. A coroutine can _suspend_ its execution--saving its local state somewhere outside the stack--and _resume_ later, picking up exactly where it left off. The control flow reads top-to-bottom, like the synchronous code you already know, but the runtime behavior is asynchronous. No blocked threads. No callback chains. No lost context.
+
+This is not a minor syntactic convenience. It is a fundamental shift in how you can structure programs that wait.
+
+== What You Will Learn
+
+This section takes you from zero to a working understanding of C++20 coroutines. You do not need prior experience with coroutines, async programming, or any coroutine library.
+
+* **xref:2a.foundations.adoc[Foundations]** -- How regular functions use the call stack, what happens when a function needs to pause, and how coroutines solve the problem by decoupling a function's lifetime from its stack frame.
+
+* **xref:2b.syntax.adoc[C++20 Syntax]** -- The three coroutine keywords (`co_await`, `co_return`, `co_yield`), what the compiler does when it sees them, and how to write your first coroutine.
+
+* **xref:2c.machinery.adoc[Coroutine Machinery]** -- The promise type, coroutine handles, and the protocols that connect your coroutine to the runtime. This is where you see how the compiler transforms your code and how you can customize that transformation.
+
+* **xref:2d.advanced.adoc[Advanced Topics]** -- Symmetric transfer, heap allocation elision optimization (HALO), and the performance characteristics that make coroutines practical for high-throughput systems.
+
+By the end of this section, you will understand not only _how_ to write coroutines, but _why_ they work the way they do--knowledge that will make everything in the rest of this documentation click into place.

@@ -1,0 +1,182 @@
+= Frame Allocators
+
+This section explains how coroutine frames are allocated and how to customize allocation for performance.
+
+== Prerequisites
+
+* Completed xref:4f.composition.adoc[Concurrent Composition]
+* Understanding of coroutine frame allocation from xref:../2.cpp20-coroutines/2d.advanced.adoc[C++20 Coroutines Tutorial]
+
+== The Timing Constraint
+
+Coroutine frame allocation has a unique constraint: memory must be allocated *before* the coroutine body begins executing. The standard C++ mechanism—promise type's `operator new`—is called before the promise is constructed.
+
+This creates a challenge: how can a coroutine use a custom allocator when the allocator might be passed as a parameter, which is stored *in* the frame?
+
+== Thread-Local Propagation
+
+Capy solves this with thread-local propagation:
+
+1. Before evaluating the task argument, `run_async` sets a thread-local allocator
+2. The task's `operator new` reads this thread-local allocator
+3. The task stores the allocator in its promise for child propagation
+
+This is why `run_async` uses two-call syntax:
+
+[source,cpp]
+----
+run_async(executor)(my_task());
+//        ↑         ↑
+//        1. Sets    2. Task allocated
+//        TLS        using TLS allocator
+----
+
+== The Window
+
+The "window" is the interval between setting the thread-local allocator and the coroutine's first suspension point. During this window:
+
+* The task is allocated using the TLS allocator
+* The task captures the TLS allocator in its promise
+* Child tasks inherit the allocator
+
+After the window closes (at the first suspension), the TLS allocator may be restored to a previous value. The task retains its captured allocator regardless.
+
+== The FrameAllocator Concept
+
+Custom allocators must satisfy the `FrameAllocator` concept, which is compatible with C++ allocator requirements:
+
+[source,cpp]
+----
+template<typename A>
+concept FrameAllocator = requires {
+    typename A::value_type;
+} && requires(A& a, std::size_t n) {
+    { a.allocate(n) } -> std::same_as<typename A::value_type*>;
+    { a.deallocate(std::declval<typename A::value_type*>(), n) };
+};
+----
+
+In practice, any standard allocator works.
+
+== Using Custom Allocators
+
+=== With run_async
+
+Pass an allocator to `run_async`:
+
+[source,cpp]
+----
+std::pmr::monotonic_buffer_resource resource;
+std::pmr::polymorphic_allocator<std::byte> alloc(&resource);
+
+run_async(executor, alloc)(my_task());
+----
+
+Or pass a `memory_resource*` directly:
+
+[source,cpp]
+----
+std::pmr::monotonic_buffer_resource resource;
+run_async(executor, &resource)(my_task());
+----
+
+=== Default Allocator
+
+When no allocator is specified, `run_async` uses the execution context's default frame allocator, typically a recycling allocator optimized for coroutine frame sizes.
+
+== Recycling Allocator
+
+Capy provides `recycling_memory_resource`, a memory resource optimized for coroutine frames:
+
+* Maintains freelists by size class
+* Reuses recently freed blocks (cache-friendly)
+* Falls back to upstream allocator for new sizes
+
+This allocator is used by default for `thread_pool` and other execution contexts.
+
+== HALO Optimization
+
+*Heap Allocation eLision Optimization* (HALO) allows the compiler to allocate coroutine frames on the stack instead of the heap when:
+
+* The coroutine's lifetime is provably contained in the caller's
+* The frame size is known at compile time
+* Optimization is enabled
+
+Capy's `task<T>` uses the `[[clang::coro_await_elidable]]` attribute (when available) to enable HALO:
+
+[source,cpp]
+----
+template<typename T = void>
+struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
+    task
+{
+    // ...
+};
+----
+
+=== When HALO Applies
+
+HALO is most effective for immediately-awaited tasks:
+
+[source,cpp]
+----
+// HALO can apply: task is awaited immediately
+int result = co_await compute();
+
+// HALO cannot apply: task escapes to storage
+auto t = compute();
+tasks.push_back(std::move(t));
+----
+
+=== Measuring HALO Effectiveness
+
+Profile your application to see if HALO is taking effect. Look for:
+
+* Reduced heap allocations
+* Improved cache locality
+* Lower allocation latency
+
+== Best Practices
+
+=== Use Default Allocators
+
+For most applications, the default recycling allocator provides good performance without configuration.
+
+=== Consider Memory Resources for Batched Work
+
+When launching many short-lived tasks together, a monotonic buffer resource can be efficient:
+
+[source,cpp]
+----
+void process_batch(std::vector<item> const& items)
+{
+    std::array<std::byte, 64 * 1024> buffer;
+    std::pmr::monotonic_buffer_resource resource(
+        buffer.data(), buffer.size());
+    
+    for (auto const& item : items)
+    {
+        run_async(executor, &resource)(process(item));
+    }
+    // All frames deallocated when resource goes out of scope
+}
+----
+
+=== Profile Before Optimizing
+
+Coroutine frame allocation is rarely the bottleneck. Profile your application before investing in custom allocators.
+
+== Reference
+
+[cols="1,3"]
+|===
+| Header | Description
+
+| `<boost/capy/ex/frame_allocator.hpp>`
+| Frame allocator concept and utilities
+
+| `<boost/capy/ex/recycling_memory_resource.hpp>`
+| Default recycling allocator implementation
+|===
+
+You have now learned how coroutine frame allocation works and how to customize it. This completes the Coroutines in Capy section. Continue to xref:../5.buffers/5a.overview.adoc[Buffer Sequences] to learn about Capy's buffer model.

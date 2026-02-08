@@ -1,0 +1,175 @@
+= Buffer Sequences
+
+This section explains buffer sequences—the concept that enables zero-allocation composition of buffers.
+
+== Prerequisites
+
+* Completed xref:5b.types.adoc[Buffer Types]
+* Understanding of `const_buffer` and `mutable_buffer`
+
+== What Is a Buffer Sequence?
+
+A *buffer sequence* is any type that can produce an iteration of buffers. Formally:
+
+* A single buffer (like `const_buffer`) is a sequence of one element
+* A range of buffers (like `vector<const_buffer>`) is a multi-element sequence
+* Any bidirectional range with buffer-convertible values qualifies
+
+== The Concepts
+
+=== ConstBufferSequence
+
+[source,cpp]
+----
+template<typename T>
+concept ConstBufferSequence =
+    std::is_convertible_v<T, const_buffer> || (
+        std::ranges::bidirectional_range<T> &&
+        std::is_convertible_v<std::ranges::range_value_t<T>, const_buffer>);
+----
+
+A type satisfies `ConstBufferSequence` if:
+
+* It converts to `const_buffer` directly (single buffer), OR
+* It is a bidirectional range whose elements convert to `const_buffer`
+
+=== MutableBufferSequence
+
+[source,cpp]
+----
+template<typename T>
+concept MutableBufferSequence =
+    std::is_convertible_v<T, mutable_buffer> || (
+        std::ranges::bidirectional_range<T> &&
+        std::is_convertible_v<std::ranges::range_value_t<T>, mutable_buffer>);
+----
+
+Same pattern, but for `mutable_buffer`.
+
+== Satisfying the Concepts
+
+Many common types satisfy these concepts:
+
+[source,cpp]
+----
+// Single buffers
+const_buffer cb;                    // ConstBufferSequence
+mutable_buffer mb;                  // MutableBufferSequence (and ConstBufferSequence)
+
+// Standard containers of buffers
+std::vector<const_buffer> v;        // ConstBufferSequence
+std::array<mutable_buffer, 3> a;    // MutableBufferSequence
+
+// String types (convert to single buffer)
+std::string str;                    // ConstBufferSequence (via make_buffer)
+std::string_view sv;                // ConstBufferSequence
+----
+
+== Heterogeneous Composition
+
+Because the concept accepts anything convertible to buffer, you can mix types:
+
+[source,cpp]
+----
+template<ConstBufferSequence Buffers>
+void send(Buffers const& bufs);
+
+// All of these work:
+send(make_buffer("Hello"));                    // string literal
+send(std::string_view{"Hello"});               // string_view
+send(std::array{buf1, buf2});                  // array of buffers
+send(my_custom_buffer_sequence);               // custom type
+----
+
+== Iterating Buffer Sequences
+
+Use `begin()` and `end()` from `<boost/capy/buffers.hpp>`:
+
+[source,cpp]
+----
+template<ConstBufferSequence Buffers>
+void process(Buffers const& bufs)
+{
+    for (auto it = begin(bufs); it != end(bufs); ++it)
+    {
+        const_buffer buf = *it;
+        // Process buf.data(), buf.size()
+    }
+}
+----
+
+These functions handle both single buffers (returning pointer-to-self) and ranges (returning standard iterators).
+
+== consuming_buffers
+
+When transferring data incrementally, `consuming_buffers` tracks progress:
+
+[source,cpp]
+----
+#include <boost/capy/buffers/consuming_buffers.hpp>
+
+template<MutableBufferSequence Buffers>
+task<std::size_t> read_all(Stream& stream, Buffers buffers)
+{
+    consuming_buffers<Buffers> remaining(buffers);
+    std::size_t total = 0;
+    
+    while (buffer_size(remaining) > 0)
+    {
+        auto [ec, n] = co_await stream.read_some(remaining);
+        if (ec.failed())
+            break;
+        remaining.consume(n);
+        total += n;
+    }
+    
+    co_return total;
+}
+----
+
+`consuming_buffers` wraps a buffer sequence and provides:
+
+* `consume(n)` — Mark `n` bytes as consumed (remove from front)
+* Iteration over unconsumed buffers
+* `buffer_size()` of remaining bytes
+
+== Zero-Allocation Composition
+
+The `cat()` function composes buffer sequences without allocation:
+
+[source,cpp]
+----
+auto headers = std::array{header_buf1, header_buf2};
+auto body = body_buffer;
+
+auto combined = cat(headers, body);  // No allocation
+
+// combined satisfies ConstBufferSequence
+// Iteration yields: header_buf1, header_buf2, body_buffer
+----
+
+The returned object stores references (or small copies for single buffers) and iterates through the composed sequence on demand.
+
+== Why Bidirectional?
+
+The concepts require bidirectional ranges (not just forward ranges) for two reasons:
+
+1. Some algorithms traverse buffers backwards
+2. `consuming_buffers` needs to adjust the first buffer's start position
+
+If your custom buffer sequence only provides forward iteration, wrap it in a type that provides bidirectional access.
+
+== Reference
+
+[cols="1,3"]
+|===
+| Header | Description
+
+| `<boost/capy/buffers.hpp>`
+| Concepts and iteration functions
+
+| `<boost/capy/buffers/consuming_buffers.hpp>`
+| Incremental consumption wrapper
+|===
+
+You have now learned how buffer sequences enable zero-allocation composition. Continue to xref:5d.system-io.adoc[System I/O Integration] to see how buffer sequences interface with operating system I/O.

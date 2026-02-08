@@ -1,0 +1,30 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Introduction to Concurrency
+
+Your processor has multiple cores. Your operating system runs hundreds of threads. Your users expect responsive interfaces while your server handles thousands of simultaneous connections. Concurrency is not an advanced topic reserved for specialists--it is the reality of modern software.
+
+Yet concurrent programming has a reputation for being treacherous, and that reputation is earned. Two threads reading and writing the same variable can produce results that are impossible to reproduce, impossible to debug, and impossible to reason about by staring at the code. A program that passes every test can still corrupt data in production under load. The bugs are real, and they are subtle.
+
+The good news: these problems are well understood. Decades of research and practice have produced clear patterns, precise vocabulary, and reliable tools. Once you understand the fundamentals--what a data race actually is, why memory ordering matters, how synchronization primitives work--concurrent code becomes something you can reason about with confidence.
+
+== What You Will Learn
+
+This section builds your understanding of concurrency from first principles. You do not need any prior experience with threads or parallel programming.
+
+* **xref:3a.foundations.adoc[Foundations]** -- What threads are, how they share memory, and why running code in parallel introduces problems that sequential programs never face.
+
+* **xref:3b.synchronization.adoc[Synchronization]** -- Mutexes, locks, condition variables, and the mechanisms that let threads coordinate safely. You will learn when each tool is appropriate and what it actually guarantees.
+
+* **xref:3c.advanced.adoc[Advanced Primitives]** -- Atomics, memory ordering, and lock-free techniques. These are the building blocks underneath the higher-level tools, and understanding them gives you the power to make informed performance decisions.
+
+* **xref:3d.patterns.adoc[Communication & Patterns]** -- Producer-consumer queues, thread pools, and the architectural patterns that structure concurrent systems. These patterns appear everywhere, from operating systems to web servers to game engines.
+
+When you finish this section, you will have the vocabulary and mental models to understand how Capy's coroutine-based concurrency works under the hood--and why it eliminates entire categories of the bugs described here.

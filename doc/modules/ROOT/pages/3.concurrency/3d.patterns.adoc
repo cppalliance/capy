@@ -1,0 +1,293 @@
+= Part IV: Communication & Patterns
+
+This section covers communication mechanisms for getting results from threads and practical patterns for concurrent programming.
+
+== Prerequisites
+
+* Completed xref:3c.advanced.adoc[Part III: Advanced Primitives]
+* Understanding of atomics, condition variables, and shared locks
+
+== Futures and Promises: Getting Results Back
+
+Threads can perform work, but how do you get results from them? Passing references works but is clunky. C++ offers a cleaner abstraction: *futures* and *promises*.
+
+A `std::promise` is a write-once container: a thread can set its value. A `std::future` is the corresponding read-once container: another thread can get that value. They form a one-way communication channel.
+
+[source,cpp]
+----
+#include <iostream>
+#include <thread>
+#include <future>
+
+void compute(std::promise<int> result_promise)
+{
+    int answer = 6 * 7;  // expensive computation
+    result_promise.set_value(answer);
+}
+
+int main()
+{
+    std::promise<int> promise;
+    std::future<int> future = promise.get_future();
+    
+    std::thread t(compute, std::move(promise));
+    
+    std::cout << "Waiting for result...\n";
+    int result = future.get();  // blocks until value is set
+    std::cout << "The answer is: " << result << "\n";
+    
+    t.join();
+    return 0;
+}
+----
+
+The worker thread calls `set_value()`. The main thread calls `get()`, which blocks until the value is available.
+
+=== Important Behaviors
+
+* A future's `get()` can only be called once
+* For multiple consumers, use `std::shared_future`
+* If the promise is destroyed without setting a value, `get()` throws `std::future_error`
+* `set_exception()` allows the worker to signal an error
+
+== std::async: The Easy Path
+
+Creating threads manually, managing promises, joining at the end—it is mechanical. `std::async` automates it:
+
+[source,cpp]
+----
+#include <iostream>
+#include <future>
+
+int compute()
+{
+    return 6 * 7;
+}
+
+int main()
+{
+    std::future<int> future = std::async(compute);
+    
+    std::cout << "Computing...\n";
+    int result = future.get();
+    std::cout << "Result: " << result << "\n";
+    
+    return 0;
+}
+----
+
+`std::async` launches the function (potentially in a new thread), returning a future. No explicit thread creation, no promise management, no join call.
+
+=== Launch Policies
+
+By default, the system decides whether to run the function in a new thread or defer it until you call `get()`. You can specify:
+
+[source,cpp]
+----
+// Force a new thread
+auto future = std::async(std::launch::async, compute);
+
+// Defer execution until get()
+auto future = std::async(std::launch::deferred, compute);
+
+// Let the system decide (default)
+auto future = std::async(std::launch::async | std::launch::deferred, compute);
+----
+
+For quick parallel tasks, `std::async` is often the cleanest choice.
+
+== Thread-Local Storage
+
+Sometimes each thread needs its own copy of a variable—not shared, not copied each call, but persistent within that thread.
+
+Declare it `thread_local`:
+
+[source,cpp]
+----
+#include <iostream>
+#include <thread>
+
+thread_local int counter = 0;
+
+void increment_and_print(char const* name)
+{
+    ++counter;
+    std::cout << name << " counter: " << counter << "\n";
+}
+
+int main()
+{
+    std::thread t1([]{
+        increment_and_print("T1");
+        increment_and_print("T1");
+    });
+    
+    std::thread t2([]{
+        increment_and_print("T2");
+        increment_and_print("T2");
+    });
+    
+    t1.join();
+    t2.join();
+    
+    return 0;
+}
+----
+
+Each thread sees its own `counter`. T1 prints 1, then 2. T2 independently prints 1, then 2. No synchronization needed because the data is not shared.
+
+Thread-local storage is useful for per-thread caches, random number generators, or error state.
+
+== Practical Patterns
+
+=== Producer-Consumer Queue
+
+One or more threads produce work items; one or more threads consume them. A queue connects them:
+
+[source,cpp]
+----
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+
+template<typename T>
+class ThreadSafeQueue
+{
+    std::queue<T> queue_;
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    
+public:
+    void push(T value)
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            queue_.push(std::move(value));
+        }
+        cv_.notify_one();
+    }
+    
+    T pop()
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
+        cv_.wait(lock, [this]{ return !queue_.empty(); });
+        T value = std::move(queue_.front());
+        queue_.pop();
+        return value;
+    }
+};
+----
+
+The producer pushes items; the consumer waits for items and processes them. The condition variable ensures the consumer sleeps efficiently when the queue is empty.
+
+[source,cpp]
+----
+ThreadSafeQueue<int> work_queue;
+
+void producer()
+{
+    for (int i = 0; i < 10; ++i)
+    {
+        work_queue.push(i);
+        std::cout << "Produced: " << i << "\n";
+    }
+}
+
+void consumer()
+{
+    for (int i = 0; i < 10; ++i)
+    {
+        int item = work_queue.pop();
+        std::cout << "Consumed: " << item << "\n";
+    }
+}
+
+int main()
+{
+    std::thread prod(producer);
+    std::thread cons(consumer);
+    
+    prod.join();
+    cons.join();
+    
+    return 0;
+}
+----
+
+=== Parallel For
+
+Split a loop across multiple threads:
+
+[source,cpp]
+----
+#include <iostream>
+#include <thread>
+#include <vector>
+#include <functional>
+
+void parallel_for(int start, int end, int num_threads,
+                  std::function<void(int)> func)
+{
+    std::vector<std::thread> threads;
+    int chunk_size = (end - start) / num_threads;
+    
+    for (int t = 0; t < num_threads; ++t)
+    {
+        int chunk_start = start + t * chunk_size;
+        int chunk_end = (t == num_threads - 1) ? end : chunk_start + chunk_size;
+        
+        threads.emplace_back([=]{
+            for (int i = chunk_start; i < chunk_end; ++i)
+                func(i);
+        });
+    }
+    
+    for (auto& thread : threads)
+        thread.join();
+}
+
+int main()
+{
+    std::mutex print_mutex;
+    
+    parallel_for(0, 20, 4, [&](int i){
+        std::lock_guard<std::mutex> lock(print_mutex);
+        std::cout << "Processing " << i << " on thread "
+                  << std::this_thread::get_id() << "\n";
+    });
+    
+    return 0;
+}
+----
+
+The work is divided into chunks, each handled by its own thread. For CPU-bound work on large datasets, this can dramatically reduce execution time.
+
+== Summary
+
+You have learned the fundamentals of concurrent programming:
+
+* *Threads* — Independent flows of execution within a process
+* *Mutexes* — Mutual exclusion to prevent data races
+* *Lock guards* — RAII wrappers that ensure mutexes are properly released
+* *Atomics* — Lock-free safety for single operations
+* *Condition variables* — Efficient waiting for events
+* *Shared locks* — Multiple readers or one writer
+* *Futures and promises* — Communication of results between threads
+* *std::async* — Simplified launching of parallel work
+
+You have seen the dangers—race conditions, deadlocks—and the tools to avoid them.
+
+=== Best Practices
+
+* *Start with std::async* when possible
+* *Prefer immutable data* — shared data that never changes needs no synchronization
+* *Protect mutable shared state carefully* — minimize the data that is shared
+* *Minimize lock duration* — hold locks for as brief a time as possible
+* *Avoid nested locks* — when unavoidable, use `std::scoped_lock`
+* *Test thoroughly* — test with many threads, on different machines, under load
+
+Concurrency is challenging. Bugs hide until the worst moment. Testing is hard because timing varies. But the rewards are substantial: responsive applications, full hardware utilization, and elegant solutions to naturally parallel problems.
+
+This foundation prepares you for understanding Capy's concurrency facilities: `thread_pool`, `strand`, `when_all`, and `async_event`. These build on standard primitives to provide coroutine-friendly concurrent programming.
