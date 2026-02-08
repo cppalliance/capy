@@ -534,6 +534,115 @@ Capy separates them. The execution model — executors, cancellation, allocation
 | No
 |===
 
+== Coroutine Overhead
+
+To measure the overhead that coroutines add to a real workload, an experimental JSON serializer drives output through a chain of `co_await` calls instead of direct function calls. Each JSON value type — null, bool, integer, double, string, array, object — is handled by a coroutine that writes fragments through a `write_sink`. The baseline is `boost::json::serialize`, a highly optimized non-coroutine implementation.
+
+The input is `numbers.json` from the Boost.JSON benchmark suite. Results are best-of-four runs, Clang 20, `-O3`, Windows x64:
+
+[cols="1,1,1"]
+|===
+| Serializer | Time | vs baseline
+
+| `boost::json::serialize`
+| 317 us
+| 1.0x
+
+| `capy::task`
+| 537 us
+| 1.69x
+
+| `cobalt::promise`
+| 1,361 us
+| 4.29x
+
+| `cobalt::task`
+| 26,079 us
+| 82.3x
+|===
+
+Capy's coroutine-driven serializer runs at 1.69x the baseline. Cobalt's `promise` is 4.29x. Cobalt's `task` is 82x.
+
+The Capy implementation:
+
+[source,cpp]
+----
+namespace {
+
+template<class WS> task<> serialize(json::value const& v, WS& ws);
+
+template<class WS> task<> write(std::nullptr_t, WS& ws) {
+    co_await ws.write("null", 4);
+}
+template<class WS> task<> write(bool v, WS& ws) {
+    if(v) co_await ws.write("true", 4);
+    else  co_await ws.write("false", 5);
+}
+template<class WS> task<> write(std::int64_t v, WS& ws) {
+    char buf[32];
+    auto r = std::to_chars(buf, buf + sizeof(buf), v);
+    co_await ws.write(buf, r.ptr - buf);
+}
+template<class WS> task<> write(std::uint64_t v, WS& ws) {
+    char buf[32];
+    auto r = std::to_chars(buf, buf + sizeof(buf), v);
+    co_await ws.write(buf, r.ptr - buf);
+}
+template<class WS> task<> write(double v, WS& ws) {
+    char buf[32];
+    auto r = std::to_chars(buf, buf + sizeof(buf), v);
+    co_await ws.write(buf, r.ptr - buf);
+}
+template<class WS> task<> write(std::string_view v, WS& ws) {
+    co_await ws.write("\"", 1);
+    co_await ws.write(v.data(), v.size());
+    co_await ws.write("\"", 1);
+}
+template<class WS> task<> write(json::array const& v, WS& ws) {
+    co_await ws.write("[", 1);
+    bool first = true;
+    for(auto const& x : v) {
+        if(!first) co_await ws.write(",", 1);
+        first = false;
+        co_await serialize(x, ws);
+    }
+    co_await ws.write("]", 1);
+}
+template<class WS> task<> write(json::object const& v, WS& ws) {
+    co_await ws.write("{", 1);
+    bool first = true;
+    for(auto const& x : v) {
+        if(!first) co_await ws.write(",", 1);
+        first = false;
+        co_await write(x.key(), ws);
+        co_await ws.write(":", 1);
+        co_await serialize(x.value(), ws);
+    }
+    co_await ws.write("}", 1);
+}
+template<class WS> task<> serialize(json::value const& v, WS& ws) {
+    return visit([&](auto const& v) { return write(v, ws); }, v);
+}
+
+struct write_sink {
+    std::string r;
+    task<> write(void const* p, std::size_t n) {
+        r.append(static_cast<char const*>(p), n);
+        co_return;
+    }
+};
+
+} // namespace
+
+std::string serialize_capy_task(json::value const& jv) {
+    write_sink ws;
+    capy::test::run_blocking()(serialize(jv, ws));
+    return std::move(ws.r);
+}
+----
+
+Every `co_await ws.write(...)` call creates a coroutine frame, suspends, resumes, and destroys. This is the worst case for coroutine overhead — many tiny operations that complete synchronously. In a real application where I/O operations take microseconds or milliseconds, the coroutine machinery becomes negligible.
+
 == Summary
 
 [cols="1,1,1"]
