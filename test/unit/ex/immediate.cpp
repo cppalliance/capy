@@ -36,9 +36,8 @@ T run_task(task<T> t)
     while (!h.done())
         h.resume();
     auto& p = h.promise();
-    if (p.ep_)
+    if (auto ep = p.exception())
     {
-        auto ep = p.ep_;
         h.destroy();
         std::rethrow_exception(ep);
     }

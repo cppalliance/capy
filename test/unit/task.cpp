@@ -90,9 +90,8 @@ T run_task(task<T> t)
         h.resume();
     auto& p = h.promise();
     // Check for exception first (result may be empty if exception occurred)
-    if (p.ep_)
+    if (auto ep = p.exception())
     {
-        auto ep = p.ep_;
         h.destroy();
         std::rethrow_exception(ep);
     }

@@ -75,7 +75,7 @@ namespace capy {
         };
 
         bool await_ready() const noexcept;
-        coro await_suspend( coro h, executor_ref ex, std::stop_token token );
+        coro await_suspend( coro h, executor_ref const& ex, std::stop_token const& token );
         R await_resume();
     };
     @endcode
@@ -98,7 +98,7 @@ namespace capy {
 
         bool await_ready() const noexcept { return false; }
 
-        coro await_suspend( coro cont, executor_ref ex, std::stop_token token )
+        coro await_suspend( coro cont, executor_ref const& ex, std::stop_token const& token )
         {
             h_.promise().set_executor( ex );
             h_.promise().set_stop_token( token );

@@ -282,7 +282,7 @@ private:
 struct any_read_source::awaitable_ops
 {
     bool (*await_ready)(void*);
-    coro (*await_suspend)(void*, coro, executor_ref, std::stop_token);
+    coro (*await_suspend)(void*, coro, executor_ref const&, std::stop_token const&);
     io_result<std::size_t> (*await_resume)(void*);
     void (*destroy)(void*) noexcept;
 };
@@ -330,7 +330,7 @@ struct any_read_source::vtable_for_impl
             +[](void* p) {
                 return static_cast<ReadSomeAwaitable*>(p)->await_ready();
             },
-            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+            +[](void* p, coro h, executor_ref const& ex, std::stop_token const& token) {
                 return detail::call_await_suspend(
                     static_cast<ReadSomeAwaitable*>(p), h, ex, token);
             },
@@ -357,7 +357,7 @@ struct any_read_source::vtable_for_impl
             +[](void* p) {
                 return static_cast<ReadAwaitable*>(p)->await_ready();
             },
-            +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+            +[](void* p, coro h, executor_ref const& ex, std::stop_token const& token) {
                 return detail::call_await_suspend(
                     static_cast<ReadAwaitable*>(p), h, ex, token);
             },
@@ -492,7 +492,7 @@ any_read_source::read_some(MB buffers)
         }
 
         coro
-        await_suspend(coro h, executor_ref ex, std::stop_token token)
+        await_suspend(coro h, executor_ref const& ex, std::stop_token const& token)
         {
             self_->active_ops_ = self_->vt_->construct_read_some_awaitable(
                 self_->source_,
@@ -541,7 +541,7 @@ any_read_source::read_(std::span<mutable_buffer const> buffers)
         }
 
         coro
-        await_suspend(coro h, executor_ref ex, std::stop_token token)
+        await_suspend(coro h, executor_ref const& ex, std::stop_token const& token)
         {
             self_->active_ops_ = self_->vt_->construct_read_awaitable(
                 self_->source_,

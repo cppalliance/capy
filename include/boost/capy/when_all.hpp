@@ -304,7 +304,7 @@ public:
         return sizeof...(Ts) == 0;
     }
 
-    coro await_suspend(coro continuation, executor_ref caller_ex, std::stop_token parent_token = {})
+    coro await_suspend(coro continuation, executor_ref const& caller_ex, std::stop_token const& parent_token = {})
     {
         state_->continuation_ = continuation;
         state_->caller_ex_ = caller_ex;

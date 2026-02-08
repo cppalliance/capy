@@ -96,8 +96,8 @@ struct custom_task
 
     auto await_resume()
     {
-        if(h_.promise().ep_)
-            std::rethrow_exception(h_.promise().ep_);
+        if(auto ep = h_.promise().exception())
+            std::rethrow_exception(ep);
         if constexpr (!std::is_void_v<T>)
             return std::move(*h_.promise().result_);
     }

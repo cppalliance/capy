@@ -55,8 +55,8 @@ namespace capy {
 
         auto await_suspend(
             coro h,
-            executor_ref ex,
-            std::stop_token token );
+            executor_ref const& ex,
+            std::stop_token const& token );
 
         T await_resume();
     };
@@ -69,8 +69,8 @@ namespace capy {
     {
         auto await_suspend(
             coro h,
-            executor_ref ex,
-            std::stop_token token )
+            executor_ref const& ex,
+            std::stop_token const& token )
         {
             start_async( [h, ex, token] {
                 if( token.stop_requested() )

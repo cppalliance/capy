@@ -101,11 +101,28 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         : io_awaitable_support<promise_type>
         , detail::task_return_base<T>
     {
-        std::exception_ptr ep_;
+    private:
+        friend task;
+        union { std::exception_ptr ep_; };
+        bool has_ep_;
+
+    public:
+        promise_type() noexcept
+            : has_ep_(false)
+        {
+        }
+
+        ~promise_type()
+        {
+            if(has_ep_)
+                ep_.~exception_ptr();
+        }
 
         std::exception_ptr exception() const noexcept
         {
-            return ep_;
+            if(has_ep_)
+                return ep_;
+            return {};
         }
 
         task get_return_object()
@@ -133,8 +150,9 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                 void await_resume() const noexcept
                 {
                     // Restore TLS when body starts executing
-                    if(p_->frame_allocator())
-                        current_frame_allocator() = p_->frame_allocator();
+                    auto* fa = p_->frame_allocator();
+                    if(fa && fa != current_frame_allocator())
+                        current_frame_allocator() = fa;
                 }
             };
             return awaiter{this};
@@ -165,7 +183,8 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
         void unhandled_exception()
         {
-            ep_ = std::current_exception();
+            new (&ep_) std::exception_ptr(std::current_exception());
+            has_ep_ = true;
         }
 
         template<class Awaitable>
@@ -182,8 +201,9 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             decltype(auto) await_resume()
             {
                 // Restore TLS before body resumes
-                if(p_->frame_allocator())
-                    current_frame_allocator() = p_->frame_allocator();
+                auto* fa = p_->frame_allocator();
+                if(fa && fa != current_frame_allocator())
+                    current_frame_allocator() = fa;
                 return a_.await_resume();
             }
 
@@ -228,7 +248,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     /// Return the result or rethrow any stored exception.
     auto await_resume()
     {
-        if(h_.promise().ep_)
+        if(h_.promise().has_ep_)
             std::rethrow_exception(h_.promise().ep_);
         if constexpr (! std::is_void_v<T>)
             return std::move(*h_.promise().result_);
@@ -237,7 +257,8 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     }
 
     /// Start execution with the caller's context.
-    coro await_suspend(coro cont, executor_ref caller_ex, std::stop_token token)
+    coro await_suspend(coro cont,
+        executor_ref const& caller_ex, std::stop_token const& token)
     {
         h_.promise().set_continuation(cont, caller_ex);
         h_.promise().set_executor(caller_ex);

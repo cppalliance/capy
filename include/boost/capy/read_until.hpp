@@ -177,7 +177,7 @@ struct read_until_awaitable
     }
 
     coro
-    await_suspend(coro h, executor_ref ex, std::stop_token token)
+    await_suspend(coro h, executor_ref const& ex, std::stop_token const& token)
     {
         inner_.emplace(read_until_match_impl(
             *stream_, buffers(), match_, initial_amount_));

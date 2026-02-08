@@ -112,7 +112,7 @@ namespace capy {
         std::coroutine_handle<promise_type> h_;
 
         // IoAwaitable await_suspend receives and stores the token and executor
-        coro await_suspend(coro cont, executor_ref ex, std::stop_token token)
+        coro await_suspend(coro cont, executor_ref const& ex, std::stop_token const& token)
         {
             h_.promise().set_stop_token(token);
             h_.promise().set_executor(ex);

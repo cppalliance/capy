@@ -245,7 +245,7 @@ struct any_read_stream::vtable
         void* storage,
         std::span<mutable_buffer const> buffers);
     bool (*await_ready)(void*);
-    coro (*await_suspend)(void*, coro, executor_ref, std::stop_token);
+    coro (*await_suspend)(void*, coro, executor_ref const&, std::stop_token const&);
     io_result<std::size_t> (*await_resume)(void*);
     void (*destroy_awaitable)(void*) noexcept;
     std::size_t awaitable_size;
@@ -280,7 +280,7 @@ struct any_read_stream::vtable_for_impl
         +[](void* p) {
             return static_cast<Awaitable*>(p)->await_ready();
         },
-        +[](void* p, coro h, executor_ref ex, std::stop_token token) {
+        +[](void* p, coro h, executor_ref const& ex, std::stop_token const& token) {
             return detail::call_await_suspend(
                 static_cast<Awaitable*>(p), h, ex, token);
         },
@@ -402,7 +402,7 @@ any_read_stream::read_some(MB buffers)
         }
 
         coro
-        await_suspend(coro h, executor_ref ex, std::stop_token token)
+        await_suspend(coro h, executor_ref const& ex, std::stop_token const& token)
         {
             return self_->vt_->await_suspend(
                 self_->cached_awaitable_, h, ex, token);
