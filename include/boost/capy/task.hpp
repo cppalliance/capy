@@ -174,7 +174,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             std::decay_t<Awaitable> a_;
             promise_type* p_;
 
-            bool await_ready()
+            bool await_ready() noexcept
             {
                 return a_.await_ready();
             }
@@ -188,7 +188,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             }
 
             template<class Promise>
-            auto await_suspend(std::coroutine_handle<Promise> h)
+            auto await_suspend(std::coroutine_handle<Promise> h) noexcept
             {
                 return a_.await_suspend(h, p_->executor(), p_->stop_token());
             }
