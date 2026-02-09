@@ -43,7 +43,8 @@ int main()
 
     auto consumer = [&]() -> task<> {
         std::cout << "Consumer: waiting for data...\n";
-        co_await data_ready.wait();
+        auto [ec] = co_await data_ready.wait();
+        (void)ec;
         std::cout << "Consumer: received value " << shared_value << "\n";
         co_return;
     };

@@ -190,8 +190,15 @@ public:
         // Aligned storage for stop_cb_t. Declared last:
         // its destructor may block while the callback
         // accesses the members above.
+#ifdef _MSC_VER
+# pragma warning(push)
+# pragma warning(disable: 4324) // padded due to alignas
+#endif
         alignas(stop_cb_t)
             unsigned char stop_cb_buf_[sizeof(stop_cb_t)];
+#ifdef _MSC_VER
+# pragma warning(pop)
+#endif
 
         stop_cb_t& stop_cb_() noexcept
         {
