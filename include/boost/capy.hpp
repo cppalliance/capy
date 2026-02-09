@@ -70,7 +70,7 @@
 // Execution
 #include <boost/capy/ex/any_executor.hpp>
 #include <boost/capy/ex/async_event.hpp>
-#include <boost/capy/ex/coro_lock.hpp>
+#include <boost/capy/ex/async_mutex.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/work_guard.hpp>

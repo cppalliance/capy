@@ -300,7 +300,7 @@ No other solution like this exists. Not Asio. Not `std::execution`. Not anywhere
 * `IoAwaitable`, `IoAwaitableTask`, `IoLaunchableTask` — taxonomy of awaitable concepts
 * `task<T>` — concrete task type implementing the protocol (user-defined tasks also supported)
 * `run`, `run_async` — launch functions with forward-flow allocator control
-* `strand`, `thread_pool`, `coro_lock`, `async_event` — concurrency primitives
+* `strand`, `thread_pool`, `async_mutex`, `async_event` — concurrency primitives
 * `frame_allocator`, `recycling_memory_resource` — coroutine-optimized allocation
 
 === Comparison
@@ -369,7 +369,7 @@ No other solution like this exists. Not Asio. Not `std::execution`. Not anywhere
 |
 |
 
-| `coro_lock`
+| `async_mutex`
 |
 |
 |
