@@ -127,3 +127,17 @@ set_property(TARGET capy_example_asio_callbacks
 target_link_libraries(capy_example_asio_callbacks
     Boost::capy
     Boost::asio)
+
+# use_capy example (use_capy completion token)
+add_executable(capy_example_use_capy
+    use_capy_example.cpp
+    api/capy_streams.cpp
+    api/capy_streams.hpp
+    api/use_capy.hpp)
+
+set_property(TARGET capy_example_use_capy
+    PROPERTY FOLDER "examples")
+
+target_link_libraries(capy_example_use_capy
+    Boost::capy
+    Boost::asio)

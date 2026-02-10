@@ -1,9 +1,10 @@
 # Asio Integration Examples
 
-This directory demonstrates how to use Capy with Boost.Asio, showcasing two complementary integration patterns:
+This directory demonstrates how to use Capy with Boost.Asio, showcasing three complementary integration patterns:
 
 - **Writing portable stream algorithms** that hide Asio entirely
 - **Adapting Capy streams** to work with Asio's Universal Async Model
+- **Using Asio operations directly** from Capy coroutines via `use_capy`
 
 ---
 
@@ -87,8 +88,48 @@ int main()
 
 ---
 
+## use_capy_example.cpp
+
+This example demonstrates the `use_capy` completion token, which allows **any Asio async operation** to be awaited directly from a Capy coroutine. The returned awaitable satisfies Capy's `IoAwaitable` concept with the extended `await_suspend` signature.
+
+```cpp
+capy::task<>
+writer(net::ip::tcp::socket& socket, std::size_t total)
+{
+    char buf[128];
+    // ...
+    // Use Asio's async_write_some with use_capy completion token
+    auto [ec, n] = co_await socket.async_write_some(
+        net::buffer(buf, chunk), use_capy);
+    // ...
+}
+
+capy::task<>
+reader(net::ip::tcp::socket& socket, std::size_t total)
+{
+    char buf[128];
+    // ...
+    // Use Asio's async_read_some with use_capy completion token
+    auto [ec, n] = co_await socket.async_read_some(
+        net::buffer(buf), use_capy);
+    // ...
+}
+```
+
+The `use_capy` token:
+
+- Works with any Asio async operation
+- Returns an `IoAwaitable` that integrates with Capy's executor and cancellation
+- Bridges `std::stop_token` to Asio's cancellation system
+- Returns results as `capy::io_result<...>` for structured bindings
+- Uses `asio::deferred_async_operation` internally (no `std::function` overhead)
+
+---
+
 ## Key Takeaways
 
 - **any_stream approach**: Write algorithms once, run them on any I/O backend. Complete portability with no Asio dependency in algorithm code.
 
 - **uni_stream approach**: Implement Asio's Universal Async Model on Capy streams. Full compatibility with Asio's completion token system, enabling use of existing Asio utilities and patterns.
+
+- **use_capy approach**: Call Asio async operations directly from Capy coroutines. Useful when you need access to Asio-specific features or want to integrate existing Asio code into Capy applications.
