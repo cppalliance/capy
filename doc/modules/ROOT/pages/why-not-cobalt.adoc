@@ -342,21 +342,21 @@ Capy supports multi-threaded execution. `thread_pool` distributes work across th
 
 Cobalt stores executor context in thread-local variables. Coroutines access it via `this_coro::executor`. This works on a single thread with a single executor. This design is scoped to single-threaded, single-executor configurations.
 
-Capy introduces the https://github.com/cppalliance/wg21-papers/blob/master/source/d4003-io-awaitables.md[IoAwaitable protocol] and uses it for context propagation. When you `co_await`, the caller passes its executor and stop token to the child structurally:
+Capy introduces the https://github.com/cppalliance/wg21-papers/blob/master/source/d4003-io-awaitables.md[IoAwaitable protocol] and uses it for context propagation. When you `co_await`, the caller passes its execution environment to the child structurally:
 
 [source,cpp]
 ----
-auto await_suspend(coro h, executor_ref ex, std::stop_token token);
+auto await_suspend(coro h, io_env const& env);
 ----
 
-No thread-local state. No ambient context. The executor and stop token flow forward through the call chain as parameters.
+No thread-local state. No ambient context. The executor and stop token flow forward through the call chain via the `io_env` parameter.
 
 [cols="1,1,1"]
 |===
 | Context Propagation | Capy | Cobalt
 
 | Mechanism
-| `await_suspend(h, ex, token)`
+| `await_suspend(h, env)`
 | Thread-local variables
 
 | Works with strands
@@ -368,7 +368,7 @@ No thread-local state. No ambient context. The executor and stop token flow forw
 | No
 
 | Stop token delivery
-| Structural (parameter)
+| Structural (`io_env`)
 | `this_coro::cancellation_state`
 |===
 
@@ -376,7 +376,7 @@ No thread-local state. No ambient context. The executor and stop token flow forw
 
 Both libraries propagate cancellation automatically through coroutine chains. Both support OS-level cancellation of pending I/O operations (`CancelIoEx` on Windows, `IORING_OP_ASYNC_CANCEL` on Linux).
 
-Capy uses `std::stop_token`, propagated as a parameter via the IoAwaitable protocol. The token is part of the `await_suspend` signature — it flows forward structurally alongside the executor.
+Capy uses `std::stop_token`, propagated via the IoAwaitable protocol's `io_env` parameter. The token flows forward structurally alongside the executor.
 
 Cobalt uses Asio's `cancellation_signal` and `cancellation_slot`. Propagation is wired automatically in `await_suspend` via `forward_cancellation`. `this_coro::cancellation_state` provides filtering control over which cancellation types pass through.
 
@@ -389,7 +389,7 @@ Cobalt uses Asio's `cancellation_signal` and `cancellation_slot`. Propagation is
 | `asio::cancellation_signal`
 
 | Propagation
-| Automatic (IoAwaitable parameters)
+| Automatic (`io_env`)
 | Automatic (slot/signal wiring)
 
 | Filtering

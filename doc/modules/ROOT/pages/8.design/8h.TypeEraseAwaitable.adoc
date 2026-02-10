@@ -50,8 +50,8 @@ bool await_ready() {
     return vt_->await_ready(storage_);   // true → no suspend
 }
 
-coro await_suspend(coro h, executor_ref ex, stop_token tok) {
-    return vt_->await_suspend(storage_, h, ex, tok);
+coro await_suspend(coro h, io_env const& env) {
+    return vt_->await_suspend(storage_, h, env);
 }
 
 io_result<size_t> await_resume() {
@@ -74,12 +74,12 @@ bool await_ready() const noexcept {
     return buffers_.empty();             // short-circuit, no construct
 }
 
-coro await_suspend(coro h, executor_ref ex, stop_token tok) {
+coro await_suspend(coro h, io_env const& env) {
     vt_->construct_awaitable(stream_, storage_, buffers);
     awaitable_active_ = true;
     if(vt_->await_ready(storage_))
         return h;                        // immediate → resume caller
-    return vt_->await_suspend(storage_, h, ex, tok);
+    return vt_->await_suspend(storage_, h, env);
 }
 
 io_result<size_t> await_resume() {
@@ -135,11 +135,11 @@ bool await_ready() const noexcept {
     return buffers_.empty();             // short-circuit
 }
 
-coro await_suspend(coro h, executor_ref ex, stop_token tok) {
+coro await_suspend(coro h, io_env const& env) {
     active_ops_ = vt_->construct_awaitable(stream_, storage_, buffers_);
     if(active_ops_->await_ready(storage_))
         return h;                        // immediate → resume caller
-    return active_ops_->await_suspend(storage_, h, ex, tok);
+    return active_ops_->await_suspend(storage_, h, env);
 }
 
 io_result<size_t> await_resume() {

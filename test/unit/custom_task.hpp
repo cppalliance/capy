@@ -12,6 +12,7 @@
 
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/io_awaitable_support.hpp>
+#include <boost/capy/ex/io_env.hpp>
 
 #include <coroutine>
 #include <exception>
@@ -102,12 +103,10 @@ struct custom_task
             return std::move(*h_.promise().result_);
     }
 
-    template<typename Ex>
-    coro await_suspend(coro cont, Ex const& caller_ex, std::stop_token token)
+    coro await_suspend(coro cont, io_env const& env)
     {
-        h_.promise().set_continuation(cont, caller_ex);
-        h_.promise().set_executor(caller_ex);
-        h_.promise().set_stop_token(token);
+        h_.promise().set_continuation(cont, env.executor);
+        h_.promise().set_environment(env);
         return h_;
     }
 

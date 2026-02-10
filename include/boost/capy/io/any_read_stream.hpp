@@ -17,7 +17,7 @@
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/coro.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 
 #include <concepts>
@@ -245,7 +245,7 @@ struct any_read_stream::vtable
         void* storage,
         std::span<mutable_buffer const> buffers);
     bool (*await_ready)(void*);
-    coro (*await_suspend)(void*, coro, executor_ref const&, std::stop_token const&);
+    coro (*await_suspend)(void*, coro, io_env const&);
     io_result<std::size_t> (*await_resume)(void*);
     void (*destroy_awaitable)(void*) noexcept;
     std::size_t awaitable_size;
@@ -280,9 +280,9 @@ struct any_read_stream::vtable_for_impl
         +[](void* p) {
             return static_cast<Awaitable*>(p)->await_ready();
         },
-        +[](void* p, coro h, executor_ref const& ex, std::stop_token const& token) {
+        +[](void* p, coro h, io_env const& env) {
             return detail::call_await_suspend(
-                static_cast<Awaitable*>(p), h, ex, token);
+                static_cast<Awaitable*>(p), h, env);
         },
         +[](void* p) {
             return static_cast<Awaitable*>(p)->await_resume();
@@ -402,10 +402,10 @@ any_read_stream::read_some(MB buffers)
         }
 
         coro
-        await_suspend(coro h, executor_ref const& ex, std::stop_token const& token)
+        await_suspend(coro h, io_env const& env)
         {
             return self_->vt_->await_suspend(
-                self_->cached_awaitable_, h, ex, token);
+                self_->cached_awaitable_, h, env);
         }
 
         io_result<std::size_t>

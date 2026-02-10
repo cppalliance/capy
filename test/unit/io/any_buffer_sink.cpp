@@ -14,6 +14,7 @@
 #include <boost/capy/io/pull_from.hpp>
 
 #include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/buffer_sink.hpp>
 #include <boost/capy/test/read_source.hpp>
@@ -101,7 +102,7 @@ public:
             std::size_t n_;
 
             bool await_ready() const noexcept { return true; }
-            void await_suspend(coro, executor_ref, std::stop_token) const noexcept {}
+            void await_suspend(coro, io_env const&) const noexcept {}
 
             io_result<>
             await_resume()
@@ -126,7 +127,7 @@ public:
             std::size_t n_;
 
             bool await_ready() const noexcept { return true; }
-            void await_suspend(coro, executor_ref, std::stop_token) const noexcept {}
+            void await_suspend(coro, io_env const&) const noexcept {}
 
             io_result<>
             await_resume()
@@ -156,7 +157,7 @@ public:
             CB buffers_;
 
             bool await_ready() const noexcept { return true; }
-            void await_suspend(coro, executor_ref, std::stop_token) const noexcept {}
+            void await_suspend(coro, io_env const&) const noexcept {}
 
             io_result<std::size_t>
             await_resume()
@@ -188,7 +189,7 @@ public:
             CB buffers_;
 
             bool await_ready() const noexcept { return true; }
-            void await_suspend(coro, executor_ref, std::stop_token) const noexcept {}
+            void await_suspend(coro, io_env const&) const noexcept {}
 
             io_result<std::size_t>
             await_resume()
@@ -219,7 +220,7 @@ public:
             CB buffers_;
 
             bool await_ready() const noexcept { return true; }
-            void await_suspend(coro, executor_ref, std::stop_token) const noexcept {}
+            void await_suspend(coro, io_env const&) const noexcept {}
 
             io_result<std::size_t>
             await_resume()
@@ -251,7 +252,7 @@ public:
             buffer_write_sink* self_;
 
             bool await_ready() const noexcept { return true; }
-            void await_suspend(coro, executor_ref, std::stop_token) const noexcept {}
+            void await_suspend(coro, io_env const&) const noexcept {}
 
             io_result<>
             await_resume()

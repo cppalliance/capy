@@ -15,12 +15,11 @@
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/coro.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/test/fuse.hpp>
 
-#include <stop_token>
 #include <string>
 #include <string_view>
 
@@ -139,8 +138,7 @@ public:
 
             void await_suspend(
                 coro,
-                executor_ref,
-                std::stop_token) const noexcept
+                io_env const&) const noexcept
             {
             }
 
@@ -200,8 +198,7 @@ public:
 
             void await_suspend(
                 coro,
-                executor_ref,
-                std::stop_token) const noexcept
+                io_env const&) const noexcept
             {
             }
 

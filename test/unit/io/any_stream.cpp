@@ -13,6 +13,7 @@
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/cond.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/fuse.hpp>
 
@@ -69,8 +70,7 @@ public:
 
             void await_suspend(
                 coro,
-                executor_ref,
-                std::stop_token) const noexcept
+                io_env const&) const noexcept
             {
             }
 
@@ -109,8 +109,7 @@ public:
 
             void await_suspend(
                 coro,
-                executor_ref,
-                std::stop_token) const noexcept
+                io_env const&) const noexcept
             {
             }
 

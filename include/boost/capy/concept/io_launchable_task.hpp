@@ -23,8 +23,11 @@ namespace capy {
 /** Concept for task types that can be launched from non-coroutine contexts.
 
     Extends @ref IoAwaitableTask with operations needed by launch utilities
-    (`run`, `run_async`) to start a task, transfer ownership of the
+    (@ref run, @ref run_async) to start a task, transfer ownership of the
     coroutine frame, and retrieve results or exceptions after completion.
+
+    Launch functions use `set_environment` from @ref IoAwaitableTask to
+    inject the execution environment before resuming the root task.
 
     @tparam T The task type.
 
@@ -81,10 +84,11 @@ namespace capy {
 
     @code
     template<IoLaunchableTask Task>
-    void blocking_run( Task task )
+    void blocking_run( Task task, executor_ref ex )
     {
         task.release();  // take ownership of the frame
         auto h = task.handle();
+        h.promise().set_environment( { ex, {}, nullptr } );
         h.resume();
 
         if( auto ep = h.promise().exception() )

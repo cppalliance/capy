@@ -14,11 +14,10 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/slice.hpp>
 #include <boost/capy/coro.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 
 #include <algorithm>
 #include <cstddef>
-#include <stop_token>
 #include <utility>
 
 namespace boost {
@@ -131,7 +130,7 @@ public:
         bufgrind* self_;
 
         bool await_ready() const noexcept { return true; }
-        coro await_suspend(coro h, executor_ref const&, std::stop_token const&) const noexcept { return h; }
+        coro await_suspend(coro h, io_env const&) const noexcept { return h; }
 
         split_type
         await_resume()

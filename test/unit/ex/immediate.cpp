@@ -11,6 +11,7 @@
 #include <boost/capy/ex/immediate.hpp>
 
 #include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_task.hpp>
 
 #include "test/unit/test_helpers.hpp"
@@ -379,8 +380,7 @@ struct immediate_test
             // because the result is already ready
             auto result = im.await_suspend(
                 std::noop_coroutine(),
-                ex,
-                std::stop_token{});
+                io_env{ex, {}});
             BOOST_TEST(result == std::noop_coroutine());
 
             // Executor was not used since we're already ready

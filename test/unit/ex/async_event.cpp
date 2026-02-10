@@ -13,6 +13,7 @@
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/task.hpp>
 
@@ -80,8 +81,9 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        h.promise().set_executor(ex);
-        h.promise().set_stop_token({});
+        io_env env;
+        env.executor = executor_ref(ex);
+        h.promise().set_environment(env);
 
         h.resume();
         BOOST_TEST(!resumed);
@@ -125,12 +127,12 @@ struct async_event_test
         t1.release();
         t2.release();
         t3.release();
-        h1.promise().set_executor(ex);
-        h1.promise().set_stop_token({});
-        h2.promise().set_executor(ex);
-        h2.promise().set_stop_token({});
-        h3.promise().set_executor(ex);
-        h3.promise().set_stop_token({});
+
+        io_env env;
+        env.executor = executor_ref(ex);
+        h1.promise().set_environment(env);
+        h2.promise().set_environment(env);
+        h3.promise().set_environment(env);
 
         h1.resume();
         h2.resume();
@@ -170,8 +172,9 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        h.promise().set_executor(ex);
-        h.promise().set_stop_token({});
+        io_env env;
+        env.executor = executor_ref(ex);
+        h.promise().set_environment(env);
         h.resume();
 
         BOOST_TEST(done);
@@ -196,8 +199,9 @@ struct async_event_test
 
         auto h1 = t1.handle();
         t1.release();
-        h1.promise().set_executor(ex);
-        h1.promise().set_stop_token({});
+        io_env env;
+        env.executor = executor_ref(ex);
+        h1.promise().set_environment(env);
         h1.resume();
         BOOST_TEST_EQ(count, 0);
 
@@ -221,8 +225,7 @@ struct async_event_test
 
         auto h2 = t2.handle();
         t2.release();
-        h2.promise().set_executor(ex);
-        h2.promise().set_stop_token({});
+        h2.promise().set_environment(env);
         h2.resume();
         BOOST_TEST_EQ(count, 1);
 
@@ -262,12 +265,12 @@ struct async_event_test
         t1.release();
         t2.release();
         t3.release();
-        h1.promise().set_executor(ex);
-        h1.promise().set_stop_token({});
-        h2.promise().set_executor(ex);
-        h2.promise().set_stop_token({});
-        h3.promise().set_executor(ex);
-        h3.promise().set_stop_token({});
+
+        io_env env;
+        env.executor = executor_ref(ex);
+        h1.promise().set_environment(env);
+        h2.promise().set_environment(env);
+        h3.promise().set_environment(env);
 
         h1.resume();
         h2.resume();
@@ -319,8 +322,10 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        h.promise().set_executor(ex);
-        h.promise().set_stop_token(ss.get_token());
+        io_env env;
+        env.executor = executor_ref(ex);
+        env.stop_token = ss.get_token();
+        h.promise().set_environment(env);
 
         h.resume();
         BOOST_TEST(!done);
@@ -368,13 +373,16 @@ struct async_event_test
 
         auto h1 = w1.handle();
         w1.release();
-        h1.promise().set_executor(ex);
-        h1.promise().set_stop_token(ss.get_token());
+        io_env env1;
+        env1.executor = executor_ref(ex);
+        env1.stop_token = ss.get_token();
+        h1.promise().set_environment(env1);
 
         auto h2 = w2.handle();
         w2.release();
-        h2.promise().set_executor(ex);
-        h2.promise().set_stop_token({});
+        io_env env2;
+        env2.executor = executor_ref(ex);
+        h2.promise().set_environment(env2);
 
         h1.resume();
         h2.resume();
@@ -428,8 +436,10 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        h.promise().set_executor(ex);
-        h.promise().set_stop_token(ss.get_token());
+        io_env env;
+        env.executor = executor_ref(ex);
+        env.stop_token = ss.get_token();
+        h.promise().set_environment(env);
 
         h.resume();
         BOOST_TEST(done);
@@ -460,8 +470,10 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        h.promise().set_executor(ex);
-        h.promise().set_stop_token(ss.get_token());
+        io_env env;
+        env.executor = executor_ref(ex);
+        env.stop_token = ss.get_token();
+        h.promise().set_environment(env);
         h.resume();
 
         BOOST_TEST(done);
@@ -484,8 +496,9 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        h.promise().set_executor(ex);
-        h.promise().set_stop_token({});
+        io_env env;
+        env.executor = executor_ref(ex);
+        h.promise().set_environment(env);
         h.resume();
 
         // Destroy without resuming (shutdown)
@@ -518,8 +531,10 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        h.promise().set_executor(ex);
-        h.promise().set_stop_token(ss.get_token());
+        io_env env;
+        env.executor = executor_ref(ex);
+        env.stop_token = ss.get_token();
+        h.promise().set_environment(env);
         h.resume();
         BOOST_TEST(!done);
 

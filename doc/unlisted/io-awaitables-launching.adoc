@@ -261,6 +261,31 @@ task<void> parent()
 
 == Lifetime Considerations
 
+=== io_env Lifetime
+
+Launch functions (`run_async`, `run`) own the `io_env` that is passed to
+every awaitable in the chain. The `io_env` is guaranteed to outlive the
+task and all awaitables it contains. This is a responsibility of the
+launch function:
+
+* `run_async` stores `io_env` in its trampoline coroutine frame, which
+  outlives the launched task.
+* `run` stores `io_env` in its awaitable, which persists for the entire
+  `co_await` expression.
+
+Because of this guarantee, awaitables that receive `io_env const&` in
+`await_suspend` should store it as a pointer (`io_env const*`), never
+as a copy. Copying is unnecessary and wasteful.
+
+[source,cpp]
+----
+coro await_suspend(coro h, io_env const& env)
+{
+    env_ = &env;  // Correct: store pointer
+    // ...
+}
+----
+
 === Task Lifetime
 
 Tasks launched with `run_async` are self-managing. The launcher takes

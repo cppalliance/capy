@@ -16,6 +16,7 @@
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/task.hpp>
 
 #include <array>
@@ -197,7 +198,7 @@ struct when_any_core
     std::optional<stop_callback_t> parent_stop_callback_;
 
     coro continuation_;
-    executor_ref caller_ex_;
+    io_env caller_env_;
 
     // Placed last to avoid padding (1-byte atomic followed by 8-byte aligned members)
     std::atomic<bool> has_winner_{false};
@@ -290,8 +291,7 @@ struct when_any_runner
     {
         StateType* state_ = nullptr;
         std::size_t index_ = 0;
-        executor_ref ex_;
-        std::stop_token stop_token_;
+        io_env env_;
 
         when_any_runner get_return_object() noexcept
         {
@@ -317,7 +317,7 @@ struct when_any_runner
                     // state, so we can't access members after.
                     auto& core = p_->state_->core_;
                     auto* counter = &core.remaining_count_;
-                    auto caller_ex = core.caller_ex_;
+                    auto caller_env = core.caller_env_;
                     auto cont = core.continuation_;
 
                     // Self-destruct first - state no longer destroys runners
@@ -328,7 +328,7 @@ struct when_any_runner
                     // is destroyed during inline dispatch.
                     auto remaining = counter->fetch_sub(1, std::memory_order_acq_rel);
                     if(remaining == 1)
-                        caller_ex.dispatch(cont);
+                        caller_env.executor.dispatch(cont);
                 }
                 void await_resume() const noexcept {}
             };
@@ -357,7 +357,7 @@ struct when_any_runner
             template<class Promise>
             auto await_suspend(std::coroutine_handle<Promise> h)
             {
-                return a_.await_suspend(h, p_->ex_, p_->stop_token_);
+                return a_.await_suspend(h, p_->env_);
             }
         };
 
@@ -467,25 +467,24 @@ public:
         destroys this object before await_suspend returns. Must not reference
         `this` after the final launch_one call.
     */
-    template<Executor Ex>
-    coro await_suspend(coro continuation, Ex const& caller_ex, std::stop_token parent_token = {})
+    coro await_suspend(coro continuation, io_env const& caller_env)
     {
         state_->core_.continuation_ = continuation;
-        state_->core_.caller_ex_ = caller_ex;
+        state_->core_.caller_env_ = caller_env;
 
-        if(parent_token.stop_possible())
+        if(caller_env.stop_token.stop_possible())
         {
             state_->core_.parent_stop_callback_.emplace(
-                parent_token,
+                caller_env.stop_token,
                 when_any_core::stop_callback_fn{&state_->core_.stop_source_});
 
-            if(parent_token.stop_requested())
+            if(caller_env.stop_token.stop_requested())
                 state_->core_.stop_source_.request_stop();
         }
 
         auto token = state_->core_.stop_source_.get_token();
         [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            (..., launch_one<Is>(caller_ex, token));
+            (..., launch_one<Is>(caller_env.executor, token));
         }(std::index_sequence_for<Awaitables...>{});
 
         return std::noop_coroutine();
@@ -497,8 +496,8 @@ public:
 
 private:
     /** @pre Ex::dispatch() and coro::resume() must not throw (handle may leak). */
-    template<std::size_t I, Executor Ex>
-    void launch_one(Ex const& caller_ex, std::stop_token token)
+    template<std::size_t I>
+    void launch_one(executor_ref caller_ex, std::stop_token token)
     {
         auto runner = make_when_any_runner(
             std::move(std::get<I>(*tasks_)), state_, I);
@@ -506,8 +505,7 @@ private:
         auto h = runner.release();
         h.promise().state_ = state_;
         h.promise().index_ = I;
-        h.promise().ex_ = caller_ex;
-        h.promise().stop_token_ = token;
+        h.promise().env_ = io_env{caller_ex, token, state_->core_.caller_env_.allocator};
 
         coro ch{h};
         state_->runner_handles_[I] = ch;
@@ -741,19 +739,18 @@ public:
         1. Create all runners (safe - no dispatch yet)
         2. Dispatch all runners (any may complete synchronously)
     */
-    template<Executor Ex>
-    coro await_suspend(coro continuation, Ex const& caller_ex, std::stop_token parent_token = {})
+    coro await_suspend(coro continuation, io_env const& caller_env)
     {
         state_->core_.continuation_ = continuation;
-        state_->core_.caller_ex_ = caller_ex;
+        state_->core_.caller_env_ = caller_env;
 
-        if(parent_token.stop_possible())
+        if(caller_env.stop_token.stop_possible())
         {
             state_->core_.parent_stop_callback_.emplace(
-                parent_token,
+                caller_env.stop_token,
                 when_any_core::stop_callback_fn{&state_->core_.stop_source_});
 
-            if(parent_token.stop_requested())
+            if(caller_env.stop_token.stop_requested())
                 state_->core_.stop_source_.request_stop();
         }
 
@@ -770,8 +767,7 @@ public:
             auto h = runner.release();
             h.promise().state_ = state_;
             h.promise().index_ = index;
-            h.promise().ex_ = caller_ex;
-            h.promise().stop_token_ = token;
+            h.promise().env_ = io_env{caller_env.executor, token, caller_env.allocator};
 
             state_->runner_handles_[index] = coro{h};
             ++index;
@@ -783,7 +779,7 @@ public:
         coro* handles = state_->runner_handles_.data();
         std::size_t count = state_->runner_handles_.size();
         for(std::size_t i = 0; i < count; ++i)
-            caller_ex.dispatch(handles[i]);
+            caller_env.executor.dispatch(handles[i]);
 
         return std::noop_coroutine();
     }

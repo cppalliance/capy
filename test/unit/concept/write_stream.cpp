@@ -10,10 +10,11 @@
 // Test that header file is self-contained.
 #include <boost/capy/concept/write_stream.hpp>
 
+#include <boost/capy/ex/io_env.hpp>
+
 #include <system_error>
 
 #include <cstddef>
-#include <stop_token>
 #include <tuple>
 #include <utility>
 
@@ -29,8 +30,7 @@ struct mock_write_awaitable_pair
 
     void await_suspend(
         coro,
-        executor_ref,
-        std::stop_token) const noexcept
+        io_env const&) const noexcept
     {
     }
 
@@ -48,8 +48,7 @@ struct mock_write_awaitable_tuple
 
     void await_suspend(
         coro,
-        executor_ref,
-        std::stop_token) const noexcept
+        io_env const&) const noexcept
     {
     }
 
@@ -67,8 +66,7 @@ struct mock_write_awaitable_wrong_type
 
     void await_suspend(
         coro,
-        executor_ref,
-        std::stop_token) const noexcept
+        io_env const&) const noexcept
     {
     }
 
@@ -82,8 +80,7 @@ struct mock_write_awaitable_wrong_order
 
     void await_suspend(
         coro,
-        executor_ref,
-        std::stop_token) const noexcept
+        io_env const&) const noexcept
     {
     }
 

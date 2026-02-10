@@ -17,6 +17,7 @@
 
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 
 #include <cstddef>
@@ -123,12 +124,11 @@ public:
 
     capy::coro await_suspend(
         capy::coro h,
-        capy::executor_ref ex,
-        std::stop_token st)
+        capy::io_env const& env)
     {
-        cancel_ = std::make_shared<cancel_bridge>(st);
+        cancel_ = std::make_shared<cancel_bridge>(env.stop_token);
 
-        auto handler = [this, h, ex](Args... args) mutable
+        auto handler = [this, h, ex = env.executor](Args... args) mutable
         {
             store_result(std::move(args)...);
             ex.dispatch(h);

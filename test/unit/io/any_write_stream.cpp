@@ -12,6 +12,7 @@
 
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/run_blocking.hpp>
@@ -42,7 +43,7 @@ struct pending_write_awaitable
         : counter_(std::exchange(o.counter_, nullptr)) {}
     ~pending_write_awaitable() { if(counter_) ++(*counter_); }
     bool await_ready() const noexcept { return false; }
-    coro await_suspend(coro, executor_ref, std::stop_token)
+    coro await_suspend(coro, io_env const&)
         { return std::noop_coroutine(); }
     io_result<std::size_t> await_resume()
         { return {{}, 0}; }
@@ -409,7 +410,7 @@ public:
 
             test::inline_executor ex;
             aw.await_suspend(
-                std::noop_coroutine(), executor_ref(ex), {});
+                std::noop_coroutine(), io_env{executor_ref(ex), {}});
         }
         BOOST_TEST_EQ(destroyed, 1);
     }
@@ -427,7 +428,7 @@ public:
 
             test::inline_executor ex;
             aw.await_suspend(
-                std::noop_coroutine(), executor_ref(ex), {});
+                std::noop_coroutine(), io_env{executor_ref(ex), {}});
 
             any_write_stream empty;
             aws = std::move(empty);

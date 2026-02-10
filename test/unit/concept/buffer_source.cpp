@@ -10,10 +10,11 @@
 // Test that header file is self-contained.
 #include <boost/capy/concept/buffer_source.hpp>
 
+#include <boost/capy/ex/io_env.hpp>
+
 #include <system_error>
 
 #include <cstddef>
-#include <stop_token>
 #include <utility>
 
 namespace boost {
@@ -28,8 +29,7 @@ struct mock_source_awaitable
 
     void await_suspend(
         coro,
-        executor_ref,
-        std::stop_token) const noexcept
+        io_env const&) const noexcept
     {
     }
 
@@ -47,8 +47,7 @@ struct mock_source_awaitable_wrong_type
 
     void await_suspend(
         coro,
-        executor_ref,
-        std::stop_token) const noexcept
+        io_env const&) const noexcept
     {
     }
 

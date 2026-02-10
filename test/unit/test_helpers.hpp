@@ -15,6 +15,7 @@
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/task.hpp>
 
 #include <optional>
@@ -232,10 +233,7 @@ struct self_destroy_awaitable
 {
     bool await_ready() {return false;}
 
-    template<typename Executor>
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h,
-                                          const Executor &,
-                                          std::stop_token)
+    coro await_suspend(coro h, io_env const&)
     {
         // one wouldn't expect this to happen, but it should not cause UB
         h.destroy();
@@ -251,18 +249,15 @@ struct stop_only_awaitable
     stop_only_awaitable() noexcept = default;
     stop_only_awaitable(stop_only_awaitable && ) noexcept {}
 
-    std::optional<std::stop_callback<std::coroutine_handle<>>> stop_cb;
+    std::optional<std::stop_callback<coro>> stop_cb;
 
     bool await_ready() {return false;}
 
-    template<typename Executor>
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h,
-                                          const Executor &,
-                                          std::stop_token tk)
+    coro await_suspend(coro h, io_env const& env)
     {
-        if (tk.stop_requested())
+        if (env.stop_token.stop_requested())
             return h;
-        stop_cb.emplace(tk, h);
+        stop_cb.emplace(env.stop_token, h);
         return std::noop_coroutine();
     }
     void await_resume() {}
@@ -393,11 +388,10 @@ struct yield_awaitable
         return false;
     }
 
-    template<typename Ex>
-    coro await_suspend(coro h, Ex const& ex, std::stop_token)
+    coro await_suspend(coro h, io_env const& env)
     {
         // Post ourselves back to the queue
-        ex.post(h);
+        env.executor.post(h);
         return std::noop_coroutine();
     }
 

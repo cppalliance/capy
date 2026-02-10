@@ -15,7 +15,7 @@
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/coro.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/read.hpp>
@@ -230,13 +230,12 @@ public:
 
             coro await_suspend(
                 coro h,
-                executor_ref ex,
-                std::stop_token) noexcept
+                io_env const& env) noexcept
             {
                 auto& side = self_->state_->sides[
                     self_->index_];
                 side.pending_h = h;
-                side.pending_ex = ex;
+                side.pending_ex = env.executor;
                 return std::noop_coroutine();
             }
 
@@ -306,8 +305,7 @@ public:
 
             void await_suspend(
                 coro,
-                executor_ref,
-                std::stop_token) const noexcept
+                io_env const&) const noexcept
             {
             }
 

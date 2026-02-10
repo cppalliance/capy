@@ -12,6 +12,7 @@
 
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/cond.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/read_stream.hpp>
@@ -40,7 +41,7 @@ struct pending_read_awaitable
         : counter_(std::exchange(o.counter_, nullptr)) {}
     ~pending_read_awaitable() { if(counter_) ++(*counter_); }
     bool await_ready() const noexcept { return false; }
-    coro await_suspend(coro, executor_ref, std::stop_token)
+    coro await_suspend(coro, io_env const&)
         { return std::noop_coroutine(); }
     io_result<std::size_t> await_resume()
         { return {{}, 0}; }

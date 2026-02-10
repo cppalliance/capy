@@ -11,7 +11,7 @@
 #define BOOST_CAPY_EX_IMMEDIATE_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 
 #include <coroutine>
@@ -82,33 +82,24 @@ struct immediate
         return true;
     }
 
-    /** Never called since await_ready() returns true. */
-    constexpr void
-    await_suspend(std::coroutine_handle<>) const noexcept
-    {
-    }
-
     /** IoAwaitable protocol overload.
 
         This overload allows `immediate` to satisfy the @ref IoAwaitable
-        concept. Since the result is already available, the executor and
-        stop token are unused.
+        concept. Since the result is already available, the environment
+        is unused.
 
         @param h The coroutine handle (unused).
-        @param ex The executor (unused).
-        @param token The stop token (unused).
+        @param env The execution environment (unused).
 
         @return `std::noop_coroutine()` to indicate no suspension.
     */
     std::coroutine_handle<>
     await_suspend(
         std::coroutine_handle<> h,
-        executor_ref ex,
-        std::stop_token token = {}) const noexcept
+        io_env const& env) const noexcept
     {
         (void)h;
-        (void)ex;
-        (void)token;
+        (void)env;
         return std::noop_coroutine();
     }
 

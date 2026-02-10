@@ -15,7 +15,7 @@
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 
 #include <stop_token>
@@ -195,20 +195,19 @@ public:
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
-            executor_ref ex,
-            std::stop_token token) noexcept
+            io_env const& env) noexcept
         {
-            if(token.stop_requested())
+            if(env.stop_token.stop_requested())
             {
                 canceled_ = true;
                 return h;
             }
             h_ = h;
-            ex_ = ex;
+            ex_ = env.executor;
             e_->waiters_.push_back(this);
             in_list_ = true;
             ::new(stop_cb_buf_) stop_cb_t(
-                token, cancel_fn{this});
+                env.stop_token, cancel_fn{this});
             active_ = true;
             return std::noop_coroutine();
         }

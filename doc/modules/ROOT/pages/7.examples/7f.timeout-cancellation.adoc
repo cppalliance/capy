@@ -172,7 +172,7 @@ target_link_libraries(timeout_cancellation PRIVATE capy)
 auto token = co_await this_coro::stop_token;  // std::stop_token
 ----
 
-Inside a task, `this_coro::stop_token` retrieves the stop token propagated from the caller.
+Inside a task, `this_coro::stop_token` retrieves the stop token propagated from the caller. You can also access it through the full environment via `co_await this_coro::environment`.
 
 === Checking for Cancellation
 

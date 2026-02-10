@@ -17,6 +17,7 @@
 #include <boost/capy/concept/io_launchable_task.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/ex/work_guard.hpp>
 
@@ -88,6 +89,7 @@ struct run_async_trampoline
         work_guard<Ex> wg_;
         Handlers handlers_;
         frame_memory_resource<Alloc> resource_;
+        io_env env_;
         invoke_fn invoke_ = nullptr;
         void* task_promise_ = nullptr;
         std::coroutine_handle<> task_h_;
@@ -194,6 +196,7 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
         work_guard<Ex> wg_;
         Handlers handlers_;
         std::pmr::memory_resource* mr_;
+        io_env env_;
         invoke_fn invoke_ = nullptr;
         void* task_promise_ = nullptr;
         std::coroutine_handle<> task_h_;
@@ -359,6 +362,11 @@ public:
         The rvalue ref-qualifier ensures the wrapper is consumed, enforcing
         correct LIFO destruction order.
 
+        The `io_env` constructed for the task is owned by the trampoline
+        coroutine and is guaranteed to outlive the task and all awaitables
+        in its chain. Awaitables may store `io_env const*` without concern
+        for dangling references.
+
         @tparam Task The IoLaunchableTask type.
 
         @param t The task to execute. Ownership is transferred to the
@@ -380,8 +388,8 @@ public:
 
         // Setup task's continuation to return to run_async_trampoline
         task_promise.set_continuation(tr_.h_, p.wg_.executor());
-        task_promise.set_executor(p.wg_.executor());
-        task_promise.set_stop_token(st_);
+        p.env_ = {p.wg_.executor(), st_, p.get_resource()};
+        task_promise.set_environment(p.env_);
 
         // Resume task through executor
         p.wg_.executor().dispatch(task_h);

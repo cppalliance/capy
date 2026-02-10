@@ -8,6 +8,7 @@
 //
 
 #include <boost/capy/concept/execution_context.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/run.hpp>
 #include <boost/capy/ex/strand.hpp>
@@ -130,8 +131,7 @@ struct foreign_awaitable
     }
 
     // IoAwaitable protocol
-    template<typename D>
-    coro await_suspend(coro h, D const&, std::stop_token) const
+    coro await_suspend(coro h, io_env const&) const
     {
         return h;
     }

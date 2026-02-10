@@ -273,13 +273,14 @@ means we can skip the dispatch overhead.
 
 == Querying the Current Executor
 
-Inside a coroutine, retrieve the current executor:
+Inside a coroutine, retrieve the current executor via the environment:
 
 [source,cpp]
 ----
 task<void> example()
 {
-    executor_ref ex = co_await this_coro::executor;
+    auto const& env = co_await this_coro::environment;
+    executor_ref ex = env.executor;
 
     if (!ex)
     {
@@ -291,7 +292,7 @@ task<void> example()
 }
 ----
 
-`this_coro::executor` is a tag that `await_transform` intercepts. It never
+`this_coro::environment` is a tag that `await_transform` intercepts. It never
 actually suspends—`await_ready()` returns `true`.
 
 == Summary
@@ -315,8 +316,8 @@ actually suspends—`await_ready()` returns `true`.
 | `run(ex)(task)`
 | Override inherited executor for a subtask
 
-| `this_coro::executor`
-| Query current executor inside coroutine
+| `this_coro::environment`
+| Query current environment (including executor) inside coroutine
 |===
 
 == Next Steps

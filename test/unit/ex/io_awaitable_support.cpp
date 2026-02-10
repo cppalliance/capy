@@ -10,6 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/ex/io_awaitable_support.hpp>
 
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 
 #include "test_suite.hpp"
@@ -111,46 +112,50 @@ private:
 struct io_awaitable_support_test
 {
     void
-    testSetAndGetStopToken()
+    testSetAndGetEnvironment()
     {
         std::stop_source source;
-        auto token = source.get_token();
+        io_env env;
+        env.stop_token = source.get_token();
 
         auto c = []() -> test_coro { co_return; }();
-        c.h_.promise().set_stop_token(token);
+        c.h_.promise().set_environment(env);
 
-        auto retrieved = c.h_.promise().stop_token();
-        BOOST_TEST(retrieved.stop_possible());
-        BOOST_TEST(!retrieved.stop_requested());
+        auto const& retrieved = c.h_.promise().environment();
+        BOOST_TEST(retrieved.stop_token.stop_possible());
+        BOOST_TEST(!retrieved.stop_token.stop_requested());
 
         source.request_stop();
-        BOOST_TEST(retrieved.stop_requested());
+        BOOST_TEST(retrieved.stop_token.stop_requested());
     }
 
     void
-    testDefaultStopToken()
+    testDefaultEnvironment()
     {
         auto c = []() -> test_coro { co_return; }();
-        auto token = c.h_.promise().stop_token();
+        auto const& env = c.h_.promise().environment();
 
-        BOOST_TEST(!token.stop_possible());
-        BOOST_TEST(!token.stop_requested());
+        BOOST_TEST(!env.stop_token.stop_possible());
+        BOOST_TEST(!env.stop_token.stop_requested());
+        BOOST_TEST(!static_cast<bool>(env.executor));
     }
 
     void
-    testAwaitTransformInterceptsStopTokenTag()
+    testAwaitTransformInterceptsEnvironmentTag()
     {
         auto c = []() -> test_coro { co_return; }();
 
         std::stop_source source;
-        c.h_.promise().set_stop_token(source.get_token());
+        io_env env;
+        env.stop_token = source.get_token();
+        c.h_.promise().set_environment(env);
 
-        auto awaiter = c.h_.promise().await_transform(this_coro::stop_token);
+        auto awaiter = c.h_.promise().await_transform(this_coro::environment);
 
         BOOST_TEST(awaiter.await_ready());
 
-        auto token = awaiter.await_resume();
-        BOOST_TEST(token.stop_possible());
+        auto const& retrieved = awaiter.await_resume();
+        BOOST_TEST(retrieved.stop_token.stop_possible());
     }
 
     void
@@ -170,86 +175,55 @@ struct io_awaitable_support_test
         c.h_.promise().await_transform(dummy_awaitable{});
         BOOST_TEST_EQ(c.h_.promise().transform_count_, 1);
 
-        c.h_.promise().await_transform(this_coro::stop_token);
+        // None of the this_coro tags should delegate
+        c.h_.promise().await_transform(this_coro::environment);
         BOOST_TEST_EQ(c.h_.promise().transform_count_, 1);
 
         c.h_.promise().await_transform(this_coro::executor);
         BOOST_TEST_EQ(c.h_.promise().transform_count_, 1);
+
+        c.h_.promise().await_transform(this_coro::stop_token);
+        BOOST_TEST_EQ(c.h_.promise().transform_count_, 1);
+
+        c.h_.promise().await_transform(this_coro::allocator);
+        BOOST_TEST_EQ(c.h_.promise().transform_count_, 1);
     }
 
     void
-    testStopTokenAwaiterNeverSuspends()
+    testEnvironmentAwaiterNeverSuspends()
     {
         auto c = []() -> test_coro { co_return; }();
-        auto awaiter = c.h_.promise().await_transform(this_coro::stop_token);
+        auto awaiter = c.h_.promise().await_transform(this_coro::environment);
 
         BOOST_TEST(awaiter.await_ready());
         awaiter.await_suspend(c.h_);
     }
 
     void
-    testSetAndGetExecutor()
+    testSetAndGetExecutorViaEnvironment()
     {
         thread_pool pool(1);
         auto executor = pool.get_executor();
 
         auto c = []() -> test_coro { co_return; }();
-        c.h_.promise().set_executor(executor);
+        io_env env;
+        env.executor = executor_ref(executor);
+        c.h_.promise().set_environment(env);
 
-        auto retrieved = c.h_.promise().executor();
-        BOOST_TEST(static_cast<bool>(retrieved));
-        BOOST_TEST(retrieved == executor_ref(executor));
-    }
-
-    void
-    testDefaultExecutor()
-    {
-        auto c = []() -> test_coro { co_return; }();
-        auto ex = c.h_.promise().executor();
-
-        BOOST_TEST(!static_cast<bool>(ex));
-    }
-
-    void
-    testAwaitTransformInterceptsExecutorTag()
-    {
-        thread_pool pool(1);
-        auto executor = pool.get_executor();
-
-        auto c = []() -> test_coro { co_return; }();
-        c.h_.promise().set_executor(executor);
-
-        auto awaiter = c.h_.promise().await_transform(this_coro::executor);
-
-        BOOST_TEST(awaiter.await_ready());
-
-        auto ex = awaiter.await_resume();
-        BOOST_TEST(static_cast<bool>(ex));
-        BOOST_TEST(ex == executor_ref(executor));
-    }
-
-    void
-    testExecutorAwaiterNeverSuspends()
-    {
-        auto c = []() -> test_coro { co_return; }();
-        auto awaiter = c.h_.promise().await_transform(this_coro::executor);
-
-        BOOST_TEST(awaiter.await_ready());
-        awaiter.await_suspend(c.h_);
+        auto const& retrieved = c.h_.promise().environment();
+        BOOST_TEST(static_cast<bool>(retrieved.executor));
+        BOOST_TEST(retrieved.executor == executor_ref(executor));
     }
 
     void
     run()
     {
-        testSetAndGetStopToken();
-        testDefaultStopToken();
-        testAwaitTransformInterceptsStopTokenTag();
+        testSetAndGetEnvironment();
+        testDefaultEnvironment();
+        testAwaitTransformInterceptsEnvironmentTag();
         testAwaitTransformDelegatesToTransformAwaitable();
-        testStopTokenAwaiterNeverSuspends();
-        testSetAndGetExecutor();
-        testDefaultExecutor();
-        testAwaitTransformInterceptsExecutorTag();
-        testExecutorAwaiterNeverSuspends();
+        testEnvironmentAwaiterNeverSuspends();
+        testSetAndGetExecutorViaEnvironment();
     }
 };
 

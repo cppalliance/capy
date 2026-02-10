@@ -18,6 +18,7 @@
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 
 #include <cstddef>
@@ -94,8 +95,7 @@ class write_now
             io_result<std::size_t> result_;
             std::exception_ptr ep_;
             coro cont_{nullptr};
-            executor_ref ex_;
-            std::stop_token token_;
+            io_env env_;
             bool done_ = false;
 
             op_type get_return_object()
@@ -176,7 +176,7 @@ class write_now
                         {
                             return detail::call_await_suspend(
                                 &inner_, h,
-                                p_->ex_, p_->token_);
+                                p_->env_);
                         }
 
                         decltype(auto) await_resume()
@@ -241,13 +241,11 @@ class write_now
 
         coro await_suspend(
             coro cont,
-            executor_ref ex,
-            std::stop_token token)
+            io_env const& env)
         {
             auto& p = h_.promise();
             p.cont_ = cont;
-            p.ex_ = ex;
-            p.token_ = token;
+            p.env_ = env;
             return h_;
         }
 

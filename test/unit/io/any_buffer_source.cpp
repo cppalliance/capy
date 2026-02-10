@@ -15,6 +15,7 @@
 
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/cond.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/buffer_source.hpp>
 #include <boost/capy/test/write_sink.hpp>
@@ -93,7 +94,7 @@ public:
             std::span<const_buffer> dest_;
 
             bool await_ready() const noexcept { return true; }
-            void await_suspend(coro, executor_ref, std::stop_token) const noexcept {}
+            void await_suspend(coro, io_env const&) const noexcept {}
 
             io_result<std::span<const_buffer>>
             await_resume()
@@ -133,7 +134,7 @@ public:
             MB buffers_;
 
             bool await_ready() const noexcept { return true; }
-            void await_suspend(coro, executor_ref, std::stop_token) const noexcept {}
+            void await_suspend(coro, io_env const&) const noexcept {}
 
             io_result<std::size_t>
             await_resume()
@@ -171,7 +172,7 @@ public:
             MB buffers_;
 
             bool await_ready() const noexcept { return true; }
-            void await_suspend(coro, executor_ref, std::stop_token) const noexcept {}
+            void await_suspend(coro, io_env const&) const noexcept {}
 
             io_result<std::size_t>
             await_resume()

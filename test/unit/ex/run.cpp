@@ -13,6 +13,7 @@
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/ex/this_coro.hpp>
 #include <boost/capy/task.hpp>
 
 #include "test/unit/custom_task.hpp"
@@ -337,6 +338,46 @@ struct run_test
     }
 
     void
+    testAllocatorPropagation()
+    {
+        // Verify allocator is non-null inside task launched via run_async
+        int dispatch_count = 0;
+        test_executor ex(1, dispatch_count);
+        bool result = false;
+
+        auto check = []() -> task<bool> {
+            auto* alloc = co_await this_coro::allocator;
+            co_return alloc != nullptr;
+        };
+
+        run_async(ex, [&](bool v) { result = v; })(check());
+
+        BOOST_TEST(result);
+    }
+
+    void
+    testAllocatorPropagationThroughRun()
+    {
+        // Verify allocator propagates through run(ex) to inner task
+        int dispatch_count = 0;
+        test_executor ex(1, dispatch_count);
+        bool result = false;
+
+        auto inner = []() -> task<bool> {
+            auto* alloc = co_await this_coro::allocator;
+            co_return alloc != nullptr;
+        };
+
+        auto outer = [&]() -> task<bool> {
+            co_return co_await capy::run(ex)(inner());
+        };
+
+        run_async(ex, [&](bool v) { result = v; })(outer());
+
+        BOOST_TEST(result);
+    }
+
+    void
     run()
     {
         testCustomTaskType();
@@ -353,6 +394,8 @@ struct run_test
         testStopTokenWithAllocator();
         testVoidWithStopToken();
         testVoidWithMemoryResource();
+        testAllocatorPropagation();
+        testAllocatorPropagationThroughRun();
     }
 };
 

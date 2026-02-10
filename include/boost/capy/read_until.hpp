@@ -20,7 +20,7 @@
 #include <boost/capy/concept/dynamic_buffer.hpp>
 #include <boost/capy/concept/match_condition.hpp>
 #include <boost/capy/concept/read_stream.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -177,11 +177,11 @@ struct read_until_awaitable
     }
 
     coro
-    await_suspend(coro h, executor_ref const& ex, std::stop_token const& token)
+    await_suspend(coro h, io_env const& env)
     {
         inner_.emplace(read_until_match_impl(
             *stream_, buffers(), match_, initial_amount_));
-        return inner_->await_suspend(h, ex, token);
+        return inner_->await_suspend(h, env);
     }
 
     io_result<std::size_t>

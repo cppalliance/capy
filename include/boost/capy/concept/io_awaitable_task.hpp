@@ -13,20 +13,19 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/coro.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 
 #include <concepts>
-#include <stop_token>
 
 namespace boost {
 namespace capy {
 
 /** Concept for task types with promise-based context injection.
 
-    Extends @ref IoAwaitable with a `promise_type` that stores executor
-    and stop token state. This enables launch functions (`run`, `run_async`)
-    to inject context at the root of a coroutine chain without going
-    through `await_suspend`.
+    Extends @ref IoAwaitable with a `promise_type` that stores the
+    execution environment. This enables coroutine launch functions
+    such as @ref run to inject context at the root of a coroutine
+    chain without going through `await_suspend`.
 
     @tparam T The task type.
 
@@ -34,25 +33,27 @@ namespace capy {
 
     @li `T` must satisfy @ref IoAwaitable
     @li `T::promise_type` must be a valid type
-    @li `p.set_executor(ex)` must be valid and `noexcept`
-    @li `p.set_stop_token(st)` must be valid and `noexcept`
+    @li `p.set_environment(env)` must be valid and `noexcept`
     @li `p.set_continuation(cont, ex)` must be valid and `noexcept`
-    @li `p.executor()` must return `executor_ref` and be `noexcept`
-    @li `p.stop_token()` must return `std::stop_token const&` and be `noexcept`
+    @li `p.environment()` must return `io_env const&` and be `noexcept`
     @li `p.complete()` must return `coro` and be `noexcept`
 
     @par Semantic Requirements
 
-    The `set_executor` and `set_stop_token` operations inject context:
+    The `set_environment` operation injects context:
 
     @li Called by launch functions before resuming the task
-    @li The promise stores these values for use by child awaitables
+    @li The promise stores the address of the @ref io_env, not a copy.
+        The referenced @ref io_env is owned by the launch function and
+        is guaranteed to outlive the task.
     @li Values propagate to nested `co_await` expressions
 
-    The `executor` and `stop_token` accessors retrieve stored context:
+    The `environment` accessor retrieves stored context:
 
-    @li Return the values set by launch functions or parent tasks
-    @li Used by awaitables to schedule resumption and check cancellation
+    @li Returns a const reference to the @ref io_env owned by the
+        launch function or parent awaitable
+    @li Used by awaitables to schedule resumption, check cancellation,
+        and allocate memory
 
     The `set_continuation` and `complete` operations manage resumption:
 
@@ -66,16 +67,15 @@ namespace capy {
     {
         struct promise_type
         {
-            void set_executor( executor_ref ex ) noexcept;
-            void set_stop_token( std::stop_token st ) noexcept;
+            void set_environment( io_env const& env ) noexcept;
             void set_continuation( coro cont, executor_ref ex ) noexcept;
-            executor_ref executor() const noexcept;
-            std::stop_token const& stop_token() const noexcept;
+            io_env const& environment() const noexcept;
             coro complete() const noexcept;
         };
 
         bool await_ready() const noexcept;
-        coro await_suspend( coro h, executor_ref const& ex, std::stop_token const& token );
+        std::coroutine_handle<> await_suspend(
+            std::coroutine_handle<> h, io_env const& env );
         R await_resume();
     };
     @endcode
@@ -98,11 +98,10 @@ namespace capy {
 
         bool await_ready() const noexcept { return false; }
 
-        coro await_suspend( coro cont, executor_ref const& ex, std::stop_token const& token )
+        coro await_suspend( coro cont, io_env const& env )
         {
-            h_.promise().set_executor( ex );
-            h_.promise().set_stop_token( token );
-            h_.promise().set_continuation( cont, ex );
+            h_.promise().set_environment( env );
+            h_.promise().set_continuation( cont, env.executor );
             return h_;
         }
 
@@ -121,15 +120,13 @@ concept IoAwaitableTask =
     requires(
         typename T::promise_type& p,
         typename T::promise_type const& cp,
+        io_env const& env,
         executor_ref ex,
-        std::stop_token st,
         coro cont)
     {
-        { p.set_executor(ex) } noexcept;
-        { p.set_stop_token(st) } noexcept;
+        { p.set_environment(env) } noexcept;
         { p.set_continuation(cont, ex) } noexcept;
-        { cp.executor() } noexcept -> std::same_as<executor_ref>;
-        { cp.stop_token() } noexcept -> std::same_as<std::stop_token const&>;
+        { cp.environment() } noexcept -> std::same_as<io_env const&>;
         { cp.complete() } noexcept -> std::same_as<coro>;
     };
 

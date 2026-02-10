@@ -14,13 +14,12 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/coro.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/test/fuse.hpp>
 
 #include <algorithm>
 #include <span>
-#include <stop_token>
 #include <string>
 #include <string_view>
 
@@ -171,15 +170,14 @@ public:
             // Capy uses a two-layer awaitable system: the promise's
             // await_transform wraps awaitables in a transform_awaiter whose
             // standard await_suspend(coroutine_handle) calls this custom
-            // 3-argument overload, passing the executor and stop_token from
-            // the coroutine's context. For synchronous test awaitables like
-            // this one, the coroutine never suspends, so this is not invoked.
-            // The signature exists to allow the same awaitable type to work
-            // with both synchronous (test) and asynchronous (real I/O) code.
+            // 2-argument overload, passing the io_env from the coroutine's
+            // context. For synchronous test awaitables like this one, the
+            // coroutine never suspends, so this is not invoked. The signature
+            // exists to allow the same awaitable type to work with both
+            // synchronous (test) and asynchronous (real I/O) code.
             void await_suspend(
                 coro,
-                executor_ref,
-                std::stop_token) const noexcept
+                io_env const&) const noexcept
             {
             }
 
@@ -228,8 +226,7 @@ public:
             // See the comment on commit(std::size_t) for a detailed explanation.
             void await_suspend(
                 coro,
-                executor_ref,
-                std::stop_token) const noexcept
+                io_env const&) const noexcept
             {
             }
 

@@ -29,19 +29,19 @@ IoAwaitableTask
 IoLaunchableTask
 ....
 
-`IoAwaitable` is the base. It requires a single syntactic property -- the `await_suspend` signature must accept an executor and stop token as explicit parameters:
+`IoAwaitable` is the base. It requires a single syntactic property -- the `await_suspend` signature must accept an `io_env` parameter containing the execution environment:
 
 [source,cpp]
 ----
 template<typename A>
 concept IoAwaitable =
-    requires(A a, coro h, executor_ref ex, std::stop_token token)
+    requires(A a, coro h, io_env const& env)
     {
-        a.await_suspend(h, ex, token);
+        a.await_suspend(h, env);
     };
 ----
 
-`IoAwaitableTask` refines `IoAwaitable` with promise-level context storage. The promise must provide `set_executor`, `set_stop_token`, `set_continuation`, and their accessors:
+`IoAwaitableTask` refines `IoAwaitable` with promise-level context storage. The promise must provide `set_environment`, `environment`, `set_continuation`, and their accessors:
 
 [source,cpp]
 ----
@@ -52,15 +52,12 @@ concept IoAwaitableTask =
     requires(
         typename T::promise_type& p,
         typename T::promise_type const& cp,
-        executor_ref ex,
-        std::stop_token st,
+        io_env const& env,
         coro cont)
     {
-        { p.set_executor(ex) } noexcept;
-        { p.set_stop_token(st) } noexcept;
-        { p.set_continuation(cont, ex) } noexcept;
-        { cp.executor() } noexcept -> std::same_as<executor_ref>;
-        { cp.stop_token() } noexcept -> std::same_as<std::stop_token const&>;
+        { p.set_environment(env) } noexcept;
+        { p.set_continuation(cont, env.executor) } noexcept;
+        { cp.environment() } noexcept -> std::same_as<io_env const&>;
         { cp.complete() } noexcept -> std::same_as<coro>;
     };
 ----
@@ -138,14 +135,14 @@ The associators are optional member functions on the promise. Each awaitable pro
 
 The task requirements directly determine how executor and cancellation context reach child operations.
 
-Capy's `IoAwaitable` protocol passes executor and stop token as explicit parameters to `await_suspend`:
+Capy's `IoAwaitable` protocol passes the execution environment as an explicit parameter to `await_suspend`:
 
 [source,cpp]
 ----
-auto await_suspend(coro h, executor_ref ex, std::stop_token token);
+auto await_suspend(coro h, io_env const& env);
 ----
 
-The executor and stop token flow forward structurally through the call chain. If a task's machinery does not provide them, the code does not compile. There is no fallback.
+The executor and stop token flow forward structurally through the call chain via `io_env`. If a task's machinery does not provide them, the code does not compile. There is no fallback.
 
 Cobalt's approach probes the calling promise. The relevant code from `cobalt/detail/task.hpp`:
 
@@ -182,7 +179,7 @@ In Capy, the equivalent of "no cancellation" is passing `std::stop_token{}` (a n
 | Aspect | Capy | Cobalt
 
 | Mechanism
-| Explicit `await_suspend` parameters
+| Explicit `await_suspend(h, env)` parameter
 | Promise probing via `if constexpr`
 
 | Missing executor

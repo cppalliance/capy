@@ -21,7 +21,7 @@
 #include <boost/capy/concept/read_source.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/io_task.hpp>
 
@@ -340,7 +340,7 @@ private:
 struct any_buffer_source::awaitable_ops
 {
     bool (*await_ready)(void*);
-    coro (*await_suspend)(void*, coro, executor_ref const&, std::stop_token const&);
+    coro (*await_suspend)(void*, coro, io_env const&);
     io_result<std::span<const_buffer>> (*await_resume)(void*);
     void (*destroy)(void*) noexcept;
 };
@@ -349,7 +349,7 @@ struct any_buffer_source::awaitable_ops
 struct any_buffer_source::read_awaitable_ops
 {
     bool (*await_ready)(void*);
-    coro (*await_suspend)(void*, coro, executor_ref const&, std::stop_token const&);
+    coro (*await_suspend)(void*, coro, io_env const&);
     io_result<std::size_t> (*await_resume)(void*);
     void (*destroy)(void*) noexcept;
 };
@@ -408,9 +408,9 @@ struct any_buffer_source::vtable_for_impl
             +[](void* p) {
                 return static_cast<PullAwaitable*>(p)->await_ready();
             },
-            +[](void* p, coro h, executor_ref const& ex, std::stop_token const& token) {
+            +[](void* p, coro h, io_env const& env) {
                 return detail::call_await_suspend(
-                    static_cast<PullAwaitable*>(p), h, ex, token);
+                    static_cast<PullAwaitable*>(p), h, env);
             },
             +[](void* p) {
                 return static_cast<PullAwaitable*>(p)->await_resume();
@@ -441,9 +441,9 @@ struct any_buffer_source::vtable_for_impl
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_ready();
             },
-            +[](void* p, coro h, executor_ref const& ex, std::stop_token const& token) {
+            +[](void* p, coro h, io_env const& env) {
                 return detail::call_await_suspend(
-                    static_cast<Aw*>(p), h, ex, token);
+                    static_cast<Aw*>(p), h, env);
             },
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_resume();
@@ -471,9 +471,9 @@ struct any_buffer_source::vtable_for_impl
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_ready();
             },
-            +[](void* p, coro h, executor_ref const& ex, std::stop_token const& token) {
+            +[](void* p, coro h, io_env const& env) {
                 return detail::call_await_suspend(
-                    static_cast<Aw*>(p), h, ex, token);
+                    static_cast<Aw*>(p), h, env);
             },
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_resume();
@@ -643,10 +643,10 @@ any_buffer_source::pull(std::span<const_buffer> dest)
         }
 
         coro
-        await_suspend(coro h, executor_ref const& ex, std::stop_token const& token)
+        await_suspend(coro h, io_env const& env)
         {
             return self_->active_ops_->await_suspend(
-                self_->cached_awaitable_, h, ex, token);
+                self_->cached_awaitable_, h, env);
         }
 
         io_result<std::span<const_buffer>>
@@ -685,7 +685,7 @@ any_buffer_source::read_some_(
         }
 
         coro
-        await_suspend(coro h, executor_ref const& ex, std::stop_token const& token)
+        await_suspend(coro h, io_env const& env)
         {
             self_->active_read_ops_ =
                 self_->vt_->construct_read_some_awaitable(
@@ -698,7 +698,7 @@ any_buffer_source::read_some_(
                 return h;
 
             return self_->active_read_ops_->await_suspend(
-                self_->cached_awaitable_, h, ex, token);
+                self_->cached_awaitable_, h, env);
         }
 
         io_result<std::size_t>
@@ -735,7 +735,7 @@ any_buffer_source::read_(
         }
 
         coro
-        await_suspend(coro h, executor_ref const& ex, std::stop_token const& token)
+        await_suspend(coro h, io_env const& env)
         {
             self_->active_read_ops_ =
                 self_->vt_->construct_read_awaitable(
@@ -748,7 +748,7 @@ any_buffer_source::read_(
                 return h;
 
             return self_->active_read_ops_->await_suspend(
-                self_->cached_awaitable_, h, ex, token);
+                self_->cached_awaitable_, h, env);
         }
 
         io_result<std::size_t>

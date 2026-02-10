@@ -358,6 +358,30 @@ struct run_async_test
     }
 
     //----------------------------------------------------------
+    // Allocator Propagation
+    //----------------------------------------------------------
+
+    static task<bool>
+    check_allocator_propagated()
+    {
+        auto* alloc = co_await this_coro::allocator;
+        co_return alloc != nullptr;
+    }
+
+    void
+    testAllocatorPropagation()
+    {
+        int dispatch_count = 0;
+        sync_executor d(dispatch_count);
+        bool result = false;
+
+        run_async(d, [&](bool v) { result = v; })(
+            check_allocator_propagated());
+
+        BOOST_TEST(result);
+    }
+
+    //----------------------------------------------------------
     // Sync Dispatcher
     //----------------------------------------------------------
 
@@ -616,6 +640,9 @@ struct run_async_test
         // Stop Token
         testStopTokenPropagation();
         testCancellationVisible();
+
+        // Allocator Propagation
+        testAllocatorPropagation();
 
         // Sync Dispatcher
         testSyncDispatcherBasic();

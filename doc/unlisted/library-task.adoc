@@ -171,21 +171,22 @@ A coroutine has unique state that cannot be duplicated.
 
 == Affinity and Context
 
-Tasks implement `IoAwaitableTask`, receiving executor and stop token when
+Tasks implement `IoAwaitableTask`, receiving execution environment when
 awaited:
 
 [source,cpp]
 ----
 task<void> child()
 {
-    // Inherits executor and stop token from parent
-    auto ex = co_await this_coro::executor;
-    auto token = co_await this_coro::stop_token;
+    // Inherits environment from parent
+    auto const& env = co_await this_coro::environment;
+    // env.executor - the executor
+    // env.stop_token - the stop token
 }
 
 task<void> parent()  // Bound to pool's executor
 {
-    co_await child();  // child inherits our executor
+    co_await child();  // child inherits our environment
 }
 
 run_async(pool.get_executor())(parent());

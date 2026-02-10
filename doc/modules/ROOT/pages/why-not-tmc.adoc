@@ -31,7 +31,7 @@ When async code finishes waiting, it needs to resume somewhere. Where?
 
 *Capy's answer:* The same place it started. Automatically.
 
-* Context flows forward through `await_suspend(h, ex, token)` parameters
+* Context flows forward through `await_suspend(h, env)` where `env` is an `io_env`
 * Your coroutine started on executor X? It resumes on executor X.
 * Child tasks can run on different executors via `run(other_ex)(child_task())`
 
@@ -178,14 +178,16 @@ The awaitable receives a handle to resume. That's all. No information about wher
 
 [source,cpp]
 ----
-auto await_suspend(coro h, executor_ref ex, std::stop_token token);
+auto await_suspend(coro h, io_env const& env);
 ----
 
 The awaitable receives:
 
-* `h` - The handle (for resumption)
-* `ex` - The executor (where to resume)
-* `token` - A stop token (for cancellation)
+* `h` — The handle (for resumption)
+* `env` — The execution environment containing:
+** `env.executor` — The executor (where to resume)
+** `env.stop_token` — A stop token (for cancellation)
+** `env.allocator` — An optional allocator for frame allocation
 
 *TMC's approach:*
 
@@ -419,7 +421,7 @@ TMC for compute scheduling, Capy/Corosio for I/O. They can coexist at different 
 | `ex_braid` (lock released on suspend)
 
 | Context propagation
-| `await_suspend` parameters
+| `await_suspend(h, env)`
 | `awaitable_traits` + TLS
 
 | Unknown awaitables

@@ -19,7 +19,7 @@
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/write_sink.hpp>
 #include <boost/capy/coro.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/io_task.hpp>
 
@@ -407,7 +407,7 @@ private:
 struct any_buffer_sink::awaitable_ops
 {
     bool (*await_ready)(void*);
-    coro (*await_suspend)(void*, coro, executor_ref const&, std::stop_token const&);
+    coro (*await_suspend)(void*, coro, io_env const&);
     io_result<> (*await_resume)(void*);
     void (*destroy)(void*) noexcept;
 };
@@ -416,7 +416,7 @@ struct any_buffer_sink::awaitable_ops
 struct any_buffer_sink::write_awaitable_ops
 {
     bool (*await_ready)(void*);
-    coro (*await_suspend)(void*, coro, executor_ref const&, std::stop_token const&);
+    coro (*await_suspend)(void*, coro, io_env const&);
     io_result<std::size_t> (*await_resume)(void*);
     void (*destroy)(void*) noexcept;
 };
@@ -492,9 +492,9 @@ struct any_buffer_sink::vtable_for_impl
             +[](void* p) {
                 return static_cast<CommitAwaitable*>(p)->await_ready();
             },
-            +[](void* p, coro h, executor_ref const& ex, std::stop_token const& token) {
+            +[](void* p, coro h, io_env const& env) {
                 return detail::call_await_suspend(
-                    static_cast<CommitAwaitable*>(p), h, ex, token);
+                    static_cast<CommitAwaitable*>(p), h, env);
             },
             +[](void* p) {
                 return static_cast<CommitAwaitable*>(p)->await_resume();
@@ -519,9 +519,9 @@ struct any_buffer_sink::vtable_for_impl
             +[](void* p) {
                 return static_cast<CommitEofAwaitable*>(p)->await_ready();
             },
-            +[](void* p, coro h, executor_ref const& ex, std::stop_token const& token) {
+            +[](void* p, coro h, io_env const& env) {
                 return detail::call_await_suspend(
-                    static_cast<CommitEofAwaitable*>(p), h, ex, token);
+                    static_cast<CommitEofAwaitable*>(p), h, env);
             },
             +[](void* p) {
                 return static_cast<CommitEofAwaitable*>(p)->await_resume();
@@ -552,9 +552,9 @@ struct any_buffer_sink::vtable_for_impl
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_ready();
             },
-            +[](void* p, coro h, executor_ref const& ex, std::stop_token const& token) {
+            +[](void* p, coro h, io_env const& env) {
                 return detail::call_await_suspend(
-                    static_cast<Aw*>(p), h, ex, token);
+                    static_cast<Aw*>(p), h, env);
             },
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_resume();
@@ -582,9 +582,9 @@ struct any_buffer_sink::vtable_for_impl
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_ready();
             },
-            +[](void* p, coro h, executor_ref const& ex, std::stop_token const& token) {
+            +[](void* p, coro h, io_env const& env) {
                 return detail::call_await_suspend(
-                    static_cast<Aw*>(p), h, ex, token);
+                    static_cast<Aw*>(p), h, env);
             },
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_resume();
@@ -612,9 +612,9 @@ struct any_buffer_sink::vtable_for_impl
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_ready();
             },
-            +[](void* p, coro h, executor_ref const& ex, std::stop_token const& token) {
+            +[](void* p, coro h, io_env const& env) {
                 return detail::call_await_suspend(
-                    static_cast<Aw*>(p), h, ex, token);
+                    static_cast<Aw*>(p), h, env);
             },
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_resume();
@@ -640,9 +640,9 @@ struct any_buffer_sink::vtable_for_impl
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_ready();
             },
-            +[](void* p, coro h, executor_ref const& ex, std::stop_token const& token) {
+            +[](void* p, coro h, io_env const& env) {
                 return detail::call_await_suspend(
-                    static_cast<Aw*>(p), h, ex, token);
+                    static_cast<Aw*>(p), h, env);
             },
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_resume();
@@ -833,10 +833,10 @@ any_buffer_sink::commit(std::size_t n)
         }
 
         coro
-        await_suspend(coro h, executor_ref const& ex, std::stop_token const& token)
+        await_suspend(coro h, io_env const& env)
         {
             return self_->active_ops_->await_suspend(
-                self_->cached_awaitable_, h, ex, token);
+                self_->cached_awaitable_, h, env);
         }
 
         io_result<>
@@ -875,10 +875,10 @@ any_buffer_sink::commit_eof(std::size_t n)
         }
 
         coro
-        await_suspend(coro h, executor_ref const& ex, std::stop_token const& token)
+        await_suspend(coro h, io_env const& env)
         {
             return self_->active_ops_->await_suspend(
-                self_->cached_awaitable_, h, ex, token);
+                self_->cached_awaitable_, h, env);
         }
 
         io_result<>
@@ -917,7 +917,7 @@ any_buffer_sink::write_some_(
         }
 
         coro
-        await_suspend(coro h, executor_ref const& ex, std::stop_token const& token)
+        await_suspend(coro h, io_env const& env)
         {
             self_->active_write_ops_ =
                 self_->vt_->construct_write_some_awaitable(
@@ -930,7 +930,7 @@ any_buffer_sink::write_some_(
                 return h;
 
             return self_->active_write_ops_->await_suspend(
-                self_->cached_awaitable_, h, ex, token);
+                self_->cached_awaitable_, h, env);
         }
 
         io_result<std::size_t>
@@ -967,7 +967,7 @@ any_buffer_sink::write_(
         }
 
         coro
-        await_suspend(coro h, executor_ref const& ex, std::stop_token const& token)
+        await_suspend(coro h, io_env const& env)
         {
             self_->active_write_ops_ =
                 self_->vt_->construct_write_awaitable(
@@ -980,7 +980,7 @@ any_buffer_sink::write_(
                 return h;
 
             return self_->active_write_ops_->await_suspend(
-                self_->cached_awaitable_, h, ex, token);
+                self_->cached_awaitable_, h, env);
         }
 
         io_result<std::size_t>
@@ -1017,7 +1017,7 @@ any_buffer_sink::write_eof_buffers_(
         }
 
         coro
-        await_suspend(coro h, executor_ref const& ex, std::stop_token const& token)
+        await_suspend(coro h, io_env const& env)
         {
             self_->active_write_ops_ =
                 self_->vt_->construct_write_eof_buffers_awaitable(
@@ -1030,7 +1030,7 @@ any_buffer_sink::write_eof_buffers_(
                 return h;
 
             return self_->active_write_ops_->await_suspend(
-                self_->cached_awaitable_, h, ex, token);
+                self_->cached_awaitable_, h, env);
         }
 
         io_result<std::size_t>
@@ -1172,10 +1172,10 @@ any_buffer_sink::write_eof()
         }
 
         coro
-        await_suspend(coro h, executor_ref const& ex, std::stop_token const& token)
+        await_suspend(coro h, io_env const& env)
         {
             return self_->active_ops_->await_suspend(
-                self_->cached_awaitable_, h, ex, token);
+                self_->cached_awaitable_, h, env);
         }
 
         io_result<>

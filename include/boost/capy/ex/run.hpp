@@ -15,8 +15,8 @@
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_launchable_task.hpp>
 #include <boost/capy/coro.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
+#include <boost/capy/ex/io_env.hpp>
 
 #include <memory_resource>
 #include <stop_token>
@@ -69,6 +69,10 @@ namespace boost::capy::detail {
     co_await expression's lifetime extension keeps both alive for the
     duration of the operation.
 
+    The `io_env` is owned by this awaitable and is guaranteed to
+    outlive the inner task and all awaitables in its chain. Awaitables
+    may store `io_env const*` without concern for dangling references.
+
     @tparam Task The IoLaunchableTask type
     @tparam Ex The executor type
     @tparam InheritStopToken If true, inherit caller's stop token
@@ -79,8 +83,9 @@ struct [[nodiscard]] run_awaitable_ex
 {
     Ex ex_;
     frame_memory_resource<Alloc> resource_;
-    Task inner_;
     std::conditional_t<InheritStopToken, std::monostate, std::stop_token> st_;
+    io_env env_;
+    Task inner_;  // Last: destroyed first, while env_ is still valid
 
     // void allocator, inherit stop token
     run_awaitable_ex(Ex ex, Task inner)
@@ -94,8 +99,8 @@ struct [[nodiscard]] run_awaitable_ex
     run_awaitable_ex(Ex ex, Task inner, std::stop_token st)
         requires (!InheritStopToken && std::is_void_v<Alloc>)
         : ex_(std::move(ex))
-        , inner_(std::move(inner))
         , st_(std::move(st))
+        , inner_(std::move(inner))
     {
     }
 
@@ -115,8 +120,8 @@ struct [[nodiscard]] run_awaitable_ex
     run_awaitable_ex(Ex ex, A alloc, Task inner, std::stop_token st)
         : ex_(std::move(ex))
         , resource_(std::move(alloc))
-        , inner_(std::move(inner))
         , st_(std::move(st))
+        , inner_(std::move(inner))
     {
     }
 
@@ -130,25 +135,24 @@ struct [[nodiscard]] run_awaitable_ex
         return inner_.await_resume();
     }
 
-    template<typename Caller>
-    coro await_suspend(coro cont, Caller const& caller_ex, std::stop_token token)
+    coro await_suspend(coro cont, io_env const& caller_env)
     {
         auto h = inner_.handle();
         auto& p = h.promise();
-        p.set_executor(ex_);
-        p.set_continuation(cont, caller_ex);
+        p.set_continuation(cont, caller_env.executor);
 
+        env_.executor = ex_;
         if constexpr (InheritStopToken)
-            p.set_stop_token(token);
+            env_.stop_token = caller_env.stop_token;
         else
-            p.set_stop_token(st_);
+            env_.stop_token = st_;
 
-        // Refresh TLS pointer to this awaitable's resource. The wrapper's
-        // resource may be destroyed, but allocator copies are equivalent
-        // for deallocation. This awaitable lives until co_await completes.
         if constexpr (!std::is_void_v<Alloc>)
-            p.set_frame_allocator(resource_.get());
+            env_.allocator = resource_.get();
+        else
+            env_.allocator = caller_env.allocator;
 
+        p.set_environment(env_);
         return h;
     }
 
@@ -181,8 +185,9 @@ template<IoLaunchableTask Task, bool InheritStopToken, class Alloc = void>
 struct [[nodiscard]] run_awaitable
 {
     frame_memory_resource<Alloc> resource_;
-    Task inner_;
     std::conditional_t<InheritStopToken, std::monostate, std::stop_token> st_;
+    io_env env_;
+    Task inner_;  // Last: destroyed first, while env_ is still valid
 
     // void allocator, inherit stop token
     explicit run_awaitable(Task inner)
@@ -194,8 +199,8 @@ struct [[nodiscard]] run_awaitable
     // void allocator, explicit stop token
     run_awaitable(Task inner, std::stop_token st)
         requires (!InheritStopToken && std::is_void_v<Alloc>)
-        : inner_(std::move(inner))
-        , st_(std::move(st))
+        : st_(std::move(st))
+        , inner_(std::move(inner))
     {
     }
 
@@ -213,8 +218,8 @@ struct [[nodiscard]] run_awaitable
         requires (!InheritStopToken && !std::is_void_v<Alloc> && std::same_as<A, Alloc>)
     run_awaitable(A alloc, Task inner, std::stop_token st)
         : resource_(std::move(alloc))
-        , inner_(std::move(inner))
         , st_(std::move(st))
+        , inner_(std::move(inner))
     {
     }
 
@@ -228,25 +233,24 @@ struct [[nodiscard]] run_awaitable
         return inner_.await_resume();
     }
 
-    template<typename Caller>
-    coro await_suspend(coro cont, Caller const& caller_ex, std::stop_token token)
+    coro await_suspend(coro cont, io_env const& caller_env)
     {
         auto h = inner_.handle();
         auto& p = h.promise();
-        p.set_executor(caller_ex);
-        p.set_continuation(cont, caller_ex);
+        p.set_continuation(cont, caller_env.executor);
 
+        env_.executor = caller_env.executor;
         if constexpr (InheritStopToken)
-            p.set_stop_token(token);
+            env_.stop_token = caller_env.stop_token;
         else
-            p.set_stop_token(st_);
+            env_.stop_token = st_;
 
-        // Refresh TLS pointer to this awaitable's resource. The wrapper's
-        // resource may be destroyed, but allocator copies are equivalent
-        // for deallocation. This awaitable lives until co_await completes.
         if constexpr (!std::is_void_v<Alloc>)
-            p.set_frame_allocator(resource_.get());
+            env_.allocator = resource_.get();
+        else
+            env_.allocator = caller_env.allocator;
 
+        p.set_environment(env_);
         return h;
     }
 

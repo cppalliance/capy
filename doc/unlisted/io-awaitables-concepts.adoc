@@ -37,24 +37,24 @@ synchronization everywhere.
 
 == The Solution: Extended await_suspend
 
-Capy awaitables receive context parameters in `await_suspend`:
+Capy awaitables receive context via `io_env` in `await_suspend`:
 
 [source,cpp]
 ----
-auto await_suspend(std::coroutine_handle<> h, executor_ref ex, std::stop_token token)
+auto await_suspend(std::coroutine_handle<> h, io_env const& env)
 {
     // Now we know where to dispatch and can check cancellation
-    if (token.stop_requested())
-        return ex.dispatch(h);  // Resume on correct executor
+    if (env.stop_token.stop_requested())
+        return env.executor.dispatch(h);  // Resume on correct executor
 
-    start_io([h, ex]() {
+    start_io([h, ex = env.executor]() {
         ex.dispatch(h).resume();  // Completion on correct executor
     });
     return std::noop_coroutine();
 }
 ----
 
-The promise passes executor and stop token to every awaitable through
+The promise passes the execution environment to every awaitable through
 `await_transform`.
 
 == Concept Hierarchy
@@ -78,20 +78,20 @@ The base concept. An `IoAwaitable` can receive context when awaited:
 [source,cpp]
 ----
 template<typename T>
-concept IoAwaitable = requires(T a, std::coroutine_handle<> h,
-                               executor_ref ex, std::stop_token token)
+concept IoAwaitable = requires(T a, std::coroutine_handle<> h, io_env const& env)
 {
     { a.await_ready() } -> std::convertible_to<bool>;
-    { a.await_suspend(h, ex, token) };  // Three-argument form
+    { a.await_suspend(h, env) };  // Two-argument form with io_env
     a.await_resume();
 };
 ----
 
 Key features:
 
-* Three-argument `await_suspend` receives executor and stop token
+* Two-argument `await_suspend` receives `io_env` containing executor and stop token
 * Works with any executor type (via `executor_ref`)
 * Enables automatic context propagation
+* Awaitables should store the `io_env` as a pointer (`io_env const*`), never a copy. Launch functions guarantee the `io_env` outlives the operation.
 
 Reference: `<boost/capy/concept/io_awaitable.hpp>`
 
@@ -106,20 +106,17 @@ template<typename T>
 concept IoAwaitableTask = IoAwaitable<T> && requires
 {
     typename T::promise_type;
-    requires requires(typename T::promise_type& p, executor_ref ex,
-                     std::stop_token token)
+    requires requires(typename T::promise_type& p, io_env const& env)
     {
-        p.set_executor(ex);
-        { p.executor() } -> std::same_as<executor_ref>;
-        p.set_stop_token(token);
-        { p.stop_token() } -> std::same_as<std::stop_token>;
+        p.set_environment(env);
+        { p.environment() } -> std::same_as<io_env const&>;
     };
 };
 ----
 
 Key features:
 
-* Stores executor and stop token in the promise
+* Stores execution environment in the promise
 * Can propagate context to child awaitables
 * Bidirectional: receives context _and_ provides it to children
 
@@ -194,12 +191,12 @@ io_operation's await_suspend(h, ex, token)
 
 === Forward Propagation (Capy's Approach)
 
-Context flows _forward_ through `await_suspend` parameters:
+Context flows _forward_ through `await_suspend` via `io_env`:
 
 [source,cpp]
 ----
 // Parent passes context to child
-child.await_suspend(handle, executor, stop_token);
+child.await_suspend(handle, env);
 ----
 
 Benefits:
@@ -254,8 +251,7 @@ struct my_task
 
 The mixin provides:
 
-* `set_executor(ex)` / `executor()` — executor storage
-* `set_stop_token(token)` / `stop_token()` — stop token storage
+* `set_environment(env)` / `environment()` — execution environment storage
 * `await_transform()` — intercepts awaitables and injects context
 * `set_continuation(h, ex)` / `complete()` — completion handling
 
@@ -285,7 +281,7 @@ struct transform_awaiter
     auto await_suspend(std::coroutine_handle<> h)
     {
         // Inject context from promise
-        return a_.await_suspend(h, p_->executor(), p_->stop_token());
+        return a_.await_suspend(h, p_->environment());
     }
 
     decltype(auto) await_resume() { return a_.await_resume(); }

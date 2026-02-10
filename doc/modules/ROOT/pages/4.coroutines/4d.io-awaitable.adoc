@@ -36,20 +36,22 @@ One approach: the awaitable queries the calling coroutine's promise for context.
 
 Capy uses *forward propagation*: the caller passes context to the awaitable through an extended `await_suspend` signature.
 
-== The Three-Argument await_suspend
+== The Two-Argument await_suspend
 
 The IoAwaitable protocol extends `await_suspend` to receive context:
 
 [source,cpp]
 ----
-coro await_suspend(coro h, executor_ref ex, std::stop_token token);
+coro await_suspend(coro h, io_env const& env);
 ----
 
 This signature receives:
 
 * `h` — The coroutine handle (as in standard awaiters)
-* `ex` — The caller's executor for dispatching completions
-* `token` — A stop token for cooperative cancellation
+* `env` — The execution environment containing:
+** `env.executor` — The caller's executor for dispatching completions
+** `env.stop_token` — A stop token for cooperative cancellation
+** `env.allocator` — An optional allocator for frame allocation
 
 The return type enables symmetric transfer.
 
@@ -60,23 +62,21 @@ An awaitable satisfies `IoAwaitable` if:
 [source,cpp]
 ----
 template<typename T>
-concept IoAwaitable = requires(T& t, coro h, executor_ref ex, std::stop_token st) {
+concept IoAwaitable = requires(T& t, coro h, io_env const& env) {
     { t.await_ready() } -> std::convertible_to<bool>;
-    { t.await_suspend(h, ex, st) } -> std::same_as<coro>;
+    { t.await_suspend(h, env) } -> std::same_as<coro>;
     t.await_resume();
 };
 ----
 
-The key difference from standard awaitables is the three-argument `await_suspend`.
+The key difference from standard awaitables is the two-argument `await_suspend` that receives the `io_env`.
 
 == IoAwaitableTask Concept
 
 A task type satisfies `IoAwaitableTask` if its promise provides:
 
-* `set_executor(executor_ref)` — Store the propagated executor
-* `executor()` — Retrieve the stored executor
-* `set_stop_token(std::stop_token)` — Store the propagated stop token
-* `stop_token()` — Retrieve the stored stop token
+* `set_environment(io_env const&)` — Store the propagated execution environment
+* `environment()` — Retrieve the stored environment
 
 Capy's `task<T>` satisfies this concept.
 
@@ -105,7 +105,7 @@ template<class Awaitable>
 auto await_suspend(std::coroutine_handle<Promise> h)
 {
     // Forward caller's context to child
-    return awaitable_.await_suspend(h, promise_.executor(), promise_.stop_token());
+    return awaitable_.await_suspend(h, promise_.environment());
 }
 ----
 
@@ -129,17 +129,20 @@ To create a custom IoAwaitable:
 ----
 struct my_awaitable
 {
+    io_env const* env_ = nullptr;
+    coro continuation_;
+    result_type result_;
+
     bool await_ready() const noexcept
     {
         return false;  // Or true if result is immediately available
     }
     
-    coro await_suspend(coro h, executor_ref ex, std::stop_token token)
+    coro await_suspend(coro h, io_env const& env)
     {
-        // Store continuation and context
+        // Store pointer to environment, never copy
+        env_ = &env;
         continuation_ = h;
-        executor_ = ex;
-        stop_token_ = token;
         
         // Start async operation...
         start_operation();
@@ -157,14 +160,14 @@ private:
     void on_completion()
     {
         // Resume on caller's executor
-        executor_.dispatch(continuation_).resume();
+        env_->executor.dispatch(continuation_);
     }
 };
 ----
 
 The key points:
 
-1. Store the continuation and executor in `await_suspend`
+1. Store the `io_env` as a pointer (`io_env const*`), never a copy. Launch functions guarantee the `io_env` outlives the awaitable's operation.
 2. Use the executor to dispatch completion
 3. Respect the stop token for cancellation
 

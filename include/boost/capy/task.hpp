@@ -14,7 +14,7 @@
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/io_awaitable_support.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 
 #include <exception>
@@ -143,14 +143,12 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
                 void await_suspend(coro) const noexcept
                 {
-                    // Capture TLS allocator while it's still valid
-                    p_->set_frame_allocator(current_frame_allocator());
                 }
 
                 void await_resume() const noexcept
                 {
                     // Restore TLS when body starts executing
-                    auto* fa = p_->frame_allocator();
+                    auto* fa = p_->environment().allocator;
                     if(fa && fa != current_frame_allocator())
                         current_frame_allocator() = fa;
                 }
@@ -201,7 +199,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             decltype(auto) await_resume()
             {
                 // Restore TLS before body resumes
-                auto* fa = p_->frame_allocator();
+                auto* fa = p_->environment().allocator;
                 if(fa && fa != current_frame_allocator())
                     current_frame_allocator() = fa;
                 return a_.await_resume();
@@ -210,7 +208,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             template<class Promise>
             auto await_suspend(std::coroutine_handle<Promise> h) noexcept
             {
-                return a_.await_suspend(h, p_->executor(), p_->stop_token());
+                return a_.await_suspend(h, p_->environment());
             }
         };
 
@@ -257,12 +255,10 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     }
 
     /// Start execution with the caller's context.
-    coro await_suspend(coro cont,
-        executor_ref const& caller_ex, std::stop_token const& token)
+    coro await_suspend(coro cont, io_env const& env)
     {
-        h_.promise().set_continuation(cont, caller_ex);
-        h_.promise().set_executor(caller_ex);
-        h_.promise().set_stop_token(token);
+        h_.promise().set_continuation(cont, env.executor);
+        h_.promise().set_environment(env);
         return h_;
     }
 

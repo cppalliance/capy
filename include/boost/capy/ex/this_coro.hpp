@@ -26,14 +26,27 @@ namespace capy {
     @code
     task<void> example()
     {
+        auto const& env = co_await this_coro::environment;
         auto ex = co_await this_coro::executor;
         auto token = co_await this_coro::stop_token;
+        auto* alloc = co_await this_coro::allocator;
     }
     @endcode
 
-    @see io_awaitable_support
+    @see io_awaitable_support, io_env
 */
 namespace this_coro {
+
+/** Tag type for coroutine environment retrieval.
+
+    This tag is intercepted by a promise type's `await_transform` to
+    yield the coroutine's current execution environment. The tag itself
+    carries no data; it serves only as a sentinel for compile-time dispatch.
+
+    @see environment
+    @see io_awaitable_support
+*/
+struct environment_tag {};
 
 /** Tag type for coroutine executor retrieval.
 
@@ -57,6 +70,45 @@ struct executor_tag {};
 */
 struct stop_token_tag {};
 
+/** Tag type for coroutine allocator retrieval.
+
+    This tag is intercepted by a promise type's `await_transform` to
+    yield the coroutine's current frame allocator. The tag itself carries
+    no data; it serves only as a sentinel for compile-time dispatch.
+
+    @see allocator
+    @see io_awaitable_support
+*/
+struct allocator_tag {};
+
+/** Tag object that yields the current environment when awaited.
+
+    Use `co_await this_coro::environment` inside a coroutine whose promise
+    type supports environment access (e.g., inherits from
+    @ref io_awaitable_support). The returned environment contains the
+    executor, stop token, and allocator for this coroutine.
+
+    @par Example
+    @code
+    task<void> example()
+    {
+        auto const& env = co_await this_coro::environment;
+        // env.executor - the executor this coroutine is bound to
+        // env.stop_token - the stop token for cancellation
+        // env.allocator - the allocator for frame allocation
+    }
+    @endcode
+
+    @par Behavior
+    @li Returns a const reference to the stored `io_env`
+    @li This operation never suspends; `await_ready()` always returns `true`
+
+    @see environment_tag
+    @see io_awaitable_support
+    @see io_env
+*/
+inline constexpr environment_tag environment{};
+
 /** Tag object that yields the current executor when awaited.
 
     Use `co_await this_coro::executor` inside a coroutine whose promise
@@ -69,7 +121,6 @@ struct stop_token_tag {};
     task<void> example()
     {
         executor_ref ex = co_await this_coro::executor;
-        // ex is the executor this coroutine is bound to
     }
     @endcode
 
@@ -95,12 +146,8 @@ inline constexpr executor_tag executor{};
     task<void> cancellable_work()
     {
         auto token = co_await this_coro::stop_token;
-        for (int i = 0; i < 1000; ++i)
-        {
-            if (token.stop_requested())
-                co_return;  // Exit gracefully on cancellation
-            co_await process_chunk(i);
-        }
+        if (token.stop_requested())
+            co_return;
     }
     @endcode
 
@@ -114,6 +161,31 @@ inline constexpr executor_tag executor{};
     @see io_awaitable_support
 */
 inline constexpr stop_token_tag stop_token{};
+
+/** Tag object that yields the current frame allocator when awaited.
+
+    Use `co_await this_coro::allocator` inside a coroutine whose promise
+    type supports allocator access (e.g., inherits from
+    @ref io_awaitable_support). The returned pointer is the memory resource
+    used for coroutine frame allocation.
+
+    @par Example
+    @code
+    task<void> example()
+    {
+        auto* alloc = co_await this_coro::allocator;
+        // alloc is nullptr when using the default allocator
+    }
+    @endcode
+
+    @par Behavior
+    @li Returns `nullptr` when the default allocator is in use.
+    @li This operation never suspends; `await_ready()` always returns `true`.
+
+    @see allocator_tag
+    @see io_awaitable_support
+*/
+inline constexpr allocator_tag allocator{};
 
 } // namespace this_coro
 } // namespace capy

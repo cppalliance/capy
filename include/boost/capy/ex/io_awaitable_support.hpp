@@ -12,8 +12,8 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/coro.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 
 #include <coroutine>
@@ -32,26 +32,19 @@ namespace capy {
     1. **Frame allocation** — The mixin provides `operator new/delete` that
        use the thread-local frame allocator set by `run_async`.
 
-    2. **Frame allocator storage** — The mixin stores the allocator pointer
-       for propagation to child tasks.
+    2. **Environment storage** — The mixin stores a pointer to the `io_env`
+       containing the executor, stop token, and allocator for this coroutine.
 
-    3. **Stop token storage** — The mixin stores the `std::stop_token`
-       that was passed when your coroutine was awaited.
-
-    4. **Stop token access** — Coroutine code can retrieve the token via
-       `co_await this_coro::stop_token`.
-
-    5. **Executor storage** — The mixin stores the `executor_ref`
-       that this coroutine is bound to.
-
-    6. **Executor access** — Coroutine code can retrieve the executor via
-       `co_await this_coro::executor`.
+    3. **Environment access** — Coroutine code can retrieve the environment
+       via `co_await this_coro::environment`, or individual fields via
+       `co_await this_coro::executor`, `co_await this_coro::stop_token`,
+       and `co_await this_coro::allocator`.
 
     @tparam Derived The derived promise type (CRTP pattern).
 
     @par Basic Usage
 
-    For coroutines that need to access their stop token or executor:
+    For coroutines that need to access their execution environment:
 
     @code
     struct my_task
@@ -70,9 +63,13 @@ namespace capy {
 
     my_task example()
     {
-        auto token = co_await this_coro::stop_token;
+        auto const& env = co_await this_coro::environment;
+        // Access env.executor, env.stop_token, env.allocator
+
+        // Or use fine-grained accessors:
         auto ex = co_await this_coro::executor;
-        // Use token and ex...
+        auto token = co_await this_coro::stop_token;
+        auto* alloc = co_await this_coro::allocator;
     }
     @endcode
 
@@ -93,16 +90,17 @@ namespace capy {
     };
     @endcode
 
-    The mixin's `await_transform` intercepts @ref this_coro::stop_token_tag and
-    @ref this_coro::executor_tag, then delegates all other awaitables to your
-    `transform_awaitable`.
+    The mixin's `await_transform` intercepts @ref this_coro::environment_tag
+    and the fine-grained tag types (@ref this_coro::executor_tag,
+    @ref this_coro::stop_token_tag, @ref this_coro::allocator_tag),
+    then delegates all other awaitables to your `transform_awaitable`.
 
     @par Making Your Coroutine an IoAwaitable
 
-    The mixin handles the "inside the coroutine" part—accessing the token
-    and executor. To receive these when your coroutine is awaited (satisfying
-    @ref IoAwaitable), implement the `await_suspend` overload on your
-    coroutine return type:
+    The mixin handles the "inside the coroutine" part—accessing the
+    environment. To receive the environment when your coroutine is awaited
+    (satisfying @ref IoAwaitable), implement the `await_suspend` overload
+    on your coroutine return type:
 
     @code
     struct my_task
@@ -111,32 +109,29 @@ namespace capy {
 
         std::coroutine_handle<promise_type> h_;
 
-        // IoAwaitable await_suspend receives and stores the token and executor
-        coro await_suspend(coro cont, executor_ref const& ex, std::stop_token const& token)
+        // IoAwaitable await_suspend receives and stores the environment
+        coro await_suspend(coro cont, io_env const& env)
         {
-            h_.promise().set_stop_token(token);
-            h_.promise().set_executor(ex);
+            h_.promise().set_environment(env);
             // ... rest of suspend logic ...
         }
     };
     @endcode
 
     @par Thread Safety
-    The stop token and executor are stored during `await_suspend` and read
-    during `co_await this_coro::stop_token` or `co_await this_coro::executor`.
-    These occur on the same logical thread of execution, so no synchronization
-    is required.
+    The environment is stored during `await_suspend` and read during
+    `co_await this_coro::environment`. These occur on the same logical
+    thread of execution, so no synchronization is required.
 
-    @see this_coro::stop_token
-    @see this_coro::executor
+    @see this_coro::environment, this_coro::executor,
+         this_coro::stop_token, this_coro::allocator
+    @see io_env
     @see IoAwaitable
 */
 template<typename Derived>
 class io_awaitable_support
 {
-    executor_ref executor_;
-    std::stop_token stop_token_;
-    std::pmr::memory_resource* alloc_ = nullptr;
+    io_env const* env_ = &detail::empty_io_env;
     executor_ref caller_ex_;
     mutable coro cont_{nullptr};
 
@@ -206,29 +201,6 @@ public:
             cont_.destroy();
     }
 
-    /** Store a frame allocator for later retrieval.
-
-        Call this from initial_suspend to capture the current
-        TLS allocator for propagation to child tasks.
-
-        @param alloc The allocator to store.
-    */
-    void
-    set_frame_allocator(std::pmr::memory_resource* alloc) noexcept
-    {
-        alloc_ = alloc;
-    }
-
-    /** Return the stored frame allocator.
-
-        @return The allocator, or nullptr if none was set.
-    */
-    std::pmr::memory_resource*
-    frame_allocator() const noexcept
-    {
-        return alloc_;
-    }
-
     //----------------------------------------------------------
     // Continuation support
     //----------------------------------------------------------
@@ -265,54 +237,37 @@ public:
     {
         if(!cont_)
             return std::noop_coroutine();
-        if(executor_ == caller_ex_)
+        if(env_->executor == caller_ex_)
             return std::exchange(cont_, nullptr);
         caller_ex_.dispatch(std::exchange(cont_, nullptr));
         return std::noop_coroutine();
     }
 
-    /** Store a stop token for later retrieval.
+    //----------------------------------------------------------
+    // Environment support
+    //----------------------------------------------------------
+
+    /** Store a pointer to the execution environment.
 
         Call this from your coroutine type's `await_suspend`
-        overload to make the token available via
-        `co_await this_coro::stop_token`.
+        overload to make the environment available via
+        `co_await this_coro::environment`. The referenced
+        `io_env` must outlive this coroutine.
 
-        @param token The stop token to store.
+        @param env The environment to reference.
     */
-    void set_stop_token(std::stop_token token) noexcept
+    void set_environment(io_env const& env) noexcept
     {
-        stop_token_ = token;
+        env_ = &env;
     }
 
-    /** Return the stored stop token.
+    /** Return the stored execution environment.
 
-        @return The stop token, or a default-constructed token if none was set.
+        @return The environment.
     */
-    std::stop_token const& stop_token() const noexcept
+    io_env const& environment() const noexcept
     {
-        return stop_token_;
-    }
-
-    /** Store an executor for later retrieval.
-
-        Call this from your coroutine type's `await_suspend`
-        overload to make the executor available via
-        `co_await this_coro::executor`.
-
-        @param ex The executor to store.
-    */
-    void set_executor(executor_ref ex) noexcept
-    {
-        executor_ = ex;
-    }
-
-    /** Return the stored executor.
-
-        @return The executor, or a default-constructed executor_ref if none was set.
-    */
-    executor_ref executor() const noexcept
-    {
-        return executor_;
+        return *env_;
     }
 
     /** Transform an awaitable before co_await.
@@ -333,10 +288,11 @@ public:
 
     /** Intercept co_await expressions.
 
-        This function handles @ref this_coro::stop_token_tag and
-        @ref this_coro::executor_tag specially, returning an awaiter that
-        yields the stored value. All other awaitables are delegated to
-        @ref transform_awaitable.
+        This function handles @ref this_coro::environment_tag and
+        the fine-grained tags (@ref this_coro::executor_tag,
+        @ref this_coro::stop_token_tag, @ref this_coro::allocator_tag)
+        specially, returning an awaiter that yields the stored value.
+        All other awaitables are delegated to @ref transform_awaitable.
 
         @param t The awaited expression.
 
@@ -345,49 +301,51 @@ public:
     template<typename T>
     auto await_transform(T&& t)
     {
-        if constexpr (std::is_same_v<std::decay_t<T>, this_coro::stop_token_tag>)
+        using Tag = std::decay_t<T>;
+
+        if constexpr (std::is_same_v<Tag, this_coro::environment_tag>)
         {
             struct awaiter
             {
-                std::stop_token token_;
-
-                bool await_ready() const noexcept
-                {
-                    return true;
-                }
-
-                void await_suspend(coro) const noexcept
-                {
-                }
-
-                std::stop_token await_resume() const noexcept
-                {
-                    return token_;
-                }
+                io_env const* env_;
+                bool await_ready() const noexcept { return true; }
+                void await_suspend(coro) const noexcept { }
+                io_env const& await_resume() const noexcept { return *env_; }
             };
-            return awaiter{stop_token_};
+            return awaiter{env_};
         }
-        else if constexpr (std::is_same_v<std::decay_t<T>, this_coro::executor_tag>)
+        else if constexpr (std::is_same_v<Tag, this_coro::executor_tag>)
         {
             struct awaiter
             {
                 executor_ref executor_;
-
-                bool await_ready() const noexcept
-                {
-                    return true;
-                }
-
-                void await_suspend(coro) const noexcept
-                {
-                }
-
-                executor_ref await_resume() const noexcept
-                {
-                    return executor_;
-                }
+                bool await_ready() const noexcept { return true; }
+                void await_suspend(coro) const noexcept { }
+                executor_ref await_resume() const noexcept { return executor_; }
             };
-            return awaiter{executor_};
+            return awaiter{env_->executor};
+        }
+        else if constexpr (std::is_same_v<Tag, this_coro::stop_token_tag>)
+        {
+            struct awaiter
+            {
+                std::stop_token token_;
+                bool await_ready() const noexcept { return true; }
+                void await_suspend(coro) const noexcept { }
+                std::stop_token await_resume() const noexcept { return token_; }
+            };
+            return awaiter{env_->stop_token};
+        }
+        else if constexpr (std::is_same_v<Tag, this_coro::allocator_tag>)
+        {
+            struct awaiter
+            {
+                std::pmr::memory_resource* allocator_;
+                bool await_ready() const noexcept { return true; }
+                void await_suspend(coro) const noexcept { }
+                std::pmr::memory_resource* await_resume() const noexcept { return allocator_; }
+            };
+            return awaiter{env_->allocator};
         }
         else
         {

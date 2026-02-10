@@ -20,6 +20,7 @@
 #include <boost/capy/buffers/buffer_array.hpp>
 #include <boost/capy/concept/stream.hpp>
 #include <boost/capy/coro.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 
 #include <cstddef>
@@ -99,16 +100,15 @@ public:
         capy::coro
         await_suspend(
             capy::coro h,
-            capy::executor_ref ex,
-            std::stop_token st)
+            capy::io_env const& env)
         {
-            cancel_ = std::make_shared<cancel_state>(st);
+            cancel_ = std::make_shared<cancel_state>(env.stop_token);
 
             self_->socket_.async_read_some(
                 capy::mutable_buffer_array<8>(buffers_),
                 net::bind_cancellation_slot(
                     cancel_->signal.slot(),
-                    [this, h, ex](
+                    [this, h, ex = env.executor](
                         boost::system::error_code ec,
                         std::size_t n) mutable
                     {
@@ -162,16 +162,15 @@ public:
         capy::coro
         await_suspend(
             capy::coro h,
-            capy::executor_ref ex,
-            std::stop_token st)
+            capy::io_env const& env)
         {
-            cancel_ = std::make_shared<cancel_state>(st);
+            cancel_ = std::make_shared<cancel_state>(env.stop_token);
 
             self_->socket_.async_write_some(
                 capy::const_buffer_array<8>(buffers_),
                 net::bind_cancellation_slot(
                     cancel_->signal.slot(),
-                    [this, h, ex](
+                    [this, h, ex = env.executor](
                         boost::system::error_code ec,
                         std::size_t n) mutable
                     {

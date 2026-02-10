@@ -10,10 +10,11 @@
 // Test that header file is self-contained.
 #include <boost/capy/concept/write_sink.hpp>
 
+#include <boost/capy/ex/io_env.hpp>
+
 #include <system_error>
 
 #include <cstddef>
-#include <stop_token>
 #include <tuple>
 #include <utility>
 
@@ -29,8 +30,7 @@ struct mock_sink_awaitable
 
     void await_suspend(
         coro,
-        executor_ref,
-        std::stop_token) const noexcept
+        io_env const&) const noexcept
     {
     }
 
@@ -48,8 +48,7 @@ struct mock_sink_awaitable_with_size
 
     void await_suspend(
         coro,
-        executor_ref,
-        std::stop_token) const noexcept
+        io_env const&) const noexcept
     {
     }
 
@@ -67,8 +66,7 @@ struct mock_sink_awaitable_int
 
     void await_suspend(
         coro,
-        executor_ref,
-        std::stop_token) const noexcept
+        io_env const&) const noexcept
     {
     }
 

@@ -8,6 +8,7 @@
 //
 
 #include <boost/capy.hpp>
+#include <boost/capy/ex/this_coro.hpp>
 #include <boost/capy/test/stream.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 #include <chrono>

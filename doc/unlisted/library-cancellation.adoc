@@ -48,7 +48,7 @@ task<void> child()
 
 task<void> parent()
 {
-    co_await child();  // child sees our token
+    co_await child();  // child sees our environment
 }
 
 std::stop_source source;
@@ -79,7 +79,7 @@ task<void> long_running()
 }
 ----
 
-`this_coro::stop_token` never suspends—it returns immediately.
+`this_coro::environment` never suspends—it returns immediately.
 
 == Implementing Stoppable Operations
 
@@ -90,6 +90,7 @@ Custom awaitables can support cancellation:
 struct stoppable_timer
 {
     std::chrono::milliseconds duration_;
+    io_env const* env_ = nullptr;
     bool cancelled_ = false;
 
     bool await_ready() const
@@ -97,22 +98,22 @@ struct stoppable_timer
         return duration_.count() <= 0;
     }
 
-    void await_suspend(std::coroutine_handle<> h,
-                       executor_ref ex,
-                       std::stop_token token)
+    void await_suspend(std::coroutine_handle<> h, io_env const& env)
     {
-        if (token.stop_requested())
+        env_ = &env;  // Store pointer, never copy
+
+        if (env_->stop_token.stop_requested())
         {
             cancelled_ = true;
-            ex.dispatch(h).resume();
+            env_->executor.dispatch(h).resume();
             return;
         }
 
-        auto handle = start_timer(duration_, [h, ex]() {
+        auto handle = start_timer(duration_, [h, ex = env_->executor]() {
             ex.dispatch(h).resume();
         });
 
-        std::stop_callback cb(token, [handle]() {
+        std::stop_callback cb(env_->stop_token, [handle]() {
             cancel_timer(handle);
         });
     }
@@ -229,8 +230,8 @@ task<void> with_raii()
 | `std::stop_token`
 | Observer that checks if stop was requested
 
-| `this_coro::stop_token`
-| Query current token inside coroutine
+| `this_coro::environment`
+| Query current environment (including stop token) inside coroutine
 
 | `std::stop_callback`
 | Execute code when stop is requested

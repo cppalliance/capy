@@ -106,7 +106,7 @@ Stop tokens flow forward through `co_await`, just like executors:
 ----
 task<void> child()
 {
-    // Inherits parent's stop token
+    // Inherits parent's stop token via environment
     auto token = co_await this_coro::stop_token;
     if (token.stop_requested())
         co_return;
@@ -114,7 +114,7 @@ task<void> child()
 
 task<void> parent()
 {
-    // Our stop token is passed to child
+    // Our environment is passed to child
     co_await child();
 }
 
@@ -156,7 +156,7 @@ task<void> cancellable_work()
 }
 ----
 
-`this_coro::stop_token` never suspends—it's intercepted by `await_transform` and
+`this_coro::environment` never suspends—it's intercepted by `await_transform` and
 returns immediately.
 
 == Implementing Stoppable Awaitables
@@ -169,6 +169,7 @@ struct stoppable_timer
 {
     std::chrono::milliseconds duration_;
     timer_handle handle_;
+    io_env const* env_ = nullptr;
     bool cancelled_ = false;
 
     bool await_ready() const
@@ -176,29 +177,29 @@ struct stoppable_timer
         return duration_.count() <= 0;
     }
 
-    void await_suspend(std::coroutine_handle<> h,
-                       executor_ref ex,
-                       std::stop_token token)
+    void await_suspend(std::coroutine_handle<> h, io_env const& env)
     {
+        env_ = &env;  // Store pointer, never copy
+
         // Check if already cancelled
-        if (token.stop_requested())
+        if (env_->stop_token.stop_requested())
         {
             cancelled_ = true;
-            ex.dispatch(h).resume();
+            env_->executor.dispatch(h).resume();
             return;
         }
 
         // Start timer
-        handle_ = start_timer(duration_, [h, ex]() {
+        handle_ = start_timer(duration_, [h, ex = env_->executor]() {
             ex.dispatch(h).resume();
         });
 
         // Cancel timer if stop requested
-        if (token.stop_possible())
+        if (env_->stop_token.stop_possible())
         {
             // Note: stop_callback must outlive the operation
             // In real code, store in coroutine frame or awaiter
-            std::stop_callback cb(token, [this]() {
+            std::stop_callback cb(env_->stop_token, [this]() {
                 cancel_timer(handle_);
             });
         }
@@ -260,8 +261,6 @@ Cancellation is not an error—it's an expected outcome:
 ----
 task<std::optional<result>> fetch_with_timeout()
 {
-    auto token = co_await this_coro::stop_token;
-
     try {
         auto data = co_await fetch_data();
         co_return data;
@@ -305,8 +304,8 @@ Do NOT use cancellation when:
 | `std::stop_callback`
 | Execute code when stop is requested
 
-| `this_coro::stop_token`
-| Query current token inside coroutine
+| `this_coro::environment`
+| Query current environment (including stop token) inside coroutine
 
 | `when_all` stop propagation
 | Sibling cancellation on first error

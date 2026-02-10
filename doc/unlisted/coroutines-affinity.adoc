@@ -174,19 +174,20 @@ executor type without templating everything.
 
 == Querying the Current Executor
 
-Within a coroutine, use `co_await this_coro::executor` to retrieve the current
-executor that this coroutine is bound to:
+Within a coroutine, use `co_await this_coro::environment` to retrieve the current
+execution environment that this coroutine is bound to:
 
 [source,cpp]
 ----
 task<void> example()
 {
-    executor_ref ex = co_await this_coro::executor;
+    auto const& env = co_await this_coro::environment;
+    executor_ref ex = env.executor;
     // ex is the executor this coroutine is bound to
 }
 ----
 
-The `this_coro::executor` is a tag that the promise intercepts via
+The `this_coro::environment` is a tag that the promise intercepts via
 `await_transform`. This operation never suspends—`await_ready()` always
 returns `true`.
 
@@ -222,8 +223,8 @@ Do NOT use `run` when:
 | `run`
 | Explicitly binds a child to a different executor
 
-| `this_coro::executor`
-| Retrieve the current executor inside a coroutine
+| `this_coro::environment`
+| Retrieve the current environment (including executor) inside a coroutine
 
 | Symmetric transfer
 | Zero-overhead resumption when executor matches

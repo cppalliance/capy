@@ -10,11 +10,12 @@
 // Test that header file is self-contained.
 #include <boost/capy/concept/buffer_sink.hpp>
 
+#include <boost/capy/ex/io_env.hpp>
+
 #include <system_error>
 
 #include <cstddef>
 #include <span>
-#include <stop_token>
 #include <utility>
 
 namespace boost {
@@ -29,8 +30,7 @@ struct mock_commit_awaitable
 
     void await_suspend(
         coro,
-        executor_ref,
-        std::stop_token) const noexcept
+        io_env const&) const noexcept
     {
     }
 
@@ -48,8 +48,7 @@ struct mock_commit_awaitable_wrong_type
 
     void await_suspend(
         coro,
-        executor_ref,
-        std::stop_token) const noexcept
+        io_env const&) const noexcept
     {
     }
 

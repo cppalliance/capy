@@ -11,6 +11,7 @@
 #include <boost/capy/test/run_blocking.hpp>
 
 #include <boost/capy/task.hpp>
+#include <boost/capy/ex/this_coro.hpp>
 
 #include "test_suite.hpp"
 
@@ -347,6 +348,26 @@ struct run_blocking_test
     }
 
     //----------------------------------------------------------
+    // Allocator Propagation
+    //----------------------------------------------------------
+
+    static task<bool>
+    check_allocator_propagated()
+    {
+        auto* alloc = co_await this_coro::allocator;
+        co_return alloc != nullptr;
+    }
+
+    void
+    testAllocatorPropagation()
+    {
+        bool result = false;
+        run_blocking([&](bool v) { result = v; })(
+            check_allocator_propagated());
+        BOOST_TEST(result);
+    }
+
+    //----------------------------------------------------------
     // Nested Task Tests
     //----------------------------------------------------------
 
@@ -396,6 +417,9 @@ struct run_blocking_test
         // Stop Token
         testStopTokenNotRequested();
         testStopTokenRequested();
+
+        // Allocator Propagation
+        testAllocatorPropagation();
 
         // Nested Tasks
         testNestedTask();

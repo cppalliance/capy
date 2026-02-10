@@ -10,12 +10,12 @@
 // Test that header file is self-contained.
 #include <boost/capy/concept/stream.hpp>
 
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io/any_stream.hpp>
 
 #include <system_error>
 
 #include <cstddef>
-#include <stop_token>
 #include <tuple>
 #include <utility>
 
@@ -35,8 +35,7 @@ struct mock_read_awaitable
 
     void await_suspend(
         coro,
-        executor_ref,
-        std::stop_token) const noexcept
+        io_env const&) const noexcept
     {
     }
 
@@ -54,8 +53,7 @@ struct mock_write_awaitable
 
     void await_suspend(
         coro,
-        executor_ref,
-        std::stop_token) const noexcept
+        io_env const&) const noexcept
     {
     }
 
