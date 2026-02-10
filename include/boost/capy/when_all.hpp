@@ -161,25 +161,21 @@ struct when_all_runner
                     return false;
                 }
 
-                void await_suspend(std::coroutine_handle<> h) noexcept
+                std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) noexcept
                 {
-                    // Extract everything needed for signaling before
-                    // self-destruction. Inline dispatch may destroy
-                    // when_all_state, so we can't access members after.
+                    // Extract everything needed before self-destruction.
                     auto* state = p_->state_;
                     auto* counter = &state->remaining_count_;
                     auto caller_env = state->caller_env_;
                     auto cont = state->continuation_;
 
-                    // Self-destruct first - state no longer destroys runners
                     h.destroy();
 
-                    // Signal completion. If last, dispatch parent.
-                    // Uses only local copies - safe even if state
-                    // is destroyed during inline dispatch.
+                    // If last runner, dispatch parent for symmetric transfer.
                     auto remaining = counter->fetch_sub(1, std::memory_order_acq_rel);
                     if(remaining == 1)
-                        caller_env.executor.dispatch(cont);
+                        return caller_env.executor.dispatch(cont);
+                    return std::noop_coroutine();
                 }
 
                 void await_resume() const noexcept
@@ -354,7 +350,7 @@ private:
 
         std::coroutine_handle<> ch{h};
         state_->runner_handles_[I] = ch;
-        state_->caller_env_.executor.dispatch(ch);
+        state_->caller_env_.executor.post(ch);
     }
 };
 

@@ -310,25 +310,21 @@ struct when_any_runner
             {
                 promise_type* p_;
                 bool await_ready() const noexcept { return false; }
-                void await_suspend(std::coroutine_handle<> h) noexcept
+                std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) noexcept
                 {
-                    // Extract everything needed for signaling before
-                    // self-destruction. Inline dispatch may destroy
-                    // state, so we can't access members after.
+                    // Extract everything needed before self-destruction.
                     auto& core = p_->state_->core_;
                     auto* counter = &core.remaining_count_;
                     auto caller_env = core.caller_env_;
                     auto cont = core.continuation_;
 
-                    // Self-destruct first - state no longer destroys runners
                     h.destroy();
 
-                    // Signal completion. If last, dispatch parent.
-                    // Uses only local copies - safe even if state
-                    // is destroyed during inline dispatch.
+                    // If last runner, dispatch parent for symmetric transfer.
                     auto remaining = counter->fetch_sub(1, std::memory_order_acq_rel);
                     if(remaining == 1)
-                        caller_env.executor.dispatch(cont);
+                        return caller_env.executor.dispatch(cont);
+                    return std::noop_coroutine();
                 }
                 void await_resume() const noexcept {}
             };
@@ -509,7 +505,7 @@ private:
 
         std::coroutine_handle<> ch{h};
         state_->runner_handles_[I] = ch;
-        caller_ex.dispatch(ch);
+        caller_ex.post(ch);
     }
 };
 
@@ -773,13 +769,13 @@ public:
             ++index;
         }
 
-        // Phase 2: Dispatch all runners. Any may complete synchronously.
-        // After last dispatch, state_ and this may be destroyed.
-        // Use raw pointer/count captured before dispatching.
+        // Phase 2: Post all runners. Any may complete synchronously.
+        // After last post, state_ and this may be destroyed.
+        // Use raw pointer/count captured before posting.
         std::coroutine_handle<>* handles = state_->runner_handles_.data();
         std::size_t count = state_->runner_handles_.size();
         for(std::size_t i = 0; i < count; ++i)
-            caller_env.executor.dispatch(handles[i]);
+            caller_env.executor.post(handles[i]);
 
         return std::noop_coroutine();
     }

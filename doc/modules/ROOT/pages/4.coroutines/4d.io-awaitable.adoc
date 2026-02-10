@@ -75,8 +75,12 @@ The key difference from standard awaitables is the two-argument `await_suspend` 
 
 A task type satisfies `IoAwaitableTask` if its promise provides:
 
-* `set_environment(io_env const&)` — Store the propagated execution environment
+* `set_environment(io_env const&)` — Store the address of the execution environment (not a copy; the referenced `io_env` is guaranteed to outlive the coroutine)
+* `set_continuation(std::coroutine_handle<>, executor_ref)` — Store the continuation and caller's executor
 * `environment()` — Retrieve the stored environment
+* `complete()` — Return a handle for symmetric transfer at completion
+
+These injection methods are public so that launch functions like `run_async` can set context directly on the promise. Without them, a launch function would need to allocate an extra coroutine frame as a trampoline just to propagate context through `await_transform`. This breaks encapsulation, but the tradeoff eliminates a frame allocation on every launch.
 
 Capy's `task<T>` satisfies this concept.
 

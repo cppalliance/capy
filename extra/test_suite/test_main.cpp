@@ -10,11 +10,55 @@
 
 #include "test_suite.hpp"
 
+#include <cstdio>
+#include <cstdlib>
+#include <exception>
+
+namespace {
+
+[[noreturn]] void
+on_terminate() noexcept
+{
+    std::fprintf(stderr,
+        "\n"
+        "======================================================\n"
+        "FATAL: std::terminate() called\n"
+        "======================================================\n");
+
+    if(auto ep = std::current_exception())
+    {
+        try
+        {
+            std::rethrow_exception(ep);
+        }
+        catch(std::exception const& e)
+        {
+            std::fprintf(stderr,
+                "Exception: %s\n", e.what());
+        }
+        catch(...)
+        {
+            std::fprintf(stderr,
+                "Unknown exception type\n");
+        }
+    }
+    else
+    {
+        std::fprintf(stderr,
+            "No active exception (likely noexcept violation)\n");
+    }
+
+    std::fprintf(stderr,
+        "======================================================\n");
+    std::fflush(stderr);
+    std::abort();
+}
+
+} // namespace
+
 #ifdef _WIN32
 #include <windows.h>
 #include <crtdbg.h>
-#include <stdlib.h>
-#include <cstdio>
 
 namespace {
 
@@ -85,9 +129,10 @@ seh_exception_handler(EXCEPTION_POINTERS* info) noexcept
 int
 main(int argc, char const* const* argv)
 {
+    std::fprintf(stderr, "Built: " __DATE__ " " __TIME__ "\n");
+    std::set_terminate(on_terminate);
 #ifdef _WIN32
     SetUnhandledExceptionFilter(seh_exception_handler);
-    // Suppress CRT dialogs so tests run unattended
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 #ifdef _DEBUG
     _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_FILE);
@@ -96,11 +141,14 @@ main(int argc, char const* const* argv)
     _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
     _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
     _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
-    // Enable memory leak checking
-    int flags = _CrtSetDbgFlag(_CRTDBG_REPORT_FLAG);
-    flags |= _CRTDBG_LEAK_CHECK_DF;
-    _CrtSetDbgFlag(flags);
+    // Leak check runs after all static destructors
+    _CrtSetDbgFlag(
+        _CRTDBG_ALLOC_MEM_DF |
+        _CRTDBG_LEAK_CHECK_DF);
 #endif
 #endif
-    return ::test_suite::run(argc, argv);
+    int result = ::test_suite::run(argc, argv);
+    if(result != 0)
+        std::fprintf(stderr, "test_suite::run returned %d!\n", result);
+    return result;
 }

@@ -391,8 +391,8 @@ public:
         p.env_ = {p.wg_.executor(), st_, p.get_resource()};
         task_promise.set_environment(p.env_);
 
-        // Resume task through executor
-        p.wg_.executor().dispatch(task_h);
+        // Start task through executor
+        p.wg_.executor().dispatch(task_h).resume();
     }
 };
 

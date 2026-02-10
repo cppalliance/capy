@@ -62,12 +62,12 @@ struct tracking_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    void dispatch(std::coroutine_handle<> h) const
+    std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
     {
         ++(*dispatch_count_);
         if (dispatch_log)
             dispatch_log->push_back(id);
-        h.resume();
+        return h;
     }
 
     void post(std::coroutine_handle<> h) const

@@ -99,12 +99,12 @@ struct test_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    void
+    std::coroutine_handle<>
     dispatch(std::coroutine_handle<> h) const
     {
         if(dispatch_count_)
             ++(*dispatch_count_);
-        h.resume();
+        return h;
     }
 
     void

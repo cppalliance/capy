@@ -22,6 +22,9 @@ namespace boost {
 namespace capy {
 namespace test {
 
+static_assert(Executor<blocking_executor>);
+static_assert(ExecutionContext<blocking_context>);
+
 //----------------------------------------------------------
 // Test Exception Type
 //----------------------------------------------------------
@@ -210,104 +213,15 @@ struct run_blocking_test
     }
 
     //----------------------------------------------------------
-    // inline_executor Tests
+    // blocking_executor Tests
     //----------------------------------------------------------
 
     void
-    testInlineExecutorConcept()
+    testBlockingExecutorConcept()
     {
-        static_assert(Executor<inline_executor>);
+        static_assert(Executor<blocking_executor>);
+        static_assert(ExecutionContext<blocking_context>);
         BOOST_TEST(true);
-    }
-
-    void
-    testInlineExecutorEquality()
-    {
-        inline_executor ex1;
-        inline_executor ex2;
-        BOOST_TEST(ex1 == ex2);
-    }
-
-    void
-    testInlineExecutorPostThrows()
-    {
-        inline_executor ex;
-        bool caught = false;
-        try
-        {
-            ex.post(std::coroutine_handle<>{});
-        }
-        catch(std::logic_error const& e)
-        {
-            caught = true;
-            BOOST_TEST(std::string(e.what()).find("post") != std::string::npos);
-        }
-        BOOST_TEST(caught);
-    }
-
-    void
-    testInlineExecutorDispatch()
-    {
-        // dispatch() now returns void and resumes inline
-        inline_executor ex;
-        bool resumed = false;
-        auto checker = [&]() -> task<> {
-            resumed = true;
-            co_return;
-        };
-        auto t = checker();
-        ex.dispatch(t.handle());
-        BOOST_TEST(resumed);
-    }
-
-    //----------------------------------------------------------
-    // Explicit Executor Tests
-    //----------------------------------------------------------
-
-    void
-    testWithExplicitExecutor()
-    {
-        int dispatch_count = 0;
-
-        struct counting_executor
-        {
-            int* count_;
-
-            bool operator==(counting_executor const& other) const noexcept
-            {
-                return count_ == other.count_;
-            }
-
-            execution_context& context() const noexcept
-            {
-                struct local_context : public execution_context {};
-                static local_context ctx;
-                return ctx;
-            }
-
-            void on_work_started() const noexcept {}
-            void on_work_finished() const noexcept {}
-
-            void dispatch(std::coroutine_handle<> h) const
-            {
-                ++(*count_);
-                h.resume();
-            }
-
-            void post(std::coroutine_handle<> h) const
-            {
-                h.resume();
-            }
-        };
-
-        int result = 0;
-        run_blocking(
-            counting_executor{&dispatch_count},
-            [&](int v) { result = v; }
-        )(returns_int());
-
-        BOOST_TEST_EQ(result, 42);
-        BOOST_TEST_EQ(dispatch_count, 1);
     }
 
     //----------------------------------------------------------
@@ -405,14 +319,8 @@ struct run_blocking_test
         testExceptionRethrown();
         testOverloadedHandlerException();
 
-        // inline_executor
-        testInlineExecutorConcept();
-        testInlineExecutorEquality();
-        testInlineExecutorPostThrows();
-        testInlineExecutorDispatch();
-
-        // Explicit Executor
-        testWithExplicitExecutor();
+        // blocking_executor
+        testBlockingExecutorConcept();
 
         // Stop Token
         testStopTokenNotRequested();

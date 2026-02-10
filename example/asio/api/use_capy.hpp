@@ -131,7 +131,7 @@ public:
         auto handler = [this, h, ex = env.executor](Args... args) mutable
         {
             store_result(std::move(args)...);
-            ex.dispatch(h);
+            ex.post(h);
         };
 
         std::move(op_)(

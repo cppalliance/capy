@@ -81,19 +81,17 @@ public:
     {
     }
 
-    // Executor interface - dispatch inline
-    void dispatch(coro h) const
+    std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
+    {
+        return h;
+    }
+
+    void post(std::coroutine_handle<> h) const
     {
         h.resume();
     }
 
-    // Post interface - resume inline for benchmarking
-    void post(coro h) const
-    {
-        h.resume();
-    }
-
-    void defer(coro h) const
+    void defer(std::coroutine_handle<> h) const
     {
         h.resume();
     }
@@ -131,7 +129,7 @@ struct foreign_awaitable
     }
 
     // IoAwaitable protocol
-    coro await_suspend(coro h, io_env const&) const
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const&) const
     {
         return h;
     }

@@ -66,41 +66,41 @@ class recycling_memory_resource : public std::pmr::memory_resource
         return idx < num_classes ? idx : num_classes;
     }
 
+    struct bucket
+    {
+        std::size_t count = 0;
+        void* ptrs[bucket_capacity];
+
+        void* pop() noexcept
+        {
+            if(count == 0)
+                return nullptr;
+            return ptrs[--count];
+        }
+
+        // Peter Dimov's idea
+        void* pop(bucket& b) noexcept
+        {
+            if(count == 0)
+                return nullptr;
+            for(std::size_t i = 0; i < count; ++i)
+                b.ptrs[i] = ptrs[i];
+            b.count = count - 1;
+            count = 0;
+            return b.ptrs[b.count];
+        }
+
+        bool push(void* p) noexcept
+        {
+            if(count >= bucket_capacity)
+                return false;
+            ptrs[count++] = p;
+            return true;
+        }
+    };
+
     struct pool
     {
-        struct bucket
-        {
-            std::size_t count = 0;
-            void* ptrs[bucket_capacity];
-
-            void* pop() noexcept
-            {
-                if(count == 0)
-                    return nullptr;
-                return ptrs[--count];
-            }
-
-            // Peter Dimov's idea
-            void* pop(bucket& b) noexcept
-            {
-                if(count == 0)
-                    return nullptr;
-                for(std::size_t i = 0; i < count; ++i)
-                    b.ptrs[i] = ptrs[i];
-                b.count = count - 1;
-                count = 0;
-                return b.ptrs[b.count];
-            }
-
-            bool push(void* p) noexcept
-            {
-                if(count >= bucket_capacity)
-                    return false;
-                ptrs[count++] = p;
-                return true;
-            }
-        };
-
         bucket buckets[num_classes];
 
         ~pool()
@@ -111,72 +111,16 @@ class recycling_memory_resource : public std::pmr::memory_resource
         }
     };
 
-    static pool&
-    local() noexcept
-    {
-        static thread_local pool p;
-        return p;
-    }
-
-    static pool&
-    global() noexcept
-    {
-        static pool p;
-        return p;
-    }
-
-    static std::mutex&
-    global_mutex() noexcept
-    {
-        static std::mutex mtx;
-        return mtx;
-    }
+    BOOST_CAPY_DECL static pool& local() noexcept;
+    BOOST_CAPY_DECL static pool& global() noexcept;
+    BOOST_CAPY_DECL static std::mutex& global_mutex() noexcept;
 
 protected:
-    void*
-    do_allocate(std::size_t bytes, std::size_t) override
-    {
-        std::size_t rounded = round_up_pow2(bytes);
-        std::size_t idx = get_class_index(rounded);
+    BOOST_CAPY_DECL void*
+    do_allocate(std::size_t bytes, std::size_t) override;
 
-        if(idx >= num_classes)
-            return ::operator new(bytes);
-
-        if(auto* p = local().buckets[idx].pop())
-            return p;
-
-        {
-            std::lock_guard<std::mutex> lock(global_mutex());
-            if(auto* p = global().buckets[idx].pop(local().buckets[idx]))
-                return p;
-        }
-
-        return ::operator new(rounded);
-    }
-
-    void
-    do_deallocate(void* p, std::size_t bytes, std::size_t) override
-    {
-        std::size_t rounded = round_up_pow2(bytes);
-        std::size_t idx = get_class_index(rounded);
-
-        if(idx >= num_classes)
-        {
-            ::operator delete(p);
-            return;
-        }
-
-        if(local().buckets[idx].push(p))
-            return;
-
-        {
-            std::lock_guard<std::mutex> lock(global_mutex());
-            if(global().buckets[idx].push(p))
-                return;
-        }
-
-        ::operator delete(p);
-    }
+    BOOST_CAPY_DECL void
+    do_deallocate(void* p, std::size_t bytes, std::size_t) override;
 
     bool
     do_is_equal(const memory_resource& other) const noexcept override

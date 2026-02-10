@@ -87,7 +87,7 @@ namespace capy {
                 {
                     // complete with cancellation error
                 }
-                env_->executor.dispatch( cont_ );
+                env_->executor.post( cont_ );
             } );
             return std::noop_coroutine();
         }

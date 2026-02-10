@@ -251,7 +251,8 @@ struct executor_ref_test
         BOOST_TEST(ex1.type_id() == ex2.type_id());
 
         // Different executor type returns different type_info
-        test::inline_executor ie;
+        test::blocking_context bctx;
+        auto ie = bctx.get_executor();
         executor_ref ex3(ie);
         BOOST_TEST(ex1.type_id() != ex3.type_id());
     }

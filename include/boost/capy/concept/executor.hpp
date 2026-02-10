@@ -27,6 +27,13 @@ class execution_context;
     coroutines are executed. It provides operations to submit work
     and to track outstanding work for graceful shutdown.
 
+    Ordinary users writing coroutine tasks do not interact with
+    `dispatch` and `post` directly. These operations are used by
+    authors of coroutine machinery -- `promise_type` implementations,
+    awaitables, `await_transform` -- to implement asynchronous
+    algorithms such as `when_all`, `when_any`, `async_mutex`,
+    channels, and similar primitives.
+
     @tparam E The executor type.
 
     @par Syntactic Requirements
@@ -37,7 +44,7 @@ class execution_context;
         from `execution_context`, `noexcept`
     @li `e.on_work_started()` must be valid and `noexcept`
     @li `e.on_work_finished()` must be valid and `noexcept`
-    @li `e.dispatch(h)` must be a valid expression
+    @li `e.dispatch(h)` must return `std::coroutine_handle<>`
     @li `e.post(h)` must be valid
 
     @par Semantic Requirements
@@ -60,38 +67,35 @@ class execution_context;
         behaviors, without the library needing to grant friendship
         to types it cannot anticipate
 
-    The `dispatch` operation executes immediately if safe:
+    The `dispatch` operation returns a handle for symmetric transfer:
 
-    @li If the executor determines it is safe (e.g., already on the
-        correct thread), resumes the coroutine inline via a normal
-        function call
-    @li The call returns when the coroutine suspends or completes
-    @li If not safe, posts the coroutine for later execution
+    Every coroutine resumption must go through either symmetric
+    transfer or the scheduler queue -- never through an inline
+    `resume()` or `dispatch()` that creates a frame below the
+    resumed coroutine.
+
+    @li If the executor determines it is safe to resume inline
+        (e.g., already on the correct thread), returns `h` for
+        the caller to use in symmetric transfer
+    @li Otherwise, posts the coroutine for later execution and
+        returns `std::noop_coroutine()`
+    @li The caller is responsible for using the returned handle
+        appropriately: returning it from `await_suspend` for
+        symmetric transfer, or calling `.resume()` if at the
+        event loop pump level
 
     A conforming implementation might look like:
 
     @code
-    void dispatch( std::coroutine_handle<> h ) const
+    std::coroutine_handle<> dispatch(
+        std::coroutine_handle<> h ) const
     {
         if( ctx_.is_running_on_this_thread() )
-            h.resume();  // inline execution
-        else
-            post( h );   // deferred execution
+            return h;              // symmetric transfer
+        post( h );
+        return std::noop_coroutine();
     }
     @endcode
-
-    After `dispatch(h)` returns, the state of `h` is unspecified.
-    The coroutine may have completed, been destroyed, or suspended
-    at a different suspension point. Callers must not assume `h`
-    remains valid or in its original state after calling `dispatch`.
-
-    @par Note
-    Because `dispatch` may call `h.resume()` before returning,
-    it cannot be used to implement symmetric transfer from
-    `await_suspend`. Patterns like `return ex.dispatch(h)` are
-    ill-formed since `dispatch` returns `void`, and even if it
-    returned the handle, the coroutine would have already been
-    resumed, leading to undefined behavior.
 
     The `post` operation queues for later execution:
 
@@ -121,23 +125,12 @@ class execution_context;
         void on_work_started() const noexcept;
         void on_work_finished() const noexcept;
 
-        void dispatch( std::coroutine_handle<> h ) const;
+        std::coroutine_handle<> dispatch(
+            std::coroutine_handle<> h ) const;
         void post( std::coroutine_handle<> h ) const;
 
         bool operator==( E const& ) const noexcept;
     };
-    @endcode
-
-    @par Example
-
-    @code
-    template<Executor Ex>
-    void submit_work( Ex ex, std::coroutine_handle<> h )
-    {
-        ex.on_work_started();
-        ex.post( h );
-        // on_work_finished called when coroutine completes
-    }
     @endcode
 
     @see ExecutionContext, execution_context
@@ -156,7 +149,7 @@ concept Executor =
         { ce.on_work_started() } noexcept;
         { ce.on_work_finished() } noexcept;
 
-        { ce.dispatch(h) };
+        { ce.dispatch(h) } -> std::same_as<std::coroutine_handle<>>;
         { ce.post(h) };
     };
 

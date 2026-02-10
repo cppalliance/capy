@@ -23,9 +23,13 @@ namespace capy {
 /** Concept for task types with promise-based context injection.
 
     Extends @ref IoAwaitable with a `promise_type` that stores the
-    execution environment. This enables coroutine launch functions
-    such as @ref run to inject context at the root of a coroutine
-    chain without going through `await_suspend`.
+    execution environment. The injection methods (`set_environment`,
+    `set_continuation`) exist so that launch functions like @ref run
+    and @ref run_async can set context directly on the promise. Without
+    them, a launch function would need an extra coroutine frame as a
+    trampoline to propagate context through `await_transform`. Exposing
+    these methods breaks encapsulation, but the tradeoff eliminates an
+    allocation on every launch.
 
     @tparam T The task type.
 

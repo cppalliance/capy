@@ -78,11 +78,11 @@ struct sync_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    void dispatch(std::coroutine_handle<> h) const
+    std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
     {
         if(dispatch_count_)
             ++(*dispatch_count_);
-        h.resume();
+        return h;
     }
 
     void post(std::coroutine_handle<> h) const
@@ -120,9 +120,10 @@ struct queue_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    void dispatch(std::coroutine_handle<> h) const
+    std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
     {
         queue_->push(h);
+        return std::noop_coroutine();
     }
 
     void post(std::coroutine_handle<> h) const

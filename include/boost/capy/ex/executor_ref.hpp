@@ -31,7 +31,7 @@ struct executor_vtable
     void (*on_work_started)(void const*) noexcept;
     void (*on_work_finished)(void const*) noexcept;
     void (*post)(void const*, std::coroutine_handle<>);
-    void (*dispatch)(void const*, std::coroutine_handle<>);
+    std::coroutine_handle<> (*dispatch)(void const*, std::coroutine_handle<>);
     bool (*equals)(void const*, void const*) noexcept;
     detail::type_info const* type_id;
 };
@@ -56,8 +56,8 @@ inline constexpr executor_vtable vtable_for = {
         static_cast<Ex const*>(p)->post(h);
     },
     // dispatch
-    [](void const* p, std::coroutine_handle<> h) {
-        static_cast<Ex const*>(p)->dispatch(h);
+    [](void const* p, std::coroutine_handle<> h) -> std::coroutine_handle<> {
+        return static_cast<Ex const*>(p)->dispatch(h);
     },
     // equals
     [](void const* a, void const* b) noexcept -> bool {
@@ -200,18 +200,19 @@ public:
 
     /** Dispatches a coroutine handle through the wrapped executor.
 
-        Invokes the executor's `dispatch()` operation with the given
-        coroutine handle. If running in the executor's thread, resumes
-        the coroutine inline via a normal function call. Otherwise,
-        posts the coroutine for later execution.
+        Returns a handle for symmetric transfer. If running in the
+        executor's thread, returns `h`. Otherwise, posts the coroutine
+        for later execution and returns `std::noop_coroutine()`.
 
         @param h The coroutine handle to dispatch for resumption.
 
+        @return A handle for symmetric transfer or `std::noop_coroutine()`.
+
         @pre This instance was constructed with a valid executor.
     */
-    void dispatch(std::coroutine_handle<> h) const
+    std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
     {
-        vt_->dispatch(ex_, h);
+        return vt_->dispatch(ex_, h);
     }
 
     /** Posts a coroutine handle to the wrapped executor.

@@ -408,7 +408,8 @@ public:
             auto aw = aws.write_some(const_buffer(data, 1));
             BOOST_TEST(!aw.await_ready());
 
-            test::inline_executor ex;
+            test::blocking_context bctx;
+            auto ex = bctx.get_executor();
             aw.await_suspend(
                 std::noop_coroutine(), io_env{executor_ref(ex), {}});
         }
@@ -426,7 +427,8 @@ public:
             auto aw = aws.write_some(const_buffer(data, 1));
             BOOST_TEST(!aw.await_ready());
 
-            test::inline_executor ex;
+            test::blocking_context bctx;
+            auto ex = bctx.get_executor();
             aw.await_suspend(
                 std::noop_coroutine(), io_env{executor_ref(ex), {}});
 

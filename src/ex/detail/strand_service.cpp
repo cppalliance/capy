@@ -222,18 +222,16 @@ running_in_this_thread(strand_impl& impl) noexcept
     return impl.dispatch_thread_.load() == std::this_thread::get_id();
 }
 
-void
+std::coroutine_handle<>
 strand_service::
 dispatch(strand_impl& impl, executor_ref ex, std::coroutine_handle<> h)
 {
     if(running_in_this_thread(impl))
-    {
-        h.resume();
-        return;
-    }
+        return h;
 
     if(strand_service_impl::enqueue(impl, h))
         ex.post(strand_service_impl::make_invoker(impl).h_);
+    return std::noop_coroutine();
 }
 
 void

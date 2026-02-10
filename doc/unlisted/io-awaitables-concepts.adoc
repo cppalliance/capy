@@ -116,9 +116,11 @@ concept IoAwaitableTask = IoAwaitable<T> && requires
 
 Key features:
 
-* Stores execution environment in the promise
+* Stores execution environment in the promise (by pointer, never by copy)
 * Can propagate context to child awaitables
 * Bidirectional: receives context _and_ provides it to children
+
+The injection methods (`set_environment`, `set_continuation`) are public so that launch functions like `run_async` can set context directly on the promise. Without them, a launch function would need to allocate an extra coroutine frame as a trampoline just to propagate context through `await_transform`. This breaks encapsulation, but the tradeoff eliminates a frame allocation on every launch.
 
 This is what `task<T>` implements.
 

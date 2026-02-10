@@ -114,7 +114,7 @@ public:
                     {
                         result_.ec = ec;
                         result_.t1 = n;
-                        ex.dispatch(h);
+                        ex.post(h);
                     }));
 
             return std::noop_coroutine();
@@ -176,7 +176,7 @@ public:
                     {
                         result_.ec = ec;
                         result_.t1 = n;
-                        ex.dispatch(h);
+                        ex.post(h);
                     }));
 
             return std::noop_coroutine();
@@ -234,9 +234,10 @@ public:
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    void dispatch(std::coroutine_handle<> h) const
+    std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
     {
-        net::dispatch(ex_, [h]{ h.resume(); });
+        net::post(ex_, [h]{ h.resume(); });
+        return std::noop_coroutine();
     }
 
     void post(std::coroutine_handle<> h) const

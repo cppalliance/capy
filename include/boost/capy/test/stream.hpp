@@ -104,7 +104,7 @@ class stream
 
         // Set closed and resume any suspended readers
         // with eof on both sides.
-        void close() noexcept
+        void close()
         {
             closed = true;
             for(auto& side : sides)
@@ -115,7 +115,7 @@ class stream
                     side.pending_h = {};
                     auto ex = side.pending_ex;
                     side.pending_ex = {};
-                    ex.dispatch(h);
+                    ex.post(h);
                 }
             }
         }
@@ -130,7 +130,7 @@ class stream
         state* st;
         bool armed = true;
         void disarm() noexcept { armed = false; }
-        ~close_guard() { if(armed) st->close(); }
+        ~close_guard() noexcept(false) { if(armed) st->close(); }
     };
 
     std::shared_ptr<state> state_;
@@ -162,7 +162,7 @@ public:
         from the peer are unaffected.
     */
     void
-    close() noexcept
+    close()
     {
         int peer = 1 - index_;
         auto& side = state_->sides[peer];
@@ -173,7 +173,7 @@ public:
             side.pending_h = {};
             auto ex = side.pending_ex;
             side.pending_ex = {};
-            ex.dispatch(h);
+            ex.post(h);
         }
     }
 
@@ -342,7 +342,7 @@ public:
                     side.pending_h = {};
                     auto ex = side.pending_ex;
                     side.pending_ex = {};
-                    ex.dispatch(h);
+                    ex.post(h);
                 }
 
                 return {{}, n};
@@ -374,7 +374,7 @@ public:
             side.pending_h = {};
             auto ex = side.pending_ex;
             side.pending_ex = {};
-            ex.dispatch(h);
+            ex.post(h);
         }
     }
 

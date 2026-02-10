@@ -10,16 +10,13 @@
 #ifndef BOOST_CAPY_TEST_RUN_BLOCKING_HPP
 #define BOOST_CAPY_TEST_RUN_BLOCKING_HPP
 
-#include <coroutine>
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/run_async.hpp>
-#include <boost/capy/ex/system_context.hpp>
 
-#include <condition_variable>
+#include <coroutine>
 #include <exception>
-#include <mutex>
-#include <stdexcept>
 #include <stop_token>
 #include <type_traits>
 #include <utility>
@@ -28,158 +25,186 @@ namespace boost {
 namespace capy {
 namespace test {
 
-struct inline_executor;
+class blocking_context;
 
-/** Execution context for inline blocking execution.
+/** Single-threaded executor for blocking synchronous tests.
 
-    This execution context is used with inline_executor for
-    blocking synchronous execution. It satisfies the
-    ExecutionContext concept requirements.
+    This executor is used internally by @ref run_blocking to
+    execute coroutine tasks on the calling thread. Work submitted
+    via `dispatch()` is returned for symmetric transfer. Work
+    submitted via `post()` is enqueued and processed by the
+    @ref blocking_context event loop.
 
-    @see inline_executor
-    @see run_blocking
-*/
-class inline_context : public execution_context
-{
-public:
-    using executor_type = inline_executor;
-
-    inline_context() = default;
-
-    executor_type
-    get_executor() noexcept;
-};
-
-/** Synchronous executor that executes inline and disallows posting.
-
-    This executor executes work synchronously on the calling thread
-    via `dispatch()`. Calling `post()` throws `std::logic_error`
-    because posting implies deferred execution which is incompatible
-    with blocking synchronous semantics.
+    Users do not construct this type directly. It is obtained
+    from @ref blocking_context::get_executor.
 
     @par Thread Safety
-    All member functions are thread-safe.
+    All member functions are safe to call from any thread.
 
-    @see run_blocking
+    @see blocking_context, run_blocking
 */
-struct inline_executor
+struct BOOST_CAPY_DECL blocking_executor
 {
-    /// Compare two inline executors for equality.
-    bool
-    operator==(inline_executor const&) const noexcept
+    /// Construct from a context pointer.
+    explicit blocking_executor(
+        blocking_context* ctx) noexcept
+        : ctx_(ctx)
     {
-        return true;
     }
+
+    /** Compare two blocking executors for equality.
+
+        Two executors are equal if they share the same context.
+    */
+    bool
+    operator==(blocking_executor const& other) const noexcept;
 
     /** Return the associated execution context.
 
-        @return A reference to a function-local static `inline_context`.
+        @return A reference to the owning `blocking_context`.
     */
-    inline_context&
-    context() const noexcept
-    {
-        static inline_context ctx;
-        return ctx;
-    }
+    blocking_context&
+    context() const noexcept;
 
     /// Called when work is submitted (no-op).
-    void on_work_started() const noexcept {}
+    void on_work_started() const noexcept;
 
     /// Called when work completes (no-op).
-    void on_work_finished() const noexcept {}
+    void on_work_finished() const noexcept;
 
     /** Dispatch work for immediate inline execution.
 
+        Returns the handle for symmetric transfer. The caller
+        resumes the coroutine via the returned handle.
+
         @param h The coroutine handle to execute.
+
+        @return `h` for symmetric transfer.
     */
-    void
-    dispatch(std::coroutine_handle<> h) const
-    {
-        h.resume();
-    }
+    std::coroutine_handle<>
+    dispatch(std::coroutine_handle<> h) const;
 
     /** Post work for deferred execution.
 
-        @par Exception Safety
-        Always throws.
+        Enqueues the coroutine handle into the context's work
+        queue. The handle is resumed when the blocking event
+        loop processes it.
 
-        @throws std::logic_error Always, because posting is not
-            supported in a blocking context.
-
-        @param h The coroutine handle (unused).
+        @param h The coroutine handle to enqueue.
     */
-    [[noreturn]] void
-    post(std::coroutine_handle<>) const
-    {
-        throw std::logic_error(
-            "post not supported in blocking context");
-    }
+    void
+    post(std::coroutine_handle<> h) const;
+
+private:
+    blocking_context* ctx_;
 };
 
-inline inline_context::executor_type
-inline_context::get_executor() noexcept
-{
-    return inline_executor{};
-}
+/** Single-threaded execution context for blocking tests.
 
-static_assert(Executor<inline_executor>);
-static_assert(ExecutionContext<inline_context>);
+    Provides a work queue and event loop that runs on the
+    calling thread. Coroutines dispatched through the
+    associated @ref blocking_executor have their `post()`
+    calls enqueued and processed by @ref run, which blocks
+    until @ref signal_done is called.
 
-//----------------------------------------------------------
-//
-// blocking_state
-//
-//----------------------------------------------------------
-
-/** Synchronization state for blocking execution.
-
-    Holds the mutex, condition variable, and completion flag
-    used to block the caller until the task completes.
+    This context is created internally by @ref run_blocking.
+    Users do not interact with it directly.
 
     @par Thread Safety
-    Thread-safe when accessed under the mutex.
+    The event loop runs on the thread that calls `run()`.
+    `signal_done()` and `enqueue()` are safe to call from
+    any thread.
 
-    @see run_blocking
-    @see blocking_handler_wrapper
+    @see blocking_executor, run_blocking
 */
-struct blocking_state
+class BOOST_CAPY_DECL blocking_context
+    : public execution_context
 {
-    std::mutex mtx;
-    std::condition_variable cv;
-    bool done = false;
-    std::exception_ptr ep;
+    struct impl;
+    impl* impl_;
+
+public:
+    using executor_type = blocking_executor;
+
+    /** Construct a blocking context.
+
+        Allocates the internal work queue and
+        synchronization state.
+    */
+    blocking_context();
+
+    /** Destroy the blocking context. */
+    ~blocking_context();
+
+    /** Return an executor bound to this context.
+
+        @return A `blocking_executor` that enqueues work
+            into this context's queue.
+    */
+    blocking_executor
+    get_executor() noexcept;
+
+    /** Signal that the task has completed.
+
+        Wakes the event loop so that @ref run returns.
+    */
+    void
+    signal_done() noexcept;
+
+    /** Signal that the task has completed with an error.
+
+        Stores the exception and wakes the event loop
+        so that @ref run rethrows it.
+
+        @param ep The exception to propagate.
+    */
+    void
+    signal_done(std::exception_ptr ep) noexcept;
+
+    /** Run the event loop until done.
+
+        Blocks the calling thread, processing posted
+        coroutine handles until @ref signal_done is called.
+        After draining remaining work, rethrows any stored
+        exception.
+
+        @par Exception Safety
+        Basic guarantee. If the completed task stored an
+        exception via `signal_done(ep)`, it is rethrown.
+    */
+    void
+    run();
+
+    /** Enqueue a coroutine handle for processing.
+
+        @param h The coroutine handle to enqueue.
+    */
+    void
+    enqueue(std::coroutine_handle<> h);
 };
 
-//----------------------------------------------------------
-//
-// blocking_handler_wrapper
-//
-//----------------------------------------------------------
+/** Wrapper that signals completion after invoking the handler.
 
-/** Wrapper that signals completion after invoking the underlying handler_pair.
-
-    This wrapper forwards invocations to the contained handler_pair,
-    then signals the `blocking_state` condition variable so
-    that `run_blocking` can unblock. Any exceptions thrown by the
-    handler are captured and stored for later rethrow.
+    Forwards invocations to the contained handler_pair, then
+    signals the `blocking_context` so that its event loop
+    unblocks. Exceptions thrown by the handler are captured
+    and stored for later rethrow.
 
     @tparam H1 The success handler type.
     @tparam H2 The error handler type.
 
     @par Thread Safety
-    Safe to invoke from any thread. Signals the condition
-    variable after calling the handler.
+    Safe to invoke from any thread.
 
-    @see run_blocking
-    @see blocking_state
+    @see run_blocking, blocking_context
 */
 template<class H1, class H2>
 struct blocking_handler_wrapper
 {
-    blocking_state* state_;
+    blocking_context* ctx_;
     detail::handler_pair<H1, H2> handlers_;
 
-    /** Invoke the handler with non-void result and signal completion. */
+    /** Invoke the handler with a non-void result. */
     template<class T>
     void operator()(T&& v)
     {
@@ -189,20 +214,13 @@ struct blocking_handler_wrapper
         }
         catch(...)
         {
-            std::lock_guard<std::mutex> lock(state_->mtx);
-            state_->ep = std::current_exception();
-            state_->done = true;
-            state_->cv.notify_one();
+            ctx_->signal_done(std::current_exception());
             return;
         }
-        {
-            std::lock_guard<std::mutex> lock(state_->mtx);
-            state_->done = true;
-        }
-        state_->cv.notify_one();
+        ctx_->signal_done();
     }
 
-    /** Invoke the handler for void result and signal completion. */
+    /** Invoke the handler for a void result. */
     void operator()()
     {
         try
@@ -211,20 +229,13 @@ struct blocking_handler_wrapper
         }
         catch(...)
         {
-            std::lock_guard<std::mutex> lock(state_->mtx);
-            state_->ep = std::current_exception();
-            state_->done = true;
-            state_->cv.notify_one();
+            ctx_->signal_done(std::current_exception());
             return;
         }
-        {
-            std::lock_guard<std::mutex> lock(state_->mtx);
-            state_->done = true;
-        }
-        state_->cv.notify_one();
+        ctx_->signal_done();
     }
 
-    /** Invoke the handler with exception and signal completion. */
+    /** Invoke the handler with an exception. */
     void operator()(std::exception_ptr ep)
     {
         try
@@ -233,36 +244,23 @@ struct blocking_handler_wrapper
         }
         catch(...)
         {
-            std::lock_guard<std::mutex> lock(state_->mtx);
-            state_->ep = std::current_exception();
-            state_->done = true;
-            state_->cv.notify_one();
+            ctx_->signal_done(std::current_exception());
             return;
         }
-        {
-            std::lock_guard<std::mutex> lock(state_->mtx);
-            state_->done = true;
-        }
-        state_->cv.notify_one();
+        ctx_->signal_done();
     }
 };
 
-//----------------------------------------------------------
-//
-// run_blocking_wrapper
-//
-//----------------------------------------------------------
+/** Wrapper returned by run_blocking that accepts a task.
 
-/** Wrapper returned by run_blocking that accepts a task for execution.
+    Holds the handlers and optional stop token. When invoked
+    with a task, creates a @ref blocking_context, launches
+    the task via `run_async`, and pumps the event loop until
+    the task completes.
 
-    This wrapper holds the blocking state and handlers. When invoked
-    with a task, it launches the task via `run_async` and blocks
-    until the task completes.
+    The rvalue ref-qualifier on `operator()` ensures the
+    wrapper can only be used as a temporary.
 
-    The rvalue ref-qualifier on `operator()` ensures the wrapper
-    can only be used as a temporary.
-
-    @tparam Ex The executor type satisfying the `Executor` concept.
     @tparam H1 The success handler type.
     @tparam H2 The error handler type.
 
@@ -272,37 +270,31 @@ struct blocking_handler_wrapper
 
     @par Example
     @code
-    // Block until task completes
     int result = 0;
     run_blocking([&](int v) { result = v; })(my_task());
     @endcode
 
-    @see run_blocking
-    @see run_async
+    @see run_blocking, run_async
 */
-template<Executor Ex, class H1, class H2>
+template<class H1, class H2>
 class [[nodiscard]] run_blocking_wrapper
 {
-    Ex ex_;
     std::stop_token st_;
     H1 h1_;
     H2 h2_;
 
 public:
-    /** Construct wrapper with executor, stop token, and handlers.
+    /** Construct wrapper with stop token and handlers.
 
-        @param ex The executor to execute the task on.
         @param st The stop token for cooperative cancellation.
         @param h1 The success handler.
         @param h2 The error handler.
     */
     run_blocking_wrapper(
-        Ex ex,
         std::stop_token st,
         H1 h1,
         H2 h2)
-        : ex_(std::move(ex))
-        , st_(std::move(st))
+        : st_(std::move(st))
         , h1_(std::move(h1))
         , h2_(std::move(h2))
     {
@@ -315,8 +307,9 @@ public:
 
     /** Launch the task and block until completion.
 
-        This operator accepts a task, launches it via `run_async`
-        with wrapped handlers, and blocks until the task completes.
+        Creates a blocking_context with a single-threaded
+        event loop, launches the task via `run_async`, then
+        pumps the loop until the task completes or throws.
 
         @tparam Task The IoLaunchableTask type.
 
@@ -326,44 +319,34 @@ public:
     void
     operator()(Task t) &&
     {
-        blocking_state state;
+        blocking_context ctx;
 
         auto make_handlers = [&]() {
-            if constexpr(std::is_same_v<H2, detail::default_handler>)
-                return detail::handler_pair<H1, H2>{std::move(h1_)};
+            if constexpr(
+                std::is_same_v<H2, detail::default_handler>)
+                return detail::handler_pair<H1, H2>{
+                    std::move(h1_)};
             else
-                return detail::handler_pair<H1, H2>{std::move(h1_), std::move(h2_)};
+                return detail::handler_pair<H1, H2>{
+                    std::move(h1_), std::move(h2_)};
         };
 
         run_async(
-            ex_,
+            ctx.get_executor(),
             st_,
-            blocking_handler_wrapper<H1, H2>{&state, make_handlers()}
+            blocking_handler_wrapper<H1, H2>{
+                &ctx, make_handlers()}
         )(std::move(t));
 
-        std::unique_lock<std::mutex> lock(state.mtx);
-        state.cv.wait(lock, [&] { return state.done; });
-        if(state.ep)
-            std::rethrow_exception(state.ep);
+        ctx.run();
     }
 };
 
-//----------------------------------------------------------
-//
-// run_blocking Overloads
-//
-//----------------------------------------------------------
-
-// With inline_executor (default)
-
 /** Block until task completes and discard result.
 
-    Executes a lazy task using the inline executor and blocks the
-    calling thread until the task completes or throws.
-
-    @par Thread Safety
-    The calling thread is blocked. The task executes inline
-    on the calling thread.
+    Executes a lazy task on a single-threaded event loop
+    and blocks the calling thread until the task completes
+    or throws.
 
     @par Exception Safety
     Basic guarantee. If the task throws, the exception is
@@ -382,10 +365,8 @@ public:
 run_blocking()
 {
     return run_blocking_wrapper<
-        inline_executor,
         detail::default_handler,
         detail::default_handler>(
-            inline_executor{},
             std::stop_token{},
             detail::default_handler{},
             detail::default_handler{});
@@ -393,27 +374,25 @@ run_blocking()
 
 /** Block until task completes and invoke handler with result.
 
-    Executes a lazy task using the inline executor and blocks until
-    completion. The handler `h1` is called with the result on success.
-    If `h1` is also invocable with `std::exception_ptr`, it handles
-    exceptions too. Otherwise, exceptions are rethrown.
-
-    @par Thread Safety
-    The calling thread is blocked. The task and handler execute
-    inline on the calling thread.
+    Executes a lazy task on a single-threaded event loop
+    and blocks until completion. The handler `h1` is called
+    with the result on success. If `h1` is also invocable
+    with `std::exception_ptr`, it handles exceptions too.
+    Otherwise, exceptions are rethrown.
 
     @par Exception Safety
-    Basic guarantee. Exceptions from the task are passed to `h1`
-    if it accepts `std::exception_ptr`, otherwise rethrown.
+    Basic guarantee. Exceptions from the task are passed
+    to `h1` if it accepts `std::exception_ptr`, otherwise
+    rethrown.
 
     @par Example
     @code
     int result = 0;
-    run_blocking([&](int v) { result = v; })(compute_value());
+    run_blocking([&](int v) { result = v; })(compute());
     @endcode
 
-    @param h1 Handler invoked with the result on success, and
-        optionally with `std::exception_ptr` on failure.
+    @param h1 Handler invoked with the result on success,
+        and optionally with `std::exception_ptr` on failure.
 
     @return A wrapper that accepts a task for blocking execution.
 
@@ -424,10 +403,8 @@ template<class H1>
 run_blocking(H1 h1)
 {
     return run_blocking_wrapper<
-        inline_executor,
         H1,
         detail::default_handler>(
-            inline_executor{},
             std::stop_token{},
             std::move(h1),
             detail::default_handler{});
@@ -435,15 +412,13 @@ run_blocking(H1 h1)
 
 /** Block until task completes with separate handlers.
 
-    Executes a lazy task using the inline executor and blocks until
-    completion. The handler `h1` is called on success, `h2` on failure.
-
-    @par Thread Safety
-    The calling thread is blocked. The task and handlers execute
-    inline on the calling thread.
+    Executes a lazy task on a single-threaded event loop
+    and blocks until completion. The handler `h1` is called
+    on success, `h2` on failure.
 
     @par Exception Safety
-    Basic guarantee. Exceptions from the task are passed to `h2`.
+    Basic guarantee. Exceptions from the task are passed
+    to `h2`.
 
     @par Example
     @code
@@ -453,7 +428,7 @@ run_blocking(H1 h1)
         [](std::exception_ptr ep) {
             std::rethrow_exception(ep);
         }
-    )(compute_value());
+    )(compute());
     @endcode
 
     @param h1 Handler invoked with the result on success.
@@ -468,133 +443,17 @@ template<class H1, class H2>
 run_blocking(H1 h1, H2 h2)
 {
     return run_blocking_wrapper<
-        inline_executor,
         H1,
         H2>(
-            inline_executor{},
             std::stop_token{},
             std::move(h1),
             std::move(h2));
 }
-
-// With explicit executor
-
-/** Block until task completes on the given executor.
-
-    Executes a lazy task on the specified executor and blocks the
-    calling thread until the task completes.
-
-    @par Thread Safety
-    The calling thread is blocked. The task may execute on
-    a different thread depending on the executor.
-
-    @par Exception Safety
-    Basic guarantee. If the task throws, the exception is
-    rethrown to the caller.
-
-    @par Example
-    @code
-    run_blocking(my_executor)(my_void_task());
-    @endcode
-
-    @param ex The executor to execute the task on.
-
-    @return A wrapper that accepts a task for blocking execution.
-
-    @see run_async
-*/
-template<Executor Ex>
-[[nodiscard]] auto
-run_blocking(Ex ex)
-{
-    return run_blocking_wrapper<
-        Ex,
-        detail::default_handler,
-        detail::default_handler>(
-            std::move(ex),
-            std::stop_token{},
-            detail::default_handler{},
-            detail::default_handler{});
-}
-
-/** Block until task completes on executor with handler.
-
-    Executes a lazy task on the specified executor and blocks until
-    completion. The handler `h1` is called with the result.
-
-    @par Thread Safety
-    The calling thread is blocked. The task and handler may
-    execute on a different thread depending on the executor.
-
-    @par Exception Safety
-    Basic guarantee. Exceptions from the task are passed to `h1`
-    if it accepts `std::exception_ptr`, otherwise rethrown.
-
-    @param ex The executor to execute the task on.
-    @param h1 Handler invoked with the result on success.
-
-    @return A wrapper that accepts a task for blocking execution.
-
-    @see run_async
-*/
-template<Executor Ex, class H1>
-[[nodiscard]] auto
-run_blocking(Ex ex, H1 h1)
-{
-    return run_blocking_wrapper<
-        Ex,
-        H1,
-        detail::default_handler>(
-            std::move(ex),
-            std::stop_token{},
-            std::move(h1),
-            detail::default_handler{});
-}
-
-/** Block until task completes on executor with separate handlers.
-
-    Executes a lazy task on the specified executor and blocks until
-    completion. The handler `h1` is called on success, `h2` on failure.
-
-    @par Thread Safety
-    The calling thread is blocked. The task and handlers may
-    execute on a different thread depending on the executor.
-
-    @par Exception Safety
-    Basic guarantee. Exceptions from the task are passed to `h2`.
-
-    @param ex The executor to execute the task on.
-    @param h1 Handler invoked with the result on success.
-    @param h2 Handler invoked with the exception on failure.
-
-    @return A wrapper that accepts a task for blocking execution.
-
-    @see run_async
-*/
-template<Executor Ex, class H1, class H2>
-[[nodiscard]] auto
-run_blocking(Ex ex, H1 h1, H2 h2)
-{
-    return run_blocking_wrapper<
-        Ex,
-        H1,
-        H2>(
-            std::move(ex),
-            std::stop_token{},
-            std::move(h1),
-            std::move(h2));
-}
-
-// With stop_token
 
 /** Block until task completes with stop token support.
 
-    Executes a lazy task using the inline executor with the given
-    stop token and blocks until completion.
-
-    @par Thread Safety
-    The calling thread is blocked. The task executes inline
-    on the calling thread.
+    Executes a lazy task on a single-threaded event loop
+    with the given stop token and blocks until completion.
 
     @par Exception Safety
     Basic guarantee. If the task throws, the exception is
@@ -610,10 +469,8 @@ run_blocking(Ex ex, H1 h1, H2 h2)
 run_blocking(std::stop_token st)
 {
     return run_blocking_wrapper<
-        inline_executor,
         detail::default_handler,
         detail::default_handler>(
-            inline_executor{},
             std::move(st),
             detail::default_handler{},
             detail::default_handler{});
@@ -633,16 +490,14 @@ template<class H1>
 run_blocking(std::stop_token st, H1 h1)
 {
     return run_blocking_wrapper<
-        inline_executor,
         H1,
         detail::default_handler>(
-            inline_executor{},
             std::move(st),
             std::move(h1),
             detail::default_handler{});
 }
 
-/** Block until task completes with stop token and separate handlers.
+/** Block until task completes with stop token and handlers.
 
     @param st The stop token for cooperative cancellation.
     @param h1 Handler invoked with the result on success.
@@ -657,84 +512,8 @@ template<class H1, class H2>
 run_blocking(std::stop_token st, H1 h1, H2 h2)
 {
     return run_blocking_wrapper<
-        inline_executor,
         H1,
         H2>(
-            inline_executor{},
-            std::move(st),
-            std::move(h1),
-            std::move(h2));
-}
-
-// Executor + stop_token
-
-/** Block until task completes on executor with stop token.
-
-    @param ex The executor to execute the task on.
-    @param st The stop token for cooperative cancellation.
-
-    @return A wrapper that accepts a task for blocking execution.
-
-    @see run_async
-*/
-template<Executor Ex>
-[[nodiscard]] auto
-run_blocking(Ex ex, std::stop_token st)
-{
-    return run_blocking_wrapper<
-        Ex,
-        detail::default_handler,
-        detail::default_handler>(
-            std::move(ex),
-            std::move(st),
-            detail::default_handler{},
-            detail::default_handler{});
-}
-
-/** Block until task completes on executor with stop token and handler.
-
-    @param ex The executor to execute the task on.
-    @param st The stop token for cooperative cancellation.
-    @param h1 Handler invoked with the result on success.
-
-    @return A wrapper that accepts a task for blocking execution.
-
-    @see run_async
-*/
-template<Executor Ex, class H1>
-[[nodiscard]] auto
-run_blocking(Ex ex, std::stop_token st, H1 h1)
-{
-    return run_blocking_wrapper<
-        Ex,
-        H1,
-        detail::default_handler>(
-            std::move(ex),
-            std::move(st),
-            std::move(h1),
-            detail::default_handler{});
-}
-
-/** Block until task completes on executor with stop token and handlers.
-
-    @param ex The executor to execute the task on.
-    @param st The stop token for cooperative cancellation.
-    @param h1 Handler invoked with the result on success.
-    @param h2 Handler invoked with the exception on failure.
-
-    @return A wrapper that accepts a task for blocking execution.
-
-    @see run_async
-*/
-template<Executor Ex, class H1, class H2>
-[[nodiscard]] auto
-run_blocking(Ex ex, std::stop_token st, H1 h1, H2 h2)
-{
-    return run_blocking_wrapper<
-        Ex,
-        H1,
-        H2>(
-            std::move(ex),
             std::move(st),
             std::move(h1),
             std::move(h2));
