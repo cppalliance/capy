@@ -10,8 +10,10 @@
 // Test that header file is self-contained.
 #include <boost/capy/when_any.hpp>
 
+#include <boost/capy/ex/async_event.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/io_task.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/when_all.hpp>
 
@@ -1733,6 +1735,521 @@ struct when_any_vector_test
 TEST_SUITE(
     when_any_vector_test,
     "boost.capy.when_any_vector");
+
+//----------------------------------------------------------
+// IoAwaitable (non-task) tests for when_any
+//----------------------------------------------------------
+
+struct when_any_io_awaitable_test
+{
+    // Test: when_any with stop_only_awaitable (void IoAwaitable) and task<int>
+    void
+    testStopOnlyAwaitableWithTask()
+    {
+        std::queue<coro> work_queue;
+        queuing_executor ex(work_queue);
+        bool completed = false;
+        std::size_t winner_index = 999;
+
+        run_async(ex,
+            [&](auto&& r) {
+                completed = true;
+                winner_index = r.first;
+            },
+            [](std::exception_ptr) {})(
+            when_any(stop_only_awaitable{}, returns_int(42)));
+
+        while (!work_queue.empty()) {
+            auto h = work_queue.front();
+            work_queue.pop();
+            h.resume();
+        }
+
+        BOOST_TEST(completed);
+        // task<int> completes immediately, stop_only_awaitable wakes via stop
+        BOOST_TEST_EQ(winner_index, 1u);
+    }
+
+    // Test: when_any with async_event wait_awaiter and task<int>
+    void
+    testAsyncEventWaitWithTask()
+    {
+        std::queue<coro> work_queue;
+        queuing_executor ex(work_queue);
+        bool completed = false;
+        std::size_t winner_index = 999;
+
+        async_event event;
+
+        run_async(ex,
+            [&](auto&& r) {
+                completed = true;
+                winner_index = r.first;
+            },
+            [](std::exception_ptr) {})(
+            when_any(event.wait(), returns_int(42)));
+
+        while (!work_queue.empty()) {
+            auto h = work_queue.front();
+            work_queue.pop();
+            h.resume();
+        }
+
+        BOOST_TEST(completed);
+        // task<int> completes first, event.wait() cancelled via stop token
+        BOOST_TEST_EQ(winner_index, 1u);
+    }
+
+    // Test: when_any with two stop_only_awaitables (homogeneous non-task)
+    void
+    testTwoStopOnlyAwaitables()
+    {
+        std::queue<coro> work_queue;
+        queuing_executor ex(work_queue);
+        bool completed = false;
+        std::size_t winner_index = 999;
+
+        // Use a stop_source to cancel from parent
+        std::stop_source parent_stop;
+
+        run_async(ex, parent_stop.get_token(),
+            [&](auto&& r) {
+                completed = true;
+                winner_index = r.first;
+            },
+            [](std::exception_ptr) {})(
+            when_any(stop_only_awaitable{}, stop_only_awaitable{}));
+
+        // Neither can complete on their own - request parent stop
+        parent_stop.request_stop();
+
+        while (!work_queue.empty()) {
+            auto h = work_queue.front();
+            work_queue.pop();
+            h.resume();
+        }
+
+        BOOST_TEST(completed);
+        BOOST_TEST(winner_index == 0 || winner_index == 1);
+    }
+
+    // Test: when_any with io_task<> (task<io_result<>>)
+    void
+    testIoTaskWithWhenAny()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool completed = false;
+        std::size_t winner_index = 999;
+
+        auto io_op = []() -> io_task<> {
+            co_return io_result<>{{}};
+        };
+
+        run_async(ex,
+            [&](auto&& r) {
+                completed = true;
+                winner_index = r.first;
+            },
+            [](std::exception_ptr) {})(
+            when_any(io_op(), io_op()));
+
+        BOOST_TEST(completed);
+        BOOST_TEST(winner_index == 0 || winner_index == 1);
+    }
+
+    // Test: when_any with io_task<size_t> (task<io_result<size_t>>)
+    void
+    testIoTaskWithValueAndWhenAny()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool completed = false;
+        std::size_t winner_index = 999;
+        io_result<std::size_t> result;
+
+        auto io_read = [](std::size_t n) -> io_task<std::size_t> {
+            co_return io_result<std::size_t>{{}, n};
+        };
+
+        run_async(ex,
+            [&](auto&& r) {
+                completed = true;
+                winner_index = r.first;
+                result = std::get<io_result<std::size_t>>(r.second);
+            },
+            [](std::exception_ptr) {})(
+            when_any(io_read(100), io_read(200)));
+
+        BOOST_TEST(completed);
+        BOOST_TEST(winner_index == 0 || winner_index == 1);
+        if (winner_index == 0)
+            BOOST_TEST_EQ(result.t1, 100u);
+        else
+            BOOST_TEST_EQ(result.t1, 200u);
+    }
+
+    // Test: when_any with mixed io_task and regular task
+    void
+    testIoTaskMixedWithRegularTask()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool completed = false;
+        std::size_t winner_index = 999;
+
+        auto io_op = []() -> io_task<std::size_t> {
+            co_return io_result<std::size_t>{{}, 42};
+        };
+
+        run_async(ex,
+            [&](auto&& r) {
+                completed = true;
+                winner_index = r.first;
+            },
+            [](std::exception_ptr) {})(
+            when_any(io_op(), returns_int(99)));
+
+        BOOST_TEST(completed);
+        BOOST_TEST(winner_index == 0 || winner_index == 1);
+    }
+
+    // Test: vector of event waiters (range overload with non-task IoAwaitable)
+    void
+    testVectorOfEventWaiters()
+    {
+        std::queue<coro> work_queue;
+        queuing_executor ex(work_queue);
+        bool completed = false;
+        std::size_t winner_index = 999;
+
+        async_event event1;
+        async_event event2;
+
+        std::vector<async_event::wait_awaiter> waiters;
+        waiters.push_back(event1.wait());
+        waiters.push_back(event2.wait());
+
+        run_async(ex,
+            [&](auto&& r) {
+                completed = true;
+                winner_index = r.first;
+            },
+            [](std::exception_ptr) {})(
+            when_any(std::move(waiters)));
+
+        // Set event1 to wake the first waiter
+        event1.set();
+
+        while (!work_queue.empty()) {
+            auto h = work_queue.front();
+            work_queue.pop();
+            h.resume();
+        }
+
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(winner_index, 0u);
+    }
+
+    void
+    run()
+    {
+        testStopOnlyAwaitableWithTask();
+        testAsyncEventWaitWithTask();
+        testTwoStopOnlyAwaitables();
+        testIoTaskWithWhenAny();
+        testIoTaskWithValueAndWhenAny();
+        testIoTaskMixedWithRegularTask();
+        testVectorOfEventWaiters();
+    }
+};
+
+TEST_SUITE(
+    when_any_io_awaitable_test,
+    "boost.capy.when_any_io_awaitable");
+
+//----------------------------------------------------------
+// IoAwaitableRange tests for when_any (range overloads
+// with non-task IoAwaitable element types)
+//----------------------------------------------------------
+
+struct when_any_io_awaitable_range_test
+{
+    // Test: vector of stop_only_awaitables (void range overload)
+    void
+    testVoidRangeStopOnlyAwaitables()
+    {
+        std::queue<coro> work_queue;
+        queuing_executor ex(work_queue);
+        bool completed = false;
+        std::size_t winner_index = 999;
+
+        std::stop_source parent_stop;
+
+        std::vector<stop_only_awaitable> awaitables;
+        awaitables.push_back(stop_only_awaitable{});
+        awaitables.push_back(stop_only_awaitable{});
+        awaitables.push_back(stop_only_awaitable{});
+
+        run_async(ex, parent_stop.get_token(),
+            [&](std::size_t idx) {
+                completed = true;
+                winner_index = idx;
+            },
+            [](std::exception_ptr) {})(
+            when_any(std::move(awaitables)));
+
+        // All three are suspended waiting for stop
+        parent_stop.request_stop();
+
+        while (!work_queue.empty()) {
+            auto h = work_queue.front();
+            work_queue.pop();
+            h.resume();
+        }
+
+        BOOST_TEST(completed);
+        BOOST_TEST(winner_index < 3);
+    }
+
+    // Test: vector of event waiters (non-void range overload)
+    void
+    testNonVoidRangeEventWaiters()
+    {
+        std::queue<coro> work_queue;
+        queuing_executor ex(work_queue);
+        bool completed = false;
+        std::size_t winner_index = 999;
+        io_result<> winner_result;
+
+        async_event event0;
+        async_event event1;
+        async_event event2;
+
+        std::vector<async_event::wait_awaiter> waiters;
+        waiters.push_back(event0.wait());
+        waiters.push_back(event1.wait());
+        waiters.push_back(event2.wait());
+
+        run_async(ex,
+            [&](auto&& r) {
+                completed = true;
+                winner_index = r.first;
+                winner_result = r.second;
+            },
+            [](std::exception_ptr) {})(
+            when_any(std::move(waiters)));
+
+        // Set event1 - second waiter wins
+        event1.set();
+
+        while (!work_queue.empty()) {
+            auto h = work_queue.front();
+            work_queue.pop();
+            h.resume();
+        }
+
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(winner_index, 1u);
+        // Winner completed via set(), no error
+        BOOST_TEST(!winner_result.ec);
+    }
+
+    // Test: vector of event waiters where winner is cancelled
+    void
+    testNonVoidRangeAllCancelled()
+    {
+        std::queue<coro> work_queue;
+        queuing_executor ex(work_queue);
+        bool completed = false;
+        std::size_t winner_index = 999;
+        io_result<> winner_result;
+
+        async_event event0;
+        async_event event1;
+
+        std::stop_source parent_stop;
+
+        std::vector<async_event::wait_awaiter> waiters;
+        waiters.push_back(event0.wait());
+        waiters.push_back(event1.wait());
+
+        run_async(ex, parent_stop.get_token(),
+            [&](auto&& r) {
+                completed = true;
+                winner_index = r.first;
+                winner_result = r.second;
+            },
+            [](std::exception_ptr) {})(
+            when_any(std::move(waiters)));
+
+        // Cancel from parent - no events set
+        parent_stop.request_stop();
+
+        while (!work_queue.empty()) {
+            auto h = work_queue.front();
+            work_queue.pop();
+            h.resume();
+        }
+
+        BOOST_TEST(completed);
+        BOOST_TEST(winner_index < 2);
+        // Winner completed via cancellation
+        BOOST_TEST_EQ(winner_result.ec,
+            make_error_code(error::canceled));
+    }
+
+    // Test: single-element range of non-task IoAwaitable
+    void
+    testSingleElementRange()
+    {
+        std::queue<coro> work_queue;
+        queuing_executor ex(work_queue);
+        bool completed = false;
+        std::size_t winner_index = 999;
+
+        async_event event;
+
+        std::vector<async_event::wait_awaiter> waiters;
+        waiters.push_back(event.wait());
+
+        run_async(ex,
+            [&](auto&& r) {
+                completed = true;
+                winner_index = r.first;
+            },
+            [](std::exception_ptr) {})(
+            when_any(std::move(waiters)));
+
+        event.set();
+
+        while (!work_queue.empty()) {
+            auto h = work_queue.front();
+            work_queue.pop();
+            h.resume();
+        }
+
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(winner_index, 0u);
+    }
+
+    // Test: empty range of non-task IoAwaitable throws
+    void
+    testEmptyRangeThrows()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool caught_exception = false;
+
+        std::vector<async_event::wait_awaiter> waiters;
+
+        run_async(ex,
+            [](auto&&) {},
+            [&](std::exception_ptr ep) {
+                try {
+                    std::rethrow_exception(ep);
+                } catch (std::invalid_argument const&) {
+                    caught_exception = true;
+                }
+            })(when_any(std::move(waiters)));
+
+        BOOST_TEST(caught_exception);
+    }
+
+    // Test: event waiters where first event is already set
+    void
+    testAlreadySetEventInRange()
+    {
+        std::queue<coro> work_queue;
+        queuing_executor ex(work_queue);
+        bool completed = false;
+        std::size_t winner_index = 999;
+        io_result<> winner_result;
+
+        async_event event0;
+        async_event event1;
+
+        // Set event0 before creating waiters
+        event0.set();
+
+        std::vector<async_event::wait_awaiter> waiters;
+        waiters.push_back(event0.wait());
+        waiters.push_back(event1.wait());
+
+        run_async(ex,
+            [&](auto&& r) {
+                completed = true;
+                winner_index = r.first;
+                winner_result = r.second;
+            },
+            [](std::exception_ptr) {})(
+            when_any(std::move(waiters)));
+
+        while (!work_queue.empty()) {
+            auto h = work_queue.front();
+            work_queue.pop();
+            h.resume();
+        }
+
+        BOOST_TEST(completed);
+        // event0 was already set, so waiter 0 completes immediately
+        BOOST_TEST_EQ(winner_index, 0u);
+        BOOST_TEST(!winner_result.ec);
+    }
+
+    // Test: large range of non-task IoAwaitables
+    void
+    testLargeRange()
+    {
+        std::queue<coro> work_queue;
+        queuing_executor ex(work_queue);
+        bool completed = false;
+        std::size_t winner_index = 999;
+
+        constexpr std::size_t count = 20;
+        std::vector<async_event> events(count);
+
+        std::vector<async_event::wait_awaiter> waiters;
+        for (std::size_t i = 0; i < count; ++i)
+            waiters.push_back(events[i].wait());
+
+        run_async(ex,
+            [&](auto&& r) {
+                completed = true;
+                winner_index = r.first;
+            },
+            [](std::exception_ptr) {})(
+            when_any(std::move(waiters)));
+
+        // Set the 15th event
+        events[15].set();
+
+        while (!work_queue.empty()) {
+            auto h = work_queue.front();
+            work_queue.pop();
+            h.resume();
+        }
+
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(winner_index, 15u);
+    }
+
+    void
+    run()
+    {
+        testVoidRangeStopOnlyAwaitables();
+        testNonVoidRangeEventWaiters();
+        testNonVoidRangeAllCancelled();
+        testSingleElementRange();
+        testEmptyRangeThrows();
+        testAlreadySetEventInRange();
+        testLargeRange();
+    }
+};
+
+TEST_SUITE(
+    when_any_io_awaitable_range_test,
+    "boost.capy.when_any_io_awaitable_range");
 
 } // capy
 } // boost
