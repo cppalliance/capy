@@ -29,7 +29,7 @@ struct mock_source_awaitable_pair
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
-        coro,
+        std::coroutine_handle<>,
         io_env const&) const noexcept
     {
     }
@@ -47,7 +47,7 @@ struct mock_source_awaitable_tuple
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
-        coro,
+        std::coroutine_handle<>,
         io_env const&) const noexcept
     {
     }
@@ -65,7 +65,7 @@ struct mock_source_awaitable_wrong_type
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
-        coro,
+        std::coroutine_handle<>,
         io_env const&) const noexcept
     {
     }
@@ -83,7 +83,7 @@ struct mock_source_awaitable_int
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
-        coro,
+        std::coroutine_handle<>,
         io_env const&) const noexcept
     {
     }

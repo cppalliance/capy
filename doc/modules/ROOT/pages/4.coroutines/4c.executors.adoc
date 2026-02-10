@@ -13,8 +13,8 @@ An *executor* is an object that can schedule work for execution. In Capy, execut
 
 [source,cpp]
 ----
-concept Executor = requires(E ex, coro h) {
-    { ex.dispatch(h) } -> std::same_as<coro>;
+concept Executor = requires(E ex, std::coroutine_handle<> h) {
+    { ex.dispatch(h) } -> std::same_as<std::coroutine_handle<>>;
     { ex.post(h) } -> std::same_as<void>;
     { ex.context() } -> std::convertible_to<execution_context&>;
 };
@@ -40,7 +40,7 @@ Returns a reference to the execution context that owns this executor. The contex
 
 [source,cpp]
 ----
-void schedule_work(executor_ref ex, coro h)
+void schedule_work(executor_ref ex, std::coroutine_handle<> h)
 {
     ex.post(h);  // Works with any executor
 }

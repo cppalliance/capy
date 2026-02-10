@@ -44,9 +44,9 @@ class thread_pool::impl
 {
     struct work : detail::intrusive_queue<work>::node
     {
-        coro h_;
+        std::coroutine_handle<> h_;
 
-        explicit work(coro h) noexcept
+        explicit work(std::coroutine_handle<> h) noexcept
             : h_(h)
         {
         }
@@ -99,7 +99,7 @@ public:
     }
 
     void
-    post(coro h)
+    post(std::coroutine_handle<> h)
     {
         ensure_started();
         auto* w = new work(h);
@@ -183,7 +183,7 @@ stop() noexcept
 
 void
 thread_pool::executor_type::
-post(coro h) const
+post(std::coroutine_handle<> h) const
 {
     pool_->impl_->post(h);
 }

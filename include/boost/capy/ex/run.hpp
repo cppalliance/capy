@@ -14,7 +14,7 @@
 #include <boost/capy/detail/run.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_launchable_task.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
 
@@ -135,7 +135,7 @@ struct [[nodiscard]] run_awaitable_ex
         return inner_.await_resume();
     }
 
-    coro await_suspend(coro cont, io_env const& caller_env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const& caller_env)
     {
         auto h = inner_.handle();
         auto& p = h.promise();
@@ -233,7 +233,7 @@ struct [[nodiscard]] run_awaitable
         return inner_.await_resume();
     }
 
-    coro await_suspend(coro cont, io_env const& caller_env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const& caller_env)
     {
         auto h = inner_.handle();
         auto& p = h.promise();

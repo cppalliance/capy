@@ -19,7 +19,6 @@
 
 // Core types
 #include <boost/capy/cond.hpp>
-#include <boost/capy/coro.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/io_task.hpp>

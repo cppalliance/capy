@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_TEST_RUN_BLOCKING_HPP
 #define BOOST_CAPY_TEST_RUN_BLOCKING_HPP
 
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -93,7 +93,7 @@ struct inline_executor
         @param h The coroutine handle to execute.
     */
     void
-    dispatch(coro h) const
+    dispatch(std::coroutine_handle<> h) const
     {
         h.resume();
     }
@@ -109,7 +109,7 @@ struct inline_executor
         @param h The coroutine handle (unused).
     */
     [[noreturn]] void
-    post(coro) const
+    post(std::coroutine_handle<>) const
     {
         throw std::logic_error(
             "post not supported in blocking context");

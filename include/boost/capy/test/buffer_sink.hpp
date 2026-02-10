@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/test/fuse.hpp>
@@ -176,7 +176,7 @@ public:
             // exists to allow the same awaitable type to work with both
             // synchronous (test) and asynchronous (real I/O) code.
             void await_suspend(
-                coro,
+                std::coroutine_handle<>,
                 io_env const&) const noexcept
             {
             }
@@ -225,7 +225,7 @@ public:
             // but is never called because await_ready() returns true.
             // See the comment on commit(std::size_t) for a detailed explanation.
             void await_suspend(
-                coro,
+                std::coroutine_handle<>,
                 io_env const&) const noexcept
             {
             }

@@ -43,7 +43,7 @@ struct pending_write_awaitable
         : counter_(std::exchange(o.counter_, nullptr)) {}
     ~pending_write_awaitable() { if(counter_) ++(*counter_); }
     bool await_ready() const noexcept { return false; }
-    coro await_suspend(coro, io_env const&)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<>, io_env const&)
         { return std::noop_coroutine(); }
     io_result<std::size_t> await_resume()
         { return {{}, 0}; }

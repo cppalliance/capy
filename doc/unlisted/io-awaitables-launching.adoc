@@ -279,7 +279,7 @@ as a copy. Copying is unnecessary and wasteful.
 
 [source,cpp]
 ----
-coro await_suspend(coro h, io_env const& env)
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env)
 {
     env_ = &env;  // Correct: store pointer
     // ...

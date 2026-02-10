@@ -235,7 +235,7 @@ struct run_blocking_test
         bool caught = false;
         try
         {
-            ex.post(coro{});
+            ex.post(std::coroutine_handle<>{});
         }
         catch(std::logic_error const& e)
         {
@@ -288,13 +288,13 @@ struct run_blocking_test
             void on_work_started() const noexcept {}
             void on_work_finished() const noexcept {}
 
-            void dispatch(coro h) const
+            void dispatch(std::coroutine_handle<> h) const
             {
                 ++(*count_);
                 h.resume();
             }
 
-            void post(coro h) const
+            void post(std::coroutine_handle<> h) const
             {
                 h.resume();
             }

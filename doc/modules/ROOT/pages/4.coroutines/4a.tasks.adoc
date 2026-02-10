@@ -150,7 +150,7 @@ This is implemented through the `await_suspend` returning a coroutine handle rat
 [source,cpp]
 ----
 // Inside task's final_suspend awaiter
-coro await_suspend(coro) const noexcept
+std::coroutine_handle<> await_suspend(std::coroutine_handle<>) const noexcept
 {
     return continuation_;  // Transfer directly to continuation
 }

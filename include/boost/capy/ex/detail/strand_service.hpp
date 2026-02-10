@@ -11,7 +11,7 @@
 #define BOOST_CAPY_EX_DETAIL_STRAND_SERVICE_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
@@ -68,11 +68,11 @@ public:
 
     /** Dispatch through strand; may resume inline if running in strand. */
     static void
-    dispatch(strand_impl& impl, executor_ref ex, coro h);
+    dispatch(strand_impl& impl, executor_ref ex, std::coroutine_handle<> h);
 
     /** Post to strand queue. */
     static void
-    post(strand_impl& impl, executor_ref ex, coro h);
+    post(strand_impl& impl, executor_ref ex, std::coroutine_handle<> h);
 
 protected:
     strand_service();

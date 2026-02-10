@@ -35,7 +35,7 @@ IoLaunchableTask
 ----
 template<typename A>
 concept IoAwaitable =
-    requires(A a, coro h, io_env const& env)
+    requires(A a, std::coroutine_handle<> h, io_env const& env)
     {
         a.await_suspend(h, env);
     };
@@ -53,12 +53,12 @@ concept IoAwaitableTask =
         typename T::promise_type& p,
         typename T::promise_type const& cp,
         io_env const& env,
-        coro cont)
+        std::coroutine_handle<> cont)
     {
         { p.set_environment(env) } noexcept;
         { p.set_continuation(cont, env.executor) } noexcept;
         { cp.environment() } noexcept -> std::same_as<io_env const&>;
-        { cp.complete() } noexcept -> std::same_as<coro>;
+        { cp.complete() } noexcept -> std::same_as<std::coroutine_handle<>>;
     };
 ----
 
@@ -139,7 +139,7 @@ Capy's `IoAwaitable` protocol passes the execution environment as an explicit pa
 
 [source,cpp]
 ----
-auto await_suspend(coro h, io_env const& env);
+auto await_suspend(std::coroutine_handle<> h, io_env const& env);
 ----
 
 The executor and stop token flow forward structurally through the call chain via `io_env`. If a task's machinery does not provide them, the code does not compile. There is no fallback.

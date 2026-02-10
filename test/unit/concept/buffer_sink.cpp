@@ -29,7 +29,7 @@ struct mock_commit_awaitable
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
-        coro,
+        std::coroutine_handle<>,
         io_env const&) const noexcept
     {
     }
@@ -47,7 +47,7 @@ struct mock_commit_awaitable_wrong_type
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
-        coro,
+        std::coroutine_handle<>,
         io_env const&) const noexcept
     {
     }

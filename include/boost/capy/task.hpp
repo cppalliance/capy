@@ -141,7 +141,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                     return false;
                 }
 
-                void await_suspend(coro) const noexcept
+                void await_suspend(std::coroutine_handle<>) const noexcept
                 {
                 }
 
@@ -167,7 +167,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                     return false;
                 }
 
-                coro await_suspend(coro) const noexcept
+                std::coroutine_handle<> await_suspend(std::coroutine_handle<>) const noexcept
                 {
                     return p_->complete();
                 }
@@ -255,7 +255,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     }
 
     /// Start execution with the caller's context.
-    coro await_suspend(coro cont, io_env const& env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const& env)
     {
         h_.promise().set_continuation(cont, env.executor);
         h_.promise().set_environment(env);

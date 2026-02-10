@@ -42,7 +42,7 @@ The IoAwaitable protocol extends `await_suspend` to receive context:
 
 [source,cpp]
 ----
-coro await_suspend(coro h, io_env const& env);
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env);
 ----
 
 This signature receives:
@@ -62,9 +62,9 @@ An awaitable satisfies `IoAwaitable` if:
 [source,cpp]
 ----
 template<typename T>
-concept IoAwaitable = requires(T& t, coro h, io_env const& env) {
+concept IoAwaitable = requires(T& t, std::coroutine_handle<> h, io_env const& env) {
     { t.await_ready() } -> std::convertible_to<bool>;
-    { t.await_suspend(h, env) } -> std::same_as<coro>;
+    { t.await_suspend(h, env) } -> std::same_as<std::coroutine_handle<>>;
     t.await_resume();
 };
 ----
@@ -130,7 +130,7 @@ To create a custom IoAwaitable:
 struct my_awaitable
 {
     io_env const* env_ = nullptr;
-    coro continuation_;
+    std::coroutine_handle<> continuation_;
     result_type result_;
 
     bool await_ready() const noexcept
@@ -138,7 +138,7 @@ struct my_awaitable
         return false;  // Or true if result is immediately available
     }
     
-    coro await_suspend(coro h, io_env const& env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env)
     {
         // Store pointer to environment, never copy
         env_ = &env;

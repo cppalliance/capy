@@ -16,7 +16,7 @@
 #include <boost/capy/buffers/consuming_buffers.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/write_stream.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
@@ -94,7 +94,7 @@ class write_now
         {
             io_result<std::size_t> result_;
             std::exception_ptr ep_;
-            coro cont_{nullptr};
+            std::coroutine_handle<> cont_{nullptr};
             io_env env_;
             bool done_ = false;
 
@@ -125,7 +125,7 @@ class write_now
                         return false;
                     }
 
-                    coro await_suspend(coro) const noexcept
+                    std::coroutine_handle<> await_suspend(std::coroutine_handle<>) const noexcept
                     {
                         p_->done_ = true;
                         if(!p_->cont_)
@@ -172,7 +172,7 @@ class write_now
                             return inner_.await_ready();
                         }
 
-                        coro await_suspend(coro h)
+                        std::coroutine_handle<> await_suspend(std::coroutine_handle<> h)
                         {
                             return detail::call_await_suspend(
                                 &inner_, h,
@@ -239,8 +239,8 @@ class write_now
             return h_.promise().done_;
         }
 
-        coro await_suspend(
-            coro cont,
+        std::coroutine_handle<> await_suspend(
+            std::coroutine_handle<> cont,
             io_env const& env)
         {
             auto& p = h_.promise();

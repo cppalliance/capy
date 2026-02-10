@@ -10,7 +10,6 @@
 #ifndef BOOST_CAPY_TEST_CUSTOM_TASK_HPP
 #define BOOST_CAPY_TEST_CUSTOM_TASK_HPP
 
-#include <boost/capy/coro.hpp>
 #include <boost/capy/ex/io_awaitable_support.hpp>
 #include <boost/capy/ex/io_env.hpp>
 
@@ -68,7 +67,7 @@ struct custom_task
             {
                 promise_type* p_;
                 bool await_ready() const noexcept { return false; }
-                coro await_suspend(coro) const noexcept { return p_->complete(); }
+                std::coroutine_handle<> await_suspend(std::coroutine_handle<>) const noexcept { return p_->complete(); }
                 void await_resume() const noexcept {}
             };
             return awaiter{this};
@@ -103,7 +102,7 @@ struct custom_task
             return std::move(*h_.promise().result_);
     }
 
-    coro await_suspend(coro cont, io_env const& env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const& env)
     {
         h_.promise().set_continuation(cont, env.executor);
         h_.promise().set_environment(env);

@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/cond.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/error.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/io_task.hpp>
@@ -176,8 +176,8 @@ struct read_until_awaitable
         return immediate_.has_value();
     }
 
-    coro
-    await_suspend(coro h, io_env const& env)
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> h, io_env const& env)
     {
         inner_.emplace(read_until_match_impl(
             *stream_, buffers(), match_, initial_amount_));

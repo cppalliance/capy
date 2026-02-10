@@ -11,7 +11,6 @@
 #define BOOST_CAPY_EX_IO_AWAITABLE_SUPPORT_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/coro.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/this_coro.hpp>
@@ -110,7 +109,7 @@ namespace capy {
         std::coroutine_handle<promise_type> h_;
 
         // IoAwaitable await_suspend receives and stores the environment
-        coro await_suspend(coro cont, io_env const& env)
+        std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const& env)
         {
             h_.promise().set_environment(env);
             // ... rest of suspend logic ...
@@ -133,7 +132,7 @@ class io_awaitable_support
 {
     io_env const* env_ = &detail::empty_io_env;
     executor_ref caller_ex_;
-    mutable coro cont_{nullptr};
+    mutable std::coroutine_handle<> cont_{nullptr};
 
 public:
     //----------------------------------------------------------
@@ -215,7 +214,7 @@ public:
         @param cont The continuation to resume on completion.
         @param caller_ex The caller's executor for completion dispatch.
     */
-    void set_continuation(coro cont, executor_ref caller_ex) noexcept
+    void set_continuation(std::coroutine_handle<> cont, executor_ref caller_ex) noexcept
     {
         cont_ = cont;
         caller_ex_ = caller_ex;
@@ -233,7 +232,7 @@ public:
 
         @return A coroutine handle for symmetric transfer.
     */
-    coro complete() const noexcept
+    std::coroutine_handle<> complete() const noexcept
     {
         if(!cont_)
             return std::noop_coroutine();
@@ -309,7 +308,7 @@ public:
             {
                 io_env const* env_;
                 bool await_ready() const noexcept { return true; }
-                void await_suspend(coro) const noexcept { }
+                void await_suspend(std::coroutine_handle<>) const noexcept { }
                 io_env const& await_resume() const noexcept { return *env_; }
             };
             return awaiter{env_};
@@ -320,7 +319,7 @@ public:
             {
                 executor_ref executor_;
                 bool await_ready() const noexcept { return true; }
-                void await_suspend(coro) const noexcept { }
+                void await_suspend(std::coroutine_handle<>) const noexcept { }
                 executor_ref await_resume() const noexcept { return executor_; }
             };
             return awaiter{env_->executor};
@@ -331,7 +330,7 @@ public:
             {
                 std::stop_token token_;
                 bool await_ready() const noexcept { return true; }
-                void await_suspend(coro) const noexcept { }
+                void await_suspend(std::coroutine_handle<>) const noexcept { }
                 std::stop_token await_resume() const noexcept { return token_; }
             };
             return awaiter{env_->stop_token};
@@ -342,7 +341,7 @@ public:
             {
                 std::pmr::memory_resource* allocator_;
                 bool await_ready() const noexcept { return true; }
-                void await_suspend(coro) const noexcept { }
+                void await_suspend(std::coroutine_handle<>) const noexcept { }
                 std::pmr::memory_resource* await_resume() const noexcept { return allocator_; }
             };
             return awaiter{env_->allocator};

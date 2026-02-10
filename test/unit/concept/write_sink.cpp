@@ -29,7 +29,7 @@ struct mock_sink_awaitable
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
-        coro,
+        std::coroutine_handle<>,
         io_env const&) const noexcept
     {
     }
@@ -47,7 +47,7 @@ struct mock_sink_awaitable_with_size
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
-        coro,
+        std::coroutine_handle<>,
         io_env const&) const noexcept
     {
     }
@@ -65,7 +65,7 @@ struct mock_sink_awaitable_int
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
-        coro,
+        std::coroutine_handle<>,
         io_env const&) const noexcept
     {
     }

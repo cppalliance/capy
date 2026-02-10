@@ -15,7 +15,7 @@
 #include <boost/asio/cancellation_signal.hpp>
 #include <boost/asio/deferred.hpp>
 
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
@@ -122,8 +122,8 @@ public:
         return false;
     }
 
-    capy::coro await_suspend(
-        capy::coro h,
+    std::coroutine_handle<> await_suspend(
+        std::coroutine_handle<> h,
         capy::io_env const& env)
     {
         cancel_ = std::make_shared<cancel_bridge>(env.stop_token);

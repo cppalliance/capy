@@ -81,7 +81,7 @@ struct name_checker
     };
 
     std::coroutine_handle<promise_type> h;
-    operator coro() const { return h; }
+    operator std::coroutine_handle<>() const { return h; }
 };
 
 name_checker check_thread_name(name_check_result& result, char const* prefix)

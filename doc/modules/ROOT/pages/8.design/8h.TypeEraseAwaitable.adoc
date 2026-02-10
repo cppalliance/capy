@@ -24,7 +24,7 @@ struct vtable
 {
     void (*construct_awaitable)(...);       // 8
     bool (*await_ready)(void*);            // 8
-    coro (*await_suspend)(void*, ...);     // 8
+    std::coroutine_handle<> (*await_suspend)(void*, ...);     // 8
     io_result<size_t> (*await_resume)(void*); // 8
     void (*destroy_awaitable)(void*);      // 8
     size_t awaitable_size;                 // 8
@@ -50,7 +50,7 @@ bool await_ready() {
     return vt_->await_ready(storage_);   // true → no suspend
 }
 
-coro await_suspend(coro h, io_env const& env) {
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env) {
     return vt_->await_suspend(storage_, h, env);
 }
 
@@ -74,7 +74,7 @@ bool await_ready() const noexcept {
     return buffers_.empty();             // short-circuit, no construct
 }
 
-coro await_suspend(coro h, io_env const& env) {
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env) {
     vt_->construct_awaitable(stream_, storage_, buffers);
     awaitable_active_ = true;
     if(vt_->await_ready(storage_))
@@ -110,7 +110,7 @@ created.
 struct awaitable_ops
 {
     bool (*await_ready)(void*);
-    coro (*await_suspend)(void*, ...);
+    std::coroutine_handle<> (*await_suspend)(void*, ...);
     io_result<size_t> (*await_resume)(void*);
     void (*destroy)(void*);
 };
@@ -135,7 +135,7 @@ bool await_ready() const noexcept {
     return buffers_.empty();             // short-circuit
 }
 
-coro await_suspend(coro h, io_env const& env) {
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env) {
     active_ops_ = vt_->construct_awaitable(stream_, storage_, buffers_);
     if(active_ops_->await_ready(storage_))
         return h;                        // immediate → resume caller

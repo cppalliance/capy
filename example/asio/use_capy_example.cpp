@@ -14,7 +14,7 @@
 #include <boost/asio/read.hpp>
 #include <boost/asio/write.hpp>
 
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/task.hpp>
 #include <boost/capy/when_all.hpp>
 #include <boost/capy/ex/run_async.hpp>

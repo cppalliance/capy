@@ -34,7 +34,7 @@ struct mock_read_awaitable
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
-        coro,
+        std::coroutine_handle<>,
         io_env const&) const noexcept
     {
     }
@@ -52,7 +52,7 @@ struct mock_write_awaitable
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
-        coro,
+        std::coroutine_handle<>,
         io_env const&) const noexcept
     {
     }

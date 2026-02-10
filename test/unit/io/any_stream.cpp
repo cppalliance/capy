@@ -69,7 +69,7 @@ public:
             bool await_ready() const noexcept { return true; }
 
             void await_suspend(
-                coro,
+                std::coroutine_handle<>,
                 io_env const&) const noexcept
             {
             }
@@ -108,7 +108,7 @@ public:
             bool await_ready() const noexcept { return true; }
 
             void await_suspend(
-                coro,
+                std::coroutine_handle<>,
                 io_env const&) const noexcept
             {
             }

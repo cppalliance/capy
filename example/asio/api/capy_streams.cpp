@@ -19,7 +19,7 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_array.hpp>
 #include <boost/capy/concept/stream.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 
@@ -97,9 +97,9 @@ public:
             return false;
         }
 
-        capy::coro
+        std::coroutine_handle<>
         await_suspend(
-            capy::coro h,
+            std::coroutine_handle<> h,
             capy::io_env const& env)
         {
             cancel_ = std::make_shared<cancel_state>(env.stop_token);
@@ -159,9 +159,9 @@ public:
             return false;
         }
 
-        capy::coro
+        std::coroutine_handle<>
         await_suspend(
-            capy::coro h,
+            std::coroutine_handle<> h,
             capy::io_env const& env)
         {
             cancel_ = std::make_shared<cancel_state>(env.stop_token);
@@ -234,12 +234,12 @@ public:
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    void dispatch(capy::coro h) const
+    void dispatch(std::coroutine_handle<> h) const
     {
         net::dispatch(ex_, [h]{ h.resume(); });
     }
 
-    void post(capy::coro h) const
+    void post(std::coroutine_handle<> h) const
     {
         net::post(ex_, [h]{ h.resume(); });
     }

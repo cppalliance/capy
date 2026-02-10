@@ -520,16 +520,16 @@ struct when_all_test
         void on_work_started() const noexcept {}
         void on_work_finished() const noexcept {}
 
-        void dispatch(coro h) const
-        {
-            ++(*dispatch_count_);
-            h.resume();
-        }
+    void dispatch(std::coroutine_handle<> h) const
+    {
+        ++(*dispatch_count_);
+        h.resume();
+    }
 
-        void post(coro h) const
-        {
-            h.resume();
-        }
+    void post(std::coroutine_handle<> h) const
+    {
+        h.resume();
+    }
     };
 
     static_assert(Executor<tracking_executor>);
@@ -893,7 +893,7 @@ struct when_all_io_awaitable_test
     void
     testStopOnlyAwaitableWithTask()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
         bool completed = false;
         int result = 0;
@@ -925,7 +925,7 @@ struct when_all_io_awaitable_test
     void
     testAsyncEventWaitWithTask()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
         bool completed = false;
         int result = 0;
@@ -959,7 +959,7 @@ struct when_all_io_awaitable_test
     void
     testTwoStopOnlyAwaitables()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
         bool completed = false;
 

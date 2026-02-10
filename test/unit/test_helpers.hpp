@@ -13,7 +13,7 @@
 
 #include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/task.hpp>
@@ -100,7 +100,7 @@ struct test_executor
     void on_work_finished() const noexcept {}
 
     void
-    dispatch(coro h) const
+    dispatch(std::coroutine_handle<> h) const
     {
         if(dispatch_count_)
             ++(*dispatch_count_);
@@ -108,7 +108,7 @@ struct test_executor
     }
 
     void
-    post(coro h) const
+    post(std::coroutine_handle<> h) const
     {
         h.resume();
     }
@@ -233,7 +233,7 @@ struct self_destroy_awaitable
 {
     bool await_ready() {return false;}
 
-    coro await_suspend(coro h, io_env const&)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const&)
     {
         // one wouldn't expect this to happen, but it should not cause UB
         h.destroy();
@@ -249,11 +249,11 @@ struct stop_only_awaitable
     stop_only_awaitable() noexcept = default;
     stop_only_awaitable(stop_only_awaitable && ) noexcept {}
 
-    std::optional<std::stop_callback<coro>> stop_cb;
+    std::optional<std::stop_callback<std::coroutine_handle<>>> stop_cb;
 
     bool await_ready() {return false;}
 
-    coro await_suspend(coro h, io_env const& env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env)
     {
         if (env.stop_token.stop_requested())
             return h;
@@ -336,10 +336,10 @@ void_throws_exception(char const* msg)
 */
 struct queuing_executor
 {
-    std::queue<coro>* queue_;
+    std::queue<std::coroutine_handle<>>* queue_;
     test_io_context* ctx_ = nullptr;
 
-    explicit queuing_executor(std::queue<coro>& q)
+    explicit queuing_executor(std::queue<std::coroutine_handle<>>& q)
         : queue_(&q)
     {
     }
@@ -357,13 +357,13 @@ struct queuing_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    coro dispatch(coro h) const
+    std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
     {
         queue_->push(h);
         return std::noop_coroutine();
     }
 
-    void post(coro h) const
+    void post(std::coroutine_handle<> h) const
     {
         queue_->push(h);
     }
@@ -388,7 +388,7 @@ struct yield_awaitable
         return false;
     }
 
-    coro await_suspend(coro h, io_env const& env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env)
     {
         // Post ourselves back to the queue
         env.executor.post(h);

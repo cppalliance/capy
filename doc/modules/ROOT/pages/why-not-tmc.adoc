@@ -178,7 +178,7 @@ The awaitable receives a handle to resume. That's all. No information about wher
 
 [source,cpp]
 ----
-auto await_suspend(coro h, io_env const& env);
+auto await_suspend(std::coroutine_handle<> h, io_env const& env);
 ----
 
 The awaitable receives:

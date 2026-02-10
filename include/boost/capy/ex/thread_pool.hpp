@@ -12,7 +12,7 @@
 #define BOOST_CAPY_EX_THREAD_POOL_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/execution_context.hpp>
 #include <cstddef>
 #include <string_view>
@@ -154,7 +154,7 @@ public:
         @param h The coroutine handle to execute.
     */
     void
-    dispatch(coro h) const
+    dispatch(std::coroutine_handle<> h) const
     {
         post(h);
     }
@@ -168,7 +168,7 @@ public:
     */
     BOOST_CAPY_DECL
     void
-    post(coro h) const;
+    post(std::coroutine_handle<> h) const;
 
     /// Return true if two executors refer to the same thread pool.
     bool

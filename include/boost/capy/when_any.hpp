@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -197,7 +197,7 @@ struct when_any_core
     using stop_callback_t = std::stop_callback<stop_callback_fn>;
     std::optional<stop_callback_t> parent_stop_callback_;
 
-    coro continuation_;
+    std::coroutine_handle<> continuation_;
     io_env caller_env_;
 
     // Placed last to avoid padding (1-byte atomic followed by 8-byte aligned members)
@@ -251,7 +251,7 @@ struct when_any_state
 
     when_any_core core_;
     std::optional<variant_type> result_;
-    std::array<coro, task_count> runner_handles_{};
+    std::array<std::coroutine_handle<>, task_count> runner_handles_{};
 
     when_any_state()
         : core_(task_count)
@@ -310,7 +310,7 @@ struct when_any_runner
             {
                 promise_type* p_;
                 bool await_ready() const noexcept { return false; }
-                void await_suspend(coro h) noexcept
+                void await_suspend(std::coroutine_handle<> h) noexcept
                 {
                     // Extract everything needed for signaling before
                     // self-destruction. Inline dispatch may destroy
@@ -467,7 +467,7 @@ public:
         destroys this object before await_suspend returns. Must not reference
         `this` after the final launch_one call.
     */
-    coro await_suspend(coro continuation, io_env const& caller_env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> continuation, io_env const& caller_env)
     {
         state_->core_.continuation_ = continuation;
         state_->core_.caller_env_ = caller_env;
@@ -495,7 +495,7 @@ public:
     }
 
 private:
-    /** @pre Ex::dispatch() and coro::resume() must not throw (handle may leak). */
+    /** @pre Ex::dispatch() and std::coroutine_handle<>::resume() must not throw (handle may leak). */
     template<std::size_t I>
     void launch_one(executor_ref caller_ex, std::stop_token token)
     {
@@ -507,7 +507,7 @@ private:
         h.promise().index_ = I;
         h.promise().env_ = io_env{caller_ex, token, state_->core_.caller_env_.allocator};
 
-        coro ch{h};
+        std::coroutine_handle<> ch{h};
         state_->runner_handles_[I] = ch;
         caller_ex.dispatch(ch);
     }
@@ -671,7 +671,7 @@ struct when_any_homogeneous_state
 {
     when_any_core core_;
     std::optional<T> result_;
-    std::vector<coro> runner_handles_;
+    std::vector<std::coroutine_handle<>> runner_handles_;
 
     explicit when_any_homogeneous_state(std::size_t count)
         : core_(count)
@@ -694,7 +694,7 @@ template<>
 struct when_any_homogeneous_state<void>
 {
     when_any_core core_;
-    std::vector<coro> runner_handles_;
+    std::vector<std::coroutine_handle<>> runner_handles_;
 
     explicit when_any_homogeneous_state(std::size_t count)
         : core_(count)
@@ -739,7 +739,7 @@ public:
         1. Create all runners (safe - no dispatch yet)
         2. Dispatch all runners (any may complete synchronously)
     */
-    coro await_suspend(coro continuation, io_env const& caller_env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> continuation, io_env const& caller_env)
     {
         state_->core_.continuation_ = continuation;
         state_->core_.caller_env_ = caller_env;
@@ -769,14 +769,14 @@ public:
             h.promise().index_ = index;
             h.promise().env_ = io_env{caller_env.executor, token, caller_env.allocator};
 
-            state_->runner_handles_[index] = coro{h};
+            state_->runner_handles_[index] = std::coroutine_handle<>{h};
             ++index;
         }
 
         // Phase 2: Dispatch all runners. Any may complete synchronously.
         // After last dispatch, state_ and this may be destroyed.
         // Use raw pointer/count captured before dispatching.
-        coro* handles = state_->runner_handles_.data();
+        std::coroutine_handle<>* handles = state_->runner_handles_.data();
         std::size_t count = state_->runner_handles_.size();
         for(std::size_t i = 0; i < count; ++i)
             caller_env.executor.dispatch(handles[i]);

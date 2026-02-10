@@ -351,7 +351,7 @@ struct when_any_test
     void
     testLongLivedTasksCancelledOnWinner()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
 
         std::atomic<int> cancelled_count{0};
@@ -411,7 +411,7 @@ struct when_any_test
     void
     testSlowTaskCanWin()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
 
         std::atomic<int> cancelled_count{0};
@@ -468,7 +468,7 @@ struct when_any_test
     void
     testNonCooperativeTasksStillComplete()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
 
         std::atomic<int> completion_count{0};
@@ -515,7 +515,7 @@ struct when_any_test
     void
     testMixedCooperativeAndNonCooperativeTasks()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
 
         std::atomic<int> cooperative_cancelled{0};
@@ -870,7 +870,7 @@ struct when_any_test
     void
     testParentStopAlreadyRequested()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
 
         std::atomic<int> saw_stop_count{0};
@@ -915,7 +915,7 @@ struct when_any_test
     void
     testParentStopDuringExecution()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
 
         std::atomic<int> cancelled_count{0};
@@ -973,7 +973,7 @@ struct when_any_test
     void
     testInterleavedExceptions()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
 
         bool caught_exception = false;
@@ -1018,7 +1018,7 @@ struct when_any_test
     void
     testNestedStopPropagationOuterCancelled()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
 
         std::atomic<int> outer_cancelled{0};
@@ -1064,7 +1064,7 @@ struct when_any_test
     void
     testNestedStopPropagationInnerCancelled()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
 
         std::atomic<int> inner_cancelled{0};
@@ -1506,7 +1506,7 @@ struct when_any_vector_test
     void
     testLongLivedTasksCancelledVector()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
 
         std::atomic<int> cancelled_count{0};
@@ -1747,7 +1747,7 @@ struct when_any_io_awaitable_test
     void
     testStopOnlyAwaitableWithTask()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
         bool completed = false;
         std::size_t winner_index = 999;
@@ -1775,7 +1775,7 @@ struct when_any_io_awaitable_test
     void
     testAsyncEventWaitWithTask()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
         bool completed = false;
         std::size_t winner_index = 999;
@@ -1805,7 +1805,7 @@ struct when_any_io_awaitable_test
     void
     testTwoStopOnlyAwaitables()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
         bool completed = false;
         std::size_t winner_index = 999;
@@ -1919,7 +1919,7 @@ struct when_any_io_awaitable_test
     void
     testVectorOfEventWaiters()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
         bool completed = false;
         std::size_t winner_index = 999;
@@ -1980,7 +1980,7 @@ struct when_any_io_awaitable_range_test
     void
     testVoidRangeStopOnlyAwaitables()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
         bool completed = false;
         std::size_t winner_index = 999;
@@ -2017,7 +2017,7 @@ struct when_any_io_awaitable_range_test
     void
     testNonVoidRangeEventWaiters()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
         bool completed = false;
         std::size_t winner_index = 999;
@@ -2060,7 +2060,7 @@ struct when_any_io_awaitable_range_test
     void
     testNonVoidRangeAllCancelled()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
         bool completed = false;
         std::size_t winner_index = 999;
@@ -2104,7 +2104,7 @@ struct when_any_io_awaitable_range_test
     void
     testSingleElementRange()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
         bool completed = false;
         std::size_t winner_index = 999;
@@ -2161,7 +2161,7 @@ struct when_any_io_awaitable_range_test
     void
     testAlreadySetEventInRange()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
         bool completed = false;
         std::size_t winner_index = 999;
@@ -2202,7 +2202,7 @@ struct when_any_io_awaitable_range_test
     void
     testLargeRange()
     {
-        std::queue<coro> work_queue;
+        std::queue<std::coroutine_handle<>> work_queue;
         queuing_executor ex(work_queue);
         bool completed = false;
         std::size_t winner_index = 999;

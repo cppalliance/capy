@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_DETAIL_AWAIT_SUSPEND_HELPER_HPP
 #define BOOST_CAPY_DETAIL_AWAIT_SUSPEND_HELPER_HPP
 
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/io_env.hpp>
 
 #include <type_traits>
@@ -19,11 +19,11 @@ namespace boost {
 namespace capy {
 namespace detail {
 
-// Helper to normalize await_suspend return types to coro
+// Helper to normalize await_suspend return types to std::coroutine_handle<>
 template<typename Awaitable>
-coro call_await_suspend(
+std::coroutine_handle<> call_await_suspend(
     Awaitable* a,
-    coro h,
+    std::coroutine_handle<> h,
     io_env const& env)
 {
     using R = decltype(a->await_suspend(h, env));

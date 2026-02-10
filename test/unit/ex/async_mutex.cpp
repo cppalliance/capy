@@ -62,7 +62,7 @@ struct async_mutex_test
     testContendedLock()
     {
         async_mutex cm;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
 
         bool first_done = false;
@@ -115,7 +115,7 @@ struct async_mutex_test
     testCancellation()
     {
         async_mutex cm;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
         std::stop_source ss;
 
@@ -176,7 +176,7 @@ struct async_mutex_test
     testScopedLockCancellation()
     {
         async_mutex cm;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
         std::stop_source ss;
 
@@ -237,7 +237,7 @@ struct async_mutex_test
     testDestroyWhileSuspended()
     {
         async_mutex cm;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
 
         bool holder_done = false;
@@ -280,7 +280,7 @@ struct async_mutex_test
     testUnlockSkipsCanceled()
     {
         async_mutex cm;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
         std::stop_source ss1;
         std::stop_source ss2;
@@ -387,7 +387,7 @@ struct async_mutex_test
     testPreSignaledToken()
     {
         async_mutex cm;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
         std::stop_source ss;
         ss.request_stop();
@@ -501,7 +501,7 @@ struct async_mutex_test
     testPreSignaledScopedLock()
     {
         async_mutex cm;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
         std::stop_source ss;
         ss.request_stop();
@@ -555,7 +555,7 @@ struct async_mutex_test
     testFIFOOrder()
     {
         async_mutex cm;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
 
         int order = 0;
@@ -632,7 +632,7 @@ struct async_mutex_test
     testCancelMiddleWaiter()
     {
         async_mutex cm;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
         std::stop_source ss;
 
@@ -727,7 +727,7 @@ struct async_mutex_test
     testDestroyMultipleSuspended()
     {
         async_mutex cm;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
 
         auto holder = [](async_mutex& cm) -> task<void> {

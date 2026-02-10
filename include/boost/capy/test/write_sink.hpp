@@ -14,7 +14,7 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/error.hpp>
@@ -171,7 +171,7 @@ public:
             bool await_ready() const noexcept { return true; }
 
             void await_suspend(
-                coro,
+                std::coroutine_handle<>,
                 io_env const&) const noexcept
             {
             }
@@ -232,7 +232,7 @@ public:
             bool await_ready() const noexcept { return true; }
 
             void await_suspend(
-                coro,
+                std::coroutine_handle<>,
                 io_env const&) const noexcept
             {
             }
@@ -297,7 +297,7 @@ public:
             bool await_ready() const noexcept { return true; }
 
             void await_suspend(
-                coro,
+                std::coroutine_handle<>,
                 io_env const&) const noexcept
             {
             }
@@ -360,7 +360,7 @@ public:
             // but is never called because await_ready() returns true.
             // See the comment on write(CB buffers) for a detailed explanation.
             void await_suspend(
-                coro,
+                std::coroutine_handle<>,
                 io_env const&) const noexcept
             {
             }

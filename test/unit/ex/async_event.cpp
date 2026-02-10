@@ -69,7 +69,7 @@ struct async_event_test
     testSingleWaiter()
     {
         async_event event;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
 
         bool resumed = false;
@@ -105,7 +105,7 @@ struct async_event_test
     testMultipleWaiters()
     {
         async_event event;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
 
         int count = 0;
@@ -185,7 +185,7 @@ struct async_event_test
     testSetClearSetSequence()
     {
         async_event event;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
 
         int count = 0;
@@ -243,7 +243,7 @@ struct async_event_test
     testResumeOrder()
     {
         async_event event;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
 
         std::vector<int> order;
@@ -306,7 +306,7 @@ struct async_event_test
     {
         // Stop token cancels a waiting coroutine
         async_event event;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
         std::stop_source ss;
 
@@ -350,7 +350,7 @@ struct async_event_test
     {
         // Cancel one waiter, set() wakes the rest
         async_event event;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
         std::stop_source ss;
 
@@ -419,7 +419,7 @@ struct async_event_test
     {
         // Pre-signaled token on contended event
         async_event event;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
         std::stop_source ss;
         ss.request_stop();
@@ -486,7 +486,7 @@ struct async_event_test
         // Destroying a coroutine while suspended properly
         // unlinks the awaiter
         async_event event;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
 
         auto t = [](async_event& ev) -> task<void> {
@@ -515,7 +515,7 @@ struct async_event_test
         // set() claims the waiter first, stop callback
         // loses the race -- no double resume
         async_event event;
-        std::queue<coro> q;
+        std::queue<std::coroutine_handle<>> q;
         queuing_executor ex(q);
         std::stop_source ss;
 

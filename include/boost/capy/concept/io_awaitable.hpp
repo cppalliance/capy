@@ -11,7 +11,7 @@
 #define BOOST_CAPY_CONCEPT_IO_AWAITABLE_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/io_env.hpp>
 
 namespace boost {
@@ -29,7 +29,7 @@ namespace capy {
     @par Syntactic Requirements
 
     @li `a.await_suspend(h, env)` must be a valid expression where:
-        - `h` is a `coro` (coroutine handle)
+        - `h` is a `std::coroutine_handle<>` (coroutine handle)
         - `env` is an `io_env const&`
 
     @par Semantic Requirements
@@ -61,7 +61,7 @@ namespace capy {
         bool await_ready() const noexcept;
 
         auto await_suspend(
-            coro h,
+            std::coroutine_handle<> h,
             io_env const& env );
 
         T await_resume();
@@ -74,10 +74,10 @@ namespace capy {
     struct my_io_op
     {
         io_env const* env_ = nullptr;
-        coro cont_;
+        std::coroutine_handle<> cont_;
 
         auto await_suspend(
-            coro h,
+            std::coroutine_handle<> h,
             io_env const& env )
         {
             env_ = &env;  // Store pointer, never copy
@@ -103,7 +103,7 @@ template<typename A>
 concept IoAwaitable =
     requires(
         A a,
-        coro h,
+        std::coroutine_handle<> h,
         io_env const& env)
     {
         a.await_suspend(h, env);

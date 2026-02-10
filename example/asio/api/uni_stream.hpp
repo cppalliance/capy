@@ -54,12 +54,12 @@ public:
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    void dispatch(capy::coro h) const
+    void dispatch(std::coroutine_handle<> h) const
     {
         net::dispatch(ex_, [h]{ h.resume(); });
     }
 
-    void post(capy::coro h) const
+    void post(std::coroutine_handle<> h) const
     {
         net::post(ex_, [h]{ h.resume(); });
     }

@@ -12,7 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/io_env.hpp>
 
 #include <concepts>
@@ -36,7 +36,7 @@ namespace capy {
     @li `p.set_environment(env)` must be valid and `noexcept`
     @li `p.set_continuation(cont, ex)` must be valid and `noexcept`
     @li `p.environment()` must return `io_env const&` and be `noexcept`
-    @li `p.complete()` must return `coro` and be `noexcept`
+    @li `p.complete()` must return `std::coroutine_handle<>` and be `noexcept`
 
     @par Semantic Requirements
 
@@ -68,9 +68,9 @@ namespace capy {
         struct promise_type
         {
             void set_environment( io_env const& env ) noexcept;
-            void set_continuation( coro cont, executor_ref ex ) noexcept;
+            void set_continuation( std::coroutine_handle<> cont, executor_ref ex ) noexcept;
             io_env const& environment() const noexcept;
-            coro complete() const noexcept;
+            std::coroutine_handle<> complete() const noexcept;
         };
 
         bool await_ready() const noexcept;
@@ -98,7 +98,7 @@ namespace capy {
 
         bool await_ready() const noexcept { return false; }
 
-        coro await_suspend( coro cont, io_env const& env )
+        std::coroutine_handle<> await_suspend( std::coroutine_handle<> cont, io_env const& env )
         {
             h_.promise().set_environment( env );
             h_.promise().set_continuation( cont, env.executor );
@@ -122,12 +122,12 @@ concept IoAwaitableTask =
         typename T::promise_type const& cp,
         io_env const& env,
         executor_ref ex,
-        coro cont)
+        std::coroutine_handle<> cont)
     {
         { p.set_environment(env) } noexcept;
         { p.set_continuation(cont, ex) } noexcept;
         { cp.environment() } noexcept -> std::same_as<io_env const&>;
-        { cp.complete() } noexcept -> std::same_as<coro>;
+        { cp.complete() } noexcept -> std::same_as<std::coroutine_handle<>>;
     };
 
 } // namespace capy

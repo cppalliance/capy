@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/slice.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/io_env.hpp>
 
 #include <algorithm>
@@ -130,7 +130,7 @@ public:
         bufgrind* self_;
 
         bool await_ready() const noexcept { return true; }
-        coro await_suspend(coro h, io_env const&) const noexcept { return h; }
+        std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const&) const noexcept { return h; }
 
         split_type
         await_resume()

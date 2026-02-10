@@ -346,7 +346,7 @@ Capy introduces the https://github.com/cppalliance/wg21-papers/blob/master/sourc
 
 [source,cpp]
 ----
-auto await_suspend(coro h, io_env const& env);
+auto await_suspend(std::coroutine_handle<> h, io_env const& env);
 ----
 
 No thread-local state. No ambient context. The executor and stop token flow forward through the call chain via the `io_env` parameter.

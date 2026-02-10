@@ -11,7 +11,7 @@
 #define BOOST_CAPY_EX_STRAND_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/detail/strand_service.hpp>
 
 #include <type_traits>
@@ -208,7 +208,7 @@ public:
         @param h The coroutine handle to post.
     */
     void
-    post(coro h) const
+    post(std::coroutine_handle<> h) const
     {
         detail::strand_service::post(*impl_, executor_ref(ex_), h);
     }
@@ -240,7 +240,7 @@ public:
         @param h The coroutine handle to dispatch.
     */
     void
-    dispatch(coro h) const
+    dispatch(std::coroutine_handle<> h) const
     {
         detail::strand_service::dispatch(*impl_, executor_ref(ex_), h);
     }

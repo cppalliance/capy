@@ -75,6 +75,13 @@
 # define BOOST_CAPY_DECL
 #endif
 
+// Clang 20+ supports coro_await_elidable for heap elision
+#if defined(__clang__) && !defined(__apple_build_version__) && __clang_major__ >= 20
+#define BOOST_CAPY_CORO_AWAIT_ELIDABLE [[clang::coro_await_elidable]]
+#else
+#define BOOST_CAPY_CORO_AWAIT_ELIDABLE
+#endif
+
 namespace boost::capy::detail {
 inline constexpr unsigned max_iovec_ = 16;
 }

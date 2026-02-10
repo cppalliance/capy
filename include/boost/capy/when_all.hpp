@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/task.hpp>
@@ -86,7 +86,7 @@ struct when_all_state
     std::tuple<result_holder<Ts>...> results_;
 
     // Runner handles - destroyed in await_resume while allocator is valid
-    std::array<coro, task_count> runner_handles_{};
+    std::array<std::coroutine_handle<>, task_count> runner_handles_{};
 
     // Exception storage - first error wins, others discarded
     std::atomic<bool> has_exception_{false};
@@ -105,7 +105,7 @@ struct when_all_state
     std::optional<stop_callback_t> parent_stop_callback_;
 
     // Parent resumption
-    coro continuation_;
+    std::coroutine_handle<> continuation_;
     io_env caller_env_;
 
     when_all_state()
@@ -161,7 +161,7 @@ struct when_all_runner
                     return false;
                 }
 
-                void await_suspend(coro h) noexcept
+                void await_suspend(std::coroutine_handle<> h) noexcept
                 {
                     // Extract everything needed for signaling before
                     // self-destruction. Inline dispatch may destroy
@@ -306,7 +306,7 @@ public:
         return sizeof...(Awaitables) == 0;
     }
 
-    coro await_suspend(coro continuation, io_env const& caller_env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> continuation, io_env const& caller_env)
     {
         state_->continuation_ = continuation;
         state_->caller_env_ = caller_env;
@@ -352,7 +352,7 @@ private:
         h.promise().state_ = state_;
         h.promise().env_ = io_env{caller_ex, token, state_->caller_env_.allocator};
 
-        coro ch{h};
+        std::coroutine_handle<> ch{h};
         state_->runner_handles_[I] = ch;
         state_->caller_env_.executor.dispatch(ch);
     }

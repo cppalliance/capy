@@ -14,7 +14,7 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/coro.hpp>
+#include <coroutine>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/error.hpp>
@@ -86,7 +86,7 @@ class stream
     {
         std::string buf;
         std::size_t max_read_size = std::size_t(-1);
-        coro pending_h{};
+        std::coroutine_handle<> pending_h{};
         executor_ref pending_ex;
         bool eof = false;
     };
@@ -228,8 +228,8 @@ public:
                     !side.buf.empty();
             }
 
-            coro await_suspend(
-                coro h,
+            std::coroutine_handle<> await_suspend(
+                std::coroutine_handle<> h,
                 io_env const& env) noexcept
             {
                 auto& side = self_->state_->sides[
@@ -304,7 +304,7 @@ public:
             bool await_ready() const noexcept { return true; }
 
             void await_suspend(
-                coro,
+                std::coroutine_handle<>,
                 io_env const&) const noexcept
             {
             }
