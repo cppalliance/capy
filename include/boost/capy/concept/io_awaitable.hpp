@@ -100,6 +100,15 @@ concept IoAwaitable =
         a.await_suspend(h, ex, token);
     };
 
+namespace detail {
+
+/** Extract the result type from any awaitable via await_resume().
+*/
+template<typename A>
+using awaitable_result_t = decltype(std::declval<std::decay_t<A>&>().await_resume());
+
+} // namespace detail
+
 } // namespace capy
 } // namespace boost
 

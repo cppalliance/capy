@@ -12,7 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/concept/io_launchable_task.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
@@ -261,14 +261,15 @@ struct when_all_runner
     }
 };
 
-/** Create a runner coroutine for a single task.
+/** Create a runner coroutine for a single awaitable.
 
-    Task is passed directly to ensure proper coroutine frame storage.
+    Awaitable is passed directly to ensure proper coroutine frame storage.
 */
-template<std::size_t Index, typename T, typename... Ts>
-when_all_runner<T, Ts...>
-make_when_all_runner(task<T> inner, when_all_state<Ts...>* state)
+template<std::size_t Index, IoAwaitable Awaitable, typename... Ts>
+when_all_runner<awaitable_result_t<Awaitable>, Ts...>
+make_when_all_runner(Awaitable inner, when_all_state<Ts...>* state)
 {
+    using T = awaitable_result_t<Awaitable>;
     if constexpr (std::is_void_v<T>)
     {
         co_await std::move(inner);
@@ -282,26 +283,28 @@ make_when_all_runner(task<T> inner, when_all_state<Ts...>* state)
 /** Internal awaitable that launches all runner coroutines and waits.
 
     This awaitable is used inside the when_all coroutine to handle
-    the concurrent execution of child tasks.
+    the concurrent execution of child awaitables.
 */
-template<typename... Ts>
+template<IoAwaitable... Awaitables>
 class when_all_launcher
 {
-    std::tuple<task<Ts>...>* tasks_;
-    when_all_state<Ts...>* state_;
+    using state_type = when_all_state<awaitable_result_t<Awaitables>...>;
+
+    std::tuple<Awaitables...>* awaitables_;
+    state_type* state_;
 
 public:
     when_all_launcher(
-        std::tuple<task<Ts>...>* tasks,
-        when_all_state<Ts...>* state)
-        : tasks_(tasks)
+        std::tuple<Awaitables...>* awaitables,
+        state_type* state)
+        : awaitables_(awaitables)
         , state_(state)
     {
     }
 
     bool await_ready() const noexcept
     {
-        return sizeof...(Ts) == 0;
+        return sizeof...(Awaitables) == 0;
     }
 
     coro await_suspend(coro continuation, executor_ref const& caller_ex, std::stop_token const& parent_token = {})
@@ -314,7 +317,7 @@ public:
         {
             state_->parent_stop_callback_.emplace(
                 parent_token,
-                typename when_all_state<Ts...>::stop_callback_fn{&state_->stop_source_});
+                typename state_type::stop_callback_fn{&state_->stop_source_});
 
             if(parent_token.stop_requested())
                 state_->stop_source_.request_stop();
@@ -328,7 +331,7 @@ public:
         auto token = state_->stop_source_.get_token();
         [&]<std::size_t... Is>(std::index_sequence<Is...>) {
             (..., launch_one<Is>(caller_ex, token));
-        }(std::index_sequence_for<Ts...>{});
+        }(std::index_sequence_for<Awaitables...>{});
 
         // Let signal_completion() handle resumption
         return std::noop_coroutine();
@@ -344,7 +347,7 @@ private:
     void launch_one(executor_ref caller_ex, std::stop_token token)
     {
         auto runner = make_when_all_runner<I>(
-            std::move(std::get<I>(*tasks_)), state_);
+            std::move(std::get<I>(*awaitables_)), state_);
 
         auto h = runner.release();
         h.promise().state_ = state_;
@@ -394,31 +397,32 @@ auto extract_results(when_all_state<Ts...>& state)
 
 } // namespace detail
 
-/** Execute multiple tasks concurrently and collect their results.
+/** Execute multiple awaitables concurrently and collect their results.
 
-    Launches all tasks simultaneously and waits for all to complete
+    Launches all awaitables simultaneously and waits for all to complete
     before returning. Results are collected in input order. If any
-    task throws, cancellation is requested for siblings and the first
-    exception is rethrown after all tasks complete.
+    awaitable throws, cancellation is requested for siblings and the first
+    exception is rethrown after all awaitables complete.
 
-    @li All child tasks run concurrently on the caller's executor
+    @li All child awaitables run concurrently on the caller's executor
     @li Results are returned as a tuple in input order
-    @li Void-returning tasks do not contribute to the result tuple
-    @li If all tasks return void, `when_all` returns `task<void>`
+    @li Void-returning awaitables do not contribute to the result tuple
+    @li If all awaitables return void, `when_all` returns `task<void>`
     @li First exception wins; subsequent exceptions are discarded
     @li Stop is requested for siblings on first error
     @li Completes only after all children have finished
 
     @par Thread Safety
     The returned task must be awaited from a single execution context.
-    Child tasks execute concurrently but complete through the caller's
+    Child awaitables execute concurrently but complete through the caller's
     executor.
 
-    @param tasks The tasks to execute concurrently. Each task is
-        consumed (moved-from) when `when_all` is awaited.
+    @param awaitables The awaitables to execute concurrently. Each must
+        satisfy @ref IoAwaitable and is consumed (moved-from) when
+        `when_all` is awaited.
 
     @return A task yielding a tuple of non-void results. Returns
-        `task<void>` when all input tasks return void.
+        `task<void>` when all input awaitables return void.
 
     @par Example
 
@@ -431,7 +435,7 @@ auto extract_results(when_all_state<Ts...>& state)
             fetch_posts( id )      // task<std::vector<Post>>
         );
 
-        // Void tasks don't contribute to result
+        // Void awaitables don't contribute to result
         co_await when_all(
             log_event( "start" ),  // task<void>
             notify_user( id )      // task<void>
@@ -440,22 +444,22 @@ auto extract_results(when_all_state<Ts...>& state)
     }
     @endcode
 
-    @see task
+    @see IoAwaitable, task
 */
-template<typename... Ts>
-[[nodiscard]] task<detail::when_all_result_t<Ts...>>
-when_all(task<Ts>... tasks)
+template<IoAwaitable... As>
+[[nodiscard]] auto when_all(As... awaitables)
+    -> task<detail::when_all_result_t<detail::awaitable_result_t<As>...>>
 {
-    using result_type = detail::when_all_result_t<Ts...>;
+    using result_type = detail::when_all_result_t<detail::awaitable_result_t<As>...>;
 
     // State is stored in the coroutine frame, using the frame allocator
-    detail::when_all_state<Ts...> state;
+    detail::when_all_state<detail::awaitable_result_t<As>...> state;
 
-    // Store tasks in the frame
-    std::tuple<task<Ts>...> task_tuple(std::move(tasks)...);
+    // Store awaitables in the frame
+    std::tuple<As...> awaitable_tuple(std::move(awaitables)...);
 
-    // Launch all tasks and wait for completion
-    co_await detail::when_all_launcher<Ts...>(&task_tuple, &state);
+    // Launch all awaitables and wait for completion
+    co_await detail::when_all_launcher<As...>(&awaitable_tuple, &state);
 
     // Propagate first exception if any.
     // Safe without explicit acquire: capture_exception() is sequenced-before
