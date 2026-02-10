@@ -171,10 +171,6 @@ using unique_variant_t = typename deduplicate_impl<
 template<typename T0, typename... Ts>
 using when_any_result_t = std::pair<std::size_t, unique_variant_t<T0, Ts...>>;
 
-// Extract result type from any awaitable via await_resume()
-template<typename A>
-using awaitable_result_t = decltype(std::declval<std::decay_t<A>&>().await_resume());
-
 /** Core shared state for when_any operations.
 
     Contains all members and methods common to both heterogeneous (variadic)

@@ -10,7 +10,9 @@
 // Test that header file is self-contained.
 #include <boost/capy/when_all.hpp>
 
+#include <boost/capy/ex/async_event.hpp>
 #include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/io_task.hpp>
 #include <boost/capy/task.hpp>
 
 #include "test_helpers.hpp"
@@ -62,6 +64,18 @@ static_assert(std::is_void_v<
 
 // Verify when_all returns task which satisfies awaitable protocols
 static_assert(IoAwaitableTask<task<std::tuple<int, int>>>);
+
+// Verify non-task IoAwaitables work with when_all
+template<typename... Args>
+concept WhenAllCallable = requires(Args... args) {
+    when_all(std::move(args)...);
+};
+
+static_assert(WhenAllCallable<stop_only_awaitable>);
+static_assert(WhenAllCallable<stop_only_awaitable, stop_only_awaitable>);
+static_assert(WhenAllCallable<async_event::wait_awaiter>);
+static_assert(WhenAllCallable<async_event::wait_awaiter, stop_only_awaitable>);
+static_assert(WhenAllCallable<task<int>, stop_only_awaitable>);
 
 struct when_all_test
 {
@@ -866,6 +880,172 @@ struct when_all_test
 TEST_SUITE(
     when_all_test,
     "boost.capy.when_all");
+
+//----------------------------------------------------------
+// IoAwaitable (non-task) tests for when_all
+//----------------------------------------------------------
+
+struct when_all_io_awaitable_test
+{
+    // Test: when_all with stop_only_awaitable and task<int>
+    // stop_only_awaitable only completes via cancellation, so we
+    // provide a parent stop_source to trigger both completions.
+    void
+    testStopOnlyAwaitableWithTask()
+    {
+        std::queue<coro> work_queue;
+        queuing_executor ex(work_queue);
+        bool completed = false;
+        int result = 0;
+
+        std::stop_source parent_stop;
+
+        run_async(ex, parent_stop.get_token(),
+            [&](std::tuple<int> t) {
+                completed = true;
+                result = std::get<0>(t);
+            },
+            [](std::exception_ptr) {})(
+            when_all(stop_only_awaitable{}, returns_int(42)));
+
+        // stop_only_awaitable needs cancellation to complete
+        parent_stop.request_stop();
+
+        while (!work_queue.empty()) {
+            auto h = work_queue.front();
+            work_queue.pop();
+            h.resume();
+        }
+
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(result, 42);
+    }
+
+    // Test: when_all with async_event wait_awaiter and task<int>
+    void
+    testAsyncEventWaitWithTask()
+    {
+        std::queue<coro> work_queue;
+        queuing_executor ex(work_queue);
+        bool completed = false;
+        int result = 0;
+
+        async_event event;
+
+        // event.wait() returns io_result<>, returns_int returns int
+        // Result: tuple<io_result<>, int>
+        run_async(ex,
+            [&](auto&& t) {
+                completed = true;
+                result = std::get<1>(t);
+            },
+            [](std::exception_ptr) {})(
+            when_all(event.wait(), returns_int(42)));
+
+        // Set event so the waiter can complete
+        event.set();
+
+        while (!work_queue.empty()) {
+            auto h = work_queue.front();
+            work_queue.pop();
+            h.resume();
+        }
+
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(result, 42);
+    }
+
+    // Test: when_all with two stop_only_awaitables
+    void
+    testTwoStopOnlyAwaitables()
+    {
+        std::queue<coro> work_queue;
+        queuing_executor ex(work_queue);
+        bool completed = false;
+
+        std::stop_source parent_stop;
+
+        run_async(ex, parent_stop.get_token(),
+            [&]() {
+                completed = true;
+            },
+            [](std::exception_ptr) {})(
+            when_all(stop_only_awaitable{}, stop_only_awaitable{}));
+
+        // Neither can complete on their own - request parent stop
+        parent_stop.request_stop();
+
+        while (!work_queue.empty()) {
+            auto h = work_queue.front();
+            work_queue.pop();
+            h.resume();
+        }
+
+        BOOST_TEST(completed);
+    }
+
+    // Test: when_all with io_task<> types
+    void
+    testIoTaskWithWhenAll()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool completed = false;
+
+        auto io_op = []() -> io_task<> {
+            co_return io_result<>{{}};
+        };
+
+        // io_task<> is task<io_result<>>, result: tuple<io_result<>, io_result<>>
+        run_async(ex,
+            [&](auto&&) {
+                completed = true;
+            },
+            [](std::exception_ptr) {})(
+            when_all(io_op(), io_op()));
+
+        BOOST_TEST(completed);
+    }
+
+    // Test: when_all with mixed io_task and regular task
+    void
+    testMixedIoTaskAndRegularTask()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool completed = false;
+        int int_result = 0;
+
+        auto io_read = [](std::size_t n) -> io_task<std::size_t> {
+            co_return io_result<std::size_t>{{}, n};
+        };
+
+        run_async(ex,
+            [&](auto&& t) {
+                completed = true;
+                int_result = std::get<0>(t);
+            },
+            [](std::exception_ptr) {})(
+            when_all(returns_int(99), io_read(200)));
+
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(int_result, 99);
+    }
+
+    void
+    run()
+    {
+        testStopOnlyAwaitableWithTask();
+        testAsyncEventWaitWithTask();
+        testTwoStopOnlyAwaitables();
+        testIoTaskWithWhenAll();
+        testMixedIoTaskAndRegularTask();
+    }
+};
+
+TEST_SUITE(
+    when_all_io_awaitable_test,
+    "boost.capy.when_all_io_awaitable");
 
 } // capy
 } // boost
