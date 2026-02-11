@@ -14,10 +14,14 @@
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/task.hpp>
+#include <boost/capy/when_all.hpp>
 
 #include <queue>
+#include <semaphore>
 #include <stop_token>
 #include <vector>
 
@@ -676,6 +680,60 @@ struct async_event_test
         h.destroy();
     }
 
+    static task<void>
+    set_event_task(async_event& evt)
+    {
+        evt.set();
+        co_return;
+    }
+
+    static task<void>
+    when_all_set_event_main(bool& finished)
+    {
+        async_event evt;
+        co_await when_all(evt.wait(), set_event_task(evt));
+        finished = true;
+    }
+
+    static task<void>
+    simple_task(bool& finished)
+    {
+        finished = true;
+        co_return;
+    }
+
+    void
+    testRunAsyncThreadPool()
+    {
+        thread_pool pool(1);
+        std::binary_semaphore done(0);
+        bool finished = false;
+
+        run_async(pool.get_executor(),
+            [&]() { done.release(); },
+            [&](std::exception_ptr) { done.release(); }
+        )(simple_task(finished));
+
+        done.acquire();
+        BOOST_TEST(finished);
+    }
+
+    void
+    testWhenAllSetEvent()
+    {
+        thread_pool pool(1);
+        std::binary_semaphore done(0);
+        bool finished = false;
+
+        run_async(pool.get_executor(),
+            [&]() { done.release(); },
+            [&](std::exception_ptr) { done.release(); }
+        )(when_all_set_event_main(finished));
+
+        done.acquire();
+        BOOST_TEST(finished);
+    }
+
     void
     run()
     {
@@ -697,6 +755,8 @@ struct async_event_test
         testSetWithInlineExecutor();
         testMultipleWaitersInlineExecutor();
         testCancellationWithInlineExecutor();
+        testRunAsyncThreadPool();
+        testWhenAllSetEvent();
     }
 };
 
