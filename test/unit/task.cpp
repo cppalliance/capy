@@ -252,6 +252,139 @@ struct task_test
         }
     }
 
+    static task<int>
+    catch_and_throw_different()
+    {
+        try
+        {
+            co_await inner_task_throws();
+        }
+        catch (test_exception const&)
+        {
+            throw std::runtime_error("replaced exception");
+        }
+        co_return 0;
+    }
+
+    static task<int>
+    throws_after_checking_stop()
+    {
+        auto token = (co_await this_coro::environment)->stop_token;
+        if (token.stop_requested())
+            throw test_exception("stopped and throwing");
+        co_return 42;
+    }
+
+    void
+    testDestroyedTaskWithException()
+    {
+        // Value task: exception stored but never observed
+        {
+            auto t = throws_exception();
+            auto h = t.handle();
+            t.release();
+            while (!h.done())
+                h.resume();
+            BOOST_TEST(h.promise().exception() != nullptr);
+            h.destroy();
+        }
+
+        // Void task: exception stored but never observed
+        {
+            auto t = void_task_throws();
+            auto h = t.handle();
+            t.release();
+            while (!h.done())
+                h.resume();
+            BOOST_TEST(h.promise().exception() != nullptr);
+            h.destroy();
+        }
+
+        // Never-started task destroyed via RAII
+        {
+            auto t = throws_exception();
+            (void)t;
+        }
+    }
+
+    void
+    testExceptionReplacedInCatch()
+    {
+        // Catch one exception type, throw a different type
+        {
+            BOOST_TEST_THROWS(
+                run_task(catch_and_throw_different()),
+                std::runtime_error);
+        }
+
+        // Verify the replacement message propagates
+        {
+            try
+            {
+                run_task(catch_and_throw_different());
+                BOOST_TEST(false);
+            }
+            catch (std::runtime_error const& e)
+            {
+                BOOST_TEST_EQ(
+                    std::string(e.what()),
+                    "replaced exception");
+            }
+            catch (...)
+            {
+                BOOST_TEST(false);
+            }
+        }
+    }
+
+    void
+    testExceptionWithCancellation()
+    {
+        // Exception thrown after observing stop request
+        {
+            int dispatch_count = 0;
+            test_executor ex(dispatch_count);
+            bool caught_exception = false;
+            std::stop_source source;
+            source.request_stop();
+
+            run_async(ex, source.get_token(),
+                [](int) { BOOST_TEST(false); },
+                [&](std::exception_ptr ep) {
+                    try {
+                        std::rethrow_exception(ep);
+                    } catch (test_exception const&) {
+                        caught_exception = true;
+                    }
+                })(throws_after_checking_stop());
+
+            BOOST_TEST(caught_exception);
+        }
+
+        // Exception in nested task while stop is requested
+        {
+            int dispatch_count = 0;
+            test_executor ex(dispatch_count);
+            bool caught_exception = false;
+            std::stop_source source;
+            source.request_stop();
+
+            run_async(ex, source.get_token(),
+                [](int) { BOOST_TEST(false); },
+                [&](std::exception_ptr ep) {
+                    try {
+                        std::rethrow_exception(ep);
+                    } catch (test_exception const&) {
+                        caught_exception = true;
+                    }
+                })([]() -> task<int> {
+                    co_return co_await throws_after_checking_stop();
+                }());
+
+            BOOST_TEST(caught_exception);
+        }
+    }
+
     void
     testMoveOperations()
     {
@@ -1125,6 +1258,9 @@ struct task_test
         testReturnValue();
         testException();
         testTaskAwaitsTask();
+        testDestroyedTaskWithException();
+        testExceptionReplacedInCatch();
+        testExceptionWithCancellation();
         testMoveOperations();
         testAwaitReady();
 
