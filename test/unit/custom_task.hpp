@@ -10,6 +10,7 @@
 #ifndef BOOST_CAPY_TEST_CUSTOM_TASK_HPP
 #define BOOST_CAPY_TEST_CUSTOM_TASK_HPP
 
+#include <boost/capy/concept/io_runnable.hpp>
 #include <boost/capy/ex/io_awaitable_support.hpp>
 #include <boost/capy/ex/io_env.hpp>
 
@@ -39,10 +40,10 @@ struct custom_task_result_base<void>
     void return_void() {}
 };
 
-/** A custom task type that satisfies IoLaunchableTask.
+/** A custom task type that satisfies IoRunnable.
 
     This task is intentionally NOT capy::task to prove that
-    run_async and run work with any IoLaunchableTask type.
+    run_async and run work with any IoRunnable type.
 */
 template<typename T>
 struct custom_task
@@ -67,7 +68,7 @@ struct custom_task
             {
                 promise_type* p_;
                 bool await_ready() const noexcept { return false; }
-                std::coroutine_handle<> await_suspend(std::coroutine_handle<>) const noexcept { return p_->complete(); }
+                std::coroutine_handle<> await_suspend(std::coroutine_handle<>) const noexcept { return p_->continuation(); }
                 void await_resume() const noexcept {}
             };
             return awaiter{this};
@@ -102,10 +103,10 @@ struct custom_task
             return std::move(*h_.promise().result_);
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const& env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const* env)
     {
-        h_.promise().set_continuation(cont, env.executor);
-        h_.promise().set_environment(env);
+        h_.promise().set_continuation(cont);
+        h_.promise().set_environment(*env);
         return h_;
     }
 
@@ -113,8 +114,8 @@ struct custom_task
     void release() noexcept { h_ = nullptr; }
 };
 
-static_assert(IoLaunchableTask<custom_task<int>>);
-static_assert(IoLaunchableTask<custom_task<void>>);
+static_assert(IoRunnable<custom_task<int>>);
+static_assert(IoRunnable<custom_task<void>>);
 
 } // namespace test
 } // namespace capy

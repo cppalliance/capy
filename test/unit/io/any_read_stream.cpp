@@ -41,7 +41,7 @@ struct pending_read_awaitable
         : counter_(std::exchange(o.counter_, nullptr)) {}
     ~pending_read_awaitable() { if(counter_) ++(*counter_); }
     bool await_ready() const noexcept { return false; }
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<>, io_env const&)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<>, io_env const*)
         { return std::noop_coroutine(); }
     io_result<std::size_t> await_resume()
         { return {{}, 0}; }

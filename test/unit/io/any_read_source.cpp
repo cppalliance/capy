@@ -43,7 +43,7 @@ struct pending_source_awaitable
         : counter_(std::exchange(o.counter_, nullptr)) {}
     ~pending_source_awaitable() { if(counter_) ++(*counter_); }
     bool await_ready() const noexcept { return false; }
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<>, io_env const&)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<>, io_env const*)
         { return std::noop_coroutine(); }
     io_result<std::size_t> await_resume()
         { return {{}, 0}; }
@@ -687,8 +687,9 @@ public:
 
             test::blocking_context bctx;
             auto ex = bctx.get_executor();
+            io_env env{executor_ref(ex), {}};
             aw.await_suspend(
-                std::noop_coroutine(), io_env{executor_ref(ex), {}});
+                std::noop_coroutine(), &env);
         }
         BOOST_TEST_EQ(destroyed, 1);
     }
@@ -706,8 +707,9 @@ public:
 
             test::blocking_context bctx;
             auto ex = bctx.get_executor();
+            io_env env{executor_ref(ex), {}};
             aw.await_suspend(
-                std::noop_coroutine(), io_env{executor_ref(ex), {}});
+                std::noop_coroutine(), &env);
 
             any_read_source empty;
             ars = std::move(empty);

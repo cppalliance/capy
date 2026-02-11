@@ -27,10 +27,10 @@
 namespace boost {
 namespace capy {
 
-static_assert(IoAwaitableTask<task<void>>);
-static_assert(IoAwaitableTask<task<int>>);
-static_assert(IoLaunchableTask<task<void>>);
-static_assert(IoLaunchableTask<task<int>>);
+static_assert(IoAwaitable<task<void>>);
+static_assert(IoAwaitable<task<int>>);
+static_assert(IoRunnable<task<void>>);
+static_assert(IoRunnable<task<int>>);
 
 /** Tracking executor that logs dispatch calls with an ID.
     Uses pointers to external storage to allow copying.
@@ -907,14 +907,14 @@ struct task_test
     static task<bool>
     task_checks_stop_token()
     {
-        auto token = (co_await this_coro::environment).stop_token;
+        auto token = (co_await this_coro::environment)->stop_token;
         co_return token.stop_requested();
     }
 
     static task<bool>
     task_checks_stop_possible()
     {
-        auto token = (co_await this_coro::environment).stop_token;
+        auto token = (co_await this_coro::environment)->stop_token;
         co_return token.stop_possible();
     }
 
@@ -941,7 +941,7 @@ struct task_test
         bool stop_requested = true;
 
         auto outer = []() -> task<bool> {
-            auto token = (co_await this_coro::environment).stop_token;
+            auto token = (co_await this_coro::environment)->stop_token;
             co_return token.stop_requested();
         };
 
@@ -955,13 +955,13 @@ struct task_test
     static task<std::stop_token>
     inner_task_returns_token()
     {
-        co_return (co_await this_coro::environment).stop_token;
+        co_return (co_await this_coro::environment)->stop_token;
     }
 
     static task<bool>
     outer_task_propagates_token()
     {
-        auto outer_token = (co_await this_coro::environment).stop_token;
+        auto outer_token = (co_await this_coro::environment)->stop_token;
         auto inner_token = co_await inner_task_returns_token();
         co_return outer_token.stop_possible() == inner_token.stop_possible();
     }
@@ -983,7 +983,7 @@ struct task_test
     static task<int>
     task_with_cancellation_check()
     {
-        auto token = (co_await this_coro::environment).stop_token;
+        auto token = (co_await this_coro::environment)->stop_token;
         int count = 0;
 
         for (int i = 0; i < 100; ++i)
@@ -1013,9 +1013,9 @@ struct task_test
     static task<bool>
     task_get_token_multiple_times()
     {
-        auto t1 = (co_await this_coro::environment).stop_token;
-        auto t2 = (co_await this_coro::environment).stop_token;
-        auto t3 = (co_await this_coro::environment).stop_token;
+        auto t1 = (co_await this_coro::environment)->stop_token;
+        auto t2 = (co_await this_coro::environment)->stop_token;
+        auto t3 = (co_await this_coro::environment)->stop_token;
 
         co_return t1.stop_possible() == t2.stop_possible() &&
                   t2.stop_possible() == t3.stop_possible();

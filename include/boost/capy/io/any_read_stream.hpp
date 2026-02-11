@@ -244,7 +244,7 @@ struct any_read_stream::vtable
         void* storage,
         std::span<mutable_buffer const> buffers);
     bool (*await_ready)(void*);
-    std::coroutine_handle<> (*await_suspend)(void*, std::coroutine_handle<>, io_env const&);
+    std::coroutine_handle<> (*await_suspend)(void*, std::coroutine_handle<>, io_env const*);
     io_result<std::size_t> (*await_resume)(void*);
     void (*destroy_awaitable)(void*) noexcept;
     std::size_t awaitable_size;
@@ -279,7 +279,7 @@ struct any_read_stream::vtable_for_impl
         +[](void* p) {
             return static_cast<Awaitable*>(p)->await_ready();
         },
-        +[](void* p, std::coroutine_handle<> h, io_env const& env) {
+        +[](void* p, std::coroutine_handle<> h, io_env const* env) {
             return detail::call_await_suspend(
                 static_cast<Awaitable*>(p), h, env);
         },
@@ -401,7 +401,7 @@ any_read_stream::read_some(MB buffers)
         }
 
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const& env)
+        await_suspend(std::coroutine_handle<> h, io_env const* env)
         {
             return self_->vt_->await_suspend(
                 self_->cached_awaitable_, h, env);

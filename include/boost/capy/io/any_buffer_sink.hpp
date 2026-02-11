@@ -406,7 +406,7 @@ private:
 struct any_buffer_sink::awaitable_ops
 {
     bool (*await_ready)(void*);
-    std::coroutine_handle<> (*await_suspend)(void*, std::coroutine_handle<>, io_env const&);
+    std::coroutine_handle<> (*await_suspend)(void*, std::coroutine_handle<>, io_env const*);
     io_result<> (*await_resume)(void*);
     void (*destroy)(void*) noexcept;
 };
@@ -415,7 +415,7 @@ struct any_buffer_sink::awaitable_ops
 struct any_buffer_sink::write_awaitable_ops
 {
     bool (*await_ready)(void*);
-    std::coroutine_handle<> (*await_suspend)(void*, std::coroutine_handle<>, io_env const&);
+    std::coroutine_handle<> (*await_suspend)(void*, std::coroutine_handle<>, io_env const*);
     io_result<std::size_t> (*await_resume)(void*);
     void (*destroy)(void*) noexcept;
 };
@@ -491,7 +491,7 @@ struct any_buffer_sink::vtable_for_impl
             +[](void* p) {
                 return static_cast<CommitAwaitable*>(p)->await_ready();
             },
-            +[](void* p, std::coroutine_handle<> h, io_env const& env) {
+            +[](void* p, std::coroutine_handle<> h, io_env const* env) {
                 return detail::call_await_suspend(
                     static_cast<CommitAwaitable*>(p), h, env);
             },
@@ -518,7 +518,7 @@ struct any_buffer_sink::vtable_for_impl
             +[](void* p) {
                 return static_cast<CommitEofAwaitable*>(p)->await_ready();
             },
-            +[](void* p, std::coroutine_handle<> h, io_env const& env) {
+            +[](void* p, std::coroutine_handle<> h, io_env const* env) {
                 return detail::call_await_suspend(
                     static_cast<CommitEofAwaitable*>(p), h, env);
             },
@@ -551,7 +551,7 @@ struct any_buffer_sink::vtable_for_impl
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_ready();
             },
-            +[](void* p, std::coroutine_handle<> h, io_env const& env) {
+            +[](void* p, std::coroutine_handle<> h, io_env const* env) {
                 return detail::call_await_suspend(
                     static_cast<Aw*>(p), h, env);
             },
@@ -581,7 +581,7 @@ struct any_buffer_sink::vtable_for_impl
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_ready();
             },
-            +[](void* p, std::coroutine_handle<> h, io_env const& env) {
+            +[](void* p, std::coroutine_handle<> h, io_env const* env) {
                 return detail::call_await_suspend(
                     static_cast<Aw*>(p), h, env);
             },
@@ -611,7 +611,7 @@ struct any_buffer_sink::vtable_for_impl
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_ready();
             },
-            +[](void* p, std::coroutine_handle<> h, io_env const& env) {
+            +[](void* p, std::coroutine_handle<> h, io_env const* env) {
                 return detail::call_await_suspend(
                     static_cast<Aw*>(p), h, env);
             },
@@ -639,7 +639,7 @@ struct any_buffer_sink::vtable_for_impl
             +[](void* p) {
                 return static_cast<Aw*>(p)->await_ready();
             },
-            +[](void* p, std::coroutine_handle<> h, io_env const& env) {
+            +[](void* p, std::coroutine_handle<> h, io_env const* env) {
                 return detail::call_await_suspend(
                     static_cast<Aw*>(p), h, env);
             },
@@ -832,7 +832,7 @@ any_buffer_sink::commit(std::size_t n)
         }
 
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const& env)
+        await_suspend(std::coroutine_handle<> h, io_env const* env)
         {
             return self_->active_ops_->await_suspend(
                 self_->cached_awaitable_, h, env);
@@ -874,7 +874,7 @@ any_buffer_sink::commit_eof(std::size_t n)
         }
 
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const& env)
+        await_suspend(std::coroutine_handle<> h, io_env const* env)
         {
             return self_->active_ops_->await_suspend(
                 self_->cached_awaitable_, h, env);
@@ -916,7 +916,7 @@ any_buffer_sink::write_some_(
         }
 
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const& env)
+        await_suspend(std::coroutine_handle<> h, io_env const* env)
         {
             self_->active_write_ops_ =
                 self_->vt_->construct_write_some_awaitable(
@@ -966,7 +966,7 @@ any_buffer_sink::write_(
         }
 
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const& env)
+        await_suspend(std::coroutine_handle<> h, io_env const* env)
         {
             self_->active_write_ops_ =
                 self_->vt_->construct_write_awaitable(
@@ -1016,7 +1016,7 @@ any_buffer_sink::write_eof_buffers_(
         }
 
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const& env)
+        await_suspend(std::coroutine_handle<> h, io_env const* env)
         {
             self_->active_write_ops_ =
                 self_->vt_->construct_write_eof_buffers_awaitable(
@@ -1171,7 +1171,7 @@ any_buffer_sink::write_eof()
         }
 
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const& env)
+        await_suspend(std::coroutine_handle<> h, io_env const* env)
         {
             return self_->active_ops_->await_suspend(
                 self_->cached_awaitable_, h, env);

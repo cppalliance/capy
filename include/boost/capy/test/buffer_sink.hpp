@@ -177,7 +177,7 @@ public:
             // synchronous (test) and asynchronous (real I/O) code.
             void await_suspend(
                 std::coroutine_handle<>,
-                io_env const&) const noexcept
+                io_env const*) const noexcept
             {
             }
 
@@ -226,7 +226,7 @@ public:
             // See the comment on commit(std::size_t) for a detailed explanation.
             void await_suspend(
                 std::coroutine_handle<>,
-                io_env const&) const noexcept
+                io_env const*) const noexcept
             {
             }
 

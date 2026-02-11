@@ -7,11 +7,11 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_CONCEPT_IO_LAUNCHABLE_TASK_HPP
-#define BOOST_CAPY_CONCEPT_IO_LAUNCHABLE_TASK_HPP
+#ifndef BOOST_CAPY_CONCEPT_IO_RUNNABLE_HPP
+#define BOOST_CAPY_CONCEPT_IO_RUNNABLE_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/concept/io_awaitable_task.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 
 #include <coroutine>
 #include <exception>
@@ -22,18 +22,16 @@ namespace capy {
 
 /** Concept for task types that can be launched from non-coroutine contexts.
 
-    Extends @ref IoAwaitableTask with operations needed by launch utilities
+    Extends @ref IoAwaitable with operations needed by launch utilities
     (@ref run, @ref run_async) to start a task, transfer ownership of the
     coroutine frame, and retrieve results or exceptions after completion.
-
-    Launch functions use `set_environment` from @ref IoAwaitableTask to
-    inject the execution environment before resuming the root task.
 
     @tparam T The task type.
 
     @par Syntactic Requirements
 
-    @li `T` must satisfy @ref IoAwaitableTask
+    @li `T` must satisfy @ref IoAwaitable
+    @li `T::promise_type` must be a valid type
     @li `t.handle()` returns `std::coroutine_handle<T::promise_type>`,
         must be `noexcept`
     @li `t.release()` releases ownership, must be `noexcept`
@@ -80,27 +78,12 @@ namespace capy {
     };
     @endcode
 
-    @par Example
-
-    @code
-    template<IoLaunchableTask Task>
-    void blocking_run( Task task, executor_ref ex )
-    {
-        task.release();  // take ownership of the frame
-        auto h = task.handle();
-        h.promise().set_environment( { ex, {}, nullptr } );
-        h.resume();
-
-        if( auto ep = h.promise().exception() )
-            std::rethrow_exception( ep );
-    }
-    @endcode
-
-    @see IoAwaitableTask, run, run_async
+    @see IoAwaitable, run, run_async
 */
 template<typename T>
-concept IoLaunchableTask =
-    IoAwaitableTask<T> &&
+concept IoRunnable =
+    IoAwaitable<T> &&
+    requires { typename T::promise_type; } &&
     requires(T& t, T const& ct, typename T::promise_type const& cp)
     {
         { ct.handle() } noexcept -> std::same_as<std::coroutine_handle<typename T::promise_type>>;

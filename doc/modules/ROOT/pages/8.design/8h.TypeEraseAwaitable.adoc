@@ -50,7 +50,7 @@ bool await_ready() {
     return vt_->await_ready(storage_);   // true → no suspend
 }
 
-std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env) {
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env) {
     return vt_->await_suspend(storage_, h, env);
 }
 
@@ -74,7 +74,7 @@ bool await_ready() const noexcept {
     return buffers_.empty();             // short-circuit, no construct
 }
 
-std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env) {
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env) {
     vt_->construct_awaitable(stream_, storage_, buffers);
     awaitable_active_ = true;
     if(vt_->await_ready(storage_))
@@ -135,7 +135,7 @@ bool await_ready() const noexcept {
     return buffers_.empty();             // short-circuit
 }
 
-std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env) {
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env) {
     active_ops_ = vt_->construct_awaitable(stream_, storage_, buffers_);
     if(active_ops_->await_ready(storage_))
         return h;                        // immediate → resume caller

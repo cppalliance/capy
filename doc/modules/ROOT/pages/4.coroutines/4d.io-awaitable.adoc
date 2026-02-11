@@ -42,16 +42,16 @@ The IoAwaitable protocol extends `await_suspend` to receive context:
 
 [source,cpp]
 ----
-std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env);
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env);
 ----
 
 This signature receives:
 
 * `h` — The coroutine handle (as in standard awaiters)
 * `env` — The execution environment containing:
-** `env.executor` — The caller's executor for dispatching completions
-** `env.stop_token` — A stop token for cooperative cancellation
-** `env.allocator` — An optional allocator for frame allocation
+** `env->executor` — The caller's executor for dispatching completions
+** `env->stop_token` — A stop token for cooperative cancellation
+** `env->allocator` — An optional allocator for frame allocation
 
 The return type enables symmetric transfer.
 
@@ -62,7 +62,7 @@ An awaitable satisfies `IoAwaitable` if:
 [source,cpp]
 ----
 template<typename T>
-concept IoAwaitable = requires(T& t, std::coroutine_handle<> h, io_env const& env) {
+concept IoAwaitable = requires(T& t, std::coroutine_handle<> h, io_env const* env) {
     { t.await_ready() } -> std::convertible_to<bool>;
     { t.await_suspend(h, env) } -> std::same_as<std::coroutine_handle<>>;
     t.await_resume();
@@ -71,29 +71,20 @@ concept IoAwaitable = requires(T& t, std::coroutine_handle<> h, io_env const& en
 
 The key difference from standard awaitables is the two-argument `await_suspend` that receives the `io_env`.
 
-== IoAwaitableTask Concept
+== IoRunnable Concept
 
-A task type satisfies `IoAwaitableTask` if its promise provides:
+For tasks that can be launched from non-coroutine contexts, the `IoRunnable` concept refines `IoAwaitable` with:
 
-* `set_environment(io_env const&)` — Store the address of the execution environment (not a copy; the referenced `io_env` is guaranteed to outlive the coroutine)
-* `set_continuation(std::coroutine_handle<>, executor_ref)` — Store the continuation and caller's executor
-* `environment()` — Retrieve the stored environment
-* `complete()` — Return a handle for symmetric transfer at completion
+* `handle()` — Access the typed coroutine handle
+* `release()` — Transfer ownership of the frame
+* `exception()` — Check for captured exceptions
+* `result()` — Access the result value (non-void tasks)
 
-These injection methods are public so that launch functions like `run_async` can set context directly on the promise. Without them, a launch function would need to allocate an extra coroutine frame as a trampoline just to propagate context through `await_transform`. This breaks encapsulation, but the tradeoff eliminates a frame allocation on every launch.
+These methods exist because launch functions like `run_async` cannot `co_await` the task directly. The trampoline must be allocated before the task type is known, so it type-erases the task through function pointers and needs a common API to manage lifetime and extract results.
+
+Context injection methods (`set_environment`, `set_continuation`) are internal to the promise and not part of any concept. Launch functions access them through the typed handle provided by `handle()`.
 
 Capy's `task<T>` satisfies this concept.
-
-== IoLaunchableTask Concept
-
-For tasks that can be launched (not just awaited), the `IoLaunchableTask` concept adds:
-
-* `handle()` — Access the coroutine handle
-* `release()` — Transfer ownership of the handle
-* `exception()` — Check for captured exceptions
-* `result()` — Access the result value
-
-These methods enable `run_async` to manage task lifecycle.
 
 == How Context Flows
 
@@ -120,7 +111,7 @@ The child receives the parent's executor and stop token automatically.
 Forward propagation offers several advantages:
 
 * *Decoupling* — Awaitables don't need to know caller's promise type
-* *Composability* — Any IoAwaitable works with any IoAwaitableTask
+* *Composability* — Any IoAwaitable works with any IoRunnable task
 * *Explicit flow* — Context flows downward through the call chain, not queried upward
 
 This design enables Capy's type-erased wrappers (`any_stream`, etc.) to work without knowing the concrete executor type.
@@ -142,10 +133,10 @@ struct my_awaitable
         return false;  // Or true if result is immediately available
     }
     
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env)
     {
         // Store pointer to environment, never copy
-        env_ = &env;
+        env_ = env;
         continuation_ = h;
         
         // Start async operation...
@@ -184,11 +175,8 @@ The key points:
 | `<boost/capy/concept/io_awaitable.hpp>`
 | The IoAwaitable concept definition
 
-| `<boost/capy/concept/io_awaitable_task.hpp>`
-| The IoAwaitableTask concept for task types
-
-| `<boost/capy/concept/io_launchable_task.hpp>`
-| The IoLaunchableTask concept for launchable tasks
+| `<boost/capy/concept/io_runnable.hpp>`
+| The IoRunnable concept for launchable tasks
 |===
 
 You have now learned how the IoAwaitable protocol enables context propagation through coroutine chains. In the next section, you will learn about stop tokens and cooperative cancellation.

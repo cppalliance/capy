@@ -172,7 +172,7 @@ public:
 
             void await_suspend(
                 std::coroutine_handle<>,
-                io_env const&) const noexcept
+                io_env const*) const noexcept
             {
             }
 
@@ -233,7 +233,7 @@ public:
 
             void await_suspend(
                 std::coroutine_handle<>,
-                io_env const&) const noexcept
+                io_env const*) const noexcept
             {
             }
 
@@ -298,7 +298,7 @@ public:
 
             void await_suspend(
                 std::coroutine_handle<>,
-                io_env const&) const noexcept
+                io_env const*) const noexcept
             {
             }
 
@@ -361,7 +361,7 @@ public:
             // See the comment on write(CB buffers) for a detailed explanation.
             void await_suspend(
                 std::coroutine_handle<>,
-                io_env const&) const noexcept
+                io_env const*) const noexcept
             {
             }
 

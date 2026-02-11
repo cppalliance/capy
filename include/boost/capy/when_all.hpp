@@ -106,7 +106,7 @@ struct when_all_state
 
     // Parent resumption
     std::coroutine_handle<> continuation_;
-    io_env caller_env_;
+    io_env const* caller_env_ = nullptr;
 
     when_all_state()
         : remaining_count_(task_count)
@@ -166,7 +166,7 @@ struct when_all_runner
                     // Extract everything needed before self-destruction.
                     auto* state = p_->state_;
                     auto* counter = &state->remaining_count_;
-                    auto caller_env = state->caller_env_;
+                    auto* caller_env = state->caller_env_;
                     auto cont = state->continuation_;
 
                     h.destroy();
@@ -174,7 +174,7 @@ struct when_all_runner
                     // If last runner, dispatch parent for symmetric transfer.
                     auto remaining = counter->fetch_sub(1, std::memory_order_acq_rel);
                     if(remaining == 1)
-                        return caller_env.executor.dispatch(cont);
+                        return caller_env->executor.dispatch(cont);
                     return std::noop_coroutine();
                 }
 
@@ -215,7 +215,7 @@ struct when_all_runner
             template<class Promise>
             auto await_suspend(std::coroutine_handle<Promise> h)
             {
-                return a_.await_suspend(h, p_->env_);
+                return a_.await_suspend(h, &p_->env_);
             }
         };
 
@@ -302,19 +302,19 @@ public:
         return sizeof...(Awaitables) == 0;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> continuation, io_env const& caller_env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> continuation, io_env const* caller_env)
     {
         state_->continuation_ = continuation;
         state_->caller_env_ = caller_env;
 
         // Forward parent's stop requests to children
-        if(caller_env.stop_token.stop_possible())
+        if(caller_env->stop_token.stop_possible())
         {
             state_->parent_stop_callback_.emplace(
-                caller_env.stop_token,
+                caller_env->stop_token,
                 typename state_type::stop_callback_fn{&state_->stop_source_});
 
-            if(caller_env.stop_token.stop_requested())
+            if(caller_env->stop_token.stop_requested())
                 state_->stop_source_.request_stop();
         }
 
@@ -325,7 +325,7 @@ public:
         // for the last time.
         auto token = state_->stop_source_.get_token();
         [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            (..., launch_one<Is>(caller_env.executor, token));
+            (..., launch_one<Is>(caller_env->executor, token));
         }(std::index_sequence_for<Awaitables...>{});
 
         // Let signal_completion() handle resumption
@@ -346,11 +346,11 @@ private:
 
         auto h = runner.release();
         h.promise().state_ = state_;
-        h.promise().env_ = io_env{caller_ex, token, state_->caller_env_.allocator};
+        h.promise().env_ = io_env{caller_ex, token, state_->caller_env_->allocator};
 
         std::coroutine_handle<> ch{h};
         state_->runner_handles_[I] = ch;
-        state_->caller_env_.executor.post(ch);
+        state_->caller_env_->executor.post(ch);
     }
 };
 

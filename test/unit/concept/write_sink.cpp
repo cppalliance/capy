@@ -30,7 +30,7 @@ struct mock_sink_awaitable
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const&) const noexcept
+        io_env const*) const noexcept
     {
     }
 
@@ -48,7 +48,7 @@ struct mock_sink_awaitable_with_size
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const&) const noexcept
+        io_env const*) const noexcept
     {
     }
 
@@ -66,7 +66,7 @@ struct mock_sink_awaitable_int
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const&) const noexcept
+        io_env const*) const noexcept
     {
     }
 

@@ -119,25 +119,25 @@ struct io_awaitable_support_test
         env.stop_token = source.get_token();
 
         auto c = []() -> test_coro { co_return; }();
-        c.h_.promise().set_environment(env);
+        c.h_.promise().set_environment(&env);
 
-        auto const& retrieved = c.h_.promise().environment();
-        BOOST_TEST(retrieved.stop_token.stop_possible());
-        BOOST_TEST(!retrieved.stop_token.stop_requested());
+        auto const* retrieved = c.h_.promise().environment();
+        BOOST_TEST(retrieved->stop_token.stop_possible());
+        BOOST_TEST(!retrieved->stop_token.stop_requested());
 
         source.request_stop();
-        BOOST_TEST(retrieved.stop_token.stop_requested());
+        BOOST_TEST(retrieved->stop_token.stop_requested());
     }
 
     void
     testDefaultEnvironment()
     {
         auto c = []() -> test_coro { co_return; }();
-        auto const& env = c.h_.promise().environment();
+        auto env = c.h_.promise().environment();
 
-        BOOST_TEST(!env.stop_token.stop_possible());
-        BOOST_TEST(!env.stop_token.stop_requested());
-        BOOST_TEST(!static_cast<bool>(env.executor));
+        BOOST_TEST(!env->stop_token.stop_possible());
+        BOOST_TEST(!env->stop_token.stop_requested());
+        BOOST_TEST(!static_cast<bool>(env->executor));
     }
 
     void
@@ -148,14 +148,14 @@ struct io_awaitable_support_test
         std::stop_source source;
         io_env env;
         env.stop_token = source.get_token();
-        c.h_.promise().set_environment(env);
+        c.h_.promise().set_environment(&env);
 
         auto awaiter = c.h_.promise().await_transform(this_coro::environment);
 
         BOOST_TEST(awaiter.await_ready());
 
-        auto const& retrieved = awaiter.await_resume();
-        BOOST_TEST(retrieved.stop_token.stop_possible());
+        auto const* retrieved = awaiter.await_resume();
+        BOOST_TEST(retrieved->stop_token.stop_possible());
     }
 
     void
@@ -208,11 +208,11 @@ struct io_awaitable_support_test
         auto c = []() -> test_coro { co_return; }();
         io_env env;
         env.executor = executor_ref(executor);
-        c.h_.promise().set_environment(env);
+        c.h_.promise().set_environment(&env);
 
-        auto const& retrieved = c.h_.promise().environment();
-        BOOST_TEST(static_cast<bool>(retrieved.executor));
-        BOOST_TEST(retrieved.executor == executor_ref(executor));
+        auto const* retrieved = c.h_.promise().environment();
+        BOOST_TEST(static_cast<bool>(retrieved->executor));
+        BOOST_TEST(retrieved->executor == executor_ref(executor));
     }
 
     void

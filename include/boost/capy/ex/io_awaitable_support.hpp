@@ -62,8 +62,8 @@ namespace capy {
 
     my_task example()
     {
-        auto const& env = co_await this_coro::environment;
-        // Access env.executor, env.stop_token, env.allocator
+        auto env = co_await this_coro::environment;
+        // Access env->executor, env->stop_token, env->allocator
 
         // Or use fine-grained accessors:
         auto ex = co_await this_coro::executor;
@@ -109,7 +109,7 @@ namespace capy {
         std::coroutine_handle<promise_type> h_;
 
         // IoAwaitable await_suspend receives and stores the environment
-        std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const& env)
+        std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const* env)
         {
             h_.promise().set_environment(env);
             // ... rest of suspend logic ...
@@ -131,8 +131,7 @@ template<typename Derived>
 class io_awaitable_support
 {
     io_env const* env_ = &detail::empty_io_env;
-    executor_ref caller_ex_;
-    mutable std::coroutine_handle<> cont_{nullptr};
+    mutable std::coroutine_handle<> cont_{std::noop_coroutine()};
 
 public:
     //----------------------------------------------------------
@@ -196,7 +195,8 @@ public:
 
     ~io_awaitable_support()
     {
-        if (cont_)
+        // Abnormal teardown: destroy orphaned continuation
+        if(cont_ != std::noop_coroutine())
             cont_.destroy();
     }
 
@@ -204,42 +204,29 @@ public:
     // Continuation support
     //----------------------------------------------------------
 
-    /** Store continuation and caller's executor for completion dispatch.
+    /** Store the continuation to resume on completion.
 
-        Call this from your coroutine type's `await_suspend` overload to
-        set up the completion path. On completion, the coroutine will
-        resume the continuation, dispatching through the caller's executor
-        if it differs from this coroutine's executor.
+        Call this from your coroutine type's `await_suspend` overload
+        to set up the completion path. The `final_suspend` awaiter
+        returns this handle via unconditional symmetric transfer.
 
         @param cont The continuation to resume on completion.
-        @param caller_ex The caller's executor for completion dispatch.
     */
-    void set_continuation(std::coroutine_handle<> cont, executor_ref caller_ex) noexcept
+    void set_continuation(std::coroutine_handle<> cont) noexcept
     {
         cont_ = cont;
-        caller_ex_ = caller_ex;
     }
 
-    /** Return the handle to resume on completion with dispatch-awareness.
+    /** Return and consume the stored continuation handle.
 
-        If no continuation was set, returns `std::noop_coroutine()`.
-        If the coroutine's executor matches the caller's executor, returns
-        the continuation directly for symmetric transfer.
-        Otherwise, dispatches through the caller's executor and returns
-        `std::noop_coroutine()`.
+        Resets the stored handle to `noop_coroutine()` so the
+        destructor will not double-destroy it.
 
-        Call this from your `final_suspend` awaiter's `await_suspend`.
-
-        @return A coroutine handle for symmetric transfer.
+        @return The continuation for symmetric transfer.
     */
-    std::coroutine_handle<> complete() const noexcept
+    std::coroutine_handle<> continuation() const noexcept
     {
-        if(!cont_)
-            return std::noop_coroutine();
-        if(env_->executor == caller_ex_)
-            return std::exchange(cont_, nullptr);
-        caller_ex_.dispatch(std::exchange(cont_, nullptr));
-        return std::noop_coroutine();
+        return std::exchange(cont_, std::noop_coroutine());
     }
 
     //----------------------------------------------------------
@@ -250,23 +237,23 @@ public:
 
         Call this from your coroutine type's `await_suspend`
         overload to make the environment available via
-        `co_await this_coro::environment`. The referenced
+        `co_await this_coro::environment`. The pointed-to
         `io_env` must outlive this coroutine.
 
-        @param env The environment to reference.
+        @param env The environment to store.
     */
-    void set_environment(io_env const& env) noexcept
+    void set_environment(io_env const* env) noexcept
     {
-        env_ = &env;
+        env_ = env;
     }
 
     /** Return the stored execution environment.
 
         @return The environment.
     */
-    io_env const& environment() const noexcept
+    io_env const* environment() const noexcept
     {
-        return *env_;
+        return env_;
     }
 
     /** Transform an awaitable before co_await.
@@ -309,7 +296,7 @@ public:
                 io_env const* env_;
                 bool await_ready() const noexcept { return true; }
                 void await_suspend(std::coroutine_handle<>) const noexcept { }
-                io_env const& await_resume() const noexcept { return *env_; }
+                io_env const* await_resume() const noexcept { return env_; }
             };
             return awaiter{env_};
         }

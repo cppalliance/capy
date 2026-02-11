@@ -14,7 +14,7 @@
 #include <boost/capy/detail/run.hpp>
 #include <boost/capy/detail/run_callbacks.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/concept/io_launchable_task.hpp>
+#include <boost/capy/concept/io_runnable.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -168,7 +168,7 @@ struct run_async_trampoline
 
     std::coroutine_handle<promise_type> h_;
 
-    template<IoLaunchableTask Task>
+    template<IoRunnable Task>
     static void invoke_impl(void* p, Handlers& h)
     {
         using R = decltype(std::declval<Task&>().await_resume());
@@ -259,7 +259,7 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
 
     std::coroutine_handle<promise_type> h_;
 
-    template<IoLaunchableTask Task>
+    template<IoRunnable Task>
     static void invoke_impl(void* p, Handlers& h)
     {
         using R = decltype(std::declval<Task&>().await_resume());
@@ -367,12 +367,12 @@ public:
         in its chain. Awaitables may store `io_env const*` without concern
         for dangling references.
 
-        @tparam Task The IoLaunchableTask type.
+        @tparam Task The IoRunnable type.
 
         @param t The task to execute. Ownership is transferred to the
                  run_async_trampoline which will destroy it after completion.
     */
-    template<IoLaunchableTask Task>
+    template<IoRunnable Task>
     void operator()(Task t) &&
     {
         auto task_h = t.handle();
@@ -387,9 +387,9 @@ public:
         p.task_h_ = task_h;
 
         // Setup task's continuation to return to run_async_trampoline
-        task_promise.set_continuation(tr_.h_, p.wg_.executor());
+        task_promise.set_continuation(tr_.h_);
         p.env_ = {p.wg_.executor(), st_, p.get_resource()};
-        task_promise.set_environment(p.env_);
+        task_promise.set_environment(&p.env_);
 
         // Start task through executor
         p.wg_.executor().dispatch(task_h).resume();

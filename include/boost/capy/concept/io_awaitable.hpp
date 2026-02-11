@@ -30,7 +30,7 @@ namespace capy {
 
     @li `a.await_suspend(h, env)` must be a valid expression where:
         - `h` is a `std::coroutine_handle<>` (coroutine handle)
-        - `env` is an `io_env const&`
+        - `env` is an `io_env const*`
 
     @par Semantic Requirements
 
@@ -62,7 +62,7 @@ namespace capy {
 
         auto await_suspend(
             std::coroutine_handle<> h,
-            io_env const& env );
+            io_env const* env );
 
         T await_resume();
     };
@@ -78,9 +78,9 @@ namespace capy {
 
         auto await_suspend(
             std::coroutine_handle<> h,
-            io_env const& env )
+            io_env const* env )
         {
-            env_ = &env;  // Store pointer, never copy
+            env_ = env;
             cont_ = h;
             start_async( [this] {
                 if( env_->stop_token.stop_requested() )
@@ -97,14 +97,14 @@ namespace capy {
     };
     @endcode
 
-    @see IoAwaitableTask
+    @see IoRunnable
 */
 template<typename A>
 concept IoAwaitable =
     requires(
         A a,
         std::coroutine_handle<> h,
-        io_env const& env)
+        io_env const* env)
     {
         a.await_suspend(h, env);
     };

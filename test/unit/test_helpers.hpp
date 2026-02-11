@@ -233,7 +233,7 @@ struct self_destroy_awaitable
 {
     bool await_ready() {return false;}
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const&)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const*)
     {
         // one wouldn't expect this to happen, but it should not cause UB
         h.destroy();
@@ -253,11 +253,11 @@ struct stop_only_awaitable
 
     bool await_ready() {return false;}
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env)
     {
-        if (env.stop_token.stop_requested())
+        if (env->stop_token.stop_requested())
             return h;
-        stop_cb.emplace(env.stop_token, h);
+        stop_cb.emplace(env->stop_token, h);
         return std::noop_coroutine();
     }
     void await_resume() {}
@@ -388,10 +388,10 @@ struct yield_awaitable
         return false;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env)
     {
         // Post ourselves back to the queue
-        env.executor.post(h);
+        env->executor.post(h);
         return std::noop_coroutine();
     }
 

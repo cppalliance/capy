@@ -177,7 +177,7 @@ struct read_until_awaitable
     }
 
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<> h, io_env const& env)
+    await_suspend(std::coroutine_handle<> h, io_env const* env)
     {
         inner_.emplace(read_until_match_impl(
             *stream_, buffers(), match_, initial_amount_));

@@ -56,8 +56,7 @@
 #include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/concept/io_awaitable_task.hpp>
-#include <boost/capy/concept/io_launchable_task.hpp>
+#include <boost/capy/concept/io_runnable.hpp>
 #include <boost/capy/concept/match_condition.hpp>
 #include <boost/capy/concept/mutable_buffer_sequence.hpp>
 #include <boost/capy/concept/read_source.hpp>

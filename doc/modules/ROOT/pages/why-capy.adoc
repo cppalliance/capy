@@ -291,13 +291,13 @@ The *IoAwaitable protocol* solves context propagation. When you `co_await`, the 
 
 And Capy *separates execution from platform*. The execution model—executors, cancellation, allocation—lives in Capy. Platform abstractions—sockets, `io_uring`, IOCP—live in Corosio. Clean boundaries. Testable components. You can use Capy's execution model with a different I/O backend if you choose.
 
-Most importantly, Capy defines a *taxonomy of awaitables*. `IoAwaitable` is the base protocol. `IoAwaitableTask` adds promise-level context storage. `IoLaunchableTask` adds the interface for launch functions. This hierarchy means you can write your own task types that integrate with Capy's execution model. Asio's `awaitable<T>` is a concrete type, not a concept. You use it or you don't. Capy gives you building blocks.
+Most importantly, Capy defines a *taxonomy of awaitables*. `IoAwaitable` is the base protocol for any type that participates in context propagation. `IoRunnable` refines it with the launch interface needed by `run_async` and `run`. This hierarchy means you can write your own task types that integrate with Capy's execution model. Asio's `awaitable<T>` is a concrete type, not a concept. You use it or you don't. Capy gives you building blocks.
 
 No other solution like this exists. Not Asio. Not `std::execution`. Not anywhere in the global ecosystem. Capy is the first.
 
 === What Capy Offers
 
-* `IoAwaitable`, `IoAwaitableTask`, `IoLaunchableTask` — taxonomy of awaitable concepts
+* `IoAwaitable`, `IoRunnable` — taxonomy of awaitable concepts
 * `task<T>` — concrete task type implementing the protocol (user-defined tasks also supported)
 * `run`, `run_async` — launch functions with forward-flow allocator control
 * `strand`, `thread_pool`, `async_mutex`, `async_event` — concurrency primitives
@@ -314,12 +314,12 @@ No other solution like this exists. Not Asio. Not `std::execution`. Not anywhere
 |
 |
 
-| `IoAwaitableTask`
+| `IoRunnable`
 |
 |
 |
 
-| `IoLaunchableTask`
+| `io_awaitable_support`
 |
 |
 |

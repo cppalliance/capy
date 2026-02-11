@@ -129,7 +129,7 @@ struct foreign_awaitable
     }
 
     // IoAwaitable protocol
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const&) const
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const*) const
     {
         return h;
     }

@@ -152,7 +152,7 @@ struct this_coro_tags_test
         auto c = []() -> tag_test_coro { co_return; }();
         io_env env;
         env.executor = executor_ref(executor);
-        c.h_.promise().set_environment(env);
+        c.h_.promise().set_environment(&env);
 
         auto awaiter = c.h_.promise().await_transform(this_coro::executor);
 
@@ -172,7 +172,7 @@ struct this_coro_tags_test
         std::stop_source source;
         io_env env;
         env.stop_token = source.get_token();
-        c.h_.promise().set_environment(env);
+        c.h_.promise().set_environment(&env);
 
         auto awaiter = c.h_.promise().await_transform(this_coro::stop_token);
 
@@ -196,7 +196,7 @@ struct this_coro_tags_test
         auto* mr = std::pmr::new_delete_resource();
         io_env env;
         env.allocator = mr;
-        c.h_.promise().set_environment(env);
+        c.h_.promise().set_environment(&env);
 
         auto awaiter = c.h_.promise().await_transform(this_coro::allocator);
 

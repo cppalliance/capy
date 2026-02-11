@@ -138,7 +138,7 @@ public:
 
             void await_suspend(
                 std::coroutine_handle<>,
-                io_env const&) const noexcept
+                io_env const*) const noexcept
             {
             }
 
@@ -198,7 +198,7 @@ public:
 
             void await_suspend(
                 std::coroutine_handle<>,
-                io_env const&) const noexcept
+                io_env const*) const noexcept
             {
             }
 

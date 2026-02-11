@@ -30,14 +30,14 @@ namespace capy {
 
     Launch functions (@ref run_async, @ref run) own the `io_env` and
     guarantee it outlives all tasks and awaitables in the launched
-    chain. Awaitables that receive `io_env const&` in `await_suspend`
-    should store the address (`io_env const*`), never a copy.
+    chain. Awaitables receive `io_env const*` in `await_suspend`
+    and should store it directly, never copy the pointed-to object.
 
     @par Thread Safety
     The referenced executor and allocator must remain valid
     for the lifetime of any coroutine using this environment.
 
-    @see IoAwaitable, IoAwaitableTask
+    @see IoAwaitable, IoRunnable
 */
 struct io_env
 {

@@ -24,7 +24,7 @@ template<typename Awaitable>
 std::coroutine_handle<> call_await_suspend(
     Awaitable* a,
     std::coroutine_handle<> h,
-    io_env const& env)
+    io_env const* env)
 {
     using R = decltype(a->await_suspend(h, env));
     if constexpr (std::is_void_v<R>)

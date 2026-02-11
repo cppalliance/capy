@@ -178,16 +178,16 @@ The awaitable receives a handle to resume. That's all. No information about wher
 
 [source,cpp]
 ----
-auto await_suspend(std::coroutine_handle<> h, io_env const& env);
+auto await_suspend(std::coroutine_handle<> h, io_env const* env);
 ----
 
 The awaitable receives:
 
 * `h` — The handle (for resumption)
 * `env` — The execution environment containing:
-** `env.executor` — The executor (where to resume)
-** `env.stop_token` — A stop token (for cancellation)
-** `env.allocator` — An optional allocator for frame allocation
+** `env->executor` — The executor (where to resume)
+** `env->stop_token` — A stop token (for cancellation)
+** `env->allocator` — An optional allocator for frame allocation
 
 *TMC's approach:*
 

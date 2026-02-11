@@ -50,7 +50,7 @@ struct async_mutex_test
         t.release();
         io_env env;
         env.executor = executor_ref(ex);
-        h.promise().set_environment(env);
+        h.promise().set_environment(&env);
         h.resume();
 
         BOOST_TEST(done);
@@ -85,11 +85,11 @@ struct async_mutex_test
         first.release();
         io_env env;
         env.executor = executor_ref(ex);
-        h1.promise().set_environment(env);
+        h1.promise().set_environment(&env);
 
         auto h2 = second.handle();
         second.release();
-        h2.promise().set_environment(env);
+        h2.promise().set_environment(&env);
 
         h1.resume();
         BOOST_TEST(first_done);
@@ -140,14 +140,14 @@ struct async_mutex_test
         holder.release();
         io_env env1;
         env1.executor = executor_ref(ex);
-        h1.promise().set_environment(env1);
+        h1.promise().set_environment(&env1);
 
         auto h2 = waiter.handle();
         waiter.release();
         io_env env2;
         env2.executor = executor_ref(ex);
         env2.stop_token = ss.get_token();
-        h2.promise().set_environment(env2);
+        h2.promise().set_environment(&env2);
 
         h1.resume();
         BOOST_TEST(holder_done);
@@ -201,14 +201,14 @@ struct async_mutex_test
         holder.release();
         io_env env1;
         env1.executor = executor_ref(ex);
-        h1.promise().set_environment(env1);
+        h1.promise().set_environment(&env1);
 
         auto h2 = waiter.handle();
         waiter.release();
         io_env env2;
         env2.executor = executor_ref(ex);
         env2.stop_token = ss.get_token();
-        h2.promise().set_environment(env2);
+        h2.promise().set_environment(&env2);
 
         h1.resume();
         BOOST_TEST(holder_done);
@@ -257,11 +257,11 @@ struct async_mutex_test
         holder.release();
         io_env env;
         env.executor = executor_ref(ex);
-        h1.promise().set_environment(env);
+        h1.promise().set_environment(&env);
 
         auto h2 = waiter.handle();
         waiter.release();
-        h2.promise().set_environment(env);
+        h2.promise().set_environment(&env);
 
         h1.resume();
         BOOST_TEST(holder_done);
@@ -321,27 +321,27 @@ struct async_mutex_test
         holder.release();
         io_env env_h;
         env_h.executor = executor_ref(ex);
-        hh.promise().set_environment(env_h);
+        hh.promise().set_environment(&env_h);
 
         auto h1 = w1.handle();
         w1.release();
         io_env env1;
         env1.executor = executor_ref(ex);
         env1.stop_token = ss1.get_token();
-        h1.promise().set_environment(env1);
+        h1.promise().set_environment(&env1);
 
         auto h2 = w2.handle();
         w2.release();
         io_env env2;
         env2.executor = executor_ref(ex);
         env2.stop_token = ss2.get_token();
-        h2.promise().set_environment(env2);
+        h2.promise().set_environment(&env2);
 
         auto h3 = w3.handle();
         w3.release();
         io_env env3;
         env3.executor = executor_ref(ex);
-        h3.promise().set_environment(env3);
+        h3.promise().set_environment(&env3);
 
         hh.resume();
         BOOST_TEST(holder_done);
@@ -413,14 +413,14 @@ struct async_mutex_test
         holder.release();
         io_env env1;
         env1.executor = executor_ref(ex);
-        h1.promise().set_environment(env1);
+        h1.promise().set_environment(&env1);
 
         auto h2 = waiter.handle();
         waiter.release();
         io_env env2;
         env2.executor = executor_ref(ex);
         env2.stop_token = ss.get_token();
-        h2.promise().set_environment(env2);
+        h2.promise().set_environment(&env2);
 
         h1.resume();
         BOOST_TEST(holder_done);
@@ -460,7 +460,7 @@ struct async_mutex_test
         io_env env;
         env.executor = executor_ref(ex);
         env.stop_token = ss.get_token();
-        h.promise().set_environment(env);
+        h.promise().set_environment(&env);
         h.resume();
 
         BOOST_TEST(done);
@@ -490,7 +490,7 @@ struct async_mutex_test
         t.release();
         io_env env;
         env.executor = executor_ref(ex);
-        h.promise().set_environment(env);
+        h.promise().set_environment(&env);
         h.resume();
 
         BOOST_TEST(done);
@@ -527,14 +527,14 @@ struct async_mutex_test
         holder.release();
         io_env env1;
         env1.executor = executor_ref(ex);
-        h1.promise().set_environment(env1);
+        h1.promise().set_environment(&env1);
 
         auto h2 = waiter.handle();
         waiter.release();
         io_env env2;
         env2.executor = executor_ref(ex);
         env2.stop_token = ss.get_token();
-        h2.promise().set_environment(env2);
+        h2.promise().set_environment(&env2);
 
         h1.resume();
         BOOST_TEST(holder_done);
@@ -591,19 +591,19 @@ struct async_mutex_test
         holder.release();
         io_env env;
         env.executor = executor_ref(ex);
-        hh.promise().set_environment(env);
+        hh.promise().set_environment(&env);
 
         auto h1 = w1.handle();
         w1.release();
-        h1.promise().set_environment(env);
+        h1.promise().set_environment(&env);
 
         auto h2 = w2.handle();
         w2.release();
-        h2.promise().set_environment(env);
+        h2.promise().set_environment(&env);
 
         auto h3 = w3.handle();
         w3.release();
-        h3.promise().set_environment(env);
+        h3.promise().set_environment(&env);
 
         hh.resume();
         h1.resume();
@@ -671,26 +671,26 @@ struct async_mutex_test
         holder.release();
         io_env env_h;
         env_h.executor = executor_ref(ex);
-        hh.promise().set_environment(env_h);
+        hh.promise().set_environment(&env_h);
 
         auto h1 = w1.handle();
         w1.release();
         io_env env1;
         env1.executor = executor_ref(ex);
-        h1.promise().set_environment(env1);
+        h1.promise().set_environment(&env1);
 
         auto h2 = w2.handle();
         w2.release();
         io_env env2;
         env2.executor = executor_ref(ex);
         env2.stop_token = ss.get_token();
-        h2.promise().set_environment(env2);
+        h2.promise().set_environment(&env2);
 
         auto h3 = w3.handle();
         w3.release();
         io_env env3;
         env3.executor = executor_ref(ex);
-        h3.promise().set_environment(env3);
+        h3.promise().set_environment(&env3);
 
         hh.resume();
         h1.resume();
@@ -749,15 +749,15 @@ struct async_mutex_test
         holder.release();
         io_env env;
         env.executor = executor_ref(ex);
-        hh.promise().set_environment(env);
+        hh.promise().set_environment(&env);
 
         auto h1 = w1.handle();
         w1.release();
-        h1.promise().set_environment(env);
+        h1.promise().set_environment(&env);
 
         auto h2 = w2.handle();
         w2.release();
-        h2.promise().set_environment(env);
+        h2.promise().set_environment(&env);
 
         hh.resume();
         h1.resume();
@@ -795,7 +795,7 @@ struct async_mutex_test
         t.release();
         io_env env;
         env.executor = executor_ref(ex);
-        h.promise().set_environment(env);
+        h.promise().set_environment(&env);
         h.resume();
 
         BOOST_TEST(done);

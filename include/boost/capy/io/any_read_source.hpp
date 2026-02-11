@@ -281,7 +281,7 @@ private:
 struct any_read_source::awaitable_ops
 {
     bool (*await_ready)(void*);
-    std::coroutine_handle<> (*await_suspend)(void*, std::coroutine_handle<>, io_env const&);
+    std::coroutine_handle<> (*await_suspend)(void*, std::coroutine_handle<>, io_env const*);
     io_result<std::size_t> (*await_resume)(void*);
     void (*destroy)(void*) noexcept;
 };
@@ -329,7 +329,7 @@ struct any_read_source::vtable_for_impl
             +[](void* p) {
                 return static_cast<ReadSomeAwaitable*>(p)->await_ready();
             },
-            +[](void* p, std::coroutine_handle<> h, io_env const& env) {
+            +[](void* p, std::coroutine_handle<> h, io_env const* env) {
                 return detail::call_await_suspend(
                     static_cast<ReadSomeAwaitable*>(p), h, env);
             },
@@ -356,7 +356,7 @@ struct any_read_source::vtable_for_impl
             +[](void* p) {
                 return static_cast<ReadAwaitable*>(p)->await_ready();
             },
-            +[](void* p, std::coroutine_handle<> h, io_env const& env) {
+            +[](void* p, std::coroutine_handle<> h, io_env const* env) {
                 return detail::call_await_suspend(
                     static_cast<ReadAwaitable*>(p), h, env);
             },
@@ -491,7 +491,7 @@ any_read_source::read_some(MB buffers)
         }
 
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const& env)
+        await_suspend(std::coroutine_handle<> h, io_env const* env)
         {
             self_->active_ops_ = self_->vt_->construct_read_some_awaitable(
                 self_->source_,
@@ -540,7 +540,7 @@ any_read_source::read_(std::span<mutable_buffer const> buffers)
         }
 
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const& env)
+        await_suspend(std::coroutine_handle<> h, io_env const* env)
         {
             self_->active_ops_ = self_->vt_->construct_read_awaitable(
                 self_->source_,

@@ -130,7 +130,7 @@ public:
         bufgrind* self_;
 
         bool await_ready() const noexcept { return true; }
-        std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const&) const noexcept { return h; }
+        std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const*) const noexcept { return h; }
 
         split_type
         await_resume()

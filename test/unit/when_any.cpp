@@ -369,7 +369,7 @@ struct when_any_test
         // A task that does multiple steps, checking stop token between each
         auto slow_task = [&](int id, int steps) -> task<int> {
             for (int i = 0; i < steps; ++i) {
-                auto token = (co_await this_coro::environment).stop_token;
+                auto token = (co_await this_coro::environment)->stop_token;
                 if (token.stop_requested()) {
                     ++cancelled_count;
                     co_return -1;  // Cancelled
@@ -423,7 +423,7 @@ struct when_any_test
         // A task that does a few steps then completes
         auto medium_task = [&](int id, int steps) -> task<int> {
             for (int i = 0; i < steps; ++i) {
-                auto token = (co_await this_coro::environment).stop_token;
+                auto token = (co_await this_coro::environment)->stop_token;
                 if (token.stop_requested()) {
                     ++cancelled_count;
                     co_return -1;
@@ -530,7 +530,7 @@ struct when_any_test
 
         auto cooperative_slow = [&](int steps) -> task<int> {
             for (int i = 0; i < steps; ++i) {
-                auto token = (co_await this_coro::environment).stop_token;
+                auto token = (co_await this_coro::environment)->stop_token;
                 if (token.stop_requested()) {
                     ++cooperative_cancelled;
                     co_return -1;
@@ -879,7 +879,7 @@ struct when_any_test
 
         // A task that checks stop token on first suspension
         auto check_stop_task = [&](int id) -> task<int> {
-            auto token = (co_await this_coro::environment).stop_token;
+            auto token = (co_await this_coro::environment)->stop_token;
             if (token.stop_requested()) {
                 ++saw_stop_count;
             }
@@ -923,7 +923,7 @@ struct when_any_test
 
         auto slow_task = [&](int id, int steps) -> task<int> {
             for (int i = 0; i < steps; ++i) {
-                auto token = (co_await this_coro::environment).stop_token;
+                auto token = (co_await this_coro::environment)->stop_token;
                 if (token.stop_requested()) {
                     ++cancelled_count;
                     co_return -1;
@@ -1031,7 +1031,7 @@ struct when_any_test
 
         // A task that checks stop before launching inner when_any
         auto nested_when_any_task = [&]() -> task<int> {
-            auto token = (co_await this_coro::environment).stop_token;
+            auto token = (co_await this_coro::environment)->stop_token;
             if (token.stop_requested()) {
                 ++outer_cancelled;
                 co_return -1;
@@ -1080,7 +1080,7 @@ struct when_any_test
 
         auto slow_inner_task = [&](int steps) -> task<int> {
             for (int i = 0; i < steps; ++i) {
-                auto token = (co_await this_coro::environment).stop_token;
+                auto token = (co_await this_coro::environment)->stop_token;
                 if (token.stop_requested()) {
                     ++inner_cancelled;
                     co_return -1;
@@ -1522,7 +1522,7 @@ struct when_any_vector_test
 
         auto slow_task = [&](int id, int steps) -> task<int> {
             for (int i = 0; i < steps; ++i) {
-                auto token = (co_await this_coro::environment).stop_token;
+                auto token = (co_await this_coro::environment)->stop_token;
                 if (token.stop_requested()) {
                     ++cancelled_count;
                     co_return -1;

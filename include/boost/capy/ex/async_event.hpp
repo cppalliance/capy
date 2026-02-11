@@ -194,19 +194,19 @@ public:
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
-            io_env const& env) noexcept
+            io_env const* env) noexcept
         {
-            if(env.stop_token.stop_requested())
+            if(env->stop_token.stop_requested())
             {
                 canceled_ = true;
                 return h;
             }
             h_ = h;
-            ex_ = env.executor;
+            ex_ = env->executor;
             e_->waiters_.push_back(this);
             in_list_ = true;
             ::new(stop_cb_buf_) stop_cb_t(
-                env.stop_token, cancel_fn{this});
+                env->stop_token, cancel_fn{this});
             active_ = true;
             return std::noop_coroutine();
         }

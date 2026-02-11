@@ -230,12 +230,12 @@ public:
 
             std::coroutine_handle<> await_suspend(
                 std::coroutine_handle<> h,
-                io_env const& env) noexcept
+                io_env const* env) noexcept
             {
                 auto& side = self_->state_->sides[
                     self_->index_];
                 side.pending_h = h;
-                side.pending_ex = env.executor;
+                side.pending_ex = env->executor;
                 return std::noop_coroutine();
             }
 
@@ -305,7 +305,7 @@ public:
 
             void await_suspend(
                 std::coroutine_handle<>,
-                io_env const&) const noexcept
+                io_env const*) const noexcept
             {
             }
 

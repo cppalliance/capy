@@ -98,9 +98,9 @@ struct stoppable_timer
         return duration_.count() <= 0;
     }
 
-    void await_suspend(std::coroutine_handle<> h, io_env const& env)
+    void await_suspend(std::coroutine_handle<> h, io_env const* env)
     {
-        env_ = &env;  // Store pointer, never copy
+        env_ = env;  // Store pointer, never copy
 
         if (env_->stop_token.stop_requested())
         {

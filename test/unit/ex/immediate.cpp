@@ -378,9 +378,10 @@ struct immediate_test
 
             // Even though we call await_suspend, it returns noop
             // because the result is already ready
+            io_env env{ex, {}};
             auto result = im.await_suspend(
                 std::noop_coroutine(),
-                io_env{ex, {}});
+                &env);
             BOOST_TEST(result == std::noop_coroutine());
 
             // Executor was not used since we're already ready

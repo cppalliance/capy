@@ -72,8 +72,8 @@ struct this_coro_environment_access_test
 
         BOOST_TEST(awaiter.await_ready());
 
-        auto& env = awaiter.await_resume();
-        static_assert(std::is_same_v<decltype(env), io_env const&>);
+        auto env = awaiter.await_resume();
+        static_assert(std::is_same_v<decltype(env), io_env const*>);
         (void)env;
     }
 
@@ -86,16 +86,16 @@ struct this_coro_environment_access_test
         io_env env;
         env.stop_token = source.get_token();
 
-        c.h_.promise().set_environment(env);
+        c.h_.promise().set_environment(&env);
 
         auto awaiter = c.h_.promise().await_transform(this_coro::environment);
-        auto& retrieved = awaiter.await_resume();
+        auto retrieved = awaiter.await_resume();
 
-        BOOST_TEST(retrieved.stop_token.stop_possible());
-        BOOST_TEST(!retrieved.stop_token.stop_requested());
+        BOOST_TEST(retrieved->stop_token.stop_possible());
+        BOOST_TEST(!retrieved->stop_token.stop_requested());
 
         source.request_stop();
-        BOOST_TEST(retrieved.stop_token.stop_requested());
+        BOOST_TEST(retrieved->stop_token.stop_requested());
     }
 
     void
@@ -116,7 +116,7 @@ struct this_coro_environment_access_test
         std::stop_source source;
         io_env env;
         env.stop_token = source.get_token();
-        c.h_.promise().set_environment(env);
+        c.h_.promise().set_environment(&env);
 
         auto awaiter = c.h_.promise().await_transform(this_coro::stop_token);
         BOOST_TEST(awaiter.await_ready());
@@ -135,7 +135,7 @@ struct this_coro_environment_access_test
         auto c = []() -> env_test_coro { co_return; }();
 
         io_env env;
-        c.h_.promise().set_environment(env);
+        c.h_.promise().set_environment(&env);
 
         auto awaiter = c.h_.promise().await_transform(this_coro::executor);
         BOOST_TEST(awaiter.await_ready());
@@ -152,7 +152,7 @@ struct this_coro_environment_access_test
         auto* mr = std::pmr::new_delete_resource();
         io_env env;
         env.allocator = mr;
-        c.h_.promise().set_environment(env);
+        c.h_.promise().set_environment(&env);
 
         auto awaiter = c.h_.promise().await_transform(this_coro::allocator);
         BOOST_TEST(awaiter.await_ready());

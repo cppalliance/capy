@@ -13,7 +13,8 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/run.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/concept/io_launchable_task.hpp>
+#include <boost/capy/concept/io_runnable.hpp>
+#include <boost/capy/ex/executor_ref.hpp>
 #include <coroutine>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -59,32 +60,125 @@ namespace boost::capy::detail {
 
 //----------------------------------------------------------
 //
+// dispatch_trampoline - cross-executor dispatch
+//
+//----------------------------------------------------------
+
+/** Minimal coroutine that dispatches through the caller's executor.
+
+    Sits between the inner task and the parent when executors
+    diverge. The inner task's `final_suspend` resumes this
+    trampoline via symmetric transfer. The trampoline's own
+    `final_suspend` dispatches the parent through the caller's
+    executor to restore the correct execution context.
+
+    The trampoline never touches the task's result.
+*/
+struct dispatch_trampoline
+{
+    struct promise_type
+    {
+        executor_ref caller_ex_;
+        std::coroutine_handle<> parent_;
+
+        dispatch_trampoline get_return_object() noexcept
+        {
+            return dispatch_trampoline{
+                std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+
+        std::suspend_always initial_suspend() noexcept { return {}; }
+
+        auto final_suspend() noexcept
+        {
+            struct awaiter
+            {
+                promise_type* p_;
+                bool await_ready() const noexcept { return false; }
+
+                std::coroutine_handle<> await_suspend(
+                    std::coroutine_handle<>) noexcept
+                {
+                    return p_->caller_ex_.dispatch(p_->parent_);
+                }
+
+                void await_resume() const noexcept {}
+            };
+            return awaiter{this};
+        }
+
+        void return_void() noexcept {}
+        void unhandled_exception() noexcept {}
+    };
+
+    std::coroutine_handle<promise_type> h_{nullptr};
+
+    dispatch_trampoline() noexcept = default;
+
+    ~dispatch_trampoline()
+    {
+        if(h_) h_.destroy();
+    }
+
+    dispatch_trampoline(dispatch_trampoline const&) = delete;
+    dispatch_trampoline& operator=(dispatch_trampoline const&) = delete;
+
+    dispatch_trampoline(dispatch_trampoline&& o) noexcept
+        : h_(std::exchange(o.h_, nullptr)) {}
+
+    dispatch_trampoline& operator=(dispatch_trampoline&& o) noexcept
+    {
+        if(this != &o)
+        {
+            if(h_) h_.destroy();
+            h_ = std::exchange(o.h_, nullptr);
+        }
+        return *this;
+    }
+
+private:
+    explicit dispatch_trampoline(std::coroutine_handle<promise_type> h) noexcept
+        : h_(h) {}
+};
+
+inline dispatch_trampoline make_dispatch_trampoline()
+{
+    co_return;
+}
+
+//----------------------------------------------------------
+//
 // run_awaitable_ex - with executor (executor switch)
 //
 //----------------------------------------------------------
 
-/** Awaitable that binds an IoLaunchableTask to a specific executor.
+/** Awaitable that binds an IoRunnable to a specific executor.
 
     Stores the executor and inner task by value. When co_awaited, the
     co_await expression's lifetime extension keeps both alive for the
     duration of the operation.
 
+    A dispatch trampoline handles the executor switch on completion:
+    the inner task's `final_suspend` resumes the trampoline, which
+    dispatches back through the caller's executor.
+
     The `io_env` is owned by this awaitable and is guaranteed to
     outlive the inner task and all awaitables in its chain. Awaitables
     may store `io_env const*` without concern for dangling references.
 
-    @tparam Task The IoLaunchableTask type
+    @tparam Task The IoRunnable type
     @tparam Ex The executor type
     @tparam InheritStopToken If true, inherit caller's stop token
     @tparam Alloc The allocator type (void for no allocator)
 */
-template<IoLaunchableTask Task, Executor Ex, bool InheritStopToken, class Alloc = void>
+template<IoRunnable Task, Executor Ex, bool InheritStopToken, class Alloc = void>
 struct [[nodiscard]] run_awaitable_ex
 {
     Ex ex_;
     frame_memory_resource<Alloc> resource_;
     std::conditional_t<InheritStopToken, std::monostate, std::stop_token> st_;
     io_env env_;
+    dispatch_trampoline tr_;
     Task inner_;  // Last: destroyed first, while env_ is still valid
 
     // void allocator, inherit stop token
@@ -135,24 +229,28 @@ struct [[nodiscard]] run_awaitable_ex
         return inner_.await_resume();
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const& caller_env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const* caller_env)
     {
+        tr_ = make_dispatch_trampoline();
+        tr_.h_.promise().caller_ex_ = caller_env->executor;
+        tr_.h_.promise().parent_ = cont;
+
         auto h = inner_.handle();
         auto& p = h.promise();
-        p.set_continuation(cont, caller_env.executor);
+        p.set_continuation(tr_.h_);
 
         env_.executor = ex_;
         if constexpr (InheritStopToken)
-            env_.stop_token = caller_env.stop_token;
+            env_.stop_token = caller_env->stop_token;
         else
             env_.stop_token = st_;
 
         if constexpr (!std::is_void_v<Alloc>)
             env_.allocator = resource_.get();
         else
-            env_.allocator = caller_env.allocator;
+            env_.allocator = caller_env->allocator;
 
-        p.set_environment(env_);
+        p.set_environment(&env_);
         return h;
     }
 
@@ -174,14 +272,15 @@ struct [[nodiscard]] run_awaitable_ex
 /** Awaitable that runs a task with optional stop_token override.
 
     Does NOT store an executor - the task inherits the caller's executor
-    directly. Since executor_ == caller_ex_, complete() does direct
-    symmetric transfer without dispatch overhead.
+    directly. Executors always match, so no dispatch trampoline is needed.
+    The inner task's `final_suspend` resumes the parent directly via
+    unconditional symmetric transfer.
 
-    @tparam Task The IoLaunchableTask type
+    @tparam Task The IoRunnable type
     @tparam InheritStopToken If true, inherit caller's stop token
     @tparam Alloc The allocator type (void for no allocator)
 */
-template<IoLaunchableTask Task, bool InheritStopToken, class Alloc = void>
+template<IoRunnable Task, bool InheritStopToken, class Alloc = void>
 struct [[nodiscard]] run_awaitable
 {
     frame_memory_resource<Alloc> resource_;
@@ -233,24 +332,24 @@ struct [[nodiscard]] run_awaitable
         return inner_.await_resume();
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const& caller_env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const* caller_env)
     {
         auto h = inner_.handle();
         auto& p = h.promise();
-        p.set_continuation(cont, caller_env.executor);
+        p.set_continuation(cont);
 
-        env_.executor = caller_env.executor;
+        env_.executor = caller_env->executor;
         if constexpr (InheritStopToken)
-            env_.stop_token = caller_env.stop_token;
+            env_.stop_token = caller_env->stop_token;
         else
             env_.stop_token = st_;
 
         if constexpr (!std::is_void_v<Alloc>)
             env_.allocator = resource_.get();
         else
-            env_.allocator = caller_env.allocator;
+            env_.allocator = caller_env->allocator;
 
-        p.set_environment(env_);
+        p.set_environment(&env_);
         return h;
     }
 
@@ -309,7 +408,7 @@ public:
     run_wrapper_ex& operator=(run_wrapper_ex const&) = delete;
     run_wrapper_ex& operator=(run_wrapper_ex&&) = delete;
 
-    template<IoLaunchableTask Task>
+    template<IoRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
         if constexpr (InheritStopToken)
@@ -353,7 +452,7 @@ public:
     run_wrapper_ex& operator=(run_wrapper_ex const&) = delete;
     run_wrapper_ex& operator=(run_wrapper_ex&&) = delete;
 
-    template<IoLaunchableTask Task>
+    template<IoRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
         if constexpr (InheritStopToken)
@@ -392,7 +491,7 @@ public:
     run_wrapper_ex& operator=(run_wrapper_ex const&) = delete;
     run_wrapper_ex& operator=(run_wrapper_ex&&) = delete;
 
-    template<IoLaunchableTask Task>
+    template<IoRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
         if constexpr (InheritStopToken)
@@ -446,7 +545,7 @@ public:
     run_wrapper& operator=(run_wrapper const&) = delete;
     run_wrapper& operator=(run_wrapper&&) = delete;
 
-    template<IoLaunchableTask Task>
+    template<IoRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
         if constexpr (InheritStopToken)
@@ -487,7 +586,7 @@ public:
     run_wrapper& operator=(run_wrapper const&) = delete;
     run_wrapper& operator=(run_wrapper&&) = delete;
 
-    template<IoLaunchableTask Task>
+    template<IoRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
         if constexpr (InheritStopToken)
@@ -517,7 +616,7 @@ public:
     run_wrapper& operator=(run_wrapper const&) = delete;
     run_wrapper& operator=(run_wrapper&&) = delete;
 
-    template<IoLaunchableTask Task>
+    template<IoRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
         return run_awaitable<Task, false, void>{std::move(t), std::move(st_)};

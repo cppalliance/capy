@@ -29,7 +29,7 @@ struct mock_source_awaitable
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const&) const noexcept
+        io_env const*) const noexcept
     {
     }
 
@@ -47,7 +47,7 @@ struct mock_source_awaitable_wrong_type
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const&) const noexcept
+        io_env const*) const noexcept
     {
     }
 

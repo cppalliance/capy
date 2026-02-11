@@ -311,11 +311,11 @@ public:
         event loop, launches the task via `run_async`, then
         pumps the loop until the task completes or throws.
 
-        @tparam Task The IoLaunchableTask type.
+        @tparam Task The IoRunnable type.
 
         @param t The task to execute.
     */
-    template<IoLaunchableTask Task>
+    template<IoRunnable Task>
     void
     operator()(Task t) &&
     {

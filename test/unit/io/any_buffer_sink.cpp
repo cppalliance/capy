@@ -102,7 +102,7 @@ public:
             std::size_t n_;
 
             bool await_ready() const noexcept { return true; }
-            void await_suspend(std::coroutine_handle<>, io_env const&) const noexcept {}
+            void await_suspend(std::coroutine_handle<>, io_env const*) const noexcept {}
 
             io_result<>
             await_resume()
@@ -127,7 +127,7 @@ public:
             std::size_t n_;
 
             bool await_ready() const noexcept { return true; }
-            void await_suspend(std::coroutine_handle<>, io_env const&) const noexcept {}
+            void await_suspend(std::coroutine_handle<>, io_env const*) const noexcept {}
 
             io_result<>
             await_resume()
@@ -157,7 +157,7 @@ public:
             CB buffers_;
 
             bool await_ready() const noexcept { return true; }
-            void await_suspend(std::coroutine_handle<>, io_env const&) const noexcept {}
+            void await_suspend(std::coroutine_handle<>, io_env const*) const noexcept {}
 
             io_result<std::size_t>
             await_resume()
@@ -189,7 +189,7 @@ public:
             CB buffers_;
 
             bool await_ready() const noexcept { return true; }
-            void await_suspend(std::coroutine_handle<>, io_env const&) const noexcept {}
+            void await_suspend(std::coroutine_handle<>, io_env const*) const noexcept {}
 
             io_result<std::size_t>
             await_resume()
@@ -220,7 +220,7 @@ public:
             CB buffers_;
 
             bool await_ready() const noexcept { return true; }
-            void await_suspend(std::coroutine_handle<>, io_env const&) const noexcept {}
+            void await_suspend(std::coroutine_handle<>, io_env const*) const noexcept {}
 
             io_result<std::size_t>
             await_resume()
@@ -252,7 +252,7 @@ public:
             buffer_write_sink* self_;
 
             bool await_ready() const noexcept { return true; }
-            void await_suspend(std::coroutine_handle<>, io_env const&) const noexcept {}
+            void await_suspend(std::coroutine_handle<>, io_env const*) const noexcept {}
 
             io_result<>
             await_resume()

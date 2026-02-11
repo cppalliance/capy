@@ -17,16 +17,13 @@ Each section below examines one design choice and its technical consequences.
 
 == Task Requirements
 
-Capy formally defines what makes a task type conforming. Three C++20 concepts form a refinement hierarchy:
+Capy formally defines what makes a task type conforming. Two C++20 concepts form a refinement hierarchy:
 
 ....
 IoAwaitable
     |
     v
-IoAwaitableTask
-    |
-    v
-IoLaunchableTask
+IoRunnable
 ....
 
 `IoAwaitable` is the base. It requires a single syntactic property -- the `await_suspend` signature must accept an `io_env` parameter containing the execution environment:
@@ -35,34 +32,32 @@ IoLaunchableTask
 ----
 template<typename A>
 concept IoAwaitable =
-    requires(A a, std::coroutine_handle<> h, io_env const& env)
+    requires(A a, std::coroutine_handle<> h, io_env const* env)
     {
         a.await_suspend(h, env);
     };
 ----
 
-`IoAwaitableTask` refines `IoAwaitable` with promise-level context storage. The promise must provide `set_environment`, `environment`, `set_continuation`, and their accessors:
+`IoRunnable` refines `IoAwaitable` with operations needed to start a task from non-coroutine contexts: `handle()`, `release()`, `exception()`, and `result()`.
 
 [source,cpp]
 ----
 template<typename T>
-concept IoAwaitableTask =
+concept IoRunnable =
     IoAwaitable<T> &&
     requires { typename T::promise_type; } &&
-    requires(
-        typename T::promise_type& p,
-        typename T::promise_type const& cp,
-        io_env const& env,
-        std::coroutine_handle<> cont)
+    requires(T& t, T const& ct, typename T::promise_type const& cp)
     {
-        { p.set_environment(env) } noexcept;
-        { p.set_continuation(cont, env.executor) } noexcept;
-        { cp.environment() } noexcept -> std::same_as<io_env const&>;
-        { cp.complete() } noexcept -> std::same_as<std::coroutine_handle<>>;
-    };
+        { ct.handle() } noexcept
+            -> std::same_as<std::coroutine_handle<typename T::promise_type>>;
+        { cp.exception() } noexcept -> std::same_as<std::exception_ptr>;
+        { t.release() } noexcept;
+    } &&
+    (std::is_void_v<decltype(std::declval<T&>().await_resume())> ||
+     requires(typename T::promise_type& p) { p.result(); });
 ----
 
-`IoLaunchableTask` adds operations needed to start a task from non-coroutine contexts: `handle()`, `release()`, `exception()`, and `result()`.
+Context injection (`set_environment`, `set_continuation`) is handled internally by the promise through `await_suspend` and is not part of any concept.
 
 Each concept has documented syntactic requirements, semantic requirements, conforming signatures, and examples. A user who wants to create a custom task type can read the concept definition and know exactly what to provide. The compiler enforces the syntactic requirements at constraint-check time.
 
@@ -111,7 +106,7 @@ The associators are optional member functions on the promise. Each awaitable pro
 | Aspect | Capy | Cobalt
 
 | Task requirements
-| Named concepts (`IoAwaitable`, `IoAwaitableTask`, `IoLaunchableTask`)
+| Named concepts (`IoAwaitable`, `IoRunnable`)
 | Implicit associators probed via `if constexpr`
 
 | Specification
@@ -139,7 +134,7 @@ Capy's `IoAwaitable` protocol passes the execution environment as an explicit pa
 
 [source,cpp]
 ----
-auto await_suspend(std::coroutine_handle<> h, io_env const& env);
+auto await_suspend(std::coroutine_handle<> h, io_env const* env);
 ----
 
 The executor and stop token flow forward structurally through the call chain via `io_env`. If a task's machinery does not provide them, the code does not compile. There is no fallback.
@@ -549,7 +544,7 @@ This separation is the architectural root of the differences examined in this do
 | Design Choice | Capy | Cobalt
 
 | Task requirements
-| Named concept hierarchy (`IoAwaitable` -> `IoAwaitableTask` -> `IoLaunchableTask`)
+| Named concept hierarchy (`IoAwaitable` -> `IoRunnable`)
 | Implicit associators (`get_executor`, `get_cancellation_slot`, `get_allocator`)
 
 | Context propagation

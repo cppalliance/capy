@@ -86,7 +86,7 @@ struct run_test
     void
     testCustomTaskType()
     {
-        // Proves run works with any IoLaunchableTask, not just capy::task
+        // Proves run works with any IoRunnable, not just capy::task
         int dispatch_count = 0;
         test_executor ex(1, dispatch_count);
         int result = 0;

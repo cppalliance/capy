@@ -63,7 +63,7 @@ static_assert(std::is_void_v<
     when_all_result_type<void, void, void>>);
 
 // Verify when_all returns task which satisfies awaitable protocols
-static_assert(IoAwaitableTask<task<std::tuple<int, int>>>);
+static_assert(IoAwaitable<task<std::tuple<int, int>>>);
 
 // Verify non-task IoAwaitables work with when_all
 template<typename... Args>
@@ -665,13 +665,13 @@ struct when_all_test
     testIoAwaitableConcept()
     {
         // when_all now returns task<T>, which satisfies the awaitable protocols
-        static_assert(IoAwaitableTask<
+        static_assert(IoAwaitable<
             task<std::tuple<int, int>>>);
 
-        static_assert(IoAwaitableTask<
+        static_assert(IoAwaitable<
             task<std::tuple<int, std::string>>>);
 
-        static_assert(IoAwaitableTask<
+        static_assert(IoAwaitable<
             task<void>>);
     }
 

@@ -171,7 +171,7 @@ A coroutine has unique state that cannot be duplicated.
 
 == Affinity and Context
 
-Tasks implement `IoAwaitableTask`, receiving execution environment when
+Tasks implement `IoRunnable`, receiving execution environment when
 awaited:
 
 [source,cpp]

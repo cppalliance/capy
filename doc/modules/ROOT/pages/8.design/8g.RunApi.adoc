@@ -5,7 +5,7 @@
 This document explains the naming conventions and call syntax of the
 two launcher functions: `run_async` (fire-and-forget from non-coroutine
 code) and `run` (awaitable within a coroutine). Both accept any type
-satisfying _IoLaunchableTask_ -- not just `task<T>` -- and use a
+satisfying _IoRunnable_ -- not just `task<T>` -- and use a
 deliberate **two-phase invocation** pattern -- `f(context)(task)` -- that
 exists for a mechanical reason rooted in coroutine frame allocation
 timing.
@@ -14,7 +14,7 @@ timing.
 
 === `run_async` -- Fire-and-Forget Launch
 
-`run_async` launches any _IoLaunchableTask_ from non-coroutine code:
+`run_async` launches any _IoRunnable_ from non-coroutine code:
 `main()`, callback handlers, event loops. `task<T>` is the most common
 conforming type, but any user-defined type satisfying the concept works.
 The function does not return a value to the caller. Handlers receive the
@@ -50,7 +50,7 @@ run_async(ex, st, alloc, h1, h2)(my_task());
 === `run` -- Awaitable Launch Within a Coroutine
 
 `run` is the coroutine-side counterpart. It binds any
-_IoLaunchableTask_ to a (possibly different) executor and returns
+_IoRunnable_ to a (possibly different) executor and returns
 the result to the caller via `co_await`. It also supports overloads
 that customize stop token or allocator while inheriting the caller's
 executor.

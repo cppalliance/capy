@@ -30,7 +30,7 @@ struct mock_write_awaitable_pair
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const&) const noexcept
+        io_env const*) const noexcept
     {
     }
 
@@ -48,7 +48,7 @@ struct mock_write_awaitable_tuple
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const&) const noexcept
+        io_env const*) const noexcept
     {
     }
 
@@ -66,7 +66,7 @@ struct mock_write_awaitable_wrong_type
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const&) const noexcept
+        io_env const*) const noexcept
     {
     }
 
@@ -80,7 +80,7 @@ struct mock_write_awaitable_wrong_order
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const&) const noexcept
+        io_env const*) const noexcept
     {
     }
 

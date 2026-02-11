@@ -41,13 +41,13 @@ Capy awaitables receive context via `io_env` in `await_suspend`:
 
 [source,cpp]
 ----
-auto await_suspend(std::coroutine_handle<> h, io_env const& env)
+auto await_suspend(std::coroutine_handle<> h, io_env const* env)
 {
     // Now we know where to dispatch and can check cancellation
-    if (env.stop_token.stop_requested())
-        return env.executor.dispatch(h);  // Resume on correct executor
+    if (env->stop_token.stop_requested())
+        return env->executor.dispatch(h);  // Resume on correct executor
 
-    start_io([h, ex = env.executor]() {
+    start_io([h, ex = env->executor]() {
         ex.dispatch(h).resume();  // Completion on correct executor
     });
     return std::noop_coroutine();
@@ -59,16 +59,13 @@ The promise passes the execution environment to every awaitable through
 
 == Concept Hierarchy
 
-Capy defines three progressively capable concepts:
+Capy defines two progressively capable concepts:
 
 ----
 IoAwaitable
     │
     ▼
-IoAwaitableTask
-    │
-    ▼
-IoLaunchableTask
+IoRunnable
 ----
 
 === IoAwaitable
@@ -78,7 +75,7 @@ The base concept. An `IoAwaitable` can receive context when awaited:
 [source,cpp]
 ----
 template<typename T>
-concept IoAwaitable = requires(T a, std::coroutine_handle<> h, io_env const& env)
+concept IoAwaitable = requires(T a, std::coroutine_handle<> h, io_env const* env)
 {
     { a.await_ready() } -> std::convertible_to<bool>;
     { a.await_suspend(h, env) };  // Two-argument form with io_env
@@ -95,60 +92,41 @@ Key features:
 
 Reference: `<boost/capy/concept/io_awaitable.hpp>`
 
-=== IoAwaitableTask
+=== IoRunnable
 
-An `IoAwaitableTask` is an `IoAwaitable` that also has a promise with
-context storage:
+An `IoRunnable` is an `IoAwaitable` that can be launched from non-coroutine
+contexts by utilities like `run` and `run_async`:
 
 [source,cpp]
 ----
 template<typename T>
-concept IoAwaitableTask = IoAwaitable<T> && requires
-{
-    typename T::promise_type;
-    requires requires(typename T::promise_type& p, io_env const& env)
+concept IoRunnable =
+    IoAwaitable<T> &&
+    requires { typename T::promise_type; } &&
+    requires(T& t, T const& ct, typename T::promise_type const& cp)
     {
-        p.set_environment(env);
-        { p.environment() } -> std::same_as<io_env const&>;
-    };
-};
+        { ct.handle() } noexcept
+            -> std::same_as<std::coroutine_handle<typename T::promise_type>>;
+        { cp.exception() } noexcept -> std::same_as<std::exception_ptr>;
+        { t.release() } noexcept;
+    } &&
+    (std::is_void_v<decltype(std::declval<T&>().await_resume())> ||
+     requires(typename T::promise_type& p) { p.result(); });
 ----
 
 Key features:
 
-* Stores execution environment in the promise (by pointer, never by copy)
-* Can propagate context to child awaitables
-* Bidirectional: receives context _and_ provides it to children
-
-The injection methods (`set_environment`, `set_continuation`) are public so that launch functions like `run_async` can set context directly on the promise. Without them, a launch function would need to allocate an extra coroutine frame as a trampoline just to propagate context through `await_transform`. This breaks encapsulation, but the tradeoff eliminates a frame allocation on every launch.
-
-This is what `task<T>` implements.
-
-Reference: `<boost/capy/concept/io_awaitable_task.hpp>`
-
-=== IoLaunchableTask
-
-An `IoLaunchableTask` adds introspection for launchers:
-
-[source,cpp]
-----
-template<typename T>
-concept IoLaunchableTask = IoAwaitableTask<T> && requires(T t)
-{
-    { t.handle() } -> std::same_as<std::coroutine_handle<typename T::promise_type>>;
-    t.release();  // Transfer ownership
-    { t.handle().promise().exception() } -> std::same_as<std::exception_ptr>;
-};
-----
-
-Key features:
-
-* `handle()` returns the raw coroutine handle
+* `handle()` returns the typed coroutine handle
 * `release()` transfers ownership out of the task
-* Access to stored exception via promise
+* `exception()` retrieves any stored exception after completion
+* `result()` retrieves the return value (non-void tasks only)
 * Required for `run_async` and similar launchers
 
-Reference: `<boost/capy/concept/io_launchable_task.hpp>`
+Context injection (`set_environment`, `set_continuation`) is handled internally
+by the promise through `await_suspend` and is not part of any concept.
+This is what `task<T>` implements.
+
+Reference: `<boost/capy/concept/io_runnable.hpp>`
 
 == How Context Flows
 
@@ -231,7 +209,7 @@ Capy uses forward propagation for clarity and composability.
 
 == The Promise Support Mixin
 
-To implement `IoAwaitableTask`, use the `io_awaitable_support` CRTP mixin:
+To implement an `IoRunnable` task, use the `io_awaitable_support` CRTP mixin:
 
 [source,cpp]
 ----
@@ -255,7 +233,7 @@ The mixin provides:
 
 * `set_environment(env)` / `environment()` — execution environment storage
 * `await_transform()` — intercepts awaitables and injects context
-* `set_continuation(h, ex)` / `complete()` — completion handling
+* `set_continuation(h)` / `continuation()` — completion handling
 
 == Using await_transform
 
@@ -301,11 +279,8 @@ Every `co_await` in a task automatically receives context.
 | `IoAwaitable`
 | Receives executor and stop token in `await_suspend`
 
-| `IoAwaitableTask`
-| Stores context in promise, propagates to children
-
-| `IoLaunchableTask`
-| Adds introspection for launchers (`handle()`, `release()`)
+| `IoRunnable`
+| Adds launch interface (`handle()`, `release()`, `exception()`, `result()`)
 
 | `io_awaitable_support`
 | CRTP mixin implementing context storage and propagation

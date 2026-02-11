@@ -253,23 +253,23 @@ Use this notation to reason about executor flow:
 
 When `c2` completes, `c1` resumes on `ex1` (its own affinity).
 
-== Symmetric Transfer Optimization
+== Unconditional Symmetric Transfer
 
-When caller and callee share the same executor, completion uses symmetric
-transfer (direct tail call):
+At completion, the task's `final_suspend` performs unconditional symmetric
+transfer to its continuation:
 
 [source,cpp]
 ----
-std::coroutine_handle<> complete()
+std::coroutine_handle<> continuation() const noexcept
 {
-    if (continuation_ && caller_ex_ == executor_)
-        return continuation_;  // Same executor: direct transfer
-    return caller_ex_.dispatch(continuation_);  // Different: dispatch
+    return std::exchange(cont_, std::noop_coroutine());
 }
 ----
 
-The check uses pointer equality on `executor_ref`—same underlying executor
-means we can skip the dispatch overhead.
+Within a coroutine chain, every task shares the same executor, so the
+continuation is always valid for direct transfer. When executors diverge
+(via `run(other_ex)`), the `run` awaitable interposes a dispatch trampoline
+that handles the executor switch on completion.
 
 == Querying the Current Executor
 

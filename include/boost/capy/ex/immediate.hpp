@@ -96,7 +96,7 @@ struct immediate
     std::coroutine_handle<>
     await_suspend(
         std::coroutine_handle<> h,
-        io_env const& env) const noexcept
+        io_env const* env) const noexcept
     {
         (void)h;
         (void)env;

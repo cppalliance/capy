@@ -273,15 +273,14 @@ launch function:
 * `run` stores `io_env` in its awaitable, which persists for the entire
   `co_await` expression.
 
-Because of this guarantee, awaitables that receive `io_env const&` in
-`await_suspend` should store it as a pointer (`io_env const*`), never
-as a copy. Copying is unnecessary and wasteful.
+Because of this guarantee, awaitables that receive `io_env const*` in
+`await_suspend` should store it directly; copying is unnecessary and wasteful.
 
 [source,cpp]
 ----
-std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const& env)
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env)
 {
-    env_ = &env;  // Correct: store pointer
+    env_ = env;  // Correct: store pointer
     // ...
 }
 ----

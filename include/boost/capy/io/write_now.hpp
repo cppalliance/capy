@@ -95,7 +95,7 @@ class write_now
             io_result<std::size_t> result_;
             std::exception_ptr ep_;
             std::coroutine_handle<> cont_{nullptr};
-            io_env env_;
+            io_env const* env_ = nullptr;
             bool done_ = false;
 
             op_type get_return_object()
@@ -241,7 +241,7 @@ class write_now
 
         std::coroutine_handle<> await_suspend(
             std::coroutine_handle<> cont,
-            io_env const& env)
+            io_env const* env)
         {
             auto& p = h_.promise();
             p.cont_ = cont;

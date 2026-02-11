@@ -124,11 +124,11 @@ public:
 
     std::coroutine_handle<> await_suspend(
         std::coroutine_handle<> h,
-        capy::io_env const& env)
+        capy::io_env const* env)
     {
-        cancel_ = std::make_shared<cancel_bridge>(env.stop_token);
+        cancel_ = std::make_shared<cancel_bridge>(env->stop_token);
 
-        auto handler = [this, h, ex = env.executor](Args... args) mutable
+        auto handler = [this, h, ex = env->executor](Args... args) mutable
         {
             store_result(std::move(args)...);
             ex.post(h);

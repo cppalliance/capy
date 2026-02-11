@@ -55,7 +55,7 @@ struct task_return_base<void>
 
 } // namespace detail
 
-/** Lazy coroutine task satisfying @ref IoLaunchableTask.
+/** Lazy coroutine task satisfying @ref IoRunnable.
 
     Use `task<T>` as the return type for coroutines that perform I/O
     and return a value of type `T`. The coroutine body does not start
@@ -91,7 +91,7 @@ struct task_return_base<void>
     }
     @endcode
 
-    @see IoLaunchableTask, IoAwaitableTask, run, run_async
+    @see IoRunnable, IoAwaitable, run, run_async
 */
 template<typename T = void>
 struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
@@ -148,7 +148,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                 void await_resume() const noexcept
                 {
                     // Restore TLS when body starts executing
-                    auto* fa = p_->environment().allocator;
+                    auto* fa = p_->environment()->allocator;
                     if(fa && fa != current_frame_allocator())
                         current_frame_allocator() = fa;
                 }
@@ -169,7 +169,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
                 std::coroutine_handle<> await_suspend(std::coroutine_handle<>) const noexcept
                 {
-                    return p_->complete();
+                    return p_->continuation();
                 }
 
                 void await_resume() const noexcept
@@ -199,7 +199,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             decltype(auto) await_resume()
             {
                 // Restore TLS before body resumes
-                auto* fa = p_->environment().allocator;
+                auto* fa = p_->environment()->allocator;
                 if(fa && fa != current_frame_allocator())
                     current_frame_allocator() = fa;
                 return a_.await_resume();
@@ -255,9 +255,9 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     }
 
     /// Start execution with the caller's context.
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const& env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const* env)
     {
-        h_.promise().set_continuation(cont, env.executor);
+        h_.promise().set_continuation(cont);
         h_.promise().set_environment(env);
         return h_;
     }

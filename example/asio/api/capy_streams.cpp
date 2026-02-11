@@ -100,15 +100,15 @@ public:
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
-            capy::io_env const& env)
+            capy::io_env const* env)
         {
-            cancel_ = std::make_shared<cancel_state>(env.stop_token);
+            cancel_ = std::make_shared<cancel_state>(env->stop_token);
 
             self_->socket_.async_read_some(
                 capy::mutable_buffer_array<8>(buffers_),
                 net::bind_cancellation_slot(
                     cancel_->signal.slot(),
-                    [this, h, ex = env.executor](
+                    [this, h, ex = env->executor](
                         boost::system::error_code ec,
                         std::size_t n) mutable
                     {
@@ -162,15 +162,15 @@ public:
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
-            capy::io_env const& env)
+            capy::io_env const* env)
         {
-            cancel_ = std::make_shared<cancel_state>(env.stop_token);
+            cancel_ = std::make_shared<cancel_state>(env->stop_token);
 
             self_->socket_.async_write_some(
                 capy::const_buffer_array<8>(buffers_),
                 net::bind_cancellation_slot(
                     cancel_->signal.slot(),
-                    [this, h, ex = env.executor](
+                    [this, h, ex = env->executor](
                         boost::system::error_code ec,
                         std::size_t n) mutable
                     {
