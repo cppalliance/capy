@@ -32,7 +32,7 @@
     and threading assumptions).
 
     Key difference: set() wakes ALL waiters (broadcast), not one.
-    It pops every waiter from the list and dispatches the ones it
+    It pops every waiter from the list and posts the ones it
     claims. Waiters already claimed by a stop callback are skipped.
 
     Because set() pops all waiters, a canceled waiter may have been
@@ -128,7 +128,7 @@ public:
                     true, std::memory_order_acq_rel))
                 {
                     self_->canceled_ = true;
-                    self_->ex_.dispatch(self_->h_);
+                    self_->ex_.post(self_->h_);
                 }
             }
         };
@@ -255,7 +255,7 @@ public:
         are skipped. Subsequent calls to wait() complete
         immediately until clear() is called.
     */
-    void set() noexcept
+    void set()
     {
         set_ = true;
         for(;;)
@@ -267,7 +267,7 @@ public:
             if(!w->claimed_.exchange(
                 true, std::memory_order_acq_rel))
             {
-                w->ex_.dispatch(w->h_);
+                w->ex_.post(w->h_);
             }
         }
     }

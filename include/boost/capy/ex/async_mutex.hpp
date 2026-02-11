@@ -38,10 +38,9 @@
     An atomic bool `claimed_` resolves the race -- whoever does
     claimed_.exchange(true) and reads false wins. The loser does nothing.
 
-    The stop callback calls ex_.dispatch(h_). If dispatch runs inline
-    (same thread), the stop_callback is destroyed from within its own
-    operator() via await_resume. This is safe: cancel_fn touches no
-    members after dispatch returns (same pattern as delete-this).
+    The stop callback calls ex_.post(h_). The stop_callback is
+    destroyed later in await_resume. cancel_fn touches no members
+    after post returns (same pattern as delete-this).
 
     unlock() pops waiters from the front. If the popped waiter was
     already claimed by the stop callback, unlock() skips it and tries
@@ -79,7 +78,7 @@
     - All list mutations happen on the executor thread (await_suspend,
       await_resume, unlock, ~lock_awaiter).
     - The stop callback may fire from any thread, but only touches
-      claimed_ (atomic) and then calls dispatch. It never touches the
+      claimed_ (atomic) and then calls post. It never touches the
       list.
     - ~lock_awaiter must be called from the executor thread. This is
       guaranteed during normal shutdown but NOT if the coroutine frame
@@ -178,7 +177,7 @@ public:
                     true, std::memory_order_acq_rel))
                 {
                     self_->canceled_ = true;
-                    self_->ex_.dispatch(self_->h_);
+                    self_->ex_.post(self_->h_);
                 }
             }
         };
@@ -412,7 +411,7 @@ public:
             if(!waiter->claimed_.exchange(
                 true, std::memory_order_acq_rel))
             {
-                waiter->ex_.dispatch(waiter->h_);
+                waiter->ex_.post(waiter->h_);
                 return;
             }
         }

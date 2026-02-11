@@ -557,6 +557,126 @@ struct async_event_test
     }
 
     void
+    testSetWithInlineExecutor()
+    {
+        // Regression: set() must use post() so the waiter
+        // is resumed even with an inline executor.
+        async_event event;
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+
+        bool resumed = false;
+        auto t = [](async_event& ev, bool& r) -> task<void> {
+            auto [ec] = co_await ev.wait();
+            BOOST_TEST(!ec);
+            r = true;
+        }(event, resumed);
+
+        auto h = t.handle();
+        t.release();
+        io_env env;
+        env.executor = executor_ref(ex);
+        h.promise().set_environment(&env);
+
+        h.resume();
+        BOOST_TEST(!resumed);
+
+        event.set();
+
+        BOOST_TEST(resumed);
+        BOOST_TEST(h.done());
+        h.destroy();
+    }
+
+    void
+    testMultipleWaitersInlineExecutor()
+    {
+        // Regression: set() must resume all waiters via post()
+        // even with an inline executor.
+        async_event event;
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+
+        int count = 0;
+
+        auto make_waiter = [](async_event& ev,
+            int& c) -> task<void> {
+            auto [ec] = co_await ev.wait();
+            BOOST_TEST(!ec);
+            ++c;
+        };
+
+        auto t1 = make_waiter(event, count);
+        auto t2 = make_waiter(event, count);
+        auto t3 = make_waiter(event, count);
+
+        auto h1 = t1.handle();
+        auto h2 = t2.handle();
+        auto h3 = t3.handle();
+        t1.release();
+        t2.release();
+        t3.release();
+
+        io_env env;
+        env.executor = executor_ref(ex);
+        h1.promise().set_environment(&env);
+        h2.promise().set_environment(&env);
+        h3.promise().set_environment(&env);
+
+        h1.resume();
+        h2.resume();
+        h3.resume();
+        BOOST_TEST_EQ(count, 0);
+
+        event.set();
+
+        BOOST_TEST_EQ(count, 3);
+
+        h1.destroy();
+        h2.destroy();
+        h3.destroy();
+    }
+
+    void
+    testCancellationWithInlineExecutor()
+    {
+        // Regression: cancel_fn must use post() so the waiter
+        // is resumed even with an inline executor.
+        async_event event;
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        std::stop_source ss;
+
+        bool done = false;
+        std::error_code out_ec;
+
+        auto t = [](async_event& ev,
+            std::error_code& oec, bool& d) -> task<void> {
+            auto [ec] = co_await ev.wait();
+            oec = ec;
+            d = true;
+        }(event, out_ec, done);
+
+        auto h = t.handle();
+        t.release();
+        io_env env;
+        env.executor = executor_ref(ex);
+        env.stop_token = ss.get_token();
+        h.promise().set_environment(&env);
+
+        h.resume();
+        BOOST_TEST(!done);
+
+        ss.request_stop();
+
+        BOOST_TEST(done);
+        BOOST_TEST(out_ec == make_error_code(error::canceled));
+        BOOST_TEST(!event.is_set());
+
+        h.destroy();
+    }
+
+    void
     run()
     {
         testInitialState();
@@ -574,6 +694,9 @@ struct async_event_test
         testPreSignaledTokenOnSetEvent();
         testDestroyWhileSuspended();
         testSetThenCancelNoDouble();
+        testSetWithInlineExecutor();
+        testMultipleWaitersInlineExecutor();
+        testCancellationWithInlineExecutor();
     }
 };
 

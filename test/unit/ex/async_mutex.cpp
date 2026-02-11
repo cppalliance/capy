@@ -804,6 +804,116 @@ struct async_mutex_test
     }
 
     void
+    testUnlockResumesWaiterInline()
+    {
+        // Regression: unlock() must use post() so the waiter
+        // is resumed even with an inline executor.
+        async_mutex cm;
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+
+        bool first_done = false;
+        bool second_done = false;
+
+        auto first = [](async_mutex& cm, bool& done) -> task<void> {
+            auto [ec] = co_await cm.lock();
+            BOOST_TEST(!ec);
+            done = true;
+        }(cm, first_done);
+
+        auto second = [](async_mutex& cm, bool& done) -> task<void> {
+            auto [ec] = co_await cm.lock();
+            BOOST_TEST(!ec);
+            done = true;
+            cm.unlock();
+        }(cm, second_done);
+
+        auto h1 = first.handle();
+        first.release();
+        io_env env;
+        env.executor = executor_ref(ex);
+        h1.promise().set_environment(&env);
+
+        auto h2 = second.handle();
+        second.release();
+        h2.promise().set_environment(&env);
+
+        h1.resume();
+        BOOST_TEST(first_done);
+        BOOST_TEST(cm.is_locked());
+
+        h2.resume();
+        BOOST_TEST(!second_done);
+
+        cm.unlock();
+
+        BOOST_TEST(second_done);
+        BOOST_TEST(!cm.is_locked());
+
+        h1.destroy();
+        h2.destroy();
+    }
+
+    void
+    testCancellationWithInlineExecutor()
+    {
+        // Regression: cancel_fn must use post() so the waiter
+        // is resumed even with an inline executor.
+        async_mutex cm;
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        std::stop_source ss;
+
+        bool holder_done = false;
+        bool waiter_done = false;
+        std::error_code waiter_ec;
+
+        auto holder = [](async_mutex& cm, bool& done) -> task<void> {
+            auto [ec] = co_await cm.lock();
+            BOOST_TEST(!ec);
+            done = true;
+        }(cm, holder_done);
+
+        auto waiter = [](async_mutex& cm,
+            std::error_code& out_ec, bool& done) -> task<void> {
+            auto [ec] = co_await cm.lock();
+            out_ec = ec;
+            done = true;
+        }(cm, waiter_ec, waiter_done);
+
+        auto h1 = holder.handle();
+        holder.release();
+        io_env env1;
+        env1.executor = executor_ref(ex);
+        h1.promise().set_environment(&env1);
+
+        auto h2 = waiter.handle();
+        waiter.release();
+        io_env env2;
+        env2.executor = executor_ref(ex);
+        env2.stop_token = ss.get_token();
+        h2.promise().set_environment(&env2);
+
+        h1.resume();
+        BOOST_TEST(holder_done);
+
+        h2.resume();
+        BOOST_TEST(!waiter_done);
+
+        ss.request_stop();
+
+        BOOST_TEST(waiter_done);
+        BOOST_TEST(waiter_ec == make_error_code(error::canceled));
+        BOOST_TEST(cm.is_locked());
+
+        cm.unlock();
+        BOOST_TEST(!cm.is_locked());
+
+        h1.destroy();
+        h2.destroy();
+    }
+
+    void
     run()
     {
         testAcquireUnlocked();
@@ -820,6 +930,8 @@ struct async_mutex_test
         testCancelMiddleWaiter();
         testDestroyMultipleSuspended();
         testLockGuardMove();
+        testUnlockResumesWaiterInline();
+        testCancellationWithInlineExecutor();
     }
 };
 
