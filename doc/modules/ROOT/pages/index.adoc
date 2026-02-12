@@ -1,45 +1,45 @@
 = Capy
 
-Capy abstracts away sockets, files, and asynchrony with type-erased streams and buffer sequencesâ€”code compiles fast because the implementation is hidden. It provides the framework for concurrent algorithms that transact in buffers of memory: networking, serial ports, console, timers, and any platform I/O. This is only possible because Capy is coroutine-only, enabling optimizations and ergonomics that hybrid approaches must sacrifice.
+Capy abstracts away sockets, files, and asynchrony with type-erased streams and buffer sequences—code compiles fast because the implementation is hidden. It provides the framework for concurrent algorithms that transact in buffers of memory: networking, serial ports, console, timers, and any platform I/O. This is only possible because Capy is coroutine-only, enabling optimizations and ergonomics that hybrid approaches must sacrifice.
 
 == What This Library Does
 
-* *Lazy coroutine tasks* â€” `task<T>` with forward-propagating stop tokens and automatic cancellation
-* *Buffer sequences* â€” taken straight from Asio and improved
-* *Stream concepts* â€” `ReadStream`, `WriteStream`, `ReadSource`, `WriteSink`, `BufferSource`, `BufferSink`
-* *Type-erased streams* â€” `any_stream`, `any_read_stream`, `any_write_stream` for fast compilation
-* *Concurrency facilities* â€” executors, strands, thread pools, `when_all`, `when_any`
-* *Test utilities* â€” mock streams, mock sources/sinks, error injection
+* *Lazy coroutine tasks* — `task<T>` with forward-propagating stop tokens and automatic cancellation
+* *Buffer sequences* — taken straight from Asio and improved
+* *Stream concepts* — `ReadStream`, `WriteStream`, `ReadSource`, `WriteSink`, `BufferSource`, `BufferSink`
+* *Type-erased streams* — `any_stream`, `any_read_stream`, `any_write_stream` for fast compilation
+* *Concurrency facilities* — executors, strands, thread pools, `when_all`, `when_any`
+* *Test utilities* — mock streams, mock sources/sinks, error injection
 
 == What This Library Does Not Do
 
-* *Networking* â€” no sockets, acceptors, or DNS; that's what Corosio provides
-* *Protocols* â€” no HTTP, WebSocket, or TLS; see the Http and Beast2 libraries
-* *Platform event loops* â€” no io_uring, IOCP, epoll, or kqueue; Capy is the layer above
-* *Callbacks or futures* â€” coroutine-only means no other continuation styles
-* *Sender/receiver* â€” Capy uses the IoAwaitable protocol, not `std::execution`
+* *Networking* — no sockets, acceptors, or DNS; that's what Corosio provides
+* *Protocols* — no HTTP, WebSocket, or TLS; see the Http and Beast2 libraries
+* *Platform event loops* — no io_uring, IOCP, epoll, or kqueue; Capy is the layer above
+* *Callbacks or futures* — coroutine-only means no other continuation styles
+* *Sender/receiver* — Capy uses the IoAwaitable protocol, not `std::execution`
 
 == Target Audience
 
-* Users of *Corosio* â€” portable coroutine networking
-* Users of *Http* â€” sans-I/O HTTP/1.1 clients and servers
-* Users of *Websocket* â€” sans-I/O WebSocket
-* Users of *Beast2* â€” high-level HTTP/WebSocket servers
-* Users of *Burl* â€” high-level HTTP client
+* Users of *Corosio* — portable coroutine networking
+* Users of *Http* — sans-I/O HTTP/1.1 clients and servers
+* Users of *Websocket* — sans-I/O WebSocket
+* Users of *Beast2* — high-level HTTP/WebSocket servers
+* Users of *Burl* — high-level HTTP client
 
-All of these are built on Capy. Understanding its conceptsâ€”tasks, buffer sequences, streams, executorsâ€”unlocks the full power of the stack.
+All of these are built on Capy. Understanding its concepts—tasks, buffer sequences, streams, executors—unlocks the full power of the stack.
 
 == Design Philosophy
 
-* *Use case first.* Buffer sequences, stream concepts, executor affinityâ€”these exist because I/O code needs them, not because they're theoretically elegant.
+* *Use case first.* Buffer sequences, stream concepts, executor affinity—these exist because I/O code needs them, not because they're theoretically elegant.
 * *Coroutines-only.* No callbacks, futures, or sender/receiver. Hybrid support forces compromises; full commitment unlocks optimizations that adapted models cannot achieve.
-* *Address the complaints of C++.* Type erasure at boundaries, minimal dependencies, and hidden implementations keep builds fast and templates manageable.
+* *Address the complaints of {cpp}.* Type erasure at boundaries, minimal dependencies, and hidden implementations keep builds fast and templates manageable.
 
 == Requirements
 
 === Assumed Knowledge
 
-* C++20 coroutines, concepts, and ranges
+* {cpp}20 coroutines, concepts, and ranges
 * Basic concurrent programming
 
 === Compiler Support
@@ -104,15 +104,15 @@ int main()
 }
 ----
 
-The `echo` function accepts an `any_stream&`â€”a type-erased wrapper that works with any concrete stream implementation. The function reads data into a buffer, then writes it back. Both operations use `co_await` to suspend until the I/O completes.
+The `echo` function accepts an `any_stream&`—a type-erased wrapper that works with any concrete stream implementation. The function reads data into a buffer, then writes it back. Both operations use `co_await` to suspend until the I/O completes.
 
 The `task<>` return type (equivalent to `task<void>`) creates a lazy coroutine that does not start executing until awaited or launched with `run_async`.
 
 == Next Steps
 
-* xref:quick-start.adoc[Quick Start] â€” Set up your first Capy project
-* xref:cpp20-coroutines/foundations.adoc[C++20 Coroutines Tutorial] â€” Learn coroutines from the ground up
-* xref:concurrency/foundations.adoc[Concurrency Tutorial] â€” Understand threads, mutexes, and synchronization
-* xref:coroutines/tasks.adoc[Coroutines in Capy] â€” Deep dive into `task<T>` and the IoAwaitable protocol
-* xref:buffers/overview.adoc[Buffer Sequences] â€” Master the concept-driven buffer model
-* xref:streams/overview.adoc[Stream Concepts] â€” Understand the six stream concepts
+* xref:quick-start.adoc[Quick Start] — Set up your first Capy project
+* xref:cpp20-coroutines/foundations.adoc[{cpp}20 Coroutines Tutorial] — Learn coroutines from the ground up
+* xref:concurrency/foundations.adoc[Concurrency Tutorial] — Understand threads, mutexes, and synchronization
+* xref:coroutines/tasks.adoc[Coroutines in Capy] — Deep dive into `task<T>` and the IoAwaitable protocol
+* xref:buffers/overview.adoc[Buffer Sequences] — Master the concept-driven buffer model
+* xref:streams/overview.adoc[Stream Concepts] — Understand the six stream concepts

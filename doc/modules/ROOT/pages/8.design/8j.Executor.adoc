@@ -141,7 +141,7 @@ would execute while `await_suspend` has not yet returned --
 resuming a coroutine from inside `await_suspend` before the
 suspension machinery completes risks undefined behavior.
 
-The C++ standard describes the sequencing in
+The {cpp} standard describes the sequencing in
 https://eel.is/c++draft/expr.await[[expr.await]/5.1]:
 
 [quote]
@@ -451,9 +451,9 @@ have overhead that executor usage cannot tolerate:
 to a `static constexpr` structure in `.rodata`. One indirection,
 no branches, no allocation.
 
-=== Why Not C++ Virtual Functions
+=== Why Not {cpp} Virtual Functions
 
-C++ virtual dispatch places the vtable pointer inside each
+{cpp} virtual dispatch places the vtable pointer inside each
 heap-allocated object. Every virtual call chases a pointer from
 the object to its vtable, which may reside at an unpredictable
 address in memory. When objects of different types are

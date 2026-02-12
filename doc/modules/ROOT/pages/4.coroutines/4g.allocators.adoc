@@ -1,15 +1,15 @@
-= Frame Allocators
+﻿= Frame Allocators
 
 This section explains how coroutine frames are allocated and how to customize allocation for performance.
 
 == Prerequisites
 
 * Completed xref:4f.composition.adoc[Concurrent Composition]
-* Understanding of coroutine frame allocation from xref:../2.cpp20-coroutines/2d.advanced.adoc[C++20 Coroutines Tutorial]
+* Understanding of coroutine frame allocation from xref:../2.cpp20-coroutines/2d.advanced.adoc[{cpp}20 Coroutines Tutorial]
 
 == The Timing Constraint
 
-Coroutine frame allocation has a unique constraint: memory must be allocated *before* the coroutine body begins executing. The standard C++ mechanism—promise type's `operator new`—is called before the promise is constructed.
+Coroutine frame allocation has a unique constraint: memory must be allocated *before* the coroutine body begins executing. The standard {cpp} mechanism—promise type's `operator new`—is called before the promise is constructed.
 
 This creates a challenge: how can a coroutine use a custom allocator when the allocator might be passed as a parameter, which is stored *in* the frame?
 
@@ -43,7 +43,7 @@ After the window closes (at the first suspension), the TLS allocator may be rest
 
 == The FrameAllocator Concept
 
-Custom allocators must satisfy the `FrameAllocator` concept, which is compatible with C++ allocator requirements:
+Custom allocators must satisfy the `FrameAllocator` concept, which is compatible with {cpp} allocator requirements:
 
 [source,cpp]
 ----

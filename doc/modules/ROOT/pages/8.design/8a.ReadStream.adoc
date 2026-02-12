@@ -296,7 +296,7 @@ reasoning presented here was reconstructed from three sources:
   terse but the implications are deep.
 - *Analysis of the underlying system calls.* POSIX `recv()` and
   Windows `WSARecv()` both enforce a binary outcome per call: data
-  or error, never both. This is not because the C++ abstraction
+  or error, never both. This is not because the {cpp} abstraction
   copied the OS, but because both levels face the same fundamental
   constraint.
 
@@ -528,7 +528,7 @@ an error -- it chooses to report the partial data as success.
 POSIX `recv()` independently enforces the same rule: `N > 0` on
 success, `-1` on error, `0` on EOF. The kernel never returns "here
 are your last 5 bytes, and also EOF." It delivers the available bytes
-on one call and returns 0 on the next. This is not because the C++
+on one call and returns 0 on the next. This is not because the {cpp}
 abstraction copied POSIX semantics. It is because the kernel faces
 the same fundamental constraint: state is discovered through the act
 of I/O. The alignment between `read_some` and `recv()` is convergent

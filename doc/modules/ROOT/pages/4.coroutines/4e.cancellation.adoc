@@ -1,6 +1,6 @@
 = Stop Tokens and Cancellation
 
-This section teaches cooperative cancellation from the ground up, explaining C++20 stop tokens as a general-purpose notification mechanism and how Capy uses them for coroutine cancellation.
+This section teaches cooperative cancellation from the ground up, explaining {cpp}20 stop tokens as a general-purpose notification mechanism and how Capy uses them for coroutine cancellation.
 
 == Prerequisites
 
@@ -35,22 +35,22 @@ void worker()
 
 This approach has problems:
 
-* *No standardization* â€” Every component invents its own cancellation flag
-* *Race conditions* â€” Checking the flag and acting on it is not atomic
-* *No cleanup notification* â€” The worker just stops; no opportunity for graceful cleanup
-* *Polling overhead* â€” Must check the flag repeatedly
+* *No standardization* — Every component invents its own cancellation flag
+* *Race conditions* — Checking the flag and acting on it is not atomic
+* *No cleanup notification* — The worker just stops; no opportunity for graceful cleanup
+* *Polling overhead* — Must check the flag repeatedly
 
 === The Thread Interruption Problem
 
-Some systems support forceful thread interruption. This is dangerous because it can leave resources in inconsistent statesâ€”files half-written, locks held, transactions uncommitted.
+Some systems support forceful thread interruption. This is dangerous because it can leave resources in inconsistent states—files half-written, locks held, transactions uncommitted.
 
 === The Goal: Cooperative Cancellation
 
 The solution is *cooperative cancellation*: ask nicely, let the work clean up. The cancellation requestor signals intent; the worker decides when and how to respond.
 
-== Part 2: C++20 Stop Tokensâ€”A General-Purpose Signaling Mechanism
+== Part 2: {cpp}20 Stop Tokens—A General-Purpose Signaling Mechanism
 
-C++20 introduces `std::stop_token`, `std::stop_source`, and `std::stop_callback`. While named for "stopping," these implement a general-purpose *Observer pattern*â€”a thread-safe one-to-many notification system.
+{cpp}20 introduces `std::stop_token`, `std::stop_source`, and `std::stop_callback`. While named for "stopping," these implement a general-purpose *Observer pattern*—a thread-safe one-to-many notification system.
 
 === The Three Components
 
@@ -133,7 +133,7 @@ Registration and invocation are thread-safe. You can register callbacks, request
 *Critical limitation*: `stop_token` is a *one-shot* mechanism.
 
 * Can only transition from "not signaled" to "signaled" once
-* No reset mechanismâ€”once `stop_requested()` returns true, it stays true forever
+* No reset mechanism—once `stop_requested()` returns true, it stays true forever
 * `request_stop()` returns `true` only on the first successful call
 * *You cannot "un-cancel" a stop_source*
 ====
@@ -177,9 +177,9 @@ If you need repeatable signals, `stop_token` is the wrong tool. Consider:
 
 The "stop" naming obscures the mechanism's generality. `stop_token` implements *one-shot broadcast notification*, useful for:
 
-* *Starting things* â€” Signal "ready" to trigger initialization
-* *Configuration loaded* â€” Notify components when config is available
-* *Resource availability* â€” Signal when database connected or cache warmed
+* *Starting things* — Signal "ready" to trigger initialization
+* *Configuration loaded* — Notify components when config is available
+* *Resource availability* — Signal when database connected or cache warmed
 * *Any one-shot broadcast scenario*
 
 == Part 5: Stop Tokens in Coroutines
@@ -205,7 +205,7 @@ task<> child()
 }
 ----
 
-No manual threadingâ€”the protocol handles it.
+No manual threading—the protocol handles it.
 
 === Accessing the Stop Token
 
@@ -287,8 +287,8 @@ task<std::string> fetch_with_cancel()
 
 Capy's I/O operations (provided by Corosio) respect stop tokens at the OS level:
 
-* *IOCP* (Windows) â€” Pending operations can be cancelled via `CancelIoEx`
-* *io_uring* (Linux) â€” Operations can be cancelled via `IORING_OP_ASYNC_CANCEL`
+* *IOCP* (Windows) — Pending operations can be cancelled via `CancelIoEx`
+* *io_uring* (Linux) — Operations can be cancelled via `IORING_OP_ASYNC_CANCEL`
 
 When you request stop, pending I/O operations are cancelled at the OS level, providing immediate response rather than waiting for the operation to complete naturally.
 
@@ -375,7 +375,7 @@ public:
 
 == Reference
 
-The stop token mechanism is part of the C++ standard library:
+The stop token mechanism is part of the {cpp} standard library:
 
 [source,cpp]
 ----
@@ -384,8 +384,8 @@ The stop token mechanism is part of the C++ standard library:
 
 Key types:
 
-* `std::stop_source` â€” Creates and manages stop state
-* `std::stop_token` â€” Observes stop state
-* `std::stop_callback<F>` â€” Registers callbacks for stop notification
+* `std::stop_source` — Creates and manages stop state
+* `std::stop_token` — Observes stop state
+* `std::stop_callback<F>` — Registers callbacks for stop notification
 
 You have now learned how stop tokens provide cooperative cancellation for coroutines. In the next section, you will learn about concurrent composition with `when_all` and `when_any`.

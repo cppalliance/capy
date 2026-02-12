@@ -1,4 +1,4 @@
-//
+﻿//
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
@@ -111,7 +111,7 @@ auto [ec, v1, v2, v3] = co_await complex_operation();
 
 == Using Structured Bindings
 
-C++17 structured bindings make `io_result` ergonomic:
+{cpp}17 structured bindings make `io_result` ergonomic:
 
 [source,cpp]
 ----

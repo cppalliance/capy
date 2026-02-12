@@ -9,10 +9,10 @@ This section explains how to launch coroutines for execution. You will learn abo
 
 == The Execution Model
 
-Capy tasks are lazyâ€”they do not execute until something drives them. Two mechanisms exist:
+Capy tasks are lazy—they do not execute until something drives them. Two mechanisms exist:
 
-* *Awaiting* â€” One coroutine awaits another (`co_await task`)
-* *Launching* â€” Non-coroutine code initiates execution (`run_async`)
+* *Awaiting* — One coroutine awaits another (`co_await task`)
+* *Launching* — Non-coroutine code initiates execution (`run_async`)
 
 When a task is awaited, the awaiting coroutine provides context: an executor for dispatching completion and a stop token for cancellation. But what about the first task in a chain? That task needs explicit launching.
 
@@ -43,9 +43,9 @@ int main()
 
 === Two-Call Syntax
 
-Notice the unusual syntax: `run_async(executor)(task)`. This is intentional and relates to C++17 evaluation order.
+Notice the unusual syntax: `run_async(executor)(task)`. This is intentional and relates to {cpp}17 evaluation order.
 
-C++17 guarantees that in the expression `f(a)(b)`:
+{cpp}17 guarantees that in the expression `f(a)(b)`:
 
 1. `f(a)` is evaluated first, producing a callable
 2. `b` is evaluated second
