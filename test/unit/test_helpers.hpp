@@ -126,6 +126,11 @@ public:
 
     int id = 0;
 
+    test_io_context()
+        : execution_context(this)
+    {
+    }
+
     executor_type
     get_executor() noexcept
     {

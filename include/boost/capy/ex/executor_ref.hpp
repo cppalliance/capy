@@ -248,15 +248,35 @@ public:
         return vt_->equals(ex_, other.ex_);
     }
 
-    /** Returns the type info of the underlying executor type.
+    /** Return a pointer to the wrapped executor if it matches
+        the requested type.
 
-        @return A reference to the type_info for the wrapped executor.
+        Performs a type check against the stored executor and
+        returns a typed pointer when the types match, or
+        `nullptr` otherwise. Analogous to
+        `std::any_cast< Executor >( &a )`.
 
-        @pre This instance was constructed with a valid executor.
+        @tparam Executor The executor type to retrieve.
+
+        @return A pointer to the underlying executor, or
+            `nullptr` if the type does not match.
     */
-    detail::type_info const& type_id() const noexcept
+    template< typename Executor >
+    const Executor* target() const
     {
-        return *vt_->type_id;
+        if ( *vt_->type_id == detail::type_id< Executor >() )
+           return static_cast< Executor const* >( ex_ );
+        return nullptr;
+    }
+
+    /// @copydoc target() const
+    template< typename Executor>
+    Executor* target()
+    {
+        if ( *vt_->type_id == detail::type_id< Executor >() )
+           return const_cast< Executor* >(
+               static_cast< Executor const* >( ex_ ));
+        return nullptr;
     }
 };
 

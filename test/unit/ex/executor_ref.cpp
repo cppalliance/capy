@@ -237,24 +237,28 @@ struct executor_ref_test
     }
 
     void
-    testTypeId()
+    testTarget()
     {
-        thread_pool pool1(1);
-        thread_pool pool2(1);
-        auto executor1 = pool1.get_executor();
-        auto executor2 = pool2.get_executor();
+        thread_pool pool(1);
+        auto executor = pool.get_executor();
+        executor_ref ex(executor);
 
-        executor_ref ex1(executor1);
-        executor_ref ex2(executor2);
+        // Matching type returns non-null
+        auto* p = ex.target<thread_pool::executor_type>();
+        BOOST_TEST_NE(p, nullptr);
 
-        // Same executor type returns equal type_info
-        BOOST_TEST(ex1.type_id() == ex2.type_id());
+        // Const overload
+        executor_ref const& cex = ex;
+        auto* cp = cex.target<thread_pool::executor_type>();
+        BOOST_TEST_NE(cp, nullptr);
 
-        // Different executor type returns different type_info
+        // Wrong type returns nullptr
         test::blocking_context bctx;
         auto ie = bctx.get_executor();
-        executor_ref ex3(ie);
-        BOOST_TEST(ex1.type_id() != ex3.type_id());
+        executor_ref ex2(ie);
+        BOOST_TEST_EQ(
+            ex2.target<thread_pool::executor_type>(),
+            nullptr);
     }
 
     void
@@ -266,7 +270,7 @@ struct executor_ref_test
         testDispatch();
         testPost();
         testMultiplePost();
-        testTypeId();
+        testTarget();
     }
 };
 

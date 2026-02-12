@@ -318,6 +318,29 @@ struct execution_context_test
     }
 
     void
+    testTarget()
+    {
+        test_io_context ctx;
+
+        // Matching type returns non-null
+        auto* p = ctx.target<test_io_context>();
+        BOOST_TEST_NE(p, nullptr);
+        BOOST_TEST_EQ(p, &ctx);
+
+        // Const overload
+        execution_context const& cctx = ctx;
+        auto* cp = cctx.target<test_io_context>();
+        BOOST_TEST_NE(cp, nullptr);
+        BOOST_TEST_EQ(cp, &ctx);
+
+        // Wrong type returns nullptr
+        struct other_context : execution_context {};
+        BOOST_TEST_EQ(
+            ctx.target<other_context>(),
+            nullptr);
+    }
+
+    void
     testGetFrameAllocator()
     {
         test_io_context ctx;
@@ -379,6 +402,7 @@ struct execution_context_test
         testMultipleServices();
         testNestedServiceCreation();
         testConcurrentAccess();
+        testTarget();
         testGetFrameAllocator();
         testSetFrameAllocatorRawPointer();
         testSetFrameAllocatorTemplate();
