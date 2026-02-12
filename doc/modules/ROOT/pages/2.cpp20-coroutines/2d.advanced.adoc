@@ -9,7 +9,7 @@ This section covers advanced coroutine topics: symmetric transfer for efficient 
 
 == Symmetric Transfer
 
-When a coroutine completes or awaits another coroutine, control must transfer somewhere. The naive approachâ€”simply calling `handle.resume()`â€”has a problem: each nested coroutine adds a frame to the call stack. With deep nesting, you risk stack overflow.
+When a coroutine completes or awaits another coroutine, control must transfer somewhere. The naive approach—simply calling `handle.resume()`—has a problem: each nested coroutine adds a frame to the call stack. With deep nesting, you risk stack overflow.
 
 *Symmetric transfer* solves this by returning a coroutine handle from `await_suspend`. Instead of resuming the target coroutine via a function call, the compiler generates a tail call that transfers control without growing the stack.
 
@@ -102,7 +102,7 @@ auto final_suspend() noexcept
 
 == Coroutine Allocation
 
-Every coroutine needs memory for its *coroutine frame*â€”the heap-allocated structure holding local variables, parameters, and suspension state.
+Every coroutine needs memory for its *coroutine frame*—the heap-allocated structure holding local variables, parameters, and suspension state.
 
 === Default Allocation
 
@@ -454,13 +454,13 @@ This generator:
 
 == Conclusion
 
-You have now learned the complete mechanics of C++20 coroutines:
+You have now learned the complete mechanics of {cpp}20 coroutines:
 
-* *Keywords* â€” `co_await`, `co_yield`, and `co_return` transform functions into coroutines
-* *Promise types* â€” Control coroutine behavior at initialization, suspension, completion, and error handling
-* *Coroutine handles* â€” Lightweight references for resuming, querying, and destroying coroutines
-* *Symmetric transfer* â€” Efficient control flow without stack accumulation
-* *Allocation* â€” Custom allocation and HALO optimization
-* *Exception handling* â€” Capturing and propagating exceptions across suspension points
+* *Keywords* — `co_await`, `co_yield`, and `co_return` transform functions into coroutines
+* *Promise types* — Control coroutine behavior at initialization, suspension, completion, and error handling
+* *Coroutine handles* — Lightweight references for resuming, querying, and destroying coroutines
+* *Symmetric transfer* — Efficient control flow without stack accumulation
+* *Allocation* — Custom allocation and HALO optimization
+* *Exception handling* — Capturing and propagating exceptions across suspension points
 
 These fundamentals prepare you for understanding Capy's `task<T>` type and the IoAwaitable protocol, which build on standard coroutine machinery with executor affinity and stop token propagation.

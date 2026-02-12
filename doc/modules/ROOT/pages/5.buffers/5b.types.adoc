@@ -1,4 +1,4 @@
-= Buffer Types
+﻿= Buffer Types
 
 This section introduces Capy's fundamental buffer types: `const_buffer` and `mutable_buffer`.
 
@@ -13,7 +13,7 @@ This section introduces Capy's fundamental buffer types: `const_buffer` and `mut
 
 POSIX uses `void*` for buffers. This expresses semantic neutrality: "I move memory without opining on what it contains." The OS doesn't care if the bytes represent text, integers, or compressed data—it moves them.
 
-But `std::span<void>` doesn't compile. C++ can't express a type-agnostic buffer abstraction using `span`.
+But `std::span<void>` doesn't compile. {cpp} can't express a type-agnostic buffer abstraction using `span`.
 
 Capy provides `const_buffer` and `mutable_buffer` as semantically neutral buffer types with known layout.
 

@@ -142,7 +142,7 @@ co_await run(my_alloc)(subtask());
 ----
 
 The builder pattern reads well as English, but it creates problems
-in C++ practice. See <<why-not-builder>> below for the full analysis.
+in {cpp} practice. See <<why-not-builder>> below for the full analysis.
 
 === Single-Call with Named Method
 
@@ -172,7 +172,7 @@ namespace collision problems of `on`/`with`. The objection is minor:
 `.spawn()` and `.call()` add vocabulary without adding clarity. The
 wrapper already has exactly one purpose -- accepting a task. A named
 method implies the wrapper has a richer interface than it does.
-`operator()` is the conventional C++ way to express "this object
+`operator()` is the conventional {cpp} way to express "this object
 does exactly one thing." That said, this alternative has legs and
 could be revisited if the `()()` syntax proves too confusing in
 practice.
@@ -201,7 +201,7 @@ The `run` prefix was chosen for several reasons:
   as a coherent pair.
 
 - **Consistency.** The naming follows the established pattern from
-  `io_context::run()`, `std::jthread`, and other C++ APIs where
+  `io_context::run()`, `std::jthread`, and other {cpp} APIs where
   `run` means "begin executing work."
 
 - **No false promises.** A builder-pattern syntax like
@@ -309,7 +309,7 @@ Any mechanism that injects the allocator _after_ the call -- receiver
 queries, `await_transform`, explicit method calls -- arrives too late.
 The frame is already allocated.
 
-This is the fundamental tension identified in D4003 ยง3.3:
+This is the fundamental tension identified in D4003 ง3.3:
 
 [quote]
 ____
@@ -321,9 +321,9 @@ Any mechanism that injects context later -- receiver connection,
 `await_transform`, explicit method calls -- arrives too late.
 ____
 
-=== The Solution: C++17 Postfix Evaluation Order
+=== The Solution: {cpp}17 Postfix Evaluation Order
 
-C++17 guarantees that in a postfix-expression call, the
+{cpp}17 guarantees that in a postfix-expression call, the
 postfix-expression is sequenced before the argument expressions:
 
 [quote]
@@ -447,6 +447,6 @@ The `run` name is greppable, unambiguous, and won't collide with
 local variables in a namespace-heavy Boost codebase. The `f(ctx)(task)`
 syntax exists because coroutine frame allocation requires the
 allocator to be set _before_ the task expression is evaluated, and
-C++17 postfix sequencing guarantees exactly that ordering. The syntax
+{cpp}17 postfix sequencing guarantees exactly that ordering. The syntax
 is intentionally explicit about its two steps -- it tells the reader
 that something important happens between them.

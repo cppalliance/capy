@@ -1,16 +1,16 @@
 = Part I: Foundations
 
-This section introduces the fundamental concepts you need before working with C++20 coroutines. You will learn how normal functions work, what makes coroutines different, and why coroutines exist as a language feature.
+This section introduces the fundamental concepts you need before working with {cpp}20 coroutines. You will learn how normal functions work, what makes coroutines different, and why coroutines exist as a language feature.
 
 == Prerequisites
 
 Before beginning this tutorial, you should have:
 
-* A C++ compiler with C++20 support (GCC 10+, Clang 14+, or MSVC 2019 16.8+)
-* Familiarity with basic C++ concepts: functions, classes, templates, and lambdas
+* A {cpp} compiler with {cpp}20 support (GCC 10+, Clang 14+, or MSVC 2019 16.8+)
+* Familiarity with basic {cpp} concepts: functions, classes, templates, and lambdas
 * Understanding of how function calls work: the call stack, local variables, and return values
 
-The examples in this tutorial use standard C++20 features. Compile with:
+The examples in this tutorial use standard {cpp}20 features. Compile with:
 
 * GCC: `g++ -std=c++20 -fcoroutines your_file.cpp`
 * Clang: `clang++ -std=c++20 your_file.cpp`
@@ -42,7 +42,7 @@ This model has a fundamental constraint: *run-to-completion*. Once a function st
 
 == What Is a Coroutine?
 
-A *coroutine* is a function that can suspend its execution and resume later from exactly where it left off. Think of it as a bookmark in a book of instructionsâ€”instead of reading the entire book in one sitting, you can mark your place, do something else, and return to continue reading.
+A *coroutine* is a function that can suspend its execution and resume later from exactly where it left off. Think of it as a bookmark in a book of instructions—instead of reading the entire book in one sitting, you can mark your place, do something else, and return to continue reading.
 
 When a coroutine suspends:
 
@@ -55,7 +55,7 @@ When a coroutine resumes:
 * Local variables are restored to their previous values
 * Execution continues from the suspension point
 
-This capability is implemented through a *coroutine frame*â€”a heap-allocated block of memory that stores the coroutine's state. Unlike stack frames, coroutine frames persist across suspension points because they live on the heap rather than the stack.
+This capability is implemented through a *coroutine frame*—a heap-allocated block of memory that stores the coroutine's state. Unlike stack frames, coroutine frames persist across suspension points because they live on the heap rather than the stack.
 
 [source,cpp]
 ----
@@ -138,8 +138,8 @@ This code reads like the original blocking version. Local variables like `reques
 
 Coroutines also enable:
 
-* *Generators* â€” Functions that produce sequences of values on demand, computing each value only when requested
-* *State machines* â€” Complex control flow expressed as linear code with suspension points
-* *Cooperative multitasking* â€” Multiple logical tasks interleaved on a single thread
+* *Generators* — Functions that produce sequences of values on demand, computing each value only when requested
+* *State machines* — Complex control flow expressed as linear code with suspension points
+* *Cooperative multitasking* — Multiple logical tasks interleaved on a single thread
 
-You have now learned what coroutines are and why they exist. In the next section, you will learn the C++20 syntax for creating coroutines.
+You have now learned what coroutines are and why they exist. In the next section, you will learn the {cpp}20 syntax for creating coroutines.

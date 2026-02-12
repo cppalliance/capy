@@ -6,8 +6,8 @@ This section introduces the fundamental concepts of concurrent programming. You 
 
 Before beginning this tutorial, you should have:
 
-* A C++ compiler with C++11 or later support
-* Familiarity with basic C++ concepts: functions, classes, and lambdas
+* A {cpp} compiler with {cpp}11 or later support
+* Familiarity with basic {cpp} concepts: functions, classes, and lambdas
 * Understanding of how programs execute sequentially
 
 == Why Concurrency Matters
@@ -32,7 +32,7 @@ This sharing is both the power and the peril of threads.
 
 == Creating Threads
 
-The `<thread>` header provides `std::thread`, the standard way to create threads in C++.
+The `<thread>` header provides `std::thread`, the standard way to create threads in {cpp}.
 
 [source,cpp]
 ----

@@ -10,7 +10,7 @@ The minimal Capy program: a task that prints a message.
 
 == Prerequisites
 
-* C++20 compiler
+* {cpp}20 compiler
 * Capy library installed
 
 == Source Code
@@ -57,7 +57,7 @@ task<> say_hello()
 }
 ----
 
-`task<>` is equivalent to `task<void>`â€”a coroutine that completes without returning a value. The `co_return` keyword marks this as a coroutine.
+`task<>` is equivalent to `task<void>`—a coroutine that completes without returning a value. The `co_return` keyword marks this as a coroutine.
 
 Tasks are lazy: calling `say_hello()` creates a task object but does not execute the body. The `"Hello"` message is not printed until the task is launched.
 
@@ -81,8 +81,8 @@ run_async(pool.get_executor())(say_hello());
 
 `run_async` bridges non-coroutine code (like `main`) to coroutine code. The two-call syntax:
 
-1. `run_async(pool.get_executor())` â€” Creates a launcher with the executor
-2. `(say_hello())` â€” Accepts the task and starts execution
+1. `run_async(pool.get_executor())` — Creates a launcher with the executor
+2. `(say_hello())` — Accepts the task and starts execution
 
 The task runs on one of the pool's worker threads.
 
@@ -100,4 +100,4 @@ Hello from Capy!
 
 == Next Steps
 
-* xref:7b.producer-consumer.adoc[Producer-Consumer] â€” Multiple tasks communicating
+* xref:7b.producer-consumer.adoc[Producer-Consumer] — Multiple tasks communicating

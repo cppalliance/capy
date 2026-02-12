@@ -1,4 +1,4 @@
-//
+﻿//
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
@@ -14,7 +14,7 @@ context propagation through coroutine chains.
 
 == The Problem: Lost Context
 
-Standard C++20 awaiters receive only a coroutine handle:
+Standard {cpp}20 awaiters receive only a coroutine handle:
 
 [source,cpp]
 ----

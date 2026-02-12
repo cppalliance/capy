@@ -479,7 +479,7 @@ This was replaced by the span-based interface because:
 
 - `std::span<mutable_buffer>` is self-describing: it carries both the
   pointer and the size, eliminating a class of off-by-one errors.
-- Returning a subspan of the input span is idiomatic C++ and composes
+- Returning a subspan of the input span is idiomatic {cpp} and composes
   well with range-based code.
 - The raw-pointer interface required two parameters (pointer + count)
   where the span interface requires one.

@@ -17,7 +17,7 @@ Each section below examines one design choice and its technical consequences.
 
 == Task Requirements
 
-Capy formally defines what makes a task type conforming. Two C++20 concepts form a refinement hierarchy:
+Capy formally defines what makes a task type conforming. Two {cpp}20 concepts form a refinement hierarchy:
 
 ....
 IoAwaitable
@@ -493,7 +493,7 @@ The preceding sections each examined a specific design choice. A common thread r
 
 Cobalt's `write_stream` is an abstract base class. The abstraction and the runtime wrapper are the same type. Writing against the abstraction means using virtual dispatch. The return type (`write_op`), the buffer parameter type (`const_buffer_sequence`), the allocation strategy (4096-byte SBO), and the context propagation mechanism (promise probing) are all fixed by the base class definition.
 
-Capy separates the abstraction from the wrapper. `WriteStream` is a C++20 concept:
+Capy separates the abstraction from the wrapper. `WriteStream` is a {cpp}20 concept:
 
 [source,cpp]
 ----
@@ -521,7 +521,7 @@ This separation is the architectural root of the differences examined in this do
 | Aspect | Capy | Cobalt
 
 | Abstraction mechanism
-| C++20 concept (`WriteStream`)
+| {cpp}20 concept (`WriteStream`)
 | Abstract base class (`write_stream`)
 
 | Runtime wrapper

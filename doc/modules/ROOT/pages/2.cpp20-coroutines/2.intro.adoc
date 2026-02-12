@@ -7,12 +7,12 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-= Introduction To C++20 Coroutines
+= Introduction To {cpp}20 Coroutines
 
-Every C++ function you have ever written follows the same contract: it runs from start to finish, then returns. The caller waits. The stack frame lives and dies in lockstep with that single invocation. This model has served us well for decades, but it forces a hard tradeoff when programs need to wait--for a network response, a disk read, a timer, or another thread. The function either blocks (wasting a thread) or you restructure your code into callbacks, state machines, or futures that scatter your logic across multiple places.
+Every {cpp} function you have ever written follows the same contract: it runs from start to finish, then returns. The caller waits. The stack frame lives and dies in lockstep with that single invocation. This model has served us well for decades, but it forces a hard tradeoff when programs need to wait--for a network response, a disk read, a timer, or another thread. The function either blocks (wasting a thread) or you restructure your code into callbacks, state machines, or futures that scatter your logic across multiple places.
 
-C++20 coroutines change the rules. A coroutine can _suspend_ its execution--saving its local state somewhere outside the stack--and _resume_ later, picking up exactly where it left off. The control flow reads top-to-bottom, like the synchronous code you already know, but the runtime behavior is asynchronous. No blocked threads. No callback chains. No lost context.
+{cpp}20 coroutines change the rules. A coroutine can _suspend_ its execution--saving its local state somewhere outside the stack--and _resume_ later, picking up exactly where it left off. The control flow reads top-to-bottom, like the synchronous code you already know, but the runtime behavior is asynchronous. No blocked threads. No callback chains. No lost context.
 
 This is not a minor syntactic convenience. It is a fundamental shift in how you can structure programs that wait.
 
-This section takes you from zero to a working understanding of C++20 coroutines. No prior experience with coroutines or async programming is needed. You will start with the problem that coroutines solve, move through the language syntax and compiler machinery, and finish with the performance characteristics that make coroutines practical for real systems. By the end, you will understand not only _how_ to write coroutines but _why_ they work the way they do--knowledge that will make everything in the rest of this documentation click into place.
+This section takes you from zero to a working understanding of {cpp}20 coroutines. No prior experience with coroutines or async programming is needed. You will start with the problem that coroutines solve, move through the language syntax and compiler machinery, and finish with the performance characteristics that make coroutines practical for real systems. By the end, you will understand not only _how_ to write coroutines but _why_ they work the way they do--knowledge that will make everything in the rest of this documentation click into place.

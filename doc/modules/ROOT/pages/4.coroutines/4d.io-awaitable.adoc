@@ -1,6 +1,6 @@
 = The IoAwaitable Protocol
 
-This section explains the IoAwaitable protocolâ€”Capy's mechanism for propagating execution context through coroutine chains.
+This section explains the IoAwaitable protocol—Capy's mechanism for propagating execution context through coroutine chains.
 
 == Prerequisites
 
@@ -9,7 +9,7 @@ This section explains the IoAwaitable protocolâ€”Capy's mechanism for propagatin
 
 == The Problem: Context Propagation
 
-Standard C++20 coroutines define awaiters with this `await_suspend` signature:
+Standard {cpp}20 coroutines define awaiters with this `await_suspend` signature:
 
 [source,cpp]
 ----
@@ -22,9 +22,9 @@ std::coroutine_handle<> await_suspend(std::coroutine_handle<> h);
 
 The awaiter receives only a handle to the suspended coroutine. But real I/O code needs more:
 
-* *Executor* â€” Where should completions be dispatched?
-* *Stop token* â€” Should this operation support cancellation?
-* *Allocator* â€” Where should memory be allocated?
+* *Executor* — Where should completions be dispatched?
+* *Stop token* — Should this operation support cancellation?
+* *Allocator* — Where should memory be allocated?
 
 How does an awaitable get this information?
 
@@ -47,11 +47,11 @@ std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* e
 
 This signature receives:
 
-* `h` â€” The coroutine handle (as in standard awaiters)
-* `env` â€” The execution environment containing:
-** `env->executor` â€” The caller's executor for dispatching completions
-** `env->stop_token` â€” A stop token for cooperative cancellation
-** `env->allocator` â€” An optional allocator for frame allocation
+* `h` — The coroutine handle (as in standard awaiters)
+* `env` — The execution environment containing:
+** `env->executor` — The caller's executor for dispatching completions
+** `env->stop_token` — A stop token for cooperative cancellation
+** `env->allocator` — An optional allocator for frame allocation
 
 The return type enables symmetric transfer.
 
@@ -75,10 +75,10 @@ The key difference from standard awaitables is the two-argument `await_suspend` 
 
 For tasks that can be launched from non-coroutine contexts, the `IoRunnable` concept refines `IoAwaitable` with:
 
-* `handle()` â€” Access the typed coroutine handle
-* `release()` â€” Transfer ownership of the frame
-* `exception()` â€” Check for captured exceptions
-* `result()` â€” Access the result value (non-void tasks)
+* `handle()` — Access the typed coroutine handle
+* `release()` — Transfer ownership of the frame
+* `exception()` — Check for captured exceptions
+* `result()` — Access the result value (non-void tasks)
 
 These methods exist because launch functions like `run_async` cannot `co_await` the task directly. The trampoline must be allocated before the task type is known, so it type-erases the task through function pointers and needs a common API to manage lifetime and extract results.
 
@@ -110,9 +110,9 @@ The child receives the parent's executor and stop token automatically.
 
 Forward propagation offers several advantages:
 
-* *Decoupling* â€” Awaitables don't need to know caller's promise type
-* *Composability* â€” Any IoAwaitable works with any IoRunnable task
-* *Explicit flow* â€” Context flows downward through the call chain, not queried upward
+* *Decoupling* — Awaitables don't need to know caller's promise type
+* *Composability* — Any IoAwaitable works with any IoRunnable task
+* *Explicit flow* — Context flows downward through the call chain, not queried upward
 
 This design enables Capy's type-erased wrappers (`any_stream`, etc.) to work without knowing the concrete executor type.
 

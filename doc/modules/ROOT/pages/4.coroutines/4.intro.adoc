@@ -9,7 +9,7 @@
 
 = Coroutines in Capy
 
-You know how C++20 coroutines work at the language level. You understand threads, synchronization, and the problems that concurrency introduces. Now it is time to see how Capy brings these together into a practical, high-performance library.
+You know how {cpp}20 coroutines work at the language level. You understand threads, synchronization, and the problems that concurrency introduces. Now it is time to see how Capy brings these together into a practical, high-performance library.
 
 Capy's coroutine model is built around a single principle: asynchronous code should look like synchronous code. You write a function that reads from a socket, processes the data, and writes a response--top to bottom, with local variables and normal control flow. Capy handles suspension, resumption, thread scheduling, and cancellation behind the scenes. The result is code that is both easier to read and harder to get wrong.
 
