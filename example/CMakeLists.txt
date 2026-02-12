@@ -22,4 +22,5 @@ if(TARGET Boost::corosio)
     add_subdirectory(echo-server-corosio)
 endif()
 
+add_subdirectory(allocation)
 add_subdirectory(asio)
