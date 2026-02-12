@@ -11,26 +11,4 @@
 
 The best way to learn a library is to watch it solve real problems. This section is a collection of complete, working programs that demonstrate how the pieces you have learned--tasks, buffers, streams, cancellation, composition--fit together in practice.
 
-Each example is self-contained. You can compile and run it. The code is followed by detailed explanations of what it does, why it is structured that way, and what happens at each step. Start with the examples that interest you most, or work through them in order for a guided tour of Capy's capabilities.
-
-== What You Will Find
-
-* **xref:7a.hello-task.adoc[Hello Task]** -- The minimal Capy program. Create a task, run it on a thread pool, and see coroutine execution in action.
-
-* **xref:7b.producer-consumer.adoc[Producer-Consumer]** -- Two coroutines communicating through a shared channel. A classic concurrency pattern, implemented without threads or locks.
-
-* **xref:7c.buffer-composition.adoc[Buffer Composition]** -- Assembling I/O from multiple memory regions using buffer sequences. Zero-copy message construction in practice.
-
-* **xref:7d.mock-stream-testing.adoc[Mock Stream Testing]** -- Testing I/O logic without a network. In-memory streams that simulate sockets, including partial reads and error injection.
-
-* **xref:7e.type-erased-echo.adoc[Type-Erased Echo]** -- An echo server that works over any transport. Demonstrates physical isolation and type erasure for streams.
-
-* **xref:7f.timeout-cancellation.adoc[Timeout with Cancellation]** -- Racing an operation against a deadline. Cooperative cancellation with `when_any` and stop tokens.
-
-* **xref:7g.parallel-fetch.adoc[Parallel Fetch]** -- Launching multiple operations concurrently and collecting results. Fan-out/fan-in with `when_all`.
-
-* **xref:7h.custom-dynamic-buffer.adoc[Custom Dynamic Buffer]** -- Implementing your own `DynamicBuffer` for specialized allocation strategies.
-
-* **xref:7i.echo-server-corosio.adoc[Echo Server with Corosio]** -- A complete multi-client echo server using Corosio for socket I/O. The full picture: accept loop, per-connection coroutines, graceful shutdown.
-
-* **xref:7j.stream-pipeline.adoc[Stream Pipeline]** -- Chaining stream transformations. Data flows through multiple processing stages, each implemented as a stream adapter.
+Every example is self-contained and compiles as a standalone program. The code is followed by detailed explanations of what it does, why it is structured that way, and what happens at each step. The examples range from minimal starting points to fully featured servers, covering real-world integration with Corosio. Start with whatever interests you most, or work through them in order for a guided tour of Capy's capabilities.

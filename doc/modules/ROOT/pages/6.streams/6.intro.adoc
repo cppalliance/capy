@@ -17,18 +17,4 @@ A socket might give you 47 bytes when you asked for 1024. That is not an error--
 
 On top of this, Capy adds _buffer sources_ and _buffer sinks_--concepts that work with dynamic buffers, enabling protocol parsers and message builders to grow their storage as needed without manual bookkeeping.
 
-== What You Will Learn
-
-* **xref:6a.overview.adoc[Overview]** -- The six stream concepts at a glance, how they relate to each other, and which one to reach for in different situations.
-
-* **xref:6b.streams.adoc[Streams (Partial I/O)]** -- `ReadStream` and `WriteStream`--the concepts for operations that transfer _some_ data and return immediately. The building blocks for everything else.
-
-* **xref:6c.sources-sinks.adoc[Sources and Sinks (Complete I/O)]** -- `ReadSource` and `WriteSink`--the concepts for operations that transfer _all_ requested data or report an error. Built on top of streams, with well-defined completion guarantees.
-
-* **xref:6d.buffer-concepts.adoc[Buffer Sources and Sinks]** -- `BufferSource` and `BufferSink`--concepts that pair complete I/O with dynamic buffers for protocol-level operations.
-
-* **xref:6e.algorithms.adoc[Transfer Algorithms]** -- Generic algorithms that move data between streams, sources, and sinks. Composable, efficient, and independent of any particular transport.
-
-* **xref:6f.isolation.adoc[Physical Isolation]** -- How Capy's stream concepts enable you to test, mock, and compose I/O layers without coupling to specific transports. Write your logic once; run it over TCP, TLS, pipes, or in-memory buffers.
-
-These concepts are the vocabulary of Capy's I/O model. Once you understand them, every I/O operation in the library will feel familiar.
+This section introduces the concepts that form Capy's vocabulary for data flow. You will learn the distinction between partial and complete I/O, how the concept pairs relate to each other, and how transfer algorithms and physical isolation let you write I/O logic that is composable, testable, and independent of any particular transport. Once you understand these concepts, every I/O operation in the library will feel familiar.
