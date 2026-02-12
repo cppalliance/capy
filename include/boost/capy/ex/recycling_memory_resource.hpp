@@ -46,7 +46,11 @@ namespace capy {
     @see get_recycling_memory_resource
     @see run_async
 */
-class recycling_memory_resource : public std::pmr::memory_resource
+#ifdef _MSC_VER
+# pragma warning(push)
+# pragma warning(disable: 4275) // non dll-interface base class
+#endif
+class BOOST_CAPY_DECL recycling_memory_resource : public std::pmr::memory_resource
 {
     static constexpr std::size_t num_classes = 6;
     static constexpr std::size_t min_class_size = 64;   // 2^6
@@ -111,15 +115,67 @@ class recycling_memory_resource : public std::pmr::memory_resource
         }
     };
 
-    BOOST_CAPY_DECL static pool& local() noexcept;
-    BOOST_CAPY_DECL static pool& global() noexcept;
-    BOOST_CAPY_DECL static std::mutex& global_mutex() noexcept;
+    static pool& local() noexcept
+    {
+        static thread_local pool p;
+        return p;
+    }
+
+    static pool& global() noexcept;
+    static std::mutex& global_mutex() noexcept;
+
+    void* allocate_slow(std::size_t rounded, std::size_t idx);
+    void deallocate_slow(void* p, std::size_t idx);
+
+public:
+    ~recycling_memory_resource();
+
+    /** Allocate without virtual dispatch.
+
+        Handles the fast path inline (thread-local bucket pop)
+        and falls through to the slow path for global pool or
+        heap allocation.
+    */
+    void*
+    allocate_fast(std::size_t bytes, std::size_t)
+    {
+        std::size_t rounded = round_up_pow2(bytes);
+        std::size_t idx = get_class_index(rounded);
+        if(idx >= num_classes)
+            return ::operator new(bytes);
+        auto& lp = local();
+        if(auto* p = lp.buckets[idx].pop())
+            return p;
+        return allocate_slow(rounded, idx);
+    }
+
+    /** Deallocate without virtual dispatch.
+
+        Handles the fast path inline (thread-local bucket push)
+        and falls through to the slow path for global pool or
+        heap deallocation.
+    */
+    void
+    deallocate_fast(void* p, std::size_t bytes, std::size_t)
+    {
+        std::size_t rounded = round_up_pow2(bytes);
+        std::size_t idx = get_class_index(rounded);
+        if(idx >= num_classes)
+        {
+            ::operator delete(p);
+            return;
+        }
+        auto& lp = local();
+        if(lp.buckets[idx].push(p))
+            return;
+        deallocate_slow(p, idx);
+    }
 
 protected:
-    BOOST_CAPY_DECL void*
+    void*
     do_allocate(std::size_t bytes, std::size_t) override;
 
-    BOOST_CAPY_DECL void
+    void
     do_deallocate(void* p, std::size_t bytes, std::size_t) override;
 
     bool
@@ -128,6 +184,9 @@ protected:
         return this == &other;
     }
 };
+#ifdef _MSC_VER
+# pragma warning(pop)
+#endif
 
 /** Returns pointer to the default recycling memory resource.
 

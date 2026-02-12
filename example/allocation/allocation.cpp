@@ -29,6 +29,11 @@ using namespace boost::capy;
 
 std::atomic<std::size_t> counter{0};
 
+// These coroutines simulate a "composed operation"
+// consisting of layered APIs. For example a user's
+// business logic awaiting an HTTP client, awaiting
+// a TLS stream, awaiting a tcp_socket
+
 task<> depth_4()
 {
     counter.fetch_add(1, std::memory_order_relaxed);
@@ -37,17 +42,20 @@ task<> depth_4()
 
 task<> depth_3()
 {
-    co_await depth_4();
+    for(int i = 0; i < 3; ++i)
+        co_await depth_4();
 }
 
 task<> depth_2()
 {
-    co_await depth_3();
+    for(int i = 0; i < 3; ++i)
+        co_await depth_3();
 }
 
 task<> depth_1()
 {
-    co_await depth_2();
+    for(int i = 0; i < 5; ++i)
+        co_await depth_2();
 }
 
 task<> bench_loop(std::size_t n)
@@ -58,7 +66,7 @@ task<> bench_loop(std::size_t n)
 
 int main()
 {
-    constexpr std::size_t iterations = 200000000;
+    constexpr std::size_t iterations = 2000000;
 
     // With recycling allocator
     counter.store(0);
@@ -73,7 +81,6 @@ int main()
     }
     auto t1 = std::chrono::steady_clock::now();
 
-#if 0
     // With std::allocator (no recycling)
     counter.store(0);
     auto t2 = std::chrono::steady_clock::now();
@@ -103,7 +110,6 @@ int main()
         << "  Speedup:             "
         << std::fixed << std::setprecision(1)
         << pct << "%\n";
-#endif
 
     return 0;
 }

@@ -13,10 +13,12 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 
 #include <coroutine>
 #include <cstddef>
+#include <cstring>
 #include <memory_resource>
 #include <stop_token>
 #include <type_traits>
@@ -138,40 +140,33 @@ public:
     // Frame allocation support
     //----------------------------------------------------------
 
-private:
-    static constexpr std::size_t ptr_alignment = alignof(void*);
-
-    static std::size_t
-    aligned_offset(std::size_t n) noexcept
-    {
-        return (n + ptr_alignment - 1) & ~(ptr_alignment - 1);
-    }
-
 public:
     /** Allocate a coroutine frame.
 
         Uses the thread-local frame allocator set by run_async.
         Falls back to default memory resource if not set.
         Stores the allocator pointer at the end of each frame for
-        correct deallocation even when TLS changes.
+        correct deallocation even when TLS changes. Uses memcpy
+        to avoid alignment requirements on the trailing pointer.
+        Bypasses virtual dispatch for the recycling allocator.
     */
     static void*
     operator new(std::size_t size)
     {
+        static auto* const rmr = get_recycling_memory_resource();
+
         auto* mr = current_frame_allocator();
         if(!mr)
             mr = std::pmr::get_default_resource();
 
-        // Allocate extra space for memory_resource pointer
-        std::size_t ptr_offset = aligned_offset(size);
-        std::size_t total = ptr_offset + sizeof(std::pmr::memory_resource*);
-        void* raw = mr->allocate(total, alignof(std::max_align_t));
-
-        // Store the allocator pointer at the end
-        auto* ptr_loc = reinterpret_cast<std::pmr::memory_resource**>(
-            static_cast<char*>(raw) + ptr_offset);
-        *ptr_loc = mr;
-
+        auto total = size + sizeof(std::pmr::memory_resource*);
+        void* raw;
+        if(mr == rmr)
+            raw = static_cast<recycling_memory_resource*>(mr)
+                ->allocate_fast(total, alignof(std::max_align_t));
+        else
+            raw = mr->allocate(total, alignof(std::max_align_t));
+        std::memcpy(static_cast<char*>(raw) + size, &mr, sizeof(mr));
         return raw;
     }
 
@@ -179,18 +174,21 @@ public:
 
         Reads the allocator pointer stored at the end of the frame
         to ensure correct deallocation regardless of current TLS.
+        Bypasses virtual dispatch for the recycling allocator.
     */
     static void
     operator delete(void* ptr, std::size_t size)
     {
-        // Read the allocator pointer from the end of the frame
-        std::size_t ptr_offset = aligned_offset(size);
-        auto* ptr_loc = reinterpret_cast<std::pmr::memory_resource**>(
-            static_cast<char*>(ptr) + ptr_offset);
-        auto* mr = *ptr_loc;
+        static auto* const rmr = get_recycling_memory_resource();
 
-        std::size_t total = ptr_offset + sizeof(std::pmr::memory_resource*);
-        mr->deallocate(ptr, total, alignof(std::max_align_t));
+        std::pmr::memory_resource* mr;
+        std::memcpy(&mr, static_cast<char*>(ptr) + size, sizeof(mr));
+        auto total = size + sizeof(std::pmr::memory_resource*);
+        if(mr == rmr)
+            static_cast<recycling_memory_resource*>(mr)
+                ->deallocate_fast(ptr, total, alignof(std::max_align_t));
+        else
+            mr->deallocate(ptr, total, alignof(std::max_align_t));
     }
 
     ~io_awaitable_support()

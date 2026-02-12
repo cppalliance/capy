@@ -22,6 +22,7 @@
 #include <boost/capy/ex/work_guard.hpp>
 
 #include <coroutine>
+#include <cstring>
 #include <memory_resource>
 #include <new>
 #include <stop_token>
@@ -209,31 +210,22 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
         {
         }
 
-        static std::size_t
-        aligned_offset(std::size_t n) noexcept
-        {
-            constexpr auto a = alignof(std::pmr::memory_resource*);
-            return (n + a - 1) & ~(a - 1);
-        }
-
         static void* operator new(
             std::size_t size, Ex const&, Handlers const&,
             std::pmr::memory_resource* mr)
         {
-            auto off = aligned_offset(size);
-            auto total = off + sizeof(mr);
+            auto total = size + sizeof(mr);
             void* raw = mr->allocate(total, alignof(std::max_align_t));
-            *reinterpret_cast<std::pmr::memory_resource**>(
-                static_cast<char*>(raw) + off) = mr;
+            std::memcpy(static_cast<char*>(raw) + size, &mr, sizeof(mr));
             return raw;
         }
 
         static void operator delete(void* ptr, std::size_t size)
         {
-            auto off = aligned_offset(size);
-            auto* mr = *reinterpret_cast<std::pmr::memory_resource**>(
-                static_cast<char*>(ptr) + off);
-            mr->deallocate(ptr, off + sizeof(mr), alignof(std::max_align_t));
+            std::pmr::memory_resource* mr;
+            std::memcpy(&mr, static_cast<char*>(ptr) + size, sizeof(mr));
+            auto total = size + sizeof(mr);
+            mr->deallocate(ptr, total, alignof(std::max_align_t));
         }
 
         std::pmr::memory_resource* get_resource() noexcept
