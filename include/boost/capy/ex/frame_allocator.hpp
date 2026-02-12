@@ -15,6 +15,20 @@
 
 #include <memory_resource>
 
+/*  Design rationale (pdimov):
+    This accessor is a thin wrapper over a thread-local pointer.
+    It returns exactly what was stored, including nullptr. No
+    dynamic initializer on the thread-local; a dynamic TLS
+    initializer moves you into a costlier implementation bucket
+    on some platforms - avoid it.
+
+    Null handling is the caller's responsibility (e.g. in
+    promise_type::operator new). The accessor must not substitute
+    a default, because there are multiple valid choices
+    (new_delete_resource, the default pmr resource, etc.). If
+    the allocator is not set, it reports "not set" and the
+    caller interprets that however it wants.                    */
+
 namespace boost {
 namespace capy {
 
