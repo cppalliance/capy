@@ -1,3 +1,4 @@
+/.vs
 /build-*/
 /build/*
 !/build/Jamfile
