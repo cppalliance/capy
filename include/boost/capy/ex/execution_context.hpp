@@ -85,6 +85,8 @@ namespace capy {
 class BOOST_CAPY_DECL
     execution_context
 {
+    detail::type_info const* ti_ = nullptr;
+
     template<class T, class = void>
     struct get_key : std::false_type
     {};
@@ -94,6 +96,9 @@ class BOOST_CAPY_DECL
     {
         using type = typename T::key_type;
     };
+protected:
+    template< typename Derived >
+    explicit execution_context( Derived* ) noexcept;
 
 public:
     //------------------------------------------------
@@ -416,6 +421,36 @@ public:
         owned_ = std::move(p);
     }
 
+    /** Return a pointer to this context if it matches the
+        requested type.
+
+        Performs a type check and downcasts `this` when the
+        types match, or returns `nullptr` otherwise. Analogous
+        to `std::any_cast< ExecutionContext >( &a )`.
+
+        @tparam ExecutionContext The derived context type to
+            retrieve.
+
+        @return A pointer to this context as the requested
+            type, or `nullptr` if the type does not match.
+    */
+    template< typename ExecutionContext >
+    const ExecutionContext* target() const
+    {
+        if ( ti_ && *ti_ == detail::type_id< ExecutionContext >() )
+           return static_cast< ExecutionContext const* >( this );
+        return nullptr;
+    }
+
+    /// @copydoc target() const
+    template< typename ExecutionContext >
+    ExecutionContext* target()
+    {
+        if ( ti_ && *ti_ == detail::type_id< ExecutionContext >() )
+           return static_cast< ExecutionContext* >( this );
+        return nullptr;
+    }
+
 protected:
     /** Shut down all services.
 
@@ -510,6 +545,14 @@ private:
     service* head_ = nullptr;
     bool shutdown_ = false;
 };
+
+template< typename Derived >
+execution_context::
+execution_context( Derived* ) noexcept
+    : execution_context()
+{
+    ti_ = &detail::type_id< Derived >();
+}
 
 } // namespace capy
 } // namespace boost
