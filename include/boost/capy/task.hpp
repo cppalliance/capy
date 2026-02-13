@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/ex/io_awaitable_support.hpp>
+#include <boost/capy/ex/io_awaitable_promise_base.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 
@@ -98,7 +98,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     task
 {
     struct promise_type
-        : io_awaitable_support<promise_type>
+        : io_awaitable_promise_base<promise_type>
         , detail::task_return_base<T>
     {
     private:
@@ -149,8 +149,8 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                 {
                     // Restore TLS when body starts executing
                     auto* fa = p_->environment()->allocator;
-                    if(fa && fa != current_frame_allocator())
-                        current_frame_allocator() = fa;
+                    if(fa && fa != get_current_frame_allocator())
+                        set_current_frame_allocator(fa);
                 }
             };
             return awaiter{this};
@@ -200,8 +200,8 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             {
                 // Restore TLS before body resumes
                 auto* fa = p_->environment()->allocator;
-                if(fa && fa != current_frame_allocator())
-                    current_frame_allocator() = fa;
+                if(fa && fa != get_current_frame_allocator())
+                    set_current_frame_allocator(fa);
                 return a_.await_resume();
             }
 

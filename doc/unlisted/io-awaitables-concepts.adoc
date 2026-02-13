@@ -209,13 +209,13 @@ Capy uses forward propagation for clarity and composability.
 
 == The Promise Support Mixin
 
-To implement an `IoRunnable` task, use the `io_awaitable_support` CRTP mixin:
+To implement an `IoRunnable` task, use the `io_awaitable_promise_base` CRTP mixin:
 
 [source,cpp]
 ----
 struct my_task
 {
-    struct promise_type : io_awaitable_support<promise_type>
+    struct promise_type : io_awaitable_promise_base<promise_type>
     {
         my_task get_return_object();
         std::suspend_always initial_suspend();
@@ -282,7 +282,7 @@ Every `co_await` in a task automatically receives context.
 | `IoRunnable`
 | Adds launch interface (`handle()`, `release()`, `exception()`, `result()`)
 
-| `io_awaitable_support`
+| `io_awaitable_promise_base`
 | CRTP mixin implementing context storage and propagation
 |===
 

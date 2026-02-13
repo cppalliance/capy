@@ -11,7 +11,7 @@
 #define BOOST_CAPY_TEST_CUSTOM_TASK_HPP
 
 #include <boost/capy/concept/io_runnable.hpp>
-#include <boost/capy/ex/io_awaitable_support.hpp>
+#include <boost/capy/ex/io_awaitable_promise_base.hpp>
 #include <boost/capy/ex/io_env.hpp>
 
 #include <coroutine>
@@ -49,7 +49,7 @@ template<typename T>
 struct custom_task
 {
     struct promise_type
-        : io_awaitable_support<promise_type>
+        : io_awaitable_promise_base<promise_type>
         , custom_task_result_base<T>
     {
         std::exception_ptr ep_;

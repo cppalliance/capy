@@ -389,7 +389,7 @@ public:
         , resource_(alloc)
         , alloc_(std::move(alloc))
     {
-        current_frame_allocator() = &resource_;
+        set_current_frame_allocator(&resource_);
     }
 
     run_wrapper_ex(Ex ex, std::stop_token st, Alloc alloc)
@@ -399,7 +399,7 @@ public:
         , resource_(alloc)
         , alloc_(std::move(alloc))
     {
-        current_frame_allocator() = &resource_;
+        set_current_frame_allocator(&resource_);
     }
 
     // Non-copyable, non-movable (must be used immediately)
@@ -434,7 +434,7 @@ public:
         : ex_(std::move(ex))
         , mr_(mr)
     {
-        current_frame_allocator() = mr_;
+        set_current_frame_allocator(mr_);
     }
 
     run_wrapper_ex(Ex ex, std::stop_token st, std::pmr::memory_resource* mr)
@@ -443,7 +443,7 @@ public:
         , st_(std::move(st))
         , mr_(mr)
     {
-        current_frame_allocator() = mr_;
+        set_current_frame_allocator(mr_);
     }
 
     // Non-copyable, non-movable (must be used immediately)
@@ -527,7 +527,7 @@ public:
         : resource_(alloc)
         , alloc_(std::move(alloc))
     {
-        current_frame_allocator() = &resource_;
+        set_current_frame_allocator(&resource_);
     }
 
     run_wrapper(std::stop_token st, Alloc alloc)
@@ -536,7 +536,7 @@ public:
         , resource_(alloc)
         , alloc_(std::move(alloc))
     {
-        current_frame_allocator() = &resource_;
+        set_current_frame_allocator(&resource_);
     }
 
     // Non-copyable, non-movable (must be used immediately)
@@ -569,7 +569,7 @@ public:
         requires InheritStopToken
         : mr_(mr)
     {
-        current_frame_allocator() = mr_;
+        set_current_frame_allocator(mr_);
     }
 
     run_wrapper(std::stop_token st, std::pmr::memory_resource* mr)
@@ -577,7 +577,7 @@ public:
         : st_(std::move(st))
         , mr_(mr)
     {
-        current_frame_allocator() = mr_;
+        set_current_frame_allocator(mr_);
     }
 
     // Non-copyable, non-movable (must be used immediately)

@@ -33,7 +33,7 @@ namespace capy {
     }
     @endcode
 
-    @see io_awaitable_support, io_env
+    @see io_awaitable_promise_base, io_env
 */
 namespace this_coro {
 
@@ -44,7 +44,7 @@ namespace this_coro {
     carries no data; it serves only as a sentinel for compile-time dispatch.
 
     @see environment
-    @see io_awaitable_support
+    @see io_awaitable_promise_base
 */
 struct environment_tag {};
 
@@ -55,7 +55,7 @@ struct environment_tag {};
     data; it serves only as a sentinel for compile-time dispatch.
 
     @see executor
-    @see io_awaitable_support
+    @see io_awaitable_promise_base
 */
 struct executor_tag {};
 
@@ -66,7 +66,7 @@ struct executor_tag {};
     no data; it serves only as a sentinel for compile-time dispatch.
 
     @see stop_token
-    @see io_awaitable_support
+    @see io_awaitable_promise_base
 */
 struct stop_token_tag {};
 
@@ -77,7 +77,7 @@ struct stop_token_tag {};
     no data; it serves only as a sentinel for compile-time dispatch.
 
     @see allocator
-    @see io_awaitable_support
+    @see io_awaitable_promise_base
 */
 struct allocator_tag {};
 
@@ -85,7 +85,7 @@ struct allocator_tag {};
 
     Use `co_await this_coro::environment` inside a coroutine whose promise
     type supports environment access (e.g., inherits from
-    @ref io_awaitable_support). The returned environment contains the
+    @ref io_awaitable_promise_base). The returned environment contains the
     executor, stop token, and allocator for this coroutine.
 
     @par Example
@@ -104,7 +104,7 @@ struct allocator_tag {};
     @li This operation never suspends; `await_ready()` always returns `true`
 
     @see environment_tag
-    @see io_awaitable_support
+    @see io_awaitable_promise_base
     @see io_env
 */
 inline constexpr environment_tag environment{};
@@ -113,7 +113,7 @@ inline constexpr environment_tag environment{};
 
     Use `co_await this_coro::executor` inside a coroutine whose promise
     type supports executor access (e.g., inherits from
-    @ref io_awaitable_support). The returned executor reflects the
+    @ref io_awaitable_promise_base). The returned executor reflects the
     executor this coroutine is bound to.
 
     @par Example
@@ -130,7 +130,7 @@ inline constexpr environment_tag environment{};
     @li This operation never suspends; `await_ready()` always returns `true`.
 
     @see executor_tag
-    @see io_awaitable_support
+    @see io_awaitable_promise_base
 */
 inline constexpr executor_tag executor{};
 
@@ -138,7 +138,7 @@ inline constexpr executor_tag executor{};
 
     Use `co_await this_coro::stop_token` inside a coroutine whose promise
     type supports stop token access (e.g., inherits from
-    @ref io_awaitable_support). The returned stop token reflects whatever
+    @ref io_awaitable_promise_base). The returned stop token reflects whatever
     token was passed to this coroutine when it was awaited.
 
     @par Example
@@ -158,7 +158,7 @@ inline constexpr executor_tag executor{};
     @li This operation never suspends; `await_ready()` always returns `true`.
 
     @see stop_token_tag
-    @see io_awaitable_support
+    @see io_awaitable_promise_base
 */
 inline constexpr stop_token_tag stop_token{};
 
@@ -166,7 +166,7 @@ inline constexpr stop_token_tag stop_token{};
 
     Use `co_await this_coro::allocator` inside a coroutine whose promise
     type supports allocator access (e.g., inherits from
-    @ref io_awaitable_support). The returned pointer is the memory resource
+    @ref io_awaitable_promise_base). The returned pointer is the memory resource
     used for coroutine frame allocation.
 
     @par Example
@@ -183,7 +183,7 @@ inline constexpr stop_token_tag stop_token{};
     @li This operation never suspends; `await_ready()` always returns `true`.
 
     @see allocator_tag
-    @see io_awaitable_support
+    @see io_awaitable_promise_base
 */
 inline constexpr allocator_tag allocator{};
 

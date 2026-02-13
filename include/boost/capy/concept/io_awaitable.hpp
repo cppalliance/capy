@@ -34,22 +34,26 @@ namespace capy {
 
     @par Semantic Requirements
 
-    The `await_suspend` operation initiates the async operation:
+    When `await_suspend` is called:
 
-    @li The awaitable stores the executor from `env` and uses it to
-        schedule resumption of the coroutine when the operation completes
-    @li The awaitable should monitor `env.stop_token` and complete
-        early with a cancellation error if stop is requested
-    @li The awaitable may use `env.allocator` for internal allocations
-    @li The awaitable may return `std::noop_coroutine()` to indicate
-        the operation was started asynchronously
+    @li The awaitable uses `env->executor` to schedule
+        resumption of the coroutine when the operation completes
+    @li The awaitable should monitor `env->stop_token` and
+        complete early with a cancellation error if stop is
+        requested
+    @li The awaitable may use `env->allocator` for internal
+        allocations
+    @li The awaitable must propagate `env->allocator` faithfully
+        to any child coroutines it creates
+    @li The awaitable may return `std::noop_coroutine()` to
+        indicate the operation was started asynchronously
 
     @par Lifetime
 
     The `io_env` passed to `await_suspend` is guaranteed by launch
-    functions (`run_async`, `run`) to remain valid for the lifetime
-    of the awaitable's async operation. Awaitables that need to retain
-    access to the environment should store it as `io_env const*`,
+    functions such as @ref run or @ref run_async to remain valid for the
+    lifetime of the awaitable's async operation. Awaitables that need to
+    retain access to the environment should store it as `io_env const*`,
     never as a copy. Copying is unnecessary and wasteful because the
     referent is guaranteed to outlive the operation.
 
@@ -82,13 +86,12 @@ namespace capy {
         {
             env_ = env;
             cont_ = h;
-            start_async( [this] {
-                if( env_->stop_token.stop_requested() )
-                {
-                    // complete with cancellation error
-                }
-                env_->executor.post( cont_ );
-            } );
+            // Pass members by value; capturing this
+            // risks use-after-free in async callbacks
+            start_async(
+                env_->stop_token,
+                env_->executor,
+                cont_ );
             return std::noop_coroutine();
         }
 

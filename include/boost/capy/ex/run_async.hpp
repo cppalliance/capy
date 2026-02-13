@@ -341,7 +341,7 @@ public:
         : tr_(detail::make_trampoline<Ex, Handlers, Alloc>(
             std::move(ex), std::move(h), std::move(a)))
         , st_(std::move(st))
-        , saved_tls_(current_frame_allocator())
+        , saved_tls_(get_current_frame_allocator())
     {
         if constexpr (!std::is_same_v<Alloc, std::pmr::memory_resource*>)
         {
@@ -350,14 +350,14 @@ public:
                 "Allocator must be nothrow move constructible");
         }
         // Set TLS before task argument is evaluated
-        current_frame_allocator() = tr_.h_.promise().get_resource();
+        set_current_frame_allocator(tr_.h_.promise().get_resource());
     }
 
     ~run_async_wrapper()
     {
         // Restore TLS so stale pointer doesn't outlive
         // the execution context that owns the resource.
-        current_frame_allocator() = saved_tls_;
+        set_current_frame_allocator(saved_tls_);
     }
 
     // Non-copyable, non-movable (must be used immediately)

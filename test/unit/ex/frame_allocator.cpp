@@ -26,10 +26,10 @@ Allocation Flow
    - For default: calls get_recycling_frame_allocator() to get recycling_memory_resource*
    - For memory_resource*: stores the pointer directly
    - For standard Allocator: wraps it in frame_memory_resource<Alloc> stored in promise
-   - Sets current_frame_allocator() = &resource (or mr directly)
+   - Calls set_current_frame_allocator(&resource) (or mr directly)
 3. Trampoline resumes the user's task
-4. task::promise_type (via io_awaitable_support) provides operator new/delete
-   that call current_frame_allocator()->allocate/deallocate
+4. task::promise_type (via io_awaitable_promise_base) provides operator new/delete
+   that call get_current_frame_allocator()->allocate/deallocate
 5. task::initial_suspend captures TLS into promise via set_frame_allocator()
 6. task::initial_suspend::await_resume restores TLS when body starts
 7. When task awaits a child, transform_awaiter::await_resume restores TLS
@@ -38,7 +38,7 @@ Allocation Flow
 Key Components
 --------------
 
-current_frame_allocator()
+get_current_frame_allocator() / set_current_frame_allocator()
     Thread-local std::pmr::memory_resource* set by trampoline before any task
     allocation. Tasks read this in operator new and capture it in initial_suspend.
 
@@ -50,9 +50,9 @@ recycling_memory_resource
     Default allocator with thread-local and global pools for frame recycling.
     Accessed via get_recycling_memory_resource() which returns pointer to static.
 
-io_awaitable_support
+io_awaitable_promise_base
     CRTP mixin providing:
-    - operator new/delete using current_frame_allocator()
+    - operator new/delete using get_current_frame_allocator()
     - alloc_ member to store captured allocator pointer
     - set_frame_allocator()/frame_allocator() accessors
 

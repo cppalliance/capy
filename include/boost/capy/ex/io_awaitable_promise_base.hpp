@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_EX_IO_AWAITABLE_SUPPORT_HPP
-#define BOOST_CAPY_EX_IO_AWAITABLE_SUPPORT_HPP
+#ifndef BOOST_CAPY_EX_IO_AWAITABLE_PROMISE_BASE_HPP
+#define BOOST_CAPY_EX_IO_AWAITABLE_PROMISE_BASE_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
@@ -50,7 +50,7 @@ namespace capy {
     @code
     struct my_task
     {
-        struct promise_type : io_awaitable_support<promise_type>
+        struct promise_type : io_awaitable_promise_base<promise_type>
         {
             my_task get_return_object();
             std::suspend_always initial_suspend() noexcept;
@@ -80,7 +80,7 @@ namespace capy {
     logging), override `transform_awaitable` instead of `await_transform`:
 
     @code
-    struct promise_type : io_awaitable_support<promise_type>
+    struct promise_type : io_awaitable_promise_base<promise_type>
     {
         template<typename A>
         auto transform_awaitable(A&& a)
@@ -106,7 +106,7 @@ namespace capy {
     @code
     struct my_task
     {
-        struct promise_type : io_awaitable_support<promise_type> { ... };
+        struct promise_type : io_awaitable_promise_base<promise_type> { ... };
 
         std::coroutine_handle<promise_type> h_;
 
@@ -130,7 +130,7 @@ namespace capy {
     @see IoAwaitable
 */
 template<typename Derived>
-class io_awaitable_support
+class io_awaitable_promise_base
 {
     io_env const* env_ = &detail::empty_io_env;
     mutable std::coroutine_handle<> cont_{std::noop_coroutine()};
@@ -155,7 +155,7 @@ public:
     {
         static auto* const rmr = get_recycling_memory_resource();
 
-        auto* mr = current_frame_allocator();
+        auto* mr = get_current_frame_allocator();
         if(!mr)
             mr = std::pmr::get_default_resource();
 
@@ -191,7 +191,7 @@ public:
             mr->deallocate(ptr, total, alignof(std::max_align_t));
     }
 
-    ~io_awaitable_support()
+    ~io_awaitable_promise_base()
     {
         // Abnormal teardown: destroy orphaned continuation
         if(cont_ != std::noop_coroutine())

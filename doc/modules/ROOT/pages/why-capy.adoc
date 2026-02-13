@@ -319,7 +319,7 @@ No other solution like this exists. Not Asio. Not `std::execution`. Not anywhere
 |
 |
 
-| `io_awaitable_support`
+| `io_awaitable_promise_base`
 |
 |
 |

@@ -10,7 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/ex/this_coro.hpp>
 
-#include <boost/capy/ex/io_awaitable_support.hpp>
+#include <boost/capy/ex/io_awaitable_promise_base.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 
@@ -24,7 +24,7 @@ namespace capy {
 
 struct tag_test_coro
 {
-    struct promise_type : io_awaitable_support<promise_type>
+    struct promise_type : io_awaitable_promise_base<promise_type>
     {
         tag_test_coro get_return_object()
         {

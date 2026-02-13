@@ -74,7 +74,7 @@
 #include <boost/capy/ex/work_guard.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/immediate.hpp>
-#include <boost/capy/ex/io_awaitable_support.hpp>
+#include <boost/capy/ex/io_awaitable_promise_base.hpp>
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/ex/run.hpp>
 #include <boost/capy/ex/run_async.hpp>

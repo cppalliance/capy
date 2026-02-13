@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/ex/io_awaitable_support.hpp>
+#include <boost/capy/ex/io_awaitable_promise_base.hpp>
 
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
@@ -24,7 +24,7 @@ namespace capy {
 
 struct test_coro
 {
-    struct promise_type : io_awaitable_support<promise_type>
+    struct promise_type : io_awaitable_promise_base<promise_type>
     {
         test_coro get_return_object()
         {
@@ -63,7 +63,7 @@ private:
 
 struct custom_transform_coro
 {
-    struct promise_type : io_awaitable_support<promise_type>
+    struct promise_type : io_awaitable_promise_base<promise_type>
     {
         int transform_count_ = 0;
 
@@ -109,7 +109,7 @@ private:
     }
 };
 
-struct io_awaitable_support_test
+struct io_awaitable_promise_base_test
 {
     void
     testSetAndGetEnvironment()
@@ -228,8 +228,8 @@ struct io_awaitable_support_test
 };
 
 TEST_SUITE(
-    io_awaitable_support_test,
-    "boost.capy.ex.io_awaitable_support");
+    io_awaitable_promise_base_test,
+    "boost.capy.ex.io_awaitable_promise_base");
 
 } // namespace capy
 } // namespace boost

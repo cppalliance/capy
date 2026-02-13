@@ -335,8 +335,8 @@ ____
 In the expression `run_async(ex)(my_task())`:
 
 1. `run_async(ex)` evaluates first. This returns a wrapper object
-   (`run_async_wrapper`) whose constructor sets `current_frame_allocator()`
-   -- a thread-local pointer to the memory resource.
+   (`run_async_wrapper`) whose constructor calls `set_current_frame_allocator()`
+   -- storing a thread-local pointer to the memory resource.
 2. `my_task()` evaluates second. The coroutine's `operator new` reads
    the thread-local pointer and allocates the frame from it.
 3. `operator()` on the wrapper takes ownership of the task and
@@ -367,7 +367,7 @@ run_async_wrapper(Ex ex, std::stop_token st, Handlers h, Alloc a)
     , st_(std::move(st))
 {
     // Set TLS before task argument is evaluated
-    current_frame_allocator() = tr_.h_.promise().get_resource();
+    set_current_frame_allocator(tr_.h_.promise().get_resource());
 }
 ----
 
@@ -377,7 +377,7 @@ The task's `operator new` reads it:
 ----
 static void* operator new(std::size_t size)
 {
-    auto* mr = current_frame_allocator();
+    auto* mr = get_current_frame_allocator();
     if(!mr)
         mr = std::pmr::get_default_resource();
     return mr->allocate(size, alignof(std::max_align_t));
