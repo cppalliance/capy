@@ -1,0 +1,350 @@
+= Run API Design
+
+== Overview
+
+This document explains the naming conventions and call syntax of the two launcher functions: `run_async` (fire-and-forget from non-coroutine code) and `run` (awaitable within a coroutine). Both accept any type satisfying _IoRunnable_ -- not just `task<T>` -- and use a deliberate **two-phase invocation** pattern -- `f(context)(task)` -- that exists for a mechanical reason rooted in coroutine frame allocation timing.
+
+== Usage
+
+=== `run_async` -- Fire-and-Forget Launch
+
+`run_async` launches any _IoRunnable_ from non-coroutine code: `main()`, callback handlers, event loops. `task<T>` is the most common conforming type, but any user-defined type satisfying the concept works. The function does not return a value to the caller. Handlers receive the task's result or exception after completion.
+
+[source,cpp]
+----
+// Executor only (uses default recycling allocator)
+run_async(ex)(my_task());
+
+// With a stop token for cooperative cancellation
+std::stop_source source;
+run_async(ex, source.get_token())(cancellable_task());
+
+// With a custom memory resource
+run_async(ex, my_pool)(my_task());
+
+// With a result handler
+run_async(ex, [](int result) {
+    std::cout << "Got: " << result << "\n";
+})(compute_value());
+
+// With separate success and error handlers
+run_async(ex,
+    [](int result) { std::cout << "Got: " << result << "\n"; },
+    [](std::exception_ptr ep) { /* handle error */ }
+)(compute_value());
+
+// Full: executor, stop_token, allocator, success handler, error handler
+run_async(ex, st, alloc, h1, h2)(my_task());
+----
+
+=== `run` -- Awaitable Launch Within a Coroutine
+
+`run` is the coroutine-side counterpart. It binds any _IoRunnable_ to a (possibly different) executor and returns the result to the caller via `co_await`. It also supports overloads that customize stop token or allocator while inheriting the caller's executor.
+
+[source,cpp]
+----
+// Switch to a different executor for CPU-bound work
+task<void> parent()
+{
+    int result = co_await run(worker_ex)(compute_on_worker());
+    // Completion returns to parent's executor
+}
+
+// Customize stop token, inherit caller's executor
+task<void> with_timeout()
+{
+    std::stop_source source;
+    co_await run(source.get_token())(subtask());
+}
+
+// Customize allocator, inherit caller's executor
+task<void> with_custom_alloc()
+{
+    co_await run(my_alloc)(subtask());
+}
+
+// Switch executor AND customize allocator
+task<void> full_control()
+{
+    co_await run(worker_ex, my_alloc)(cpu_bound_task());
+}
+----
+
+=== `run_async` on a Strand
+
+A common pattern for launching per-connection coroutines on a strand, ensuring serialized access to connection state:
+
+[source,cpp]
+----
+void on_accept(tcp::socket sock)
+{
+    strand my_strand(ioc.get_executor());
+    run_async(my_strand)(handle_connection(std::move(sock)));
+}
+----
+
+== Alternatives Considered
+
+Several alternative naming and syntax proposals were evaluated and discarded. The following table shows each rejected form alongside the chosen form.
+
+=== Builder Pattern: `on` / `with` / `spawn` / `call`
+
+[cols="1,1"]
+|===
+| Rejected | Chosen
+
+| `capy::on(ex).spawn(t)`
+| `run_async(ex)(t)`
+
+| `co_await capy::on(ex).call(t)`
+| `co_await run(ex)(t)`
+
+| `co_await capy::with(st).call(t)`
+| `co_await run(st)(t)`
+
+| `co_await capy::with(alloc).call(t)`
+| `co_await run(alloc)(t)`
+
+| `capy::on(ex).block(t)`
+| `test::run_blocking(ex)(t)`
+|===
+
+What this looks like in practice:
+
+[source,cpp]
+----
+// Rejected: builder pattern
+capy::on(ex).spawn(my_task());
+co_await capy::on(worker_ex).call(compute());
+co_await capy::with(my_alloc).call(subtask());
+
+// Chosen: two-phase invocation
+run_async(ex)(my_task());
+co_await run(worker_ex)(compute());
+co_await run(my_alloc)(subtask());
+----
+
+The builder pattern reads well as English, but it creates problems in {cpp} practice. See <<why-not-builder>> below for the full analysis.
+
+=== Single-Call with Named Method
+
+[source,cpp]
+----
+// Rejected: single-call
+run_async(ex, my_task());
+----
+
+This fails the allocator timing constraint entirely. The task argument `my_task()` is evaluated _before_ `run_async` can set the thread-local allocator. The coroutine frame is allocated with the wrong (or no) allocator. This is not a style preference -- it is a correctness bug.
+
+=== Named Method on Wrapper
+
+[source,cpp]
+----
+// Rejected: named method instead of operator()
+run_async(ex).spawn(my_task());
+co_await run(ex).call(compute());
+----
+
+This preserves the two-phase timing guarantee and avoids the namespace collision problems of `on`/`with`. The objection is minor: `.spawn()` and `.call()` add vocabulary without adding clarity. The wrapper already has exactly one purpose -- accepting a task. A named method implies the wrapper has a richer interface than it does. `operator()` is the conventional {cpp} way to express "this object does exactly one thing." That said, this alternative has legs and could be revisited if the `()()` syntax proves too confusing in practice.
+
+== The Names
+
+=== Why `run`
+
+The `run` prefix was chosen for several reasons:
+
+- **Greppability.** Searching for `run_async(` or `run(` in a codebase produces unambiguous results. Short, common English words like `on` or `with` collide with local variable names, parameter names, and other libraries. A `using namespace capy;` combined with a local variable named `on` produces silent shadowing bugs.
+
+- **Verb clarity.** `run` tells you what happens: something executes. `run_async` tells you it executes without waiting. `run` inside a coroutine tells you control transfers and returns. Prepositions like `on` and `with` say nothing about the action -- they are sentence fragments waiting for a verb.
+
+- **Discoverability.** The `run_*` family groups together in documentation, autocompletion, and alphabetical listings. Users searching for "how do I launch a task" find `run_async` and `run` as a coherent pair.
+
+- **Consistency.** The naming follows the established pattern from `io_context::run()`, `std::jthread`, and other {cpp} APIs where `run` means "begin executing work."
+
+- **No false promises.** A builder-pattern syntax like `on(ex).spawn(t)` implies composability -- `on(ex).with(alloc).call(t)` -- that the API does not deliver. The `f(x)(t)` pattern is honest about being exactly two steps, no more. It does not invite users to chain methods that do not exist.
+
+[[why-not-builder]]
+=== Why Not a Builder Pattern
+
+An alternative proposal suggested replacing the two-call syntax with a builder-style API:
+
+[source,cpp]
+----
+// Rejected builder pattern
+capy::on(ex).spawn(my_task());
+co_await capy::on(ex).call(compute());
+co_await capy::with(st).call(subtask());
+co_await capy::with(alloc).call(subtask());
+capy::on(ex).block(my_task());
+----
+
+While the English readability of `on(ex).spawn(t)` is genuinely appealing, the approach has practical problems in a Boost library:
+
+- **Namespace pollution.** `on` and `with` are among the most common English words in programming. In a Boost library used alongside dozens of other namespaces, these names invite collisions. Consider what happens with `using namespace capy;`:
++
+[source,cpp]
+----
+int on = 42;                  // local variable
+on(ex).spawn(my_task());      // ambiguous: variable or function?
+
+void handle(auto with) {      // parameter name
+    with(alloc).call(sub());  // won't compile
+}
+----
++ The names `run` and `run_async` do not have this problem. No one names their variables `run_async`.
+
+- **Semantic ambiguity.** `with(st)` versus `with(alloc)` -- with _what_, exactly? The current API uses `run(st)` and `run(alloc)` where overload resolution disambiguates naturally because the verb `run` provides context. A bare preposition provides none.
++
+[source,cpp]
+----
+// What does "with" mean here? Stop token or allocator?
+co_await capy::with(x).call(subtask());
+
+// "run" provides a verb -- the argument type disambiguates
+co_await run(x)(subtask());
+----
+
+- **Builder illusion.** Dot-chaining suggests composability that does not exist. Users will naturally try:
++
+[source,cpp]
+----
+// These look reasonable but don't work
+capy::on(ex).with(alloc).call(my_task());
+capy::on(ex).with(st).with(alloc).spawn(my_task(), h1, h2);
+----
++ The current syntax makes the interface boundary explicit: the first call captures _all_ context, the second call accepts the task. There is no dot-chain to extend.
+
+- **Erases the test boundary.** `run_blocking` lives in `capy::test` deliberately -- it is a test utility, not a production API. The proposed `on(ex).block(t)` places it alongside `.spawn()` and `.call()` as if it were a first-class production method. That is a promotion this API has not earned.
+
+- **Hidden critical ordering.** The two-phase invocation exists for a mechanical reason (allocator timing, described below). With `on(ex).spawn(t)`, the critical sequencing guarantee is buried behind what looks like a casual method call. The `()()` syntax is pedagogically valuable -- it signals that something important happens in two distinct steps.
+
+- **Overload count does not shrink.** `run_async` has 18 overloads for good reason (executor x stop_token x allocator x handlers). The builder pattern still needs all those combinations -- they just move from free function overloads to constructor or method overloads. The complexity does not vanish; it relocates.
+
+== The Two-Phase Invocation
+
+=== The Problem: Allocator Timing
+
+Coroutine frame allocation happens _before_ the coroutine body executes. When the compiler encounters a coroutine call, it:
+
+1. Calls `operator new` to allocate the frame
+2. Constructs the promise object
+3. Begins execution of the coroutine body
+
+Any mechanism that injects the allocator _after_ the call -- receiver queries, `await_transform`, explicit method calls -- arrives too late. The frame is already allocated.
+
+This is the fundamental tension identified in D4003 �3.3:
+
+[quote]
+____
+The allocator must be present at invocation. Coroutine frame
+allocation has a fundamental timing constraint: `operator new`
+executes before the coroutine body. When a coroutine is called,
+the compiler allocates the frame first, then begins execution.
+Any mechanism that injects context later -- receiver connection,
+`await_transform`, explicit method calls -- arrives too late.
+____
+
+=== The Solution: {cpp}17 Postfix Evaluation Order
+
+{cpp}17 guarantees that in a postfix-expression call, the postfix-expression is sequenced before the argument expressions:
+
+[quote]
+____
+The postfix-expression is sequenced before each expression in
+the expression-list and any default argument. -- [expr.call]
+____
+
+In the expression `run_async(ex)(my_task())`:
+
+1. `run_async(ex)` evaluates first. This returns a wrapper object (`run_async_wrapper`) whose constructor calls `set_current_frame_allocator()` -- storing a thread-local pointer to the memory resource.
+2. `my_task()` evaluates second. The coroutine's `operator new` reads the thread-local pointer and allocates the frame from it.
+3. `operator()` on the wrapper takes ownership of the task and dispatches it to the executor.
+
+[source,cpp]
+----
+// Step 1: wrapper constructor sets TLS allocator
+//         v~~~~~~~~~~~~~~v
+   run_async(ex, alloc)    (my_task());
+//                          ^~~~~~~~~^
+// Step 2: task frame allocated using TLS allocator
+----
+
+This sequencing is not an implementation detail -- it is the _only correct way_ to inject an allocator into a coroutine's frame allocation when the allocator is not known at compile time.
+
+=== How It Works in the Code
+
+The `run_async_wrapper` constructor sets the thread-local allocator:
+
+[source,cpp]
+----
+run_async_wrapper(Ex ex, std::stop_token st, Handlers h, Alloc a)
+    : tr_(detail::make_trampoline<Ex, Handlers, Alloc>(
+        std::move(ex), std::move(h), std::move(a)))
+    , st_(std::move(st))
+{
+    // Set TLS before task argument is evaluated
+    set_current_frame_allocator(tr_.h_.promise().get_resource());
+}
+----
+
+The task's `operator new` reads it:
+
+[source,cpp]
+----
+static void* operator new(std::size_t size)
+{
+    auto* mr = get_current_frame_allocator();
+    if(!mr)
+        mr = std::pmr::get_default_resource();
+    return mr->allocate(size, alignof(std::max_align_t));
+}
+----
+
+The wrapper is `[[nodiscard]]` and its `operator()` is rvalue-ref-qualified, preventing misuse:
+
+[source,cpp]
+----
+// Correct: wrapper is a temporary, used immediately
+run_async(ex)(my_task());
+
+// Compile error: cannot call operator() on an lvalue
+auto w = run_async(ex);
+w(my_task());  // Error: requires rvalue
+----
+
+=== The `run` Variant
+
+The `run` function uses the same two-phase pattern inside coroutines. An additional subtlety arises: the wrapper is a temporary that dies before `co_await` suspends the caller. The wrapper's `frame_memory_resource` would be destroyed before the child task executes.
+
+The solution is to store a _copy_ of the allocator in the awaitable returned by `operator()`. Since standard allocator copies are equivalent -- memory allocated with one copy can be deallocated with another -- this preserves correctness while keeping the allocator alive for the task's duration.
+
+=== Comparison with `std::execution`
+
+In `std::execution` (P2300), context flows _backward_ from receiver to sender via queries _after_ `connect()`:
+
+----
+task<int> async_work();              // Frame allocated NOW
+auto sndr = async_work();
+auto op = connect(sndr, receiver);   // Allocator available NOW -- too late
+start(op);
+----
+
+In the _IoAwaitable_ model, context flows _forward_ from launcher to task:
+
+----
+1. Set TLS allocator     -->  2. Call task()
+                               3. operator new (uses TLS)
+                               4. await_suspend
+----
+
+The allocator is ready before the frame is created. No query machinery can retroactively fix an allocation that already happened.
+
+== Summary
+
+[cols="1,2"]
+|===
+| `run_async(ctx)(task)` | Fire-and-forget launch from non-coroutine code
+| `co_await run(ctx)(task)` | Awaitable launch within a coroutine
+|===
+
+The `run` name is greppable, unambiguous, and won't collide with local variables in a namespace-heavy Boost codebase. The `f(ctx)(task)` syntax exists because coroutine frame allocation requires the allocator to be set _before_ the task expression is evaluated, and {cpp}17 postfix sequencing guarantees exactly that ordering. The syntax is intentionally explicit about its two steps -- it tells the reader that something important happens between them.

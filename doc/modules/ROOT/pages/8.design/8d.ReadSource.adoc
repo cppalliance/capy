@@ -2,10 +2,7 @@
 
 == Overview
 
-This document describes the design of the `ReadSource` concept: a
-refinement of `ReadStream` that adds a complete-read primitive. It
-explains how `ReadSource` relates to `ReadStream`, why the refinement
-hierarchy mirrors the write side, and the use cases each serves.
+This document describes the design of the `ReadSource` concept: a refinement of `ReadStream` that adds a complete-read primitive. It explains how `ReadSource` relates to `ReadStream`, why the refinement hierarchy mirrors the write side, and the use cases each serves.
 
 == Definition
 
@@ -23,14 +20,11 @@ concept ReadSource =
     };
 ----
 
-`ReadSource` refines `ReadStream`. Every `ReadSource` is a
-`ReadStream`. A `ReadSource` provides two operations:
+`ReadSource` refines `ReadStream`. Every `ReadSource` is a `ReadStream`. A `ReadSource` provides two operations:
 
 === `read_some(buffers)` -- Partial Read (inherited from `ReadStream`)
 
-Reads one or more bytes from the source into the buffer sequence.
-Returns `(error_code, std::size_t)` where `n` is the number of bytes
-read. May return fewer bytes than the buffer can hold.
+Reads one or more bytes from the source into the buffer sequence. Returns `(error_code, std::size_t)` where `n` is the number of bytes read. May return fewer bytes than the buffer can hold.
 
 ==== Semantics
 
@@ -39,42 +33,28 @@ read. May return fewer bytes than the buffer can hold.
 - On error: `ec`, `n == 0`.
 - If `buffer_empty(buffers)`: completes immediately, `!ec`, `n == 0`.
 
-Once `read_some` returns an error (including EOF), the caller must
-not call `read_some` again. The stream is done. Not all
-implementations can reproduce a prior error on subsequent calls, so
-the behavior after an error is undefined.
+Once `read_some` returns an error (including EOF), the caller must not call `read_some` again. The stream is done. Not all implementations can reproduce a prior error on subsequent calls, so the behavior after an error is undefined.
 
 === `read(buffers)` -- Complete Read
 
-Reads data into the buffer sequence. Either fills the entire buffer
-or returns an error. Returns `(error_code, std::size_t)` where `n`
-is the number of bytes read.
+Reads data into the buffer sequence. Either fills the entire buffer or returns an error. Returns `(error_code, std::size_t)` where `n` is the number of bytes read.
 
 ==== Semantics
 
-- On success: `!ec`, `n == buffer_size(buffers)`. The buffer is
-  completely filled.
-- On EOF: `ec == cond::eof`, `n` is the number of bytes read before
-  EOF was reached (may be less than `buffer_size(buffers)`).
+- On success: `!ec`, `n == buffer_size(buffers)`. The buffer is completely filled.
+- On EOF: `ec == cond::eof`, `n` is the number of bytes read before EOF was reached (may be less than `buffer_size(buffers)`).
 - On error: `ec`, `n` is the number of bytes read before the error.
 - If `buffer_empty(buffers)`: completes immediately, `!ec`, `n == 0`.
 
-Successful partial reads are not permitted. Either the entire buffer
-is filled, or the operation returns with an error. This is the
-defining property of a complete-read primitive.
+Successful partial reads are not permitted. Either the entire buffer is filled, or the operation returns with an error. This is the defining property of a complete-read primitive.
 
-Once `read` returns an error (including EOF), the caller must not
-call `read` or `read_some` again. The source is done. Not all
-implementations can reproduce a prior error on subsequent calls, so
-the behavior after an error is undefined.
+Once `read` returns an error (including EOF), the caller must not call `read` or `read_some` again. The source is done. Not all implementations can reproduce a prior error on subsequent calls, so the behavior after an error is undefined.
 
-When the buffer sequence contains multiple buffers, each buffer is
-filled completely before proceeding to the next.
+When the buffer sequence contains multiple buffers, each buffer is filled completely before proceeding to the next.
 
 ==== Buffer Lifetime
 
-The caller must ensure that the memory referenced by `buffers` remains
-valid until the `co_await` expression returns.
+The caller must ensure that the memory referenced by `buffers` remains valid until the `co_await` expression returns.
 
 ==== Conforming Signatures
 
@@ -105,35 +85,23 @@ WriteStream   { write_some }
 WriteSink     { write_some, write, write_eof(buffers), write_eof() }
 ----
 
-Algorithms constrained on `ReadStream` accept both raw streams and
-sources. Algorithms that need the complete-read guarantee constrain on
-`ReadSource`.
+Algorithms constrained on `ReadStream` accept both raw streams and sources. Algorithms that need the complete-read guarantee constrain on `ReadSource`.
 
 == Why ReadSource Refines ReadStream
 
 Every concrete `ReadSource` type has a natural `read_some`:
 
-- **HTTP content-length body**: `read_some` returns
-  `min(available_from_network, remaining_content_length)` bytes. It
-  is the underlying stream's `read_some` capped by the body's limit.
-- **HTTP chunked body**: `read_some` delivers whatever unchunked
-  data is available from the current chunk.
-- **Decompression source** (inflate, zstd): `read_some` does one
-  decompression pass -- feeds available compressed input to the
-  decompressor and returns whatever output is produced. This is
-  how `zlib::inflate()` naturally works.
-- **File source**: `read_some` is a single `read()` syscall. It is
-  the OS primitive.
+- **HTTP content-length body**: `read_some` returns `min(available_from_network, remaining_content_length)` bytes. It is the underlying stream's `read_some` capped by the body's limit.
+- **HTTP chunked body**: `read_some` delivers whatever unchunked data is available from the current chunk.
+- **Decompression source** (inflate, zstd): `read_some` does one decompression pass -- feeds available compressed input to the decompressor and returns whatever output is produced. This is how `zlib::inflate()` naturally works.
+- **File source**: `read_some` is a single `read()` syscall. It is the OS primitive.
 - **Memory source**: `read_some` returns `min(requested, remaining)`.
 
-No concrete source type lacks a meaningful `read_some`. The claim that
-"many sources can't meaningfully offer `read_some`" does not hold up
-under scrutiny.
+No concrete source type lacks a meaningful `read_some`. The claim that "many sources can't meaningfully offer `read_some`" does not hold up under scrutiny.
 
 === The Relay Argument
 
-If `ReadSource` were disjoint from `ReadStream`, generic relay code
-would need two separate implementations:
+If `ReadSource` were disjoint from `ReadStream`, generic relay code would need two separate implementations:
 
 [source,cpp]
 ----
@@ -155,13 +123,11 @@ template<ReadStream Src, WriteSink Dest>
 task<> relay(Src& src, Dest& dest);
 ----
 
-This is the same argument that justified `WriteSink` refining
-`WriteStream`.
+This is the same argument that justified `WriteSink` refining `WriteStream`.
 
 === The Latency Argument
 
-With only `read` (complete read), a relay must wait for the entire
-buffer to fill before forwarding any data:
+With only `read` (complete read), a relay must wait for the entire buffer to fill before forwarding any data:
 
 [source,cpp]
 ----
@@ -179,9 +145,7 @@ auto [ec, n] = co_await src.read_some(mutable_buffer(buf, 65536));
 co_await dest.write_some(const_buffer(buf, n));
 ----
 
-For a decompressor backed by a slow network connection, `read_some`
-lets you decompress and forward whatever is available instead of
-blocking until the entire buffer is filled.
+For a decompressor backed by a slow network connection, `read_some` lets you decompress and forward whatever is available instead of blocking until the entire buffer is filled.
 
 == Member Function Comparison
 
@@ -214,21 +178,15 @@ auto read(ReadSource auto& source,
     -> io_task<std::size_t>;
 ----
 
-Reads from the source into a dynamic buffer until EOF. The buffer
-grows with a 1.5x factor when filled. On success (EOF), `ec` is clear
-and `n` is total bytes read.
+Reads from the source into a dynamic buffer until EOF. The buffer grows with a 1.5x factor when filled. On success (EOF), `ec` is clear and `n` is total bytes read.
 
-This is the `ReadSource` equivalent of the `ReadStream` overload. Both
-use the same `read` free function name, distinguished by concept
-constraints.
+This is the `ReadSource` equivalent of the `ReadStream` overload. Both use the same `read` free function name, distinguished by concept constraints.
 
 == Use Cases
 
 === Reading an HTTP Body
 
-An HTTP body with a known content length is a `ReadSource`. The caller
-reads into a buffer, and the source ensures exactly the right number
-of bytes are delivered.
+An HTTP body with a known content length is a `ReadSource`. The caller reads into a buffer, and the source ensures exactly the right number of bytes are delivered.
 
 [source,cpp]
 ----
@@ -249,8 +207,7 @@ task<std::string> read_body(Source& body, std::size_t content_length)
 
 === Reading into a Dynamic Buffer
 
-When the body size is unknown (e.g., chunked encoding), read until
-EOF using the dynamic buffer overload.
+When the body size is unknown (e.g., chunked encoding), read until EOF using the dynamic buffer overload.
 
 [source,cpp]
 ----
@@ -268,8 +225,7 @@ task<std::string> read_chunked_body(Source& body)
 
 === Reading Fixed-Size Records from a Source
 
-When a source produces structured records of known size, `read`
-guarantees each record is completely filled.
+When a source produces structured records of known size, `read` guarantees each record is completely filled.
 
 [source,cpp]
 ----
@@ -299,10 +255,7 @@ task<> process_records(Source& source)
 
 === Decompression with Low-Latency Relay
 
-A decompression source wraps a `ReadStream` and produces decompressed
-data. Using `read_some` (inherited from `ReadStream`), a relay can
-forward decompressed data as it becomes available instead of waiting
-for a full buffer.
+A decompression source wraps a `ReadStream` and produces decompressed data. Using `read_some` (inherited from `ReadStream`), a relay can forward decompressed data as it becomes available instead of waiting for a full buffer.
 
 [source,cpp]
 ----
@@ -333,9 +286,7 @@ task<> relay_decompressed(Source& inflater, Sink& dest)
 
 === Relaying from ReadSource to WriteSink
 
-When connecting a source to a sink, `read_some` provides low-latency
-forwarding. The final chunk uses `write_eof` for atomic delivery plus
-EOF signaling.
+When connecting a source to a sink, `read_some` provides low-latency forwarding. The final chunk uses `write_eof` for atomic delivery plus EOF signaling.
 
 [source,cpp]
 ----
@@ -363,15 +314,11 @@ task<> relay(Src& src, Sink& dest)
 }
 ----
 
-Because `ReadSource` refines `ReadStream`, this relay accepts
-`ReadSource` types (HTTP bodies, decompressors, files) as well as
-raw `ReadStream` types (TCP sockets, TLS streams).
+Because `ReadSource` refines `ReadStream`, this relay accepts `ReadSource` types (HTTP bodies, decompressors, files) as well as raw `ReadStream` types (TCP sockets, TLS streams).
 
 === Type-Erased Source
 
-The `any_read_source` wrapper type-erases a `ReadSource` behind a
-virtual interface. This is useful when the concrete source type is
-not known at compile time.
+The `any_read_source` wrapper type-erases a `ReadSource` behind a virtual interface. This is useful when the concrete source type is not known at compile time.
 
 [source,cpp]
 ----
@@ -393,51 +340,28 @@ task<> handle_request(any_read_source& body)
 
 Examples of types that satisfy `ReadSource`:
 
-- **HTTP content-length body**: `read_some` returns available bytes
-  capped by remaining length. `read` fills the buffer, enforcing the
-  content length limit.
-- **HTTP chunked body**: `read_some` delivers available unchunked
-  data. `read` decodes chunk framing and fills the buffer.
-- **Decompression source** (inflate, zstd): `read_some` does one
-  decompression pass. `read` loops decompression until the buffer
-  is filled.
-- **File source**: `read_some` is a single `read()` syscall. `read`
-  loops until the buffer is filled or EOF.
-- **Memory source**: `read_some` returns available bytes. `read`
-  fills the buffer from the memory region.
+- **HTTP content-length body**: `read_some` returns available bytes capped by remaining length. `read` fills the buffer, enforcing the content length limit.
+- **HTTP chunked body**: `read_some` delivers available unchunked data. `read` decodes chunk framing and fills the buffer.
+- **Decompression source** (inflate, zstd): `read_some` does one decompression pass. `read` loops decompression until the buffer is filled.
+- **File source**: `read_some` is a single `read()` syscall. `read` loops until the buffer is filled or EOF.
+- **Memory source**: `read_some` returns available bytes. `read` fills the buffer from the memory region.
 
 == Why `read_some` Returns No Data on EOF
 
-The `read_some` contract (inherited from `ReadStream`) requires that
-when `ec == cond::eof`, `n` is always 0. Data and EOF are delivered
-in separate calls. See xref:8a.ReadStream.adoc#_design_foundations_why_errors_exclude_data[ReadStream: Why Errors Exclude Data]
-for the full rationale. The key points:
+The `read_some` contract (inherited from `ReadStream`) requires that when `ec == cond::eof`, `n` is always 0. Data and EOF are delivered in separate calls. See xref:8a.ReadStream.adoc#_design_foundations_why_errors_exclude_data[ReadStream: Why Errors Exclude Data] for the full rationale. The key points:
 
-- The clean trichotomy (success/EOF/error, where data implies success)
-  eliminates an entire class of bugs where callers accidentally drop
-  the final bytes of a stream.
-- Write-side atomicity (`write_eof(buffers)`) serves correctness for
-  protocol framing. Read-side piggybacking would be a minor
-  optimization with significant API cost.
-- Every concrete source type naturally separates its last data
-  delivery from its EOF indication.
+- The clean trichotomy (success/EOF/error, where data implies success) eliminates an entire class of bugs where callers accidentally drop the final bytes of a stream.
+- Write-side atomicity (`write_eof(buffers)`) serves correctness for protocol framing. Read-side piggybacking would be a minor optimization with significant API cost.
+- Every concrete source type naturally separates its last data delivery from its EOF indication.
 - POSIX `read()` follows the same model.
 
-This contract carries over to `ReadSource` unchanged. The `read`
-member function (complete read) _does_ allow `n > 0` on EOF, because
-it is a composed loop that accumulates data across multiple internal
-`read_some` calls. When the underlying stream signals EOF
-mid-accumulation, discarding the bytes already gathered would be
-wrong. The caller needs `n` to know how much valid data landed in the
-buffer.
+This contract carries over to `ReadSource` unchanged. The `read` member function (complete read) _does_ allow `n > 0` on EOF, because it is a composed loop that accumulates data across multiple internal `read_some` calls. When the underlying stream signals EOF mid-accumulation, discarding the bytes already gathered would be wrong. The caller needs `n` to know how much valid data landed in the buffer.
 
 == Summary
 
-`ReadSource` refines `ReadStream` by adding `read` for complete-read
-semantics. The refinement relationship enables:
+`ReadSource` refines `ReadStream` by adding `read` for complete-read semantics. The refinement relationship enables:
 
-- Generic algorithms constrained on `ReadStream` work on both raw
-  streams and sources.
+- Generic algorithms constrained on `ReadStream` work on both raw streams and sources.
 - `read_some` provides low-latency forwarding in relays.
 - `read` provides the complete-fill guarantee for structured data.
 

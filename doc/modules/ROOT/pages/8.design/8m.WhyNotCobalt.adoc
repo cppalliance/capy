@@ -134,7 +134,7 @@ Templates can achieve this by type-erasing every customization point. The cost m
 
 == Stream Concepts
 
-Capy defines seven coroutine-only stream concepts. Cobalt inherits Asio's `AsyncReadStream` and `AsyncWriteStream`, which are hybrid concepts supporting callbacks, futures, and coroutines. Cobalt's `cobalt::io` wrappers simplify the API and Cobalt defines stream abstractions (`write_stream`, `read_stream`, `stream`) as abstract base classes, a distinct approach from Capy's concept-based hierarchy. Cobalt's wrappers still include full Asio headers. See xref:8.design/8m.WhyNotCobaltConcepts.adoc[Write Stream Design] for a detailed comparison of the two approaches.
+Capy defines seven coroutine-only stream concepts. Cobalt inherits Asio's `AsyncReadStream` and `AsyncWriteStream`, which are hybrid concepts supporting callbacks, futures, and coroutines. Cobalt's `cobalt::io` wrappers simplify the API and Cobalt defines stream abstractions (`write_stream`, `read_stream`, `stream`) as abstract base classes, a distinct approach from Capy's concept-based hierarchy. Cobalt's wrappers still include full Asio headers. See xref:8.design/8n.WhyNotCobaltConcepts.adoc[Write Stream Design] for a detailed comparison of the two approaches.
 
 Capy's concepts form a refinement hierarchy that emerged naturally from use-case-first design:
 
@@ -192,7 +192,7 @@ Traditional approaches to type erasure in Asio focus on the lowest-level element
 
 Capy type-erases the stream itself. This is possible because coroutines provide structural type erasure — the continuation is always a handle, not a template parameter. When the library is coroutines-only, one virtual call per I/O operation is the total cost. The completion handler, executor, and allocator do not need individual erasure because they are not part of the stream's operation signature.
 
-Cobalt defines stream abstractions (`write_stream`, `read_stream`, `stream`) as abstract base classes in `cobalt/io/stream.hpp`, taking a different approach from Capy's concept + type-erased wrapper model. See xref:8.design/8m.WhyNotCobaltConcepts.adoc[Write Stream Design] for a side-by-side analysis.
+Cobalt defines stream abstractions (`write_stream`, `read_stream`, `stream`) as abstract base classes in `cobalt/io/stream.hpp`, taking a different approach from Capy's concept + type-erased wrapper model. See xref:8.design/8n.WhyNotCobaltConcepts.adoc[Write Stream Design] for a side-by-side analysis.
 
 The wrappers compose. `any_buffer_source` also satisfies `ReadSource` — natively if the wrapped type supports both, synthesized otherwise. `any_buffer_sink` also satisfies `WriteSink`. You pick the abstraction level you need.
 
@@ -245,7 +245,7 @@ This is how the Dimovian Ideal is mechanically achieved.
 
 == Mock Streams and Testability
 
-When algorithms operate on type-erased interfaces, testing becomes deterministic. Capy provides mock implementations for every stream concept. Cobalt defines stream abstractions as abstract base classes but does not provide mock implementations for testing. See xref:8.design/8m.WhyNotCobaltConcepts.adoc[Write Stream Design] for a comparison of the two stream designs.
+When algorithms operate on type-erased interfaces, testing becomes deterministic. Capy provides mock implementations for every stream concept. Cobalt defines stream abstractions as abstract base classes but does not provide mock implementations for testing. See xref:8.design/8n.WhyNotCobaltConcepts.adoc[Write Stream Design] for a comparison of the two stream designs.
 
 Capy's mock types:
 

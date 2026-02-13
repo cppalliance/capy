@@ -1,0 +1,388 @@
+= BufferSource Concept Design
+
+== Overview
+
+This document describes the design of the `BufferSource` concept, the rationale behind each member function, and the relationship between `BufferSource`, `ReadSource`, and the `push_to` algorithm. `BufferSource` models the "callee owns buffers" pattern on the read side: the source exposes its internal storage as read-only buffers and the caller consumes data directly from them, enabling zero-copy data transfer.
+
+Where `ReadSource` requires the caller to supply mutable buffers for the source to fill, `BufferSource` inverts the ownership: the source provides read-only views into its own memory and the caller reads from them in place. The two concepts are independent -- neither refines the other -- but the type-erased wrapper `any_buffer_source` satisfies both, bridging the two patterns behind a single runtime interface.
+
+== Concept Definition
+
+[source,cpp]
+----
+template<typename T>
+concept BufferSource =
+    requires(T& src, std::span<const_buffer> dest, std::size_t n)
+    {
+        { src.pull(dest) } -> IoAwaitable;
+        requires awaitable_decomposes_to<
+            decltype(src.pull(dest)),
+            std::error_code, std::span<const_buffer>>;
+        src.consume(n);
+    };
+----
+
+`BufferSource` is a standalone concept. It does not refine `ReadSource` or `ReadStream`. The two concept families model different ownership patterns and can coexist on the same concrete type.
+
+== Caller vs Callee Buffer Ownership
+
+The library provides two concept families for reading data:
+
+[cols="1,2,2"]
+|===
+| Aspect | ReadSource (caller owns) | BufferSource (callee owns)
+
+| Buffer origin
+| Caller allocates mutable buffers; source fills them.
+| Source exposes its internal storage as read-only buffers; caller reads
+  from them.
+
+| Copy cost
+| One copy: source's internal storage -> caller's buffer.
+| Zero copies when the caller can process data in place (e.g., scanning,
+  hashing, forwarding to a `write_some` call).
+
+| API shape
+| `read_some(buffers)`, `read(buffers)`
+| `pull(dest)`, `consume(n)`
+
+| Natural for
+| Callers that need to accumulate data into their own buffer (e.g.,
+  parsing a fixed-size header into a struct).
+| Sources backed by pre-existing memory (ring buffers, memory-mapped
+  files, decompression output buffers, kernel receive buffers).
+|===
+
+Both patterns are necessary. A memory-mapped file source naturally owns the mapped region; the caller reads directly from the mapped pages without copying. Conversely, an application that needs to fill a fixed-size header struct naturally provides its own mutable buffer for the source to fill.
+
+== Member Functions
+
+=== `pull(dest)` -- Expose Readable Buffers
+
+Fills the provided span with const buffer descriptors pointing to the source's internal storage. This operation is asynchronous because the source may need to perform I/O to produce data (e.g., reading from a socket, decompressing a block).
+
+==== Signature
+
+[source,cpp]
+----
+IoAwaitable auto pull(std::span<const_buffer> dest);
+----
+
+Returns `(error_code, std::span<const_buffer>)`.
+
+==== Semantics
+
+- **Data available**: `!ec` and `bufs.size() > 0`. The returned span contains buffer descriptors pointing to readable data in the source's internal storage.
+- **Source exhausted**: `ec == cond::eof` and `bufs.empty()`. No more data is available; the transfer is complete.
+- **Error**: `ec` is `true` and `ec != cond::eof`. An error occurred.
+
+Calling `pull` multiple times without an intervening `consume` returns the same unconsumed data. This idempotency lets the caller inspect the data, decide how much to process, and then advance the position with `consume`.
+
+==== Why Asynchronous
+
+Unlike `BufferSink::prepare`, which is synchronous, `pull` is asynchronous. The asymmetry exists because the two operations have fundamentally different costs:
+
+- `prepare` returns pointers to _empty_ memory the sink already owns. No data movement is involved; it is pure bookkeeping.
+- `pull` may need to _produce_ data before it can return buffer descriptors. A file source reads from disk. A decompression source feeds compressed input to the decompressor. A network source waits for data to arrive on a socket. These operations require I/O.
+
+Making `pull` synchronous would force the source to pre-buffer all data before the caller can begin consuming it, defeating the streaming model.
+
+==== Why a Span Parameter
+
+The caller provides the output span rather than the source returning a fixed-size container. This lets the caller control the stack allocation and avoids heap allocation for the buffer descriptor array:
+
+[source,cpp]
+----
+const_buffer arr[16];
+auto [ec, bufs] = co_await source.pull(arr);
+----
+
+The source fills as many descriptors as it can (up to `dest.size()`) and returns the populated subspan.
+
+=== `consume(n)` -- Advance the Read Position
+
+Advances the source's internal read position by `n` bytes. The next call to `pull` returns data starting after the consumed bytes. This operation is synchronous.
+
+==== Signature
+
+[source,cpp]
+----
+void consume(std::size_t n) noexcept;
+----
+
+==== Semantics
+
+- Advances the read position by `n` bytes.
+- `n` must not exceed the total size of the buffers returned by the most recent `pull`.
+- After `consume`, the buffers returned by the prior `pull` are invalidated. The caller must call `pull` again to obtain new buffer descriptors.
+
+==== Why Synchronous
+
+`consume` is synchronous because it is pure bookkeeping: advancing an offset or releasing a reference. No I/O is involved. The asynchronous work (producing data, performing I/O) happens in `pull`.
+
+==== Why Separate from `pull`
+
+Separating `consume` from `pull` gives the caller explicit control over how much data to process before advancing:
+
+[source,cpp]
+----
+const_buffer arr[16];
+auto [ec, bufs] = co_await source.pull(arr);
+if(!ec)
+{
+    // Process some of the data
+    auto n = process(bufs);
+    source.consume(n);
+    // Remaining data returned by next pull
+}
+----
+
+This is essential for partial processing. A parser may examine the pulled data, find that it contains an incomplete message, and consume only the complete portion. The next `pull` returns the remainder prepended to any newly available data.
+
+If `pull` automatically consumed all returned data, the caller would need to buffer unconsumed bytes itself, defeating the zero-copy benefit.
+
+== The Pull/Consume Protocol
+
+The `pull` and `consume` functions form a two-phase read protocol:
+
+1. **Pull**: the source provides data (async, may involve I/O).
+2. **Inspect**: the caller examines the returned buffers.
+3. **Consume**: the caller indicates how many bytes were used (sync).
+4. **Repeat**: the next `pull` returns data starting after the consumed bytes.
+
+This protocol enables several patterns that a single-call interface cannot:
+
+- **Partial consumption**: consume less than what was pulled. The remainder is returned by the next `pull`.
+- **Peek**: call `pull` to inspect data without consuming it. Call `pull` again (without `consume`) to get the same data.
+- **Scatter writes**: pull once, write the returned buffers to multiple destinations (e.g., `write_some` to a socket), and consume only the bytes that were successfully written.
+
+== Relationship to `push_to`
+
+`push_to` is a composed algorithm that transfers data from a `BufferSource` to a `WriteSink` (or `WriteStream`). It is the callee-owns-buffers counterpart to `pull_from`, which transfers from a `ReadSource` (or `ReadStream`) to a `BufferSink`.
+
+[source,cpp]
+----
+template<BufferSource Src, WriteSink Sink>
+io_task<std::size_t>
+push_to(Src& source, Sink& sink);
+
+template<BufferSource Src, WriteStream Stream>
+io_task<std::size_t>
+push_to(Src& source, Stream& stream);
+----
+
+The algorithm loops:
+
+1. Call `source.pull(arr)` to get readable buffers.
+2. Write the data to the sink via `sink.write(bufs)` or `stream.write_some(bufs)`.
+3. Call `source.consume(n)` to advance past the written bytes.
+4. When `pull` signals EOF, call `sink.write_eof()` to finalize the sink (WriteSink overload only).
+
+The two `push_to` overloads differ in how they write to the destination:
+
+[cols="1,2"]
+|===
+| Overload | Behavior
+
+| `push_to(BufferSource, WriteSink)`
+| Uses `sink.write(bufs)` for complete writes. Each iteration delivers
+  all pulled data. On EOF, calls `sink.write_eof()` to finalize.
+
+| `push_to(BufferSource, WriteStream)`
+| Uses `stream.write_some(bufs)` for partial writes. Consumes only the
+  bytes that were actually written, providing backpressure. Does not
+  signal EOF (WriteStream has no EOF mechanism).
+|===
+
+`push_to` is the right tool when the data source satisfies `BufferSource` and the destination satisfies `WriteSink` or `WriteStream`. The source's internal buffers are passed directly to the write call, avoiding any intermediate caller-owned buffer.
+
+== Relationship to `ReadSource`
+
+`BufferSource` and `ReadSource` are independent concepts serving different ownership models. A concrete type may satisfy one, the other, or both.
+
+The type-erased wrapper `any_buffer_source` satisfies both concepts. When the wrapped type satisfies only `BufferSource`, the `ReadSource` operations (`read_some`, `read`) are synthesized from `pull` and `consume` with a `buffer_copy` step: the wrapper pulls data from the underlying source, copies it into the caller's mutable buffers, and consumes the copied bytes.
+
+When the wrapped type satisfies both `BufferSource` and `ReadSource`, the native `read_some` and `read` implementations are forwarded directly across the type-erased boundary, avoiding the extra copy. This dispatch is determined at compile time when the vtable is constructed; at runtime the wrapper checks a single nullable function pointer to select the forwarding path.
+
+This dual-concept bridge lets algorithms constrained on `ReadSource` work with any `BufferSource` through `any_buffer_source`, and lets algorithms constrained on `BufferSource` work natively with the callee-owns-buffers pattern.
+
+=== Transfer Algorithm Matrix
+
+[cols="1,1,1"]
+|===
+| Source | Sink | Algorithm
+
+| `BufferSource`
+| `WriteSink`
+| `push_to` -- pulls from source, writes to sink, signals EOF
+
+| `BufferSource`
+| `WriteStream`
+| `push_to` -- pulls from source, writes partial to stream
+
+| `ReadSource`
+| `BufferSink`
+| `pull_from` -- prepares sink buffers, reads into them
+
+| `ReadStream`
+| `BufferSink`
+| `pull_from` -- prepares sink buffers, reads partial into them
+|===
+
+== Use Cases
+
+=== Zero-Copy Transfer to a Socket
+
+When the source's internal storage already contains the data to send, `push_to` passes the source's buffers directly to the socket's `write_some`, avoiding any intermediate copy.
+
+[source,cpp]
+----
+template<BufferSource Source, WriteStream Stream>
+task<> send_all(Source& source, Stream& socket)
+{
+    auto [ec, total] = co_await push_to(source, socket);
+    if(ec)
+        co_return;
+    // total bytes sent directly from source's internal buffers
+}
+----
+
+=== Memory-Mapped File Source
+
+A memory-mapped file is a natural `BufferSource`. The `pull` operation returns buffer descriptors pointing directly into the mapped region. No data is copied until the consumer explicitly copies it.
+
+[source,cpp]
+----
+template<BufferSource Source, WriteSink Sink>
+task<> serve_static_file(Source& mmap_source, Sink& response)
+{
+    auto [ec, total] = co_await push_to(mmap_source, response);
+    if(ec)
+        co_return;
+    // File served via zero-copy from mapped pages
+}
+----
+
+=== Partial Consumption with a Parser
+
+A protocol parser pulls data, parses as much as it can, and consumes only the parsed portion. The next `pull` returns the unparsed remainder plus any newly arrived data.
+
+[source,cpp]
+----
+template<BufferSource Source>
+task<message> parse_message(Source& source)
+{
+    const_buffer arr[16];
+    message msg;
+
+    for(;;)
+    {
+        auto [ec, bufs] = co_await source.pull(arr);
+        if(ec)
+            co_return msg;
+
+        auto [parsed, complete] = msg.parse(bufs);
+        source.consume(parsed);
+
+        if(complete)
+            co_return msg;
+    }
+}
+----
+
+The parser consumes only the bytes it understood. If a message spans two `pull` calls, the unconsumed tail from the first call is returned at the start of the second.
+
+=== HTTP Request Body Source
+
+An HTTP request body can be exposed through a `BufferSource` interface. The concrete implementation handles transfer encoding (content-length, chunked, compressed) behind the abstraction.
+
+[source,cpp]
+----
+task<> handle_request(
+    any_buffer_source& body,
+    WriteSink auto& response)
+{
+    auto [ec, total] = co_await push_to(body, response);
+    if(ec)
+        co_return;
+    // Request body forwarded to response sink
+}
+----
+
+The caller does not know whether the body uses content-length, chunked encoding, or compression. The `BufferSource` interface handles the difference.
+
+=== Bridging to ReadSource via `any_buffer_source`
+
+When a function is constrained on `ReadSource` but the concrete type satisfies only `BufferSource`, `any_buffer_source` bridges the gap.
+
+[source,cpp]
+----
+template<ReadSource Source>
+task<std::string> read_all(Source& source);
+
+// Concrete type satisfies BufferSource only
+my_ring_buffer ring;
+any_buffer_source abs(ring);
+
+// Works: any_buffer_source satisfies ReadSource
+auto data = co_await read_all(abs);
+----
+
+The `read_some` and `read` methods pull data internally, copy it into the caller's mutable buffers, and consume the copied bytes. This incurs one buffer copy compared to using `pull` and `consume` directly.
+
+== Alternatives Considered
+
+=== Single `pull` That Auto-Consumes
+
+An earlier design had `pull` automatically consume all returned data, eliminating the separate `consume` call. This was rejected because:
+
+- Partial consumption becomes impossible. A parser that finds an incomplete message at the end of a pull would need to buffer the remainder itself, negating the zero-copy benefit.
+- Peek semantics (inspecting data without consuming it) require the source to maintain a separate undo mechanism.
+- The `WriteStream::write_some` pattern naturally consumes only `n` bytes, so the remaining pulled data must survive for the next `write_some` call. Without `consume`, the source would need to track how much of its own returned data was actually used.
+
+=== `pull` Returning an Owned Container
+
+A design where `pull` returned a `std::vector<const_buffer>` or similar owned container was considered. This was rejected because:
+
+- Heap allocation on every pull is unacceptable for high-throughput I/O paths.
+- The span-based interface lets the caller control storage: a stack-allocated array for the common case, or a heap-allocated array for unusual situations.
+- Returning a subspan of the caller's span is zero-overhead and composes naturally with existing buffer algorithm interfaces.
+
+=== Synchronous `pull`
+
+Making `pull` synchronous (like `BufferSink::prepare`) was considered. This was rejected because:
+
+- A source may need to perform I/O to produce data. A file source reads from disk. A decompression source feeds compressed input to the decompressor. A network source waits for data to arrive.
+- Forcing synchronous `pull` would require the source to pre-buffer all data before the caller starts consuming, breaking the streaming model and inflating memory usage.
+- The asymmetry with `prepare` is intentional: `prepare` returns pointers to empty memory (no I/O needed), while `pull` returns pointers to data that may need to be produced first.
+
+=== `BufferSource` Refining `ReadSource`
+
+A design where `BufferSource` refined `ReadSource` (requiring all types to implement `read_some` and `read`) was considered. This was rejected because:
+
+- Many natural `BufferSource` types (memory-mapped files, ring buffers, DMA receive descriptors) have no meaningful `read_some` primitive. Their data path is pull-then-consume, not read-into-caller-buffer.
+- Requiring `read_some` and `read` on every `BufferSource` would force implementations to synthesize these operations even when they are never called.
+- The `any_buffer_source` wrapper provides the bridge when needed, without burdening every concrete type.
+
+=== Combined Pull-and-Consume
+
+A design with a single `read(dest) -> (error_code, span)` that both pulled and advanced the position was considered. This is equivalent to the auto-consume alternative above and was rejected for the same reasons: it prevents partial consumption and peek semantics.
+
+== Summary
+
+[cols="1,2,2"]
+|===
+| Function | Contract | Use Case
+
+| `pull(dest)`
+| Async. Fills span with readable buffer descriptors from the source's
+  internal storage. Returns EOF when exhausted.
+| Every read iteration: obtain data to process or forward.
+
+| `consume(n)`
+| Sync. Advances the read position by `n` bytes. Invalidates prior
+  buffers.
+| After processing or forwarding data: indicate how much was used.
+|===
+
+`BufferSource` is the callee-owns-buffers counterpart to `ReadSource`. The `push_to` algorithm transfers data from a `BufferSource` to a `WriteSink` or `WriteStream`, and `any_buffer_source` bridges the two patterns by satisfying both `BufferSource` and `ReadSource` behind a single type-erased interface.

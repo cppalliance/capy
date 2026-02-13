@@ -2,20 +2,13 @@
 
 == Overview
 
-The `any_*` wrappers type-erase stream and source concepts so that
-algorithms can operate on heterogeneous concrete types through a
-uniform interface. Each wrapper preallocates storage for the
-type-erased awaitable at construction time, achieving zero
-steady-state allocation.
+The `any_*` wrappers type-erase stream and source concepts so that algorithms can operate on heterogeneous concrete types through a uniform interface. Each wrapper preallocates storage for the type-erased awaitable at construction time, achieving zero steady-state allocation.
 
-Two vtable layouts are used depending on how many operations the
-wrapper exposes.
+Two vtable layouts are used depending on how many operations the wrapper exposes.
 
 == Single-Operation: Flat Vtable
 
-When a wrapper exposes exactly one async operation (e.g.
-`any_read_stream` with `read_some`, or `any_write_stream` with
-`write_some`), all function pointers live in a single flat vtable:
+When a wrapper exposes exactly one async operation (e.g. `any_read_stream` with `read_some`, or `any_write_stream` with `write_some`), all function pointers live in a single flat vtable:
 
 [source,cpp]
 ----
@@ -33,14 +26,11 @@ struct vtable
 };
 ----
 
-The inner awaitable can be constructed in either `await_ready` or
-`await_suspend`, depending on whether the outer awaitable has a
-short-circuit path.
+The inner awaitable can be constructed in either `await_ready` or `await_suspend`, depending on whether the outer awaitable has a short-circuit path.
 
 === Construct in await_ready (any_read_stream)
 
-When there is no outer short-circuit, constructing in `await_ready`
-lets immediate completions skip `await_suspend` entirely:
+When there is no outer short-circuit, constructing in `await_ready` lets immediate completions skip `await_suspend` entirely:
 
 [source,cpp]
 ----
@@ -64,9 +54,7 @@ io_result<size_t> await_resume() {
 
 === Construct in await_suspend (any_write_stream)
 
-When the outer awaitable has a short-circuit (empty buffers),
-construction is deferred to `await_suspend` so the inner awaitable
-is never created on the fast path:
+When the outer awaitable has a short-circuit (empty buffers), construction is deferred to `await_suspend` so the inner awaitable is never created on the fast path:
 
 [source,cpp]
 ----
@@ -96,13 +84,7 @@ Both variants touch the same two cache lines on the hot path.
 
 == Multi-Operation: Split Vtable with awaitable_ops
 
-When a wrapper exposes multiple operations that produce different
-awaitable types (e.g. `any_read_source` with `read_some` and
-`read`, or `any_write_sink` with `write_some`, `write`,
-`write_eof(buffers)`, and `write_eof()`), a split layout is
-required. Each `construct` call returns a pointer to a
-`static constexpr awaitable_ops` matching the awaitable it
-created.
+When a wrapper exposes multiple operations that produce different awaitable types (e.g. `any_read_source` with `read_some` and `read`, or `any_write_sink` with `write_some`, `write`, `write_eof(buffers)`, and `write_eof()`), a split layout is required. Each `construct` call returns a pointer to a `static constexpr awaitable_ops` matching the awaitable it created.
 
 [source,cpp]
 ----
@@ -125,9 +107,7 @@ struct vtable
 };
 ----
 
-The inner awaitable is constructed in `await_suspend`. Outer
-`await_ready` handles short-circuits (e.g. empty buffers) before
-the inner type is ever created:
+The inner awaitable is constructed in `await_suspend`. Outer `await_ready` handles short-circuits (e.g. empty buffers) before the inner type is ever created:
 
 [source,cpp]
 ----
@@ -169,10 +149,7 @@ Split (any_read_source, any_write_sink):  3 cache lines
                          (separate .rodata address, defeats spatial prefetch)
 ----
 
-The flat layout keeps all per-awaitable function pointers adjacent
-to `construct_awaitable` in a single 64-byte structure. The split
-layout places `vtable` and `awaitable_ops` at unrelated addresses
-in `.rodata`, adding one cache miss on the hot path.
+The flat layout keeps all per-awaitable function pointers adjacent to `construct_awaitable` in a single 64-byte structure. The split layout places `vtable` and `awaitable_ops` at unrelated addresses in `.rodata`, adding one cache miss on the hot path.
 
 == When to Use Which
 
@@ -192,11 +169,4 @@ in `.rodata`, adding one cache miss on the hot path.
 
 == Why the Flat Layout Cannot Scale
 
-With multiple operations, each `construct` call produces a
-different concrete awaitable type. The per-awaitable function
-pointers (`await_ready`, `await_suspend`, `await_resume`,
-`destroy`) must match the type that was constructed. The split
-layout solves this by returning the correct `awaitable_ops const*`
-from each `construct` call. The flat layout would require
-duplicating all four function pointers in the vtable for every
-operation -- workable for two operations, unwieldy for four.
+With multiple operations, each `construct` call produces a different concrete awaitable type. The per-awaitable function pointers (`await_ready`, `await_suspend`, `await_resume`, `destroy`) must match the type that was constructed. The split layout solves this by returning the correct `awaitable_ops const*` from each `construct` call. The flat layout would require duplicating all four function pointers in the vtable for every operation -- workable for two operations, unwieldy for four.

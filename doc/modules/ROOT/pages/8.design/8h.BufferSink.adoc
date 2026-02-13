@@ -1,0 +1,434 @@
+= BufferSink Concept Design
+
+== Overview
+
+This document describes the design of the `BufferSink` concept, the rationale behind each member function, and the relationship between `BufferSink`, `WriteSink`, and the `pull_from` algorithm. `BufferSink` models the "callee owns buffers" pattern: the sink provides writable memory and the caller writes directly into it, enabling zero-copy data transfer.
+
+Where `WriteSink` requires the caller to supply buffer sequences containing the data to be written, `BufferSink` inverts the ownership: the sink exposes its internal storage and the caller fills it in place. The two concepts are independent -- neither refines the other -- but the type-erased wrapper `any_buffer_sink` satisfies both, bridging the two patterns behind a single runtime interface.
+
+== Concept Definition
+
+[source,cpp]
+----
+template<typename T>
+concept BufferSink =
+    requires(T& sink, std::span<mutable_buffer> dest, std::size_t n)
+    {
+        // Synchronous: get writable buffers from sink's internal storage
+        { sink.prepare(dest) } -> std::same_as<std::span<mutable_buffer>>;
+
+        // Async: commit n bytes written
+        { sink.commit(n) } -> IoAwaitable;
+        requires awaitable_decomposes_to<
+            decltype(sink.commit(n)),
+            std::error_code>;
+
+        // Async: commit n final bytes and signal end of data
+        { sink.commit_eof(n) } -> IoAwaitable;
+        requires awaitable_decomposes_to<
+            decltype(sink.commit_eof(n)),
+            std::error_code>;
+    };
+----
+
+`BufferSink` is a standalone concept. It does not refine `WriteSink` or `WriteStream`. The two concept families model different ownership patterns and can coexist on the same concrete type.
+
+== Caller vs Callee Buffer Ownership
+
+The library provides two concept families for writing data:
+
+[cols="1,2,2"]
+|===
+| Aspect | WriteSink (caller owns) | BufferSink (callee owns)
+
+| Buffer origin
+| Caller allocates and fills buffers, then passes them to the sink.
+| Sink exposes its internal storage; caller writes into it.
+
+| Copy cost
+| One copy: caller's buffer -> sink's internal storage (or I/O submission).
+| Zero copies when the sink's internal storage is the final destination
+  (e.g., a ring buffer, kernel page, or DMA region).
+
+| API shape
+| `write_some(buffers)`, `write(buffers)`, `write_eof(buffers)`
+| `prepare(dest)`, `commit(n)`, `commit_eof(n)`
+
+| Natural for
+| Protocol serializers that produce data into their own buffers, then hand
+  it off.
+| Sinks backed by pre-allocated memory (ring buffers, memory-mapped files,
+  hardware DMA descriptors).
+|===
+
+Both patterns are necessary. A compression sink, for example, naturally owns the output buffer where compressed data lands; the caller feeds uncompressed data and the compressor writes results directly into the ring buffer. Conversely, an HTTP serializer naturally produces header bytes into its own scratch space and then hands the buffer sequence to a `WriteSink`.
+
+== Member Functions
+
+=== `prepare(dest)` -- Expose Writable Buffers
+
+Fills the provided span with mutable buffer descriptors pointing to the sink's internal storage. This operation is synchronous.
+
+==== Signature
+
+[source,cpp]
+----
+std::span<mutable_buffer> prepare(std::span<mutable_buffer> dest);
+----
+
+==== Semantics
+
+- Returns a (possibly empty) subspan of `dest` populated with buffer descriptors. Each descriptor points to a writable region of the sink's internal storage.
+- If the returned span is empty, the sink has no available space. The caller should call `commit` (possibly with `n == 0`) to flush buffered data and then retry `prepare`.
+- The returned buffers remain valid until the next call to `prepare`, `commit`, `commit_eof`, or until the sink is destroyed.
+
+==== Why Synchronous
+
+`prepare` is synchronous because it is a bookkeeping operation: the sink returns pointers into memory it already owns. No I/O or blocking is involved. Making `prepare` asynchronous would force a coroutine suspension on every iteration of the write loop, adding overhead with no benefit.
+
+When the sink has no available space, the correct response is to `commit` the pending data (which _is_ asynchronous, as it may trigger I/O), then call `prepare` again. This keeps the synchronous fast path free of unnecessary suspensions.
+
+==== Why a Span Parameter
+
+The caller provides the output span rather than the sink returning a fixed-size container. This lets the caller control the stack allocation and avoids heap allocation for the buffer descriptor array:
+
+[source,cpp]
+----
+mutable_buffer arr[16];
+auto bufs = sink.prepare(arr);
+----
+
+The sink fills as many descriptors as it can (up to `dest.size()`) and returns the populated subspan.
+
+=== `commit(n)` -- Finalize Written Data
+
+Commits `n` bytes that the caller wrote into the buffers returned by the most recent `prepare`. Returns `(error_code)`.
+
+==== Semantics
+
+- On success: `!ec`.
+- On error: `ec`.
+- May trigger underlying I/O (flush to socket, compression pass, etc.).
+- After `commit`, the buffers returned by the prior `prepare` are invalidated. The caller must call `prepare` again before writing more data.
+
+==== When to Use
+
+- After writing data into prepared buffers and needing to continue the transfer.
+- To flush when `prepare` returns an empty span (call `commit(0)` to drain the sink's internal buffer and free space).
+
+=== `commit_eof(n)` -- Commit Final Data and Signal EOF
+
+Commits `n` bytes written to the most recent `prepare` buffers and signals end-of-stream. Returns `(error_code)`.
+
+After a successful call, no further `prepare`, `commit`, or `commit_eof` operations are permitted.
+
+==== Semantics
+
+- On success: `!ec`. The sink is finalized.
+- On error: `ec`. The sink state is unspecified.
+
+==== Why `commit_eof` Takes a Byte Count
+
+Combining the final commit with the EOF signal in a single operation enables the same optimizations that motivate `write_eof(buffers)` on the `WriteSink` side:
+
+- **HTTP chunked encoding**: `commit_eof(n)` can emit the data chunk followed by the terminal `0\r\n\r\n` in a single system call.
+- **Compression (deflate)**: `commit_eof(n)` can pass `Z_FINISH` to the final `deflate()` call, producing the compressed data and the stream trailer together.
+- **TLS close-notify**: `commit_eof(n)` can coalesce the final application data with the TLS close-notify alert.
+
+A separate `commit(n)` followed by `commit_eof(0)` would prevent these optimizations because the sink cannot know during `commit` that no more data will follow.
+
+== Relationship to `pull_from`
+
+`pull_from` is a composed algorithm that transfers data from a `ReadSource` (or `ReadStream`) into a `BufferSink`. It is the callee-owns-buffers counterpart to `push_to`, which transfers from a `BufferSource` to a `WriteSink`.
+
+[source,cpp]
+----
+template<ReadSource Src, BufferSink Sink>
+io_task<std::size_t>
+pull_from(Src& source, Sink& sink);
+
+template<ReadStream Src, BufferSink Sink>
+io_task<std::size_t>
+pull_from(Src& source, Sink& sink);
+----
+
+The algorithm loops:
+
+1. Call `sink.prepare(arr)` to get writable buffers.
+2. Call `source.read(bufs)` (or `source.read_some(bufs)`) to fill them.
+3. Call `sink.commit(n)` to finalize the data.
+4. When the source signals EOF, call `sink.commit_eof(0)` to finalize the sink.
+
+`pull_from` is the right tool when the data source satisfies `ReadSource` or `ReadStream` and the destination satisfies `BufferSink`. It avoids the intermediate caller-owned buffer that a `WriteSink`-based transfer would require.
+
+The two `pull_from` overloads differ in how they read from the source:
+
+[cols="1,2"]
+|===
+| Overload | Behavior
+
+| `pull_from(ReadSource, BufferSink)`
+| Uses `source.read(bufs)` for complete reads. Each iteration fills the
+  prepared buffers entirely (or returns EOF/error).
+
+| `pull_from(ReadStream, BufferSink)`
+| Uses `source.read_some(bufs)` for partial reads. Each iteration
+  commits whatever data was available, providing lower latency.
+|===
+
+== Relationship to `WriteSink`
+
+`BufferSink` and `WriteSink` are independent concepts serving different ownership models. A concrete type may satisfy one, the other, or both.
+
+The type-erased wrapper `any_buffer_sink` satisfies both concepts. When the wrapped type satisfies only `BufferSink`, the `WriteSink` operations (`write_some`, `write`, `write_eof`) are synthesized from `prepare` and `commit` with a `buffer_copy` step. When the wrapped type satisfies both `BufferSink` and `WriteSink`, the native write operations are forwarded directly through the virtual boundary with no extra copy.
+
+This dual-concept bridge lets algorithms constrained on `WriteSink` work with any `BufferSink` through `any_buffer_sink`, and lets algorithms constrained on `BufferSink` work natively with the callee-owns-buffers pattern.
+
+=== Transfer Algorithm Matrix
+
+[cols="1,1,1"]
+|===
+| Source | Sink | Algorithm
+
+| `BufferSource`
+| `WriteSink`
+| `push_to` -- pulls from source, writes to sink
+
+| `BufferSource`
+| `WriteStream`
+| `push_to` -- pulls from source, writes partial to stream
+
+| `ReadSource`
+| `BufferSink`
+| `pull_from` -- prepares sink buffers, reads into them
+
+| `ReadStream`
+| `BufferSink`
+| `pull_from` -- prepares sink buffers, reads partial into them
+|===
+
+== Use Cases
+
+=== Zero-Copy Transfer
+
+When the sink's internal storage is the final destination (a ring buffer, a kernel page, a DMA region), the caller writes directly into it with no intermediate copy.
+
+[source,cpp]
+----
+template<BufferSink Sink>
+task<> fill_sink(Sink& sink, std::string_view data)
+{
+    std::size_t written = 0;
+    while(written < data.size())
+    {
+        mutable_buffer arr[16];
+        auto bufs = sink.prepare(arr);
+        if(bufs.empty())
+        {
+            auto [ec] = co_await sink.commit(0);
+            if(ec)
+                co_return;
+            continue;
+        }
+
+        std::size_t n = buffer_copy(
+            bufs,
+            const_buffer(
+                data.data() + written,
+                data.size() - written));
+        written += n;
+
+        if(written == data.size())
+        {
+            auto [ec] = co_await sink.commit_eof(n);
+            if(ec)
+                co_return;
+        }
+        else
+        {
+            auto [ec] = co_await sink.commit(n);
+            if(ec)
+                co_return;
+        }
+    }
+}
+----
+
+=== Transferring from a ReadSource
+
+The `pull_from` algorithm reads data directly into the sink's buffers, avoiding a caller-owned intermediate buffer entirely.
+
+[source,cpp]
+----
+template<ReadSource Source, BufferSink Sink>
+task<> transfer(Source& source, Sink& sink)
+{
+    auto [ec, total] = co_await pull_from(source, sink);
+    if(ec)
+        co_return;
+    // total bytes transferred with zero intermediate copies
+}
+----
+
+Compare with the `WriteSink` approach, which requires an intermediate buffer:
+
+[source,cpp]
+----
+template<ReadStream Source, WriteSink Sink>
+task<> transfer(Source& source, Sink& sink)
+{
+    char buf[8192];  // intermediate buffer
+    for(;;)
+    {
+        auto [ec, n] = co_await source.read_some(
+            mutable_buffer(buf));
+        if(ec == cond::eof)
+        {
+            auto [wec] = co_await sink.write_eof();
+            co_return;
+        }
+        if(ec)
+            co_return;
+        auto [wec, nw] = co_await sink.write(
+            const_buffer(buf, n));
+        if(wec)
+            co_return;
+    }
+}
+----
+
+The `BufferSink` path eliminates the `buf[8192]` intermediate buffer.
+
+=== HTTP Response Body Sink
+
+An HTTP response body can be consumed through a `BufferSink` interface. The concrete implementation handles transfer encoding behind the abstraction.
+
+[source,cpp]
+----
+task<> receive_body(
+    any_buffer_sink& body,
+    ReadSource auto& source)
+{
+    auto [ec, n] = co_await pull_from(source, body);
+    if(ec)
+        co_return;
+    // Body fully received and committed
+}
+----
+
+The caller does not know whether the body uses content-length, chunked encoding, or compression. The `BufferSink` interface handles the difference.
+
+=== Compression Pipeline
+
+A compression sink owns an output ring buffer where compressed data lands. The caller writes uncompressed data into prepared buffers, and `commit` triggers a compression pass.
+
+[source,cpp]
+----
+template<BufferSink Sink>
+task<> compress_input(Sink& sink, std::span<const char> input)
+{
+    std::size_t pos = 0;
+    while(pos < input.size())
+    {
+        mutable_buffer arr[16];
+        auto bufs = sink.prepare(arr);
+        if(bufs.empty())
+        {
+            auto [ec] = co_await sink.commit(0);
+            if(ec)
+                co_return;
+            continue;
+        }
+
+        std::size_t n = buffer_copy(
+            bufs,
+            const_buffer(input.data() + pos,
+                         input.size() - pos));
+        pos += n;
+
+        auto [ec] = co_await sink.commit(n);
+        if(ec)
+            co_return;
+    }
+    auto [ec] = co_await sink.commit_eof(0);
+    if(ec)
+        co_return;
+}
+----
+
+The `commit_eof(0)` call lets the compression sink pass `Z_FINISH` to the final deflate call, flushing the compressed stream trailer.
+
+=== Bridging to WriteSink via `any_buffer_sink`
+
+When a function is constrained on `WriteSink` but the concrete type satisfies only `BufferSink`, `any_buffer_sink` bridges the gap.
+
+[source,cpp]
+----
+template<WriteSink Sink>
+task<> send_message(Sink& sink, std::string_view msg);
+
+// Concrete type satisfies BufferSink only
+my_ring_buffer ring;
+any_buffer_sink abs(ring);
+
+// Works: any_buffer_sink satisfies WriteSink
+co_await send_message(abs, "hello");
+----
+
+When the wrapped type also satisfies `WriteSink`, `any_buffer_sink` forwards the native write operations directly, avoiding the synthesized `prepare` + `buffer_copy` + `commit` path.
+
+== Alternatives Considered
+
+=== Combined Prepare-and-Commit
+
+An alternative design combined the prepare and commit steps into a single asynchronous operation: `write(dest) -> (error_code, span)`, where the sink returns writable buffers and the commit happens on the next call. This was rejected because:
+
+- The synchronous `prepare` is a pure bookkeeping operation. Making it asynchronous forces a coroutine suspension on every iteration, even when the sink has space available.
+- Separating `prepare` from `commit` lets the caller fill multiple prepared buffers before incurring the cost of an asynchronous commit.
+- The two-step protocol makes the buffer lifetime explicit: buffers from `prepare` are valid until `commit` or `commit_eof`.
+
+=== `prepare` Returning a Count Instead of a Span
+
+An earlier design had `prepare` fill a raw pointer array and return a count (`std::size_t prepare(mutable_buffer* arr, std::size_t max)`). This was replaced by the span-based interface because:
+
+- `std::span<mutable_buffer>` is self-describing: it carries both the pointer and the size, eliminating a class of off-by-one errors.
+- Returning a subspan of the input span is idiomatic {cpp} and composes well with range-based code.
+- The raw-pointer interface required two parameters (pointer + count) where the span interface requires one.
+
+=== Separate `flush` Operation
+
+A design with an explicit `flush` method (distinct from `commit`) was considered, where `commit` would only buffer data and `flush` would trigger I/O. This was rejected because:
+
+- It adds a fourth operation to the concept without clear benefit. The `commit` operation already serves both roles: it finalizes the caller's data and may trigger I/O at the sink's discretion.
+- A sink that wants to defer I/O can do so internally by accumulating committed data and flushing when its buffer is full. The caller does not need to know when physical I/O occurs.
+- Adding `flush` would complicate the `pull_from` algorithm, which would need to decide when to call `flush` versus `commit`.
+
+=== `BufferSink` Refining `WriteSink`
+
+A design where `BufferSink` refined `WriteSink` (requiring all types to implement both interfaces) was considered. This was rejected because:
+
+- Many natural `BufferSink` types (ring buffers, DMA descriptors) have no meaningful `write_some` primitive. Their data path is prepare-then-commit, not write-from-caller-buffer.
+- Requiring `write_some`, `write`, and `write_eof` on every `BufferSink` would force implementations to synthesize these operations even when they are never called.
+- The `any_buffer_sink` wrapper provides the bridge when needed, without burdening every concrete type.
+
+== Summary
+
+[cols="1,2,2"]
+|===
+| Function | Contract | Use Case
+
+| `prepare(dest)`
+| Synchronous. Fills span with writable buffer descriptors from the
+  sink's internal storage. Returns empty span if no space is available.
+| Every write iteration: obtain writable memory before filling it.
+
+| `commit(n)`
+| Async. Commits `n` bytes to the sink. May trigger I/O.
+| Interior iterations of a transfer loop.
+
+| `commit_eof(n)`
+| Async. Commits `n` bytes and signals end-of-stream. Finalizes the sink.
+| Final iteration: deliver last data and close the stream.
+|===
+
+`BufferSink` is the callee-owns-buffers counterpart to `WriteSink`. The `pull_from` algorithm transfers data from a `ReadSource` or `ReadStream` into a `BufferSink`, and `any_buffer_sink` bridges the two patterns by satisfying both `BufferSink` and `WriteSink` behind a single type-erased interface.
