@@ -13,6 +13,7 @@
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_task.hpp>
+#include <boost/capy/test/run_blocking.hpp>
 
 #include "test/unit/test_helpers.hpp"
 
@@ -24,37 +25,6 @@ namespace capy {
 static_assert(IoAwaitable<immediate<int>>);
 static_assert(IoAwaitable<immediate<io_result<>>>);
 static_assert(IoAwaitable<immediate<io_result<std::size_t>>>);
-
-namespace {
-
-/** Run a task to completion by manually stepping through it.
-*/
-template<class T>
-T run_task(task<T> t)
-{
-    auto h = t.handle();
-    t.release();
-    while (!h.done())
-        h.resume();
-    auto& p = h.promise();
-    if (auto ep = p.exception())
-    {
-        h.destroy();
-        std::rethrow_exception(ep);
-    }
-    if constexpr (!std::is_void_v<T>)
-    {
-        auto result = std::move(*p.result_);
-        h.destroy();
-        return result;
-    }
-    else
-    {
-        h.destroy();
-    }
-}
-
-} // namespace
 
 struct immediate_test
 {
@@ -119,7 +89,8 @@ struct immediate_test
             auto coro = []() -> task<int> {
                 co_return co_await immediate<int>{42};
             };
-            auto result = run_task(coro());
+            int result{};
+            test::run_blocking([&](int v) { result = v; })(coro());
             BOOST_TEST_EQ(result, 42);
         }
 
@@ -128,7 +99,8 @@ struct immediate_test
             auto coro = []() -> io_task<std::size_t> {
                 co_return co_await immediate<io_result<std::size_t>>{{{}, 100}};
             };
-            auto result = run_task(coro());
+            io_result<std::size_t> result{};
+            test::run_blocking([&](io_result<std::size_t> v) { result = v; })(coro());
             BOOST_TEST(!result.ec);
             BOOST_TEST_EQ(result.t1, 100u);
         }
@@ -141,7 +113,8 @@ struct immediate_test
                     co_return 0;
                 co_return n;
             };
-            auto result = run_task(coro());
+            std::size_t result{};
+            test::run_blocking([&](std::size_t v) { result = v; })(coro());
             BOOST_TEST_EQ(result, 50u);
         }
     }
@@ -163,7 +136,9 @@ struct immediate_test
                 auto [ec] = co_await ready();
                 co_return !ec;
             };
-            BOOST_TEST(run_task(coro()));
+            bool result{};
+            test::run_blocking([&](bool v) { result = v; })(coro());
+            BOOST_TEST(result);
         }
     }
 
@@ -187,7 +162,9 @@ struct immediate_test
                     co_return 0;
                 co_return n;
             };
-            BOOST_TEST_EQ(run_task(coro()), 100u);
+            std::size_t result{};
+            test::run_blocking([&](std::size_t v) { result = v; })(coro());
+            BOOST_TEST_EQ(result, 100u);
         }
     }
 
@@ -212,7 +189,9 @@ struct immediate_test
                     co_return 0.0;
                 co_return a * b;
             };
-            BOOST_TEST_EQ(run_task(coro()), 25.0);
+            double result{};
+            test::run_blocking([&](double v) { result = v; })(coro());
+            BOOST_TEST_EQ(result, 25.0);
         }
     }
 
@@ -238,7 +217,9 @@ struct immediate_test
                     co_return 0;
                 co_return a + b + c;
             };
-            BOOST_TEST_EQ(run_task(coro()), 60);
+            int result{};
+            test::run_blocking([&](int v) { result = v; })(coro());
+            BOOST_TEST_EQ(result, 60);
         }
     }
 
@@ -289,7 +270,9 @@ struct immediate_test
                     co_return 999;
                 co_return n;
             };
-            BOOST_TEST_EQ(run_task(coro()), 999u);
+            std::size_t result{};
+            test::run_blocking([&](std::size_t v) { result = v; })(coro());
+            BOOST_TEST_EQ(result, 999u);
         }
     }
 
@@ -358,7 +341,8 @@ struct immediate_test
                 co_return n1 + n2;
             };
 
-            auto result = run_task(coro());
+            std::size_t result{};
+            test::run_blocking([&](std::size_t v) { result = v; })(coro());
             BOOST_TEST_EQ(result, 30u);
             BOOST_TEST_EQ(parser.total_, 30u);
             BOOST_TEST(parser.is_complete());

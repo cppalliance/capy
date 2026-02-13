@@ -12,6 +12,7 @@
 
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/this_coro.hpp>
+#include <boost/capy/test/run_blocking.hpp>
 
 #include "test_helpers.hpp"
 
@@ -78,43 +79,6 @@ struct tracking_executor
 
 static_assert(Executor<tracking_executor>);
 
-/** Run a task to completion by manually stepping through it.
-
-    Takes ownership of the task via release() and runs until done.
-*/
-template<class T>
-T run_task(task<T> t)
-{
-    auto h = t.handle();
-    t.release();  // Take ownership
-    while (!h.done())
-        h.resume();
-    auto& p = h.promise();
-    // Check for exception first (result may be empty if exception occurred)
-    if (auto ep = p.exception())
-    {
-        h.destroy();
-        std::rethrow_exception(ep);
-    }
-    if constexpr (!std::is_void_v<T>)
-    {
-        auto result = std::move(*p.result_);
-        h.destroy();
-        return result;
-    }
-    else
-    {
-        h.destroy();
-    }
-}
-
-/** Run a void task to completion.
-*/
-inline void run_void_task(task<void> t)
-{
-    run_task<void>(std::move(t));
-}
-
 struct task_test
 {
     static task<int>
@@ -134,12 +98,16 @@ struct task_test
     {
         // task returning int
         {
-            BOOST_TEST_EQ(run_task(returns_int()), 42);
+            int result = 0;
+            test::run_blocking([&](int v) { result = v; })(returns_int());
+            BOOST_TEST_EQ(result, 42);
         }
 
         // task returning string
         {
-            BOOST_TEST_EQ(run_task(returns_string()), "hello");
+            std::string result;
+            test::run_blocking([&](std::string v) { result = std::move(v); })(returns_string());
+            BOOST_TEST_EQ(result, "hello");
         }
     }
 
@@ -162,12 +130,12 @@ struct task_test
     {
         // task that throws custom exception
         {
-            BOOST_TEST_THROWS(run_task(throws_exception()), test_exception);
+            BOOST_TEST_THROWS(test::run_blocking()(throws_exception()), test_exception);
         }
 
         // task that throws std::runtime_error
         {
-            BOOST_TEST_THROWS(run_task(throws_std_exception()), std::runtime_error);
+            BOOST_TEST_THROWS(test::run_blocking()(throws_std_exception()), std::runtime_error);
         }
     }
 
@@ -233,22 +201,28 @@ struct task_test
     {
         // outer task awaits inner task with value
         {
-            BOOST_TEST_EQ(run_task(outer_task_awaits_inner()), 101);
+            int result = 0;
+            test::run_blocking([&](int v) { result = v; })(outer_task_awaits_inner());
+            BOOST_TEST_EQ(result, 101);
         }
 
         // outer task awaits inner task that throws
         {
-            BOOST_TEST_THROWS(run_task(outer_task_awaits_throwing_inner()), test_exception);
+            BOOST_TEST_THROWS(test::run_blocking()(outer_task_awaits_throwing_inner()), test_exception);
         }
 
         // outer task catches exception from inner task
         {
-            BOOST_TEST_EQ(run_task(outer_task_catches_inner_exception()), 999);
+            int result = 0;
+            test::run_blocking([&](int v) { result = v; })(outer_task_catches_inner_exception());
+            BOOST_TEST_EQ(result, 999);
         }
 
         // chained tasks (3 levels)
         {
-            BOOST_TEST_EQ(run_task(chained_tasks()), 25);
+            int result = 0;
+            test::run_blocking([&](int v) { result = v; })(chained_tasks());
+            BOOST_TEST_EQ(result, 25);
         }
     }
 
@@ -278,11 +252,16 @@ struct task_test
     void
     testDestroyedTaskWithException()
     {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        io_env env{executor_ref(ex), {}, nullptr};
+
         // Value task: exception stored but never observed
         {
             auto t = throws_exception();
             auto h = t.handle();
             t.release();
+            h.promise().set_environment(&env);
             while (!h.done())
                 h.resume();
             BOOST_TEST(h.promise().exception() != nullptr);
@@ -294,6 +273,7 @@ struct task_test
             auto t = void_task_throws();
             auto h = t.handle();
             t.release();
+            h.promise().set_environment(&env);
             while (!h.done())
                 h.resume();
             BOOST_TEST(h.promise().exception() != nullptr);
@@ -313,7 +293,7 @@ struct task_test
         // Catch one exception type, throw a different type
         {
             BOOST_TEST_THROWS(
-                run_task(catch_and_throw_different()),
+                test::run_blocking()(catch_and_throw_different()),
                 std::runtime_error);
         }
 
@@ -321,7 +301,7 @@ struct task_test
         {
             try
             {
-                run_task(catch_and_throw_different());
+                test::run_blocking()(catch_and_throw_different());
                 BOOST_TEST(false);
             }
             catch (std::runtime_error const& e)
@@ -388,6 +368,10 @@ struct task_test
     void
     testMoveOperations()
     {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        io_env env{executor_ref(ex), {}, nullptr};
+
         // move constructor
         {
             auto t1 = returns_int();
@@ -398,10 +382,9 @@ struct task_test
             // Re-wrap for move test
             task<int> t2(std::move(t1));
             // t1 is now moved-from, t2 should be empty since t1 was released
-            // This test verifies move semantics
-            BOOST_TEST(!t2.handle());  // t2 is empty
+            BOOST_TEST(!t2.handle());
 
-            // Run the released handle
+            h1.promise().set_environment(&env);
             while (!h1.done())
                 h1.resume();
             BOOST_TEST_EQ(*h1.promise().result_, 42);
@@ -414,8 +397,9 @@ struct task_test
             auto h = t.handle();
             t.release();
             BOOST_TEST(h);
-            BOOST_TEST(!t.handle());  // Already released
+            BOOST_TEST(!t.handle());
 
+            h.promise().set_environment(&env);
             while (!h.done())
                 h.resume();
             auto& result = h.promise().result_;
@@ -451,13 +435,13 @@ struct task_test
     void
     testVoidTaskBasic()
     {
-        run_void_task(void_task_basic());  // should not throw
+        test::run_blocking()(void_task_basic());
     }
 
     void
     testVoidTaskException()
     {
-        BOOST_TEST_THROWS(run_void_task(void_task_throws()), test_exception);
+        BOOST_TEST_THROWS(test::run_blocking()(void_task_throws()), test_exception);
     }
 
     static task<void>
@@ -480,12 +464,12 @@ struct task_test
     {
         // void task awaits value-returning task
         {
-            run_void_task(void_task_awaits_value());
+            test::run_blocking()(void_task_awaits_value());
         }
 
         // void task awaits another void task
         {
-            run_void_task(void_task_awaits_void());
+            test::run_blocking()(void_task_awaits_void());
         }
     }
 
@@ -507,12 +491,16 @@ struct task_test
     void
     testVoidTaskChain()
     {
-        run_void_task(void_task_chain());
+        test::run_blocking()(void_task_chain());
     }
 
     void
     testVoidTaskMove()
     {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        io_env env{executor_ref(ex), {}, nullptr};
+
         auto t1 = void_task_basic();
         auto h = t1.handle();
         t1.release();
@@ -522,7 +510,7 @@ struct task_test
         // t1 was already released, t2 should be empty
         BOOST_TEST(!t2.handle());
 
-        // Clean up the handle
+        h.promise().set_environment(&env);
         while (!h.done())
             h.resume();
         h.destroy();
@@ -531,9 +519,9 @@ struct task_test
     void
     testNoDispatcherRunsInline()
     {
-        // Verify that simple tasks can run without run_async (manual stepping)
-        // Note: Only works for tasks that don't await executor-aware awaitables
-        BOOST_TEST_EQ(run_task(chained_tasks()), 25);
+        int result = 0;
+        test::run_blocking([&](int v) { result = v; })(chained_tasks());
+        BOOST_TEST_EQ(result, 25);
     }
 
     void

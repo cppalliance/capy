@@ -211,6 +211,8 @@ struct this_coro_tags_test
     testAwaitTransformAllocatorDefaultIsNull()
     {
         auto c = []() -> tag_test_coro { co_return; }();
+        io_env env;
+        c.h_.promise().set_environment(&env);
 
         auto awaiter = c.h_.promise().await_transform(this_coro::allocator);
         auto* alloc = awaiter.await_resume();

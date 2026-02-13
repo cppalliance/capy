@@ -10,6 +10,7 @@
 #ifndef BOOST_CAPY_DETAIL_CONFIG_HPP
 #define BOOST_CAPY_DETAIL_CONFIG_HPP
 
+#include <cassert>
 #ifndef BOOST_CAPY_ASSERT
 # define BOOST_CAPY_ASSERT(expr) assert(expr)
 #endif

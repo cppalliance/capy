@@ -68,13 +68,16 @@ struct this_coro_environment_access_test
     {
         auto c = []() -> env_test_coro { co_return; }();
 
+        io_env env;
+        c.h_.promise().set_environment(&env);
+
         auto awaiter = c.h_.promise().await_transform(this_coro::environment);
 
         BOOST_TEST(awaiter.await_ready());
 
-        auto env = awaiter.await_resume();
-        static_assert(std::is_same_v<decltype(env), io_env const*>);
-        (void)env;
+        auto retrieved = awaiter.await_resume();
+        static_assert(std::is_same_v<decltype(retrieved), io_env const*>);
+        (void)retrieved;
     }
 
     void
@@ -102,6 +105,8 @@ struct this_coro_environment_access_test
     testEnvironmentAwaiterNeverSuspends()
     {
         auto c = []() -> env_test_coro { co_return; }();
+        io_env env;
+        c.h_.promise().set_environment(&env);
         auto awaiter = c.h_.promise().await_transform(this_coro::environment);
 
         BOOST_TEST(awaiter.await_ready());

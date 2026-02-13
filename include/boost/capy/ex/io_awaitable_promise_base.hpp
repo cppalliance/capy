@@ -132,13 +132,8 @@ namespace capy {
 template<typename Derived>
 class io_awaitable_promise_base
 {
-    io_env const* env_ = &detail::empty_io_env;
+    io_env const* env_ = nullptr;
     mutable std::coroutine_handle<> cont_{std::noop_coroutine()};
-
-public:
-    //----------------------------------------------------------
-    // Frame allocation support
-    //----------------------------------------------------------
 
 public:
     /** Allocate a coroutine frame.
@@ -150,8 +145,7 @@ public:
         to avoid alignment requirements on the trailing pointer.
         Bypasses virtual dispatch for the recycling allocator.
     */
-    static void*
-    operator new(std::size_t size)
+    static void* operator new(std::size_t size)
     {
         static auto* const rmr = get_recycling_memory_resource();
 
@@ -176,8 +170,7 @@ public:
         to ensure correct deallocation regardless of current TLS.
         Bypasses virtual dispatch for the recycling allocator.
     */
-    static void
-    operator delete(void* ptr, std::size_t size)
+    static void operator delete(void* ptr, std::size_t size) noexcept
     {
         static auto* const rmr = get_recycling_memory_resource();
 
@@ -251,6 +244,7 @@ public:
     */
     io_env const* environment() const noexcept
     {
+        BOOST_CAPY_ASSERT(env_);
         return env_;
     }
 
@@ -289,6 +283,7 @@ public:
 
         if constexpr (std::is_same_v<Tag, this_coro::environment_tag>)
         {
+            BOOST_CAPY_ASSERT(env_);
             struct awaiter
             {
                 io_env const* env_;
@@ -300,6 +295,7 @@ public:
         }
         else if constexpr (std::is_same_v<Tag, this_coro::executor_tag>)
         {
+            BOOST_CAPY_ASSERT(env_);
             struct awaiter
             {
                 executor_ref executor_;
@@ -311,6 +307,7 @@ public:
         }
         else if constexpr (std::is_same_v<Tag, this_coro::stop_token_tag>)
         {
+            BOOST_CAPY_ASSERT(env_);
             struct awaiter
             {
                 std::stop_token token_;
@@ -322,6 +319,7 @@ public:
         }
         else if constexpr (std::is_same_v<Tag, this_coro::allocator_tag>)
         {
+            BOOST_CAPY_ASSERT(env_);
             struct awaiter
             {
                 std::pmr::memory_resource* allocator_;

@@ -54,13 +54,6 @@ struct io_env
     std::pmr::memory_resource* allocator = nullptr;
 };
 
-namespace detail {
-
-// Default-constructed environment for uninitialized promises
-inline const io_env empty_io_env{};
-
-} // detail
-
 } // capy
 } // boost
 
