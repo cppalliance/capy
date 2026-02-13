@@ -25,6 +25,15 @@
 #include <iomanip>
 #include <iostream>
 
+// Prevent HALO from eliding coroutine frame allocations
+#if defined(_MSC_VER)
+# define CAPY_NOINLINE __declspec(noinline)
+#elif defined(__GNUC__) || defined(__clang__)
+# define CAPY_NOINLINE __attribute__((noinline))
+#else
+# define CAPY_NOINLINE
+#endif
+
 using namespace boost::capy;
 
 std::atomic<std::size_t> counter{0};
@@ -34,31 +43,31 @@ std::atomic<std::size_t> counter{0};
 // business logic awaiting an HTTP client, awaiting
 // a TLS stream, awaiting a tcp_socket
 
-task<> depth_4()
+CAPY_NOINLINE task<> depth_4()
 {
     counter.fetch_add(1, std::memory_order_relaxed);
     co_return;
 }
 
-task<> depth_3()
+CAPY_NOINLINE task<> depth_3()
 {
     for(int i = 0; i < 3; ++i)
         co_await depth_4();
 }
 
-task<> depth_2()
+CAPY_NOINLINE task<> depth_2()
 {
     for(int i = 0; i < 3; ++i)
         co_await depth_3();
 }
 
-task<> depth_1()
+CAPY_NOINLINE task<> depth_1()
 {
     for(int i = 0; i < 5; ++i)
         co_await depth_2();
 }
 
-task<> bench_loop(std::size_t n)
+CAPY_NOINLINE task<> bench_loop(std::size_t n)
 {
     for(std::size_t i = 0; i < n; ++i)
         co_await depth_1();
