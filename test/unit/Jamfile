@@ -26,12 +26,33 @@ project
 
 for local f in [ glob-tree-ex . : *.cpp : file*.cpp ]
 {
-    run $(f) ;
+    local parts = [ SPLIT_BY_CHARACTERS $(f:S=) : / ] ;
+    local name = $(parts:J=_) ;
+    if $(name) = test_stream
+    {
+        # GCC false positive: structured bindings used inside
+        # coroutine frames trigger -Wmaybe-uninitialized because
+        # the coroutine lowering pass splits the code into a state
+        # machine, and GCC's dataflow analysis cannot prove that
+        # the anonymous temporary from
+        # `auto [a, b] = make_stream_pair(f)` is fully initialized.
+        run $(f)
+            : target-name $(name)
+            : requirements
+              <toolset>gcc:<cxxflags>-Wno-maybe-uninitialized
+            ;
+    }
+    else
+    {
+        run $(f) : target-name $(name) ;
+    }
 }
 
 for local f in [ glob-tree-ex . : file*.cpp ]
 {
+    local parts = [ SPLIT_BY_CHARACTERS $(f:S=) : / ] ;
     run $(f)
+        : target-name $(parts:J=_)
         : requirements
           <warnings>off <undefined-sanitizer>norecover:<link>static
         ;

@@ -10,20 +10,21 @@
 //
 // Allocation Example
 //
-// Compares the performance of the default recycling frame allocator
-// against std::allocator (no recycling). A 4-deep coroutine chain
-// is invoked 20 million times using test::run_blocking, once with
-// each allocator.
+// Compares the performance of three frame allocators: the default
+// recycling allocator, mimalloc, and std::allocator (no recycling).
+// A 4-deep coroutine chain is invoked 2 million times with each.
 //
 
 #include <boost/capy.hpp>
 #include <boost/capy/test/run_blocking.hpp>
+#include <mimalloc.h>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <iomanip>
 #include <iostream>
+#include <memory_resource>
 
 // Prevent HALO from eliding coroutine frame allocations
 #if defined(_MSC_VER)
@@ -37,6 +38,39 @@
 using namespace boost::capy;
 
 std::atomic<std::size_t> counter{0};
+
+// Adapts mimalloc to std::pmr::memory_resource
+class mi_memory_resource
+    : public std::pmr::memory_resource
+{
+protected:
+    void*
+    do_allocate(
+        std::size_t bytes,
+        std::size_t alignment) override
+    {
+        void* p = mi_malloc_aligned(bytes, alignment);
+        if(! p)
+            throw std::bad_alloc();
+        return p;
+    }
+
+    void
+    do_deallocate(
+        void* p,
+        std::size_t,
+        std::size_t alignment) override
+    {
+        mi_free_aligned(p, alignment);
+    }
+
+    bool
+    do_is_equal(
+        memory_resource const& other) const noexcept override
+    {
+        return this == &other;
+    }
+};
 
 // These coroutines simulate a "composed operation"
 // consisting of layered APIs. For example a user's
@@ -90,9 +124,23 @@ int main()
     }
     auto t1 = std::chrono::steady_clock::now();
 
+    // With mimalloc
+    counter.store(0);
+    mi_memory_resource mi_mr;
+    auto t2 = std::chrono::steady_clock::now();
+    {
+        test::blocking_context ctx;
+        ctx.set_frame_allocator(&mi_mr);
+        run_async(ctx.get_executor(),
+            [&] { ctx.signal_done(); })(
+            bench_loop(iterations));
+        ctx.run();
+    }
+    auto t3 = std::chrono::steady_clock::now();
+
     // With std::allocator (no recycling)
     counter.store(0);
-    auto t2 = std::chrono::steady_clock::now();
+    auto t4 = std::chrono::steady_clock::now();
     {
         test::blocking_context ctx;
         run_async(ctx.get_executor(), std::allocator<std::byte>{},
@@ -100,25 +148,35 @@ int main()
             bench_loop(iterations));
         ctx.run();
     }
-    auto t3 = std::chrono::steady_clock::now();
+    auto t5 = std::chrono::steady_clock::now();
 
     auto ms_recycling =
         std::chrono::duration<double, std::milli>(t1 - t0).count();
-    auto ms_standard =
+    auto ms_mimalloc =
         std::chrono::duration<double, std::milli>(t3 - t2).count();
+    auto ms_standard =
+        std::chrono::duration<double, std::milli>(t5 - t4).count();
 
-    auto pct = std::round((ms_standard / ms_recycling - 1.0) * 1000.0) / 10.0;
+    auto pct_rc_std = std::round(
+        (ms_standard / ms_recycling - 1.0) * 1000.0) / 10.0;
+    auto pct_mi_std = std::round(
+        (ms_standard / ms_mimalloc - 1.0) * 1000.0) / 10.0;
+    auto pct_rc_mi = std::round(
+        (ms_mimalloc / ms_recycling - 1.0) * 1000.0) / 10.0;
 
     std::cout
         << iterations << " iterations, "
         << "4-deep coroutine chain\n\n"
-        << "  Recycling allocator: "
-        << ms_recycling << " ms\n"
-        << "  std::allocator:      "
-        << ms_standard << " ms\n"
-        << "  Speedup:             "
         << std::fixed << std::setprecision(1)
-        << pct << "%\n";
+        << "  Recycling allocator: "
+        << ms_recycling << " ms  (+"
+        << pct_rc_std << "% vs std, +"
+        << pct_rc_mi << "% vs mimalloc)\n"
+        << "  mimalloc:            "
+        << ms_mimalloc << " ms  (+"
+        << pct_mi_std << "% vs std)\n"
+        << "  std::allocator:      "
+        << ms_standard << " ms\n";
 
     return 0;
 }

@@ -7,6 +7,9 @@
 # Official repository: https://github.com/cppalliance/capy
 #
 
+# Requires mimalloc (https://github.com/microsoft/mimalloc)
+# installed where the compiler can find it.
+
 project
     : requirements
       <library>/boost/capy//boost_capy
@@ -15,4 +18,6 @@ project
 
 exe allocation :
     [ glob *.cpp ]
+    :
+    <linkflags>-lmimalloc
     ;
