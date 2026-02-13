@@ -36,7 +36,9 @@ coro_lock cm;
 
 task<void> good_example()
 {
-    co_await cm.lock();  // Coroutine suspends, thread is free
+    auto [ec] = co_await cm.lock();
+    if(ec)
+        co_return;
     // ... critical section ...
     cm.unlock();
     co_return;
@@ -57,7 +59,9 @@ coro_lock cm;
 
 task<void> protected_operation()
 {
-    co_await cm.lock();
+    auto [ec] = co_await cm.lock();
+    if(ec)
+        co_return;
     // Only one coroutine executes this section at a time
     do_work();
     cm.unlock();
@@ -85,7 +89,9 @@ coro_lock cm;
 
 task<void> example()
 {
-    co_await cm.lock();
+    auto [ec] = co_await cm.lock();
+    if(ec)
+        co_return;
     // Critical section
     cm.unlock();
 }
@@ -103,7 +109,9 @@ coro_lock cm;
 
 task<void> example()
 {
-    auto guard = co_await cm.scoped_lock();
+    auto [ec, guard] = co_await cm.scoped_lock();
+    if(ec)
+        co_return;
     // Critical section
     // Guard unlocks automatically on scope exit
 }
@@ -117,7 +125,7 @@ The `lock_guard` class provides RAII semantics:
 
 [source,cpp]
 ----
-coro_lock::lock_guard guard = co_await cm.scoped_lock();
+auto [ec, guard] = co_await cm.scoped_lock();
 
 // Move to extend lifetime
 coro_lock::lock_guard g2 = std::move(guard);
@@ -157,7 +165,9 @@ coro_lock cm;
 task<void> multi_threaded_safe()
 {
     co_await run(s)([&]() -> task<void> {
-        auto guard = co_await cm.scoped_lock();
+        auto [ec, guard] = co_await cm.scoped_lock();
+        if(ec)
+            co_return;
         // Now safe: strand serializes, mutex excludes
         co_return;
     }());
@@ -176,13 +186,17 @@ class shared_counter
 public:
     task<void> increment()
     {
-        auto guard = co_await cm_.scoped_lock();
+        auto [ec, guard] = co_await cm_.scoped_lock();
+        if(ec)
+            co_return;
         ++value_;
     }
 
     task<int> get()
     {
-        auto guard = co_await cm_.scoped_lock();
+        auto [ec, guard] = co_await cm_.scoped_lock();
+        if(ec)
+            co_return 0;
         co_return value_;
     }
 };
@@ -202,7 +216,9 @@ public:
 
     task<void> write(std::string_view data)
     {
-        auto guard = co_await cm_.scoped_lock();
+        auto [ec, guard] = co_await cm_.scoped_lock();
+        if(ec)
+            co_return;
         // Only one write at a time
         co_await file_.async_write(data);
     }

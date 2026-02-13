@@ -1,0 +1,399 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Why Capy Is Separate
+
+Someone will ask the question. Probably already has. "Why are Capy
+and Corosio two separate libraries? Why not just put everything in
+one place?"
+
+It is a fair question. The answer comes from a discipline that most
+{cpp} developers have never studied, even though it governs every
+large system they have ever worked on. The discipline is called
+physical design, and it has rules. Those rules are not suggestions.
+They are the difference between a codebase that scales and one that
+collapses under its own weight.
+
+This document explains the rules, applies them to Capy and Corosio,
+and shows why the separation is not a preference but a requirement.
+
+
+== What Lives Where
+
+Before we talk about principles, here is what each library actually
+contains.
+
+**Capy** provides the foundational abstractions for coroutine-based
+I/O. Tasks. Buffers. Stream concepts. Executors. The IoAwaitable
+protocol. Type-erased streams. Composition primitives like
+`when_all` and `when_any`. It is pure {cpp}20. It does not include a
+single line of platform-specific code. No sockets. No file
+descriptors. No `#ifdef _WIN32`.
+
+**Corosio** provides platform networking. TCP sockets. TLS streams.
+DNS resolution. Timers. Signal handling. It implements four
+platform-specific event loop backends: IOCP on Windows, epoll on
+Linux, kqueue on macOS/BSD, and POSIX select as a fallback. Corosio
+depends on Capy. Capy does not depend on Corosio.
+
+The dependency arrow points in one direction. That is not an
+accident.
+
+
+== Physical Design: The Dimension Nobody Teaches
+
+Most {cpp} developers think about design in terms of classes,
+inheritance, and templates. That is logical design--the
+relationships between types. It is important, but it is only half
+the picture.
+
+The other half is physical design: how code is organized into files,
+libraries, and packages for compilation and linking. John Lakos
+identified this gap in 1996:
+
+[quote, John Lakos, 'https://www.amazon.com/dp/0201633620[Large-Scale C++ Software Design]']
+____
+Developing a large {cpp} system is fundamentally different from
+developing a small one. Successful large projects require thorough
+understanding of physical design concepts that most expert-level
+developers have never needed to consider.
+____
+
+Most developers can design a good class. Far fewer can design a
+good library boundary. The difference matters because a bad class
+affects one module. A bad library boundary affects every team that
+depends on it, for years.
+
+
+== Levels: The Idea That Changes Everything
+
+Here is the concept that makes everything else click.
+
+Imagine you are building a house. Electrical wiring and plumbing
+both run through the walls. Both are essential infrastructure. But
+nobody suggests combining them into one system. They serve different
+purposes, change for different reasons, and different specialists
+work on them. Merging them would not simplify anything. It would
+create a single system that is harder to understand, harder to test,
+and harder to modify.
+
+Software has the same structure. Lakos formalized it with a concept
+called _levelization_. The idea is simple:
+
+* A component that depends on nothing is *level 0*.
+* A component that depends only on level-0 components is *level 1*.
+* A component that depends on level-1 components is *level 2*.
+* And so on.
+
+This creates a directed acyclic graph--a hierarchy where
+dependencies flow in one direction, from higher levels to lower
+levels, never in reverse. Lakos calls this the physical hierarchy,
+and he is unequivocal about its importance:
+
+[quote, John Lakos, 'https://www.amazon.com/dp/0201633620[Large-Scale C++ Software Design]']
+____
+Systems with [acyclic] physical hierarchies are fundamentally
+easier and more economical to maintain, test, and reuse than
+tightly interdependent systems.
+____
+
+Now look at Capy and Corosio through this lens. Capy sits at a
+lower level. It provides tasks, buffers, stream concepts, and
+executors--abstractions that do not depend on any particular I/O
+backend. Corosio sits at a higher level. It provides sockets, TLS,
+and event loops that depend on Capy's abstractions.
+
+Different levels means different libraries. That is not a style
+preference. It is a structural requirement.
+
+Lakos quantified the cost of getting this wrong with a metric called
+_Cumulative Component Dependency_:
+
+[quote, John Lakos, 'https://www.amazon.com/dp/0201633620[Large-Scale C++ Software Design]']
+____
+The Cumulative Component Dependency, CCD, is the sum over all
+components in a subsystem of the number of components needed in
+order to test each component incrementally.
+____
+
+Good designs maximize the number of components while minimizing CCD.
+They create what Lakos describes as "a strict knowledge hierarchy
+arranged in as flat as possible a shape." Merging two libraries at
+different levels inflates CCD. Every component that only needs
+buffers and tasks now drags in sockets, TLS, and four platform
+backends. The testing cost goes up. The build cost goes up. The
+cognitive cost goes up.
+
+
+== Deep Modules and the Narrow Waist
+
+John Ousterhout introduced a visual model for thinking about module
+quality. A module has an interface (its top surface) and an
+implementation (its depth). A _deep module_ has a small interface and
+a large implementation. A _shallow module_ has a large interface and
+a small implementation.
+
+[quote, John Ousterhout, 'https://web.stanford.edu/~ouster/cgi-bin/aposd.php[A Philosophy of Software Design]']
+____
+The best modules are those that provide powerful functionality,
+but have a simple interface.
+____
+
+Capy is a deep module. Its public surface is narrow: a handful of
+concepts (`ReadStream`, `WriteStream`, `BufferSource`, `BufferSink`),
+a task type, an executor model, and buffer utilities. Behind that
+surface lives a substantial implementation: coroutine frame
+allocation, forward propagation of executors and stop tokens,
+type-erased stream machinery, and composition primitives.
+
+Unix file I/O is the canonical example of a deep module. Five
+functions--`open`, `close`, `read`, `write`, `lseek`--hide
+directory management, permission checks, disk scheduling, caching,
+and filesystem independence. The implementation has evolved
+radically over decades. The interface has not changed.
+
+Capy follows the same pattern. The stream concepts and task types
+provide a stable interface. The execution machinery behind them can
+evolve without disturbing any code written against those
+abstractions.
+
+Corosio is also a deep module, but a different one. It hides
+platform-specific event loop complexity (IOCP, epoll, kqueue,
+select) behind a uniform socket and timer interface.
+
+Ousterhout has a specific warning about merging layers that provide
+different abstractions:
+
+[quote, John Ousterhout, 'https://web.stanford.edu/~ouster/cgi-bin/aposd.php[A Philosophy of Software Design]']
+____
+If a system contains adjacent layers with similar abstractions,
+this is a red flag that suggests a problem with the class
+decomposition.
+____
+
+The converse is equally important. When adjacent layers provide
+_different_ abstractions--as Capy and Corosio do--that is a sign
+that the decomposition is correct. Capy abstracts over coroutine
+execution and data flow. Corosio abstracts over platform I/O. They
+hide different information. Different information hidden means
+different modules.
+
+Now here is the practical payoff. If you can express your algorithm
+using Capy instead of Corosio, that is a win. Because Corosio
+necessarily has a larger API surface. It includes sockets, TLS, DNS,
+timers, and four platform backends. You want to write code against
+the most narrow API possible.
+
+Alexander Stepanov saw this clearly when he designed the STL:
+
+[quote, Alexander Stepanov, 'https://stepanovpapers.com/drdobbs-interview.pdf[Dr. Dobb''s Journal Interview]']
+____
+I found that most algorithms can be abstracted away from a
+particular implementation in such a way that efficiency is not
+lost... the minimum requirements that the algorithm assumes are
+the only requirements that the code uses.
+____
+
+A `ReadStream` concept captures the essential operation: anything
+you can `read_some` from. TCP sockets, TLS streams, file handles,
+in-memory buffers--one generic algorithm works with all of them.
+That algorithm belongs in Capy, not Corosio, because it depends
+only on the concept, not on any particular implementation.
+
+
+== "Why Not Just Put It All In One Library?"
+
+Here is the objection, stated plainly: "You could put `ReadStream`
+and `WriteStream` in Corosio with the exact same code, and you
+would achieve the same thing."
+
+Of course you could. You could also merge Beast into Asio and
+achieve the same thing.
+
+The immediate response to that analogy is: "But the scope is clearly
+different." Exactly. Now reason about how Capy's scope differs from
+Corosio's in exactly the same fashion. Capy is to Corosio what Asio
+is to Beast. One is more fundamental than the other.
+
+The ability to merge is never an argument for merging. You can
+always move code from one library into another. The question is
+whether doing so improves or degrades the physical design. Lakos's
+levelization principle answers that directly: components at
+different levels of the physical hierarchy belong in different
+packages.
+
+Ousterhout reinforces this from a different angle. He calls it
+"pull complexity downward":
+
+[quote, John Ousterhout, 'https://web.stanford.edu/~ouster/cgi-bin/aposd.php[A Philosophy of Software Design]']
+____
+It is more important for a module to have a simple interface
+than a simple implementation.
+____
+
+Capy pulls the complexity of coroutine execution, buffer
+management, and context propagation downward, so that libraries
+like Http and Corosio do not have to deal with it. Merging Capy
+into Corosio does not eliminate that complexity. It just buries it
+inside a larger library where it is harder to find, harder to test,
+and impossible to reuse without taking the whole thing.
+
+
+== The Existence Proof
+
+Boost.Http is a sans-I/O HTTP/1.1 protocol library. It parses
+requests, serializes responses, and implements routing. It is
+written entirely against Capy. It has zero dependency on Corosio.
+
+This is not a hypothetical. It is a real library, shipping today.
+It works with any I/O backend that satisfies Capy's stream concepts.
+You could plug in Corosio's TCP sockets, or Asio's sockets, or a
+mock stream for testing. The protocol logic does not care.
+
+A sans-I/O parser is a state machine that consumes buffers and
+produces events. It does not read from sockets. It does not manage
+connections. It does not know what I/O runtime you use.
+
+If Capy were merged into Corosio, Boost.Http would be forced to
+depend on platform networking it never touches. Every user who
+wants to parse HTTP headers would need to link against IOCP on
+Windows, epoll on Linux, and kqueue on macOS. The HTTP parser does
+not use sockets. It should not pay for sockets.
+
+This is exactly the cost Lakos warns about:
+
+[quote, John Lakos, 'https://www.cs.unc.edu/~stotts/COMP204/lakos/major.html[Major Physical Design Rules]']
+____
+Avoid cyclic dependencies among packages.
+____
+
+Merging Capy into Corosio does not create a cycle, but it creates
+an equally pernicious problem: excessive link-time dependency.
+Every consumer of Capy's abstractions would inherit Corosio's
+platform dependencies. The cost is paid by everyone, even those
+who need nothing from Corosio.
+
+
+== Testing in Isolation
+
+Lakos dedicates an entire section of his book to testing components
+in isolation, and he treats it as a fundamental design principle,
+not an afterthought:
+
+[quote, John Lakos, 'https://www.cs.unc.edu/~stotts/COMP204/lakos/guide.html[Guidelines for Physical Design]']
+____
+When designing a function, component, package, or entire system,
+use the simplest techniques that are effective.
+____
+
+With Capy as a separate library, you can test buffer algorithms,
+stream concepts, and task machinery without a network stack. No
+sockets. No event loops. No platform dependencies. Just pure {cpp}20
+coroutine logic.
+
+With Corosio as a separate library, you can test socket behavior,
+DNS resolution, and timer accuracy against a known-good Capy
+foundation.
+
+Merge them, and you lose this. Every test of a buffer copy routine
+must now compile against platform I/O headers. Every CI run must
+configure platform-specific backends even to test portable
+abstractions. The test matrix explodes.
+
+Ousterhout describes the cost precisely:
+
+[quote, John Ousterhout, 'https://web.stanford.edu/~ouster/cgi-bin/cs190-winter18/lecture.php?topic=complexity[The Nature of Complexity]']
+____
+Complexity is incremental. No one thing makes a system
+complicated. It is an accumulation of thousands of small
+dependencies and obscurities.
+____
+
+Each unnecessary dependency is small. But they accumulate. And once
+they accumulate, they are nearly impossible to remove.
+
+
+== Platform Insulation
+
+Capy is portable {cpp}20. It compiles on any conforming compiler
+with no platform-specific code. This is not a minor detail. It
+means Capy can be used on embedded systems, in WebAssembly, on
+platforms that do not have sockets, and in environments where the
+I/O backend has not been written yet.
+
+Corosio contains four platform backends. Each one is a substantial
+body of platform-specific code:
+
+* *IOCP* on Windows (sockets, overlapped I/O, NT timers)
+* *epoll* on Linux
+* *kqueue* on macOS and BSD
+* *select* as a POSIX fallback
+
+Merging these into Capy would mean that a developer who wants a
+`task<>` type or a `circular_dynamic_buffer` must compile against
+platform I/O headers. That is the definition of excessive
+compile-time dependency, which Lakos identifies as one of the three
+fundamental problems in large-scale {cpp} development.
+
+Lakos's entire Chapter 6 is dedicated to insulation--techniques
+for reducing compile-time coupling:
+
+[quote, John Lakos, 'https://informit.com/articles/article.aspx?p=2995361[Large-Scale C++ Volume I]']
+____
+Our goal is to provide some top-level organizational structure
+that allows us to partition our software into discrete physical
+units so as to facilitate finding, understanding, and potentially
+reusing available software solutions.
+____
+
+Keeping Capy separate is insulation. It is the organizational
+structure that allows consumers to take only what they need.
+
+
+== Conclusion
+
+Good design separates things that change for different reasons.
+Capy changes when the coroutine execution model evolves--new
+composition primitives, new buffer types, refinements to the
+IoAwaitable protocol. Corosio changes when platform I/O APIs
+evolve--new io_uring features on Linux, new IOCP capabilities
+on Windows, new TLS backends.
+
+Different rates of change. Different levels of abstraction.
+Different platform dependencies. Different libraries.
+
+This is not theory. It is the discipline that makes large-scale
+software possible. Lakos, Ousterhout, and Stepanov all converge
+on the same principle from different directions: depend only on
+what you need, hide what others do not need to know, and organize
+your code so that each piece can be understood, tested, and reused
+independently.
+
+Capy is the narrow waist. It is the small interface that hides
+vast machinery. It is the level-1 foundation that everything else
+builds on. Merging it into Corosio would be like merging the
+electrical system into the plumbing. You can do it. But you should
+not. Because the moment you do, every electrician must also be a
+plumber, every inspection covers both systems, and every change to
+a pipe risks breaking a wire.
+
+Keep them separate. The architecture demands it.
+
+
+== References
+
+. John Lakos. https://www.amazon.com/dp/0201633620[_Large-Scale C++ Software Design._] Addison-Wesley, 1996.
+. John Lakos. https://informit.com/articles/article.aspx?p=2995361[_Large-Scale C++, Volume I: Process and Architecture._] Addison-Wesley, 2020.
+. John Lakos. https://www.cs.unc.edu/~stotts/COMP204/lakos/major.html["Major Physical Design Rules."] UNC Lecture Notes.
+. John Lakos. https://www.cs.unc.edu/~stotts/COMP204/lakos/guide.html["Guidelines for Physical Design."] UNC Lecture Notes.
+. John Ousterhout. https://web.stanford.edu/~ouster/cgi-bin/aposd.php[_A Philosophy of Software Design._] Yaknyam Press, 2nd Edition, 2021.
+. John Ousterhout. https://web.stanford.edu/~ouster/cgi-bin/cs190-winter18/lecture.php?topic=modularDesign["Modular Design."] CS 190 Lecture Notes, Stanford University, 2018.
+. John Ousterhout. https://web.stanford.edu/~ouster/cgi-bin/cs190-winter18/lecture.php?topic=complexity["The Nature of Complexity."] CS 190 Lecture Notes, Stanford University, 2018.
+. Alexander Stepanov. https://stepanovpapers.com/drdobbs-interview.pdf["Al Stevens Interviews Alex Stepanov."] _Dr. Dobb's Journal_, 1995.
+. RSF Wiki. https://rsf.github.io/wiki/Wiki7132.html?page=Levelization["Levelization."] Summary of Lakos's levelization metric.

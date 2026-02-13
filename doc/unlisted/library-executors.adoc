@@ -141,8 +141,11 @@ async_mutex cm;
 
 task<void> modify()
 {
-    auto lock = co_await cm.lock();
+    auto [ec] = co_await cm.lock();
+    if(ec)
+        co_return;
     shared_data.modify();
+    cm.unlock();
 }
 ----
 
