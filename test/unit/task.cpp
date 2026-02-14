@@ -10,6 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/task.hpp>
 
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 #include <boost/capy/test/run_blocking.hpp>
@@ -32,6 +33,16 @@ static_assert(IoAwaitable<task<void>>);
 static_assert(IoAwaitable<task<int>>);
 static_assert(IoRunnable<task<void>>);
 static_assert(IoRunnable<task<int>>);
+
+// Verify set_continuation/set_environment are part of IoRunnable
+static_assert(requires(task<void>::promise_type& p) {
+    { p.set_continuation(std::coroutine_handle<>{}) } noexcept;
+    { p.set_environment(static_cast<io_env const*>(nullptr)) } noexcept;
+});
+static_assert(requires(task<int>::promise_type& p) {
+    { p.set_continuation(std::coroutine_handle<>{}) } noexcept;
+    { p.set_environment(static_cast<io_env const*>(nullptr)) } noexcept;
+});
 
 /** Tracking executor that logs dispatch calls with an ID.
     Uses pointers to external storage to allow copying.
