@@ -737,7 +737,7 @@ public:
             auto [a, b] = make_stream_pair(f);
 
             co_await when_all(
-                [&a]() -> task<> {
+                [](stream a) -> task<> {
                     char buf[32] = {};
                     auto [ec, n] = co_await a.read_some(
                         make_buffer(buf));
@@ -747,14 +747,14 @@ public:
                     BOOST_TEST_EQ(
                         std::string_view(buf, n),
                         "hello");
-                }(),
-                [&b]() -> task<> {
+                }(std::move(a)),
+                [](stream b) -> task<> {
                     auto [ec, n] = co_await b.write_some(
                         make_buffer("hello", 5));
                     if(ec)
                         co_return;
                     BOOST_TEST_EQ(n, 5u);
-                }()
+                }(std::move(b))
             );
         });
         BOOST_TEST(r.success);
@@ -954,7 +954,7 @@ public:
             auto [a, b] = make_stream_pair(f);
 
             co_await when_all(
-                [&a]() -> task<> {
+                [](stream a) -> task<> {
                     char buf[3] = {};
                     auto [ec, n] = co_await a.read_some(
                         make_buffer(buf));
@@ -964,14 +964,14 @@ public:
                     BOOST_TEST_EQ(
                         std::string_view(buf, n),
                         "hel");
-                }(),
-                [&b]() -> task<> {
+                }(std::move(a)),
+                [](stream b) -> task<> {
                     auto [ec, n] = co_await b.write_some(
                         make_buffer("hello", 5));
                     if(ec)
                         co_return;
                     BOOST_TEST_EQ(n, 5u);
-                }()
+                }(std::move(b))
             );
         });
         BOOST_TEST(r.success);
@@ -1043,17 +1043,17 @@ public:
             auto [a, b] = make_stream_pair(f);
 
             co_await when_all(
-                [&a]() -> task<> {
+                [](stream a) -> task<> {
                     char buf[32] = {};
                     auto [ec, n] = co_await a.read_some(
                         make_buffer(buf));
                     BOOST_TEST(ec == cond::eof);
                     BOOST_TEST_EQ(n, 0u);
-                }(),
-                [&b]() -> task<> {
+                }(std::move(a)),
+                [](stream b) -> task<> {
                     b.close();
                     co_return;
-                }()
+                }(std::move(b))
             );
         }());
     }
@@ -1100,7 +1100,7 @@ public:
             auto [a, b] = make_stream_pair(f);
 
             co_await when_all(
-                [&a]() -> task<> {
+                [](stream a) -> task<> {
                     // Reader suspends waiting for data.
                     // Gets data, eof from peer's guard,
                     // or its own fuse error on resume.
@@ -1110,8 +1110,8 @@ public:
                     if(ec)
                         co_return;
                     BOOST_TEST_EQ(n, 5u);
-                }(),
-                [&b]() -> task<> {
+                }(std::move(a)),
+                [](stream b) -> task<> {
                     // Writer may get fuse error, which
                     // closes the peer via the guard
                     auto [ec, n] = co_await b.write_some(
@@ -1119,7 +1119,7 @@ public:
                     if(ec)
                         co_return;
                     BOOST_TEST_EQ(n, 5u);
-                }()
+                }(std::move(b))
             );
         });
         BOOST_TEST(r.success);
