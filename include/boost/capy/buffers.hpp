@@ -32,38 +32,6 @@ namespace capy {
 class const_buffer;
 class mutable_buffer;
 
-namespace detail {
-
-// satisfies Asio's buffer constructors, CANNOT be removed!
-template<class T, std::size_t Extent = (std::size_t)(-1)>
-class basic_buffer
-{
-    constexpr auto data() const noexcept ->
-        std::conditional_t<std::is_const_v<T>, void const*, void*>
-    {
-        return p_;
-    }
-
-    constexpr std::size_t size() const noexcept
-    {
-        return n_;
-    }
-
-    friend class capy::const_buffer;
-    friend class capy::mutable_buffer;
-    friend class asio::const_buffer;
-    friend class asio::mutable_buffer;
-    basic_buffer() = default;
-    constexpr basic_buffer(T* p, std::size_t n) noexcept : p_(p), n_(n) {}
-    constexpr basic_buffer<T, (std::size_t)(-1)> subspan(
-        std::size_t, std::size_t = (std::size_t)(-1)) const noexcept;
-
-    T* p_ = nullptr;
-    std::size_t n_ = 0;
-};
-
-} // detail
-
 //------------------------------------------------
 
 /// Tag type for customizing `buffer_size` via `tag_invoke`.
@@ -98,8 +66,10 @@ enum class slice_how
     @see const_buffer, MutableBufferSequence
 */
 class mutable_buffer
-    : public detail::basic_buffer<unsigned char>
 {
+    unsigned char* p_ = nullptr;
+    std::size_t n_ = 0;
+
 public:
     /// Construct an empty buffer.
     mutable_buffer() = default;
@@ -115,19 +85,8 @@ public:
     /// Construct from pointer and size.
     constexpr mutable_buffer(
         void* data, std::size_t size) noexcept
-        : basic_buffer<unsigned char>(
-            static_cast<unsigned char*>(data), size)
-    {
-    }
-
-    /// Construct from Asio mutable_buffer.
-    template<class MutableBuffer>
-        requires std::same_as<MutableBuffer, asio::mutable_buffer>
-    constexpr mutable_buffer(
-        MutableBuffer const& b) noexcept
-        : basic_buffer<unsigned char>(
-            static_cast<unsigned char*>(
-                b.data()), b.size())
+        : p_(static_cast<unsigned char*>(data))
+        , n_(size)
     {
     }
 
@@ -199,8 +158,10 @@ private:
     @see mutable_buffer, ConstBufferSequence
 */
 class const_buffer
-    : public detail::basic_buffer<unsigned char const>
 {
+    unsigned char const* p_ = nullptr;
+    std::size_t n_ = 0;
+
 public:
     /// Construct an empty buffer.
     const_buffer() = default;
@@ -215,28 +176,16 @@ public:
     /// Construct from pointer and size.
     constexpr const_buffer(
         void const* data, std::size_t size) noexcept
-        : basic_buffer<unsigned char const>(
-            static_cast<unsigned char const*>(data), size)
+        : p_(static_cast<unsigned char const*>(data))
+        , n_(size)
     {
     }
 
     /// Construct from mutable_buffer.
     constexpr const_buffer(
         mutable_buffer const& b) noexcept
-        : basic_buffer<unsigned char const>(
-            static_cast<unsigned char const*>(b.data()), b.size())
-    {
-    }
-
-    /// Construct from Asio buffer types.
-    template<class ConstBuffer>
-        requires (std::same_as<ConstBuffer, asio::const_buffer> ||
-                  std::same_as<ConstBuffer, asio::mutable_buffer>)
-    constexpr const_buffer(
-        ConstBuffer const& b) noexcept
-        : basic_buffer<unsigned char const>(
-            static_cast<unsigned char const*>(
-                b.data()), b.size())
+        : p_(static_cast<unsigned char const*>(b.data()))
+        , n_(b.size())
     {
     }
 

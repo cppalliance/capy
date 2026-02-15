@@ -26,6 +26,11 @@ target_link_libraries(
 
 target_include_directories(boost_capy_tests PRIVATE . ../../)
 
+if(TARGET Boost::asio)
+    target_link_libraries(boost_capy_tests PRIVATE Boost::asio)
+    target_compile_definitions(boost_capy_tests PRIVATE BOOST_CAPY_HAS_ASIO=1)
+endif()
+
 # Register individual tests with CTest
 boost_capy_test_suite_discover_tests(boost_capy_tests)
 

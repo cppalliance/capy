@@ -98,18 +98,18 @@ add_subdirectory(bench)
 
 #-------------------------------------------------
 #
+# Examples (before tests so Boost::asio is available)
+#
+#-------------------------------------------------
+if (BOOST_CAPY_BUILD_EXAMPLES)
+    add_subdirectory(example)
+endif ()
+
+#-------------------------------------------------
+#
 # Tests
 #
 #-------------------------------------------------
 if (BOOST_CAPY_BUILD_TESTS)
     add_subdirectory(test)
-endif ()
-
-#-------------------------------------------------
-#
-# Examples
-#
-#-------------------------------------------------
-if (BOOST_CAPY_BUILD_EXAMPLES)
-    add_subdirectory(example)
 endif ()

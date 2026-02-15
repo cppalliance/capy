@@ -17,7 +17,9 @@
 
 #include <boost/capy.hpp>
 #include <boost/capy/test/run_blocking.hpp>
+#if BOOST_CAPY_HAS_MIMALLOC
 #include <mimalloc.h>
+#endif
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -25,6 +27,7 @@
 #include <iomanip>
 #include <iostream>
 #include <memory_resource>
+#include <sstream>
 
 // Prevent HALO from eliding coroutine frame allocations
 #if defined(_MSC_VER)
@@ -39,6 +42,7 @@ using namespace boost::capy;
 
 std::atomic<std::size_t> counter{0};
 
+#if BOOST_CAPY_HAS_MIMALLOC
 // Adapts mimalloc to std::pmr::memory_resource
 class mi_memory_resource
     : public std::pmr::memory_resource
@@ -71,6 +75,7 @@ protected:
         return this == &other;
     }
 };
+#endif
 
 // These coroutines simulate a "composed operation"
 // consisting of layered APIs. For example a user's
@@ -124,6 +129,7 @@ int main()
     }
     auto t1 = std::chrono::steady_clock::now();
 
+#if BOOST_CAPY_HAS_MIMALLOC
     // With mimalloc
     counter.store(0);
     mi_memory_resource mi_mr;
@@ -137,6 +143,7 @@ int main()
         ctx.run();
     }
     auto t3 = std::chrono::steady_clock::now();
+#endif
 
     // With std::allocator (no recycling)
     counter.store(0);
@@ -152,31 +159,37 @@ int main()
 
     auto ms_recycling =
         std::chrono::duration<double, std::milli>(t1 - t0).count();
-    auto ms_mimalloc =
-        std::chrono::duration<double, std::milli>(t3 - t2).count();
     auto ms_standard =
         std::chrono::duration<double, std::milli>(t5 - t4).count();
 
     auto pct_rc_std = std::round(
         (ms_standard / ms_recycling - 1.0) * 1000.0) / 10.0;
+
+    std::ostringstream os;
+    os << std::fixed << std::setprecision(1);
+    os << iterations << " iterations, "
+        << "4-deep coroutine chain\n\n"
+        << "  Recycling allocator: "
+        << ms_recycling << " ms  (+"
+        << pct_rc_std << "% vs std";
+#if BOOST_CAPY_HAS_MIMALLOC
+    auto ms_mimalloc =
+        std::chrono::duration<double, std::milli>(t3 - t2).count();
     auto pct_mi_std = std::round(
         (ms_standard / ms_mimalloc - 1.0) * 1000.0) / 10.0;
     auto pct_rc_mi = std::round(
         (ms_mimalloc / ms_recycling - 1.0) * 1000.0) / 10.0;
-
-    std::cout
-        << iterations << " iterations, "
-        << "4-deep coroutine chain\n\n"
-        << std::fixed << std::setprecision(1)
-        << "  Recycling allocator: "
-        << ms_recycling << " ms  (+"
-        << pct_rc_std << "% vs std, +"
-        << pct_rc_mi << "% vs mimalloc)\n"
+    os  << ", +" << pct_rc_mi << "% vs mimalloc)\n"
         << "  mimalloc:            "
         << ms_mimalloc << " ms  (+"
-        << pct_mi_std << "% vs std)\n"
-        << "  std::allocator:      "
+        << pct_mi_std << "% vs std)\n";
+#else
+    os << ")\n";
+#endif
+    os  << "  std::allocator:      "
         << ms_standard << " ms\n";
+
+    std::cout << os.str();
 
     return 0;
 }

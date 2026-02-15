@@ -460,16 +460,3 @@ TEST_SUITE(
 
 } // capy
 } // boost
-
-#if 0
-const_buffer
-mutable_buffer
-const_buffer_pair
-mutable_buffer_pair
-std::span<const_buffer,3>
-std::span<mutable_buffer,3>
-std::array<const_buffer,3>
-std::array<mutable_buffer,3>
-const_buffer[3]
-mutable_buffer[3]
-#endif

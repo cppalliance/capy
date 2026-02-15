@@ -18,6 +18,7 @@
 
 #include "capy_streams.hpp"
 
+#include <boost/capy/buffers/asio.hpp>
 #include <boost/capy/io/any_stream.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
@@ -121,7 +122,8 @@ class uni_stream
                    MutableBufferSequence bufs,
                    ReadHandler h) -> capy::task<>
                 {
-                    auto [ec, n] = co_await stream->read_some(bufs);
+                    auto [ec, n] = co_await stream->read_some(
+                        capy::from_asio(bufs));
                     std::move(h)(ec, n);
                 }(&self_->stream_, buffers, std::forward<ReadHandler>(handler)));
         }
@@ -152,7 +154,8 @@ class uni_stream
                    ConstBufferSequence bufs,
                    WriteHandler h) -> capy::task<>
                 {
-                    auto [ec, n] = co_await stream->write_some(bufs);
+                    auto [ec, n] = co_await stream->write_some(
+                        capy::from_asio(bufs));
                     std::move(h)(ec, n);
                 }(&self_->stream_, buffers, std::forward<WriteHandler>(handler)));
         }
