@@ -129,7 +129,6 @@ seh_exception_handler(EXCEPTION_POINTERS* info) noexcept
 int
 main(int argc, char const* const* argv)
 {
-    std::fprintf(stderr, "Built: " __DATE__ " " __TIME__ "\n");
     std::set_terminate(on_terminate);
 #ifdef _WIN32
     SetUnhandledExceptionFilter(seh_exception_handler);
