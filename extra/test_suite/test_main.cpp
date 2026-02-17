@@ -12,6 +12,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <exception>
 
 namespace {
@@ -129,7 +130,25 @@ seh_exception_handler(EXCEPTION_POINTERS* info) noexcept
 int
 main(int argc, char const* const* argv)
 {
-    std::fprintf(stderr, "Built: " __DATE__ " " __TIME__ "\n");
+    // Read build timestamp from companion .build_time file written
+    // as a POST_BUILD step. The file sits next to the executable.
+    {
+        char path[4096];
+        std::snprintf(path, sizeof(path), "%s.build_time", argv[0]);
+        std::FILE* f = std::fopen(path, "r");
+        if (f)
+        {
+            char buf[64];
+            if (std::fgets(buf, sizeof(buf), f))
+            {
+                char* nl = std::strchr(buf, '\n');
+                if (nl)
+                    *nl = '\0';
+                std::fprintf(stdout, "Built: %s\n", buf);
+            }
+            std::fclose(f);
+        }
+    }
     std::set_terminate(on_terminate);
 #ifdef _WIN32
     SetUnhandledExceptionFilter(seh_exception_handler);

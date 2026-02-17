@@ -48,6 +48,17 @@ function(boost_capy_test_suite_discover_tests TARGET)
     string(SHA1 TEST_SUITE_ARGS_HASH "${TEST_SUITE_TEST_SPEC}")
     string(SUBSTRING ${TEST_SUITE_ARGS_HASH} 0 7 TEST_SUITE_ARGS_HASH)
 
+    # Write build timestamp to a companion file after linking.
+    # This runs before the discovery step so the binary can read it.
+    add_custom_command(
+            TARGET ${TARGET}
+            POST_BUILD
+            COMMAND "${CMAKE_COMMAND}"
+                -D "OUTPUT_FILE=$<TARGET_FILE:${TARGET}>.build_time"
+                -P "${TEST_SUITE_GENERATE_TIMESTAMP_SCRIPT}"
+            VERBATIM
+    )
+
     # After building the TARGET, use CMake and the executable to create the
     # tests cmake script ${TEST_SUITE_CTEST_TESTS_FILE}.
     # Our CMake script will include this test script to create the test
@@ -104,4 +115,9 @@ endfunction()
 set(TEST_SUITE_DISCOVER_AND_WRITE_TESTS_SCRIPT
     ${CMAKE_CURRENT_LIST_DIR}/DiscoverAndWriteTestsScripts.cmake
     CACHE INTERNAL "Path to the script that discovers tests for the test suite"
+)
+
+set(TEST_SUITE_GENERATE_TIMESTAMP_SCRIPT
+    ${CMAKE_CURRENT_LIST_DIR}/GenerateTimestamp.cmake
+    CACHE INTERNAL "Path to the script that generates build timestamps"
 )
