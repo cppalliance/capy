@@ -9,10 +9,10 @@ This section explains how to launch coroutines for execution. You will learn abo
 
 == The Execution Model
 
-Capy tasks are lazy—they do not execute until something drives them. Two mechanisms exist:
+Capy tasks are lazyâ€”they do not execute until something drives them. Two mechanisms exist:
 
-* *Awaiting* — One coroutine awaits another (`co_await task`)
-* *Launching* — Non-coroutine code initiates execution (`run_async`)
+* *Awaiting* â€” One coroutine awaits another (`co_await task`)
+* *Launching* â€” Non-coroutine code initiates execution (`run_async`)
 
 When a task is awaited, the awaiting coroutine provides context: an executor for dispatching completion and a stop token for cancellation. But what about the first task in a chain? That task needs explicit launching.
 

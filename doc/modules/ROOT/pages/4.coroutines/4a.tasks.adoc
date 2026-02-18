@@ -1,6 +1,6 @@
 = The task Type
 
-This section introduces Capy's `task<T>` type—the fundamental coroutine type for asynchronous programming in Capy.
+This section introduces Capy's `task<T>` typeâ€”the fundamental coroutine type for asynchronous programming in Capy.
 
 == Prerequisites
 
@@ -13,11 +13,11 @@ This section introduces Capy's `task<T>` type—the fundamental coroutine type for
 
 Key characteristics:
 
-* *Lazy execution* — The coroutine does not start until awaited
-* *Symmetric transfer* — Efficient resumption without stack accumulation
-* *Executor inheritance* — Inherits the caller's executor unless explicitly bound
-* *Stop token propagation* — Forward-propagates cancellation signals
-* *HALO support* — Enables heap allocation elision when possible
+* *Lazy execution* â€” The coroutine does not start until awaited
+* *Symmetric transfer* â€” Efficient resumption without stack accumulation
+* *Executor inheritance* â€” Inherits the caller's executor unless explicitly bound
+* *Stop token propagation* â€” Forward-propagates cancellation signals
+* *HALO support* â€” Enables heap allocation elision when possible
 
 == Declaring task Coroutines
 
@@ -128,7 +128,7 @@ Computing...
 Result: 42
 ----
 
-Lazy execution enables efficient composition—tasks that are never awaited never run, consuming no resources beyond their initial allocation.
+Lazy execution enables efficient compositionâ€”tasks that are never awaited never run, consuming no resources beyond their initial allocation.
 
 == Symmetric Transfer
 

@@ -156,7 +156,7 @@ task<void> cancellable_work()
 }
 ----
 
-`this_coro::environment` never suspends—it's intercepted by `await_transform` and
+`this_coro::environment` never suspendsâ€”it's intercepted by `await_transform` and
 returns immediately.
 
 == Implementing Stoppable Awaitables
@@ -255,7 +255,7 @@ source.request_stop();  // All children in when_all see this
 
 == Error Handling vs Cancellation
 
-Cancellation is not an error—it's an expected outcome:
+Cancellation is not an errorâ€”it's an expected outcome:
 
 [source,cpp]
 ----
@@ -272,7 +272,7 @@ task<std::optional<result>> fetch_with_timeout()
 ----
 
 Use `std::optional`, sentinel values, or error codes to signal
-cancellation—reserve exceptions for unexpected failures.
+cancellationâ€”reserve exceptions for unexpected failures.
 
 == When NOT to Use Cancellation
 
@@ -313,5 +313,5 @@ Do NOT use cancellation when:
 
 == Next Steps
 
-* xref:allocator.adoc[The Allocator] — Frame allocation strategy
-* xref:launching.adoc[Launching Coroutines] — Pass stop tokens to `run_async`
+* xref:allocator.adoc[The Allocator] â€” Frame allocation strategy
+* xref:launching.adoc[Launching Coroutines] â€” Pass stop tokens to `run_async`

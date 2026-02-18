@@ -122,7 +122,7 @@ any_write_sink sink{mock};
 send_message(sink, msg);
 ----
 
-Same `send_message` function, different transports—compile once, use everywhere.
+Same `send_message` function, different transportsâ€”compile once, use everywhere.
 
 == API Design Guidelines
 
@@ -237,4 +237,4 @@ Type-erased wrappers are in `<boost/capy/io/>`:
 * `any_read_source`, `any_write_sink`
 * `any_buffer_source`, `any_buffer_sink`
 
-You have now completed the Stream Concepts section. These abstractions—streams, sources, sinks, and their type-erased wrappers—form the foundation for Capy's I/O model. Continue to xref:../7.examples/7a.hello-task.adoc[Example Programs] to see complete working examples.
+You have now completed the Stream Concepts section. These abstractionsâ€”streams, sources, sinks, and their type-erased wrappersâ€”form the foundation for Capy's I/O model. Continue to xref:../7.examples/7a.hello-task.adoc[Example Programs] to see complete working examples.

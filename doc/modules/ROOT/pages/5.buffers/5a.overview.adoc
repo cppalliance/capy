@@ -9,7 +9,7 @@ This section explains why Capy uses concept-driven buffer sequences instead of `
 
 == The I/O Use Case
 
-Buffers exist to interface with operating system I/O. When you read from a socket, write to a file, or transfer data through any I/O channel, you work with contiguous memory regions—addresses and byte counts.
+Buffers exist to interface with operating system I/O. When you read from a socket, write to a file, or transfer data through any I/O channel, you work with contiguous memory regionsâ€”addresses and byte counts.
 
 The fundamental unit is a `(pointer, size)` pair. The OS reads bytes from or writes bytes to linear addresses.
 
@@ -23,7 +23,7 @@ void write_data(std::span<std::byte const> data);
 void read_data(std::span<std::byte> buffer);
 ----
 
-This works for single contiguous buffers. But I/O often involves multiple buffers—a technique called *scatter/gather I/O*.
+This works for single contiguous buffers. But I/O often involves multiple buffersâ€”a technique called *scatter/gather I/O*.
 
 == Scatter/Gather I/O
 
@@ -34,7 +34,7 @@ Consider assembling an HTTP message. The headers are in one buffer; the body is 
 3. Copy body after headers
 4. Send the combined buffer
 
-This is wasteful. The data already exists—why copy it?
+This is wasteful. The data already existsâ€”why copy it?
 
 Scatter/gather I/O solves this. Operating systems provide vectored I/O calls (`writev` on POSIX, scatter/gather with IOCP on Windows) that accept multiple buffers and transfer them as a single logical operation.
 
@@ -76,9 +76,9 @@ write_data(combined);
 
 Every composition allocates. This leads to:
 
-* Overload proliferation—separate functions for single buffer, multiple buffers, common cases
-* Performance overhead—allocation on every composition
-* Boilerplate—manual copying everywhere
+* Overload proliferationâ€”separate functions for single buffer, multiple buffers, common cases
+* Performance overheadâ€”allocation on every composition
+* Boilerplateâ€”manual copying everywhere
 
 == The Concept-Driven Alternative
 
@@ -97,7 +97,7 @@ This single signature accepts:
 * A `vector<const_buffer>`
 * A `string_view` (converts to single buffer)
 * A custom composite type
-* *Any composition of the above—without allocation*
+* *Any composition of the aboveâ€”without allocation*
 
 == Zero-Allocation Composition
 
@@ -114,7 +114,7 @@ auto combined = cat(headers, body);  // No allocation!
 write_data(combined);  // Works because combined satisfies ConstBufferSequence
 ----
 
-The `cat` function returns a lightweight object that, when iterated, first yields buffers from `headers`, then from `body`. The buffers themselves are not copied—only iterators are composed.
+The `cat` function returns a lightweight object that, when iterated, first yields buffers from `headers`, then from `body`. The buffers themselves are not copiedâ€”only iterators are composed.
 
 == STL Parallel
 
@@ -124,21 +124,21 @@ The span reflex is a regression from thirty years of generic programming. Concep
 
 == The Middle Ground
 
-Concepts provide flexibility at user-facing APIs. But at type-erasure boundaries—virtual functions, library boundaries—concrete types are necessary.
+Concepts provide flexibility at user-facing APIs. But at type-erasure boundariesâ€”virtual functions, library boundariesâ€”concrete types are necessary.
 
 Capy's approach:
 
-* *User-facing APIs* — Accept concepts for maximum flexibility
-* *Type-erasure boundaries* — Use concrete spans internally
-* *Library handles conversion* — Users get concepts; implementation uses spans
+* *User-facing APIs* â€” Accept concepts for maximum flexibility
+* *Type-erasure boundaries* â€” Use concrete spans internally
+* *Library handles conversion* â€” Users get concepts; implementation uses spans
 
 This gives users the composition benefits of concepts while hiding the concrete types needed for virtual dispatch.
 
 == Why Not std::byte?
 
-Even `std::byte` imposes a semantic opinion. POSIX uses `void*` for semantic neutrality—"raw memory, I move bytes without opining on contents."
+Even `std::byte` imposes a semantic opinion. POSIX uses `void*` for semantic neutralityâ€”"raw memory, I move bytes without opining on contents."
 
-But `span<void>` doesn't compile—{cpp} can't express type-agnostic buffer abstraction with `span`.
+But `span<void>` doesn't compileâ€”{cpp} can't express type-agnostic buffer abstraction with `span`.
 
 Capy provides `const_buffer` and `mutable_buffer` as semantically neutral buffer types. They have known layout compatible with OS structures (`iovec`, `WSABUF`) without imposing `std::byte` semantics.
 
