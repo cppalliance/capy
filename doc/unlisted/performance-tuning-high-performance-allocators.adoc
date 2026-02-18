@@ -47,8 +47,8 @@ allocator.
 
 You can use both approaches together:
 
-* **Global replacement** — Handles all allocations (containers, strings, etc.)
-* **frame_allocator** — Optimizes coroutine frame allocation specifically
+* **Global replacement** â€” Handles all allocations (containers, strings, etc.)
+* **frame_allocator** â€” Optimizes coroutine frame allocation specifically
 
 For applications dominated by coroutine creation, a custom `frame_allocator`
 (like the built-in recycling allocator) may provide better results than just
@@ -97,11 +97,11 @@ installation, linking, and configuration instructions.
 
 When using a replacement allocator:
 
-* **Benchmark your specific workload** — allocator performance varies by
+* **Benchmark your specific workload** â€” allocator performance varies by
   allocation pattern
-* **Monitor memory usage** — some allocators trade memory for speed
-* **Consider configuration** — most allocators have tunable parameters
-* **Test under load** — benefits are most visible under concurrent allocation
+* **Monitor memory usage** â€” some allocators trade memory for speed
+* **Consider configuration** â€” most allocators have tunable parameters
+* **Test under load** â€” benefits are most visible under concurrent allocation
 
 == Impact on Capy Coroutines
 
@@ -142,5 +142,5 @@ first step before exploring custom frame allocators.
 
 == Next Steps
 
-* xref:../execution/frame-allocation.adoc[Frame Allocation] — Coroutine-specific memory tuning
-* xref:../coroutines/launching.adoc[Launching Tasks] — Running coroutines efficiently
+* xref:../execution/frame-allocation.adoc[Frame Allocation] â€” Coroutine-specific memory tuning
+* xref:../coroutines/launching.adoc[Launching Tasks] â€” Running coroutines efficiently

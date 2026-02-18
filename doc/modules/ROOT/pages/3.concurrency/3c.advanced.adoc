@@ -44,14 +44,14 @@ No mutex, no lock guard, yet the result is always 200,000. The `std::atomic<int>
 
 === When to Use Atomics
 
-Atomics work best for single-variable operations: counters, flags, simple state. They are faster than mutexes when contention is low. But they cannot protect complex operations involving multiple variables—for that, you need mutexes.
+Atomics work best for single-variable operations: counters, flags, simple state. They are faster than mutexes when contention is low. But they cannot protect complex operations involving multiple variablesâ€”for that, you need mutexes.
 
 Common atomic types include:
 
-* `std::atomic<bool>` — Thread-safe boolean flag
-* `std::atomic<int>` — Thread-safe integer counter
-* `std::atomic<T*>` — Thread-safe pointer
-* `std::atomic<std::shared_ptr<T>>` — Thread-safe shared pointer ({cpp}20)
+* `std::atomic<bool>` â€” Thread-safe boolean flag
+* `std::atomic<int>` â€” Thread-safe integer counter
+* `std::atomic<T*>` â€” Thread-safe pointer
+* `std::atomic<std::shared_ptr<T>>` â€” Thread-safe shared pointer ({cpp}20)
 
 Any trivially copyable type can be made atomic.
 
@@ -134,12 +134,12 @@ The worker thread calls `cv.wait()`, which atomically releases the mutex and sus
 
 === The Predicate
 
-The lambda `[]{ return ready; }` is the *predicate*. `wait()` will not return until this evaluates to true. This guards against *spurious wakeups*—rare events where a thread wakes without notification. Always use a predicate.
+The lambda `[]{ return ready; }` is the *predicate*. `wait()` will not return until this evaluates to true. This guards against *spurious wakeups*â€”rare events where a thread wakes without notification. Always use a predicate.
 
 === Notification Methods
 
-* `notify_one()` — Wake a single waiting thread
-* `notify_all()` — Wake all waiting threads
+* `notify_one()` â€” Wake a single waiting thread
+* `notify_all()` â€” Wake all waiting threads
 
 Use `notify_one()` when only one thread needs to proceed (e.g., producer-consumer with single consumer). Use `notify_all()` when multiple threads might need to check the condition (e.g., broadcast events, shutdown signals).
 
@@ -160,7 +160,7 @@ auto status = cv.wait_until(lock, deadline, predicate);
 
 == Shared Locks: Readers and Writers
 
-Consider a data structure that is read frequently but written rarely. A regular mutex serializes all access—but why block readers from each other? Multiple threads can safely read simultaneously; only writes require exclusive access.
+Consider a data structure that is read frequently but written rarely. A regular mutex serializes all accessâ€”but why block readers from each other? Multiple threads can safely read simultaneously; only writes require exclusive access.
 
 *Shared mutexes* support this pattern:
 
@@ -191,10 +191,10 @@ void writer(int value)
 === Lock Types
 
 `std::shared_lock`::
-Acquires a *shared lock*—multiple threads can hold shared locks simultaneously.
+Acquires a *shared lock*â€”multiple threads can hold shared locks simultaneously.
 
 `std::unique_lock` (on shared_mutex)::
-Acquires an *exclusive lock*—no other locks (shared or exclusive) can be held.
+Acquires an *exclusive lock*â€”no other locks (shared or exclusive) can be held.
 
 === Behavior
 

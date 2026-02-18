@@ -26,7 +26,7 @@ task<std::string> fetch_page(std::string url)
 
 === co_yield
 
-The `co_yield` keyword produces a value and suspends the coroutine. This pattern creates *generators*—functions that produce sequences of values one at a time. After yielding a value, the coroutine pauses until someone asks for the next value.
+The `co_yield` keyword produces a value and suspends the coroutine. This pattern creates *generators*â€”functions that produce sequences of values one at a time. After yielding a value, the coroutine pauses until someone asks for the next value.
 
 [source,cpp]
 ----
@@ -91,11 +91,11 @@ For now, observe that the presence of `co_return` transforms what looks like a r
 
 == Awaitables and Awaiters
 
-When you write `co_await expr`, the expression `expr` must be an *awaitable*—something that knows how to suspend and resume a coroutine. The awaitable produces an *awaiter* object that implements three methods:
+When you write `co_await expr`, the expression `expr` must be an *awaitable*â€”something that knows how to suspend and resume a coroutine. The awaitable produces an *awaiter* object that implements three methods:
 
-* `await_ready()` — Returns `true` if the result is immediately available and no suspension is needed
-* `await_suspend(handle)` — Called when the coroutine suspends; receives a handle to the coroutine for later resumption
-* `await_resume()` — Called when the coroutine resumes; its return value becomes the value of the `co_await` expression
+* `await_ready()` â€” Returns `true` if the result is immediately available and no suspension is needed
+* `await_suspend(handle)` â€” Called when the coroutine suspends; receives a handle to the coroutine for later resumption
+* `await_resume()` â€” Called when the coroutine resumes; its return value becomes the value of the `co_await` expression
 
 === Example: Understanding the Awaiter Protocol
 
@@ -185,8 +185,8 @@ The variable `i` inside `counter` maintains its value across all these suspensio
 
 The {cpp} standard library provides two predefined awaiters:
 
-* `std::suspend_always` — `await_ready()` returns `false` (always suspend)
-* `std::suspend_never` — `await_ready()` returns `true` (never suspend)
+* `std::suspend_always` â€” `await_ready()` returns `false` (always suspend)
+* `std::suspend_never` â€” `await_ready()` returns `true` (never suspend)
 
 These are useful building blocks for promise types and custom awaitables.
 
@@ -199,4 +199,4 @@ co_await std::suspend_always{};
 co_await std::suspend_never{};
 ----
 
-You have now learned the three coroutine keywords and how awaitables work. In the next section, you will learn about the promise type and coroutine handle—the machinery that makes coroutines function.
+You have now learned the three coroutine keywords and how awaitables work. In the next section, you will learn about the promise type and coroutine handleâ€”the machinery that makes coroutines function.

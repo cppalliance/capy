@@ -9,7 +9,7 @@ This section introduces the dangers of shared data access and the synchronizatio
 
 == The Danger: Race Conditions
 
-When multiple threads read the same data, all is well. But when at least one thread writes while others read or write, you have a *data race*. The result is undefined behavior—crashes, corruption, or silent errors.
+When multiple threads read the same data, all is well. But when at least one thread writes while others read or write, you have a *data race*. The result is undefined behaviorâ€”crashes, corruption, or silent errors.
 
 Consider this code:
 
@@ -39,9 +39,9 @@ int main()
 }
 ----
 
-Two threads, each incrementing 100,000 times. You would expect 200,000. But run this repeatedly and you will see different results—180,000, 195,327, maybe occasionally 200,000. Something is wrong.
+Two threads, each incrementing 100,000 times. You would expect 200,000. But run this repeatedly and you will see different resultsâ€”180,000, 195,327, maybe occasionally 200,000. Something is wrong.
 
-The `++counter` operation looks atomic—indivisible—but it is not. It actually consists of three steps:
+The `++counter` operation looks atomicâ€”indivisibleâ€”but it is not. It actually consists of three steps:
 
 1. Read the current value
 2. Add one
@@ -49,7 +49,7 @@ The `++counter` operation looks atomic—indivisible—but it is not. It actually co
 
 Between any of these steps, the other thread might execute its own steps. Imagine both threads read `counter` when it is 5. Both add one, getting 6. Both write 6 back. Two increments, but the counter only went up by one. This is a *lost update*, a classic race condition.
 
-The more threads, the more opportunity for races. The faster your processor, the more instructions execute between context switches, potentially hiding the bug—until one critical day in production.
+The more threads, the more opportunity for races. The faster your processor, the more instructions execute between context switches, potentially hiding the bugâ€”until one critical day in production.
 
 == Mutual Exclusion: Mutexes
 
@@ -91,7 +91,7 @@ int main()
 
 Now the output is always 200,000. The mutex ensures that between `lock()` and `unlock()`, only one thread executes. The increment is now effectively atomic.
 
-But there is a problem with calling `lock()` and `unlock()` directly. If code between them throws an exception, `unlock()` never executes. The mutex stays locked forever, and any thread waiting for it blocks eternally—a *deadlock*.
+But there is a problem with calling `lock()` and `unlock()` directly. If code between them throws an exception, `unlock()` never executes. The mutex stays locked forever, and any thread waiting for it blocks eternallyâ€”a *deadlock*.
 
 == Lock Guards: Safety Through RAII
 
@@ -194,9 +194,9 @@ void safe_function()
 
 === Deadlock Prevention Rules
 
-1. *Lock in consistent order* — Define a global ordering for mutexes and always lock in that order
-2. *Use std::scoped_lock for multiple mutexes* — Let the library handle deadlock avoidance
-3. *Hold locks for minimal time* — Reduce the window for contention
-4. *Avoid nested locks when possible* — Simpler designs prevent deadlock by construction
+1. *Lock in consistent order* â€” Define a global ordering for mutexes and always lock in that order
+2. *Use std::scoped_lock for multiple mutexes* â€” Let the library handle deadlock avoidance
+3. *Hold locks for minimal time* â€” Reduce the window for contention
+4. *Avoid nested locks when possible* â€” Simpler designs prevent deadlock by construction
 
 You have now learned about race conditions, mutexes, lock guards, and deadlocks. In the next section, you will explore advanced synchronization primitives: atomics, condition variables, and shared locks.
