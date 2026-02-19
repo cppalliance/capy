@@ -16,4 +16,5 @@ build-project timeout-cancellation ;
 build-project parallel-fetch ;
 build-project custom-dynamic-buffer ;
 build-project stream-pipeline ;
+build-project when-any-cancellation ;
 build-project asio ;
