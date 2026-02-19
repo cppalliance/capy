@@ -4,7 +4,7 @@ This section introduces dynamic buffers—growable storage that adapts to data f
 
 == Prerequisites
 
-* Completed xref:5e.algorithms.adoc[Buffer Algorithms]
+* Completed xref:5.buffers/5e.algorithms.adoc[Buffer Algorithms]
 * Understanding of buffer sequences and copying
 
 == The Producer/Consumer Model

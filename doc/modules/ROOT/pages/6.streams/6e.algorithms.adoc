@@ -4,7 +4,7 @@ This section explains the composed read/write operations and transfer algorithms
 
 == Prerequisites
 
-* Completed xref:6d.buffer-concepts.adoc[Buffer Sources and Sinks]
+* Completed xref:6.streams/6d.buffer-concepts.adoc[Buffer Sources and Sinks]
 * Understanding of all six stream concepts
 
 == Composed Read/Write
@@ -250,4 +250,4 @@ else if (ec.failed())
 | ReadSource/ReadStream → BufferSink transfer
 |===
 
-You have now learned about transfer algorithms. Continue to xref:6f.isolation.adoc[Physical Isolation] to learn how type erasure enables compilation firewalls.
+You have now learned about transfer algorithms. Continue to xref:6.streams/6f.isolation.adoc[Physical Isolation] to learn how type erasure enables compilation firewalls.

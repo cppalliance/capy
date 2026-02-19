@@ -4,7 +4,7 @@ This section explains the IoAwaitable protocol—Capy's mechanism for propagatin
 
 == Prerequisites
 
-* Completed xref:4c.executors.adoc[Executors and Execution Contexts]
+* Completed xref:4.coroutines/4c.executors.adoc[Executors and Execution Contexts]
 * Understanding of standard awaiter protocol (`await_ready`, `await_suspend`, `await_resume`)
 
 == The Problem: Context Propagation

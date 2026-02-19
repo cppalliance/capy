@@ -4,7 +4,7 @@ This section introduces the three {cpp}20 keywords that create coroutines and wa
 
 == Prerequisites
 
-* Completed xref:2a.foundations.adoc[Part I: Foundations]
+* Completed xref:2.cpp20-coroutines/2a.foundations.adoc[Part I: Foundations]
 * Understanding of why coroutines exist and what problem they solve
 
 == The Three Keywords
@@ -85,7 +85,7 @@ SimpleCoroutine my_first_coroutine()
 }
 ----
 
-The `promise_type` nested structure provides the minimum scaffolding the compiler needs. You will learn what each method does in xref:2c.machinery.adoc[Part III: Coroutine Machinery].
+The `promise_type` nested structure provides the minimum scaffolding the compiler needs. You will learn what each method does in xref:2.cpp20-coroutines/2c.machinery.adoc[Part III: Coroutine Machinery].
 
 For now, observe that the presence of `co_return` transforms what looks like a regular function into a coroutine. If you try to compile a function with coroutine keywords but without proper infrastructure, the compiler will produce errors.
 

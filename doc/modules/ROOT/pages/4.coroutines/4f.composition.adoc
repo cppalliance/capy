@@ -4,7 +4,7 @@ This section explains how to run multiple tasks concurrently using `when_all` an
 
 == Prerequisites
 
-* Completed xref:4e.cancellation.adoc[Stop Tokens and Cancellation]
+* Completed xref:4.coroutines/4e.cancellation.adoc[Stop Tokens and Cancellation]
 * Understanding of stop token propagation
 
 == Overview

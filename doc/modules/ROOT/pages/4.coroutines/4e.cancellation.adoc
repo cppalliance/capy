@@ -4,7 +4,7 @@ This section teaches cooperative cancellation from the ground up, explaining {cp
 
 == Prerequisites
 
-* Completed xref:4d.io-awaitable.adoc[The IoAwaitable Protocol]
+* Completed xref:4.coroutines/4d.io-awaitable.adoc[The IoAwaitable Protocol]
 * Understanding of how context propagates through coroutine chains
 
 == Part 1: The Problem
@@ -371,7 +371,7 @@ public:
 
 === when_any Cancellation
 
-`when_any` uses stop tokens internally to cancel "losing" tasks when the first task completes. This is covered in xref:4f.composition.adoc[Concurrent Composition].
+`when_any` uses stop tokens internally to cancel "losing" tasks when the first task completes. This is covered in xref:4.coroutines/4f.composition.adoc[Concurrent Composition].
 
 == Reference
 

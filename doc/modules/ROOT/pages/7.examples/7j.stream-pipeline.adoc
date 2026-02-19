@@ -10,7 +10,7 @@ Data transformation through a pipeline of sources and sinks.
 
 == Prerequisites
 
-* Completed xref:7i.echo-server-corosio.adoc[Echo Server with Corosio]
+* Completed xref:7.examples/7i.echo-server-corosio.adoc[Echo Server with Corosio]
 * Understanding of buffer sources/sinks from xref:../6.streams/6d.buffer-concepts.adoc[Buffer Concepts]
 
 == Source Code

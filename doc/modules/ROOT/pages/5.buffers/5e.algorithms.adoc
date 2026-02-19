@@ -4,7 +4,7 @@ This section covers algorithms for measuring and manipulating buffer sequences.
 
 == Prerequisites
 
-* Completed xref:5c.sequences.adoc[Buffer Sequences]
+* Completed xref:5.buffers/5c.sequences.adoc[Buffer Sequences]
 * Understanding of `ConstBufferSequence` and iteration
 
 == Measuring Buffers
@@ -259,4 +259,4 @@ public:
 | Copy algorithm
 |===
 
-You have now learned how to measure and copy buffer sequences. Continue to xref:5f.dynamic.adoc[Dynamic Buffers] to learn about growable buffer storage.
+You have now learned how to measure and copy buffer sequences. Continue to xref:5.buffers/5f.dynamic.adoc[Dynamic Buffers] to learn about growable buffer storage.

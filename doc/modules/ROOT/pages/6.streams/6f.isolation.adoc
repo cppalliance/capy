@@ -4,7 +4,7 @@ This section explains how type-erased wrappers enable compilation firewalls and 
 
 == Prerequisites
 
-* Completed xref:6e.algorithms.adoc[Transfer Algorithms]
+* Completed xref:6.streams/6e.algorithms.adoc[Transfer Algorithms]
 * Understanding of type-erased wrappers
 
 == The Compilation Firewall Pattern

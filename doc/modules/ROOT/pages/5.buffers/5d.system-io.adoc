@@ -4,7 +4,7 @@ This section explains how buffer sequences interface with operating system I/O o
 
 == Prerequisites
 
-* Completed xref:5c.sequences.adoc[Buffer Sequences]
+* Completed xref:5.buffers/5c.sequences.adoc[Buffer Sequences]
 * Understanding of buffer sequence concepts
 
 == The Virtual Boundary
@@ -202,4 +202,4 @@ The buffer sequence concepts and translation utilities are in:
 
 OS-specific I/O is handled by Corosio, which builds on Capy's buffer model.
 
-You have now learned how buffer sequences integrate with operating system I/O. Continue to xref:5e.algorithms.adoc[Buffer Algorithms] to learn about measuring and copying buffers.
+You have now learned how buffer sequences integrate with operating system I/O. Continue to xref:5.buffers/5e.algorithms.adoc[Buffer Algorithms] to learn about measuring and copying buffers.

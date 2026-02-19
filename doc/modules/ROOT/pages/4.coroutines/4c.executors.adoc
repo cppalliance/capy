@@ -4,7 +4,7 @@ This section explains executors and execution contexts—the mechanisms that con
 
 == Prerequisites
 
-* Completed xref:4b.launching.adoc[Launching Coroutines]
+* Completed xref:4.coroutines/4b.launching.adoc[Launching Coroutines]
 * Understanding of `run_async` and `run`
 
 == The Executor Concept

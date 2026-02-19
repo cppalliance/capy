@@ -4,7 +4,7 @@ This section explains how to launch coroutines for execution. You will learn abo
 
 == Prerequisites
 
-* Completed xref:4a.tasks.adoc[The task Type]
+* Completed xref:4.coroutines/4a.tasks.adoc[The task Type]
 * Understanding of lazy task execution
 
 == The Execution Model
@@ -35,7 +35,7 @@ int main()
     thread_pool pool;
     run_async(pool.get_executor())(compute());
     // Task is now running on the thread pool
-    
+
     // pool destructor waits for work to complete
     return 0;
 }
@@ -115,10 +115,10 @@ Inside a coroutine, use `run` to execute a child task on a different executor:
 task<int> compute_on_pool(thread_pool& pool)
 {
     // This task runs on whatever executor we're already on
-    
+
     // But this child task runs on the pool's executor:
     int result = co_await run(pool.get_executor())(expensive_computation());
-    
+
     // After co_await, we're back on our original executor
     co_return result;
 }
