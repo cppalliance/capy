@@ -4,7 +4,7 @@ This section explains buffer sequences—the concept that enables zero-allocatio
 
 == Prerequisites
 
-* Completed xref:5b.types.adoc[Buffer Types]
+* Completed xref:5.buffers/5b.types.adoc[Buffer Types]
 * Understanding of `const_buffer` and `mutable_buffer`
 
 == What Is a Buffer Sequence?
@@ -172,4 +172,4 @@ If your custom buffer sequence only provides forward iteration, wrap it in a typ
 | Incremental consumption wrapper
 |===
 
-You have now learned how buffer sequences enable zero-allocation composition. Continue to xref:5d.system-io.adoc[System I/O Integration] to see how buffer sequences interface with operating system I/O.
+You have now learned how buffer sequences enable zero-allocation composition. Continue to xref:5.buffers/5d.system-io.adoc[System I/O Integration] to see how buffer sequences interface with operating system I/O.

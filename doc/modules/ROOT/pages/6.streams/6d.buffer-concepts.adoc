@@ -4,7 +4,7 @@ This section explains the `BufferSource` and `BufferSink` concepts for zero-copy
 
 == Prerequisites
 
-* Completed xref:6c.sources-sinks.adoc[Sources and Sinks]
+* Completed xref:6.streams/6c.sources-sinks.adoc[Sources and Sinks]
 * Understanding of caller-owns-buffers patterns
 
 == Callee-Owns-Buffers Pattern
@@ -263,4 +263,4 @@ task<> decompress_stream(any_buffer_source& compressed, any_write_sink& output)
 | Type-erased buffer sink wrapper
 |===
 
-You have now learned about buffer sources and sinks for zero-copy I/O. Continue to xref:6e.algorithms.adoc[Transfer Algorithms] to learn about composed read/write operations.
+You have now learned about buffer sources and sinks for zero-copy I/O. Continue to xref:6.streams/6e.algorithms.adoc[Transfer Algorithms] to learn about composed read/write operations.

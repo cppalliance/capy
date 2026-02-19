@@ -4,7 +4,7 @@ This section introduces the dangers of shared data access and the synchronizatio
 
 == Prerequisites
 
-* Completed xref:3a.foundations.adoc[Part I: Foundations]
+* Completed xref:3.concurrency/3a.foundations.adoc[Part I: Foundations]
 * Understanding of threads and their lifecycle
 
 == The Danger: Race Conditions

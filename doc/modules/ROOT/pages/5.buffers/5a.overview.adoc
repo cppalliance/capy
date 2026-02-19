@@ -156,4 +156,4 @@ The concept-driven approach:
 * Provides a single signature that accepts anything buffer-like
 * Follows proven STL design principles
 
-Continue to xref:5b.types.adoc[Buffer Types] to learn about `const_buffer` and `mutable_buffer`.
+Continue to xref:5.buffers/5b.types.adoc[Buffer Types] to learn about `const_buffer` and `mutable_buffer`.

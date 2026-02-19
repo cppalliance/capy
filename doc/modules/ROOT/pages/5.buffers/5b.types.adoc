@@ -4,7 +4,7 @@ This section introduces Capy's fundamental buffer types: `const_buffer` and `mut
 
 == Prerequisites
 
-* Completed xref:5a.overview.adoc[Why Concepts, Not Spans]
+* Completed xref:5.buffers/5a.overview.adoc[Why Concepts, Not Spans]
 * Understanding of why concept-driven buffers enable composition
 
 == Why Not std::byte?
@@ -197,4 +197,4 @@ auto e = end(multi);      // Returns multi.end()
 | Buffer creation utilities
 |===
 
-You have now learned about `const_buffer` and `mutable_buffer`. Continue to xref:5c.sequences.adoc[Buffer Sequences] to understand how these types compose into sequences.
+You have now learned about `const_buffer` and `mutable_buffer`. Continue to xref:5.buffers/5c.sequences.adoc[Buffer Sequences] to understand how these types compose into sequences.

@@ -196,4 +196,4 @@ echo(s3);
 
 Same code, different transports—compile once, link anywhere.
 
-Continue to xref:6b.streams.adoc[Streams (Partial I/O)] to learn the `ReadStream` and `WriteStream` concepts in detail.
+Continue to xref:6.streams/6b.streams.adoc[Streams (Partial I/O)] to learn the `ReadStream` and `WriteStream` concepts in detail.

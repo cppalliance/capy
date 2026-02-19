@@ -4,7 +4,7 @@ This section explains the `ReadSource` and `WriteSink` concepts for complete I/O
 
 == Prerequisites
 
-* Completed xref:6b.streams.adoc[Streams (Partial I/O)]
+* Completed xref:6.streams/6b.streams.adoc[Streams (Partial I/O)]
 * Understanding of partial I/O with `ReadStream` and `WriteStream`
 
 == ReadSource
@@ -238,4 +238,4 @@ Same `send_body` function, different transfer encodings—the library handles th
 | Type-erased write sink wrapper
 |===
 
-You have now learned about sources and sinks for complete I/O. Continue to xref:6d.buffer-concepts.adoc[Buffer Sources and Sinks] to learn about the callee-owns-buffers pattern.
+You have now learned about sources and sinks for complete I/O. Continue to xref:6.streams/6d.buffer-concepts.adoc[Buffer Sources and Sinks] to learn about the callee-owns-buffers pattern.

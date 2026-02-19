@@ -4,7 +4,7 @@ This section explains the promise type and coroutine handle—the core machinery
 
 == Prerequisites
 
-* Completed xref:2b.syntax.adoc[Part II: {cpp}20 Syntax]
+* Completed xref:2.cpp20-coroutines/2b.syntax.adoc[Part II: {cpp}20 Syntax]
 * Understanding of the three coroutine keywords
 * Familiarity with awaitables and awaiters
 

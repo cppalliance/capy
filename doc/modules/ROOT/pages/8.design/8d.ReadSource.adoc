@@ -348,7 +348,7 @@ Examples of types that satisfy `ReadSource`:
 
 == Why `read_some` Returns No Data on EOF
 
-The `read_some` contract (inherited from `ReadStream`) requires that when `ec == cond::eof`, `n` is always 0. Data and EOF are delivered in separate calls. See xref:8a.ReadStream.adoc#_design_foundations_why_errors_exclude_data[ReadStream: Why Errors Exclude Data] for the full rationale. The key points:
+The `read_some` contract (inherited from `ReadStream`) requires that when `ec == cond::eof`, `n` is always 0. Data and EOF are delivered in separate calls. See xref:8.design/8a.ReadStream.adoc#_design_foundations_why_errors_exclude_data[ReadStream: Why Errors Exclude Data] for the full rationale. The key points:
 
 - The clean trichotomy (success/EOF/error, where data implies success) eliminates an entire class of bugs where callers accidentally drop the final bytes of a stream.
 - Write-side atomicity (`write_eof(buffers)`) serves correctness for protocol framing. Read-side piggybacking would be a minor optimization with significant API cost.

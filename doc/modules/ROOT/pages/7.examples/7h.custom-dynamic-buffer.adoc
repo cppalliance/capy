@@ -10,7 +10,7 @@ Implementing the DynamicBuffer concept for a custom allocation strategy.
 
 == Prerequisites
 
-* Completed xref:7g.parallel-fetch.adoc[Parallel Fetch]
+* Completed xref:7.examples/7g.parallel-fetch.adoc[Parallel Fetch]
 * Understanding of dynamic buffers from xref:../5.buffers/5f.dynamic.adoc[Dynamic Buffers]
 
 == Source Code
@@ -300,4 +300,4 @@ Buffer statistics:
 
 == Next Steps
 
-* xref:7i.echo-server-corosio.adoc[Echo Server with Corosio] — Real networking
+* xref:7.examples/7i.echo-server-corosio.adoc[Echo Server with Corosio] — Real networking
