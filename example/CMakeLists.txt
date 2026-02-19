@@ -16,6 +16,7 @@ add_subdirectory(timeout-cancellation)
 add_subdirectory(parallel-fetch)
 add_subdirectory(custom-dynamic-buffer)
 add_subdirectory(stream-pipeline)
+add_subdirectory(when-any-cancellation)
 
 # Requires Corosio dependency
 if(TARGET Boost::corosio)
