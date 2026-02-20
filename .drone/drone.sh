@@ -85,34 +85,6 @@ cd $BOOST_ROOT/libs/$SELF
 ci/travis/coverity.sh
 fi
 
-elif [ "$DRONE_JOB_BUILDTYPE" == "cmake1" ]; then
-
-set -xe
-
-echo '==================================> INSTALL'
-
-# already in the image
-# pip install --user cmake
-
-echo '==================================> SCRIPT'
-
-export SELF=`basename $REPO_NAME`
-BOOST_BRANCH=develop && [ "$DRONE_BRANCH" == "master" ] && BOOST_BRANCH=master || true
-echo BOOST_BRANCH: $BOOST_BRANCH
-cd ..
-git clone -b $BOOST_BRANCH --depth 1 https://github.com/boostorg/boost.git boost-root
-cd boost-root
-
-mkdir -p libs/$SELF
-cp -r $DRONE_BUILD_DIR/* libs/$SELF
-# git submodule update --init tools/boostdep
-git submodule update --init --recursive
-
-cd libs/$SELF
-mkdir __build__ && cd __build__
-cmake -DCMAKE_INSTALL_PREFIX=~/.local ..
-cmake --build . --target install
-
 elif [ "$DRONE_JOB_BUILDTYPE" == "cmake-superproject" ]; then
 
 echo '==================================> INSTALL'
@@ -121,29 +93,102 @@ common_install
 
 echo '==================================> COMPILE'
 
-# Warnings as errors -Werror not building. Remove for now:
-# export CXXFLAGS="-Wall -Wextra -Werror"
-export CXXFLAGS="-Wall -Wextra"
-export CMAKE_OPTIONS=${CMAKE_OPTIONS:--DBUILD_TESTING=ON}
+export CXXFLAGS="-Wall -Wextra -Werror"
 export CMAKE_SHARED_LIBS=${CMAKE_SHARED_LIBS:-1}
+export CMAKE_NO_TESTS=${CMAKE_NO_TESTS:-error}
+if [ $CMAKE_NO_TESTS = "error" ]; then
+    CMAKE_BUILD_TESTING="-DBUILD_TESTING=ON"
+fi
 
 mkdir __build_static
 cd __build_static
-cmake -DBOOST_ENABLE_CMAKE=1 -DBoost_VERBOSE=1 ${CMAKE_OPTIONS} \
-    -DBOOST_INCLUDE_LIBRARIES=$SELF ..
-cmake --build .
-ctest --output-on-failure -R boost_$SELF
-
+cmake -DBoost_VERBOSE=1 ${CMAKE_BUILD_TESTING} -DCMAKE_INSTALL_PREFIX=iprefix \
+    -DBOOST_INCLUDE_LIBRARIES=$SELF ${CMAKE_OPTIONS} ..
+if [ -n "${CMAKE_BUILD_TESTING}" ]; then
+    cmake --build . --target tests
+fi
+cmake --build . --target install
+ctest --output-on-failure --no-tests=$CMAKE_NO_TESTS
 cd ..
 
 if [ "$CMAKE_SHARED_LIBS" = 1 ]; then
 
 mkdir __build_shared
 cd __build_shared
-cmake -DBOOST_ENABLE_CMAKE=1 -DBoost_VERBOSE=1 ${CMAKE_OPTIONS} \
-    -DBOOST_INCLUDE_LIBRARIES=$SELF -DBUILD_SHARED_LIBS=ON ..
+cmake -DBoost_VERBOSE=1 ${CMAKE_BUILD_TESTING} -DCMAKE_INSTALL_PREFIX=iprefix \
+    -DBOOST_INCLUDE_LIBRARIES=$SELF -DBUILD_SHARED_LIBS=ON ${CMAKE_OPTIONS} ..
+if [ -n "${CMAKE_BUILD_TESTING}" ]; then
+    cmake --build . --target tests
+fi
+cmake --build . --target install
+ctest --output-on-failure --no-tests=$CMAKE_NO_TESTS
+
+fi
+
+elif [ "$DRONE_JOB_BUILDTYPE" == "cmake-mainproject" ]; then
+
+echo '==================================> INSTALL'
+
+common_install
+
+echo '==================================> COMPILE'
+
+export CXXFLAGS="-Wall -Wextra -Werror"
+export CMAKE_SHARED_LIBS=${CMAKE_SHARED_LIBS:-1}
+export CMAKE_NO_TESTS=${CMAKE_NO_TESTS:-error}
+if [ $CMAKE_NO_TESTS = "error" ]; then
+    CMAKE_BUILD_TESTING="-DBUILD_TESTING=ON"
+fi
+
+mkdir __build_static
+cd __build_static
+cmake -DBoost_VERBOSE=1 ${CMAKE_BUILD_TESTING} -DCMAKE_INSTALL_PREFIX=iprefix \
+    ${CMAKE_OPTIONS} ../libs/$SELF
+cmake --build . --target install
+ctest --output-on-failure --no-tests=$CMAKE_NO_TESTS
+cd ..
+
+if [ "$CMAKE_SHARED_LIBS" = 1 ]; then
+
+mkdir __build_shared
+cd __build_shared
+cmake -DBoost_VERBOSE=1 ${CMAKE_BUILD_TESTING} -DCMAKE_INSTALL_PREFIX=iprefix \
+    -DBUILD_SHARED_LIBS=ON ${CMAKE_OPTIONS} ../libs/$SELF
+cmake --build . --target install
+ctest --output-on-failure --no-tests=$CMAKE_NO_TESTS
+
+fi
+
+elif [ "$DRONE_JOB_BUILDTYPE" == "cmake-subdirectory" ]; then
+
+echo '==================================> INSTALL'
+
+common_install
+
+echo '==================================> COMPILE'
+
+export CXXFLAGS="-Wall -Wextra -Werror"
+export CMAKE_SHARED_LIBS=${CMAKE_SHARED_LIBS:-1}
+export CMAKE_NO_TESTS=${CMAKE_NO_TESTS:-error}
+if [ $CMAKE_NO_TESTS = "error" ]; then
+    CMAKE_BUILD_TESTING="-DBUILD_TESTING=ON"
+fi
+
+mkdir __build_static
+cd __build_static
+cmake ${CMAKE_BUILD_TESTING} ${CMAKE_OPTIONS} ../libs/$SELF/test/cmake_test
 cmake --build .
-ctest --output-on-failure -R boost_$SELF
+cmake --build . --target check
+cd ..
+
+if [ "$CMAKE_SHARED_LIBS" = 1 ]; then
+
+mkdir __build_shared
+cd __build_shared
+cmake ${CMAKE_BUILD_TESTING} -DBUILD_SHARED_LIBS=ON ${CMAKE_OPTIONS} \
+    ../libs/$SELF/test/cmake_test
+cmake --build .
+cmake --build . --target check
 
 fi
 
