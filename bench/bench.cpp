@@ -196,8 +196,8 @@ task<int> depth4()
 // Executor Switching with Foreign Awaitable
 //
 // Flow: !c1 -> c2 -> !c3 -> c4
-//                    \
-//                      f
+//                    |
+//                    f
 //
 // c1 on ex1, c2 inherits ex1
 // c3 switches to ex2 via run_on, awaits foreign f
@@ -336,8 +336,8 @@ int main()
 
     //-----------------------------------------------
     // Flow: !c1 -> c2 -> !c3 -> c4
-    //                    \
-    //                      f
+    //                    |
+    //                    f
     //-----------------------------------------------
     run_benchmark("run executor switch + foreign", iterations, [&]{
         int result = 0;
@@ -347,8 +347,8 @@ int main()
 
     //-----------------------------------------------
     // Flow: !c1 -> c2 -> !c3 -> c4 via strands
-    //                    \
-    //                      f
+    //                    |
+    //                    f
     //-----------------------------------------------
     run_benchmark("run strand switch + foreign", iterations, [&]{
         int result = 0;

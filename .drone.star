@@ -10,31 +10,94 @@
 #
 #
 
+globalenv = {
+    'B2_CI_VERSION': '1',
+    'B2_VARIANT': 'debug,release',
+    'B2_FLAGS': 'warnings=extra warnings-as-errors=on',
+}
+
 def main(ctx):
-    return generate(
-        # Compilers
+    # generate() provides: main compiler matrix, asan, ubsan, coverage,
+    # and cmake-superproject (linux/latest gcc) by default
+    jobs = generate(
         [
             'gcc >=12.0',
             'clang >=17.0',
             'msvc >=14.1',
             'arm64-gcc latest',
-            's390x-gcc latest',
             # 'freebsd-gcc latest',
-            'apple-clang *',
+            # apple-clang: added as explicit osx_cxx() below because
+            # generate() only supports C++11/14/17 for apple-clang
             'arm64-clang latest',
-            's390x-clang latest',
-            'freebsd-clang latest',
+            # freebsd-clang: added as explicit freebsd_cxx() below to
+            # target FreeBSD >=14 (system clang >=17 needed for <coroutine>)
             'x86-msvc latest'
         ],
-        # Standards
         '>=20',
-        # Asan is delegated to GHA
-        asan=False,
         docs=False,
-        coverage=False,
         cache_dir='cache')
+
+    # macOS: generate() skips apple-clang when cxx_range='>=20' because
+    # ci-automation's compiler_supports() doesn't list C++20 for apple-clang
+    jobs += [
+        osx_cxx("macOS: Clang 16.2.0", "clang++", packages="",
+            buildscript="drone", buildtype="boost",
+            xcode_version="16.2.0",
+            environment={
+                'B2_TOOLSET': 'clang',
+                'B2_CXXSTD': '20',
+                'B2_CXXFLAGS': '-fexperimental-library',
+            },
+            globalenv=globalenv),
+    ]
+
+    # Jobs not covered by generate()
+    jobs += [
+        linux_cxx("Valgrind", "clang++-17", packages="clang-17 libc6-dbg libstdc++-12-dev",
+            llvm_os="jammy", llvm_ver="17",
+            buildscript="drone", buildtype="valgrind",
+            image="cppalliance/droneubuntu2204:1",
+            environment={
+                'COMMENT': 'valgrind',
+                'B2_TOOLSET': 'clang-17',
+                'B2_CXXSTD': '20',
+                'B2_DEFINES': 'BOOST_NO_STRESS_TEST=1',
+                'B2_VARIANT': 'debug',
+                'B2_TESTFLAGS': 'testing.launcher=valgrind',
+                'VALGRIND_OPTS': '--error-exitcode=1',
+            },
+            globalenv=globalenv),
+
+        linux_cxx("cmake-mainproject", "g++-13", packages="g++-13",
+            image="cppalliance/droneubuntu2404:1",
+            buildtype="cmake-mainproject", buildscript="drone",
+            environment={
+                'COMMENT': 'cmake-mainproject',
+                'CXX': 'g++-13',
+            },
+            globalenv=globalenv),
+
+        linux_cxx("cmake-subdirectory", "g++-13", packages="g++-13",
+            image="cppalliance/droneubuntu2404:1",
+            buildtype="cmake-subdirectory", buildscript="drone",
+            environment={
+                'COMMENT': 'cmake-subdirectory',
+                'CXX': 'g++-13',
+            },
+            globalenv=globalenv),
+
+        windows_cxx("msvc-14.3 cmake-superproject", "",
+            image="cppalliance/dronevs2022:1",
+            buildtype="cmake-superproject", buildscript="drone",
+            environment={
+                'B2_TOOLSET': 'msvc-14.3',
+                'B2_CXXSTD': '20',
+            },
+            globalenv=globalenv),
+    ]
+
+    return jobs
 
 
 # from https://github.com/cppalliance/ci-automation
 load("@ci_automation//ci/drone/:functions.star", "linux_cxx", "windows_cxx", "osx_cxx", "freebsd_cxx", "generate")
-
