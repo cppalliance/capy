@@ -24,7 +24,7 @@ namespace capy {
     This struct bundles the execution context passed through
     coroutine chains via the IoAwaitable protocol. It contains
     the executor for resumption, a stop token for cancellation,
-    and an optional allocator for coroutine frame allocation.
+    and an optional frame allocator for coroutine frame allocation.
 
     @par Lifetime
 
@@ -47,11 +47,11 @@ struct io_env
     /** The stop token for cancellation propagation. */
     std::stop_token stop_token;
 
-    /** The allocator for coroutine frame allocation.
+    /** The frame allocator for coroutine frame allocation.
 
         When null, the default allocator is used.
     */
-    std::pmr::memory_resource* allocator = nullptr;
+    std::pmr::memory_resource* frame_allocator = nullptr;
 };
 
 } // capy

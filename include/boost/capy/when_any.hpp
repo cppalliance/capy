@@ -501,7 +501,7 @@ private:
         auto h = runner.release();
         h.promise().state_ = state_;
         h.promise().index_ = I;
-        h.promise().env_ = io_env{caller_ex, token, state_->core_.caller_env_->allocator};
+        h.promise().env_ = io_env{caller_ex, token, state_->core_.caller_env_->frame_allocator};
 
         std::coroutine_handle<> ch{h};
         state_->runner_handles_[I] = ch;
@@ -763,7 +763,7 @@ public:
             auto h = runner.release();
             h.promise().state_ = state_;
             h.promise().index_ = index;
-            h.promise().env_ = io_env{caller_env->executor, token, caller_env->allocator};
+            h.promise().env_ = io_env{caller_env->executor, token, caller_env->frame_allocator};
 
             state_->runner_handles_[index] = std::coroutine_handle<>{h};
             ++index;

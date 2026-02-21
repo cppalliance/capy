@@ -246,9 +246,9 @@ struct [[nodiscard]] run_awaitable_ex
             env_.stop_token = st_;
 
         if constexpr (!std::is_void_v<Alloc>)
-            env_.allocator = resource_.get();
+            env_.frame_allocator = resource_.get();
         else
-            env_.allocator = caller_env->allocator;
+            env_.frame_allocator = caller_env->frame_allocator;
 
         p.set_environment(&env_);
         return h;
@@ -345,9 +345,9 @@ struct [[nodiscard]] run_awaitable
             env_.stop_token = st_;
 
         if constexpr (!std::is_void_v<Alloc>)
-            env_.allocator = resource_.get();
+            env_.frame_allocator = resource_.get();
         else
-            env_.allocator = caller_env->allocator;
+            env_.frame_allocator = caller_env->frame_allocator;
 
         p.set_environment(&env_);
         return h;

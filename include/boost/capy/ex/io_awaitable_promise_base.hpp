@@ -93,7 +93,7 @@ namespace capy {
 
     The mixin's `await_transform` intercepts @ref this_coro::environment_tag
     and the fine-grained tag types (@ref this_coro::executor_tag,
-    @ref this_coro::stop_token_tag, @ref this_coro::allocator_tag),
+    @ref this_coro::stop_token_tag, @ref this_coro::frame_allocator_tag),
     then delegates all other awaitables to your `transform_awaitable`.
 
     @par Making Your Coroutine an IoAwaitable
@@ -268,7 +268,7 @@ public:
 
         This function handles @ref this_coro::environment_tag and
         the fine-grained tags (@ref this_coro::executor_tag,
-        @ref this_coro::stop_token_tag, @ref this_coro::allocator_tag)
+        @ref this_coro::stop_token_tag, @ref this_coro::frame_allocator_tag)
         specially, returning an awaiter that yields the stored value.
         All other awaitables are delegated to @ref transform_awaitable.
 
@@ -317,17 +317,17 @@ public:
             };
             return awaiter{env_->stop_token};
         }
-        else if constexpr (std::is_same_v<Tag, this_coro::allocator_tag>)
+        else if constexpr (std::is_same_v<Tag, this_coro::frame_allocator_tag>)
         {
             BOOST_CAPY_ASSERT(env_);
             struct awaiter
             {
-                std::pmr::memory_resource* allocator_;
+                std::pmr::memory_resource* frame_allocator_;
                 bool await_ready() const noexcept { return true; }
                 void await_suspend(std::coroutine_handle<>) const noexcept { }
-                std::pmr::memory_resource* await_resume() const noexcept { return allocator_; }
+                std::pmr::memory_resource* await_resume() const noexcept { return frame_allocator_; }
             };
-            return awaiter{env_->allocator};
+            return awaiter{env_->frame_allocator};
         }
         else
         {

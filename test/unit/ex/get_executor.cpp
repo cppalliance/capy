@@ -126,20 +126,20 @@ struct this_coro_tags_test
     void
     testAllocatorTagType()
     {
-        this_coro::allocator_tag tag1;
-        this_coro::allocator_tag tag2{};
+        this_coro::frame_allocator_tag tag1;
+        this_coro::frame_allocator_tag tag2{};
         (void)tag1;
         (void)tag2;
 
-        static_assert(std::is_trivially_copyable_v<this_coro::allocator_tag>);
+        static_assert(std::is_trivially_copyable_v<this_coro::frame_allocator_tag>);
     }
 
     void
     testAllocatorConstant()
     {
-        auto tag = this_coro::allocator;
+        auto tag = this_coro::frame_allocator;
         static_assert(std::is_same_v<
-            decltype(this_coro::allocator), this_coro::allocator_tag const>);
+            decltype(this_coro::frame_allocator), this_coro::frame_allocator_tag const>);
         (void)tag;
     }
 
@@ -195,10 +195,10 @@ struct this_coro_tags_test
 
         auto* mr = std::pmr::new_delete_resource();
         io_env env;
-        env.allocator = mr;
+        env.frame_allocator = mr;
         c.h_.promise().set_environment(&env);
 
-        auto awaiter = c.h_.promise().await_transform(this_coro::allocator);
+        auto awaiter = c.h_.promise().await_transform(this_coro::frame_allocator);
 
         BOOST_TEST(awaiter.await_ready());
 
@@ -214,7 +214,7 @@ struct this_coro_tags_test
         io_env env;
         c.h_.promise().set_environment(&env);
 
-        auto awaiter = c.h_.promise().await_transform(this_coro::allocator);
+        auto awaiter = c.h_.promise().await_transform(this_coro::frame_allocator);
         auto* alloc = awaiter.await_resume();
         BOOST_TEST(alloc == nullptr);
     }

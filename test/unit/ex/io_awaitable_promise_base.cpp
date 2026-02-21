@@ -190,7 +190,7 @@ struct io_awaitable_promise_base_test
         c.h_.promise().await_transform(this_coro::stop_token);
         BOOST_TEST_EQ(c.h_.promise().transform_count_, 1);
 
-        c.h_.promise().await_transform(this_coro::allocator);
+        c.h_.promise().await_transform(this_coro::frame_allocator);
         BOOST_TEST_EQ(c.h_.promise().transform_count_, 1);
     }
 

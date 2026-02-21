@@ -346,7 +346,7 @@ private:
 
         auto h = runner.release();
         h.promise().state_ = state_;
-        h.promise().env_ = io_env{caller_ex, token, state_->caller_env_->allocator};
+        h.promise().env_ = io_env{caller_ex, token, state_->caller_env_->frame_allocator};
 
         std::coroutine_handle<> ch{h};
         state_->runner_handles_[I] = ch;

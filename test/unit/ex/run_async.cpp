@@ -365,7 +365,7 @@ struct run_async_test
     static task<bool>
     check_allocator_propagated()
     {
-        auto* alloc = co_await this_coro::allocator;
+        auto* alloc = co_await this_coro::frame_allocator;
         co_return alloc != nullptr;
     }
 

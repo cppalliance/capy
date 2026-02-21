@@ -346,7 +346,7 @@ struct run_test
         bool result = false;
 
         auto check = []() -> task<bool> {
-            auto* alloc = co_await this_coro::allocator;
+            auto* alloc = co_await this_coro::frame_allocator;
             co_return alloc != nullptr;
         };
 
@@ -364,7 +364,7 @@ struct run_test
         bool result = false;
 
         auto inner = []() -> task<bool> {
-            auto* alloc = co_await this_coro::allocator;
+            auto* alloc = co_await this_coro::frame_allocator;
             co_return alloc != nullptr;
         };
 

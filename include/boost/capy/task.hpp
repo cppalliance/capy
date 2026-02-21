@@ -148,7 +148,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                 void await_resume() const noexcept
                 {
                     // Restore TLS when body starts executing
-                    set_current_frame_allocator(p_->environment()->allocator);
+                    set_current_frame_allocator(p_->environment()->frame_allocator);
                 }
             };
             return awaiter{this};
@@ -197,7 +197,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             decltype(auto) await_resume()
             {
                 // Restore TLS before body resumes
-                set_current_frame_allocator(p_->environment()->allocator);
+                set_current_frame_allocator(p_->environment()->frame_allocator);
                 return a_.await_resume();
             }
 

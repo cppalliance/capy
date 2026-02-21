@@ -51,7 +51,7 @@ This signature receives:
 * `env` — The execution environment containing:
 ** `env->executor` — The caller's executor for dispatching completions
 ** `env->stop_token` — A stop token for cooperative cancellation
-** `env->allocator` — An optional allocator for frame allocation
+** `env->frame_allocator` — An optional frame allocator
 
 The return type enables symmetric transfer.
 

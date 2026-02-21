@@ -29,7 +29,7 @@ namespace capy {
         auto const& env = co_await this_coro::environment;
         auto ex = co_await this_coro::executor;
         auto token = co_await this_coro::stop_token;
-        auto* alloc = co_await this_coro::allocator;
+        auto* alloc = co_await this_coro::frame_allocator;
     }
     @endcode
 
@@ -70,16 +70,16 @@ struct executor_tag {};
 */
 struct stop_token_tag {};
 
-/** Tag type for coroutine allocator retrieval.
+/** Tag type for coroutine frame allocator retrieval.
 
     This tag is intercepted by a promise type's `await_transform` to
     yield the coroutine's current frame allocator. The tag itself carries
     no data; it serves only as a sentinel for compile-time dispatch.
 
-    @see allocator
+    @see frame_allocator
     @see io_awaitable_promise_base
 */
-struct allocator_tag {};
+struct frame_allocator_tag {};
 
 /** Tag object that yields the current environment when awaited.
 
@@ -95,7 +95,7 @@ struct allocator_tag {};
         auto const& env = co_await this_coro::environment;
         // env.executor - the executor this coroutine is bound to
         // env.stop_token - the stop token for cancellation
-        // env.allocator - the allocator for frame allocation
+        // env.frame_allocator - the frame allocator
     }
     @endcode
 
@@ -164,8 +164,8 @@ inline constexpr stop_token_tag stop_token{};
 
 /** Tag object that yields the current frame allocator when awaited.
 
-    Use `co_await this_coro::allocator` inside a coroutine whose promise
-    type supports allocator access (e.g., inherits from
+    Use `co_await this_coro::frame_allocator` inside a coroutine whose promise
+    type supports frame allocator access (e.g., inherits from
     @ref io_awaitable_promise_base). The returned pointer is the memory resource
     used for coroutine frame allocation.
 
@@ -173,7 +173,7 @@ inline constexpr stop_token_tag stop_token{};
     @code
     task<void> example()
     {
-        auto* alloc = co_await this_coro::allocator;
+        auto* alloc = co_await this_coro::frame_allocator;
         // alloc is nullptr when using the default allocator
     }
     @endcode
@@ -182,10 +182,10 @@ inline constexpr stop_token_tag stop_token{};
     @li Returns `nullptr` when the default allocator is in use.
     @li This operation never suspends; `await_ready()` always returns `true`.
 
-    @see allocator_tag
+    @see frame_allocator_tag
     @see io_awaitable_promise_base
 */
-inline constexpr allocator_tag allocator{};
+inline constexpr frame_allocator_tag frame_allocator{};
 
 } // namespace this_coro
 } // namespace capy

@@ -156,10 +156,10 @@ struct this_coro_environment_access_test
 
         auto* mr = std::pmr::new_delete_resource();
         io_env env;
-        env.allocator = mr;
+        env.frame_allocator = mr;
         c.h_.promise().set_environment(&env);
 
-        auto awaiter = c.h_.promise().await_transform(this_coro::allocator);
+        auto awaiter = c.h_.promise().await_transform(this_coro::frame_allocator);
         BOOST_TEST(awaiter.await_ready());
 
         auto* alloc = awaiter.await_resume();
