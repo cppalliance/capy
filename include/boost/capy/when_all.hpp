@@ -215,7 +215,15 @@ struct when_all_runner
             template<class Promise>
             auto await_suspend(std::coroutine_handle<Promise> h)
             {
+#ifdef _MSC_VER
+                using R = decltype(a_.await_suspend(h, &p_->env_));
+                if constexpr (std::is_same_v<R, std::coroutine_handle<>>)
+                    a_.await_suspend(h, &p_->env_).resume();
+                else
+                    return a_.await_suspend(h, &p_->env_);
+#else
                 return a_.await_suspend(h, &p_->env_);
+#endif
             }
         };
 
