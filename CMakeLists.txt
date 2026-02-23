@@ -10,12 +10,6 @@
 # Official repository: https://github.com/cppalliance/capy
 #
 
-#-------------------------------------------------
-#
-# Project
-#
-#-------------------------------------------------
-
 cmake_minimum_required(VERSION 3.8...3.31)
 
 set(BOOST_CAPY_VERSION 1)
@@ -29,23 +23,14 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 endif ()
 set(__ignore__ ${CMAKE_C_COMPILER})
 
-#-------------------------------------------------
-#
-# Options
-#
-#-------------------------------------------------
-if (BOOST_CAPY_IS_ROOT)
+option(BOOST_CAPY_BUILD_TESTS "Build boost::capy tests" ${BOOST_CAPY_IS_ROOT})
+if (BOOST_CAPY_BUILD_TESTS)
     include(CTest)
 endif ()
-option(BOOST_CAPY_BUILD_TESTS "Build boost::capy tests" ${BUILD_TESTING})
 option(BOOST_CAPY_BUILD_EXAMPLES "Build boost::capy examples" ${BOOST_CAPY_IS_ROOT})
+option(BOOST_CAPY_BUILD_BENCH "Build boost::capy benchmarks" ${BOOST_CAPY_IS_ROOT})
 option(BOOST_CAPY_MRDOCS_BUILD "Build the target for MrDocs: see mrdocs.yml" OFF)
 
-#-------------------------------------------------
-#
-# Library
-#
-#-------------------------------------------------
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 file(GLOB_RECURSE BOOST_CAPY_HEADERS CONFIGURE_DEPENDS include/boost/*.hpp include/boost/*.natvis)
@@ -57,8 +42,11 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/src PREFIX "src" FILES ${BOOST_CAP
 
 function(boost_capy_setup_properties target)
     target_compile_features(${target} PUBLIC cxx_std_20)
-    target_include_directories(${target} PUBLIC "${PROJECT_SOURCE_DIR}/include")
-    target_include_directories(${target} PRIVATE "${PROJECT_SOURCE_DIR}")
+    target_include_directories(${target} PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>)
+    target_include_directories(${target} PRIVATE
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>)
     target_compile_definitions(${target} PUBLIC BOOST_CAPY_NO_LIB)
     target_compile_definitions(${target} PRIVATE BOOST_CAPY_SOURCE)
     if (BUILD_SHARED_LIBS)
@@ -84,32 +72,57 @@ boost_capy_setup_properties(boost_capy)
 
 # Disable IPO/LTCG - causes LNK2016 errors with MSVC
 set_target_properties(boost_capy PROPERTIES
+    EXPORT_NAME capy
     INTERPROCEDURAL_OPTIMIZATION OFF
     INTERPROCEDURAL_OPTIMIZATION_RELEASE OFF
     INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO OFF
     INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL OFF)
 
-#-------------------------------------------------
-#
-# Benchmarks
-#
-#-------------------------------------------------
-add_subdirectory(bench)
+if(BOOST_SUPERPROJECT_VERSION AND NOT CMAKE_VERSION VERSION_LESS 3.13)
+    boost_install(
+        TARGETS boost_capy
+        VERSION ${BOOST_SUPERPROJECT_VERSION}
+        HEADER_DIRECTORY include)
+else()
+    include(GNUInstallDirs)
+    include(CMakePackageConfigHelpers)
 
-#-------------------------------------------------
-#
-# Examples (before tests so Boost::asio is available)
-#
-#-------------------------------------------------
+    set(BOOST_CAPY_INSTALL_CMAKEDIR
+        ${CMAKE_INSTALL_LIBDIR}/cmake/boost_capy)
+
+    install(TARGETS boost_capy
+        EXPORT boost_capy-targets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(DIRECTORY include/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(EXPORT boost_capy-targets
+        NAMESPACE Boost::
+        DESTINATION ${BOOST_CAPY_INSTALL_CMAKEDIR})
+
+    configure_package_config_file(
+        cmake/boost_capy-config.cmake.in
+        ${CMAKE_CURRENT_BINARY_DIR}/boost_capy-config.cmake
+        INSTALL_DESTINATION ${BOOST_CAPY_INSTALL_CMAKEDIR})
+    write_basic_package_version_file(
+        ${CMAKE_CURRENT_BINARY_DIR}/boost_capy-config-version.cmake
+        COMPATIBILITY SameMajorVersion)
+
+    install(FILES
+        ${CMAKE_CURRENT_BINARY_DIR}/boost_capy-config.cmake
+        ${CMAKE_CURRENT_BINARY_DIR}/boost_capy-config-version.cmake
+        DESTINATION ${BOOST_CAPY_INSTALL_CMAKEDIR})
+endif()
+
+if(BOOST_CAPY_BUILD_BENCH)
+    add_subdirectory(bench)
+endif()
+
 if (BOOST_CAPY_BUILD_EXAMPLES)
     add_subdirectory(example)
 endif ()
 
-#-------------------------------------------------
-#
-# Tests
-#
-#-------------------------------------------------
 if (BOOST_CAPY_BUILD_TESTS)
     add_subdirectory(test)
 endif ()
