@@ -3,6 +3,7 @@
 # Copyright (c) 2021 Dmitry Arkhipov (grisumbras@gmail.com)
 # Copyright (c) 2022 Alan de Freitas (alandefreitas@gmail.com)
 # Copyright (c) 2025 Mohammad Nejati
+# Copyright (c) 2026 Steve Gerbino
 #
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -43,8 +44,7 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/src PREFIX "src" FILES ${BOOST_CAP
 function(boost_capy_setup_properties target)
     target_compile_features(${target} PUBLIC cxx_std_20)
     target_include_directories(${target} PUBLIC
-        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>)
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>)
     target_include_directories(${target} PRIVATE
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>)
     target_compile_definitions(${target} PUBLIC BOOST_CAPY_NO_LIB)
@@ -86,6 +86,11 @@ if(BOOST_SUPERPROJECT_VERSION AND NOT CMAKE_VERSION VERSION_LESS 3.13)
 else()
     include(GNUInstallDirs)
     include(CMakePackageConfigHelpers)
+
+    # Set INSTALL_INTERFACE for standalone installs (boost_install handles
+    # this for superproject builds, including versioned-layout paths)
+    target_include_directories(boost_capy PUBLIC
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
     set(BOOST_CAPY_INSTALL_CMAKEDIR
         ${CMAKE_INSTALL_LIBDIR}/cmake/boost_capy)
