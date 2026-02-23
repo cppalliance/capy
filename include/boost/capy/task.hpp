@@ -204,7 +204,21 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             template<class Promise>
             auto await_suspend(std::coroutine_handle<Promise> h) noexcept
             {
+#ifdef _MSC_VER
+                // Workaround: MSVC stores the coroutine_handle<> return
+                // value on the coroutine frame via hidden __$ReturnUdt$.
+                // After await_suspend publishes the handle to another
+                // thread, that thread can resume/destroy the frame before
+                // __resume reads the handle back for the symmetric
+                // transfer tail-call, causing a use-after-free.
+                using R = decltype(a_.await_suspend(h, p_->environment()));
+                if constexpr (std::is_same_v<R, std::coroutine_handle<>>)
+                    a_.await_suspend(h, p_->environment()).resume();
+                else
+                    return a_.await_suspend(h, p_->environment());
+#else
                 return a_.await_suspend(h, p_->environment());
+#endif
             }
         };
 
