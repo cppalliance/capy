@@ -11,16 +11,30 @@ This library provides facilities which use C++20 coroutines to perform I/O. It i
 
 ## Quick Start
 
-Clone and build with CMake:
+### Standalone build
 
 ```bash
 git clone https://github.com/cppalliance/capy.git
 cd capy
-cmake --preset standalone
-cmake --build --preset standalone
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
 ```
 
-The library is built to `out/standalone/`.
+### Consume via CMake
+
+Use `FetchContent` or `add_subdirectory` to add capy to your project,
+then link against `Boost::capy`:
+
+```cmake
+include(FetchContent)
+FetchContent_Declare(capy
+    GIT_REPOSITORY https://github.com/cppalliance/capy.git
+    GIT_TAG develop
+    GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(capy)
+
+target_link_libraries(my_app Boost::capy)
+```
 
 ## Related Libraries
 
