@@ -21,7 +21,7 @@ def main(ctx):
     # and cmake-superproject (linux/latest gcc) by default
     jobs = generate(
         [
-            'gcc >=12.0',
+            'gcc >=13.0',
             'clang >=17.0',
             'msvc >=14.1',
             'arm64-gcc latest',
