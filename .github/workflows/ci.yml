@@ -124,15 +124,14 @@ jobs:
             build-type: "RelWithDebInfo"
 
           - compiler: "gcc"
-            version: "12"
+            version: "13"
             cxxstd: "20"
             latest-cxxstd: "20"
-            cxx: "g++-12"
-            cc: "gcc-12"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:22.04"
+            cxx: "g++-13"
+            cc: "gcc-13"
+            runs-on: "ubuntu-24.04"
             b2-toolset: "gcc"
-            name: "GCC 12: C++20"
+            name: "GCC 13: C++20"
             shared: true
             build-type: "Release"
 

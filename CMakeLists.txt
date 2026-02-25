@@ -33,7 +33,15 @@ if((APPLE OR CMAKE_SYSTEM_NAME STREQUAL "FreeBSD") AND
     check_cxx_compiler_flag(-fexperimental-library
         BOOST_CAPY_HAS_EXPERIMENTAL_LIBRARY)
 endif()
-option(BOOST_CAPY_BUILD_TESTS "Build boost::capy tests" ${BOOST_CAPY_IS_ROOT})
+
+if(DEFINED BUILD_TESTING)
+    set(BOOST_CAPY_BUILD_TESTS_DEFAULT ${BUILD_TESTING})
+elseif(BOOST_CAPY_IS_ROOT)
+    set(BOOST_CAPY_BUILD_TESTS_DEFAULT ON)
+else()
+    set(BOOST_CAPY_BUILD_TESTS_DEFAULT OFF)
+endif()
+option(BOOST_CAPY_BUILD_TESTS "Build boost::capy tests" ${BOOST_CAPY_BUILD_TESTS_DEFAULT})
 
 if (BOOST_CAPY_BUILD_TESTS)
     include(CTest)
