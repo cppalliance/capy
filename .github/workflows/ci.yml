@@ -1,4 +1,5 @@
 #
+# Copyright (c) 2026 Michael Vandeberg
 # Copyright (c) 2023 Christian Mazakas
 # Copyright (c) 2023 Alan de Freitas
 # Copyright (c) 2021-2023 Sam Darwin
@@ -38,179 +39,27 @@ env:
   TZ: "Europe/London"
 
 jobs:
+  generate-matrix:
+    name: Generate Matrix
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: generate
+        run: |
+          matrix=$(python3 .github/generate-matrix.py)
+          echo "matrix={\"include\":$matrix}" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: [generate-matrix]
     defaults:
       run:
         shell: bash
 
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # Windows (3 configurations)
-
-          - compiler: "msvc"
-            version: "14.42"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            runs-on: "windows-2022"
-            b2-toolset: "msvc-14.4"
-            generator: "Visual Studio 17 2022"
-            is-latest: true
-            name: "MSVC 14.42: C++20"
-            shared: false
-            build-type: "Release"
-            build-cmake: true
-
-          - compiler: "msvc"
-            version: "14.34"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            runs-on: "windows-2022"
-            b2-toolset: "msvc-14.3"
-            generator: "Visual Studio 17 2022"
-            name: "MSVC 14.34: C++20 (shared)"
-            shared: true
-            build-type: "Release"
-
-          # macOS (2 configurations)
-
-          - compiler: "apple-clang"
-            version: "*"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++"
-            cc: "clang"
-            runs-on: "macos-26"
-            b2-toolset: "clang"
-            is-latest: true
-            name: "Apple-Clang (macOS 26, asan+ubsan): C++20"
-            shared: true
-            build-type: "RelWithDebInfo"
-            asan: true
-            ubsan: true
-
-          # Linux GCC (4 configurations)
-
-          - compiler: "gcc"
-            version: "15"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-15"
-            cc: "gcc-15"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:25.04"
-            b2-toolset: "gcc"
-            is-latest: true
-            name: "GCC 15: C++20"
-            shared: true
-            build-type: "Release"
-            build-cmake: true
-
-          - compiler: "gcc"
-            version: "15"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-15"
-            cc: "gcc-15"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:25.04"
-            b2-toolset: "gcc"
-            is-latest: true
-            name: "GCC 15: C++20 (asan+ubsan)"
-            shared: true
-            asan: true
-            ubsan: true
-            build-type: "RelWithDebInfo"
-
-          - compiler: "gcc"
-            version: "13"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-13"
-            cc: "gcc-13"
-            runs-on: "ubuntu-24.04"
-            b2-toolset: "gcc"
-            name: "GCC 13: C++20"
-            shared: true
-            build-type: "Release"
-
-          - compiler: "gcc"
-            version: "13"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "g++-13"
-            cc: "gcc-13"
-            runs-on: "ubuntu-24.04"
-            b2-toolset: "gcc"
-            name: "GCC 13: C++20 (coverage)"
-            shared: false
-            coverage: true
-            build-type: "Debug"
-            cxxflags: "--coverage -fprofile-arcs -ftest-coverage"
-            ccflags: "--coverage -fprofile-arcs -ftest-coverage"
-            install: "lcov wget unzip"
-
-          # Linux Clang (5 configurations)
-
-          - compiler: "clang"
-            version: "20"
-            cxxstd: "20,23"
-            latest-cxxstd: "23"
-            cxx: "clang++-20"
-            cc: "clang-20"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:24.04"
-            b2-toolset: "clang"
-            is-latest: true
-            name: "Clang 20: C++20-23"
-            shared: true
-            build-type: "Release"
-            build-cmake: true
-
-          - compiler: "clang"
-            version: "20"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++-20"
-            cc: "clang-20"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:24.04"
-            b2-toolset: "clang"
-            is-latest: true
-            name: "Clang 20: C++20 (asan+ubsan)"
-            shared: false
-            asan: true
-            ubsan: true
-            build-type: "RelWithDebInfo"
-
-          - compiler: "clang"
-            version: "17"
-            cxxstd: "20"
-            latest-cxxstd: "20"
-            cxx: "clang++-17"
-            cc: "clang-17"
-            runs-on: "ubuntu-24.04"
-            b2-toolset: "clang"
-            name: "Clang 17: C++20"
-            shared: false
-            build-type: "Release"
-
-          - compiler: "clang"
-            version: "20"
-            cxxstd: "20,23"
-            latest-cxxstd: "23"
-            cxx: "clang++-20"
-            cc: "clang-20"
-            runs-on: "ubuntu-latest"
-            container: "ubuntu:24.04"
-            b2-toolset: "clang"
-            is-latest: true
-            name: "Clang 20: C++20-23 (x86)"
-            shared: false
-            x86: true
-            build-type: "Release"
-            install: "gcc-multilib g++-multilib"
+      matrix: ${{ fromJSON(needs.generate-matrix.outputs.matrix) }}
 
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runs-on }}
@@ -308,7 +157,7 @@ jobs:
           ubsan: ${{ matrix.ubsan }}
           shared: ${{ matrix.shared }}
           rtti: on
-          cxxflags: ${{ (matrix.asan && '-fsanitize-address-use-after-scope -fsanitize=pointer-subtract') || '' }}
+          cxxflags: ${{ (matrix.asan && matrix.compiler != 'msvc' && matrix.compiler != 'clang-cl' && '-fsanitize-address-use-after-scope -fsanitize=pointer-subtract') || '' }}
           stop-on-error: true
           extra-args: ${{ (matrix.valgrind && 'testing.launcher=valgrind' || '' )}}
 
@@ -323,7 +172,7 @@ jobs:
           build-type: ${{ matrix.build-type }}
           build-target: boost_capy_tests
           run-tests: true
-          cxxstd: ${{ matrix.latest-cxxstd }}
+          cxxstd: ${{ matrix.cmake-cxxstd || matrix.cxxstd }}
           cc:  ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
           ccflags: ${{ matrix.ccflags }}
           cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
@@ -370,6 +219,70 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Branch: [![codecov](https://codecov.io/github/$GITHUB_REPOSITORY/branch/$GITHUB_REF_NAME/graph/badge.svg)](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+  freebsd:
+    defaults:
+      run:
+        shell: bash
+
+    name: "FreeBSD 15 (Clang): C++20"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Clone Boost.Capy
+        uses: actions/checkout@v4
+        with:
+          path: capy-root
+
+      - name: Clone Boost
+        uses: alandefreitas/cpp-actions/boost-clone@v1.9.0
+        id: boost-clone
+        with:
+          branch: ${{ (github.ref_name == 'master' && github.ref_name) || 'develop' }}
+          boost-dir: boost-source
+          modules-exclude-paths: ''
+          scan-modules-dir: capy-root
+          scan-modules-ignore: capy
+
+      - name: Patch Boost
+        id: patch
+        run: |
+          set -xe
+          module=${GITHUB_REPOSITORY#*/}
+          echo "module=$module" >> $GITHUB_OUTPUT
+          workspace_root=$(echo "$GITHUB_WORKSPACE" | sed 's/\\/\//g')
+
+          rm -r "boost-source/libs/$module" || true
+          cp -rL boost-source boost-root
+          cd boost-root
+          boost_root="$(pwd)"
+          echo -E "boost_root=$boost_root" >> $GITHUB_OUTPUT
+          cp -r "$workspace_root"/capy-root "libs/$module"
+
+      - name: Test on FreeBSD
+        uses: cross-platform-actions/action@v0.32.0
+        with:
+          operating_system: freebsd
+          version: '15.0'
+          run: |
+            set -xe
+
+            sudo pkg install -y bash git python3 cmake curl
+
+            # B2 build
+            cd boost-root
+            ./bootstrap.sh
+            ./b2 headers
+            ./b2 libs/capy/test toolset=clang cxxstd=20 variant=debug,release
+
+            # CMake build
+            cd ..
+            mkdir __build__
+            cd __build__
+            cmake ../capy-root -DCMAKE_CXX_STANDARD=20 -DBUILD_TESTING=ON
+            cmake --build .
+            ctest --output-on-failure
 
   changelog:
     defaults:

@@ -21,6 +21,7 @@
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/ex/work_guard.hpp>
 
+#include <algorithm>
 #include <coroutine>
 #include <cstring>
 #include <memory_resource>
