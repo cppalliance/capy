@@ -52,6 +52,10 @@ option(BOOST_CAPY_MRDOCS_BUILD "Build the target for MrDocs: see mrdocs.yml" OFF
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
+if(BOOST_CAPY_IS_ROOT AND BUILD_SHARED_LIBS)
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+endif()
+
 file(GLOB_RECURSE BOOST_CAPY_HEADERS CONFIGURE_DEPENDS include/boost/*.hpp include/boost/*.natvis)
 file(GLOB_RECURSE BOOST_CAPY_SOURCES CONFIGURE_DEPENDS src/*.cpp src/*.hpp)
 

@@ -24,6 +24,7 @@
 #include <concepts>
 #include <coroutine>
 #include <cstddef>
+#include <exception>
 #include <new>
 #include <span>
 #include <stop_token>
