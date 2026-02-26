@@ -46,7 +46,6 @@ def main(ctx):
             environment={
                 'B2_TOOLSET': 'clang',
                 'B2_CXXSTD': '20',
-                'B2_CXXFLAGS': '-fexperimental-library',
             },
             globalenv=globalenv),
 
@@ -56,7 +55,6 @@ def main(ctx):
             environment={
                 'B2_TOOLSET': 'clang',
                 'B2_CXXSTD': '20',
-                'B2_CXXFLAGS': '-fexperimental-library',
             },
             globalenv=globalenv),
     ]

@@ -23,6 +23,10 @@ project boost/capy
   : common-requirements
     <link>shared:<define>BOOST_CAPY_DYN_LINK
     <link>static:<define>BOOST_CAPY_STATIC_LINK
+    <target-os>darwin:<cxxflags>-fexperimental-library
+    <target-os>darwin:<linkflags>-fexperimental-library
+    <target-os>freebsd:<cxxflags>-fexperimental-library
+    <target-os>freebsd:<linkflags>-fexperimental-library
   : usage-requirements
     <define>BOOST_CAPY_NO_LIB
   : source-location ..
