@@ -78,13 +78,16 @@ set_target_properties(boost_capy PROPERTIES
     INTERPROCEDURAL_OPTIMIZATION_RELWITHDEBINFO OFF
     INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL OFF)
 
+include(GNUInstallDirs)
+
+add_subdirectory(extra/test_suite)
+
 if(BOOST_SUPERPROJECT_VERSION AND NOT CMAKE_VERSION VERSION_LESS 3.13)
     boost_install(
         TARGETS boost_capy
         VERSION ${BOOST_SUPERPROJECT_VERSION}
         HEADER_DIRECTORY include)
 else()
-    include(GNUInstallDirs)
     include(CMakePackageConfigHelpers)
 
     # Set INSTALL_INTERFACE for standalone installs (boost_install handles
@@ -95,13 +98,19 @@ else()
     set(BOOST_CAPY_INSTALL_CMAKEDIR
         ${CMAKE_INSTALL_LIBDIR}/cmake/boost_capy)
 
-    install(TARGETS boost_capy
+    install(TARGETS boost_capy boost_capy_test_suite boost_capy_test_suite_main
         EXPORT boost_capy-targets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
     install(DIRECTORY include/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    install(FILES extra/test_suite/test_suite.hpp
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/boost/capy/extra/test_suite)
+    install(FILES
+        extra/test_suite/DiscoverTests.cmake
+        extra/test_suite/DiscoverAndWriteTestsScripts.cmake
+        DESTINATION ${BOOST_CAPY_INSTALL_CMAKEDIR})
     install(EXPORT boost_capy-targets
         NAMESPACE Boost::
         DESTINATION ${BOOST_CAPY_INSTALL_CMAKEDIR})

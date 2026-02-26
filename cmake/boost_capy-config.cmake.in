@@ -1,3 +1,4 @@
 @PACKAGE_INIT@
 include("${CMAKE_CURRENT_LIST_DIR}/boost_capy-targets.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/DiscoverTests.cmake")
 check_required_components(boost_capy)
