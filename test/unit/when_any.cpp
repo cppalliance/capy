@@ -49,8 +49,8 @@ struct when_any_test
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
-                result = std::get<0>(r.second);
+                winner_index = r.index();
+                result = std::get<0>(r);
             },
             [](std::exception_ptr) {})(
             when_any(returns_int(42)));
@@ -73,9 +73,8 @@ struct when_any_test
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
-                // Variant is deduplicated to single int type
-                result_value = std::get<int>(r.second);
+                winner_index = r.index();
+                std::visit([&](auto v) { result_value = v; }, r);
             },
             [](std::exception_ptr) {})(
             when_any(returns_int(10), returns_int(20)));
@@ -97,25 +96,22 @@ struct when_any_test
         test_executor ex(dispatch_count);
         bool completed = false;
         std::size_t winner_index = 999;
-        std::variant<int, std::string> result_value;
-
+        // variant<int, string, int> — one alternative per task
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
-                result_value = r.second;
+                winner_index = r.index();
+                switch (r.index()) {
+                    case 0: BOOST_TEST_EQ(std::get<0>(r), 1); break;
+                    case 1: BOOST_TEST_EQ(std::get<1>(r), "hello"); break;
+                    case 2: BOOST_TEST_EQ(std::get<2>(r), 3); break;
+                }
             },
             [](std::exception_ptr) {})(
             when_any(returns_int(1), returns_string("hello"), returns_int(3)));
 
         BOOST_TEST(completed);
         BOOST_TEST(winner_index == 0 || winner_index == 1 || winner_index == 2);
-        if (winner_index == 0)
-            BOOST_TEST_EQ(std::get<int>(result_value), 1);
-        else if (winner_index == 1)
-            BOOST_TEST_EQ(std::get<std::string>(result_value), "hello");
-        else
-            BOOST_TEST_EQ(std::get<int>(result_value), 3);
     }
 
     // Test: Void task can win
@@ -126,23 +122,18 @@ struct when_any_test
         test_executor ex(dispatch_count);
         bool completed = false;
         std::size_t winner_index = 999;
-        std::variant<std::monostate, int> result_value;
-
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
-                result_value = r.second;
+                winner_index = r.index();
+                if (r.index() == 1)
+                    BOOST_TEST_EQ(std::get<1>(r), 42);
             },
             [](std::exception_ptr) {})(
             when_any(void_task(), returns_int(42)));
 
         BOOST_TEST(completed);
         BOOST_TEST(winner_index == 0 || winner_index == 1);
-        if (winner_index == 0)
-            BOOST_TEST(std::holds_alternative<std::monostate>(result_value));
-        else
-            BOOST_TEST_EQ(std::get<int>(result_value), 42);
     }
 
     // Test: All void tasks
@@ -153,21 +144,16 @@ struct when_any_test
         test_executor ex(dispatch_count);
         bool completed = false;
         std::size_t winner_index = 999;
-        std::variant<std::monostate> result_value;
-
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
-                result_value = r.second;
+                winner_index = r.index();
             },
             [](std::exception_ptr) {})(
             when_any(void_task(), void_task(), void_task()));
 
         BOOST_TEST(completed);
         BOOST_TEST(winner_index == 0 || winner_index == 1 || winner_index == 2);
-        // All void tasks produce monostate regardless of index
-        BOOST_TEST(std::holds_alternative<std::monostate>(result_value));
     }
 
     //----------------------------------------------------------
@@ -329,7 +315,7 @@ struct when_any_test
             [&](auto&& r) {
                 completed = true;
                 // Winner should be first task (synchronous executor)
-                BOOST_TEST_EQ(r.first, 0u);
+                BOOST_TEST_EQ(r.index(), 0u);
             },
             [](std::exception_ptr) {})(
             when_any(
@@ -383,8 +369,8 @@ struct when_any_test
         run_async(ex,
             [&](auto&& r) {
                 when_any_completed = true;
-                winner_index = r.first;
-                winner_value = std::get<int>(r.second);
+                winner_index = r.index();
+                std::visit([&](auto v) { winner_value = v; }, r);
             },
             [](std::exception_ptr) {})(
             when_any(fast_task(), slow_task(100, 10), slow_task(200, 10)));
@@ -440,8 +426,8 @@ struct when_any_test
         run_async(ex,
             [&](auto&& r) {
                 when_any_completed = true;
-                winner_index = r.first;
-                winner_value = std::get<int>(r.second);
+                winner_index = r.index();
+                std::visit([&](auto v) { winner_value = v; }, r);
             },
             [](std::exception_ptr) {})(
             when_any(medium_task(10, 3), medium_task(20, 1), medium_task(30, 4)));
@@ -493,7 +479,7 @@ struct when_any_test
         run_async(ex,
             [&](auto&& r) {
                 when_any_completed = true;
-                BOOST_TEST_EQ(r.first, 0u);  // fast_task wins
+                BOOST_TEST_EQ(r.index(), 0u);  // fast_task wins
             },
             [](std::exception_ptr) {})(
             when_any(fast_task(), non_cooperative_task(100, 3), non_cooperative_task(200, 3)));
@@ -551,7 +537,7 @@ struct when_any_test
         run_async(ex,
             [&](auto&& r) {
                 when_any_completed = true;
-                BOOST_TEST_EQ(r.first, 0u);
+                BOOST_TEST_EQ(r.index(), 0u);
             },
             [](std::exception_ptr) {})(
             when_any(fast_task(), cooperative_slow(5), non_cooperative_slow(5)));
@@ -582,13 +568,13 @@ struct when_any_test
         int result = 0;
 
         auto inner1 = []() -> task<int> {
-            auto [idx, res] = co_await when_any(returns_int(10), returns_int(20));
-            co_return std::get<int>(res);
+            auto res = co_await when_any(returns_int(10), returns_int(20));
+            co_return std::visit([](auto v) { return v; }, res);
         };
 
         auto inner2 = []() -> task<int> {
-            auto [idx, res] = co_await when_any(returns_int(30), returns_int(40));
-            co_return std::get<int>(res);
+            auto res = co_await when_any(returns_int(30), returns_int(40));
+            co_return std::visit([](auto v) { return v; }, res);
         };
 
         std::size_t winner_index = 999;
@@ -596,8 +582,8 @@ struct when_any_test
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
-                result = std::get<int>(r.second);
+                winner_index = r.index();
+                std::visit([&](auto v) { result = v; }, r);
             },
             [](std::exception_ptr) {})(
             when_any(inner1(), inner2()));
@@ -620,13 +606,13 @@ struct when_any_test
         bool completed = false;
 
         auto race1 = []() -> task<int> {
-            auto [idx, res] = co_await when_any(returns_int(1), returns_int(2));
-            co_return std::get<int>(res);
+            auto res = co_await when_any(returns_int(1), returns_int(2));
+            co_return std::visit([](auto v) { return v; }, res);
         };
 
         auto race2 = []() -> task<int> {
-            auto [idx, res] = co_await when_any(returns_int(3), returns_int(4));
-            co_return std::get<int>(res);
+            auto res = co_await when_any(returns_int(3), returns_int(4));
+            co_return std::visit([](auto v) { return v; }, res);
         };
 
         run_async(ex,
@@ -665,8 +651,8 @@ struct when_any_test
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
-                result_value = std::get<int>(r.second);
+                winner_index = r.index();
+                std::visit([&](auto v) { result_value = v; }, r);
             },
             [](std::exception_ptr) {})(
             when_any(concurrent1(), concurrent2()));
@@ -697,8 +683,8 @@ struct when_any_test
         run_async(ex,
             [&](auto r) {
                 completed = true;
-                winner_index = r.first;
-                result_value = std::get<int>(r.second);
+                winner_index = r.index();
+                std::visit([&](auto v) { result_value = v; }, r);
             },
             [](std::exception_ptr) {})(when_any(
                 returns_int(1), returns_int(2), returns_int(3), returns_int(4),
@@ -732,8 +718,8 @@ struct when_any_test
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
-                result_value = std::get<int>(r.second);
+                winner_index = r.index();
+                std::visit([&](auto v) { result_value = v; }, r);
             },
             [](std::exception_ptr) {})(
             when_any(multi_step_task(10), multi_step_task(20)));
@@ -767,8 +753,8 @@ struct when_any_test
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
-                result_value = std::get<int>(r.second);
+                winner_index = r.index();
+                std::visit([&](auto v) { result_value = v; }, r);
             },
             [](std::exception_ptr) {})(std::move(awaitable2));
 
@@ -795,8 +781,8 @@ struct when_any_test
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
-                result_value = std::get<int>(r.second);
+                winner_index = r.index();
+                std::visit([&](auto v) { result_value = v; }, r);
             },
             [](std::exception_ptr) {})(std::move(deferred));
 
@@ -820,14 +806,13 @@ struct when_any_test
         test_executor ex(dispatch_count);
         bool completed = false;
 
-        // Note: <int, string, int> deduplicates to variant<int, string>
+        // <int, string, int> preserves all three alternatives
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
                 // With synchronous executor, first task wins
-                BOOST_TEST_EQ(r.first, 0u);
-                BOOST_TEST(std::holds_alternative<int>(r.second));
-                BOOST_TEST_EQ(std::get<int>(r.second), 42);
+                BOOST_TEST_EQ(r.index(), 0u);
+                BOOST_TEST_EQ(std::get<0>(r), 42);
             },
             [](std::exception_ptr) {})(
             when_any(returns_int(42), returns_string("hello"), returns_int(99)));
@@ -843,23 +828,23 @@ struct when_any_test
         test_executor ex(dispatch_count);
         bool completed = false;
         std::size_t winner_index = 999;
-        std::variant<int, std::string> result_value;
-
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
-                result_value = r.second;
+                winner_index = r.index();
+                std::visit([&](auto const& v) {
+                    using T = std::decay_t<decltype(v)>;
+                    if constexpr (std::is_same_v<T, int>)
+                        BOOST_TEST_EQ(v, 42);
+                    else
+                        BOOST_TEST_EQ(v, "hello");
+                }, r);
             },
             [](std::exception_ptr) {})(
             when_any(returns_int(42), returns_string("hello")));
 
         BOOST_TEST(completed);
         BOOST_TEST(winner_index == 0 || winner_index == 1);
-        if (winner_index == 0)
-            BOOST_TEST_EQ(std::get<int>(result_value), 42);
-        else
-            BOOST_TEST_EQ(std::get<std::string>(result_value), "hello");
     }
 
     //----------------------------------------------------------
@@ -894,7 +879,7 @@ struct when_any_test
         run_async(ex, parent_stop.get_token(),
             [&](auto&& r) {
                 when_any_completed = true;
-                winner_index = r.first;
+                winner_index = r.index();
             },
             [](std::exception_ptr) {})(
             when_any(check_stop_task(1), check_stop_task(2), check_stop_task(3)));
@@ -1043,7 +1028,7 @@ struct when_any_test
         run_async(ex,
             [&](auto&& r) {
                 when_any_completed = true;
-                winner_index = r.first;
+                winner_index = r.index();
             },
             [](std::exception_ptr) {})(
             when_any(fast_task(), nested_when_any_task()));
@@ -1094,16 +1079,16 @@ struct when_any_test
         // A task containing a nested when_any - doesn't check stop first
         auto nested_when_any_task = [&]() -> task<int> {
             // Start inner when_any immediately (no stop check first)
-            auto [idx, res] = co_await when_any(
+            auto res = co_await when_any(
                 slow_inner_task(10),
                 slow_inner_task(10));
-            co_return std::get<int>(res);
+            co_return std::visit([](auto v) { return v; }, res);
         };
 
         run_async(ex,
             [&](auto&& r) {
                 when_any_completed = true;
-                winner_index = r.first;
+                winner_index = r.index();
             },
             [](std::exception_ptr) {})(
             when_any(yielding_fast_task(), nested_when_any_task()));
@@ -1146,19 +1131,19 @@ struct when_any_test
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                // The correct pattern: use index to determine which type to access
-                switch (r.first) {
+                // The correct pattern: use .index() to determine which alternative
+                switch (r.index()) {
                     case 0:
-                        correct_access = std::holds_alternative<int>(r.second);
-                        BOOST_TEST_EQ(std::get<int>(r.second), 42);
+                        correct_access = true;
+                        BOOST_TEST_EQ(std::get<0>(r), 42);
                         break;
                     case 1:
-                        correct_access = std::holds_alternative<std::string>(r.second);
-                        BOOST_TEST_EQ(std::get<std::string>(r.second), "hello");
+                        correct_access = true;
+                        BOOST_TEST_EQ(std::get<1>(r), "hello");
                         break;
                     case 2:
-                        correct_access = std::holds_alternative<double>(r.second);
-                        BOOST_TEST_EQ(std::get<double>(r.second), 3.14);
+                        correct_access = true;
+                        BOOST_TEST_EQ(std::get<2>(r), 3.14);
                         break;
                 }
             },
@@ -1169,9 +1154,9 @@ struct when_any_test
         BOOST_TEST(correct_access);
     }
 
-    // Test: Variant with duplicate types - index disambiguation
+    // Test: Same-type tasks — use .index() to identify the winner
     void
-    testVariantDuplicateTypesIndexDisambiguation()
+    testVariantSameTypeIndexDisambiguation()
     {
         int dispatch_count = 0;
         test_executor ex(dispatch_count);
@@ -1179,13 +1164,13 @@ struct when_any_test
         std::size_t winner_index = 999;
         int result_value = 0;
 
-        // when_any(int, int, int) deduplicates to variant<int>
-        // but winner_index tells us WHICH task won
+        // when_any(int, int, int) produces variant<int, int, int>
+        // .index() tells us WHICH task won
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
-                result_value = std::get<int>(r.second);
+                winner_index = r.index();
+                std::visit([&](auto v) { result_value = v; }, r);
             },
             [](std::exception_ptr) {})(
             when_any(returns_int(100), returns_int(200), returns_int(300)));
@@ -1250,7 +1235,7 @@ struct when_any_test
         testVariantAlternativePopulated();
         testVariantVisit();
         testVariantAccessByIndex();
-        testVariantDuplicateTypesIndexDisambiguation();
+        testVariantSameTypeIndexDisambiguation();
     }
 };
 
@@ -1673,8 +1658,8 @@ struct when_any_vector_test
         std::size_t outer_winner = 999;
 
         auto variadic_race = []() -> task<int> {
-            auto [idx, res] = co_await when_any(returns_int(1), returns_int(2));
-            co_return std::get<int>(res);
+            auto res = co_await when_any(returns_int(1), returns_int(2));
+            co_return std::visit([](auto v) { return v; }, res);
         };
 
         auto vector_race = []() -> task<int> {
@@ -1688,8 +1673,8 @@ struct when_any_vector_test
         run_async(ex,
             [&](auto r) {
                 completed = true;
-                outer_winner = r.first;
-                auto result = std::get<int>(r.second);
+                outer_winner = r.index();
+                int result = std::visit([](auto v) { return v; }, r);
                 if (outer_winner == 0)
                     BOOST_TEST((result == 1 || result == 2));
                 else
@@ -1755,7 +1740,7 @@ struct when_any_io_awaitable_test
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
+                winner_index = r.index();
             },
             [](std::exception_ptr) {})(
             when_any(stop_only_awaitable{}, returns_int(42)));
@@ -1785,7 +1770,7 @@ struct when_any_io_awaitable_test
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
+                winner_index = r.index();
             },
             [](std::exception_ptr) {})(
             when_any(event.wait(), returns_int(42)));
@@ -1816,7 +1801,7 @@ struct when_any_io_awaitable_test
         run_async(ex, parent_stop.get_token(),
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
+                winner_index = r.index();
             },
             [](std::exception_ptr) {})(
             when_any(stop_only_awaitable{}, stop_only_awaitable{}));
@@ -1850,7 +1835,7 @@ struct when_any_io_awaitable_test
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
+                winner_index = r.index();
             },
             [](std::exception_ptr) {})(
             when_any(io_op(), io_op()));
@@ -1876,8 +1861,12 @@ struct when_any_io_awaitable_test
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
-                result = std::get<io_result<std::size_t>>(r.second);
+                winner_index = r.index();
+                std::visit([&](auto const& v) {
+                    using T = std::decay_t<decltype(v)>;
+                    if constexpr (std::is_same_v<T, io_result<std::size_t>>)
+                        result = v;
+                }, r);
             },
             [](std::exception_ptr) {})(
             when_any(io_read(100), io_read(200)));
@@ -1906,7 +1895,7 @@ struct when_any_io_awaitable_test
         run_async(ex,
             [&](auto&& r) {
                 completed = true;
-                winner_index = r.first;
+                winner_index = r.index();
             },
             [](std::exception_ptr) {})(
             when_any(io_op(), returns_int(99)));

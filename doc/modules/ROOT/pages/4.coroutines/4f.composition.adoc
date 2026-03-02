@@ -145,16 +145,16 @@ task<> long_running()
 
 task<> example()
 {
-    auto [index, result] = co_await when_any(
+    auto result = co_await when_any(
         fetch_int(),     // task<int>
         fetch_string()   // task<std::string>
     );
-    // index indicates which task won (0 or 1)
+    // result.index() indicates which task won (0 or 1)
     // result is std::variant<int, std::string>
 }
 ----
 
-The result is a pair containing the winner's index and a deduplicated variant of possible result types. When a winner is determined, stop is requested for all siblings. All tasks complete before `when_any` returns.
+The result is a variant with one alternative per input task, preserving positional correspondence. Use `.index()` to determine the winner. When a winner is determined, stop is requested for all siblings. All tasks complete before `when_any` returns.
 
 For detailed coverage including error handling, cancellation, and the vector overload, see Racing Tasks.
 
@@ -213,15 +213,15 @@ Use `when_any` to implement timeout with fallback:
 ----
 task<Response> fetch_with_timeout(Request req)
 {
-    auto [index, result] = co_await when_any(
+    auto result = co_await when_any(
         fetch_data(req),
         timeout_after<Response>(100ms)
     );
 
-    if (index == 1)
+    if (result.index() == 1)
         throw timeout_error{"Request timed out"};
 
-    co_return std::get<Response>(result);
+    co_return std::get<0>(result);
 }
 ----
 

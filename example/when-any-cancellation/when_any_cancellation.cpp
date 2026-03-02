@@ -69,12 +69,14 @@ task<> race_data_sources()
     // source_a: 2 steps * 20ms = fast
     // source_b: 5 steps * 20ms = medium
     // source_c: 8 steps * 20ms = slow
-    auto [winner_index, result] = co_await when_any(
+    auto result = co_await when_any(
         fetch_from_source("source_a", 2, 20),
         fetch_from_source("source_b", 5, 20),
         fetch_from_source("source_c", 8, 20));
 
-    auto value = std::get<std::string>(result);
+    auto winner_index = result.index();
+    // All alternatives are std::string, use std::visit to extract
+    auto value = std::visit([](auto&& v) -> std::string { return v; }, result);
     std::cout << "\nWinner: index=" << winner_index
               << " value=\"" << value << "\"\n";
 }
@@ -108,17 +110,17 @@ task<> timeout(int ms)
 }
 
 // Use when_any with a timeout to bound the lifetime of a background worker.
-// With void tasks, the variadic overload returns pair<size_t, variant<monostate>>.
-// We only need the winner index to know which task completed first.
+// With void tasks, the variadic overload returns variant<monostate, monostate>.
+// Use .index() to know which task completed first.
 task<> timeout_a_worker()
 {
     std::cout << "\n=== Timeout a background worker ===\n\n";
 
-    auto [winner, _] = co_await when_any(
+    auto result = co_await when_any(
         background_worker("worker", 30),
         timeout(100));
 
-    if (winner == 1)
+    if (result.index() == 1)
         std::cout << "\nTimeout fired — worker was cancelled\n";
     else
         std::cout << "\nWorker finished before timeout\n";
