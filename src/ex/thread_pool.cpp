@@ -191,6 +191,14 @@ stop() noexcept
 
 //------------------------------------------------------------------------------
 
+thread_pool::executor_type
+thread_pool::
+get_executor() const noexcept
+{
+    return executor_type(
+        const_cast<thread_pool&>(*this));
+}
+
 void
 thread_pool::executor_type::
 post(std::coroutine_handle<> h) const

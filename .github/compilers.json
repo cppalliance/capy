@@ -95,6 +95,19 @@
       "is_latest": true
     }
   ],
+  "mingw": [
+    {
+      "version": "*",
+      "cxxstd": "20,23",
+      "latest_cxxstd": "23",
+      "runs_on": "windows-2022",
+      "cxx": "clang++",
+      "cc": "clang",
+      "b2_toolset": "clang",
+      "build_cmake": false,
+      "is_latest": true
+    }
+  ],
   "clang-cl": [
     {
       "version": "*",

@@ -178,17 +178,6 @@ public:
     }
 };
 
-//------------------------------------------------------------------------------
-
-inline
-auto
-thread_pool::
-get_executor() const noexcept ->
-    executor_type
-{
-    return executor_type(const_cast<thread_pool&>(*this));
-}
-
 } // capy
 } // boost
 

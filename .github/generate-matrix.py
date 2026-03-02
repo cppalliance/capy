@@ -75,7 +75,7 @@ def generate_name(compiler_family, entry):
         "gcc": "GCC",
         "clang": "Clang",
         "msvc": "MSVC",
-        "mingw": "MinGW",
+        "mingw": "MinGW Clang",
         "clang-cl": "Clang-CL",
         "apple-clang": "Apple-Clang",
     }
