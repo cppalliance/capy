@@ -62,24 +62,21 @@
    3. Stop is requested immediately when winner is determined
    4. Only the winner's result/exception is stored
 
-   TYPE DEDUPLICATION:
+   POSITIONAL VARIANT:
    -------------------
-   std::variant requires unique alternative types. Since when_any can race
-   tasks with identical return types (e.g., three task<int>), we must
-   deduplicate types before constructing the variant.
+   The variadic overload returns a std::variant with one alternative per
+   input task, preserving positional correspondence. Use .index() on
+   the variant to identify which task won.
 
    Example: when_any(task<int>, task<string>, task<int>)
      - Raw types after void->monostate: int, string, int
-     - Deduplicated variant: std::variant<int, string>
-     - Return: pair<size_t, variant<int, string>>
-
-   The winner_index tells you which task won (0, 1, or 2), while the variant
-   holds the result. Use the index to determine how to interpret the variant.
+     - Result variant: std::variant<int, string, int>
+     - variant.index() tells you which task won (0, 1, or 2)
 
    VOID HANDLING:
    --------------
-   void tasks contribute std::monostate to the variant (then deduplicated).
-   All-void tasks result in: pair<size_t, variant<monostate>>
+   void tasks contribute std::monostate to the variant.
+   All-void tasks result in: variant<monostate, monostate, monostate>
 
    MEMORY MODEL:
    -------------
@@ -131,46 +128,11 @@ namespace detail {
 template<typename T>
 using void_to_monostate_t = std::conditional_t<std::is_void_v<T>, std::monostate, T>;
 
-// Type deduplication: std::variant requires unique alternative types.
-// Fold left over the type list, appending each type only if not already present.
-template<typename Variant, typename T>
-struct variant_append_if_unique;
-
-template<typename... Vs, typename T>
-struct variant_append_if_unique<std::variant<Vs...>, T>
-{
-    using type = std::conditional_t<
-        (std::is_same_v<T, Vs> || ...),
-        std::variant<Vs...>,
-        std::variant<Vs..., T>>;
-};
-
-template<typename Accumulated, typename... Remaining>
-struct deduplicate_impl;
-
-template<typename Accumulated>
-struct deduplicate_impl<Accumulated>
-{
-    using type = Accumulated;
-};
-
-template<typename Accumulated, typename T, typename... Rest>
-struct deduplicate_impl<Accumulated, T, Rest...>
-{
-    using next = typename variant_append_if_unique<Accumulated, T>::type;
-    using type = typename deduplicate_impl<next, Rest...>::type;
-};
-
-// Deduplicated variant; void types become monostate before deduplication
+// Result variant: one alternative per task, preserving positional
+// correspondence. Use .index() to identify which task won.
+// void results become monostate.
 template<typename T0, typename... Ts>
-using unique_variant_t = typename deduplicate_impl<
-    std::variant<void_to_monostate_t<T0>>,
-    void_to_monostate_t<Ts>...>::type;
-
-// Result: (winner_index, deduplicated_variant). Use index to disambiguate
-// when multiple tasks share the same return type.
-template<typename T0, typename... Ts>
-using when_any_result_t = std::pair<std::size_t, unique_variant_t<T0, Ts...>>;
+using when_any_variant_t = std::variant<void_to_monostate_t<T0>, void_to_monostate_t<Ts>...>;
 
 /** Core shared state for when_any operations.
 
@@ -247,7 +209,7 @@ template<typename T0, typename... Ts>
 struct when_any_state
 {
     static constexpr std::size_t task_count = 1 + sizeof...(Ts);
-    using variant_type = unique_variant_t<T0, Ts...>;
+    using variant_type = when_any_variant_t<T0, Ts...>;
 
     when_any_core core_;
     std::optional<variant_type> result_;
@@ -261,19 +223,20 @@ struct when_any_state
     // Runners self-destruct in final_suspend. No destruction needed here.
 
     /** @pre core_.try_win() returned true.
-        @note Uses in_place_type (not index) because variant is deduplicated.
+        @note Uses in_place_index (not type) for positional variant access.
     */
-    template<typename T>
+    template<std::size_t I, typename T>
     void set_winner_result(T value)
         noexcept(std::is_nothrow_move_constructible_v<T>)
     {
-        result_.emplace(std::in_place_type<T>, std::move(value));
+        result_.emplace(std::in_place_index<I>, std::move(value));
     }
 
     /** @pre core_.try_win() returned true. */
+    template<std::size_t I>
     void set_winner_void() noexcept
     {
-        result_.emplace(std::in_place_type<std::monostate>, std::monostate{});
+        result_.emplace(std::in_place_index<I>, std::monostate{});
     }
 };
 
@@ -402,7 +365,40 @@ struct when_any_runner
     }
 };
 
-/** Wraps a child awaitable, attempts to claim winner on completion.
+/** Indexed overload for heterogeneous when_any (compile-time index).
+
+    Uses compile-time index I for variant construction via in_place_index.
+    Called from when_any_launcher::launch_one<I>().
+*/
+template<std::size_t I, IoAwaitable Awaitable, typename StateType>
+when_any_runner<StateType>
+make_when_any_runner(Awaitable inner, StateType* state)
+{
+    using T = awaitable_result_t<Awaitable>;
+    if constexpr (std::is_void_v<T>)
+    {
+        co_await std::move(inner);
+        if(state->core_.try_win(I))
+            state->template set_winner_void<I>();
+    }
+    else
+    {
+        auto result = co_await std::move(inner);
+        if(state->core_.try_win(I))
+        {
+            try
+            {
+                state->template set_winner_result<I>(std::move(result));
+            }
+            catch(...)
+            {
+                state->core_.set_winner_exception(std::current_exception());
+            }
+        }
+    }
+}
+
+/** Runtime-index overload for homogeneous when_any (range path).
 
     Uses requires-expressions to detect state capabilities:
     - set_winner_void(): for heterogeneous void tasks (stores monostate)
@@ -419,10 +415,8 @@ make_when_any_runner(Awaitable inner, StateType* state, std::size_t index)
         co_await std::move(inner);
         if(state->core_.try_win(index))
         {
-            // Heterogeneous void tasks store monostate in the variant
             if constexpr (requires { state->set_winner_void(); })
                 state->set_winner_void();
-            // Homogeneous void tasks have no result to store
         }
     }
     else
@@ -430,8 +424,6 @@ make_when_any_runner(Awaitable inner, StateType* state, std::size_t index)
         auto result = co_await std::move(inner);
         if(state->core_.try_win(index))
         {
-            // Defensive: move should not throw (already moved once), but we
-            // catch just in case since an uncaught exception would be devastating.
             try
             {
                 state->set_winner_result(std::move(result));
@@ -503,8 +495,8 @@ private:
     template<std::size_t I>
     void launch_one(executor_ref caller_ex, std::stop_token token)
     {
-        auto runner = make_when_any_runner(
-            std::move(std::get<I>(*tasks_)), state_, I);
+        auto runner = make_when_any_runner<I>(
+            std::move(std::get<I>(*tasks_)), state_);
 
         auto h = runner.release();
         h.promise().state_ = state_;
@@ -522,8 +514,8 @@ private:
 /** Wait for the first awaitable to complete.
 
     Races multiple heterogeneous awaitables concurrently and returns when the
-    first one completes. The result includes the winner's index and a
-    deduplicated variant containing the result value.
+    first one completes. The result is a variant with one alternative per
+    input task, preserving positional correspondence.
 
     @par Suspends
     The calling coroutine suspends when co_await is invoked. All awaitables
@@ -562,26 +554,15 @@ private:
     @par Example
     @code
     task<void> example() {
-        auto [index, result] = co_await when_any(
-            fetch_from_primary(),   // task<Response>
-            fetch_from_backup()     // task<Response>
-        );
-        // index is 0 or 1, result holds the winner's Response
-        auto response = std::get<Response>(result);
-    }
-    @endcode
-
-    @par Example with Heterogeneous Types
-    @code
-    task<void> mixed_types() {
-        auto [index, result] = co_await when_any(
+        auto result = co_await when_any(
             fetch_int(),      // task<int>
             fetch_string()    // task<std::string>
         );
-        if (index == 0)
-            std::cout << "Got int: " << std::get<int>(result) << "\n";
+        // result.index() is 0 or 1
+        if (result.index() == 0)
+            std::cout << "Got int: " << std::get<0>(result) << "\n";
         else
-            std::cout << "Got string: " << std::get<std::string>(result) << "\n";
+            std::cout << "Got string: " << std::get<1>(result) << "\n";
     }
     @endcode
 
@@ -589,29 +570,26 @@ private:
     @tparam As Remaining awaitable types (must satisfy IoAwaitable).
     @param a0 The first awaitable to race.
     @param as Additional awaitables to race concurrently.
-    @return A task yielding a pair of (winner_index, result_variant).
+    @return A task yielding a variant with one alternative per awaitable.
+        Use .index() to identify the winner. Void awaitables contribute
+        std::monostate.
 
     @throws Rethrows the winner's exception if the winning task threw an exception.
 
     @par Remarks
     Awaitables are moved into the coroutine frame; original objects become
-    empty after the call. When multiple awaitables share the same return type,
-    the variant is deduplicated to contain only unique types. Use the winner
-    index to determine which awaitable completed first. Void awaitables
-    contribute std::monostate to the variant.
+    empty after the call. The variant preserves one alternative per input
+    task. Use .index() to determine which awaitable completed first.
+    Void awaitables contribute std::monostate to the variant.
 
     @see when_all, IoAwaitable
 */
 template<IoAwaitable A0, IoAwaitable... As>
 [[nodiscard]] auto when_any(A0 a0, As... as)
-    -> task<detail::when_any_result_t<
+    -> task<detail::when_any_variant_t<
         detail::awaitable_result_t<A0>,
         detail::awaitable_result_t<As>...>>
 {
-    using result_type = detail::when_any_result_t<
-        detail::awaitable_result_t<A0>,
-        detail::awaitable_result_t<As>...>;
-
     detail::when_any_state<
         detail::awaitable_result_t<A0>,
         detail::awaitable_result_t<As>...> state;
@@ -622,7 +600,7 @@ template<IoAwaitable A0, IoAwaitable... As>
     if(state.core_.winner_exception_)
         std::rethrow_exception(state.core_.winner_exception_);
 
-    co_return result_type{state.core_.winner_index_, std::move(*state.result_)};
+    co_return std::move(*state.result_);
 }
 
 /** Concept for ranges of full I/O awaitables.

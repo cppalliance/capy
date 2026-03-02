@@ -41,21 +41,22 @@ the first one completes:
 
 task<void> race()
 {
-    auto [index, result] = co_await when_any(
+    auto result = co_await when_any(
         fetch_from_primary(),
         fetch_from_backup()
     );
+    // result.index() is 0 or 1
 }
 ----
 
-The return value is a `std::pair` containing two elements: `index` indicates which task completed first (0 for the first argument, 1 for the second), and `result` holds the winning task's return value in a variant.
+The return value is a `std::variant` with one alternative per input task. Use `.index()` to determine which task completed first (0 for the first argument, 1 for the second). The active alternative holds the winning task's return value.
 
 The winning task's result is returned immediately. All sibling tasks receive
 a stop request and are allowed to complete before `when_any` returns.
 
 == Return Value
 
-`when_any` returns a `std::pair` containing the winner's index and result.
+The variadic `when_any` returns a `std::variant` with positional correspondence to the input tasks.
 
 === Heterogeneous Tasks (Variadic)
 
@@ -63,18 +64,18 @@ When racing tasks with different return types, the result is a variant:
 
 [source,cpp]
 ----
-auto [index, result] = co_await when_any(
+auto result = co_await when_any(
     task_returning_int(),     // task<int>
     task_returning_string()   // task<std::string>
 );
 
-if (index == 0)
-    std::cout << "Got int: " << std::get<int>(result) << "\n";
+if (result.index() == 0)
+    std::cout << "Got int: " << std::get<0>(result) << "\n";
 else
-    std::cout << "Got string: " << std::get<std::string>(result) << "\n";
+    std::cout << "Got string: " << std::get<1>(result) << "\n";
 ----
 
-The `result` variable is a `std::variant<int, std::string>`. Use `index` to determine which alternative is active, then extract the value with `std::get`.
+The `result` variable is a `std::variant<int, std::string>`. Use `.index()` to determine which alternative is active, then extract the value with `std::get<N>`.
 
 === Void Tasks
 
@@ -82,37 +83,38 @@ Void tasks contribute `std::monostate` to the variant:
 
 [source,cpp]
 ----
-auto [index, result] = co_await when_any(
+auto result = co_await when_any(
     task_returning_int(),  // task<int>
     task_void()            // task<void>
 );
 
-if (index == 0)
-    std::cout << "Got int: " << std::get<int>(result) << "\n";
+if (result.index() == 0)
+    std::cout << "Got int: " << std::get<0>(result) << "\n";
 else
     std::cout << "Void task completed\n";
 ----
 
-Tasks returning `void` contribute `std::monostate` to the variant. In this example, `result` has type `std::variant<int, std::monostate>`. When the void task wins, check for `std::monostate` or use the index to detect it.
+Tasks returning `void` contribute `std::monostate` to the variant. In this example, `result` has type `std::variant<int, std::monostate>`. Use `.index()` to detect which task won.
 
-=== Duplicate Types
+=== Same-Type Tasks
 
-The variant is deduplicated. When racing tasks with the same return type,
-use the index to identify which task won:
+The variant preserves one alternative per task.
+Use `.index()` to identify which task won:
 
 [source,cpp]
 ----
-auto [index, result] = co_await when_any(
+auto result = co_await when_any(
     fetch_from_server_a(),  // task<Response>
     fetch_from_server_b(),  // task<Response>
     fetch_from_server_c()   // task<Response>
 );
 
-auto response = std::get<Response>(result);
+auto index = result.index();
+auto response = std::visit([](auto&& v) -> Response { return v; }, result);
 std::cout << "Server " << index << " responded first\n";
 ----
 
-When multiple tasks share the same return type, the variant is deduplicated to contain only unique types. Here, `result` is `std::variant<Response>` with a single alternative. The `index` value (0, 1, or 2) tells you which server responded first.
+When multiple tasks share the same return type, the variant contains one alternative per task. Here, `result` is `std::variant<Response, Response, Response>`. The `.index()` value (0, 1, or 2) tells you which server responded first. Use `std::visit` to extract the value.
 
 === Homogeneous Tasks (Vector)
 
@@ -153,7 +155,7 @@ that exception is rethrown from `when_any`:
 task<void> handle_errors()
 {
     try {
-        auto [index, result] = co_await when_any(
+        auto result = co_await when_any(
             might_fail(),
             might_succeed()
         );
@@ -194,7 +196,7 @@ task<Response> fetch_with_cancel_support()
 task<void> example()
 {
     // When one fetch wins, the other sees stop_requested
-    auto [index, response] = co_await when_any(
+    auto response = co_await when_any(
         fetch_with_cancel_support(),
         fetch_with_cancel_support()
     );
@@ -213,7 +215,7 @@ cancelled, all children see the request:
 ----
 task<void> parent()
 {
-    auto [index, result] = co_await when_any(
+    auto result = co_await when_any(
         child_a(),  // Sees parent's stop token
         child_b()   // Sees parent's stop token
     );
@@ -234,7 +236,7 @@ All child tasks inherit the parent's executor affinity:
 ----
 task<void> parent()  // Running on executor ex
 {
-    auto [index, result] = co_await when_any(
+    auto result = co_await when_any(
         child_a(),  // Runs on ex
         child_b()   // Runs on ex
     );
@@ -267,14 +269,14 @@ Race requests to multiple servers for reliability:
 ----
 task<Response> fetch_with_redundancy(Request req)
 {
-    auto [index, response] = co_await when_any(
+    auto result = co_await when_any(
         fetch_from(primary_server, req),
         fetch_from(backup_server, req)
     );
 
-    std::cout << (index == 0 ? "Primary" : "Backup")
+    std::cout << (result.index() == 0 ? "Primary" : "Backup")
               << " server responded\n";
-    co_return std::get<Response>(response);
+    co_return std::visit([](auto&& v) -> Response { return v; }, result);
 }
 ----
 
@@ -286,15 +288,15 @@ Race an operation against a timer:
 ----
 task<Data> fetch_with_timeout(Request req)
 {
-    auto [index, result] = co_await when_any(
+    auto result = co_await when_any(
         fetch_data(req),
         timeout_after<Data>(100ms)
     );
 
-    if (index == 1)
+    if (result.index() == 1)
         throw timeout_error{"Request timed out"};
 
-    co_return std::get<Data>(result);
+    co_return std::get<0>(result);
 }
 
 // Helper that waits then throws
@@ -341,7 +343,7 @@ This function creates an acquire task for each pool, then races them. Whichever 
 
 | Return type
 | Tuple of results
-| Pair of (index, variant/value)
+| Variant (variadic) or pair (range)
 
 | Error handling
 | First exception wins, siblings get stop
@@ -365,7 +367,7 @@ This function creates an acquire task for each pool, then races them. Whichever 
 | Race homogeneous tasks from a vector
 
 | Return type (variadic)
-| `pair<size_t, variant<...>>` with deduplicated types
+| `variant<...>` with positional alternatives (use `.index()` for winner)
 
 | Return type (vector)
 | `pair<size_t, T>` or `size_t` for void
