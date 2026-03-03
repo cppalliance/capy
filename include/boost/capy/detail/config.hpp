@@ -49,13 +49,17 @@
 #endif
 
 // RTTI detection (user may predefine BOOST_CAPY_NO_RTTI)
+//
+// _MSC_VER must be checked before __clang__ because Clang-CL defines
+// both __clang__ and _MSC_VER, but uses the MSVC-style _CPPRTTI macro
+// (not the GCC-style __GXX_RTTI) to signal RTTI availability.
 #ifndef BOOST_CAPY_NO_RTTI
-# if defined(__GNUC__) || defined(__clang__)
-#  ifndef __GXX_RTTI
+# if defined(_MSC_VER)
+#  ifndef _CPPRTTI
 #   define BOOST_CAPY_NO_RTTI 1
 #  endif
-# elif defined(_MSC_VER)
-#  ifndef _CPPRTTI
+# elif defined(__GNUC__) || defined(__clang__)
+#  ifndef __GXX_RTTI
 #   define BOOST_CAPY_NO_RTTI 1
 #  endif
 # endif
