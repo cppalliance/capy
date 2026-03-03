@@ -111,6 +111,15 @@ public:
     }
 
     void
+    join() noexcept
+    {
+        stop();
+        for(auto& t : threads_)
+            if(t.joinable())
+                t.join();
+    }
+
+    void
     stop() noexcept
     {
         stop_.store(true, std::memory_order_release);
@@ -160,6 +169,7 @@ private:
 thread_pool::
 ~thread_pool()
 {
+    impl_->join();
     shutdown();
     destroy();
     delete impl_;
