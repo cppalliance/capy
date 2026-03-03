@@ -19,6 +19,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <semaphore>
 #include <thread>
 #include <queue>
 #include <stdexcept>
@@ -1220,6 +1221,7 @@ struct task_test
     {
 
         std::atomic<int> state = 0;
+        std::binary_semaphore suspended{0};
 
         auto l = [&]() -> capy::task<void>
         {
@@ -1230,6 +1232,7 @@ struct task_test
             } sc{state};
 
             state = 1;
+            suspended.release();
             co_await stop_only_awaitable{};
             state = 2;
         };
@@ -1244,7 +1247,7 @@ struct task_test
                     run_async(ex, st)(l());
                 }
             );
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            suspended.acquire();
             BOOST_TEST(state == 1);
         }
 
