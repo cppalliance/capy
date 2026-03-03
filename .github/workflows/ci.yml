@@ -232,7 +232,17 @@ jobs:
       run:
         shell: bash
 
-    name: "FreeBSD 15 (Clang): C++20"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "14.3"
+            name: "FreeBSD 14.3 (Clang): C++20"
+          - version: "15.0"
+            name: "FreeBSD 15.0 (Clang): C++20"
+            build-cmake: true
+    
+    name: ${{ matrix.name }}
     runs-on: ubuntu-24.04
     timeout-minutes: 120
 
@@ -271,7 +281,7 @@ jobs:
         uses: cross-platform-actions/action@v0.32.0
         with:
           operating_system: freebsd
-          version: '15.0'
+          version: '${{ matrix.version }}'
           run: |
             set -xe
 
@@ -284,12 +294,14 @@ jobs:
             ./b2 libs/capy/test toolset=clang cxxstd=20 variant=debug,release
 
             # CMake build
-            cd ..
-            mkdir __build__
-            cd __build__
-            cmake ../capy-root -DCMAKE_CXX_STANDARD=20 -DBUILD_TESTING=ON
-            cmake --build .
-            ctest --output-on-failure
+            if [ "${{ matrix.build-cmake }}" = "true" ]; then
+              cd ..
+              mkdir __build__
+              cd __build__
+              cmake ../capy-root -DCMAKE_CXX_STANDARD=20 -DBUILD_TESTING=ON
+              cmake --build .
+              ctest --output-on-failure
+            fi
 
   changelog:
     defaults:
