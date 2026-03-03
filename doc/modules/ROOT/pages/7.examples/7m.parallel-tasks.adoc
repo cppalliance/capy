@@ -1,0 +1,162 @@
+= Parallel Tasks
+
+Distributing CPU-bound work across a thread pool and collecting results.
+
+== What You Will Learn
+
+* Running tasks in parallel on a `thread_pool`
+* Collecting results with `when_all` structured bindings
+* Observing thread IDs to verify parallel execution
+
+== Prerequisites
+
+* Completed xref:7.examples/7g.parallel-fetch.adoc[Parallel Fetch] (introduces `when_all`)
+
+== Source Code
+
+[source,cpp]
+----
+#include <boost/capy.hpp>
+#include <iostream>
+#include <latch>
+#include <sstream>
+#include <thread>
+
+using namespace boost::capy;
+
+// Sum integers in [lo, hi)
+task<long long> partial_sum(int lo, int hi)
+{
+    std::ostringstream oss;
+    oss << "  range [" << lo << ", " << hi
+        << ") on thread " << std::this_thread::get_id() << "\n";
+    std::cout << oss.str();
+
+    long long sum = 0;
+    for (int i = lo; i < hi; ++i)
+        sum += i;
+    co_return sum;
+}
+
+int main()
+{
+    constexpr int total = 10000;
+    constexpr int num_tasks = 4;
+    constexpr int chunk = total / num_tasks;
+
+    thread_pool pool(num_tasks);
+    std::latch done(1);
+
+    auto on_complete = [&done](auto&&...) { done.count_down(); };
+    auto on_error = [&done](std::exception_ptr ep) {
+        try { std::rethrow_exception(ep); }
+        catch (std::exception const& e) {
+            std::cerr << "Error: " << e.what() << "\n";
+        }
+        catch (...) {
+            std::cerr << "Error: unknown exception\n";
+        }
+        done.count_down();
+    };
+
+    auto compute = [&]() -> task<> {
+        std::cout << "Dispatching " << num_tasks
+                  << " parallel tasks...\n";
+
+        auto [s0, s1, s2, s3] = co_await when_all(
+            partial_sum(0 * chunk, 1 * chunk),
+            partial_sum(1 * chunk, 2 * chunk),
+            partial_sum(2 * chunk, 3 * chunk),
+            partial_sum(3 * chunk, 4 * chunk));
+
+        long long total_sum = s0 + s1 + s2 + s3;
+
+        // Arithmetic series: sum [0, N) = N*(N-1)/2
+        long long expected =
+            static_cast<long long>(total) * (total - 1) / 2;
+
+        std::cout << "\nPartial sums: " << s0 << " + " << s1
+                  << " + " << s2 << " + " << s3 << "\n";
+        std::cout << "Total: " << total_sum
+                  << " (expected " << expected << ")\n";
+    };
+
+    run_async(pool.get_executor(), on_complete, on_error)(compute());
+    done.wait();
+
+    return 0;
+}
+----
+
+== Build
+
+[source,cmake]
+----
+add_executable(parallel_tasks parallel_tasks.cpp)
+target_link_libraries(parallel_tasks PRIVATE Boost::capy)
+----
+
+== Walkthrough
+
+=== Partitioning Work
+
+[source,cpp]
+----
+constexpr int total = 10000;
+constexpr int num_tasks = 4;
+constexpr int chunk = total / num_tasks;
+----
+
+The range `[0, 10000)` is divided into 4 equal chunks, one per task. Each task computes a partial sum independently.
+
+=== Parallel Execution with when_all
+
+[source,cpp]
+----
+auto [s0, s1, s2, s3] = co_await when_all(
+    partial_sum(0 * chunk, 1 * chunk),
+    partial_sum(1 * chunk, 2 * chunk),
+    partial_sum(2 * chunk, 3 * chunk),
+    partial_sum(3 * chunk, 4 * chunk));
+----
+
+`when_all` launches all four tasks concurrently on the thread pool. Each task may run on a different thread. Results are returned via structured bindings in the same order as the input tasks.
+
+=== Observing Thread IDs
+
+[source,cpp]
+----
+std::ostringstream oss;
+oss << "  range [" << lo << ", " << hi
+    << ") on thread " << std::this_thread::get_id() << "\n";
+std::cout << oss.str();
+----
+
+Each task prints its thread ID. On a multi-core system you will see different thread IDs, confirming true parallel execution. The `ostringstream` ensures each line is printed atomically.
+
+=== Verifying Results
+
+The sum of `[0, N)` is `N*(N-1)/2`. The example verifies that the sum of partial results matches this formula.
+
+== Output
+
+----
+Dispatching 4 parallel tasks...
+  range [0, 2500) on thread 140234567890432
+  range [2500, 5000) on thread 140234567886336
+  range [5000, 7500) on thread 140234567882240
+  range [7500, 10000) on thread 140234567878144
+
+Partial sums: 3123750 + 9373750 + 15623750 + 21873750
+Total: 49995000 (expected 49995000)
+----
+
+== Exercises
+
+1. Increase `num_tasks` beyond the pool thread count and observe how tasks are scheduled
+2. Add a timing comparison between parallel execution and a single-threaded loop
+3. Generalize the partitioning to handle ranges that don't divide evenly
+
+== Next Steps
+
+* xref:7.examples/7n.custom-executor.adoc[Custom Executor] -- Building your own execution context
