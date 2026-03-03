@@ -7,138 +7,86 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
+//
+// Echo Server Example (Corosio)
+//
+// A complete echo server using Corosio for real network I/O.
+// Demonstrates Capy coroutines driving actual TCP connections.
+//
+
 #include <boost/capy.hpp>
 #include <boost/corosio.hpp>
 #include <iostream>
 
+namespace corosio = boost::corosio;
 using namespace boost::capy;
-namespace tcp = boost::corosio::tcp;
 
-// Echo handler: receives data and sends it back
-task<> echo_session(any_stream& stream, std::string client_info)
+task<> echo_session(corosio::tcp_socket sock)
 {
-    std::cout << "[" << client_info << "] Session started\n";
-    
-    char buffer[1024];
-    std::size_t total_bytes = 0;
-    
-    try
-    {
-        for (;;)
-        {
-            // Read some data
-            // ec: std::error_code, n: std::size_t
-            auto [ec, n] = co_await stream.read_some(mutable_buffer(buffer));
-            
-            if (ec == cond::eof)
-            {
-                std::cout << "[" << client_info << "] Client disconnected\n";
-                break;
-            }
-            
-            if (ec)
-            {
-                std::cout << "[" << client_info << "] Read error: " 
-                          << ec.message() << "\n";
-                break;
-            }
-            
-            total_bytes += n;
-            
-            // Echo it back
-            // wec: std::error_code, wn: std::size_t
-            auto [wec, wn] = co_await write(stream, const_buffer(buffer, n));
-            
-            if (wec)
-            {
-                std::cout << "[" << client_info << "] Write error: " 
-                          << wec.message() << "\n";
-                break;
-            }
-        }
-    }
-    catch (std::exception const& e)
-    {
-        std::cout << "[" << client_info << "] Exception: " << e.what() << "\n";
-    }
-    
-    std::cout << "[" << client_info << "] Session ended, "
-              << total_bytes << " bytes echoed\n";
-}
+    char buf[1024];
 
-// Accept loop: accepts connections and spawns handlers
-task<> accept_loop(tcp::acceptor& acceptor, executor_ref ex)
-{
-    std::cout << "Server listening on port " 
-              << acceptor.local_endpoint().port() << "\n";
-    
-    int connection_id = 0;
-    
     for (;;)
     {
-        // Accept a connection
-        // ec: std::error_code, socket: tcp::socket
-        auto [ec, socket] = co_await acceptor.async_accept();
-        
+        auto [ec, n] = co_await sock.read_some(
+            mutable_buffer(buf, sizeof(buf)));
+
+        if (ec)
+            break;
+
+        auto [wec, wn] = co_await write(
+            sock, const_buffer(buf, n));
+
+        if (wec)
+            break;
+    }
+
+    sock.close();
+}
+
+task<> accept_loop(
+    corosio::tcp_acceptor& acc,
+    corosio::io_context& ioc)
+{
+    auto ep = acc.local_endpoint();
+    std::cout << "Listening on port " << ep.port() << "\n";
+
+    for (;;)
+    {
+        corosio::tcp_socket peer(ioc);
+        auto [ec] = co_await acc.accept(peer);
+
         if (ec)
         {
             std::cout << "Accept error: " << ec.message() << "\n";
             continue;
         }
-        
-        // Build client info string
-        auto remote = socket.remote_endpoint();  // tcp::endpoint
-        std::string client_info = 
-            std::to_string(++connection_id) + ":" +
-            remote.address().to_string() + ":" +
-            std::to_string(remote.port());
-        
-        std::cout << "[" << client_info << "] Connection accepted\n";
-        
-        // Wrap socket and spawn handler
-        // Note: socket ownership transfers to the lambda
-        run_async(ex)(
-            [](tcp::socket sock, std::string info) -> task<> {
-                any_stream stream{sock};
-                co_await echo_session(stream, std::move(info));
-            }(std::move(socket), std::move(client_info))
-        );
+
+        auto remote = peer.remote_endpoint();
+        std::cout << "Connection from ";
+        if (remote.is_v4())
+            std::cout << remote.v4_address();
+        else
+            std::cout << remote.v6_address();
+        std::cout << ":" << remote.port() << "\n";
+
+        run_async(ioc.get_executor())(
+            echo_session(std::move(peer)));
     }
 }
 
 int main(int argc, char* argv[])
 {
-    try
-    {
-        // Parse port from command line
-        unsigned short port = 8080;
-        if (argc > 1)
-            port = static_cast<unsigned short>(std::stoi(argv[1]));
-        
-        // Create I/O context and thread pool
-        boost::corosio::io_context ioc;
-        thread_pool pool(4);
-        
-        // Create acceptor
-        tcp::endpoint endpoint(tcp::v4(), port);
-        tcp::acceptor acceptor(ioc, endpoint);
-        acceptor.set_option(tcp::acceptor::reuse_address(true));
-        
-        std::cout << "Starting echo server...\n";
-        
-        // Run accept loop
-        run_async(pool.get_executor())(
-            accept_loop(acceptor, pool.get_executor())
-        );
-        
-        // Run the I/O context (this blocks)
-        ioc.run();
-    }
-    catch (std::exception const& e)
-    {
-        std::cerr << "Error: " << e.what() << "\n";
-        return 1;
-    }
-    
+    unsigned short port = 8080;
+    if (argc > 1)
+        port = static_cast<unsigned short>(std::atoi(argv[1]));
+
+    corosio::io_context ioc;
+    corosio::tcp_acceptor acc(ioc, corosio::endpoint(port));
+
+    run_async(ioc.get_executor())(
+        accept_loop(acc, ioc));
+
+    ioc.run();
+
     return 0;
 }

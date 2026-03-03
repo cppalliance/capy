@@ -392,6 +392,10 @@ Output (52 bytes):
 2. Implement a ROT13 transform
 3. Create a filtering stage that drops lines matching a pattern
 
+== Next Steps
+
+* xref:7.examples/7k.strand-serialization.adoc[Strand Serialization] -- Lock-free shared state with strands
+
 == Summary
 
 This example catalog demonstrated:
@@ -406,5 +410,8 @@ This example catalog demonstrated:
 * Custom buffer implementations
 * Real network I/O with Corosio
 * Data transformation pipelines
+* Strand-based serialization and async mutexes
+* Parallel task distribution across thread pools
+* Custom executor implementations
 
 These patterns form the foundation for building robust, efficient I/O applications with Capy.

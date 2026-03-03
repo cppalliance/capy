@@ -1,0 +1,146 @@
+= Strand Serialization
+
+Protecting shared state with a strand instead of a mutex.
+
+== What You Will Learn
+
+* Using a `strand` to serialize coroutine access to shared state
+* Lock-free shared state management
+* Combining `when_all` with strand-based serialization
+
+== Prerequisites
+
+* Completed xref:7.examples/7b.producer-consumer.adoc[Producer-Consumer] (introduces `strand`)
+* Understanding of `when_all` from xref:../4.coroutines/4f.composition.adoc[Composition]
+
+== Source Code
+
+[source,cpp]
+----
+#include <boost/capy.hpp>
+#include <iostream>
+#include <latch>
+
+using namespace boost::capy;
+
+int main()
+{
+    constexpr int num_coroutines = 10;
+    constexpr int increments_per_coro = 1000;
+
+    thread_pool pool(4);
+    strand s{pool.get_executor()};
+    std::latch done(1);
+
+    auto on_complete = [&done](auto&&...) { done.count_down(); };
+    auto on_error = [&done](std::exception_ptr ep) {
+        try { std::rethrow_exception(ep); }
+        catch (std::exception const& e) {
+            std::cerr << "Error: " << e.what() << "\n";
+        }
+        catch (...) {
+            std::cerr << "Error: unknown exception\n";
+        }
+        done.count_down();
+    };
+
+    int counter = 0;
+
+    // Each coroutine increments the shared counter without locks.
+    // The strand ensures only one coroutine runs at a time.
+    auto increment = [&](int id) -> task<> {
+        for (int i = 0; i < increments_per_coro; ++i)
+            ++counter;
+        std::cout << "Coroutine " << id
+                  << " finished, counter = " << counter << "\n";
+        co_return;
+    };
+
+    auto run_all = [&]() -> task<> {
+        co_await when_all(
+            increment(0), increment(1), increment(2),
+            increment(3), increment(4), increment(5),
+            increment(6), increment(7), increment(8),
+            increment(9));
+    };
+
+    run_async(s, on_complete, on_error)(run_all());
+    done.wait();
+
+    int expected = num_coroutines * increments_per_coro;
+    std::cout << "\nFinal counter: " << counter
+              << " (expected " << expected << ")\n";
+
+    return 0;
+}
+----
+
+== Build
+
+[source,cmake]
+----
+add_executable(strand_serialization strand_serialization.cpp)
+target_link_libraries(strand_serialization PRIVATE Boost::capy)
+----
+
+== Walkthrough
+
+=== Strand as Serializer
+
+[source,cpp]
+----
+strand s{pool.get_executor()};
+----
+
+A `strand` wraps an executor and guarantees that handlers dispatched through it never run concurrently. This replaces the need for a mutex when protecting shared state accessed by coroutines.
+
+=== Lock-Free Shared Access
+
+[source,cpp]
+----
+int counter = 0;
+
+auto increment = [&](int id) -> task<> {
+    for (int i = 0; i < increments_per_coro; ++i)
+        ++counter;
+    // ...
+};
+----
+
+Multiple coroutines increment the same `counter` without any locks. The strand serializes execution so only one coroutine runs at a time, preventing data races.
+
+=== Running on the Strand
+
+[source,cpp]
+----
+run_async(s, on_complete, on_error)(run_all());
+----
+
+Passing the strand `s` to `run_async` ensures the entire coroutine tree executes through the strand. Even though the underlying `thread_pool` has 4 threads, the strand constrains execution to one coroutine at a time.
+
+== Output
+
+----
+Coroutine 0 finished, counter = 1000
+Coroutine 1 finished, counter = 2000
+Coroutine 2 finished, counter = 3000
+Coroutine 3 finished, counter = 4000
+Coroutine 4 finished, counter = 5000
+Coroutine 5 finished, counter = 6000
+Coroutine 6 finished, counter = 7000
+Coroutine 7 finished, counter = 8000
+Coroutine 8 finished, counter = 9000
+Coroutine 9 finished, counter = 10000
+
+Final counter: 10000 (expected 10000)
+----
+
+== Exercises
+
+1. Remove the strand and run directly on the pool executor -- observe the data race
+2. Replace the plain `int` counter with `std::atomic<int>` and compare the two approaches
+3. Add a second shared variable and verify both are protected by the strand
+
+== Next Steps
+
+* xref:7.examples/7l.async-mutex.adoc[Async Mutex] -- FIFO coroutine locking
