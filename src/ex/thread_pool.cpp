@@ -11,7 +11,6 @@
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/detail/intrusive.hpp>
 #include <boost/capy/test/thread_name.hpp>
-#include <atomic>
 #include <condition_variable>
 #include <cstdio>
 #include <mutex>
@@ -68,7 +67,7 @@ class thread_pool::impl
     std::condition_variable cv_;
     detail::intrusive_queue<work> q_;
     std::vector<std::thread> threads_;
-    std::atomic<bool> stop_{false};
+    bool stop_{false};
     std::size_t num_threads_;
     char thread_name_prefix_[13]{};  // 12 chars max + null terminator
     std::once_flag start_flag_;
@@ -122,7 +121,10 @@ public:
     void
     stop() noexcept
     {
-        stop_.store(true, std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            stop_ = true;
+        }
         cv_.notify_all();
     }
 
@@ -152,9 +154,9 @@ private:
                 std::unique_lock<std::mutex> lock(mutex_);
                 cv_.wait(lock, [this]{
                     return !q_.empty() ||
-                        stop_.load(std::memory_order_acquire);
+                        stop_;
                 });
-                if(stop_.load(std::memory_order_acquire) && q_.empty())
+                if(stop_ && q_.empty())
                     return;
                 w = q_.pop();
             }
