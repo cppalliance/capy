@@ -273,7 +273,7 @@ struct when_any_runner
             {
                 promise_type* p_;
                 bool await_ready() const noexcept { return false; }
-                std::coroutine_handle<> await_suspend(std::coroutine_handle<> h) noexcept
+                auto await_suspend(std::coroutine_handle<> h) noexcept
                 {
                     // Extract everything needed before self-destruction.
                     auto& core = p_->state_->core_;
@@ -286,8 +286,8 @@ struct when_any_runner
                     // If last runner, dispatch parent for symmetric transfer.
                     auto remaining = counter->fetch_sub(1, std::memory_order_acq_rel);
                     if(remaining == 1)
-                        return caller_env->executor.dispatch(cont);
-                    return std::noop_coroutine();
+                        return detail::symmetric_transfer(caller_env->executor.dispatch(cont));
+                    return detail::symmetric_transfer(std::noop_coroutine());
                 }
                 void await_resume() const noexcept {}
             };
@@ -316,15 +316,11 @@ struct when_any_runner
             template<class Promise>
             auto await_suspend(std::coroutine_handle<Promise> h)
             {
-#ifdef _MSC_VER
                 using R = decltype(a_.await_suspend(h, &p_->env_));
                 if constexpr (std::is_same_v<R, std::coroutine_handle<>>)
-                    a_.await_suspend(h, &p_->env_).resume();
+                    return detail::symmetric_transfer(a_.await_suspend(h, &p_->env_));
                 else
                     return a_.await_suspend(h, &p_->env_);
-#else
-                return a_.await_suspend(h, &p_->env_);
-#endif
             }
         };
 

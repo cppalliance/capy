@@ -11,6 +11,7 @@
 #define BOOST_CAPY_RUN_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/detail/run.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_runnable.hpp>
@@ -96,10 +97,11 @@ struct dispatch_trampoline
                 promise_type* p_;
                 bool await_ready() const noexcept { return false; }
 
-                std::coroutine_handle<> await_suspend(
+                auto await_suspend(
                     std::coroutine_handle<>) noexcept
                 {
-                    return p_->caller_ex_.dispatch(p_->parent_);
+                    return detail::symmetric_transfer(
+                        p_->caller_ex_.dispatch(p_->parent_));
                 }
 
                 void await_resume() const noexcept {}
