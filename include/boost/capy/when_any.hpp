@@ -115,8 +115,6 @@
 namespace boost {
 namespace capy {
 
-namespace detail {
-
 /** Convert void to monostate for variant storage.
 
     std::variant<void, ...> is ill-formed, so void tasks contribute
@@ -128,11 +126,7 @@ namespace detail {
 template<typename T>
 using void_to_monostate_t = std::conditional_t<std::is_void_v<T>, std::monostate, T>;
 
-// Result variant: one alternative per task, preserving positional
-// correspondence. Use .index() to identify which task won.
-// void results become monostate.
-template<typename T0, typename... Ts>
-using when_any_variant_t = std::variant<void_to_monostate_t<T0>, void_to_monostate_t<Ts>...>;
+namespace detail {
 
 /** Core shared state for when_any operations.
 
@@ -202,14 +196,13 @@ struct when_any_core
     @par Lifetime
     Allocated on the parent coroutine's frame, outlives all runners.
 
-    @tparam T0 First task's result type.
-    @tparam Ts Remaining tasks' result types.
+    @tparam Ts Task result types.
 */
-template<typename T0, typename... Ts>
+template<typename... Ts>
 struct when_any_state
 {
-    static constexpr std::size_t task_count = 1 + sizeof...(Ts);
-    using variant_type = when_any_variant_t<T0, Ts...>;
+    static constexpr std::size_t task_count = sizeof...(Ts);
+    using variant_type = std::variant<void_to_monostate_t<Ts>...>;
 
     when_any_core core_;
     std::optional<variant_type> result_;
@@ -562,11 +555,9 @@ private:
     }
     @endcode
 
-    @tparam A0 First awaitable type (must satisfy IoAwaitable).
-    @tparam As Remaining awaitable types (must satisfy IoAwaitable).
-    @param a0 The first awaitable to race.
-    @param as Additional awaitables to race concurrently.
-    @return A task yielding a variant with one alternative per awaitable.
+    @param as Awaitables to race concurrently (at least one required; each
+        must satisfy IoAwaitable).
+    @return A task yielding a std::variant with one alternative per awaitable.
         Use .index() to identify the winner. Void awaitables contribute
         std::monostate.
 
@@ -580,18 +571,15 @@ private:
 
     @see when_all, IoAwaitable
 */
-template<IoAwaitable A0, IoAwaitable... As>
-[[nodiscard]] auto when_any(A0 a0, As... as)
-    -> task<detail::when_any_variant_t<
-        detail::awaitable_result_t<A0>,
-        detail::awaitable_result_t<As>...>>
+template<IoAwaitable... As>
+    requires (sizeof...(As) > 0)
+[[nodiscard]] auto when_any(As... as)
+    -> task<std::variant<void_to_monostate_t<awaitable_result_t<As>>...>>
 {
-    detail::when_any_state<
-        detail::awaitable_result_t<A0>,
-        detail::awaitable_result_t<As>...> state;
-    std::tuple<A0, As...> awaitable_tuple(std::move(a0), std::move(as)...);
+    detail::when_any_state<awaitable_result_t<As>...> state;
+    std::tuple<As...> awaitable_tuple(std::move(as)...);
 
-    co_await detail::when_any_launcher<A0, As...>(&awaitable_tuple, &state);
+    co_await detail::when_any_launcher<As...>(&awaitable_tuple, &state);
 
     if(state.core_.winner_exception_)
         std::rethrow_exception(state.core_.winner_exception_);
@@ -852,12 +840,12 @@ public:
     @see when_any, IoAwaitableRange
 */
 template<IoAwaitableRange R>
-    requires (!std::is_void_v<detail::awaitable_result_t<std::ranges::range_value_t<R>>>)
+    requires (!std::is_void_v<awaitable_result_t<std::ranges::range_value_t<R>>>)
 [[nodiscard]] auto when_any(R&& awaitables)
-    -> task<std::pair<std::size_t, detail::awaitable_result_t<std::ranges::range_value_t<R>>>>
+    -> task<std::pair<std::size_t, awaitable_result_t<std::ranges::range_value_t<R>>>>
 {
     using Awaitable = std::ranges::range_value_t<R>;
-    using T = detail::awaitable_result_t<Awaitable>;
+    using T = awaitable_result_t<Awaitable>;
     using result_type = std::pair<std::size_t, T>;
     using OwnedRange = std::remove_cvref_t<R>;
 
@@ -961,7 +949,7 @@ template<IoAwaitableRange R>
     @see when_any, IoAwaitableRange
 */
 template<IoAwaitableRange R>
-    requires std::is_void_v<detail::awaitable_result_t<std::ranges::range_value_t<R>>>
+    requires std::is_void_v<awaitable_result_t<std::ranges::range_value_t<R>>>
 [[nodiscard]] auto when_any(R&& awaitables) -> task<std::size_t>
 {
     using OwnedRange = std::remove_cvref_t<R>;
