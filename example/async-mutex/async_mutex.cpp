@@ -24,8 +24,6 @@ using namespace boost::capy;
 
 int main()
 {
-    constexpr int num_workers = 6;
-
     thread_pool pool;
     strand s{pool.get_executor()};
     std::latch done(1);
