@@ -316,25 +316,36 @@ task<> with_timeout(task<> operation, std::chrono::seconds timeout)
 
 === User Cancellation
 
-Connect UI cancellation to stop tokens:
+Connect UI cancellation to stop tokens. Pass the token through `run_async` so it propagates automatically via the execution environment—the task accesses it with `co_await this_coro::stop_token` instead of receiving it as a function argument:
 
 [source,cpp]
 ----
 class download_manager
 {
+    executor_ref executor_;
     std::stop_source stop_source_;
-    
+
 public:
     void start_download(std::string url)
     {
-        run_async(executor_)(download(url, stop_source_.get_token()));
+        // Token propagated via io_env, not as a function argument
+        run_async(executor_, stop_source_.get_token())(download(url));
     }
-    
+
     void cancel()
     {
         stop_source_.request_stop();
     }
 };
+
+task<void> download(std::string url)
+{
+    auto token = co_await this_coro::stop_token;  // From run_async's io_env
+    while (!token.stop_requested())
+    {
+        co_await fetch_next_chunk(url);
+    }
+}
 ----
 
 === Graceful Shutdown

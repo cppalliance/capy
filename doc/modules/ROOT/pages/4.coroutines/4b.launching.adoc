@@ -91,21 +91,6 @@ run_async(ex,
 
 When no handlers are provided, results are discarded and exceptions are rethrown (causing `std::terminate` if uncaught).
 
-=== Stop Token Support
-
-Pass a stop token to enable cooperative cancellation:
-
-[source,cpp]
-----
-std::stop_source source;
-run_async(ex, source.get_token())(cancellable_task());
-
-// Later, to request cancellation:
-source.request_stop();
-----
-
-The stop token is propagated to the task and all tasks it awaits.
-
 == run: Executor Hopping Within Coroutines
 
 Inside a coroutine, use `run` to execute a child task on a different executor:
@@ -135,6 +120,48 @@ This pattern is useful for:
 * Running CPU-intensive work on a thread pool
 * Performing I/O on an I/O-specific context
 * Ensuring UI updates happen on the UI thread
+
+== Stop Token Propagation
+
+Both `run_async` and `run` propagate stop tokens to the launched task and all tasks it awaits. The task accesses its token via `co_await this_coro::stop_token`.
+
+=== Injecting a Token with run_async
+
+Since `run_async` is called from non-coroutine code, there is no caller token to inherit. Pass a stop token explicitly:
+
+[source,cpp]
+----
+std::stop_source source;
+run_async(ex, source.get_token())(cancellable_task());
+
+// Later, to request cancellation:
+source.request_stop();
+----
+
+=== Inheritance with run
+
+`run` is called from within a coroutine, so it inherits the caller's stop token by default:
+
+[source,cpp]
+----
+task<void> parent()
+{
+    // Child automatically receives our stop token
+    co_await run(pool.get_executor())(child_task());
+}
+----
+
+To override with a different token, pass it explicitly:
+
+[source,cpp]
+----
+task<void> parent()
+{
+    std::stop_source local;
+    // Child gets local's token, not our caller's
+    co_await run(pool.get_executor(), local.get_token())(child_task());
+}
+----
 
 == Handler Threading
 
