@@ -358,6 +358,46 @@ struct run_async_test
         BOOST_TEST(result);
     }
 
+    void
+    testScopedCancellation()
+    {
+        // Three tasks on the same executor: one with a scoped stop token,
+        // two with the default (empty) token. Cancelling the scoped token
+        // should only affect that task, not the others.
+        std::queue<std::coroutine_handle<>> queue;
+        queue_executor d(queue);
+
+        bool default_1_stopped = true;
+        bool scoped_stopped = false;
+        bool default_2_stopped = true;
+
+        std::stop_source scoped_source;
+
+        run_async(d, [&](bool v) { default_1_stopped = v; })(
+            check_stop_requested());
+        run_async(d, scoped_source.get_token(),
+            [&](bool v) { scoped_stopped = v; })(
+            check_stop_requested());
+        run_async(d, [&](bool v) { default_2_stopped = v; })(
+            check_stop_requested());
+
+        BOOST_TEST_EQ(queue.size(), 3u);
+
+        // Cancel the scoped source before draining
+        scoped_source.request_stop();
+
+        while(!queue.empty())
+        {
+            auto h = queue.front();
+            queue.pop();
+            h.resume();
+        }
+
+        BOOST_TEST(!default_1_stopped);
+        BOOST_TEST(scoped_stopped);
+        BOOST_TEST(!default_2_stopped);
+    }
+
     //----------------------------------------------------------
     // Allocator Propagation
     //----------------------------------------------------------
@@ -641,6 +681,7 @@ struct run_async_test
         // Stop Token
         testStopTokenPropagation();
         testCancellationVisible();
+        testScopedCancellation();
 
         // Allocator Propagation
         testAllocatorPropagation();

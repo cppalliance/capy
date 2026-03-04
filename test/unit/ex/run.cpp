@@ -337,6 +337,97 @@ struct run_test
         BOOST_TEST(called);
     }
 
+    //----------------------------------------------------------
+    // Stop Token Propagation
+    //----------------------------------------------------------
+
+    static task<bool>
+    check_stop_requested()
+    {
+        auto token = co_await this_coro::stop_token;
+        co_return token.stop_requested();
+    }
+
+    void
+    testStopTokenInheritance()
+    {
+        // Verify run(ex) inherits the caller's stop token
+        int dispatch_count = 0;
+        test_executor ex(1, dispatch_count);
+        std::stop_source source;
+        source.request_stop();
+        bool result = false;
+
+        auto outer = [&]() -> task<bool> {
+            // run(ex) with no explicit stop token should inherit
+            // the caller's token (which is stopped)
+            co_return co_await capy::run(ex)(check_stop_requested());
+        };
+
+        run_async(ex, source.get_token(),
+            [&](bool v) { result = v; })(outer());
+
+        BOOST_TEST(result);
+    }
+
+    void
+    testStopTokenOverrideInnerStopped()
+    {
+        // Stop the inner (override) token only.
+        // Inner task should see stopped; outer should not.
+        int dispatch_count = 0;
+        test_executor ex(1, dispatch_count);
+        std::stop_source caller_source;
+        std::stop_source override_source;
+        override_source.request_stop();
+
+        bool outer_stopped = true;
+        bool inner_stopped = false;
+
+        auto outer = [&]() -> task<void> {
+            auto token = co_await this_coro::stop_token;
+            outer_stopped = token.stop_requested();
+            inner_stopped = co_await capy::run(ex, override_source.get_token())(
+                check_stop_requested());
+        };
+
+        run_async(ex, caller_source.get_token())(outer());
+
+        BOOST_TEST(!outer_stopped);
+        BOOST_TEST(inner_stopped);
+    }
+
+    void
+    testStopTokenOverrideOuterStopped()
+    {
+        // Stop the outer (caller) token only.
+        // Outer task should see stopped; inner (override) should not.
+        int dispatch_count = 0;
+        test_executor ex(1, dispatch_count);
+        std::stop_source caller_source;
+        caller_source.request_stop();
+        std::stop_source override_source;
+
+        bool outer_stopped = false;
+        bool inner_stopped = true;
+
+        auto outer = [&]() -> task<void> {
+            auto token = co_await this_coro::stop_token;
+            outer_stopped = token.stop_requested();
+            inner_stopped = co_await capy::run(ex, override_source.get_token())(
+                check_stop_requested());
+        };
+
+        run_async(ex, caller_source.get_token())(outer());
+
+        BOOST_TEST(outer_stopped);
+        BOOST_TEST(!inner_stopped);
+    }
+
+    //----------------------------------------------------------
+    // Allocator Propagation
+    //----------------------------------------------------------
+
     void
     testAllocatorPropagation()
     {
@@ -394,6 +485,9 @@ struct run_test
         testStopTokenWithAllocator();
         testVoidWithStopToken();
         testVoidWithMemoryResource();
+        testStopTokenInheritance();
+        testStopTokenOverrideInnerStopped();
+        testStopTokenOverrideOuterStopped();
         testAllocatorPropagation();
         testAllocatorPropagationThroughRun();
     }
