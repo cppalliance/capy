@@ -358,17 +358,6 @@ private:
     }
 };
 
-/** Compute the result type for when_all.
-
-    Returns void when all tasks are void (P2300 aligned),
-    otherwise returns a tuple with void types filtered out.
-*/
-template<typename... Ts>
-using when_all_result_t = std::conditional_t<
-    std::is_same_v<filter_void_tuple_t<Ts...>, std::tuple<>>,
-    void,
-    filter_void_tuple_t<Ts...>>;
-
 /** Helper to extract a single result, returning empty tuple for void.
     This is a separate function to work around a GCC-11 ICE that occurs
     when using nested immediately-invoked lambdas with pack expansion.
@@ -394,6 +383,20 @@ auto extract_results(when_all_state<Ts...>& state)
 }
 
 } // namespace detail
+
+/** Compute a tuple type with void types filtered out.
+
+    Returns void when all types are void (P2300 aligned),
+    otherwise returns a std::tuple with void types removed.
+
+    Example: non_void_tuple_t<int, void, string> = std::tuple<int, string>
+    Example: non_void_tuple_t<void, void> = void
+*/
+template<typename... Ts>
+using non_void_tuple_t = std::conditional_t<
+    std::is_same_v<detail::filter_void_tuple_t<Ts...>, std::tuple<>>,
+    void,
+    detail::filter_void_tuple_t<Ts...>>;
 
 /** Execute multiple awaitables concurrently and collect their results.
 
@@ -446,12 +449,12 @@ auto extract_results(when_all_state<Ts...>& state)
 */
 template<IoAwaitable... As>
 [[nodiscard]] auto when_all(As... awaitables)
-    -> task<detail::when_all_result_t<detail::awaitable_result_t<As>...>>
+    -> task<non_void_tuple_t<awaitable_result_t<As>...>>
 {
-    using result_type = detail::when_all_result_t<detail::awaitable_result_t<As>...>;
+    using result_type = non_void_tuple_t<awaitable_result_t<As>...>;
 
     // State is stored in the coroutine frame, using the frame allocator
-    detail::when_all_state<detail::awaitable_result_t<As>...> state;
+    detail::when_all_state<awaitable_result_t<As>...> state;
 
     // Store awaitables in the frame
     std::tuple<As...> awaitable_tuple(std::move(awaitables)...);
@@ -472,10 +475,6 @@ template<IoAwaitable... As>
     else
         co_return detail::extract_results(state);
 }
-
-/// Compute the result type of `when_all` for the given task types.
-template<typename... Ts>
-using when_all_result_type = detail::when_all_result_t<Ts...>;
 
 } // namespace capy
 } // namespace boost

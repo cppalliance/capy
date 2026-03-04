@@ -53,17 +53,17 @@ static_assert(std::is_same_v<
 
 // Verify result_type: void when all tasks are void, tuple otherwise
 static_assert(std::is_same_v<
-    when_all_result_type<int, std::string>,
+    non_void_tuple_t<int, std::string>,
     std::tuple<int, std::string>>);
 static_assert(std::is_same_v<
-    when_all_result_type<int, void, std::string>,
+    non_void_tuple_t<int, void, std::string>,
     std::tuple<int, std::string>>);
 static_assert(std::is_void_v<
-    when_all_result_type<void>>);
+    non_void_tuple_t<void>>);
 static_assert(std::is_void_v<
-    when_all_result_type<void, void>>);
+    non_void_tuple_t<void, void>>);
 static_assert(std::is_void_v<
-    when_all_result_type<void, void, void>>);
+    non_void_tuple_t<void, void, void>>);
 
 // Verify when_all returns task which satisfies awaitable protocols
 static_assert(IoAwaitable<task<std::tuple<int, int>>>);
@@ -306,17 +306,17 @@ struct when_all_test
     testResultType()
     {
         // Mixed types: void filtered out
-        using mixed_result = when_all_result_type<int, void, std::string>;
+        using mixed_result = non_void_tuple_t<int, void, std::string>;
         static_assert(std::is_same_v<
             mixed_result,
             std::tuple<int, std::string>>);
 
         // All void: returns void (not empty tuple)
-        using all_void_result = when_all_result_type<void, void, void>;
+        using all_void_result = non_void_tuple_t<void, void, void>;
         static_assert(std::is_void_v<all_void_result>);
 
         // Single void: returns void
-        using single_void_result = when_all_result_type<void>;
+        using single_void_result = non_void_tuple_t<void>;
         static_assert(std::is_void_v<single_void_result>);
     }
 
