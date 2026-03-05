@@ -37,25 +37,29 @@ Called if an exception escapes the coroutine body. Typically you either rethrow 
 
 The compiler transforms your coroutine body into something resembling this pseudocode:
 
+NOTE: The `co_await` keywords below are intentional. This mirrors the {cpp} standard's own description ({cpp}20 [dcl.fct.def.coroutine]/5), which uses `co_await` to express the logical suspension points. The compiler expands each `co_await` into the full awaiter protocol (`await_ready`, `await_suspend`, `await_resume`) as described in xref:2.cpp20-coroutines/2b.syntax.adoc#_awaitables_and_awaiters[Awaitables and Awaiters].
+
 [source,cpp]
 ----
 {
     promise_type promise;
     auto return_object = promise.get_return_object();
-    
-    co_await promise.initial_suspend();
-    
+
+    co_await promise.initial_suspend();  // <1>
+
     try {
         // your coroutine body goes here
     }
     catch (...) {
         promise.unhandled_exception();
     }
-    
-    co_await promise.final_suspend();
+
+    co_await promise.final_suspend();  // <2>
 }
 // coroutine frame is destroyed when control flows off the end
 ----
+<1> Suspension point before the body runs. If `initial_suspend()` returns `suspend_always`, the coroutine starts suspended.
+<2> Suspension point after the body completes. If `final_suspend()` returns `suspend_always`, the frame persists for the caller to inspect or destroy.
 
 Important observations:
 
