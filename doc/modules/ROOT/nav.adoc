@@ -19,6 +19,7 @@
 ** xref:4.coroutines/4e.cancellation.adoc[Stop Tokens and Cancellation]
 ** xref:4.coroutines/4f.composition.adoc[Concurrent Composition]
 ** xref:4.coroutines/4g.allocators.adoc[Frame Allocators]
+** xref:4.coroutines/4h.lambda-captures.adoc[Lambda Coroutine Captures]
 * xref:5.buffers/5.intro.adoc[Buffer Sequences]
 ** xref:5.buffers/5a.overview.adoc[Why Concepts, Not Spans]
 ** xref:5.buffers/5b.types.adoc[Buffer Types]

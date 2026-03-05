@@ -1,0 +1,209 @@
+= Lambda Coroutine Captures
+
+Lambda captures are a common source of undefined behavior in coroutine code. This section explains the problem and the safe patterns to use instead.
+
+== Prerequisites
+
+* Completed xref:4.coroutines/4g.allocators.adoc[Frame Allocators]
+* Understanding of coroutine frame lifetime from xref:../2.cpp20-coroutines/2c.machinery.adoc[Part III: Coroutine Machinery]
+
+== The Problem
+
+Consider this innocent-looking code:
+
+[source,cpp]
+----
+namespace capy = boost::capy;
+
+void process(socket& sock)
+{
+    auto task = [&sock]() -> capy::task<>
+    {
+        char buf[1024];
+        auto [ec, n] = co_await sock.read_some(buffer(buf, sizeof(buf)));
+    }();
+
+    run_async(executor)(std::move(task));
+}
+----
+
+**This code has undefined behavior.** It may crash, corrupt memory, or appear to work until it doesn't.
+
+== Why It Fails
+
+In {cpp}20, lambda coroutine captures are stored in the lambda closure object, *not* in the coroutine frame. Here is what happens:
+
+1. The lambda closure is created, capturing `sock` by reference
+2. The lambda's `operator()()` is called
+3. A coroutine frame is allocated on the heap
+4. The coroutine suspends at `initial_suspend`
+5. `operator()()` returns the task
+6. **The lambda closure is destroyed** — it was a temporary
+7. Later, the coroutine resumes
+8. The coroutine accesses `sock` through the destroyed closure
+9. **Undefined behavior**
+
+The coroutine frame does not contain a copy of the captured `sock`. It contains a reference to the lambda's capture storage, which no longer exists.
+
+== The Safe Pattern: IIFE With Parameters
+
+The solution is to pass values as **function parameters** instead of **lambda captures**. Function parameters are copied to the coroutine frame.
+
+[source,cpp]
+----
+namespace capy = boost::capy;
+
+void process(socket& sock)
+{
+    auto task = [](socket* s) -> capy::task<>
+    {
+        char buf[1024];
+        auto [ec, n] = co_await s->read_some(buffer(buf, sizeof(buf)));
+    }(&sock);
+
+    run_async(executor)(std::move(task));
+}
+----
+
+This is an **Immediately Invoked Function Expression (IIFE)**. The parameter `s` is copied to the coroutine frame before the first suspension, so it remains valid for the coroutine's lifetime.
+
+== Complete Example
+
+=== Broken: Using Captures
+
+[source,cpp]
+----
+class connection_handler
+{
+    socket sock_;
+    std::string name_;
+
+public:
+    capy::task<> run()
+    {
+        // BROKEN: 'this' captured in lambda, lambda destroyed after invoke
+        return [this]() -> capy::task<>
+        {
+            log("Connection from", name_);  // UB: 'this' is dangling
+            co_await handle_request();
+        }();
+    }
+};
+----
+
+=== Correct: Using Parameters
+
+[source,cpp]
+----
+class connection_handler
+{
+    socket sock_;
+    std::string name_;
+
+public:
+    capy::task<> run()
+    {
+        // CORRECT: 'self' is a parameter, copied to coroutine frame
+        return [](connection_handler* self) -> capy::task<>
+        {
+            log("Connection from", self->name_);
+            co_await self->handle_request();
+        }(this);
+    }
+};
+----
+
+== When Are Captures Safe?
+
+Captures are only safe when the lambda object **outlives the coroutine**:
+
+[source,cpp]
+----
+// SAFE: lambda stored in 'handler', outlives coroutine
+auto handler = [&sock]() -> capy::task<>
+{
+    co_await sock.read_some(...);
+};
+
+// Lambda 'handler' still exists here
+run_and_wait(handler());  // Blocks until coroutine completes
+// Lambda destroyed after coroutine finishes
+----
+
+This pattern is rare. Most async code immediately invokes the lambda and discards it, making captures unsafe.
+
+== Rules of Thumb
+
+1. **Default to IIFE with parameters** for lambda coroutines
+2. **Never capture by reference** (`[&]`) in a lambda coroutine unless the lambda outlives the coroutine
+3. **Capturing by value** (`[=]`, `[x]`) is equally broken — the copy lives in the lambda, not the coroutine frame
+4. **Capturing `this`** is particularly dangerous and common
+5. **When in doubt, use parameters**
+
+== Alternative: Named Coroutine Functions
+
+If the IIFE syntax feels awkward, use a named function instead:
+
+[source,cpp]
+----
+class connection_handler
+{
+    socket sock_;
+
+    capy::task<> do_handle()
+    {
+        // 'this' is an implicit parameter, handled correctly
+        co_await sock_.read_some(...);
+    }
+
+public:
+    capy::task<> run()
+    {
+        return do_handle();
+    }
+};
+----
+
+Member function coroutines work correctly because `this` is an implicit parameter, not a capture. The compiler copies it to the coroutine frame.
+
+== Quick Reference
+
+[cols="2,1,2"]
+|===
+| Pattern | Safety | Notes
+
+| `[x]() -> task<> { use(x); }()`
+| UNSAFE
+| Capture `x` destroyed with lambda
+
+| `[](auto x) -> task<> { use(x); }(val)`
+| SAFE
+| Parameter `x` in coroutine frame
+
+| `[&x]() -> task<> { use(x); }()`
+| UNSAFE
+| Accessed through dangling `this` pointer to destroyed closure
+
+| `[](auto& x) -> task<> { use(x); }(val)`
+| SAFE*
+| Reference parameter; `val` must outlive coroutine
+
+| Member function coroutine
+| SAFE
+| `this` is an implicit parameter
+|===
+
+== Why Does {cpp} Work This Way?
+
+The {cpp} standard specifies that coroutine parameters are copied to the coroutine state, but lambda captures are not. This is because:
+
+* Lambda captures are part of the lambda's closure type
+* The coroutine is the lambda's `operator()`
+* The coroutine frame only stores what is needed for the function body
+* The closure is external to the function body
+
+There have been proposals to change this behavior, but as of {cpp}23 the issue remains.
+
+== Next Steps
+
+You have now learned the major pitfalls of lambda coroutines. This completes the Coroutines in Capy section. Continue to xref:../5.buffers/5a.overview.adoc[Buffer Sequences] to learn about Capy's buffer model.
