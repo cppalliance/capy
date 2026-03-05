@@ -12,12 +12,15 @@
 
 #include <boost/capy.hpp>
 #include <array>
+#include <ranges>
 #include <span>
 
 #include "test_buffers.hpp"
 
 namespace boost {
 namespace capy {
+
+// Buffer Sequence Concepts
 
 static_assert(  ConstBufferSequence<const_buffer>);
 static_assert(  ConstBufferSequence<mutable_buffer>);
@@ -48,6 +51,96 @@ static_assert(  ConstBufferSequence<const_buffer[3]>);
 static_assert(  ConstBufferSequence<mutable_buffer[3]>);
 static_assert(! MutableBufferSequence<const_buffer[3]>);
 static_assert(  MutableBufferSequence<mutable_buffer[3]>);
+
+// std::ranges concepts for span<const_buffer>
+
+static_assert(std::ranges::range<std::span<const_buffer>>);
+static_assert(std::ranges::input_range<std::span<const_buffer>>);
+static_assert(std::ranges::forward_range<std::span<const_buffer>>);
+static_assert(std::ranges::bidirectional_range<std::span<const_buffer>>);
+static_assert(std::ranges::random_access_range<std::span<const_buffer>>);
+static_assert(std::ranges::contiguous_range<std::span<const_buffer>>);
+
+// std::ranges concepts for span<mutable_buffer>
+
+static_assert(std::ranges::range<std::span<mutable_buffer>>);
+static_assert(std::ranges::input_range<std::span<mutable_buffer>>);
+static_assert(std::ranges::forward_range<std::span<mutable_buffer>>);
+static_assert(std::ranges::bidirectional_range<std::span<mutable_buffer>>);
+static_assert(std::ranges::random_access_range<std::span<mutable_buffer>>);
+static_assert(std::ranges::contiguous_range<std::span<mutable_buffer>>);
+
+// std::ranges concepts for array<const_buffer, N>
+
+static_assert(std::ranges::range<std::array<const_buffer, 3>>);
+static_assert(std::ranges::input_range<std::array<const_buffer, 3>>);
+static_assert(std::ranges::forward_range<std::array<const_buffer, 3>>);
+static_assert(std::ranges::bidirectional_range<std::array<const_buffer, 3>>);
+static_assert(std::ranges::random_access_range<std::array<const_buffer, 3>>);
+static_assert(std::ranges::contiguous_range<std::array<const_buffer, 3>>);
+
+// std::ranges concepts for array<mutable_buffer, N>
+
+static_assert(std::ranges::range<std::array<mutable_buffer, 3>>);
+static_assert(std::ranges::input_range<std::array<mutable_buffer, 3>>);
+static_assert(std::ranges::forward_range<std::array<mutable_buffer, 3>>);
+static_assert(std::ranges::bidirectional_range<std::array<mutable_buffer, 3>>);
+static_assert(std::ranges::random_access_range<std::array<mutable_buffer, 3>>);
+static_assert(std::ranges::contiguous_range<std::array<mutable_buffer, 3>>);
+
+// std::ranges concepts for const_buffer_pair / mutable_buffer_pair
+
+static_assert(std::ranges::range<const_buffer_pair>);
+static_assert(std::ranges::bidirectional_range<const_buffer_pair>);
+static_assert(std::ranges::random_access_range<const_buffer_pair>);
+
+static_assert(std::ranges::range<mutable_buffer_pair>);
+static_assert(std::ranges::bidirectional_range<mutable_buffer_pair>);
+static_assert(std::ranges::random_access_range<mutable_buffer_pair>);
+
+// std::views producing valid ConstBufferSequence
+
+using span_cb = std::span<const_buffer>;
+using span_mb = std::span<mutable_buffer>;
+
+// take_view preserves bidirectional + value type
+using take_cb = decltype(std::declval<span_cb>() | std::views::take(1));
+static_assert(std::ranges::bidirectional_range<take_cb>);
+static_assert(std::is_convertible_v<std::ranges::range_value_t<take_cb>, const_buffer>);
+static_assert(ConstBufferSequence<take_cb>);
+
+using take_mb = decltype(std::declval<span_mb>() | std::views::take(1));
+static_assert(std::ranges::bidirectional_range<take_mb>);
+static_assert(MutableBufferSequence<take_mb>);
+
+// drop_view preserves bidirectional + value type
+using drop_cb = decltype(std::declval<span_cb>() | std::views::drop(1));
+static_assert(std::ranges::bidirectional_range<drop_cb>);
+static_assert(ConstBufferSequence<drop_cb>);
+
+using drop_mb = decltype(std::declval<span_mb>() | std::views::drop(1));
+static_assert(std::ranges::bidirectional_range<drop_mb>);
+static_assert(MutableBufferSequence<drop_mb>);
+
+// reverse_view preserves bidirectional + value type
+using rev_cb = decltype(std::declval<span_cb>() | std::views::reverse);
+static_assert(std::ranges::bidirectional_range<rev_cb>);
+static_assert(ConstBufferSequence<rev_cb>);
+
+using rev_mb = decltype(std::declval<span_mb>() | std::views::reverse);
+static_assert(std::ranges::bidirectional_range<rev_mb>);
+static_assert(MutableBufferSequence<rev_mb>);
+
+// filter_view is bidirectional but not const-iterable;
+// it satisfies ConstBufferSequence for non-const lvalue
+// but the buffer APIs take const& so filter_view cannot
+// be used directly with buffer_size, buffer_copy, etc.
+using filt_cb = decltype(
+    std::declval<span_cb>()
+        | std::views::filter([](const_buffer b) { return b.size() > 0; }));
+static_assert(std::ranges::bidirectional_range<filt_cb>);
+static_assert(ConstBufferSequence<filt_cb>);
+static_assert(!ConstBufferSequence<filt_cb const>);
 
 namespace {
 
@@ -444,6 +537,45 @@ struct buffer_test
         }
     }
 
+    void testViews()
+    {
+        char data[9] = "ABCDEFGH";
+        const_buffer cb[3] = {
+            { data, 3 },
+            { data + 3, 3 },
+            { data + 6, 2 }
+        };
+        std::span<const_buffer> bufs(cb, 3);
+
+        // take: first 2 buffers = "ABCDEF"
+        {
+            auto v = bufs | std::views::take(2);
+            BOOST_TEST_EQ(buffer_size(v), 6u);
+            BOOST_TEST_EQ(test::make_string(v), "ABCDEF");
+        }
+
+        // drop: skip first buffer = "DEFGH"
+        {
+            auto v = bufs | std::views::drop(1);
+            BOOST_TEST_EQ(buffer_size(v), 5u);
+            BOOST_TEST_EQ(test::make_string(v), "DEFGH");
+        }
+
+        // reverse: buffers in reverse order = "GHDEFABC"
+        {
+            auto v = bufs | std::views::reverse;
+            BOOST_TEST_EQ(buffer_size(v), 8u);
+            BOOST_TEST_EQ(test::make_string(v), "GHDEFABC");
+        }
+
+        // take + drop composition = middle buffer only
+        {
+            auto v = bufs | std::views::drop(1) | std::views::take(1);
+            BOOST_TEST_EQ(buffer_size(v), 3u);
+            BOOST_TEST_EQ(test::make_string(v), "DEF");
+        }
+    }
+
     void run()
     {
         testBuffers();
@@ -451,6 +583,7 @@ struct buffer_test
         testMutableBuffer();
         testSize();
         testEmpty();
+        testViews();
     }
 };
 

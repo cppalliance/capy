@@ -12,11 +12,36 @@
 
 #include "test_buffers.hpp"
 
+#include <ranges>
 #include <span>
 #include <vector>
 
 namespace boost {
 namespace capy {
+
+// std::ranges concepts for const_buffer_array
+
+static_assert(std::ranges::range<const_buffer_array<4>>);
+static_assert(std::ranges::input_range<const_buffer_array<4>>);
+static_assert(std::ranges::forward_range<const_buffer_array<4>>);
+static_assert(std::ranges::bidirectional_range<const_buffer_array<4>>);
+static_assert(std::ranges::random_access_range<const_buffer_array<4>>);
+static_assert(std::ranges::contiguous_range<const_buffer_array<4>>);
+
+static_assert(ConstBufferSequence<const_buffer_array<4>>);
+static_assert(!MutableBufferSequence<const_buffer_array<4>>);
+
+// std::ranges concepts for mutable_buffer_array
+
+static_assert(std::ranges::range<mutable_buffer_array<4>>);
+static_assert(std::ranges::input_range<mutable_buffer_array<4>>);
+static_assert(std::ranges::forward_range<mutable_buffer_array<4>>);
+static_assert(std::ranges::bidirectional_range<mutable_buffer_array<4>>);
+static_assert(std::ranges::random_access_range<mutable_buffer_array<4>>);
+static_assert(std::ranges::contiguous_range<mutable_buffer_array<4>>);
+
+static_assert(ConstBufferSequence<mutable_buffer_array<4>>);
+static_assert(MutableBufferSequence<mutable_buffer_array<4>>);
 
 struct buffer_array_test
 {
