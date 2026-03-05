@@ -17,7 +17,7 @@ Key characteristics:
 * *Symmetric transfer* — Efficient resumption without stack accumulation
 * *Executor inheritance* — Inherits the caller's executor unless explicitly bound
 * *Stop token propagation* — Forward-propagates cancellation signals
-* *HALO support* — Enables heap allocation elision when possible
+* *xref:4.coroutines/4g.allocators.adoc#_halo_optimization[HALO] support* — Enables Heap Allocation eLision Optimization when possible
 
 == Declaring task Coroutines
 
