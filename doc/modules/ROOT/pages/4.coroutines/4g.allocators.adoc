@@ -179,4 +179,4 @@ Coroutine frame allocation is rarely the bottleneck. Profile your application be
 | Default recycling allocator implementation
 |===
 
-You have now learned how coroutine frame allocation works and how to customize it. This completes the Coroutines in Capy section. Continue to xref:../5.buffers/5a.overview.adoc[Buffer Sequences] to learn about Capy's buffer model.
+You have now learned how coroutine frame allocation works and how to customize it. Continue to xref:4.coroutines/4h.lambda-captures.adoc[Lambda Coroutine Captures] to learn about a critical pitfall with lambda coroutines.
