@@ -16,24 +16,24 @@
 #include <cassert>
 #include <cctype>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 // A simple protocol: read until newline, echo back uppercase
 // Takes any_stream& so the function is transport-independent
-task<bool> echo_line_uppercase(any_stream& stream)
+capy::task<bool> echo_line_uppercase(capy::any_stream& stream)
 {
     std::string line;
     char c;
-    
+
     // Read character by character until newline
     while (true)
     {
         // ec: std::error_code, n: std::size_t
-        auto [ec, n] = co_await stream.read_some(mutable_buffer(&c, 1));
-        
+        auto [ec, n] = co_await stream.read_some(capy::mutable_buffer(&c, 1));
+
         if (ec)
         {
-            if (ec == cond::eof)
+            if (ec == capy::cond::eof)
                 break;
             co_return false;
         }
@@ -52,7 +52,7 @@ task<bool> echo_line_uppercase(any_stream& stream)
     {
         // wec: std::error_code, wn: std::size_t
         auto [wec, wn] = co_await stream.write_some(
-            const_buffer(line.data() + written, line.size() - written));
+            capy::const_buffer(line.data() + written, line.size() - written));
         
         if (wec)
             co_return false;
@@ -67,13 +67,13 @@ void test_happy_path()
 {
     std::cout << "Test: happy path\n";
     
-    auto [a, b] = test::make_stream_pair();
+    auto [a, b] = capy::test::make_stream_pair();
     b.provide("hello\n");
-    
-    any_stream stream{&a};  // any_stream
-    
+
+    capy::any_stream stream{&a};  // any_stream
+
     bool result = false;  // bool
-    test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
+    capy::test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
     
     assert(result == true);
     assert(b.data() == "HELLO\n");
@@ -85,14 +85,14 @@ void test_partial_reads()
 {
     std::cout << "Test: partial reads (1 byte at a time)\n";
     
-    auto [a, b] = test::make_stream_pair();
+    auto [a, b] = capy::test::make_stream_pair();
     a.set_max_read_size(1);
     b.provide("hi\n");
-    
-    any_stream stream{&a};  // any_stream
-    
+
+    capy::any_stream stream{&a};  // any_stream
+
     bool result = false;  // bool
-    test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
+    capy::test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
     
     assert(result == true);
     assert(b.data() == "HI\n");
@@ -109,12 +109,12 @@ void test_with_error_injection()
     
     // fuse::armed runs the test repeatedly, failing at each
     // operation point until all paths are covered
-    test::fuse f;  // test::fuse
-    auto r = f.armed([&](test::fuse&) -> task<> {  // fuse::result
-        auto [a, b] = test::make_stream_pair(f);
+    capy::test::fuse f;  // test::fuse
+    auto r = f.armed([&](capy::test::fuse&) -> capy::task<> {  // fuse::result
+        auto [a, b] = capy::test::make_stream_pair(f);
         b.provide("test\n");
         
-        any_stream stream{&a};  // any_stream
+        capy::any_stream stream{&a};  // any_stream
         
         // Run the protocol - fuse will inject errors at each step
         bool result = co_await echo_line_uppercase(stream);  // bool

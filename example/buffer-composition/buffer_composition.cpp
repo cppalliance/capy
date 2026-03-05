@@ -13,7 +13,7 @@
 #include <array>
 #include <vector>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 void demonstrate_single_buffers()
 {
@@ -25,9 +25,9 @@ void demonstrate_single_buffers()
     std::vector<char> vec = {'V', 'e', 'c', 't', 'o', 'r'};
     
     // make_buffer creates buffer views (no copies)
-    auto str_buf = make_buffer(str);  // mutable_buffer
-    auto arr_buf = make_buffer(arr, sizeof(arr) - 1);  // mutable_buffer - Exclude null terminator
-    auto vec_buf = make_buffer(vec);  // mutable_buffer
+    auto str_buf = capy::make_buffer(str);  // mutable_buffer
+    auto arr_buf = capy::make_buffer(arr, sizeof(arr) - 1);  // mutable_buffer - Exclude null terminator
+    auto vec_buf = capy::make_buffer(vec);  // mutable_buffer
     
     std::cout << "String buffer: " << str_buf.size() << " bytes\n";
     std::cout << "Array buffer:  " << arr_buf.size() << " bytes\n";
@@ -38,19 +38,19 @@ void demonstrate_buffer_pair()
 {
     std::cout << "\n=== Buffer Pair (Scatter/Gather) ===\n\n";
     
-    // const_buffer_pair is std::array<const_buffer, 2>
+    // capy::const_buffer_pair is std::array<const_buffer, 2>
     std::string header = "Content-Type: text/plain\r\n\r\n";
     std::string body = "Hello, World!";
     
-    const_buffer_pair message = {{
-        make_buffer(header),
-        make_buffer(body)
+    capy::const_buffer_pair message = {{
+        capy::make_buffer(header),
+        capy::make_buffer(body)
     }};
     
     // Calculate total size
-    std::size_t total = buffer_size(message);
+    std::size_t total = capy::buffer_size(message);
     std::cout << "Total message size: " << total << " bytes\n";
-    std::cout << "Buffer count: " << buffer_length(message) << "\n";
+    std::cout << "Buffer count: " << capy::buffer_length(message) << "\n";
     
     // Iterate through buffers
     std::cout << "\nBuffer contents:\n";
@@ -73,17 +73,17 @@ void demonstrate_buffer_array()
     std::string empty_line = "\r\n";
     std::string body = R"({"status":"ok"})";
     
-    std::array<const_buffer, 5> http_response = {{
-        make_buffer(status),
-        make_buffer(content_type),
-        make_buffer(server),
-        make_buffer(empty_line),
-        make_buffer(body)
+    std::array<capy::const_buffer, 5> http_response = {{
+        capy::make_buffer(status),
+        capy::make_buffer(content_type),
+        capy::make_buffer(server),
+        capy::make_buffer(empty_line),
+        capy::make_buffer(body)
     }};
     
-    std::size_t total = buffer_size(http_response);
+    std::size_t total = capy::buffer_size(http_response);
     std::cout << "HTTP response size: " << total << " bytes\n";
-    std::cout << "Buffer count: " << buffer_length(http_response) << "\n";
+    std::cout << "Buffer count: " << capy::buffer_length(http_response) << "\n";
     
     // In real code with streams:
     // co_await write(stream, http_response);
@@ -98,13 +98,13 @@ void demonstrate_mutable_buffers()
     char buf1[64];
     char buf2[64];
     
-    mutable_buffer_pair recv_buffers = {{
-        mutable_buffer(buf1, sizeof(buf1)),
-        mutable_buffer(buf2, sizeof(buf2))
+    capy::mutable_buffer_pair recv_buffers = {{
+        capy::mutable_buffer(buf1, sizeof(buf1)),
+        capy::mutable_buffer(buf2, sizeof(buf2))
     }};
     
-    std::cout << "Prepared " << buffer_length(recv_buffers) 
-              << " buffers with " << buffer_size(recv_buffers) 
+    std::cout << "Prepared " << capy::buffer_length(recv_buffers) 
+              << " buffers with " << capy::buffer_size(recv_buffers) 
               << " bytes total capacity\n";
     
     // In real code:

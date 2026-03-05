@@ -19,21 +19,21 @@
 #include <iostream>
 #include <latch>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 int main()
 {
-    thread_pool pool;  // thread_pool
-    strand s{pool.get_executor()};  // strand - serializes execution
-    std::latch done(1);  // std::latch - wait for completion
+    capy::thread_pool pool;
+    capy::strand s{pool.get_executor()};
+    std::latch done(1);
 
-    auto on_complete = [&done](auto&&...) { done.count_down(); };  // lambda
-    auto on_error = [&done](std::exception_ptr) { done.count_down(); };  // lambda
+    auto on_complete = [&done](auto&&...) { done.count_down(); };
+    auto on_error = [&done](std::exception_ptr) { done.count_down(); };
 
-    async_event data_ready;  // async_event
-    int shared_value = 0;    // int
+    capy::async_event data_ready;
+    int shared_value = 0;
 
-    auto producer = [&]() -> task<> {
+    auto producer = [&]() -> capy::task<> {
         std::cout << "Producer: preparing data...\n";
         shared_value = 42;
         std::cout << "Producer: data ready, signaling\n";
@@ -41,7 +41,7 @@ int main()
         co_return;
     };
 
-    auto consumer = [&]() -> task<> {
+    auto consumer = [&]() -> capy::task<> {
         std::cout << "Consumer: waiting for data...\n";
         auto [ec] = co_await data_ready.wait();
         (void)ec;
@@ -52,11 +52,11 @@ int main()
     // Run both tasks concurrently using when_all, through a strand.
     // The strand serializes execution, ensuring thread-safe access
     // to the shared async_event and shared_value.
-    auto run_both = [&]() -> task<> {
-        co_await when_all(producer(), consumer());
+    auto run_both = [&]() -> capy::task<> {
+        co_await capy::when_all(producer(), consumer());
     };
 
-    run_async(s, on_complete, on_error)(run_both());
+    capy::run_async(s, on_complete, on_error)(run_both());
 
     done.wait();  // Block until tasks complete
     return 0;

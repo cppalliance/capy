@@ -26,24 +26,24 @@ Unit testing protocol code with mock streams and error injection.
 #include <cassert>
 #include <cctype>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 // A simple protocol: read until newline, echo back uppercase
 // Takes any_stream& so the function is transport-independent
-task<bool> echo_line_uppercase(any_stream& stream)
+capy::task<bool> echo_line_uppercase(capy::any_stream& stream)
 {
     std::string line;
     char c;
-    
+
     // Read character by character until newline
     while (true)
     {
         // ec: std::error_code, n: std::size_t
-        auto [ec, n] = co_await stream.read_some(mutable_buffer(&c, 1));
-        
+        auto [ec, n] = co_await stream.read_some(capy::mutable_buffer(&c, 1));
+
         if (ec)
         {
-            if (ec == cond::eof)
+            if (ec == capy::cond::eof)
                 break;
             co_return false;
         }
@@ -62,7 +62,7 @@ task<bool> echo_line_uppercase(any_stream& stream)
     {
         // wec: std::error_code, wn: std::size_t
         auto [wec, wn] = co_await stream.write_some(
-            const_buffer(line.data() + written, line.size() - written));
+            capy::const_buffer(line.data() + written, line.size() - written));
         
         if (wec)
             co_return false;
@@ -77,19 +77,16 @@ void test_happy_path()
 {
     std::cout << "Test: happy path\n";
     
-    // Use fuse in disarmed mode (no error injection) for happy path
-    test::fuse f;  // test::fuse
-    test::stream mock(f);  // test::stream
-    mock.provide("hello\n");
-    
-    // Wrap mock in any_stream using pointer construction for reference semantics
-    any_stream stream{&mock};  // any_stream
-    
+    auto [a, b] = capy::test::make_stream_pair();
+    b.provide("hello\n");
+
+    capy::any_stream stream{&a};  // any_stream
+
     bool result = false;  // bool
-    test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
+    capy::test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
     
     assert(result == true);
-    assert(mock.data() == "HELLO\n");
+    assert(b.data() == "HELLO\n");
     
     std::cout << "  PASSED\n";
 }
@@ -98,20 +95,17 @@ void test_partial_reads()
 {
     std::cout << "Test: partial reads (1 byte at a time)\n";
     
-    // Use fuse in disarmed mode (no error injection)
-    test::fuse f;  // test::fuse
-    // Mock returns at most 1 byte per read_some
-    test::stream mock(f, 1);  // test::stream, max_read_size = 1
-    mock.provide("hi\n");
-    
-    // Wrap mock in any_stream using pointer construction for reference semantics
-    any_stream stream{&mock};  // any_stream
-    
+    auto [a, b] = capy::test::make_stream_pair();
+    a.set_max_read_size(1);
+    b.provide("hi\n");
+
+    capy::any_stream stream{&a};  // any_stream
+
     bool result = false;  // bool
-    test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
+    capy::test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
     
     assert(result == true);
-    assert(mock.data() == "HI\n");
+    assert(b.data() == "HI\n");
     
     std::cout << "  PASSED\n";
 }
@@ -125,13 +119,12 @@ void test_with_error_injection()
     
     // fuse::armed runs the test repeatedly, failing at each
     // operation point until all paths are covered
-    test::fuse f;  // test::fuse
-    auto r = f.armed([&](test::fuse&) -> task<> {  // fuse::result
-        test::stream mock(f);  // test::stream
-        mock.provide("test\n");
+    capy::test::fuse f;  // test::fuse
+    auto r = f.armed([&](capy::test::fuse&) -> capy::task<> {  // fuse::result
+        auto [a, b] = capy::test::make_stream_pair(f);
+        b.provide("test\n");
         
-        // Wrap mock in any_stream using pointer construction for reference semantics
-        any_stream stream{&mock};  // any_stream
+        capy::any_stream stream{&a};  // any_stream
         
         // Run the protocol - fuse will inject errors at each step
         bool result = co_await echo_line_uppercase(stream);  // bool
@@ -140,7 +133,7 @@ void test_with_error_injection()
         if (result)
         {
             ++success_count;
-            assert(mock.data() == "TEST\n");
+            assert(b.data() == "TEST\n");
         }
         else
         {
@@ -185,8 +178,8 @@ target_link_libraries(mock_stream_testing PRIVATE capy)
 
 [source,cpp]
 ----
-test::fuse f;  // test::fuse
-test::stream mock(f);  // test::stream
+capy::test::fuse f;  // test::fuse
+capy::test::stream mock(f);  // test::stream
 mock.provide("hello\n");
 ----
 
@@ -202,7 +195,7 @@ mock.provide("hello\n");
 [source,cpp]
 ----
 // Wrap mock in any_stream using pointer construction for reference semantics
-any_stream stream{&mock};  // any_stream
+capy::any_stream stream{&mock};  // any_stream
 ----
 
 Use pointer construction (`&mock`) so the `any_stream` wrapper references the mock without taking ownership. This allows inspecting `mock.data()` after operations.
@@ -212,7 +205,7 @@ Use pointer construction (`&mock`) so the `any_stream` wrapper references the mo
 [source,cpp]
 ----
 bool result = false;  // bool
-test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
+capy::test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
 ----
 
 `run_blocking` executes a coroutine synchronously, blocking until complete. Pass a handler to capture the result.
@@ -221,9 +214,9 @@ test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
 
 [source,cpp]
 ----
-test::fuse f;  // test::fuse
-auto r = f.armed([&](test::fuse&) -> task<> {
-    test::stream mock(f);  // test::stream
+capy::test::fuse f;  // test::fuse
+auto r = f.armed([&](capy::test::fuse&) -> capy::task<> {
+    capy::test::stream mock(f);  // test::stream
     // ... run test ...
 });
 ----

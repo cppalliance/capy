@@ -15,28 +15,28 @@
 
 namespace myapp {
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
-task<> echo_session(any_stream& stream)
+capy::task<> echo_session(capy::any_stream& stream)
 {
     char buffer[1024];
-    
+
     for (;;)
     {
         // Read some data
         // ec: std::error_code, n: std::size_t
-        auto [ec, n] = co_await stream.read_some(make_buffer(buffer));
-        
-        if (ec == cond::eof)
+        auto [ec, n] = co_await stream.read_some(capy::make_buffer(buffer));
+
+        if (ec == capy::cond::eof)
             co_return;  // Client closed connection
-        
+
         if (ec)
             throw std::system_error(ec);
-        
+
         // Echo it back
         // wec: std::error_code, wn: std::size_t
-        auto [wec, wn] = co_await write(stream, const_buffer(buffer, n));
-        
+        auto [wec, wn] = co_await capy::write(stream, capy::const_buffer(buffer, n));
+
         if (wec)
             throw std::system_error(wec);
     }

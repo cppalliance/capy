@@ -10,9 +10,9 @@
 #include <boost/capy.hpp>
 #include <iostream>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
-task<> say_hello()
+capy::task<> say_hello()
 {
     std::cout << "Hello from Capy!\n";
     co_return;
@@ -20,7 +20,7 @@ task<> say_hello()
 
 int main()
 {
-    thread_pool pool;
-    run_async(pool.get_executor())(say_hello());
+    capy::thread_pool pool;
+    capy::run_async(pool.get_executor())(say_hello());
     return 0;
 }

@@ -20,9 +20,9 @@ The minimal Capy program: a task that prints a message.
 #include <boost/capy.hpp>
 #include <iostream>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
-task<> say_hello()
+capy::task<> say_hello()
 {
     std::cout << "Hello from Capy!\n";
     co_return;
@@ -30,8 +30,8 @@ task<> say_hello()
 
 int main()
 {
-    thread_pool pool;
-    run_async(pool.get_executor())(say_hello());
+    capy::thread_pool pool;
+    capy::run_async(pool.get_executor())(say_hello());
     return 0;
 }
 ----
@@ -50,7 +50,7 @@ target_link_libraries(hello_task PRIVATE capy)
 
 [source,cpp]
 ----
-task<> say_hello()
+capy::task<> say_hello()
 {
     std::cout << "Hello from Capy!\n";
     co_return;
@@ -65,7 +65,7 @@ Tasks are lazy: calling `say_hello()` creates a task object but does not execute
 
 [source,cpp]
 ----
-thread_pool pool;
+capy::thread_pool pool;
 ----
 
 `thread_pool` provides an execution context with worker threads. By default, it creates one thread per CPU core.
@@ -76,7 +76,7 @@ The pool's destructor waits for all work to complete before returning. This ensu
 
 [source,cpp]
 ----
-run_async(pool.get_executor())(say_hello());
+capy::run_async(pool.get_executor())(say_hello());
 ----
 
 `run_async` bridges non-coroutine code (like `main`) to coroutine code. The two-call syntax:

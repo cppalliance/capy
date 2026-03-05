@@ -19,22 +19,22 @@
 #include <iostream>
 
 namespace corosio = boost::corosio;
-using namespace boost::capy;
+namespace capy = boost::capy;
 
-task<> echo_session(corosio::tcp_socket sock)
+capy::task<> echo_session(corosio::tcp_socket sock)
 {
     char buf[1024];
 
     for (;;)
     {
         auto [ec, n] = co_await sock.read_some(
-            mutable_buffer(buf, sizeof(buf)));
+            capy::mutable_buffer(buf, sizeof(buf)));
 
         if (ec)
             break;
 
-        auto [wec, wn] = co_await write(
-            sock, const_buffer(buf, n));
+        auto [wec, wn] = co_await capy::write(
+            sock, capy::const_buffer(buf, n));
 
         if (wec)
             break;
@@ -43,7 +43,7 @@ task<> echo_session(corosio::tcp_socket sock)
     sock.close();
 }
 
-task<> accept_loop(
+capy::task<> accept_loop(
     corosio::tcp_acceptor& acc,
     corosio::io_context& ioc)
 {
@@ -69,7 +69,7 @@ task<> accept_loop(
             std::cout << remote.v6_address();
         std::cout << ":" << remote.port() << "\n";
 
-        run_async(ioc.get_executor())(
+        capy::run_async(ioc.get_executor())(
             echo_session(std::move(peer)));
     }
 }
@@ -83,7 +83,7 @@ int main(int argc, char* argv[])
     corosio::io_context ioc;
     corosio::tcp_acceptor acc(ioc, corosio::endpoint(port));
 
-    run_async(ioc.get_executor())(
+    capy::run_async(ioc.get_executor())(
         accept_loop(acc, ioc));
 
     ioc.run();
