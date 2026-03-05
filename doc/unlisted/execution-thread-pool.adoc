@@ -92,28 +92,68 @@ run_async(pool.get_executor())(compute(), [](int result) {
 
 == Lifetime and Shutdown
 
-The pool destructor waits for all work to complete:
+=== Waiting for Work: join()
+
+Call `join()` to block until all outstanding work completes:
+
+[source,cpp]
+----
+thread_pool pool(4);
+
+for (auto& item : batch)
+    run_async(pool.get_executor())(process(item));
+
+pool.join();  // Blocks until all tasks finish
+// Pool is now stopped; worker threads are joined
+----
+
+`join()` releases the pool's internal work guard and blocks until the
+outstanding work count (tracked by `on_work_started()` / `on_work_finished()`)
+reaches zero. After all work completes, the worker threads are joined.
+
+The pool cannot be reused after `join()`. Calling `join()` more than once
+is safe (subsequent calls are no-ops).
+
+=== Immediate Stop: stop()
+
+Call `stop()` to abandon remaining work:
+
+[source,cpp]
+----
+pool.stop();   // Workers exit after current item; queued work is abandoned
+pool.join();   // Wait for threads to finish
+----
+
+If `join()` is blocking on another thread, calling `stop()` causes it to
+stop waiting for outstanding work. The `join()` call still waits for worker
+threads to finish their current item and exit before returning.
+
+=== Destructor Behavior
+
+The destructor calls `stop()` then `join()`:
 
 [source,cpp]
 ----
 {
     thread_pool pool(4);
     run_async(pool.get_executor())(long_running_task());
-    // Destructor blocks until long_running_task completes
+    // Destructor: stop() -> join() -> shutdown services -> destroy services
+    // Queued work that hasn't started is abandoned
 }
 ----
 
-This ensures orderly shutdown without orphaned coroutines.
+To wait for all work to complete before shutdown, call `join()` explicitly
+before the pool goes out of scope.
 
 === Destruction Order
 
 When a pool is destroyed:
 
-1. Threads are signaled to stop accepting new work
-2. Pending work continues to completion
+1. Workers are signaled to stop (pending work is abandoned)
+2. Worker threads are joined
 3. Services are shut down (in reverse order of creation)
 4. Services are destroyed
-5. Threads are joined
+5. Remaining queued work items are destroyed
 
 == Executor Operations
 
@@ -161,7 +201,9 @@ Since callers are never "inside" the thread pool's execution context,
 
 == Work Tracking
 
-Work tracking keeps the pool alive while operations are outstanding:
+Work tracking keeps the pool alive while operations are outstanding.
+When `join()` has been called, the pool waits until the outstanding work
+count reaches zero before stopping the worker threads.
 
 [source,cpp]
 ----
@@ -179,13 +221,14 @@ The `work_guard` RAII wrapper simplifies this:
 {
     work_guard guard(ex);
     // Work count incremented
-    
+
     // ... do work ...
-    
+
 }  // Work count decremented
 ----
 
-`run_async` handles work tracking automatically.
+`run_async` handles work tracking automatically — each launched task
+holds a `work_guard` for its lifetime.
 
 == Services
 
@@ -322,6 +365,12 @@ void process_batch()
 
 | `get_executor()`
 | Get an executor for the pool
+
+| `join()`
+| Wait for all outstanding work to complete
+
+| `stop()`
+| Immediately stop the pool, abandoning queued work
 
 | Services
 | Polymorphic components owned by the pool

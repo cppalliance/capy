@@ -166,6 +166,54 @@ The key points:
 2. Use the executor to dispatch completion
 3. Respect the stop token for cancellation
 
+=== Stop Callbacks Must Post, Not Resume
+
+When implementing a stoppable awaitable, you may register a `std::stop_callback` to wake the coroutine when cancellation is requested. The callback fires synchronously on whatever thread calls `request_stop()`, which is typically *not* the executor's thread.
+
+[WARNING]
+====
+*Never resume a coroutine handle directly from a stop_callback.* Doing so executes the coroutine on the wrong thread, corrupting the thread-local frame allocator. This causes use-after-free on the next coroutine allocation—potentially in completely unrelated code.
+====
+
+Use `stop_resume_callback` and `io_env::post_resume` from `<boost/capy/ex/io_env.hpp>` to post the resume through the executor:
+
+[source,cpp]
+----
+#include <boost/capy/ex/io_env.hpp>
+
+struct stoppable_awaitable
+{
+    std::optional<stop_resume_callback> stop_cb_;
+
+    bool await_ready() { return false; }
+
+    std::coroutine_handle<> await_suspend(
+        std::coroutine_handle<> h, io_env const* env)
+    {
+        if (env->stop_token.stop_requested())
+            return h;  // Already cancelled, resume immediately
+
+        // Post through executor when stop is requested
+        stop_cb_.emplace(env->stop_token, env->post_resume(h));
+
+        start_async_operation();
+        return std::noop_coroutine();
+    }
+
+    void await_resume() { /* ... */ }
+};
+----
+
+The incorrect pattern—which compiles and appears to work but causes memory corruption—looks like this:
+
+[source,cpp]
+----
+// WRONG: resumes coroutine on the calling thread
+stop_cb_.emplace(env->stop_token, h);  // h is a raw coroutine_handle
+----
+
+See xref:4.coroutines/4e.cancellation.adoc#stoppable-awaitables[Implementing Stoppable Awaitables] for a complete example.
+
 == Reference
 
 [cols="1,3"]

@@ -78,11 +78,47 @@ public:
     thread_pool(thread_pool const&) = delete;
     thread_pool& operator=(thread_pool const&) = delete;
 
+    /** Wait for all outstanding work to complete.
+
+        Releases the internal work guard, then blocks the calling
+        thread until all outstanding work tracked by
+        @ref executor_type::on_work_started and
+        @ref executor_type::on_work_finished completes. After all
+        work finishes, joins the worker threads.
+
+        If @ref stop is called while `join()` is blocking, the
+        pool stops without waiting for remaining work to
+        complete. Worker threads finish their current item and
+        exit; `join()` still waits for all threads to be joined
+        before returning.
+
+        This function is idempotent. The first call performs the
+        join; subsequent calls return immediately.
+
+        @par Preconditions
+        Must not be called from a thread in this pool (undefined
+        behavior).
+
+        @par Postconditions
+        All worker threads have been joined. The pool cannot be
+        reused.
+
+        @par Thread Safety
+        May be called from any thread not in this pool.
+    */
+    void
+    join() noexcept;
+
     /** Request all worker threads to stop.
 
-        Signals all threads to exit. Threads will finish their
-        current work item before exiting. Does not wait for
-        threads to exit.
+        Signals all threads to exit after finishing their current
+        work item. Queued work that has not started is abandoned.
+        Does not wait for threads to exit.
+
+        If @ref join is blocking on another thread, calling
+        `stop()` causes it to stop waiting for outstanding
+        work. The `join()` call still waits for worker threads
+        to finish their current item and exit before returning.
     */
     void
     stop() noexcept;
@@ -132,17 +168,30 @@ public:
         return *pool_;
     }
 
-    /// Notify that work has started (no-op for thread pools).
-    void
-    on_work_started() const noexcept
-    {
-    }
+    /** Notify that work has started.
 
-    /// Notify that work has finished (no-op for thread pools).
+        Increments the outstanding work count. Must be paired
+        with a subsequent call to @ref on_work_finished.
+
+        @see on_work_finished, work_guard
+    */
+    BOOST_CAPY_DECL
     void
-    on_work_finished() const noexcept
-    {
-    }
+    on_work_started() const noexcept;
+
+    /** Notify that work has finished.
+
+        Decrements the outstanding work count. When the count
+        reaches zero after @ref thread_pool::join has been called,
+        the pool's worker threads are signaled to stop.
+
+        @pre A preceding call to @ref on_work_started was made.
+
+        @see on_work_started, work_guard
+    */
+    BOOST_CAPY_DECL
+    void
+    on_work_finished() const noexcept;
 
     /** Dispatch a coroutine for execution.
 
