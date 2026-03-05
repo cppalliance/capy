@@ -20,12 +20,12 @@
 #include <queue>
 #include <thread>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 // A minimal single-threaded execution context.
 // Demonstrates how to satisfy the Executor concept
 // for any custom scheduling system.
-class run_loop : public execution_context
+class run_loop : public capy::execution_context
 {
     std::queue<std::coroutine_handle<>> queue_;
     std::thread::id owner_;
@@ -85,7 +85,7 @@ class run_loop::executor_type
 public:
     executor_type() = default;
 
-    execution_context& context() const noexcept
+    capy::execution_context& context() const noexcept
     {
         return *loop_;
     }
@@ -121,19 +121,19 @@ run_loop::get_executor() noexcept
 }
 
 // Verify the concept is satisfied
-static_assert(Executor<run_loop::executor_type>);
+static_assert(capy::Executor<run_loop::executor_type>);
 
-task<int> compute(int x)
+capy::task<int> compute(int x)
 {
     std::cout << "  computing " << x << " * " << x << "\n";
     co_return x * x;
 }
 
-task<> run_tasks()
+capy::task<> run_tasks()
 {
     std::cout << "Launching 3 tasks with when_all...\n";
 
-    auto [a, b, c] = co_await when_all(
+    auto [a, b, c] = co_await capy::when_all(
         compute(3),
         compute(7),
         compute(11));
@@ -148,7 +148,7 @@ int main()
     run_loop loop;
 
     // Launch using run_async, just like with thread_pool
-    run_async(loop.get_executor())(run_tasks());
+    capy::run_async(loop.get_executor())(run_tasks());
 
     // Drive the loop — all coroutines execute here
     std::cout << "Running event loop on main thread...\n";

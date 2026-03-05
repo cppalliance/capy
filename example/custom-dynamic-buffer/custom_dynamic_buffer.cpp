@@ -17,7 +17,7 @@
 #include <cassert>
 #include <cstring>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 // Custom dynamic buffer with statistics tracking
 class tracked_buffer
@@ -42,9 +42,9 @@ public:
     // === DynamicBuffer interface ===
     
     // Consumer: readable data
-    const_buffer data() const noexcept
+    capy::const_buffer data() const noexcept
     {
-        return const_buffer(
+        return capy::const_buffer(
             storage_.data() + read_pos_,
             write_pos_ - read_pos_);
     }
@@ -66,7 +66,7 @@ public:
     }
     
     // Producer: prepare space for writing
-    mutable_buffer prepare(std::size_t n)
+    capy::mutable_buffer prepare(std::size_t n)
     {
         total_prepared_ += n;
         
@@ -84,7 +84,7 @@ public:
         if (required > storage_.size())
             storage_.resize(required);
         
-        return mutable_buffer(
+        return capy::mutable_buffer(
             storage_.data() + write_pos_,
             n);
     }
@@ -137,7 +137,7 @@ private:
 };
 
 // Demonstrate using the custom buffer
-task<> read_into_tracked_buffer(test::stream& stream, tracked_buffer& buffer)
+capy::task<> read_into_tracked_buffer(capy::test::stream& stream, tracked_buffer& buffer)
 {
     // Read data in chunks
     while (true)
@@ -146,7 +146,7 @@ task<> read_into_tracked_buffer(test::stream& stream, tracked_buffer& buffer)
         // ec: std::error_code, n: std::size_t
         auto [ec, n] = co_await stream.read_some(space);
         
-        if (ec == cond::eof)
+        if (ec == capy::cond::eof)
             break;
         
         if (ec)
@@ -163,7 +163,7 @@ void demo_tracked_buffer()
 {
     std::cout << "=== Tracked Buffer Demo ===\n\n";
     
-    auto [reader, writer] = test::make_stream_pair();
+    auto [reader, writer] = capy::test::make_stream_pair();
     writer.provide("Hello, ");
     writer.provide("World! ");
     writer.provide("This is a test of the custom buffer.\n");
@@ -171,7 +171,7 @@ void demo_tracked_buffer()
     
     tracked_buffer buffer;
     
-    test::run_blocking()(read_into_tracked_buffer(reader, buffer));
+    capy::test::run_blocking()(read_into_tracked_buffer(reader, buffer));
     
     std::cout << "\nFinal buffer contents: ";
     auto data = buffer.data();  // const_buffer

@@ -38,7 +38,7 @@
 # define CAPY_NOINLINE
 #endif
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 std::atomic<std::size_t> counter{0};
 
@@ -82,31 +82,31 @@ protected:
 // business logic awaiting an HTTP client, awaiting
 // a TLS stream, awaiting a tcp_socket
 
-CAPY_NOINLINE task<> depth_4()
+CAPY_NOINLINE capy::task<> depth_4()
 {
     counter.fetch_add(1, std::memory_order_relaxed);
     co_return;
 }
 
-CAPY_NOINLINE task<> depth_3()
+CAPY_NOINLINE capy::task<> depth_3()
 {
     for(int i = 0; i < 3; ++i)
         co_await depth_4();
 }
 
-CAPY_NOINLINE task<> depth_2()
+CAPY_NOINLINE capy::task<> depth_2()
 {
     for(int i = 0; i < 3; ++i)
         co_await depth_3();
 }
 
-CAPY_NOINLINE task<> depth_1()
+CAPY_NOINLINE capy::task<> depth_1()
 {
     for(int i = 0; i < 5; ++i)
         co_await depth_2();
 }
 
-CAPY_NOINLINE task<> bench_loop(std::size_t n)
+CAPY_NOINLINE capy::task<> bench_loop(std::size_t n)
 {
     for(std::size_t i = 0; i < n; ++i)
         co_await depth_1();
@@ -120,9 +120,9 @@ int main()
     counter.store(0);
     auto t0 = std::chrono::steady_clock::now();
     {
-        test::blocking_context ctx;
-        ctx.set_frame_allocator(get_recycling_memory_resource());
-        run_async(ctx.get_executor(),
+        capy::test::blocking_context ctx;
+        ctx.set_frame_allocator(capy::get_recycling_memory_resource());
+        capy::run_async(ctx.get_executor(),
             [&] { ctx.signal_done(); })(
             bench_loop(iterations));
         ctx.run();
@@ -135,9 +135,9 @@ int main()
     mi_memory_resource mi_mr;
     auto t2 = std::chrono::steady_clock::now();
     {
-        test::blocking_context ctx;
+        capy::test::blocking_context ctx;
         ctx.set_frame_allocator(&mi_mr);
-        run_async(ctx.get_executor(),
+        capy::run_async(ctx.get_executor(),
             [&] { ctx.signal_done(); })(
             bench_loop(iterations));
         ctx.run();
@@ -149,8 +149,8 @@ int main()
     counter.store(0);
     auto t4 = std::chrono::steady_clock::now();
     {
-        test::blocking_context ctx;
-        run_async(ctx.get_executor(), std::allocator<std::byte>{},
+        capy::test::blocking_context ctx;
+        capy::run_async(ctx.get_executor(), std::allocator<std::byte>{},
             [&] { ctx.signal_done(); })(
             bench_loop(iterations));
         ctx.run();

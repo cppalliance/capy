@@ -33,7 +33,7 @@
 #include <cctype>
 #include <system_error>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 //------------------------------------------------------------------------------
 //
@@ -46,13 +46,13 @@ using namespace boost::capy;
 
 class uppercase_transform
 {
-    any_buffer_source* source_;  // any_buffer_source*
+    capy::any_buffer_source* source_;  // any_buffer_source*
     std::vector<char> buffer_;   // std::vector<char> - transformed data
     std::size_t consumed_ = 0;   // std::size_t - bytes consumed by downstream
     bool exhausted_ = false;     // bool - upstream exhausted
-    
+
 public:
-    explicit uppercase_transform(any_buffer_source& source)
+    explicit uppercase_transform(capy::any_buffer_source& source)
         : source_(&source)
     {
     }
@@ -71,63 +71,63 @@ public:
     }
     
     // BufferSource::pull - returns task<> to enable co_await on upstream
-    io_task<std::span<const_buffer>>
-    pull(std::span<const_buffer> dest)
+    capy::io_task<std::span<capy::const_buffer>>
+    pull(std::span<capy::const_buffer> dest)
     {
         // Already have unconsumed data?
         if (consumed_ < buffer_.size())
         {
             if (dest.empty())
-                co_return {std::error_code{}, std::span<const_buffer>{}};
-            
-            dest[0] = const_buffer(
+                co_return {std::error_code{}, std::span<capy::const_buffer>{}};
+
+            dest[0] = capy::const_buffer(
                 buffer_.data() + consumed_,
                 buffer_.size() - consumed_);
             co_return {std::error_code{}, dest.first(1)};
         }
-        
+
         // Upstream exhausted?
         if (exhausted_)
-            co_return {error::eof, std::span<const_buffer>{}};
-        
+            co_return {capy::error::eof, std::span<capy::const_buffer>{}};
+
         // Pull from upstream
         buffer_.clear();
         consumed_ = 0;
-        
-        const_buffer upstream[8];  // const_buffer[8]
+
+        capy::const_buffer upstream[8];  // const_buffer[8]
         // ec: std::error_code, bufs: std::span<const_buffer>
         auto [ec, bufs] = co_await source_->pull(upstream);
-        
-        if (ec == cond::eof)
+
+        if (ec == capy::cond::eof)
         {
             exhausted_ = true;
-            co_return {error::eof, std::span<const_buffer>{}};
+            co_return {capy::error::eof, std::span<capy::const_buffer>{}};
         }
 
         if (ec)
-            co_return {ec, std::span<const_buffer>{}};
-        
+            co_return {ec, std::span<capy::const_buffer>{}};
+
         // Transform: uppercase each byte
         for (auto const& buf : bufs)  // const_buffer const&
         {
             auto const* data = static_cast<char const*>(buf.data());  // char const*
             auto size = buf.size();  // std::size_t
-            
+
             for (std::size_t i = 0; i < size; ++i)
             {
                 buffer_.push_back(static_cast<char>(
                     std::toupper(static_cast<unsigned char>(data[i]))));
             }
         }
-        
+
         // Consume from upstream
-        source_->consume(buffer_size(bufs));
-        
+        source_->consume(capy::buffer_size(bufs));
+
         // Return transformed data
         if (dest.empty() || buffer_.empty())
-            co_return {std::error_code{}, std::span<const_buffer>{}};
-        
-        dest[0] = const_buffer(buffer_.data(), buffer_.size());
+            co_return {std::error_code{}, std::span<capy::const_buffer>{}};
+
+        dest[0] = capy::const_buffer(buffer_.data(), buffer_.size());
         co_return {std::error_code{}, dest.first(1)};
     }
 };
@@ -143,15 +143,15 @@ public:
 
 class line_numbering_transform
 {
-    any_buffer_source* source_;  // any_buffer_source*
+    capy::any_buffer_source* source_;  // any_buffer_source*
     std::string buffer_;         // std::string - transformed data
     std::size_t consumed_ = 0;   // std::size_t - bytes consumed by downstream
     std::size_t line_num_ = 1;   // std::size_t - current line number
     bool at_line_start_ = true;  // bool - are we at start of a line?
     bool exhausted_ = false;     // bool - upstream exhausted
-    
+
 public:
-    explicit line_numbering_transform(any_buffer_source& source)
+    explicit line_numbering_transform(capy::any_buffer_source& source)
         : source_(&source)
     {
     }
@@ -170,48 +170,48 @@ public:
     }
     
     // BufferSource::pull - returns task<> to enable co_await on upstream
-    io_task<std::span<const_buffer>>
-    pull(std::span<const_buffer> dest)
+    capy::io_task<std::span<capy::const_buffer>>
+    pull(std::span<capy::const_buffer> dest)
     {
         // Already have unconsumed data?
         if (consumed_ < buffer_.size())
         {
             if (dest.empty())
-                co_return {std::error_code{}, std::span<const_buffer>{}};
-            
-            dest[0] = const_buffer(
+                co_return {std::error_code{}, std::span<capy::const_buffer>{}};
+
+            dest[0] = capy::const_buffer(
                 buffer_.data() + consumed_,
                 buffer_.size() - consumed_);
             co_return {std::error_code{}, dest.first(1)};
         }
-        
+
         // Upstream exhausted?
         if (exhausted_)
-            co_return {error::eof, std::span<const_buffer>{}};
-        
+            co_return {capy::error::eof, std::span<capy::const_buffer>{}};
+
         // Pull from upstream
         buffer_.clear();
         consumed_ = 0;
-        
-        const_buffer upstream[8];  // const_buffer[8]
+
+        capy::const_buffer upstream[8];  // const_buffer[8]
         // ec: std::error_code, bufs: std::span<const_buffer>
         auto [ec, bufs] = co_await source_->pull(upstream);
-        
-        if (ec == cond::eof)
+
+        if (ec == capy::cond::eof)
         {
             exhausted_ = true;
-            co_return {error::eof, std::span<const_buffer>{}};
+            co_return {capy::error::eof, std::span<capy::const_buffer>{}};
         }
 
         if (ec)
-            co_return {ec, std::span<const_buffer>{}};
-        
+            co_return {ec, std::span<capy::const_buffer>{}};
+
         // Transform: add line numbers
         for (auto const& buf : bufs)  // const_buffer const&
         {
             auto const* data = static_cast<char const*>(buf.data());  // char const*
             auto size = buf.size();  // std::size_t
-            
+
             for (std::size_t i = 0; i < size; ++i)
             {
                 if (at_line_start_)
@@ -224,15 +224,15 @@ public:
                     at_line_start_ = true;
             }
         }
-        
+
         // Consume from upstream
-        source_->consume(buffer_size(bufs));
-        
+        source_->consume(capy::buffer_size(bufs));
+
         // Return transformed data
         if (dest.empty() || buffer_.empty())
-            co_return {std::error_code{}, std::span<const_buffer>{}};
-        
-        dest[0] = const_buffer(buffer_.data(), buffer_.size());
+            co_return {std::error_code{}, std::span<capy::const_buffer>{}};
+
+        dest[0] = capy::const_buffer(buffer_.data(), buffer_.size());
         co_return {std::error_code{}, dest.first(1)};
     }
 };
@@ -243,22 +243,22 @@ public:
 //
 //------------------------------------------------------------------------------
 
-task<std::size_t> transfer(any_buffer_source& source, any_write_sink& sink)
+capy::task<std::size_t> transfer(capy::any_buffer_source& source, capy::any_write_sink& sink)
 {
     std::size_t total = 0;  // std::size_t
-    const_buffer bufs[8];   // const_buffer[8]
-    
+    capy::const_buffer bufs[8];   // const_buffer[8]
+
     for (;;)
     {
         // ec: std::error_code, spans: std::span<const_buffer>
         auto [ec, spans] = co_await source.pull(bufs);
-        
-        if (ec == cond::eof)
+
+        if (ec == capy::cond::eof)
             break;
 
         if (ec)
             throw std::system_error(ec);
-        
+
         // Write each buffer to sink
         for (auto const& buf : spans)  // const_buffer const&
         {
@@ -268,15 +268,15 @@ task<std::size_t> transfer(any_buffer_source& source, any_write_sink& sink)
                 throw std::system_error(wec);
             total += n;
         }
-        
+
         // Consume what we read
-        source.consume(buffer_size(spans));
+        source.consume(capy::buffer_size(spans));
     }
-    
-    io_result<> eof_result = co_await sink.write_eof();
+
+    capy::io_result<> eof_result = co_await sink.write_eof();
     if (eof_result.ec)
         throw std::system_error(eof_result.ec);
-    
+
     co_return total;
 }
 
@@ -295,8 +295,8 @@ void demo_pipeline()
     std::cout << "Input:\n" << input << "\n";
     
     // Create mock source with input data
-    test::fuse f;  // test::fuse
-    test::buffer_source source(f);  // test::buffer_source
+    capy::test::fuse f;  // test::fuse
+    capy::test::buffer_source source(f);  // test::buffer_source
     source.provide(input);
     
     // Build the pipeline using type-erased buffer sources:
@@ -305,26 +305,26 @@ void demo_pipeline()
     // Stage 1: Wrap raw source as any_buffer_source.
     // Using pointer construction (&source) for reference semantics - the
     // wrapper does not take ownership, so source must outlive src.
-    any_buffer_source src{&source};  // any_buffer_source
+    capy::any_buffer_source src{&source};  // any_buffer_source
     
     // Stage 2: Uppercase transform wraps src.
     // Again using pointer construction so upper_src references upper
     // without taking ownership.
     uppercase_transform upper{src};  // uppercase_transform
-    any_buffer_source upper_src{&upper};  // any_buffer_source
+    capy::any_buffer_source upper_src{&upper};  // any_buffer_source
     
     // Stage 3: Line numbering transform wraps upper_src.
     line_numbering_transform numbered{upper_src};  // line_numbering_transform
-    any_buffer_source numbered_src{&numbered};  // any_buffer_source
+    capy::any_buffer_source numbered_src{&numbered};  // any_buffer_source
     
     // Create sink to collect output.
     // Pointer construction ensures sink outlives dst.
-    test::write_sink sink(f);  // test::write_sink
-    any_write_sink dst{&sink};  // any_write_sink
+    capy::test::write_sink sink(f);  // test::write_sink
+    capy::any_write_sink dst{&sink};  // any_write_sink
     
     // Run the pipeline
     std::size_t bytes = 0;  // std::size_t
-    test::run_blocking([&](std::size_t n) { bytes = n; })(
+    capy::test::run_blocking([&](std::size_t n) { bytes = n; })(
         transfer(numbered_src, dst));
     
     std::cout << "Output (" << bytes << " bytes):\n";

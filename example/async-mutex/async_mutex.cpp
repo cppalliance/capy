@@ -20,12 +20,12 @@
 #include <latch>
 #include <vector>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 int main()
 {
-    thread_pool pool;
-    strand s{pool.get_executor()};
+    capy::thread_pool pool;
+    capy::strand s{pool.get_executor()};
     std::latch done(1);
 
     auto on_complete = [&done](auto&&...) { done.count_down(); };
@@ -40,11 +40,11 @@ int main()
         done.count_down();
     };
 
-    async_mutex mtx;
+    capy::async_mutex mtx;
     int acquisition_order = 0;
     std::vector<int> order_log;
 
-    auto worker = [&](int id) -> task<> {
+    auto worker = [&](int id) -> capy::task<> {
         std::cout << "Worker " << id << " waiting for lock\n";
         auto [ec, guard] = co_await mtx.scoped_lock();
         if (ec)
@@ -64,14 +64,14 @@ int main()
         co_return;
     };
 
-    auto run_all = [&]() -> task<> {
-        co_await when_all(
+    auto run_all = [&]() -> capy::task<> {
+        co_await capy::when_all(
             worker(0), worker(1), worker(2),
             worker(3), worker(4), worker(5));
     };
 
     // Run on a strand so async_mutex operations are single-threaded
-    run_async(s, on_complete, on_error)(run_all());
+    capy::run_async(s, on_complete, on_error)(run_all());
     done.wait();
 
     std::cout << "\nAcquisition order: ";

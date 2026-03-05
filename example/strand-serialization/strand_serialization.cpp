@@ -19,15 +19,15 @@
 #include <iostream>
 #include <latch>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 int main()
 {
     constexpr int num_coroutines = 10;
     constexpr int increments_per_coro = 1000;
 
-    thread_pool pool(4);
-    strand s{pool.get_executor()};
+    capy::thread_pool pool(4);
+    capy::strand s{pool.get_executor()};
     std::latch done(1);
 
     auto on_complete = [&done](auto&&...) { done.count_down(); };
@@ -46,7 +46,7 @@ int main()
 
     // Each coroutine increments the shared counter without locks.
     // The strand ensures only one coroutine runs at a time.
-    auto increment = [&](int id) -> task<> {
+    auto increment = [&](int id) -> capy::task<> {
         for (int i = 0; i < increments_per_coro; ++i)
             ++counter;
         std::cout << "Coroutine " << id
@@ -54,15 +54,15 @@ int main()
         co_return;
     };
 
-    auto run_all = [&]() -> task<> {
-        co_await when_all(
+    auto run_all = [&]() -> capy::task<> {
+        co_await capy::when_all(
             increment(0), increment(1), increment(2),
             increment(3), increment(4), increment(5),
             increment(6), increment(7), increment(8),
             increment(9));
     };
 
-    run_async(s, on_complete, on_error)(run_all());
+    capy::run_async(s, on_complete, on_error)(run_all());
     done.wait();
 
     int expected = num_coroutines * increments_per_coro;

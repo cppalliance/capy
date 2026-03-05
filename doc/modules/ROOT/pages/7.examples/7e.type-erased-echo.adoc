@@ -47,28 +47,28 @@ boost::capy::task<> echo_session(boost::capy::any_stream& stream);
 
 namespace myapp {
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
-task<> echo_session(any_stream& stream)
+capy::task<> echo_session(capy::any_stream& stream)
 {
     char buffer[1024];
-    
+
     for (;;)
     {
         // Read some data
         // ec: std::error_code, n: std::size_t
-        auto [ec, n] = co_await stream.read_some(make_buffer(buffer));
-        
-        if (ec == cond::eof)
+        auto [ec, n] = co_await stream.read_some(capy::make_buffer(buffer));
+
+        if (ec == capy::cond::eof)
             co_return;  // Client closed connection
-        
+
         if (ec)
             throw std::system_error(ec);
-        
+
         // Echo it back
         // wec: std::error_code, wn: std::size_t
-        auto [wec, wn] = co_await write(stream, const_buffer(buffer, n));
-        
+        auto [wec, wn] = co_await capy::write(stream, capy::const_buffer(buffer, n));
+
         if (wec)
             throw std::system_error(wec);
     }
@@ -88,22 +88,21 @@ task<> echo_session(any_stream& stream)
 #include <boost/capy/test/run_blocking.hpp>
 #include <iostream>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 void test_with_mock()
 {
-    test::fuse f;
-    test::stream mock(f);
-    mock.provide("Hello, ");
-    mock.provide("World!\n");
-    // Stream returns eof when no more data is available
+    auto [a, b] = capy::test::make_stream_pair();
+    b.provide("Hello, ");
+    b.provide("World!\n");
+    b.close();
     
-    // Using pointer construction (&mock) for reference semantics - the
-    // wrapper does not take ownership, so mock must outlive stream.
-    any_stream stream{&mock};  // any_stream
-    test::run_blocking()(myapp::echo_session(stream));
+    // Using pointer construction (&a) for reference semantics - the
+    // wrapper does not take ownership, so a must outlive stream.
+    capy::any_stream stream{&a};  // any_stream
+    capy::test::run_blocking()(myapp::echo_session(stream));
     
-    std::cout << "Echo output: " << mock.data() << "\n";
+    std::cout << "Echo output: " << b.data() << "\n";
 }
 
 // With real sockets (using Corosio), you would write:
@@ -140,7 +139,7 @@ target_link_libraries(echo_demo PRIVATE echo_lib)
 [source,cpp]
 ----
 // echo.hpp
-task<> echo_session(any_stream& stream);
+boost::capy::task<> echo_session(boost::capy::any_stream& stream);
 ----
 
 The header declares only the signature. It includes `any_stream` and `task`, but no concrete transport types.
@@ -156,7 +155,7 @@ Clients of this header:
 [source,cpp]
 ----
 // echo.cpp
-task<> echo_session(any_stream& stream)
+capy::task<> echo_session(capy::any_stream& stream)
 {
     // Full implementation here
 }

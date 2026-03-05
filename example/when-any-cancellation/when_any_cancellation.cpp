@@ -32,14 +32,14 @@
 #include <string>
 #include <thread>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 // Simulates a data source that takes `steps` iterations to produce a result.
 // Each step checks the stop token so the task exits promptly when cancelled.
-task<std::string> fetch_from_source(
+capy::task<std::string> fetch_from_source(
     std::string name, int steps, int step_ms)
 {
-    auto token = co_await this_coro::stop_token;
+    auto token = co_await capy::this_coro::stop_token;
 
     for (int i = 0; i < steps; ++i)
     {
@@ -62,14 +62,14 @@ task<std::string> fetch_from_source(
 }
 
 // Race three sources — the fastest one wins, the rest get cancelled.
-task<> race_data_sources()
+capy::task<> race_data_sources()
 {
     std::cout << "=== Racing three data sources ===\n\n";
 
     // source_a: 2 steps * 20ms = fast
     // source_b: 5 steps * 20ms = medium
     // source_c: 8 steps * 20ms = slow
-    auto result = co_await when_any(
+    auto result = co_await capy::when_any(
         fetch_from_source("source_a", 2, 20),
         fetch_from_source("source_b", 5, 20),
         fetch_from_source("source_c", 8, 20));
@@ -83,9 +83,9 @@ task<> race_data_sources()
 
 // A void task that loops until stopped.
 // Useful for background workers that run indefinitely.
-task<> background_worker(std::string name, int step_ms)
+capy::task<> background_worker(std::string name, int step_ms)
 {
-    auto token = co_await this_coro::stop_token;
+    auto token = co_await capy::this_coro::stop_token;
     int iteration = 0;
 
     while (!token.stop_requested())
@@ -101,7 +101,7 @@ task<> background_worker(std::string name, int step_ms)
 }
 
 // A task that finishes after a fixed delay (acts as a timeout).
-task<> timeout(int ms)
+capy::task<> timeout(int ms)
 {
     std::this_thread::sleep_for(
         std::chrono::milliseconds(ms));
@@ -112,11 +112,11 @@ task<> timeout(int ms)
 // Use when_any with a timeout to bound the lifetime of a background worker.
 // With void tasks, the variadic overload returns variant<monostate, monostate>.
 // Use .index() to know which task completed first.
-task<> timeout_a_worker()
+capy::task<> timeout_a_worker()
 {
     std::cout << "\n=== Timeout a background worker ===\n\n";
 
-    auto result = co_await when_any(
+    auto result = co_await capy::when_any(
         background_worker("worker", 30),
         timeout(100));
 
@@ -127,23 +127,23 @@ task<> timeout_a_worker()
 }
 
 // Race a vector of tasks (homogeneous range overload).
-task<> race_vector_of_sources()
+capy::task<> race_vector_of_sources()
 {
     std::cout << "\n=== Racing a vector of sources ===\n\n";
 
-    std::vector<task<std::string>> tasks;
+    std::vector<capy::task<std::string>> tasks;
     tasks.push_back(fetch_from_source("replica_1", 6, 20));
     tasks.push_back(fetch_from_source("replica_2", 3, 20));
     tasks.push_back(fetch_from_source("replica_3", 5, 20));
 
-    auto [winner_index, value] = co_await when_any(std::move(tasks));
+    auto [winner_index, value] = co_await capy::when_any(std::move(tasks));
 
     std::cout << "\nFastest replica: index=" << winner_index
               << " value=\"" << value << "\"\n";
 }
 
 // Run all demos sequentially so output is readable.
-task<> run_demos()
+capy::task<> run_demos()
 {
     co_await race_data_sources();
     co_await timeout_a_worker();
@@ -152,10 +152,10 @@ task<> run_demos()
 
 int main()
 {
-    thread_pool pool;
+    capy::thread_pool pool;
     std::latch done(1);
 
-    run_async(pool.get_executor(),
+    capy::run_async(pool.get_executor(),
         [&done](auto&&...) { done.count_down(); },
         [&done](std::exception_ptr ep) {
             try { std::rethrow_exception(ep); }

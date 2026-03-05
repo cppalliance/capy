@@ -16,12 +16,12 @@
 #include <latch>
 #include <thread>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 // A slow operation that respects cancellation
-task<std::string> slow_fetch(int steps)
+capy::task<std::string> slow_fetch(int steps)
 {
-    auto token = co_await this_coro::stop_token;  // std::stop_token
+    auto token = co_await capy::this_coro::stop_token;  // std::stop_token
     std::string result;
     
     for (int i = 0; i < steps; ++i)
@@ -49,9 +49,9 @@ task<std::string> slow_fetch(int steps)
 }
 
 // Run with timeout (conceptual - real implementation needs timer)
-task<std::optional<std::string>> fetch_with_timeout()
+capy::task<std::optional<std::string>> fetch_with_timeout()
 {
-    auto token = co_await this_coro::stop_token;  // std::stop_token
+    auto token = co_await capy::this_coro::stop_token;  // std::stop_token
     
     try
     {
@@ -70,11 +70,11 @@ void demo_normal_completion()
 {
     std::cout << "Demo: Normal completion\n";
     
-    thread_pool pool;
+    capy::thread_pool pool;
     std::stop_source source;
     std::latch done(1);  // std::latch - wait for 1 task
-    
-    run_async(pool.get_executor(), source.get_token(),
+
+    capy::run_async(pool.get_executor(), source.get_token(),
         [&done](std::optional<std::string> result) {
             if (result)
                 std::cout << "Result: " << *result << "\n";
@@ -84,20 +84,20 @@ void demo_normal_completion()
         },
         [&done](std::exception_ptr) { done.count_down(); }
     )(fetch_with_timeout());
-    
+
     done.wait();  // Block until task completes
 }
 
 void demo_cancellation()
 {
     std::cout << "\nDemo: Cancellation after 2 steps\n";
-    
-    thread_pool pool;
+
+    capy::thread_pool pool;
     std::stop_source source;
     std::latch done(1);  // std::latch - wait for 1 task
-    
+
     // Launch the task
-    run_async(pool.get_executor(), source.get_token(),
+    capy::run_async(pool.get_executor(), source.get_token(),
         [&done](std::optional<std::string> result) {
             if (result)
                 std::cout << "Result: " << *result << "\n";
@@ -120,9 +120,9 @@ void demo_cancellation()
 }
 
 // Example: Manual stop token checking
-task<int> process_items(std::vector<int> const& items)
+capy::task<int> process_items(std::vector<int> const& items)
 {
-    auto token = co_await this_coro::stop_token;  // std::stop_token
+    auto token = co_await capy::this_coro::stop_token;  // std::stop_token
     int sum = 0;
     
     for (auto item : items)  // int

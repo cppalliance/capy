@@ -14,19 +14,19 @@
 #include <boost/capy/test/run_blocking.hpp>
 #include <iostream>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 void test_with_mock()
 {
-    auto [a, b] = test::make_stream_pair();
+    auto [a, b] = capy::test::make_stream_pair();
     b.provide("Hello, ");
     b.provide("World!\n");
     b.close();
     
     // Using pointer construction (&a) for reference semantics - the
     // wrapper does not take ownership, so a must outlive stream.
-    any_stream stream{&a};  // any_stream
-    test::run_blocking()(myapp::echo_session(stream));
+    capy::any_stream stream{&a};  // any_stream
+    capy::test::run_blocking()(myapp::echo_session(stream));
     
     std::cout << "Echo output: " << b.data() << "\n";
 }

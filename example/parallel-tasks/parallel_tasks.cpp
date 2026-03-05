@@ -21,10 +21,10 @@
 #include <sstream>
 #include <thread>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 // Sum integers in [lo, hi)
-task<long long> partial_sum(int lo, int hi)
+capy::task<long long> partial_sum(int lo, int hi)
 {
     std::ostringstream oss;
     oss << "  range [" << lo << ", " << hi
@@ -43,7 +43,7 @@ int main()
     constexpr int num_tasks = 4;
     constexpr int chunk = total / num_tasks;
 
-    thread_pool pool(num_tasks);
+    capy::thread_pool pool(num_tasks);
     std::latch done(1);
 
     auto on_complete = [&done](auto&&...) { done.count_down(); };
@@ -58,11 +58,11 @@ int main()
         done.count_down();
     };
 
-    auto compute = [&]() -> task<> {
+    auto compute = [&]() -> capy::task<> {
         std::cout << "Dispatching " << num_tasks
                   << " parallel tasks...\n";
 
-        auto [s0, s1, s2, s3] = co_await when_all(
+        auto [s0, s1, s2, s3] = co_await capy::when_all(
             partial_sum(0 * chunk, 1 * chunk),
             partial_sum(1 * chunk, 2 * chunk),
             partial_sum(2 * chunk, 3 * chunk),
@@ -80,7 +80,7 @@ int main()
                   << " (expected " << expected << ")\n";
     };
 
-    run_async(pool.get_executor(), on_complete, on_error)(compute());
+    capy::run_async(pool.get_executor(), on_complete, on_error)(compute());
     done.wait();
 
     return 0;
