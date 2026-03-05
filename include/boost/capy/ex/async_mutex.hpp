@@ -113,8 +113,14 @@ namespace capy {
 
     @par Thread Safety
 
+    Distinct objects: Safe.@n
+    Shared objects: Unsafe.
+
     The mutex operations are designed for single-threaded use on one
     executor. The stop callback may fire from any thread.
+
+    This type is non-copyable and non-movable because suspended
+    waiters hold intrusive pointers into the mutex's internal list.
 
     @par Example
     @code
@@ -367,11 +373,20 @@ public:
         }
     };
 
+    /// Construct an unlocked mutex.
     async_mutex() = default;
 
-    // Non-copyable, non-movable
+    /// Copy constructor (deleted).
     async_mutex(async_mutex const&) = delete;
+
+    /// Copy assignment (deleted).
     async_mutex& operator=(async_mutex const&) = delete;
+
+    /// Move constructor (deleted).
+    async_mutex(async_mutex&&) = delete;
+
+    /// Move assignment (deleted).
+    async_mutex& operator=(async_mutex&&) = delete;
 
     /** Returns an awaiter that acquires the mutex.
 

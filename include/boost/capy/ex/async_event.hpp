@@ -69,8 +69,14 @@ namespace capy {
 
     @par Thread Safety
 
+    Distinct objects: Safe.@n
+    Shared objects: Unsafe.
+
     The event operations are designed for single-threaded use on one
     executor. The stop callback may fire from any thread.
+
+    This type is non-copyable and non-movable because suspended
+    waiters hold intrusive pointers into the event's internal list.
 
     @par Example
     @code
@@ -232,11 +238,20 @@ public:
         }
     };
 
+    /// Construct an unset event.
     async_event() = default;
 
-    // Non-copyable, non-movable
+    /// Copy constructor (deleted).
     async_event(async_event const&) = delete;
+
+    /// Copy assignment (deleted).
     async_event& operator=(async_event const&) = delete;
+
+    /// Move constructor (deleted).
+    async_event(async_event&&) = delete;
+
+    /// Move assignment (deleted).
+    async_event& operator=(async_event&&) = delete;
 
     /** Returns an awaiter that waits until the event is set.
 
