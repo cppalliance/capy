@@ -15,6 +15,7 @@
 #include <boost/capy/buffers/make_buffer.hpp>
 
 #include <array>
+#include <ranges>
 #include <string_view>
 #include <vector>
 
@@ -23,6 +24,30 @@
 
 namespace boost {
 namespace capy {
+
+// std::ranges concepts for slice_of
+
+using slice_of_cbp = slice_of<const_buffer_pair>;
+using slice_of_mbp = slice_of<mutable_buffer_pair>;
+using slice_of_vec = slice_of<std::vector<const_buffer>>;
+
+static_assert(std::ranges::range<slice_of_cbp>);
+static_assert(std::ranges::input_range<slice_of_cbp>);
+static_assert(std::ranges::forward_range<slice_of_cbp>);
+static_assert(std::ranges::bidirectional_range<slice_of_cbp>);
+
+static_assert(ConstBufferSequence<slice_of_cbp>);
+static_assert(!MutableBufferSequence<slice_of_cbp>);
+
+static_assert(std::ranges::range<slice_of_mbp>);
+static_assert(std::ranges::bidirectional_range<slice_of_mbp>);
+
+static_assert(ConstBufferSequence<slice_of_mbp>);
+static_assert(MutableBufferSequence<slice_of_mbp>);
+
+static_assert(std::ranges::range<slice_of_vec>);
+static_assert(std::ranges::bidirectional_range<slice_of_vec>);
+static_assert(ConstBufferSequence<slice_of_vec>);
 
 template<
     std::size_t I,
