@@ -248,13 +248,15 @@ struct self_destroy_awaitable
 };
 
 
-// test awaitable that must be stopped in order to resume
+// test awaitable that must be stopped in order to resume.
+// Uses resume_via_post to ensure the coroutine resumes on the
+// executor's thread, not on whatever thread calls request_stop().
 struct stop_only_awaitable
 {
     stop_only_awaitable() noexcept = default;
     stop_only_awaitable(stop_only_awaitable && ) noexcept {}
 
-    std::optional<std::stop_callback<std::coroutine_handle<>>> stop_cb;
+    std::optional<stop_resume_callback> stop_cb;
 
     bool await_ready() {return false;}
 
@@ -262,7 +264,7 @@ struct stop_only_awaitable
     {
         if (env->stop_token.stop_requested())
             return h;
-        stop_cb.emplace(env->stop_token, h);
+        stop_cb.emplace(env->stop_token, env->post_resume(h));
         return std::noop_coroutine();
     }
     void await_resume() {}

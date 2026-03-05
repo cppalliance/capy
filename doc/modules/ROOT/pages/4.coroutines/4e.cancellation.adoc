@@ -292,7 +292,70 @@ Capy's I/O operations (provided by Corosio) respect stop tokens at the OS level:
 
 When you request stop, pending I/O operations are cancelled at the OS level, providing immediate response rather than waiting for the operation to complete naturally.
 
-== Part 8: Patterns
+[[stoppable-awaitables]]
+== Part 8: Implementing Stoppable Awaitables
+
+The examples above show *polling* for cancellation with `token.stop_requested()`. For awaitables that suspend indefinitely—waiting for I/O, a lock, or an external event—you need a `std::stop_callback` to wake the coroutine when cancellation arrives.
+
+=== The Dangerous Pattern
+
+A `std::stop_callback` fires synchronously on whatever thread calls `request_stop()`. If the callback resumes the coroutine directly, the coroutine runs on the wrong thread:
+
+[source,cpp]
+----
+// WRONG — causes use-after-free
+std::optional<std::stop_callback<std::coroutine_handle<>>> stop_cb;
+
+std::coroutine_handle<> await_suspend(
+    std::coroutine_handle<> h, io_env const* env)
+{
+    stop_cb.emplace(env->stop_token, h);  // Resumes inline!
+    return std::noop_coroutine();
+}
+----
+
+When an external thread calls `request_stop()`, `h.resume()` executes the coroutine on that thread. The coroutine machinery sets the thread-local frame allocator to the executor's allocator—poisoning the calling thread's TLS. When the executor's pool destructs, the TLS pointer becomes dangling. The next coroutine allocation on that thread dereferences freed memory.
+
+This bug is deterministic, not a race condition. It manifests as a heap-use-after-free in *unrelated* code—wherever the next coroutine frame happens to be allocated on the poisoned thread.
+
+=== The Correct Pattern: resume_via_post
+
+Use `stop_resume_callback` and `io_env::post_resume` to post the resume through the executor, ensuring the coroutine runs on the correct thread:
+
+[source,cpp]
+----
+#include <boost/capy/ex/io_env.hpp>
+
+struct my_stoppable_awaitable
+{
+    std::optional<stop_resume_callback> stop_cb_;
+    // ... other members for the async operation ...
+
+    bool await_ready() { return false; }
+
+    std::coroutine_handle<> await_suspend(
+        std::coroutine_handle<> h, io_env const* env)
+    {
+        if (env->stop_token.stop_requested())
+            return h;  // Already cancelled
+
+        stop_cb_.emplace(env->stop_token, env->post_resume(h));
+
+        start_async_operation(h, env);
+        return std::noop_coroutine();
+    }
+
+    void await_resume() { /* check result or throw */ }
+};
+----
+
+`stop_resume_callback` is a type alias for `std::stop_callback<resume_via_post>`. `post_resume(h)` creates a `resume_via_post` callable that posts the coroutine handle through this environment's executor.
+
+When `request_stop()` fires the callback, the coroutine handle is posted to the executor's queue instead of resumed inline. The executor's worker thread picks it up and resumes it in the correct execution context.
+
+NOTE: Capy's built-in I/O awaitables (via Corosio) already use the post-back pattern internally. This guidance applies when writing your own custom awaitables.
+
+== Part 9: Patterns
 
 === Timeout Pattern
 

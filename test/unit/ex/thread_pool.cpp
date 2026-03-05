@@ -13,10 +13,13 @@
 
 #include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
+#include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/ex/work_guard.hpp>
 
 #include "test_helpers.hpp"
 
 #include <atomic>
+#include <thread>
 #include <vector>
 
 namespace boost {
@@ -318,6 +321,238 @@ struct thread_pool_test
     }
 
     void
+    testJoinDrainsWork()
+    {
+        thread_pool pool(2);
+        auto ex = pool.get_executor();
+        std::atomic<int> count{0};
+
+        constexpr int N = 50;
+        for(int i = 0; i < N; ++i)
+        {
+            run_async(ex,
+                [&]{ count.fetch_add(1); }
+            )(void_task());
+        }
+
+        pool.join();
+        BOOST_TEST_EQ(count.load(), N);
+    }
+
+    void
+    testJoinNoWork()
+    {
+        // join() on a pool with no posted work returns promptly
+        thread_pool pool(2);
+        pool.join();
+    }
+
+    void
+    testJoinNoThreadsStarted()
+    {
+        // join() without ever posting (lazy start never triggered)
+        thread_pool pool(2);
+        // Don't call get_executor() or post anything
+        pool.join();
+    }
+
+    void
+    testJoinIdempotent()
+    {
+        thread_pool pool(1);
+        pool.join();
+        pool.join();  // second call should be a no-op
+    }
+
+    void
+    testStopThenJoin()
+    {
+        thread_pool pool(2);
+        pool.stop();
+        pool.join();  // should return immediately
+    }
+
+    void
+    testStopInterruptsJoin()
+    {
+        thread_pool pool(2);
+        auto ex = pool.get_executor();
+
+        // Hold work guard to keep join() blocking
+        auto guard = make_work_guard(ex);
+
+        std::atomic<bool> join_returned{false};
+        std::thread joiner([&]{
+            pool.join();
+            join_returned.store(true);
+        });
+
+        // Give join() time to block
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(50));
+        BOOST_TEST(!join_returned.load());
+
+        // stop() should interrupt the blocking join()
+        pool.stop();
+
+        joiner.join();
+        BOOST_TEST(join_returned.load());
+    }
+
+    void
+    testDestructorAbandonsPending()
+    {
+        // Verify the destructor doesn't hang when work items
+        // are genuinely queued but unprocessed. We block the
+        // single worker thread with a spinning callback, then
+        // post items that pile up in the queue. After releasing
+        // the worker, the destructor's stop() causes it to exit
+        // without draining the queue.
+        {
+            std::atomic<bool> busy{false};
+            std::atomic<bool> release{false};
+
+            thread_pool pool(1);
+            auto ex = pool.get_executor();
+
+            // Block the worker via run_async callback
+            run_async(ex, [&]{
+                busy.store(true);
+                while(!release.load())
+                    std::this_thread::yield();
+            })(void_task());
+
+            // Wait until worker is executing our callback
+            while(!busy.load())
+                std::this_thread::yield();
+
+            // Queue items that can't be processed yet
+            for(int i = 0; i < 50; ++i)
+                ex.post(std::noop_coroutine());
+
+            // Release worker, then pool destructs immediately.
+            // stop() races with the worker — pending items
+            // are abandoned and destroyed by ~impl().
+            release.store(true);
+        }
+    }
+
+    void
+    testStopCallbackPostBack()
+    {
+        // Cancel a suspended task via stop_token, then let the
+        // pool destruct. stop_only_awaitable uses resume_via_post
+        // so the coroutine resumes on a pool thread, not on the
+        // thread that calls request_stop().
+        {
+            thread_pool pool(1);
+            auto ex = pool.get_executor();
+            std::stop_source ss;
+
+            auto make_task = []() -> task<void> {
+                co_await stop_only_awaitable{};
+            };
+
+            run_async(ex, ss.get_token())(make_task());
+
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(50));
+
+            ss.request_stop();
+        }
+    }
+
+    void
+    testStopCallbackWithJoin()
+    {
+        // Cancel a suspended task, then join() the pool.
+        // Verifies work counting and join() interact correctly
+        // with stop_callback cancellation.
+        {
+            thread_pool pool(1);
+            auto ex = pool.get_executor();
+            std::stop_source ss;
+
+            auto make_task = []() -> task<void> {
+                co_await stop_only_awaitable{};
+            };
+
+            run_async(ex, ss.get_token())(make_task());
+
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(50));
+
+            ss.request_stop();
+            pool.join();
+        }
+    }
+
+    void
+    testStopCallbackRepeated()
+    {
+        // Stress test: repeated cancel + pool destruction cycles.
+        for(int iter = 0; iter < 50; ++iter)
+        {
+            thread_pool pool(2);
+            auto ex = pool.get_executor();
+            std::stop_source ss;
+
+            auto make_task = []() -> task<void> {
+                co_await stop_only_awaitable{};
+            };
+
+            for(int i = 0; i < 5; ++i)
+                run_async(ex, ss.get_token())(make_task());
+
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(10));
+
+            ss.request_stop();
+        }
+    }
+
+    void
+    testWorkGuardKeepsPoolAlive()
+    {
+        thread_pool pool(1);
+        auto ex = pool.get_executor();
+        std::atomic<bool> join_returned{false};
+
+        auto guard = make_work_guard(ex);
+
+        std::thread joiner([&]{
+            pool.join();
+            join_returned.store(true);
+        });
+
+        // Give join() time to block
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(50));
+        BOOST_TEST(!join_returned.load());
+
+        // Releasing the guard should allow join() to complete
+        guard.reset();
+
+        joiner.join();
+        BOOST_TEST(join_returned.load());
+    }
+
+    void
+    testJoinWithRunAsync()
+    {
+        thread_pool pool(2);
+        auto ex = pool.get_executor();
+        std::atomic<int> result{0};
+
+        run_async(ex,
+            [&](int v){ result.store(v); }
+        )(returns_int(42));
+
+        pool.join();
+        BOOST_TEST_EQ(result.load(), 42);
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -332,6 +567,18 @@ struct thread_pool_test
         testConcurrentPost();
         testDefaultExecutor();
         testThreadNaming();
+        testJoinDrainsWork();
+        testJoinNoWork();
+        testJoinNoThreadsStarted();
+        testJoinIdempotent();
+        testStopThenJoin();
+        testStopInterruptsJoin();
+        testDestructorAbandonsPending();
+        testStopCallbackPostBack();
+        testStopCallbackWithJoin();
+        testStopCallbackRepeated();
+        testWorkGuardKeepsPoolAlive();
+        testJoinWithRunAsync();
     }
 };
 
