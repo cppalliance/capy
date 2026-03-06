@@ -32,6 +32,7 @@ message(int code) const
     case error::test_failure: return "test failure";
     case error::stream_truncated: return "stream truncated";
     case error::not_found: return "not found";
+    case error::timeout: return "timeout";
     default:
         return "unknown";
     }

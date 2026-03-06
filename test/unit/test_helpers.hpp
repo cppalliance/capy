@@ -30,6 +30,14 @@
 #include <string>
 #include <thread>
 
+// Valgrind slows execution ~10-20x; scale timing-sensitive
+// durations to avoid false failures.
+#ifdef BOOST_NO_STRESS_TEST
+inline constexpr int failsafe_scale = 20;
+#else
+inline constexpr int failsafe_scale = 1;
+#endif
+
 #if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__APPLE__)
 #include <pthread.h>
 #define BOOST_CAPY_TEST_CAN_GET_THREAD_NAME 1

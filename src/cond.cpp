@@ -33,6 +33,7 @@ message(int code) const
     case cond::canceled: return "operation canceled";
     case cond::stream_truncated: return "stream truncated";
     case cond::not_found: return "not found";
+    case cond::timeout: return "operation timed out";
     default:
         return "unknown";
     }
@@ -61,6 +62,9 @@ equivalent(
 
     case cond::not_found:
         return ec == capy::error::not_found;
+
+    case cond::timeout:
+        return ec == capy::error::timeout;
 
     default:
         return false;
