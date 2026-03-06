@@ -23,15 +23,15 @@ concepts with the following contracts:
 
     Semantic Requirements:
 
-    If buffer_size( buffers ) > 0, the operation reads zero or
-    more bytes from the stream into the buffer sequence:
+    Attempts to read up to buffer_size( buffers ) bytes from
+    the stream into the buffer sequence.
 
-    - On success: !ec, and n is the number of bytes read
-      (at least 1).
-    - On error: ec, and n is the number of bytes read before
-      the error (may be 0).
-    - On end-of-file: ec == cond::eof, and n is the number of
-      bytes read before EOF (may be 0).
+    If buffer_size( buffers ) > 0:
+
+    - If !ec, then 1 <= n <= buffer_size( buffers ). n bytes
+      were read into the buffer sequence.
+    - If ec, then 0 <= n <= buffer_size( buffers ). n is the
+      number of bytes read before the I/O condition arose.
 
     If buffer_empty( buffers ) is true, n is 0. The empty buffer
     is not itself a cause for error, but ec may reflect the state
@@ -59,13 +59,15 @@ concept ReadStream =
 
     Semantic Requirements:
 
-    If buffer_size( buffers ) > 0, the operation writes zero or
-    more bytes from the buffer sequence to the stream:
+    Attempts to write up to buffer_size( buffers ) bytes from
+    the buffer sequence to the stream.
 
-    - On success: !ec, and n is the number of bytes written
-      (at least 1).
-    - On error: ec, and n is the number of bytes written before
-      the error (may be 0).
+    If buffer_size( buffers ) > 0:
+
+    - If !ec, then 1 <= n <= buffer_size( buffers ). n bytes
+      were written from the buffer sequence.
+    - If ec, then 0 <= n <= buffer_size( buffers ). n is the
+      number of bytes written before the I/O condition arose.
 
     If buffer_empty( buffers ) is true, n is 0. The empty buffer
     is not itself a cause for error, but ec may reflect the state
