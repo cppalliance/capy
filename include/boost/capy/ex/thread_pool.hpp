@@ -117,7 +117,12 @@ class thread_pool::executor_type
     }
 
 public:
-    /// Construct a default null executor.
+    /** Construct a default null executor.
+
+        The resulting executor is not associated with any pool.
+        `context()`, `dispatch()`, and `post()` require the
+        executor to be associated with a pool before use.
+    */
     executor_type() = default;
 
     /// Return the underlying thread pool.
