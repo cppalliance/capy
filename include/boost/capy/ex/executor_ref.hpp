@@ -112,7 +112,7 @@ class executor_ref
     detail::executor_vtable const* vt_ = nullptr;
 
 public:
-    /** Default constructor.
+    /** Construct a default instance.
 
         Constructs an empty `executor_ref`. Calling any executor
         operations on a default-constructed instance results in
@@ -120,7 +120,7 @@ public:
     */
     executor_ref() = default;
 
-    /** Copy constructor.
+    /** Construct a copy.
 
         Copies the internal pointers, preserving identity.
         This enables the same-executor optimization when passing

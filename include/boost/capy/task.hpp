@@ -67,8 +67,6 @@ struct task_return_base<void>
     to nested `co_await` expressions. This enables cancellation and
     proper completion dispatch across executor boundaries.
 
-    @tparam T The result type. Use `task<>` for `task<void>`.
-
     @par Thread Safety
     Distinct objects: Safe.
     Shared objects: Unsafe.
@@ -90,6 +88,8 @@ struct task_return_base<void>
         // ...
     }
     @endcode
+
+    @tparam T The result type. Use `task<>` for `task<void>`.
 
     @see IoRunnable, IoAwaitable, run, run_async
 */
@@ -296,13 +296,13 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     task(task const&) = delete;
     task& operator=(task const&) = delete;
 
-    /// Move construct, transferring ownership.
+    /// Construct by moving, transferring ownership.
     task(task&& other) noexcept
         : h_(std::exchange(other.h_, nullptr))
     {
     }
 
-    /// Move assign, transferring ownership.
+    /// Assign by moving, transferring ownership.
     task& operator=(task&& other) noexcept
     {
         if(this != &other)

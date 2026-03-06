@@ -101,7 +101,7 @@ public:
         ex_.on_work_started();
     }
 
-    /** Copy constructor.
+    /** Construct a copy.
 
         Creates a new work guard holding work on the same executor.
         Calls `on_work_started()` on the executor.
@@ -123,7 +123,7 @@ public:
             ex_.on_work_started();
     }
 
-    /** Move constructor.
+    /** Construct by moving.
 
         Transfers work ownership from `other` to `*this`. Does not
         call `on_work_started()` or `on_work_finished()`.

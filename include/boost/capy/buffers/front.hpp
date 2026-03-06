@@ -20,6 +20,7 @@ namespace capy {
 */
 constexpr struct front_mrdocs_workaround_t
 {
+    /// Return the first mutable buffer, or an empty buffer.
     template<MutableBufferSequence MutableBufferSequence>
     mutable_buffer
     operator()(
@@ -31,6 +32,7 @@ constexpr struct front_mrdocs_workaround_t
         return {};
     }
 
+    /// Return the first const buffer, or an empty buffer.
     template<ConstBufferSequence ConstBufferSequence>
         requires (!MutableBufferSequence<ConstBufferSequence>)
     const_buffer

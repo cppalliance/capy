@@ -111,6 +111,7 @@ BOOST_CAPY_DECL extern cond_cat_type cond_cat;
 
 //-----------------------------------------------
 
+/// Create an error_condition from a cond value.
 inline
 std::error_condition
 make_error_condition(

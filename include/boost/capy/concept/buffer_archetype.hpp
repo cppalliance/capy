@@ -40,13 +40,14 @@ struct const_buffer_archetype_
     const_buffer_archetype_& operator=(const_buffer_archetype_ const&) = default;
     const_buffer_archetype_& operator=(const_buffer_archetype_&&) = default;
 
+    /// Convert to const_buffer.
     operator const_buffer() const noexcept { return {}; }
 };
 
 #ifdef __clang__
-// workaround: archetype crashes clang
 using const_buffer_archetype = const_buffer;
 #else
+/// Alias for the const buffer archetype type.
 using const_buffer_archetype = const_buffer_archetype_;
 #endif
 
@@ -76,14 +77,17 @@ struct mutable_buffer_archetype_
     mutable_buffer_archetype_& operator=(mutable_buffer_archetype_ const&) = default;
     mutable_buffer_archetype_& operator=(mutable_buffer_archetype_&&) = default;
 
+    /// Convert to mutable_buffer.
     operator mutable_buffer() const noexcept { return {}; }
+
+    /// Convert to const_buffer.
     operator const_buffer() const noexcept { return {}; }
 };
 
 #ifdef __clang__
-// workaround: archetype crashes clang
 using mutable_buffer_archetype = mutable_buffer;
 #else
+/// Alias for the mutable buffer archetype type.
 using mutable_buffer_archetype = mutable_buffer_archetype_;
 #endif
 

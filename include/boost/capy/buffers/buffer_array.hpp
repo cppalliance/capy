@@ -65,11 +65,7 @@ buffer_array_keep_prefix(
     It provides efficient storage for small buffer sequences
     without dynamic allocation.
 
-    @tparam N Maximum number of buffers the array can hold.
-    @tparam IsConst If true, holds const_buffer; otherwise mutable_buffer.
-
-    @par Usage
-
+    @par Example
     @code
     void process(ConstBufferSequence auto const& buffers)
     {
@@ -77,6 +73,9 @@ buffer_array_keep_prefix(
         // use bufs.begin(), bufs.end(), bufs.to_span()
     }
     @endcode
+
+    @tparam N Maximum number of buffers the array can hold.
+    @tparam IsConst If true, holds const_buffer; otherwise mutable_buffer.
 */
 template<std::size_t N, bool IsConst>
 class buffer_array
@@ -95,7 +94,7 @@ private:
     };
 
 public:
-    /** Default constructor.
+    /** Construct a default instance.
 
         Constructs an empty buffer array.
     */
@@ -104,7 +103,7 @@ public:
     {
     }
 
-    /** Copy constructor.
+    /** Construct a copy.
     */
     buffer_array(buffer_array const& other) noexcept
         : n_(other.n_)
@@ -252,7 +251,7 @@ public:
             arr_[n_].~value_type();
     }
 
-    /** Copy assignment.
+    /** Assign by copying.
     */
     buffer_array&
     operator=(buffer_array const& other) noexcept

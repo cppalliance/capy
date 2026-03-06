@@ -81,9 +81,10 @@ public:
     /// The MutableBufferSequence type for writable bytes.
     using mutable_buffers_type = mutable_buffer;
 
+    /// Destroy the buffer.
     ~basic_vector_dynamic_buffer() = default;
 
-    /** Move constructor.
+    /** Construct by moving.
     */
     basic_vector_dynamic_buffer(
         basic_vector_dynamic_buffer&& other) noexcept

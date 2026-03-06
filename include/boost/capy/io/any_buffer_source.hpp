@@ -120,7 +120,7 @@ public:
     */
     ~any_buffer_source();
 
-    /** Default constructor.
+    /** Construct a default instance.
 
         Constructs an empty wrapper. Operations on a default-constructed
         wrapper result in undefined behavior.
@@ -134,7 +134,7 @@ public:
     any_buffer_source(any_buffer_source const&) = delete;
     any_buffer_source& operator=(any_buffer_source const&) = delete;
 
-    /** Move constructor.
+    /** Construct by moving.
 
         Transfers ownership of the wrapped source (if owned) and
         cached awaitable storage from `other`. After the move, `other` is
@@ -152,7 +152,7 @@ public:
     {
     }
 
-    /** Move assignment operator.
+    /** Assign by moving.
 
         Destroys any owned source and releases existing resources,
         then transfers ownership from `other`.

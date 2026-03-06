@@ -129,6 +129,7 @@ public:
         // Default constructor required for forward_iterator
         const_iterator() noexcept = default;
 
+        /// Construct from position and consumed byte count.
         const_iterator(
             iterator_type it,
             end_iterator_type end,
@@ -139,17 +140,19 @@ public:
         {
         }
 
+        /// Test for equality.
         bool operator==(const_iterator const& other) const noexcept
         {
             return it_ == other.it_ && consumed_ == other.consumed_;
         }
 
-        // != operator required for equality_comparable
+        /// Test for inequality.
         bool operator!=(const_iterator const& other) const noexcept
         {
             return !(*this == other);
         }
 
+        /// Return the current buffer, adjusted for consumed bytes.
         value_type operator*() const noexcept
         {
             auto const& buf = *it_;
@@ -167,6 +170,7 @@ public:
             }
         }
 
+        /// Advance to the next element.
         const_iterator& operator++() noexcept
         {
             consumed_ = 0;
@@ -174,6 +178,7 @@ public:
             return *this;
         }
 
+        /// Advance to the next element (postfix).
         const_iterator operator++(int) noexcept
         {
             const_iterator tmp = *this;
@@ -181,6 +186,7 @@ public:
             return tmp;
         }
 
+        /// Move to the previous element.
         const_iterator& operator--() noexcept
         {
             if (consumed_ == 0)
@@ -201,6 +207,7 @@ public:
             return *this;
         }
 
+        /// Move to the previous element (postfix).
         const_iterator operator--(int) noexcept
         {
             const_iterator tmp = *this;
