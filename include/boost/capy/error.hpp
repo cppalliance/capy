@@ -82,6 +82,7 @@ BOOST_CAPY_DECL extern error_cat_type error_cat;
 
 //-----------------------------------------------
 
+/// Create an error_code from an error value.
 inline
 std::error_code
 make_error_code(

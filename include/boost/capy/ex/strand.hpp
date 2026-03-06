@@ -106,7 +106,7 @@ public:
     {
     }
 
-    /** Copy constructor.
+    /** Construct a copy.
 
         Creates a strand that shares serialization state with
         the original. Coroutines dispatched through either strand
@@ -114,15 +114,15 @@ public:
     */
     strand(strand const&) = default;
 
-    /** Move constructor.
+    /** Construct by moving.
     */
     strand(strand&&) = default;
 
-    /** Copy assignment operator.
+    /** Assign by copying.
     */
     strand& operator=(strand const&) = default;
 
-    /** Move assignment operator.
+    /** Assign by moving.
     */
     strand& operator=(strand&&) = default;
 

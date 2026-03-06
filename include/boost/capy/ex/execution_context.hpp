@@ -193,7 +193,7 @@ public:
     */
     ~execution_context();
 
-    /** Default constructor.
+    /** Construct a default instance.
 
         @par Exception Safety
         Strong guarantee.

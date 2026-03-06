@@ -74,11 +74,11 @@ public:
     /// Construct an empty buffer.
     mutable_buffer() = default;
 
-    /// Copy constructor.
+    /// Construct a copy.
     mutable_buffer(
         mutable_buffer const&) = default;
 
-    /// Copy assignment.
+    /// Assign by copying.
     mutable_buffer& operator=(
         mutable_buffer const&) = default;
 
@@ -166,10 +166,10 @@ public:
     /// Construct an empty buffer.
     const_buffer() = default;
 
-    /// Copy constructor.
+    /// Construct a copy.
     const_buffer(const_buffer const&) = default;
 
-    /// Copy assignment.
+    /// Assign by copying.
     const_buffer& operator=(
         const_buffer const& other) = default;
 

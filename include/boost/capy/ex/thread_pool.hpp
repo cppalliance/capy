@@ -119,7 +119,7 @@ class thread_pool::executor_type
     }
 
 public:
-    /// Default construct a null executor.
+    /// Construct a default null executor.
     executor_type() = default;
 
     /// Return the underlying thread pool.

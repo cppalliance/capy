@@ -98,7 +98,7 @@ public:
     */
     ~any_write_stream();
 
-    /** Default constructor.
+    /** Construct a default instance.
 
         Constructs an empty wrapper. Operations on a default-constructed
         wrapper result in undefined behavior.
@@ -112,7 +112,7 @@ public:
     any_write_stream(any_write_stream const&) = delete;
     any_write_stream& operator=(any_write_stream const&) = delete;
 
-    /** Move constructor.
+    /** Construct by moving.
 
         Transfers ownership of the wrapped stream (if owned) and
         cached awaitable storage from `other`. After the move, `other` is
@@ -129,7 +129,7 @@ public:
     {
     }
 
-    /** Move assignment operator.
+    /** Assign by moving.
 
         Destroys any owned stream and releases existing resources,
         then transfers ownership from `other`.

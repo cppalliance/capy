@@ -70,7 +70,7 @@ public:
     /// Construct an empty circular buffer with zero capacity.
     circular_dynamic_buffer() = default;
 
-    /// Copy constructor.
+    /// Construct a copy.
     circular_dynamic_buffer(
         circular_dynamic_buffer const&) = default;
 
@@ -110,7 +110,7 @@ public:
             detail::throw_invalid_argument();
     }
 
-    /// Copy assignment.
+    /// Assign by copying.
     circular_dynamic_buffer& operator=(
         circular_dynamic_buffer const&) = default;
 

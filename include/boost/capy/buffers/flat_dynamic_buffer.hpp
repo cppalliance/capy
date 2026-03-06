@@ -89,11 +89,11 @@ public:
             detail::throw_invalid_argument();
     }
 
-    /// Copy constructor.
+    /// Construct a copy.
     flat_dynamic_buffer(
         flat_dynamic_buffer const&) = default;
 
-    /// Copy assignment.
+    /// Assign by copying.
     flat_dynamic_buffer& operator=(
         flat_dynamic_buffer const&) = default;
 

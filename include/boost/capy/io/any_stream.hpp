@@ -99,7 +99,7 @@ public:
         }
     }
 
-    /** Default constructor.
+    /** Construct a default instance.
 
         Constructs an empty wrapper. Operations on a default-constructed
         wrapper result in undefined behavior.
@@ -113,7 +113,7 @@ public:
     any_stream(any_stream const&) = delete;
     any_stream& operator=(any_stream const&) = delete;
 
-    /** Move constructor.
+    /** Construct by moving.
 
         Transfers ownership from both bases and the owned stream (if any).
 
@@ -128,7 +128,7 @@ public:
     {
     }
 
-    /** Move assignment operator.
+    /** Assign by moving.
 
         Destroys any owned stream and releases existing resources,
         then transfers ownership from `other`.

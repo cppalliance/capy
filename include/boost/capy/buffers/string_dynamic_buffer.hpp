@@ -18,7 +18,23 @@
 namespace boost {
 namespace capy {
 
-/** A dynamic buffer using an underlying string
+/** A dynamic buffer backed by a `std::basic_string`.
+
+    This adapter wraps an externally-owned string and
+    exposes it through the @ref DynamicBuffer interface.
+    Readable bytes occupy the front of the string; writable
+    bytes are appended by `prepare` and made readable by
+    `commit`.
+
+    @par Thread Safety
+    Distinct objects: Safe.
+    Shared objects: Unsafe.
+
+    @tparam CharT The character type.
+    @tparam Traits The character traits type.
+    @tparam Allocator The allocator type.
+
+    @see DynamicBuffer, string_dynamic_buffer, dynamic_buffer
 */
 template<
     class CharT,
@@ -34,16 +50,23 @@ class basic_string_dynamic_buffer
     std::size_t out_size_ = 0;
 
 public:
+    /// Indicates this is a DynamicBuffer adapter over external storage.
     using is_dynamic_buffer_adapter = void;
+
+    /// The underlying string type.
     using string_type = std::basic_string<
         CharT, Traits, Allocator>;
+
+    /// The ConstBufferSequence type for readable bytes.
     using const_buffers_type = const_buffer;
+
+    /// The MutableBufferSequence type for writable bytes.
     using mutable_buffers_type = mutable_buffer;
 
+    /// Destroy the buffer.
     ~basic_string_dynamic_buffer() = default;
 
-    /** Constructor.
-    */
+    /// Construct by moving from another buffer.
     basic_string_dynamic_buffer(
         basic_string_dynamic_buffer&& other) noexcept
         : s_(other.s_)
@@ -54,7 +77,12 @@ public:
         other.s_ = nullptr;
     }
 
-    /** Constructor.
+    /** Construct from an existing string.
+
+        @param s Pointer to the string to wrap. Must
+            remain valid for the lifetime of this object.
+        @param max_size Optional upper bound on the number
+            of bytes the buffer may hold.
     */
     explicit
     basic_string_dynamic_buffer(
@@ -72,23 +100,25 @@ public:
         in_size_ = s_->size();
     }
 
-    /** Assignment.
-    */
+    /// Copy assignment is deleted.
     basic_string_dynamic_buffer& operator=(
         basic_string_dynamic_buffer const&) = delete;
 
+    /// Return the number of readable bytes.
     std::size_t
     size() const noexcept
     {
         return in_size_;
     }
 
+    /// Return the maximum number of bytes the buffer can hold.
     std::size_t
     max_size() const noexcept
     {
         return max_size_;
     }
 
+    /// Return the number of writable bytes without reallocation.
     std::size_t
     capacity() const noexcept
     {
@@ -97,6 +127,7 @@ public:
         return max_size_ - in_size_;
     }
 
+    /// Return a buffer sequence representing the readable bytes.
     const_buffers_type
     data() const noexcept
     {
@@ -104,6 +135,18 @@ public:
             s_->data(), in_size_);
     }
 
+    /** Prepare writable space of at least `n` bytes.
+
+        Invalidates iterators and references returned by
+        previous calls to `data` and `prepare`.
+
+        @throws std::invalid_argument if `n` exceeds
+            available space.
+
+        @param n The number of bytes to prepare.
+
+        @return A mutable buffer of exactly `n` bytes.
+    */
     mutable_buffers_type
     prepare(std::size_t n)
     {
@@ -118,6 +161,14 @@ public:
             &(*s_)[in_size_], out_size_);
     }
 
+    /** Move bytes from the writable to the readable area.
+
+        Invalidates iterators and references returned by
+        previous calls to `data` and `prepare`.
+
+        @param n The number of bytes to commit. Clamped
+            to the size of the writable area.
+    */
     void commit(std::size_t n) noexcept
     {
         if(n < out_size_)
@@ -128,6 +179,14 @@ public:
         s_->resize(in_size_);
     }
 
+    /** Remove bytes from the beginning of the readable area.
+
+        Invalidates iterators and references returned by
+        previous calls to `data` and `prepare`.
+
+        @param n The number of bytes to consume. Clamped
+            to the number of readable bytes.
+    */
     void consume(std::size_t n) noexcept
     {
         if(n < in_size_)
@@ -144,6 +203,7 @@ public:
     }
 };
 
+/// A dynamic buffer using `std::string`.
 using string_dynamic_buffer = basic_string_dynamic_buffer<char>;
 
 /** Create a dynamic buffer from a string.

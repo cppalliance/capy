@@ -21,6 +21,7 @@ namespace capy {
 */
 using const_buffer_pair = std::array<const_buffer,2>;
 
+/// Slice customization point for const_buffer_pair.
 BOOST_CAPY_DECL
 void
 tag_invoke(
@@ -33,6 +34,7 @@ tag_invoke(
 */
 using mutable_buffer_pair = std::array<mutable_buffer,2>;
 
+/// Slice customization point for mutable_buffer_pair.
 BOOST_CAPY_DECL
 void
 tag_invoke(

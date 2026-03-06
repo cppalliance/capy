@@ -147,7 +147,7 @@ class any_executor
     };
 
 public:
-    /** Default constructor.
+    /** Construct a default instance.
 
         Constructs an empty `any_executor`. Calling any executor
         operations on a default-constructed instance results in
@@ -158,7 +158,7 @@ public:
     */
     any_executor() = default;
 
-    /** Copy constructor.
+    /** Construct a copy.
 
         Creates a new `any_executor` sharing ownership of the
         underlying executor with `other`.

@@ -67,7 +67,7 @@ namespace capy {
     @ref max_size buffer descriptors, automatically refilling
     from the underlying sequence as buffers are consumed.
 
-    @par Usage
+    @par Example
 
     Create a `buffer_param` from any buffer sequence and use
     `data()` to get the current window of buffers. After

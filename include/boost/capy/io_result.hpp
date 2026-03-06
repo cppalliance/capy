@@ -26,13 +26,13 @@ namespace capy {
     always containing a `std::error_code` plus optional additional
     values. It supports structured bindings.
 
-    @tparam Args Additional value types beyond the error code.
-
-    @par Usage
+    @par Example
     @code
     auto [ec, n] = co_await s.read_some(buf);
     if (ec) { ... }
     @endcode
+
+    @tparam Args Additional value types beyond the error code.
 */
 template<class... Args>
 struct io_result
@@ -97,7 +97,10 @@ struct [[nodiscard]] io_result<>
 template<typename T1>
 struct [[nodiscard]] io_result<T1>
 {
+    /// The error code from the operation.
     std::error_code ec;
+
+    /// The first result value.
     T1 t1{};
 
 #ifdef _MSC_VER
@@ -127,11 +130,20 @@ struct [[nodiscard]] io_result<T1>
 #endif
 };
 
+/** Result type for operations returning two values.
+
+    @see io_result
+*/
 template<typename T1, typename T2>
 struct [[nodiscard]] io_result<T1, T2>
 {
+    /// The error code from the operation.
     std::error_code ec;
+
+    /// The first result value.
     T1 t1{};
+
+    /// The second result value.
     T2 t2{};
 
 #ifdef _MSC_VER
@@ -164,12 +176,23 @@ struct [[nodiscard]] io_result<T1, T2>
 #endif
 };
 
+/** Result type for operations returning three values.
+
+    @see io_result
+*/
 template<typename T1, typename T2, typename T3>
 struct [[nodiscard]] io_result<T1, T2, T3>
 {
+    /// The error code from the operation.
     std::error_code ec;
+
+    /// The first result value.
     T1 t1{};
+
+    /// The second result value.
     T2 t2{};
+
+    /// The third result value.
     T3 t3{};
 
 #ifdef _MSC_VER
@@ -209,7 +232,8 @@ struct [[nodiscard]] io_result<T1, T2, T3>
 
 #ifdef _MSC_VER
 
-// Free-standing get() overloads for ADL (MSVC workaround for aggregates)
+/// @name Free-standing get() overloads for ADL (MSVC aggregate workaround).
+/// @{
 
 template<std::size_t I>
 auto& get(io_result<>& r) noexcept
@@ -282,6 +306,8 @@ auto&& get(io_result<T1, T2, T3>&& r) noexcept
 {
     return std::move(r).template get<I>();
 }
+
+/// @}
 
 #endif // _MSC_VER
 

@@ -46,7 +46,15 @@ using slice_type = std::conditional_t<
 
 //------------------------------------------------
 
-/** A wrapper enabling a buffer sequence to be consumed
+/** A view of a sub-range of a buffer sequence.
+
+    This class wraps a buffer sequence and presents a
+    contiguous byte sub-range by adjusting the first and
+    last buffers. The prefix and suffix can be removed or
+    kept using the free functions @ref keep_prefix,
+    @ref remove_prefix, etc.
+
+    @see keep_prefix, remove_prefix, prefix, sans_prefix
 */
 template<ConstBufferSequence BufferSequence>
 class slice_of<BufferSequence>
@@ -118,6 +126,7 @@ public:
 
         const_iterator() = default;
 
+        /// Test for equality.
         bool
         operator==(
             const_iterator const& other) const noexcept
@@ -130,6 +139,7 @@ public:
                 n_      == other.n_;
         }
 
+        /// Test for inequality.
         bool
         operator!=(
             const_iterator const& other) const noexcept
@@ -137,6 +147,7 @@ public:
             return !(*this == other);
         }
 
+        /// Return the current buffer, adjusted for prefix/suffix.
         reference
         operator*() const noexcept
         {
@@ -156,6 +167,7 @@ public:
             return value_type(p, n);
         }
 
+        /// Advance to the next element.
         const_iterator&
         operator++() noexcept
         {
@@ -165,6 +177,7 @@ public:
             return *this;
         }
 
+        /// Advance to the next element (postfix).
         const_iterator
         operator++(int) noexcept
         {
@@ -173,6 +186,7 @@ public:
             return temp;
         }
 
+        /// Move to the previous element.
         const_iterator&
         operator--() noexcept
         {
@@ -182,6 +196,7 @@ public:
             return *this;
         }
 
+        /// Move to the previous element (postfix).
         const_iterator
         operator--(int) noexcept
         {
@@ -232,6 +247,7 @@ public:
             end_iter_impl(), prefix_, suffix_, len_, len_);
     }
 
+    /// Slice customization point for this type.
     friend
     void
     tag_invoke(
