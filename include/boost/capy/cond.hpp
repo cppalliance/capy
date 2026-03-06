@@ -72,8 +72,6 @@ enum class cond
     not_found = 4
 };
 
-//-----------------------------------------------
-
 } // capy
 } // boost
 
@@ -86,8 +84,6 @@ struct is_error_condition_enum<
 
 namespace boost {
 namespace capy {
-
-//-----------------------------------------------
 
 namespace detail {
 
@@ -108,8 +104,6 @@ struct BOOST_CAPY_SYMBOL_VISIBLE
 BOOST_CAPY_DECL extern cond_cat_type cond_cat;
 
 } // detail
-
-//-----------------------------------------------
 
 /// Create an error_condition from a cond value.
 inline

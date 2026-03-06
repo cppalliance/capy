@@ -263,8 +263,6 @@ private:
 
 } // detail
 
-//------------------------------------------------
-
 /** Adapt a capy buffer sequence for use with Asio.
 
     Returns a wrapper whose iterators dereference to

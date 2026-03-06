@@ -235,8 +235,6 @@ protected:
     }
 };
 
-//----------------------------------------------------------
-
 struct any_read_stream::vtable
 {
     // ordered by call frequency for cache line coherence
@@ -295,8 +293,6 @@ struct any_read_stream::vtable_for_impl
         &do_destroy_impl
     };
 };
-
-//----------------------------------------------------------
 
 inline
 any_read_stream::~any_read_stream()
@@ -374,8 +370,6 @@ any_read_stream::any_read_stream(S* s)
     // Preallocate the awaitable storage
     cached_awaitable_ = ::operator new(vt_->awaitable_size);
 }
-
-//----------------------------------------------------------
 
 template<MutableBufferSequence MB>
 auto

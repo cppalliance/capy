@@ -276,8 +276,6 @@ private:
     read_(std::span<mutable_buffer const> buffers);
 };
 
-//----------------------------------------------------------
-
 // ordered by call sequence for cache line coherence
 struct any_read_source::awaitable_ops
 {
@@ -389,8 +387,6 @@ struct any_read_source::vtable_for_impl
     };
 };
 
-//----------------------------------------------------------
-
 inline
 any_read_source::~any_read_source()
 {
@@ -467,8 +463,6 @@ any_read_source::any_read_source(S* s)
     // Preallocate the awaitable storage
     cached_awaitable_ = ::operator new(vt_->awaitable_size);
 }
-
-//----------------------------------------------------------
 
 template<MutableBufferSequence MB>
 auto

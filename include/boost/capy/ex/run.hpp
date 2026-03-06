@@ -59,12 +59,6 @@
 
 namespace boost::capy::detail {
 
-//----------------------------------------------------------
-//
-// dispatch_trampoline - cross-executor dispatch
-//
-//----------------------------------------------------------
-
 /** Minimal coroutine that dispatches through the caller's executor.
 
     Sits between the inner task and the parent when executors
@@ -147,12 +141,6 @@ inline dispatch_trampoline make_dispatch_trampoline()
 {
     co_return;
 }
-
-//----------------------------------------------------------
-//
-// run_awaitable_ex - with executor (executor switch)
-//
-//----------------------------------------------------------
 
 /** Awaitable that binds an IoRunnable to a specific executor.
 
@@ -265,12 +253,6 @@ struct [[nodiscard]] run_awaitable_ex
     run_awaitable_ex& operator=(run_awaitable_ex&&) = default;
 };
 
-//----------------------------------------------------------
-//
-// run_awaitable - no executor (inherits caller's executor)
-//
-//----------------------------------------------------------
-
 /** Awaitable that runs a task with optional stop_token override.
 
     Does NOT store an executor - the task inherits the caller's executor
@@ -363,12 +345,6 @@ struct [[nodiscard]] run_awaitable
     run_awaitable(run_awaitable&&) = default;
     run_awaitable& operator=(run_awaitable&&) = default;
 };
-
-//----------------------------------------------------------
-//
-// run_wrapper_ex - with executor
-//
-//----------------------------------------------------------
 
 /** Wrapper returned by run(ex, ...) that accepts a task for execution.
 
@@ -505,12 +481,6 @@ public:
     }
 };
 
-//----------------------------------------------------------
-//
-// run_wrapper - no executor (inherits caller's executor)
-//
-//----------------------------------------------------------
-
 /** Wrapper returned by run(st) or run(alloc) that accepts a task.
 
     @tparam InheritStopToken If true, inherit caller's stop token.
@@ -629,12 +599,6 @@ public:
 
 namespace boost::capy {
 
-//----------------------------------------------------------
-//
-// run() overloads - with executor
-//
-//----------------------------------------------------------
-
 /** Bind a task to execute on a specific executor.
 
     Returns a wrapper that accepts a task and produces an awaitable.
@@ -735,12 +699,6 @@ run(Ex ex, std::stop_token st, Alloc alloc)
     return detail::run_wrapper_ex<Ex, false, Alloc>{
         std::move(ex), std::move(st), std::move(alloc)};
 }
-
-//----------------------------------------------------------
-//
-// run() overloads - no executor (inherits caller's)
-//
-//----------------------------------------------------------
 
 /** Run a task with a custom stop token.
 

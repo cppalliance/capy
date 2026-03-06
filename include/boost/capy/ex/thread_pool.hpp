@@ -95,8 +95,6 @@ public:
     get_executor() const noexcept;
 };
 
-//------------------------------------------------------------------------------
-
 /** An executor that submits work to a thread_pool.
 
     Executors are lightweight handles that can be copied and stored.

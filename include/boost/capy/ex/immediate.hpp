@@ -121,8 +121,6 @@ struct immediate
     }
 };
 
-//----------------------------------------------------------
-
 /** Create an immediate awaitable for a successful io_result.
 
     This helper creates an @ref immediate wrapping an @ref io_result
@@ -197,8 +195,6 @@ ready(T1 t1, T2 t2, T3 t3)
 {
     return {{{}, std::move(t1), std::move(t2), std::move(t3)}};
 }
-
-//----------------------------------------------------------
 
 /** Create an immediate awaitable for a failed io_result.
 

@@ -236,8 +236,6 @@ protected:
     }
 };
 
-//----------------------------------------------------------
-
 struct any_write_stream::vtable
 {
     // ordered by call frequency for cache line coherence
@@ -296,8 +294,6 @@ struct any_write_stream::vtable_for_impl
         &do_destroy_impl
     };
 };
-
-//----------------------------------------------------------
 
 inline
 any_write_stream::~any_write_stream()
@@ -375,8 +371,6 @@ any_write_stream::any_write_stream(S* s)
     // Preallocate the awaitable storage
     cached_awaitable_ = ::operator new(vt_->awaitable_size);
 }
-
-//----------------------------------------------------------
 
 template<ConstBufferSequence CB>
 auto

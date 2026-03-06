@@ -182,9 +182,7 @@ make_buffer(
         N * sizeof(T) < max_size ? N * sizeof(T) : max_size);
 }
 
-//------------------------------------------------
 // std::array
-//------------------------------------------------
 
 /** Return a buffer from a std::array.
 */
@@ -244,9 +242,7 @@ make_buffer(
             ? data.size() * sizeof(T) : max_size);
 }
 
-//------------------------------------------------
 // std::vector
-//------------------------------------------------
 
 /** Return a buffer from a std::vector.
 */
@@ -308,9 +304,7 @@ make_buffer(
             ? data.size() * sizeof(T) : max_size);
 }
 
-//------------------------------------------------
 // std::basic_string
-//------------------------------------------------
 
 /** Return a buffer from a std::basic_string.
 */
@@ -368,9 +362,7 @@ make_buffer(
             ? data.size() * sizeof(CharT) : max_size);
 }
 
-//------------------------------------------------
 // std::basic_string_view
-//------------------------------------------------
 
 /** Return a buffer from a std::basic_string_view.
 */
@@ -400,9 +392,7 @@ make_buffer(
             ? data.size() * sizeof(CharT) : max_size);
 }
 
-//------------------------------------------------
 // std::span
-//------------------------------------------------
 
 /** Return a buffer from a mutable std::span.
 */
@@ -458,9 +448,7 @@ make_buffer(
         data.size() < max_size ? data.size() : max_size);
 }
 
-//------------------------------------------------
 // Contiguous ranges
-//------------------------------------------------
 
 namespace detail {
 

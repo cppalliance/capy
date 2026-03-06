@@ -46,8 +46,6 @@ enum class error
     not_found
 };
 
-//-----------------------------------------------
-
 } // capy
 } // boost
 
@@ -60,8 +58,6 @@ struct is_error_code_enum<
 
 namespace boost {
 namespace capy {
-
-//-----------------------------------------------
 
 namespace detail {
  
@@ -79,8 +75,6 @@ struct BOOST_CAPY_SYMBOL_VISIBLE
 BOOST_CAPY_DECL extern error_cat_type error_cat;
 
 } // detail
-
-//-----------------------------------------------
 
 /// Create an error_code from an error value.
 inline

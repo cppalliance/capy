@@ -325,8 +325,6 @@ private:
     write_eof_buffers_(std::span<const_buffer const> buffers);
 };
 
-//----------------------------------------------------------
-
 struct any_write_sink::write_awaitable_ops
 {
     bool (*await_ready)(void*);
@@ -521,8 +519,6 @@ struct any_write_sink::vtable_for_impl
     };
 };
 
-//----------------------------------------------------------
-
 inline
 any_write_sink::~any_write_sink()
 {
@@ -604,8 +600,6 @@ any_write_sink::any_write_sink(S* s)
     // Preallocate the awaitable storage (sized for max of write/eof)
     cached_awaitable_ = ::operator new(vt_->awaitable_size);
 }
-
-//----------------------------------------------------------
 
 inline auto
 any_write_sink::write_some_(
