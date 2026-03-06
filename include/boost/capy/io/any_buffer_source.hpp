@@ -333,8 +333,6 @@ private:
     read_(std::span<mutable_buffer const> buffers);
 };
 
-//----------------------------------------------------------
-
 /** Type-erased ops for awaitables yielding `io_result<std::span<const_buffer>>`. */
 struct any_buffer_source::awaitable_ops
 {
@@ -421,9 +419,6 @@ struct any_buffer_source::vtable_for_impl
         return &ops;
     }
 
-    //------------------------------------------------------
-    // ReadSource forwarding (only instantiated when ReadSource<S>)
-
     static read_awaitable_ops const*
     construct_read_some_awaitable_impl(
         void* source,
@@ -484,8 +479,6 @@ struct any_buffer_source::vtable_for_impl
         return &ops;
     }
 
-    //------------------------------------------------------
-
     static consteval std::size_t
     compute_max_size() noexcept
     {
@@ -544,8 +537,6 @@ struct any_buffer_source::vtable_for_impl
 
     static constexpr vtable value = make_vtable();
 };
-
-//----------------------------------------------------------
 
 inline
 any_buffer_source::~any_buffer_source()
@@ -615,8 +606,6 @@ any_buffer_source::any_buffer_source(S* s)
     cached_awaitable_ = ::operator new(vt_->awaitable_size);
 }
 
-//----------------------------------------------------------
-
 inline void
 any_buffer_source::consume(std::size_t n) noexcept
 {
@@ -664,9 +653,6 @@ any_buffer_source::pull(std::span<const_buffer> dest)
     };
     return awaitable{this, dest};
 }
-
-//----------------------------------------------------------
-// Private helpers for native ReadSource forwarding
 
 inline auto
 any_buffer_source::read_some_(
@@ -768,9 +754,6 @@ any_buffer_source::read_(
     return awaitable{this, buffers};
 }
 
-//----------------------------------------------------------
-// Public ReadSource methods
-
 template<MutableBufferSequence MB>
 io_task<std::size_t>
 any_buffer_source::read_some(MB buffers)
@@ -841,8 +824,6 @@ any_buffer_source::read(MB buffers)
 
     co_return {{}, total};
 }
-
-//----------------------------------------------------------
 
 static_assert(BufferSource<any_buffer_source>);
 static_assert(ReadSource<any_buffer_source>);

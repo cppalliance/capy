@@ -19,8 +19,6 @@
 namespace boost {
 namespace capy {
 
-//----------------------------------------------------------
-
 /** Provides serialized coroutine execution for any executor type.
 
     A strand wraps an inner executor and ensures that coroutines

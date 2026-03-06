@@ -385,8 +385,6 @@ private:
     }
 };
 
-//------------------------------------------------
-
 /** Alias for buffer_array holding const_buffer.
 
     @tparam N Maximum number of buffers.

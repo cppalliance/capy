@@ -400,8 +400,6 @@ private:
     write_eof_buffers_(std::span<const_buffer const> buffers);
 };
 
-//----------------------------------------------------------
-
 /** Type-erased ops for awaitables yielding `io_result<>`. */
 struct any_buffer_sink::awaitable_ops
 {
@@ -532,9 +530,6 @@ struct any_buffer_sink::vtable_for_impl
         return &ops;
     }
 
-    //------------------------------------------------------
-    // WriteSink forwarding (only instantiated when WriteSink<S>)
-
     static write_awaitable_ops const*
     construct_write_some_awaitable_impl(
         void* sink,
@@ -653,8 +648,6 @@ struct any_buffer_sink::vtable_for_impl
         return &ops;
     }
 
-    //------------------------------------------------------
-
     static consteval std::size_t
     compute_max_size() noexcept
     {
@@ -735,8 +728,6 @@ struct any_buffer_sink::vtable_for_impl
     static constexpr vtable value = make_vtable();
 };
 
-//----------------------------------------------------------
-
 inline
 any_buffer_sink::~any_buffer_sink()
 {
@@ -804,8 +795,6 @@ any_buffer_sink::any_buffer_sink(S* s)
 {
     cached_awaitable_ = ::operator new(vt_->awaitable_size);
 }
-
-//----------------------------------------------------------
 
 inline std::span<mutable_buffer>
 any_buffer_sink::prepare(std::span<mutable_buffer> dest)
@@ -896,9 +885,6 @@ any_buffer_sink::commit_eof(std::size_t n)
     };
     return awaitable{this, n};
 }
-
-//----------------------------------------------------------
-// Private helpers for native WriteSink forwarding
 
 inline auto
 any_buffer_sink::write_some_(
@@ -1049,9 +1035,6 @@ any_buffer_sink::write_eof_buffers_(
     };
     return awaitable{this, buffers};
 }
-
-//----------------------------------------------------------
-// Public WriteSink methods
 
 template<ConstBufferSequence CB>
 io_task<std::size_t>
@@ -1263,8 +1246,6 @@ any_buffer_sink::write_eof(CB buffers)
 
     co_return {{}, total};
 }
-
-//----------------------------------------------------------
 
 static_assert(BufferSink<any_buffer_sink>);
 static_assert(WriteSink<any_buffer_sink>);

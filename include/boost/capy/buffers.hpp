@@ -32,8 +32,6 @@ namespace capy {
 class const_buffer;
 class mutable_buffer;
 
-//------------------------------------------------
-
 /// Tag type for customizing `buffer_size` via `tag_invoke`.
 struct size_tag {};
 
@@ -53,8 +51,6 @@ enum class slice_how
     /// Keep only the first N bytes.
     keep_prefix
 };
-
-//------------------------------------------------
 
 /** A reference to a contiguous region of writable memory.
 
@@ -145,8 +141,6 @@ private:
         }
     }
 };
-
-//------------------------------------------------
 
 /** A reference to a contiguous region of read-only memory.
 
@@ -245,8 +239,6 @@ private:
     }
 };
 
-//------------------------------------------------
-
 /** Concept for sequences of read-only buffer regions.
 
     A type satisfies `ConstBufferSequence` if it represents one or more
@@ -283,8 +275,6 @@ concept MutableBufferSequence =
     std::is_convertible_v<T, mutable_buffer> || (
         std::ranges::bidirectional_range<T> &&
         std::is_convertible_v<std::ranges::range_value_t<T>, mutable_buffer>);
-
-//------------------------------------------------------------------------------
 
 /** Return an iterator to the first buffer in a sequence.
 
@@ -342,8 +332,6 @@ constexpr struct end_mrdocs_workaround_t
     }
 } end {};
 
-//------------------------------------------------------------------------------
-
 template<ConstBufferSequence CB>
 std::size_t
 tag_invoke(
@@ -356,8 +344,6 @@ tag_invoke(
         n += const_buffer(*it).size();
     return n;
 }
-
-//------------------------------------------------------------------------------
 
 /** Return the total byte count across all buffers in a sequence.
 
@@ -402,8 +388,6 @@ constexpr struct buffer_empty_mrdocs_workaround_t
         return true;
     }
 } buffer_empty {};
-
-//-----------------------------------------------
 
 namespace detail {
 

@@ -51,8 +51,6 @@ using const_buffer_archetype = const_buffer;
 using const_buffer_archetype = const_buffer_archetype_;
 #endif
 
-//------------------------------------------------
-
 /** Archetype for MutableBufferSequence concept checking.
 
     This type satisfies @ref MutableBufferSequence but cannot be

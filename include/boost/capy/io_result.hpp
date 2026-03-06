@@ -228,8 +228,6 @@ struct [[nodiscard]] io_result<T1, T2, T3>
 #endif
 };
 
-//------------------------------------------------------------------------------
-
 #ifdef _MSC_VER
 
 /// @name Free-standing get() overloads for ADL (MSVC aggregate workaround).
@@ -313,8 +311,6 @@ auto&& get(io_result<T1, T2, T3>&& r) noexcept
 
 } // namespace capy
 } // namespace boost
-
-//------------------------------------------------------------------------------
 
 #ifdef _MSC_VER
 

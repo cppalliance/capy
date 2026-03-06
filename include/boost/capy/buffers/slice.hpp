@@ -44,8 +44,6 @@ using slice_type = std::conditional_t<
     detail::has_tag_invoke<T>::value,
     T, slice_of<T>>;
 
-//------------------------------------------------
-
 /** A view of a sub-range of a buffer sequence.
 
     This class wraps a buffer sequence and presents a
@@ -410,8 +408,6 @@ private:
     }
 };
 
-//------------------------------------------------
-
 // in-place modify  return value
 // -----------------------------
 // keep_prefix*     prefix
@@ -482,8 +478,6 @@ constexpr struct remove_suffix_mrdocs_workaround_t
         }
     }
 } const remove_suffix{};
-
-//------------------------------------------------
 
 /** Return a sequence representing the first `n` bytes of a buffer sequence
 */

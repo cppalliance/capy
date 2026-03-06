@@ -290,12 +290,6 @@ make_trampoline(Ex, Handlers, Alloc)
 
 } // namespace detail
 
-//----------------------------------------------------------
-//
-// run_async_wrapper
-//
-//----------------------------------------------------------
-
 /** Wrapper returned by run_async that accepts a task for execution.
 
     This wrapper holds the run_async_trampoline coroutine, executor, stop token,
@@ -406,12 +400,6 @@ public:
         p.wg_.executor().dispatch(task_h).resume();
     }
 };
-
-//----------------------------------------------------------
-//
-// run_async Overloads
-//
-//----------------------------------------------------------
 
 // Executor only (uses default recycling allocator)
 

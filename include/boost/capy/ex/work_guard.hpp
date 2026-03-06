@@ -213,8 +213,6 @@ public:
     }
 };
 
-//------------------------------------------------
-
 /** Create a work guard from an executor.
 
     @par Exception Safety
