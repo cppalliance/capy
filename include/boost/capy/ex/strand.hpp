@@ -113,6 +113,9 @@ public:
     strand(strand const&) = default;
 
     /** Construct by moving.
+
+        @note A moved-from strand is only safe to destroy
+            or reassign.
     */
     strand(strand&&) = default;
 
@@ -121,6 +124,9 @@ public:
     strand& operator=(strand const&) = default;
 
     /** Assign by moving.
+
+        @note A moved-from strand is only safe to destroy
+            or reassign.
     */
     strand& operator=(strand&&) = default;
 

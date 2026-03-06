@@ -26,9 +26,24 @@ namespace capy {
     bytes are appended by `prepare` and made readable by
     `commit`.
 
+    @note The wrapped string must outlive this adapter.
+        Calls to `prepare`, `commit`, and `consume`
+        invalidate previously returned buffer views.
+
     @par Thread Safety
     Distinct objects: Safe.
     Shared objects: Unsafe.
+
+    @par Example
+    @code
+    std::string s;
+    auto buf = dynamic_buffer( s, 4096 );
+    auto mb = buf.prepare( 100 );
+    // fill mb with data...
+    buf.commit( 100 );
+    // buf.data() now has 100 readable bytes
+    buf.consume( 50 );
+    @endcode
 
     @tparam CharT The character type.
     @tparam Traits The character traits type.

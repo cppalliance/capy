@@ -52,6 +52,24 @@ using slice_type = std::conditional_t<
     kept using the free functions @ref keep_prefix,
     @ref remove_prefix, etc.
 
+    The wrapped sequence is stored by value. The underlying
+    buffer memory must remain valid for the lifetime of the
+    slice.
+
+    @par Thread Safety
+    Distinct objects: Safe.
+    Shared objects: Unsafe.
+
+    @par Example
+    @code
+    mutable_buffer buf(data, 100);
+    auto s = prefix(buf, 50);   // first 50 bytes
+    remove_prefix(s, 10);       // now bytes 10..49
+    @endcode
+
+    @tparam BufferSequence The buffer sequence type, stored
+        by value. Must satisfy @ref ConstBufferSequence.
+
     @see keep_prefix, remove_prefix, prefix, sans_prefix
 */
 template<ConstBufferSequence BufferSequence>

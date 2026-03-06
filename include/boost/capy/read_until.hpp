@@ -205,7 +205,12 @@ struct read_until_awaitable
 */
 struct match_delim
 {
-    /// The delimiter string to search for.
+    /** The delimiter string to search for.
+
+        @note The referenced characters must remain valid
+            for the lifetime of this object and any pending
+            read operation.
+    */
     std::string_view delim;
 
     /** Search for the delimiter in `data`.
@@ -213,7 +218,8 @@ struct match_delim
         @param data The data to search.
         @param hint If non-null, receives the overlap hint
             on miss.
-        @return Position past the delimiter, or `npos`.
+        @return `0` if `delim` is empty; otherwise the position
+            just past the delimiter, or `npos` if not found.
     */
     std::size_t
     operator()(

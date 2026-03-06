@@ -32,7 +32,12 @@ namespace capy {
     if (ec) { ... }
     @endcode
 
-    @tparam Args Additional value types beyond the error code.
+    @note Only 0, 1, 2, and 3 payload specializations are
+        provided. Payload members are only meaningful when
+        `ec` does not indicate an error.
+
+    @tparam Args Ordered payload types following the leading
+        `std::error_code`.
 */
 template<class... Args>
 struct io_result
@@ -100,7 +105,7 @@ struct [[nodiscard]] io_result<T1>
     /// The error code from the operation.
     std::error_code ec;
 
-    /// The first result value.
+    /// The first payload value. Unspecified when `ec` is set.
     T1 t1{};
 
 #ifdef _MSC_VER
@@ -132,6 +137,19 @@ struct [[nodiscard]] io_result<T1>
 
 /** Result type for operations returning two values.
 
+    Stores a leading `std::error_code` followed by two
+    operation-specific payload values. Inspect `t1` and `t2`
+    only when `ec` does not indicate an error.
+
+    @par Example
+    @code
+    auto [ec, t1, t2] = co_await some_op();
+    if (ec) { ... }
+    @endcode
+
+    @tparam T1 First payload type following the error code.
+    @tparam T2 Second payload type following T1.
+
     @see io_result
 */
 template<typename T1, typename T2>
@@ -140,10 +158,10 @@ struct [[nodiscard]] io_result<T1, T2>
     /// The error code from the operation.
     std::error_code ec;
 
-    /// The first result value.
+    /// The first payload value. Unspecified when `ec` is set.
     T1 t1{};
 
-    /// The second result value.
+    /// The second payload value. Unspecified when `ec` is set.
     T2 t2{};
 
 #ifdef _MSC_VER
@@ -178,6 +196,20 @@ struct [[nodiscard]] io_result<T1, T2>
 
 /** Result type for operations returning three values.
 
+    Stores a leading `std::error_code` followed by three
+    operation-specific payload values. Inspect `t1`, `t2`,
+    and `t3` only when `ec` does not indicate an error.
+
+    @par Example
+    @code
+    auto [ec, t1, t2, t3] = co_await some_op();
+    if (ec) { ... }
+    @endcode
+
+    @tparam T1 First payload type following the error code.
+    @tparam T2 Second payload type following T1.
+    @tparam T3 Third payload type following T2.
+
     @see io_result
 */
 template<typename T1, typename T2, typename T3>
@@ -186,13 +218,13 @@ struct [[nodiscard]] io_result<T1, T2, T3>
     /// The error code from the operation.
     std::error_code ec;
 
-    /// The first result value.
+    /// The first payload value. Unspecified when `ec` is set.
     T1 t1{};
 
-    /// The second result value.
+    /// The second payload value. Unspecified when `ec` is set.
     T2 t2{};
 
-    /// The third result value.
+    /// The third payload value. Unspecified when `ec` is set.
     T3 t3{};
 
 #ifdef _MSC_VER
@@ -230,8 +262,8 @@ struct [[nodiscard]] io_result<T1, T2, T3>
 
 #ifdef _MSC_VER
 
-/// @name Free-standing get() overloads for ADL (MSVC aggregate workaround).
-/// @{
+// Free-standing get() overloads for ADL (MSVC aggregate workaround).
+/// @cond
 
 template<std::size_t I>
 auto& get(io_result<>& r) noexcept
@@ -305,7 +337,7 @@ auto&& get(io_result<T1, T2, T3>&& r) noexcept
     return std::move(r).template get<I>();
 }
 
-/// @}
+/// @endcond
 
 #endif // _MSC_VER
 

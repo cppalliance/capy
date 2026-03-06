@@ -70,7 +70,14 @@ public:
     /// Construct an empty circular buffer with zero capacity.
     circular_dynamic_buffer() = default;
 
-    /// Construct a copy.
+    /** Construct a copy.
+
+        Copies the adapter state (position and length) but does
+        not deep-copy the backing storage. Both objects alias the
+        same external buffer.
+
+        @note The underlying storage must outlive all copies.
+    */
     circular_dynamic_buffer(
         circular_dynamic_buffer const&) = default;
 
@@ -110,7 +117,14 @@ public:
             detail::throw_invalid_argument();
     }
 
-    /// Assign by copying.
+    /** Assign by copying.
+
+        Copies the adapter state but does not deep-copy the
+        backing storage. Both objects alias the same external
+        buffer afterward.
+
+        @note The underlying storage must outlive all copies.
+    */
     circular_dynamic_buffer& operator=(
         circular_dynamic_buffer const&) = default;
 
