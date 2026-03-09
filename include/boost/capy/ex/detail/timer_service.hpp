@@ -29,7 +29,7 @@ namespace detail {
 
 /* Shared timer thread for an execution_context.
 
-   One background std::jthread per execution_context. All timeouts
+   One background std::thread per execution_context. All timeouts
    scheduled through this context share the same thread, which sleeps
    on a condition variable until the next deadline.
 
@@ -113,7 +113,7 @@ private:
     timer_id next_id_ = 0;
     timer_id executing_id_ = 0;
     bool stopped_ = false;
-    std::jthread thread_;
+    std::thread thread_;
 #ifdef _MSC_VER
 # pragma warning(pop)
 #endif
