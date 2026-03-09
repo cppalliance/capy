@@ -129,6 +129,7 @@ def generate_sanitizer_variant(compiler_family, spec):
         "asan": True,
         "build-type": "RelWithDebInfo",
         "shared": True,
+        "build-cmake": False,
     }
 
     # MSVC and Clang-CL only support ASAN, not UBSAN
@@ -142,14 +143,15 @@ def generate_sanitizer_variant(compiler_family, spec):
 
 
 def generate_tsan_variant(compiler_family, spec):
-    """Generate TSan variant for the latest compiler in a family (Linux only)."""
+    """Generate TSan variant for the latest compiler in a family."""
     overrides = {
         "tsan": True,
         "build-type": "RelWithDebInfo",
         "shared": True,
+        "build-cmake": False,
     }
 
-    if compiler_family == "clang":
+    if compiler_family in ("clang", "apple-clang"):
         overrides["shared"] = False
 
     return make_entry(compiler_family, spec, **overrides)
@@ -202,7 +204,7 @@ def main():
                 matrix.append(generate_sanitizer_variant(family, spec))
 
                 # TSan is incompatible with ASan; separate variant for Linux
-                if family in ("gcc", "clang"):
+                if family in ("gcc", "clang", "apple-clang"):
                     matrix.append(generate_tsan_variant(family, spec))
 
                 if family == "gcc":
