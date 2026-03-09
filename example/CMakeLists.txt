@@ -8,7 +8,6 @@
 # Official repository: https://github.com/cppalliance/capy
 #
 
-add_subdirectory(allocation)
 add_subdirectory(async-mutex)
 add_subdirectory(buffer-composition)
 add_subdirectory(custom-dynamic-buffer)
