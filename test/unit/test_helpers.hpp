@@ -18,7 +18,7 @@
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/task.hpp>
 
-#include <optional>
+#include <atomic>
 #include <stop_token>
 
 #include "test_suite.hpp"
@@ -256,7 +256,31 @@ struct stop_only_awaitable
     stop_only_awaitable() noexcept = default;
     stop_only_awaitable(stop_only_awaitable && ) noexcept {}
 
-    std::optional<stop_resume_callback> stop_cb;
+    // Placement-new storage instead of std::optional to avoid a
+    // data race on optional's _M_engaged flag.  The stop_callback
+    // constructor synchronises with request_stop() through the
+    // stop-state's atomics, but optional::emplace writes _M_engaged
+    // *after* the constructor returns — outside that sync window.
+    // When ~jthread calls request_stop() before join(), the
+    // destructor's _M_reset (on the requesting thread) races with
+    // emplace's _M_engaged write (on the registering thread).
+#ifdef _MSC_VER
+# pragma warning(push)
+# pragma warning(disable: 4324) // padded due to alignas
+#endif
+    alignas(stop_resume_callback)
+        unsigned char stop_cb_buf_[sizeof(stop_resume_callback)]{};
+#ifdef _MSC_VER
+# pragma warning(pop)
+#endif
+    std::atomic<bool> active_{false};
+
+    ~stop_only_awaitable()
+    {
+        if (active_.load(std::memory_order_acquire))
+            reinterpret_cast<stop_resume_callback*>(
+                stop_cb_buf_)->~stop_resume_callback();
+    }
 
     bool await_ready() {return false;}
 
@@ -264,7 +288,9 @@ struct stop_only_awaitable
     {
         if (env->stop_token.stop_requested())
             return h;
-        stop_cb.emplace(env->stop_token, env->post_resume(h));
+        ::new(stop_cb_buf_) stop_resume_callback(
+            env->stop_token, env->post_resume(h));
+        active_.store(true, std::memory_order_release);
         return std::noop_coroutine();
     }
     void await_resume() {}

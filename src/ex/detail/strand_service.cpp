@@ -26,13 +26,17 @@ namespace detail {
     Each strand_impl provides serialization for coroutines
     dispatched through strands that share it.
 */
+// Sentinel stored in cached_frame_ after shutdown to prevent
+// in-flight invokers from repopulating a freed cache slot.
+inline void* const kCacheClosed = reinterpret_cast<void*>(1);
+
 struct strand_impl
 {
     std::mutex mutex_;
     strand_queue pending_;
     bool locked_ = false;
     std::atomic<std::thread::id> dispatch_thread_{};
-    void* cached_frame_ = nullptr;
+    std::atomic<void*> cached_frame_{nullptr};
 };
 
 //----------------------------------------------------------
@@ -52,9 +56,10 @@ struct strand_invoker
             std::size_t padded = (n + A - 1) & ~(A - 1);
             std::size_t total = padded + sizeof(strand_impl*);
 
-            void* p = impl.cached_frame_
-                ? std::exchange(impl.cached_frame_, nullptr)
-                : ::operator new(total);
+            void* p = impl.cached_frame_.exchange(
+                nullptr, std::memory_order_acquire);
+            if(!p || p == kCacheClosed)
+                p = ::operator new(total);
 
             // Trailer lets delete recover impl
             *reinterpret_cast<strand_impl**>(
@@ -70,9 +75,9 @@ struct strand_invoker
             auto* impl = *reinterpret_cast<strand_impl**>(
                 static_cast<char*>(p) + padded);
 
-            if (!impl->cached_frame_)
-                impl->cached_frame_ = p;
-            else
+            void* expected = nullptr;
+            if(!impl->cached_frame_.compare_exchange_strong(
+                expected, p, std::memory_order_release))
                 ::operator delete(p);
         }
 
@@ -126,11 +131,10 @@ protected:
             std::lock_guard<std::mutex> lock(impls_[i].mutex_);
             impls_[i].locked_ = true;
 
-            if(impls_[i].cached_frame_)
-            {
-                ::operator delete(impls_[i].cached_frame_);
-                impls_[i].cached_frame_ = nullptr;
-            }
+            void* p = impls_[i].cached_frame_.exchange(
+                kCacheClosed, std::memory_order_acquire);
+            if(p)
+                ::operator delete(p);
         }
     }
 
