@@ -26,7 +26,7 @@
        - MUST be passed by lvalue reference to preserve state
        - Passing as rvalue loses bookkeeping on coroutine suspend
 
-    2. WRAPPER ADAPTERS (e.g., string_buffers)
+    2. WRAPPER ADAPTERS (e.g., string_dynamic_buffer)
        - Reference external storage (std::string, std::vector)
        - Safe to pass as rvalues; external object retains data
        - Define `using is_dynamic_buffer_adapter = void;`
@@ -67,7 +67,7 @@ namespace capy {
     - **Value types** (e.g., `flat_dynamic_buffer`) store bookkeeping
       internally. Passing as rvalue to a coroutine loses state on suspend.
 
-    - **Wrapper adapters** (e.g., `string_buffers`) reference external
+    - **Wrapper adapters** (e.g., `string_dynamic_buffer`) reference external
       storage and are safe as rvalues since the external object persists.
 
     @par Conforming Signatures
@@ -125,7 +125,7 @@ concept DynamicBuffer =
 
     The distinction exists because some buffer types (like `flat_dynamic_buffer`)
     store bookkeeping internally that would be lost if passed by rvalue,
-    while adapters (like `string_buffers`) update external storage directly.
+    while adapters (like `string_dynamic_buffer`) update external storage directly.
 
     @par Conforming Signatures
     For coroutine functions, use a forwarding reference:
@@ -141,17 +141,17 @@ concept DynamicBuffer =
     // WRONG: lvalue ref rejects valid rvalue adapters
     void bad1( DynamicBufferParam auto& buffers );
     bad1( fb );                    // OK
-    bad1( string_buffers( s ) );   // compile error, but should work
+    bad1( string_dynamic_buffer( &s ) );   // compile error, but should work
 
     // WRONG: const ref deduces non-reference, rejects non-adapters
     void bad2( DynamicBufferParam auto const& buffers );
     bad2( fb );                    // compile error, but should work
-    bad2( string_buffers( s ) );   // OK (adapter only)
+    bad2( string_dynamic_buffer( &s ) );   // OK (adapter only)
 
     // CORRECT: forwarding ref enables proper checking
     void good( DynamicBufferParam auto&& buffers );
     good( fb );                    // OK: lvalue
-    good( string_buffers( s ) );   // OK: adapter rvalue
+    good( string_dynamic_buffer( &s ) );   // OK: adapter rvalue
     good( flat_dynamic_buffer( storage ) );  // compile error: non-adapter rvalue
     @endcode
 

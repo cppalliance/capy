@@ -41,9 +41,9 @@ namespace capy {
     @li The awaitable should monitor `env->stop_token` and
         complete early with a cancellation error if stop is
         requested
-    @li The awaitable may use `env->allocator` for internal
+    @li The awaitable may use `env->frame_allocator` for internal
         allocations
-    @li The awaitable must propagate `env->allocator` faithfully
+    @li The awaitable must propagate `env->frame_allocator` faithfully
         to any child coroutines it creates
     @li The awaitable may return `std::noop_coroutine()` to
         indicate the operation was started asynchronously

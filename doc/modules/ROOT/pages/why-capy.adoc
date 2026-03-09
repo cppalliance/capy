@@ -408,9 +408,9 @@ No other solution like this exists. Not Asio. Not `std::execution`. Not anywhere
 
 == The Road Ahead
 
-For twenty five years, Boost.Asio has stood alone. It defined what portable asynchronous I/O looks like in {cpp}. No serious competitor offering its depth of offerings has appeared. It defined the promising Networking TS. Asio earned its place through years of production use, careful evolution, and relentless focus on real problems faced by real developers.
+For twenty-five years, Boost.Asio has stood alone. It defined what portable asynchronous I/O looks like in {cpp}. No serious competitor offering its depth of offerings has appeared. It defined the promising Networking TS. Asio earned its place through years of production use, careful evolution, and relentless focus on real problems faced by real developers.
 
-Capy builds on Asio's foundation—the buffer sequences, the executor model, the hard-won lessons about what works. But where Asio must preserve compatibility with over decades of existing code, Capy is free to commit fully to the future. {cpp}20 coroutines are not an afterthought here. They are the foundation.
+Capy builds on Asio's foundation—the buffer sequences, the executor model, the hard-won lessons about what works. But where Asio must preserve compatibility with decades of existing code, Capy is free to commit fully to the future. {cpp}20 coroutines are not an afterthought here. They are the foundation.
 
 The result is something new. Stream concepts designed for coroutines alone. Type-erasure at the level where it matters most. A simple execution model discovered through use-case-first design. Clean separation between execution and platform. A taxonomy of awaitables that invites extension rather than mandating a single concrete type.
 

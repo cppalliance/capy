@@ -39,7 +39,7 @@ namespace capy {
     3. **Environment access** — Coroutine code can retrieve the environment
        via `co_await this_coro::environment`, or individual fields via
        `co_await this_coro::executor`, `co_await this_coro::stop_token`,
-       and `co_await this_coro::allocator`.
+       and `co_await this_coro::frame_allocator`.
 
     @tparam Derived The derived promise type (CRTP pattern).
 
@@ -65,12 +65,12 @@ namespace capy {
     my_task example()
     {
         auto env = co_await this_coro::environment;
-        // Access env->executor, env->stop_token, env->allocator
+        // Access env->executor, env->stop_token, env->frame_allocator
 
         // Or use fine-grained accessors:
         auto ex = co_await this_coro::executor;
         auto token = co_await this_coro::stop_token;
-        auto* alloc = co_await this_coro::allocator;
+        auto* alloc = co_await this_coro::frame_allocator;
     }
     @endcode
 
@@ -125,7 +125,7 @@ namespace capy {
     thread of execution, so no synchronization is required.
 
     @see this_coro::environment, this_coro::executor,
-         this_coro::stop_token, this_coro::allocator
+         this_coro::stop_token, this_coro::frame_allocator
     @see io_env
     @see IoAwaitable
 */
