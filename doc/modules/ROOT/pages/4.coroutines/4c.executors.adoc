@@ -9,7 +9,7 @@ This section explains executors and execution contexts—the mechanisms that con
 
 == The Executor Concept
 
-An *executor* is an object that can schedule work for execution. In Capy, executors must provide two methods:
+An *executor* is an object that can schedule work for execution. In Capy, executors must provide three methods:
 
 [source,cpp]
 ----
