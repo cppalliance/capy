@@ -117,10 +117,10 @@ task<std::size_t> read_all(Stream& stream, Buffers buffers)
     while (buffer_size(remaining) > 0)
     {
         auto [ec, n] = co_await stream.read_some(remaining);
-        if (ec.failed())
-            break;
         remaining.consume(n);
         total += n;
+        if (ec)
+            break;
     }
     
     co_return total;

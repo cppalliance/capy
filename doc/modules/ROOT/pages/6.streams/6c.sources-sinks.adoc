@@ -29,7 +29,7 @@ template<MutableBufferSequence Buffers>
 IoAwaitable auto read(Buffers buffers);
 ----
 
-Returns an awaitable yielding `(error_code, std::size_t)`:
+Await-returns `(error_code, std::size_t)`:
 
 * On success: `!ec`, and `n == buffer_size(buffers)` (buffer completely filled)
 * On EOF: `ec == cond::eof`, and `n` is bytes read before EOF (partial read)

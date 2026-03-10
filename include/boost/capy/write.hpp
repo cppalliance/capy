@@ -40,7 +40,7 @@ namespace capy {
     @param buffers The buffer sequence to write. The caller retains
         ownership and must ensure validity until the operation completes.
 
-    @return An awaitable yielding `(error_code, std::size_t)`.
+    @return An awaitable that await-returns `(error_code, std::size_t)`.
         On success, `n` equals `buffer_size(buffers)`. On error,
         `n` is the number of bytes written before the error. Compare
         error codes to conditions:
@@ -74,10 +74,10 @@ write(
     while(total_written < total_size)
     {
         auto [ec, n] = co_await stream.write_some(consuming);
-        if(ec)
-            co_return {ec, total_written};
         consuming.consume(n);
         total_written += n;
+        if(ec)
+            co_return {ec, total_written};
     }
 
     co_return {{}, total_written};

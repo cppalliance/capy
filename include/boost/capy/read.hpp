@@ -43,7 +43,7 @@ namespace capy {
     @param buffers The buffer sequence to fill. The caller retains
         ownership and must ensure validity until the operation completes.
 
-    @return An awaitable yielding `(error_code, std::size_t)`.
+    @return An awaitable that await-returns `(error_code, std::size_t)`.
         On success, `n` equals `buffer_size(buffers)`. On error,
         `n` is the number of bytes read before the error. Compare
         error codes to conditions:
@@ -80,10 +80,10 @@ read(
     while(total_read < total_size)
     {
         auto [ec, n] = co_await stream.read_some(consuming);
-        if(ec)
-            co_return {ec, total_read};
         consuming.consume(n);
         total_read += n;
+        if(ec)
+            co_return {ec, total_read};
     }
 
     co_return {{}, total_read};
@@ -109,7 +109,7 @@ read(
         valid until the operation completes.
     @param initial_amount Initial bytes to prepare (default 2048).
 
-    @return An awaitable yielding `(error_code, std::size_t)`.
+    @return An awaitable that await-returns `(error_code, std::size_t)`.
         On success (EOF), `ec` is clear and `n` is total bytes read.
         On error, `n` is bytes read before the error. Compare error
         codes to conditions:
@@ -175,7 +175,7 @@ read(
         valid until the operation completes.
     @param initial_amount Initial bytes to prepare (default 2048).
 
-    @return An awaitable yielding `(error_code, std::size_t)`.
+    @return An awaitable that await-returns `(error_code, std::size_t)`.
         On success (EOF), `ec` is clear and `n` is total bytes read.
         On error, `n` is bytes read before the error. Compare error
         codes to conditions:

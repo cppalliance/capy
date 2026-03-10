@@ -24,14 +24,16 @@ concept ReadSource =
 
 === `read_some(buffers)` -- Partial Read (inherited from `ReadStream`)
 
-Reads one or more bytes from the source into the buffer sequence. Returns `(error_code, std::size_t)` where `n` is the number of bytes read. May return fewer bytes than the buffer can hold.
+Attempts to read up to `buffer_size(buffers)` bytes from the source into the buffer sequence. Returns `(error_code, std::size_t)` where `n` is the number of bytes read. May return fewer bytes than the buffer can hold.
 
 ==== Semantics
 
-- On success: `!ec`, `n >= 1` and `n \<= buffer_size(buffers)`.
-- On EOF: `ec == cond::eof`, `n == 0`.
-- On error: `ec`, `n == 0`.
-- If `buffer_empty(buffers)`: completes immediately, `!ec`, `n == 0`.
+If `buffer_size(buffers) > 0`:
+
+- If `!ec`, then `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were read into the buffer sequence.
+- If `ec`, then `n >= 0 && n \<= buffer_size(buffers)`. `n` is the number of bytes read before the I/O condition arose.
+
+If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the source.
 
 Once `read_some` returns an error (including EOF), the caller must not call `read_some` again. The stream is done. Not all implementations can reproduce a prior error on subsequent calls, so the behavior after an error is undefined.
 
@@ -298,17 +300,19 @@ task<> relay(Src& src, Sink& dest)
     {
         auto [ec, n] = co_await src.read_some(
             mutable_buffer(buf));
+
+        auto [wec, nw] = co_await dest.write(
+            const_buffer(buf, n));
+
+        if(wec)
+            co_return;
+
         if(ec == cond::eof)
         {
             auto [wec] = co_await dest.write_eof();
             co_return;
         }
         if(ec)
-            co_return;
-
-        auto [wec, nw] = co_await dest.write(
-            const_buffer(buf, n));
-        if(wec)
             co_return;
     }
 }
@@ -346,16 +350,16 @@ Examples of types that satisfy `ReadSource`:
 - **File source**: `read_some` is a single `read()` syscall. `read` loops until the buffer is filled or EOF.
 - **Memory source**: `read_some` returns available bytes. `read` fills the buffer from the memory region.
 
-== Why `read_some` Returns No Data on EOF
+== Errors May Accompany Data
 
-The `read_some` contract (inherited from `ReadStream`) requires that when `ec == cond::eof`, `n` is always 0. Data and EOF are delivered in separate calls. See xref:8.design/8a.ReadStream.adoc#_design_foundations_why_errors_exclude_data[ReadStream: Why Errors Exclude Data] for the full rationale. The key points:
+The `read_some` contract (inherited from `ReadStream`) permits `n > 0` when `ec` is set, including on EOF. The implementation reports exactly what happened: the bytes that arrived and the condition that stopped the transfer. See xref:8.design/8c.ReadStream.adoc#_design_foundations_why_errors_may_accompany_data[ReadStream: Why Errors May Accompany Data] for the full rationale. The key points:
 
-- The clean trichotomy (success/EOF/error, where data implies success) eliminates an entire class of bugs where callers accidentally drop the final bytes of a stream.
-- Write-side atomicity (`write_eof(buffers)`) serves correctness for protocol framing. Read-side piggybacking would be a minor optimization with significant API cost.
-- Every concrete source type naturally separates its last data delivery from its EOF indication.
-- POSIX `read()` follows the same model.
+- The `(error_code, size_t)` return type can carry both values simultaneously, transcending the POSIX limitation of reporting only one per call.
+- Layered streams (TLS, compression) may encounter an error after a partial transfer. Allowing `(ec, n)` with `n > 0` avoids forcing deferred-error bookkeeping or data loss.
+- The canonical advance-then-check loop handles both cases correctly with no additional call-site cost.
+- Concrete types that naturally produce `(ec, 0)` on error (POSIX socket wrappers) continue to do so.
 
-This contract carries over to `ReadSource` unchanged. The `read` member function (complete read) _does_ allow `n > 0` on EOF, because it is a composed loop that accumulates data across multiple internal `read_some` calls. When the underlying stream signals EOF mid-accumulation, discarding the bytes already gathered would be wrong. The caller needs `n` to know how much valid data landed in the buffer.
+This contract carries over to `ReadSource` unchanged. Both `read_some` and `read` allow `n > 0` on error or EOF, reporting the bytes that were transferred before the condition arose.
 
 == Summary
 
@@ -370,7 +374,7 @@ This contract carries over to `ReadSource` unchanged. The `read` member function
 | Function | Contract | Use Case
 
 | `ReadSource::read_some`
-| Returns one or more bytes. May fill less than the buffer.
+| Attempts to read up to `buffer_size(buffers)` bytes. May fill less than the buffer.
 | Relays, low-latency forwarding, incremental processing.
 
 | `ReadSource::read`

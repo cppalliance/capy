@@ -191,12 +191,13 @@ public:
 
     /** Initiate a partial write operation.
 
-        Writes one or more bytes from the provided buffer sequence.
-        May consume less than the full sequence.
+        Attempt to write up to `buffer_size( buffers )` bytes from
+        the provided buffer sequence. May consume less than the
+        full sequence.
 
         @param buffers The buffer sequence containing data to write.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @par Immediate Completion
         The operation completes immediately without suspending
@@ -226,7 +227,7 @@ public:
 
         @param buffers The buffer sequence containing data to write.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @par Immediate Completion
         The operation completes immediately without suspending
@@ -256,7 +257,7 @@ public:
 
         @param buffers The buffer sequence containing data to write.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @par Immediate Completion
         The operation completes immediately without suspending
@@ -279,7 +280,7 @@ public:
         The operation completes when the sink is finalized, or
         an error occurs.
 
-        @return An awaitable yielding `(error_code)`.
+        @return An awaitable that await-returns `(error_code)`.
 
         @par Immediate Completion
         The operation completes immediately without suspending

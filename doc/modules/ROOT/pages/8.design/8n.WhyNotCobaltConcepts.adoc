@@ -298,17 +298,22 @@ Capy's `WriteStream` concept includes semantic requirements in the concept's doc
 
 // Semantic Requirements:
 //
-// If buffer_size( buffers ) > 0, the operation writes one or more
-// bytes of data to the stream from the buffer sequence:
+// Attempts to write up to buffer_size( buffers ) bytes from
+// the buffer sequence to the stream.
 //
-//   On success: !ec, and n is the number of bytes written.
-//   On error: ec, and n is 0.
+// If buffer_size( buffers ) > 0:
 //
-// If buffer_empty( buffers ) is true, the operation completes
-// immediately. !ec, and n is 0.
+//   If !ec, then n >= 1 && n <= buffer_size( buffers ).
+//     n bytes were written from the buffer sequence.
+//   If ec, then n >= 0 && n <= buffer_size( buffers ).
+//     n is the number of bytes written before the I/O
+//     condition arose.
 //
-// Buffers in the sequence are written completely before proceeding
-// to the next buffer.
+// If buffer_empty( buffers ) is true, n is 0. The empty
+// buffer is not itself a cause for error, but ec may reflect
+// the state of the stream.
+//
+// Buffers in the sequence are consumed in order.
 //
 // Buffer Lifetime:
 //
@@ -336,7 +341,7 @@ The concept also includes a coroutine-specific warning about buffer lifetime:
 |
 
 | Error reporting semantics
-| Documented (`ec` + `n == 0`)
+| Documented (`ec` + `n >= 0 && n \<= buffer_size`)
 |
 
 | Partial write guarantees
@@ -395,7 +400,7 @@ ____
 
 The documentation describes the mechanical role of each function pointer but does not specify what the `implementation` function must do with the buffer, what completion semantics to follow, how to report errors through the `completion_handler`, or under what conditions `try_implementation` should complete synchronously. Implementors can look to the existing I/O wrappers (e.g., `stream_socket`) as reference implementations.
 
-In Capy, the implementation contract lives in the `WriteStream` concept definition. A type satisfies `WriteStream` by providing a `write_some` member function template that returns an `IoAwaitable` decomposing to `(error_code, std::size_t)`. The semantic requirements are part of the concept. There is no separate operation type to construct and no function pointers to provide.
+In Capy, the implementation contract lives in the `WriteStream` concept definition. A type satisfies `WriteStream` by providing a `write_some` member function template that await-returns `(error_code, std::size_t)`. The semantic requirements are part of the concept. There is no separate operation type to construct and no function pointers to provide.
 
 [cols="1,1,1"]
 |===

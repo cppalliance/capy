@@ -28,13 +28,18 @@ template<MutableBufferSequence Buffers>
 IoAwaitable auto read_some(Buffers buffers);
 ----
 
-Returns an awaitable yielding `(error_code, std::size_t)`:
+Attempts to read up to `buffer_size(buffers)` bytes from the stream into the buffer sequence. Await-returns `(error_code, std::size_t)`:
 
-* On success: `!ec`, and `n >= 1` bytes were read
-* On error: `ec`, and `n == 0`
-* On EOF: `ec == cond::eof`, and `n == 0`
+If `buffer_size(buffers) > 0`:
 
-If `buffer_empty(buffers)` is true, completes immediately with `n == 0` and no error.
+* If `!ec`, then `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were read into the buffer sequence.
+* If `ec`, then `n >= 0 && n \<= buffer_size(buffers)`. `n` is the number of bytes read before the I/O condition arose.
+
+If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
+
+I/O conditions from the underlying system are reported via `ec`. Failures in the library itself (such as allocation failure) are reported via exceptions.
+
+*Throws:* `std::bad_alloc` if coroutine frame allocation fails.
 
 === Partial Transfer
 
@@ -45,7 +50,7 @@ If `buffer_empty(buffers)` is true, completes immediately with `n == 0` and no e
 char buf[1024];
 auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
 // n might be 1, might be 500, might be 1024
-// The only guarantee: if !ec && n > 0
+// if !ec, then n >= 1
 ----
 
 This matches underlying OS behavior—reads return when *some* data is available.
@@ -58,18 +63,15 @@ template<ReadStream Stream>
 task<> dump_stream(Stream& stream)
 {
     char buf[256];
-    
+
     for (;;)
     {
         auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
-        
-        if (ec == cond::eof)
-            break;  // End of stream
-        
-        if (ec)
-            throw std::system_error(ec);
-        
+
         std::cout.write(buf, n);
+
+        if (ec)
+            break;
     }
 }
 ----
@@ -95,12 +97,18 @@ template<ConstBufferSequence Buffers>
 IoAwaitable auto write_some(Buffers buffers);
 ----
 
-Returns an awaitable yielding `(error_code, std::size_t)`:
+Attempts to write up to `buffer_size(buffers)` bytes from the buffer sequence to the stream. Await-returns `(error_code, std::size_t)`:
 
-* On success: `!ec`, and `n >= 1` bytes were written
-* On error: `ec`, and `n == 0`
+If `buffer_size(buffers) > 0`:
 
-If `buffer_empty(buffers)` is true, completes immediately with `n == 0` and no error.
+* If `!ec`, then `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were written from the buffer sequence.
+* If `ec`, then `n >= 0 && n \<= buffer_size(buffers)`. `n` is the number of bytes written before the I/O condition arose.
+
+If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
+
+I/O conditions from the underlying system are reported via `ec`. Failures in the library itself (such as allocation failure) are reported via exceptions.
+
+*Throws:* `std::bad_alloc` if coroutine frame allocation fails.
 
 === Partial Transfer
 
@@ -191,20 +199,15 @@ task<> handle_connection(any_stream& stream)
     
     for (;;)
     {
-        // Read some data
         auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
-        
-        if (ec == cond::eof)
-            co_return;  // Client closed connection
-        
-        if (ec)
-            throw std::system_error(ec);
-        
-        // Echo it back
+
         auto [wec, wn] = co_await write(stream, const_buffer(buf, n));
-        
+
+        if (ec)
+            break;
+
         if (wec)
-            throw std::system_error(wec);
+            break;
     }
 }
 ----

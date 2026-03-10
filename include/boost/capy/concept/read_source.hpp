@@ -27,8 +27,8 @@ namespace capy {
 
     A type satisfies `ReadSource` if it satisfies @ref ReadStream
     and additionally provides a `read` member function that accepts
-    any @ref MutableBufferSequence and is an @ref IoAwaitable whose
-    return value decomposes to `(error_code, std::size_t)`.
+    any @ref MutableBufferSequence and await-returns
+    `(error_code, std::size_t)`.
 
     `ReadSource` refines `ReadStream`. Every `ReadSource` is a
     `ReadStream`. Algorithms constrained on `ReadStream` accept both
@@ -47,8 +47,8 @@ namespace capy {
 
     @par Semantic Requirements
 
-    The inherited `read_some` operation reads one or more bytes
-    (partial read). See @ref ReadStream.
+    The inherited `read_some` operation attempts to read up to
+    `buffer_size( buffers )` bytes (partial read). See @ref ReadStream.
 
     The `read` operation fills the entire buffer sequence. On return,
     exactly one of the following is true:
@@ -68,6 +68,15 @@ namespace capy {
 
     When the buffer sequence contains multiple buffers, each buffer is
     filled completely before proceeding to the next.
+
+    @par Error Reporting
+    I/O conditions arising from the underlying I/O system (EOF,
+    connection reset, broken pipe, etc.) are reported via the
+    `error_code` component of the return value. Failures in the
+    library wrapper itself (such as memory allocation failure)
+    are reported via exceptions.
+
+    @throws std::bad_alloc If coroutine frame allocation fails.
 
     @par Buffer Lifetime
 

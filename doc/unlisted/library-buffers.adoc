@@ -35,14 +35,14 @@ task<void> echo(ReadStream auto& in, WriteStream auto& out)
     for (;;)
     {
         auto [ec1, n] = co_await in.read_some(make_buffer(buffer));
-        if (ec1 == cond::eof)
-            break;
-        if (ec1.failed())
-            co_return;
 
         auto [ec2, _] = co_await write(out, make_buffer(buffer, n));
-        if (ec2.failed())
-            co_return;
+
+        if (ec1)
+            break;
+
+        if (ec2)
+            break;
     }
 }
 ----

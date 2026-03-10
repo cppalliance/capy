@@ -48,15 +48,18 @@ concept WriteSink =
 
 === `write_some(buffers)` -- Partial Write
 
-Writes one or more bytes from the buffer sequence. May consume less than the full sequence. Returns `(error_code, std::size_t)` where `n` is the number of bytes written.
+Attempts to write up to `buffer_size(buffers)` bytes from the buffer sequence to the stream. May consume less than the full sequence. Returns `(error_code, std::size_t)` where `n` is the number of bytes written.
 
 This is the low-level primitive inherited from `WriteStream`. It is appropriate when the caller manages its own consumption loop or when forwarding data incrementally without needing a complete-write guarantee.
 
 ==== Semantics
 
-- On success: `!ec`, `n >= 1`.
-- On error: `ec`, `n == 0`.
-- If `buffer_empty(buffers)`: completes immediately, `!ec`, `n == 0`.
+If `buffer_size(buffers) > 0`:
+
+- If `!ec`, then `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were written from the buffer sequence.
+- If `ec`, then `n >= 0 && n \<= buffer_size(buffers)`. `n` is the number of bytes written before the I/O condition arose.
+
+If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
 
 ==== When to Use
 
@@ -177,16 +180,8 @@ task<> relay(Source& src, Sink& dest)
     {
         auto [ec, n] = co_await src.read_some(
             mutable_buffer(buf));
-        if(ec == cond::eof)
-        {
-            // Signal EOF to the destination
-            auto [ec2] = co_await dest.write_eof();
-            co_return;
-        }
-        if(ec)
-            co_return;
 
-        // Interior: partial write is acceptable
+        // Forward whatever arrived before checking the error
         std::size_t written = 0;
         while(written < n)
         {
@@ -196,11 +191,19 @@ task<> relay(Source& src, Sink& dest)
                 co_return;
             written += n2;
         }
+
+        if(ec == cond::eof)
+        {
+            auto [ec2] = co_await dest.write_eof();
+            co_return;
+        }
+        if(ec)
+            co_return;
     }
 }
 ----
 
-The interior loop uses `write_some` because the relay does not need complete-write guarantees for intermediate data. When `read_some` returns EOF, `n` is 0 (per the `ReadStream` contract), so the relay signals EOF via `write_eof()` with no data.
+The interior loop uses `write_some` because the relay does not need complete-write guarantees for intermediate data. When `read_some` returns EOF, any partial bytes are forwarded first, then the relay signals EOF via `write_eof()` with no data.
 
 === Writing Complete Messages
 
@@ -352,7 +355,7 @@ A three-level hierarchy was considered, with an intermediate concept (`WriteClos
 | Function | Contract | Use Case
 
 | `write_some(buffers)`
-| Writes one or more bytes. May consume less than the full sequence.
+| Attempts to write up to `buffer_size(buffers)` bytes. May consume less than the full sequence.
 | Relay interiors, backpressure, implementing composed algorithms.
 
 | `write(buffers)`

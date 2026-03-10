@@ -150,7 +150,7 @@ public:
 
         @param n The number of bytes to commit.
 
-        @return An awaitable yielding `(error_code)`.
+        @return An awaitable that await-returns `(error_code)`.
 
         @see fuse
     */
@@ -207,7 +207,7 @@ public:
 
         @param n The number of bytes to commit.
 
-        @return An awaitable yielding `(error_code)`.
+        @return An awaitable that await-returns `(error_code)`.
 
         @see fuse
     */

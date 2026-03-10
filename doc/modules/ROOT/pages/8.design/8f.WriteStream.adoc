@@ -23,15 +23,24 @@ A `WriteStream` provides a single operation:
 
 === `write_some(buffers)` -- Partial Write
 
-Writes one or more bytes from the buffer sequence. Returns `(error_code, std::size_t)` where `n` is the number of bytes written.
+Attempts to write up to `buffer_size(buffers)` bytes from the buffer sequence to the stream. Returns `(error_code, std::size_t)` where `n` is the number of bytes written.
 
 ==== Semantics
 
-- On success: `!ec`, `n >= 1` and `n \<= buffer_size(buffers)`.
-- On error: `ec`, `n == 0`.
-- If `buffer_empty(buffers)`: completes immediately, `!ec`, `n == 0`.
+If `buffer_size(buffers) > 0`:
+
+- If `!ec`, then `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were written from the buffer sequence.
+- If `ec`, then `n >= 0 && n \<= buffer_size(buffers)`. `n` is the number of bytes written before the I/O condition arose.
+
+If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
 
 The caller must not assume that all bytes are consumed. `write_some` may write fewer bytes than offered. This is the defining property of a partial-write primitive.
+
+==== Error Reporting
+
+I/O conditions arising from the underlying I/O system (connection reset, broken pipe, etc.) are reported via the `error_code` component of the return value. Failures in the library wrapper itself (such as memory allocation failure) are reported via exceptions.
+
+*Throws:* `std::bad_alloc` if coroutine frame allocation fails.
 
 ==== Buffer Lifetime
 

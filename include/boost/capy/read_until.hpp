@@ -262,7 +262,7 @@ struct match_delim
     @param initial_amount Initial bytes to read per iteration (default
         2048). Grows by 1.5x when filled.
 
-    @return An awaitable yielding `(error_code, std::size_t)`.
+    @return An awaitable that await-returns `(error_code, std::size_t)`.
         On success, `n` is the position returned by the match condition
         (bytes up to and including the matched delimiter). Compare error
         codes to conditions:
@@ -340,7 +340,7 @@ read_until(
     @param initial_amount Initial bytes to read per iteration (default
         2048). Grows by 1.5x when filled.
 
-    @return An awaitable yielding `(error_code, std::size_t)`.
+    @return An awaitable that await-returns `(error_code, std::size_t)`.
         On success, `n` is bytes up to and including the delimiter.
         Compare error codes to conditions:
         @li `cond::eof` - EOF before delimiter; `n` is buffer size

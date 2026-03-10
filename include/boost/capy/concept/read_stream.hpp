@@ -26,7 +26,7 @@ namespace capy {
 
     A type satisfies `ReadStream` if it provides a `read_some`
     member function template that accepts any @ref MutableBufferSequence
-    and is an @ref IoAwaitable yielding `(error_code,std::size_t)`.
+    and await-returns `(error_code, std::size_t)`.
 
     @par Syntactic Requirements
     @li `T` must provide a `read_some` member function template
@@ -36,24 +36,31 @@ namespace capy {
         `(error_code,std::size_t)` via structured bindings
 
     @par Semantic Requirements
-    If `buffer_size( buffers ) > 0`, the operation reads one or more
-    bytes from the stream into the buffer sequence:
+    Attempts to read up to `buffer_size( buffers )` bytes from
+    the stream into the buffer sequence.
 
-    @li On success: `!ec`, and `n` is the number of bytes
-        read (at least 1).
-    @li On error: `ec`, and `n` is 0.
-    @li On end-of-file: `ec == cond::eof`, and `n` is 0.
+    If `buffer_size( buffers ) > 0`:
 
-    If `buffer_empty( buffers )` is `true`, the operation completes
-    immediately. `!ec`, and `n` is 0.
+    @li If `!ec`, then `n >= 1 && n <= buffer_size( buffers )`.
+        `n` bytes were read into the buffer sequence.
+    @li If `ec`, then `n >= 0 && n <= buffer_size( buffers )`.
+        `n` is the number of bytes read before the I/O
+        condition arose.
 
-    Buffers in the sequence are filled completely before proceeding
-    to the next buffer.
+    If `buffer_empty( buffers )` is `true`, `n` is 0. The empty
+    buffer is not itself a cause for error, but `ec` may reflect
+    the state of the stream.
 
-    @par Design Rationale
-    The requirement that `n` is 0 whenever `ec` is set follows
-    from a consistency constraint with the empty-buffer rule.
-    See the ReadStream design document for a complete derivation.
+    Buffers in the sequence are filled in order.
+
+    @par Error Reporting
+    I/O conditions arising from the underlying I/O system (EOF,
+    connection reset, broken pipe, etc.) are reported via the
+    `error_code` component of the return value. Failures in the
+    library wrapper itself (such as memory allocation failure)
+    are reported via exceptions.
+
+    @throws std::bad_alloc If coroutine frame allocation fails.
 
     @par Buffer Lifetime
     The caller must ensure that the memory referenced by `buffers`
@@ -87,9 +94,9 @@ namespace capy {
         {
             auto [ec, n] = co_await s.read_some(
                 mutable_buffer( buf + total, size - total ) );
+            total += n;
             if( ec )
                 co_return;
-            total += n;
         }
     }
     @endcode

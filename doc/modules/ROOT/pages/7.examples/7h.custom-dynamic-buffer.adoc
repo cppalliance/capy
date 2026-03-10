@@ -155,17 +155,15 @@ capy::task<> read_into_tracked_buffer(capy::test::stream& stream, tracked_buffer
         auto space = buffer.prepare(256);  // mutable_buffer
         // ec: std::error_code, n: std::size_t
         auto [ec, n] = co_await stream.read_some(space);
-        
-        if (ec == capy::cond::eof)
-            break;
-        
-        if (ec)
-            throw std::system_error(ec);
-        
+
         buffer.commit(n);
-        
-        std::cout << "Read " << n << " bytes, buffer size now: " 
-                  << buffer.size() << "\n";
+
+        if (n > 0)
+            std::cout << "Read " << n << " bytes, buffer size now: "
+                      << buffer.size() << "\n";
+
+        if (ec)
+            break;
     }
 }
 

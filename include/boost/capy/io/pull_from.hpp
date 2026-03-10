@@ -81,13 +81,11 @@ pull_from(Src& source, Sink& sink)
         auto [ec, n] = co_await source.read(
             std::span<mutable_buffer const>(dst_bufs));
 
-        if(n > 0)
-        {
-            auto [commit_ec] = co_await sink.commit(n);
-            if(commit_ec)
-                co_return {commit_ec, total};
-            total += n;
-        }
+        auto [commit_ec] = co_await sink.commit(n);
+        total += n;
+
+        if(commit_ec)
+            co_return {commit_ec, total};
 
         if(ec == cond::eof)
         {
@@ -165,16 +163,12 @@ pull_from(Src& source, Sink& sink)
         auto [ec, n] = co_await source.read_some(
             std::span<mutable_buffer const>(dst_bufs));
 
-        // Commit any data that was read
-        if(n > 0)
-        {
-            auto [commit_ec] = co_await sink.commit(n);
-            if(commit_ec)
-                co_return {commit_ec, total};
-            total += n;
-        }
+        auto [commit_ec] = co_await sink.commit(n);
+        total += n;
 
-        // Check for EOF condition
+        if(commit_ec)
+            co_return {commit_ec, total};
+
         if(ec == cond::eof)
         {
             auto [eof_ec] = co_await sink.commit_eof(0);

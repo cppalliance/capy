@@ -23,22 +23,17 @@ capy::task<> echo_session(capy::any_stream& stream)
 
     for (;;)
     {
-        // Read some data
         // ec: std::error_code, n: std::size_t
         auto [ec, n] = co_await stream.read_some(capy::make_buffer(buffer));
 
-        if (ec == capy::cond::eof)
-            co_return;  // Client closed connection
-
-        if (ec)
-            throw std::system_error(ec);
-
-        // Echo it back
         // wec: std::error_code, wn: std::size_t
         auto [wec, wn] = co_await capy::write(stream, capy::const_buffer(buffer, n));
 
+        if (ec)
+            co_return;
+
         if (wec)
-            throw std::system_error(wec);
+            co_return;
     }
 }
 

@@ -182,7 +182,7 @@ task<void> receive_message(ReadStream auto& stream)
 {
     char header[4];
     auto [ec, n] = co_await read(stream, mutable_buffer(header, 4));
-    if (ec.failed())
+    if (ec)
         co_return;
 
     // Parse length from header
@@ -191,7 +191,7 @@ task<void> receive_message(ReadStream auto& stream)
     // Read the body
     std::vector<char> body(len);
     auto [ec2, n2] = co_await read(stream, make_buffer(body));
-    if (ec2.failed())
+    if (ec2)
         co_return;
 
     process_message(body);
@@ -209,7 +209,7 @@ task<void> send_response(WriteStream auto& stream, std::string_view body)
         + std::to_string(body.size()) + "\r\n\r\n";
 
     auto [ec1, n1] = co_await write(stream, make_buffer(headers));
-    if (ec1.failed())
+    if (ec1)
         co_return;
 
     // Write body
@@ -232,11 +232,11 @@ task<void> echo_loop(ReadStream auto& in, WriteStream auto& out)
         auto [ec1, n] = co_await in.read_some(make_buffer(buffer));
         if (ec1 == cond::eof)
             break;
-        if (ec1.failed())
+        if (ec1)
             co_return;
 
         auto [ec2, written] = co_await write(out, make_buffer(buffer, n));
-        if (ec2.failed())
+        if (ec2)
             co_return;
     }
 }

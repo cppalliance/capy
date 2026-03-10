@@ -192,7 +192,7 @@ public:
             value to ensure the sequence lives in the coroutine frame
             across suspension points.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @par Immediate Completion
         The operation completes immediately without suspending

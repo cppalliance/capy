@@ -257,7 +257,7 @@ public:
 
         If the event is already set, completes immediately.
 
-        @return An awaitable yielding `(error_code)`.
+        @return An awaitable that await-returns `(error_code)`.
     */
     wait_awaiter wait() noexcept
     {
