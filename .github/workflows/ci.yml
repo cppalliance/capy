@@ -92,6 +92,7 @@ jobs:
           apt-get: >-
             ${{ matrix.install }}
             build-essential
+            curl
 
       - name: Setup MSYS2 (MinGW Clang)
         if: matrix.compiler == 'mingw'
@@ -120,9 +121,6 @@ jobs:
         shell: bash
         run: |
           set -xe
-          pwd
-          ls
-          ls -lah boost-source
 
           # Identify boost module being tested
           module=${GITHUB_REPOSITORY#*/}
@@ -134,6 +132,18 @@ jobs:
 
           # Remove module from boost-source
           rm -r "boost-source/libs/$module" || true
+
+          # Disable sparse checkout for superproject CMake builds
+          # (needed so CMakeLists.txt files in sibling boost libraries are available)
+          if [ "${{ matrix.superproject-cmake }}" = "true" ]; then
+            cd boost-source
+            if git sparse-checkout list > /dev/null 2>&1; then
+                git sparse-checkout disable
+                git fetch origin --no-tags
+                git checkout
+            fi
+            cd ..
+          fi
 
           # Copy cached boost-source to an isolated boost-root
           cp -rL boost-source boost-root
@@ -149,7 +159,7 @@ jobs:
 
       - name: Boost B2 Workflow
         uses: alandefreitas/cpp-actions/b2-workflow@v1.9.0
-        if: ${{ !matrix.coverage && !matrix.time-trace }}
+        if: ${{ !matrix.coverage && !matrix.time-trace && !matrix.superproject-cmake && !matrix.clang-tidy }}
         env:
           ASAN_OPTIONS: ${{ ((matrix.compiler == 'apple-clang' || matrix.compiler == 'clang' || matrix.compiler == 'mingw') && 'detect_invalid_pointer_pairs=0:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1') || 'detect_invalid_pointer_pairs=2:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1' }}
           TSAN_OPTIONS: ${{ matrix.tsan && 'halt_on_error=1:second_deadlock_stack=1' || '' }}
@@ -170,12 +180,12 @@ jobs:
           stop-on-error: true
           extra-args: ${{ (matrix.valgrind && 'testing.launcher=valgrind' || '' )}}
 
-      - name: CMake Workflow
+      - name: Boost CMake Workflow
         uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
-        if: ${{ matrix.coverage || matrix.time-trace || matrix.build-cmake || matrix.is-earliest }}
+        if: ${{ matrix.superproject-cmake }}
         with:
-          source-dir: capy-root
-          build-dir: __build__
+          source-dir: boost-root
+          build-dir: __build_cmake_test__
           generator: ${{ matrix.generator }}
           generator-toolset: ${{ matrix.generator-toolset }}
           build-type: ${{ matrix.build-type }}
@@ -188,41 +198,164 @@ jobs:
           cxxflags: ${{ matrix.cxxflags }}
           shared: ${{ matrix.shared }}
           cmake-version: '>=3.20'
-          install: false
+          install: true
+          install-prefix: ${{ steps.patch.outputs.workspace_root }}/.local
           package: false
           package-artifact: false
+          ref-source-dir: boost-root/libs/capy
+          extra-args: -D BOOST_INCLUDE_LIBRARIES=capy
+
+      - name: Set Path (Windows Shared)
+        if: ${{ matrix.windows && matrix.shared }}
+        run: echo "$GITHUB_WORKSPACE/.local/bin" >> $GITHUB_PATH
+
+      - name: Set LD_LIBRARY_PATH (Linux Shared)
+        if: ${{ matrix.linux && matrix.shared }}
+        run: |
+          echo "LD_LIBRARY_PATH=$GITHUB_WORKSPACE/.local/lib:$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
+
+      - name: Find Package Integration Test
+        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
+        if: ${{ matrix.superproject-cmake }}
+        with:
+          source-dir: boost-root/libs/${{ steps.patch.outputs.module }}/test/cmake_test
+          build-dir: __build_cmake_install_test__
+          generator: ${{ matrix.generator }}
+          generator-toolset: ${{ matrix.generator-toolset }}
+          build-type: ${{ matrix.build-type }}
+          cxxstd: ${{ matrix.latest-cxxstd }}
+          cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
+          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
+          install: false
+          cmake-version: '>=3.20'
+          extra-args: |
+            -D BOOST_CI_INSTALL_TEST=ON
+            -D CMAKE_PREFIX_PATH=${{ steps.patch.outputs.workspace_root }}/.local
+          ref-source-dir: boost-root/libs/capy
+
+      - name: Subdirectory Integration Test
+        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
+        if: ${{ matrix.superproject-cmake }}
+        with:
+          source-dir: boost-root/libs/${{ steps.patch.outputs.module }}/test/cmake_test
+          build-dir: __build_cmake_subdir_test__
+          generator: ${{ matrix.generator }}
+          generator-toolset: ${{ matrix.generator-toolset }}
+          build-type: ${{ matrix.build-type }}
+          cxxstd: ${{ matrix.latest-cxxstd }}
+          cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
+          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
+          install: false
+          cmake-version: '>=3.20'
+          extra-args: -D BOOST_CI_INSTALL_TEST=OFF
+          ref-source-dir: boost-root/libs/capy/test/cmake_test
+
+      - name: Root Project CMake Workflow
+        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
+        if: ${{ matrix.build-cmake || matrix.coverage }}
+        with:
+          source-dir: capy-root
+          build-dir: __build__
+          generator: ${{ matrix.generator }}
+          generator-toolset: ${{ matrix.generator-toolset }}
+          build-type: ${{ matrix.build-type }}
+          run-tests: true
+          cxxstd: ${{ matrix.cmake-cxxstd || matrix.cxxstd }}
+          cc:  ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
+          ccflags: ${{ matrix.ccflags }}
+          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
+          cxxflags: ${{ matrix.cxxflags }}
+          shared: ${{ matrix.shared }}
+          cmake-version: '>=3.20'
+          install: false
           ref-source-dir: capy-root
+
+      - name: Configure for clang-tidy
+        uses: alandefreitas/cpp-actions/cmake-workflow@v1.9.0
+        if: ${{ matrix.clang-tidy }}
+        with:
+          source-dir: capy-root
+          build-dir: __build__
+          generator: ${{ matrix.generator }}
+          cxxstd: ${{ matrix.latest-cxxstd }}
+          cc: ${{ steps.setup-cpp.outputs.cc || matrix.cc }}
+          cxx: ${{ steps.setup-cpp.outputs.cxx || matrix.cxx }}
+          cmake-version: '>=3.20'
+          extra-args: -D CMAKE_EXPORT_COMPILE_COMMANDS=ON
+          build: false
+          run-tests: false
+          install: false
+          ref-source-dir: capy-root
+
+      - name: Run clang-tidy
+        if: ${{ matrix.clang-tidy }}
+        run: |
+          python3 -c "import json; [print(e['file']) for e in json.load(open('capy-root/__build__/compile_commands.json'))]" \
+            | grep '/capy-root/\(src\|include\)/' \
+            | xargs -r clang-tidy-${{ matrix.version }} \
+                -p capy-root/__build__ \
+                --warnings-as-errors='*'
 
       - name: FlameGraph
         uses: alandefreitas/cpp-actions/flamegraph@v1.9.0
         if: matrix.time-trace
         with:
           source-dir: capy-root
-          build-dir: __build__
+          build-dir: capy-root/__build__
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Codecov
-        if: ${{ matrix.coverage }}
+      - name: Generate Coverage Report
+        if: ${{ matrix.coverage && matrix.linux }}
         run: |
           set -x
-
-          # Generate report
           gcov_tool="gcov"
-          if command -v "gcov-${{ steps.setup-cpp.outputs.version-major }}.${{ steps.setup-cpp.outputs.version-minor }}" &> /dev/null; then
-              gcov_tool="gcov"
-          elif command -v "gcov-${{ steps.setup-cpp.outputs.version-major }}" &> /dev/null; then
+          if command -v "gcov-${{ steps.setup-cpp.outputs.version-major }}" &> /dev/null; then
               gcov_tool="gcov-${{ steps.setup-cpp.outputs.version-major }}"
           fi
-          lcov -c -q -o "capy-root/__build__/coverage.info" -d "capy-root/__build__" --include "$(pwd)/capy-root/*" --gcov-tool "$gcov_tool"
+          lcov -c -q -o "capy-root/__build__/coverage.info" -d "capy-root/__build__" \
+            --include "$(pwd)/capy-root/include/*" \
+            --include "$(pwd)/capy-root/src/*" \
+            --gcov-tool "$gcov_tool"
 
-          # Upload to codecov
-          bash <(curl -s https://codecov.io/bash) -f "capy-root/__build__/coverage.info"
+      - name: Generate Coverage Report (macOS)
+        if: ${{ matrix.coverage && matrix.macos }}
+        run: |
+          pip3 install --break-system-packages gcovr
+          gcovr \
+            --gcov-executable "xcrun llvm-cov gcov" \
+            -r capy-root \
+            --filter ".*/capy-root/include/.*" \
+            --filter ".*/capy-root/src/.*" \
+            --lcov -o "capy-root/__build__/coverage.info"
 
-          # Summary
+      - name: Generate Coverage Report (Windows)
+        if: ${{ matrix.coverage && matrix.windows }}
+        run: |
+          pip3 install gcovr
+          gcovr \
+            -r capy-root \
+            --filter ".*/capy-root/include/.*" \
+            --filter ".*/capy-root/src/.*" \
+            --lcov -o "capy-root/__build__/coverage.info"
+
+      - name: Upload to Codecov
+        if: ${{ matrix.coverage }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: capy-root/__build__/coverage.info
+          flags: ${{ matrix.coverage-flag }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+          verbose: true
+          disable_search: true
+          plugins: noop
+
+      - name: Coverage Summary
+        if: ${{ matrix.coverage }}
+        run: |
           echo "# Coverage" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "[![codecov](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA/graphs/sunburst.svg)](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Commit: [![codecov](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA/graph/badge.svg)](https://codecov.io/github/$GITHUB_REPOSITORY/commit/$GITHUB_SHA)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -279,31 +412,41 @@ jobs:
           echo -E "boost_root=$boost_root" >> $GITHUB_OUTPUT
           cp -r "$workspace_root"/capy-root "libs/$module"
 
-      - name: Test on FreeBSD
-        uses: cross-platform-actions/action@v0.32.0
+      - name: Boost B2 Workflow (FreeBSD)
+        uses: vmactions/freebsd-vm@v1
         with:
-          operating_system: freebsd
-          version: '${{ matrix.version }}'
+          release: ${{ matrix.version }}
+          usesh: true
           run: |
             set -xe
-
-            sudo pkg install -y bash git python3 cmake curl
-
-            # B2 build
             cd boost-root
             ./bootstrap.sh
-            ./b2 headers
-            ./b2 libs/capy/test toolset=clang cxxstd=20 variant=debug,release
+            ./b2 libs/${{ steps.patch.outputs.module }}/test \
+              toolset=clang \
+              cxxstd=20 \
+              variant=release \
+              link=shared \
+              rtti=on \
+              -q \
+              -j$(sysctl -n hw.ncpu)
 
-            # CMake build
-            if [ "${{ matrix.build-cmake }}" = "true" ]; then
-              cd ..
-              mkdir __build__
-              cd __build__
-              cmake ../capy-root -DCMAKE_CXX_STANDARD=20 -DBUILD_TESTING=ON
-              cmake --build .
-              ctest --output-on-failure
-            fi
+      - name: Boost CMake Workflow (FreeBSD)
+        if: ${{ matrix.build-cmake }}
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: ${{ matrix.version }}
+          usesh: true
+          prepare: |
+            pkg install -y cmake
+          run: |
+            set -xe
+            cd boost-root
+            cmake -S . -B build \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBOOST_INCLUDE_LIBRARIES="${{ steps.patch.outputs.module }}" \
+              -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+            cmake --build build --target tests -j$(sysctl -n hw.ncpu)
+            ctest --test-dir build --output-on-failure
 
   changelog:
     defaults:
