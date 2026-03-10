@@ -139,7 +139,7 @@ public:
 
         @param dest Span of const_buffer to fill.
 
-        @return An awaitable yielding `(error_code,std::span<const_buffer>)`.
+        @return An awaitable that await-returns `(error_code,std::span<const_buffer>)`.
 
         @see consume, fuse
     */

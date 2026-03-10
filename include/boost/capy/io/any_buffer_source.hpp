@@ -233,7 +233,7 @@ public:
 
         @param dest Span of const_buffer to fill.
 
-        @return An awaitable yielding `(error_code,std::span<const_buffer>)`.
+        @return An awaitable that await-returns `(error_code,std::span<const_buffer>)`.
             On success with data, a non-empty span of filled buffers.
             On EOF, `ec == cond::eof` and span is empty.
 
@@ -247,8 +247,8 @@ public:
 
     /** Read some data into a mutable buffer sequence.
 
-        Reads one or more bytes into the caller's buffers. May fill
-        less than the full sequence.
+        Attempt to read up to `buffer_size( buffers )` bytes into
+        the caller's buffers. May fill less than the full sequence.
 
         When the wrapped type provides native @ref ReadSource support,
         the operation forwards directly. Otherwise it is synthesized
@@ -256,7 +256,7 @@ public:
 
         @param buffers The buffer sequence to fill.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @par Preconditions
         The wrapper must contain a valid source (`has_value() == true`).
@@ -278,7 +278,7 @@ public:
 
         @param buffers The buffer sequence to fill.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
             On success, `n == buffer_size(buffers)`.
             On EOF, `ec == error::eof` and `n` is bytes transferred.
 
@@ -333,7 +333,7 @@ private:
     read_(std::span<mutable_buffer const> buffers);
 };
 
-/** Type-erased ops for awaitables yielding `io_result<std::span<const_buffer>>`. */
+/** Type-erased ops for awaitables that await-return `io_result<std::span<const_buffer>>`. */
 struct any_buffer_source::awaitable_ops
 {
     bool (*await_ready)(void*);
@@ -342,7 +342,7 @@ struct any_buffer_source::awaitable_ops
     void (*destroy)(void*) noexcept;
 };
 
-/** Type-erased ops for awaitables yielding `io_result<std::size_t>`. */
+/** Type-erased ops for awaitables that await-return `io_result<std::size_t>`. */
 struct any_buffer_source::read_awaitable_ops
 {
     bool (*await_ready)(void*);

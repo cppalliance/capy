@@ -250,7 +250,7 @@ public:
 
         @param n The number of bytes to commit.
 
-        @return An awaitable yielding `(error_code)`.
+        @return An awaitable that await-returns `(error_code)`.
 
         @par Preconditions
         The wrapper must contain a valid sink (`has_value() == true`).
@@ -266,7 +266,7 @@ public:
 
         @param n The number of bytes to commit.
 
-        @return An awaitable yielding `(error_code)`.
+        @return An awaitable that await-returns `(error_code)`.
 
         @par Preconditions
         The wrapper must contain a valid sink (`has_value() == true`).
@@ -276,8 +276,9 @@ public:
 
     /** Write some data from a buffer sequence.
 
-        Writes one or more bytes from the buffer sequence to the
-        underlying sink. May consume less than the full sequence.
+        Attempt to write up to `buffer_size( buffers )` bytes from
+        the buffer sequence to the underlying sink. May consume less
+        than the full sequence.
 
         When the wrapped type provides native @ref WriteSink support,
         the operation forwards directly. Otherwise it is synthesized
@@ -285,7 +286,7 @@ public:
 
         @param buffers The buffer sequence to write.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @par Preconditions
         The wrapper must contain a valid sink (`has_value() == true`).
@@ -305,7 +306,7 @@ public:
 
         @param buffers The buffer sequence to write.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @par Preconditions
         The wrapper must contain a valid sink (`has_value() == true`).
@@ -326,7 +327,7 @@ public:
 
         @param buffers The buffer sequence to write.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @par Preconditions
         The wrapper must contain a valid sink (`has_value() == true`).
@@ -344,7 +345,7 @@ public:
         the underlying `write_eof()` is called. Otherwise the
         operation is implemented as `commit_eof(0)`.
 
-        @return An awaitable yielding `(error_code)`.
+        @return An awaitable that await-returns `(error_code)`.
 
         @par Preconditions
         The wrapper must contain a valid sink (`has_value() == true`).
@@ -400,7 +401,7 @@ private:
     write_eof_buffers_(std::span<const_buffer const> buffers);
 };
 
-/** Type-erased ops for awaitables yielding `io_result<>`. */
+/** Type-erased ops for awaitables that await-return `io_result<>`. */
 struct any_buffer_sink::awaitable_ops
 {
     bool (*await_ready)(void*);
@@ -409,7 +410,7 @@ struct any_buffer_sink::awaitable_ops
     void (*destroy)(void*) noexcept;
 };
 
-/** Type-erased ops for awaitables yielding `io_result<std::size_t>`. */
+/** Type-erased ops for awaitables that await-return `io_result<std::size_t>`. */
 struct any_buffer_sink::write_awaitable_ops
 {
     bool (*await_ready)(void*);

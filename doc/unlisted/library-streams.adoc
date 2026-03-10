@@ -107,7 +107,7 @@ concept ReadStream = requires(T& stream, MutableBufferSequence auto buffers)
 
 ==== Behavior
 
-`read_some()` reads **at least one byte** (unless EOF or error) but may
+`read_some()` attempts to read up to `buffer_size(buffers)` bytes but may
 read fewer bytes than the buffer can hold:
 
 [source,cpp]
@@ -121,9 +121,12 @@ This matches OS behavior: `recv()` returns whatever data is currently available.
 
 ==== Return Values
 
-* **Success**: `!ec.failed()` is true, `n >= 1`
-* **EOF**: `ec == cond::eof`, `n == 0`
-* **Error**: `ec.failed()` is true, `n == 0`
+If `buffer_size(buffers) > 0`:
+
+* If `!ec`: `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were read.
+* If `ec`: `n >= 0 && n \<= buffer_size(buffers)`. `n` is the number of bytes read before the I/O condition arose.
+
+If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
 
 ==== Example
 
@@ -133,7 +136,7 @@ task<std::string> read_available(ReadStream auto& stream)
 {
     char buffer[4096];
     auto [ec, n] = co_await stream.read_some(make_buffer(buffer));
-    if (ec.failed())
+    if (ec)
         co_return {};
     co_return std::string(buffer, n);
 }
@@ -157,7 +160,7 @@ concept WriteStream = requires(T& stream, ConstBufferSequence auto buffers)
 
 ==== Behavior
 
-`write_some()` writes **at least one byte** (unless error) but may write
+`write_some()` attempts to write up to `buffer_size(buffers)` bytes but may write
 fewer bytes than provided:
 
 [source,cpp]
@@ -172,8 +175,12 @@ kernel buffers are constrained.
 
 ==== Return Values
 
-* **Success**: `!ec.failed()` is true, `n >= 1`
-* **Error**: `ec.failed()` is true, `n == 0`
+If `buffer_size(buffers) > 0`:
+
+* If `!ec`: `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were written.
+* If `ec`: `n >= 0 && n \<= buffer_size(buffers)`. `n` is the number of bytes written before the I/O condition arose.
+
+If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
 
 ==== Example
 
@@ -182,7 +189,7 @@ kernel buffers are constrained.
 task<> write_chunk(WriteStream auto& stream, std::string_view data)
 {
     auto [ec, n] = co_await stream.write_some(make_buffer(data));
-    if (ec.failed())
+    if (ec)
         co_return;
     // Only n bytes were written; caller must handle remainder
 }
@@ -222,9 +229,9 @@ auto [ec, n] = co_await source.read(mutable_buffer(header, 16));
 
 ==== Return Values
 
-* **Success**: `!ec.failed()` is true, `n == buffer_size(buffers)`
+* **Success**: `!ec`, `n == buffer_size(buffers)`
 * **EOF**: `ec == cond::eof`, `n` is bytes read before EOF
-* **Error**: `ec.failed()` is true, `n` is bytes read before error
+* **Error**: `ec`, `n` is bytes read before error
 
 ==== Example
 
@@ -234,7 +241,7 @@ task<std::vector<char>> read_exact(ReadSource auto& source, std::size_t count)
 {
     std::vector<char> result(count);
     auto [ec, n] = co_await source.read(make_buffer(result));
-    if (ec.failed())
+    if (ec)
         co_return {};
     co_return result;
 }
@@ -285,8 +292,8 @@ are permitted.
 
 ==== Return Values
 
-* **Success**: `!ec.failed()` is true, `n == buffer_size(buffers)`
-* **Error**: `ec.failed()` is true, `n` is bytes written before error
+* **Success**: `!ec`, `n == buffer_size(buffers)`
+* **Error**: `ec`, `n` is bytes written before error
 
 Reference: `<boost/capy/concept/write_sink.hpp>`
 
@@ -324,9 +331,9 @@ auto [ec, count] = co_await source.pull(arr, 16);
 
 ==== Return Values
 
-* **Data available**: `!ec.failed()` is true, `count > 0`
-* **Source exhausted**: `!ec.failed()` is true, `count == 0`
-* **Error**: `ec.failed()` is true
+* **Data available**: `!ec`, `count > 0`
+* **Source exhausted**: `!ec`, `count == 0`
+* **Error**: `ec`
 
 ==== Buffer Lifetime
 
@@ -344,7 +351,7 @@ task<> consume_all(BufferSource auto& source)
     for (;;)
     {
         auto [ec, count] = co_await source.pull(arr, 16);
-        if (ec.failed())
+        if (ec)
             co_return;
         if (count == 0)
             break;  // Source exhausted
@@ -418,7 +425,7 @@ task<> produce_data(BufferSink auto& sink, std::string_view data)
         {
             // No space; flush and retry
             auto [ec] = co_await sink.commit(0);
-            if (ec.failed())
+            if (ec)
                 co_return;
             continue;
         }
@@ -434,7 +441,7 @@ task<> produce_data(BufferSink auto& sink, std::string_view data)
         }
 
         auto [ec] = co_await sink.commit(written);
-        if (ec.failed())
+        if (ec)
             co_return;
     }
 
@@ -633,11 +640,11 @@ task<> echo(any_stream& stream)
         auto [ec, n] = co_await stream.read_some(make_buffer(buffer));
         if (ec == cond::eof)
             break;
-        if (ec.failed())
+        if (ec)
             co_return;
 
         auto [wec, wn] = co_await write(stream, make_buffer(buffer, n));
-        if (wec.failed())
+        if (wec)
             co_return;
     }
 }
@@ -706,12 +713,12 @@ task<> echo_server(any_stream& stream)
         auto [ec, n] = co_await stream.read_some(make_buffer(buffer));
         if (ec == cond::eof)
             break;
-        if (ec.failed())
+        if (ec)
             co_return;
 
         // Complete write: send all bytes
         auto [wec, _] = co_await write(stream, make_buffer(buffer, n));
-        if (wec.failed())
+        if (wec)
             co_return;
     }
 }
@@ -725,7 +732,7 @@ task<> send_response_body(any_write_sink& body, std::string_view content)
 {
     // Write all content and signal EOF
     auto [ec, n] = co_await body.write(make_buffer(content), true);
-    if (ec.failed())
+    if (ec)
     {
         // Handle error
     }

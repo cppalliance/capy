@@ -9,17 +9,22 @@ permit `n >= 0` on error. A secondary question is the behavior when the
 caller passes a zero-length buffer. The analysis applies symmetrically
 to `WriteStream::write_some`.
 
+The consensus was reached through discussion between Peter Dimov and
+Andrzej Krzemieński, whose arguments shaped both the postcondition
+choice (E2) and the zero-length buffer semantics (Z3).
+
 ## Current Consensus
 
-The current consensus declares the `ReadStream` and `WriteStream`
-concepts with the following contracts:
+The current consensus adopts E2 (error permits `n >= 0`) and Z3
+(empty buffers are not an error). The `ReadStream` and `WriteStream`
+concepts are declared with the following contracts:
 
 ```cpp
 /** Concept for types providing awaitable read operations.
 
     A type satisfies ReadStream if it provides a read_some
     member function template that accepts any MutableBufferSequence
-    and is an IoAwaitable yielding (error_code, std::size_t).
+    and await-returns (error_code, std::size_t).
 
     Semantic Requirements:
 
@@ -28,9 +33,9 @@ concepts with the following contracts:
 
     If buffer_size( buffers ) > 0:
 
-    - If !ec, then 1 <= n <= buffer_size( buffers ). n bytes
+    - If !ec, then n >= 1 && n <= buffer_size( buffers ). n bytes
       were read into the buffer sequence.
-    - If ec, then 0 <= n <= buffer_size( buffers ). n is the
+    - If ec, then n >= 0 && n <= buffer_size( buffers ). n is the
       number of bytes read before the I/O condition arose.
 
     If buffer_empty( buffers ) is true, n is 0. The empty buffer
@@ -38,6 +43,16 @@ concepts with the following contracts:
     of the stream.
 
     Buffers in the sequence are filled in order.
+
+    Error Reporting:
+
+    I/O conditions arising from the underlying I/O system (EOF,
+    connection reset, broken pipe, etc.) are reported via the
+    error_code component of the return value. Failures in the
+    library wrapper itself (such as memory allocation failure)
+    are reported via exceptions.
+
+    Throws: std::bad_alloc if coroutine frame allocation fails.
 */
 template< typename T >
 concept ReadStream =
@@ -55,7 +70,7 @@ concept ReadStream =
 
     A type satisfies WriteStream if it provides a write_some
     member function template that accepts any ConstBufferSequence
-    and is an IoAwaitable yielding (error_code, std::size_t).
+    and await-returns (error_code, std::size_t).
 
     Semantic Requirements:
 
@@ -64,9 +79,9 @@ concept ReadStream =
 
     If buffer_size( buffers ) > 0:
 
-    - If !ec, then 1 <= n <= buffer_size( buffers ). n bytes
+    - If !ec, then n >= 1 && n <= buffer_size( buffers ). n bytes
       were written from the buffer sequence.
-    - If ec, then 0 <= n <= buffer_size( buffers ). n is the
+    - If ec, then n >= 0 && n <= buffer_size( buffers ). n is the
       number of bytes written before the I/O condition arose.
 
     If buffer_empty( buffers ) is true, n is 0. The empty buffer
@@ -74,6 +89,16 @@ concept ReadStream =
     of the stream.
 
     Buffers in the sequence are consumed in order.
+
+    Error Reporting:
+
+    I/O conditions arising from the underlying I/O system (EOF,
+    connection reset, broken pipe, etc.) are reported via the
+    error_code component of the return value. Failures in the
+    library wrapper itself (such as memory allocation failure)
+    are reported via exceptions.
+
+    Throws: std::bad_alloc if coroutine frame allocation fails.
 */
 template< typename T >
 concept WriteStream =
@@ -86,6 +111,13 @@ concept WriteStream =
     };
 ```
 
+E2 is also chosen for consistency: composed operations like `read`
+return partial progress alongside errors by necessity (there is no
+other way to report how many bytes were transferred before EOF). If
+`read_some` adopted E1, callers would need one loop style for
+`read_some` and a different one for `read`. Under E2, the same
+advance-then-check pattern is correct everywhere.
+
 The rationale for these choices follows.
 
 ## Background
@@ -93,9 +125,9 @@ The rationale for these choices follows.
 ### The read_some Contract
 
 `read_some` accepts a buffer sequence and returns `(error_code, size_t)`.
-The success case is uncontroversial:
+When `buffer_size(buffers) > 0`, the non-error case is uncontroversial:
 
-- **Success:** `!ec`, and `n >= 1` (at least one byte transferred).
+- **No error:** `!ec`, and `n >= 1` (at least one byte transferred).
 
 The disputes concern the error case and the empty-buffer case.
 

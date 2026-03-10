@@ -30,11 +30,11 @@ capy::task<> echo_session(corosio::tcp_socket sock)
         auto [ec, n] = co_await sock.read_some(
             capy::mutable_buffer(buf, sizeof(buf)));
 
-        if (ec)
-            break;
-
         auto [wec, wn] = co_await capy::write(
             sock, capy::const_buffer(buf, n));
+
+        if (ec)
+            break;
 
         if (wec)
             break;

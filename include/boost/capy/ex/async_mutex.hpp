@@ -390,7 +390,7 @@ public:
 
     /** Returns an awaiter that acquires the mutex.
 
-        @return An awaitable yielding `(error_code)`.
+        @return An awaitable that await-returns `(error_code)`.
     */
     lock_awaiter lock() noexcept
     {
@@ -399,7 +399,7 @@ public:
 
     /** Returns an awaiter that acquires the mutex with RAII.
 
-        @return An awaitable yielding `(error_code,lock_guard)`.
+        @return An awaitable that await-returns `(error_code,lock_guard)`.
     */
     lock_guard_awaiter scoped_lock() noexcept
     {

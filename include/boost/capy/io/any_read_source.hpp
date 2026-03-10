@@ -186,12 +186,13 @@ public:
 
     /** Initiate a partial read operation.
 
-        Reads one or more bytes into the provided buffer sequence.
-        May fill less than the full sequence.
+        Attempt to read up to `buffer_size( buffers )` bytes into
+        the provided buffer sequence. May fill less than the
+        full sequence.
 
         @param buffers The buffer sequence to read into.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @par Immediate Completion
         The operation completes immediately without suspending
@@ -224,7 +225,7 @@ public:
 
         @param buffers The buffer sequence to read into.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @par Immediate Completion
         The operation completes immediately without suspending

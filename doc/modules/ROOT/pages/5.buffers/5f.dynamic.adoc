@@ -76,9 +76,8 @@ task<> read_into_buffer(Stream& stream, DynamicBuffer auto& buffer)
     
     // Read into prepared space
     auto [ec, n] = co_await stream.read_some(space);
-    
-    if (!ec.failed())
-        buffer.commit(n);  // Make data readable
+
+    buffer.commit(n);  // Make data readable
 }
 ----
 
@@ -240,9 +239,9 @@ task<std::string> read_line(Stream& stream)
         // Prepare space and read
         auto space = buffer.prepare(256);
         auto [ec, n] = co_await stream.read_some(space);
-        if (ec.failed())
-            throw std::system_error(ec);
         buffer.commit(n);
+        if (ec)
+            throw std::system_error(ec);
         
         // Search for newline in readable data
         auto data = buffer.data();

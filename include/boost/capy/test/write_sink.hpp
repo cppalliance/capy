@@ -155,7 +155,7 @@ public:
 
         @param buffers The const buffer sequence containing data to write.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @see fuse
     */
@@ -216,7 +216,7 @@ public:
 
         @param buffers The const buffer sequence containing data to write.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @see fuse
     */
@@ -281,7 +281,7 @@ public:
 
         @param buffers The const buffer sequence containing data to write.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @see fuse
     */
@@ -343,7 +343,7 @@ public:
         @par Exception Safety
         No-throw guarantee.
 
-        @return An awaitable yielding `(error_code)`.
+        @return An awaitable that await-returns `(error_code)`.
 
         @see fuse
     */

@@ -26,8 +26,7 @@ namespace capy {
 
     A type satisfies `WriteStream` if it provides a `write_some`
     member function template that accepts any @ref ConstBufferSequence
-    and is an @ref IoAwaitable whose return value decomposes to
-    `(error_code,std::size_t)`.
+    and await-returns `(error_code, std::size_t)`.
 
     @tparam T The stream type.
 
@@ -41,18 +40,32 @@ namespace capy {
 
     @par Semantic Requirements
 
-    If `buffer_size( buffers ) > 0`, the operation writes one or more
-    bytes of data to the stream from the buffer sequence:
+    Attempts to write up to `buffer_size( buffers )` bytes from
+    the buffer sequence to the stream.
 
-    @li On success: `!ec`, and `n` is the number of bytes
-        written.
-    @li On error: `ec`, and `n` is 0.
+    If `buffer_size( buffers ) > 0`:
 
-    If `buffer_empty( buffers )` is `true`, the operation completes
-    immediately. `!ec`, and `n` is 0.
+    @li If `!ec`, then `n >= 1 && n <= buffer_size( buffers )`.
+        `n` bytes were written from the buffer sequence.
+    @li If `ec`, then `n >= 0 && n <= buffer_size( buffers )`.
+        `n` is the number of bytes written before the I/O
+        condition arose.
 
-    Buffers in the sequence are written completely before proceeding
-    to the next buffer.
+    If `buffer_empty( buffers )` is `true`, `n` is 0. The empty
+    buffer is not itself a cause for error, but `ec` may reflect
+    the state of the stream.
+
+    Buffers in the sequence are consumed in order.
+
+    @par Error Reporting
+
+    I/O conditions arising from the underlying I/O system (EOF,
+    connection reset, broken pipe, etc.) are reported via the
+    `error_code` component of the return value. Failures in the
+    library wrapper itself (such as memory allocation failure)
+    are reported via exceptions.
+
+    @throws std::bad_alloc If coroutine frame allocation fails.
 
     @par Buffer Lifetime
 
@@ -85,9 +98,9 @@ namespace capy {
         {
             auto [ec, n] = co_await s.write_some(
                 const_buffer( buf + total, size - total ) );
+            total += n;
             if( ec )
                 co_return;
-            total += n;
         }
     }
     @endcode

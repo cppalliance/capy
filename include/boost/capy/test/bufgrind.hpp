@@ -153,7 +153,7 @@ public:
         @par Preconditions
         `static_cast<bool>( *this )` is `true`.
 
-        @return An awaitable yielding `split_type`.
+        @return An awaitable that await-returns `split_type`.
     */
     next_awaitable
     next() noexcept

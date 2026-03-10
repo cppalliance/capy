@@ -139,11 +139,10 @@ push_to(Src& source, Stream& stream)
             co_return {ec, total};
 
         auto [write_ec, n] = co_await stream.write_some(bufs);
-        if(write_ec)
-            co_return {write_ec, total};
-
         total += n;
         source.consume(n);
+        if(write_ec)
+            co_return {write_ec, total};
     }
 }
 

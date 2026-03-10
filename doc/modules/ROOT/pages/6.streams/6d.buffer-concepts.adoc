@@ -52,11 +52,11 @@ concept BufferSource =
 IoAwaitable auto pull(const_buffer* arr, std::size_t max_count);
 ----
 
-Returns an awaitable yielding `(error_code, std::size_t)`:
+Await-returns `(error_code, std::size_t)`:
 
-* On success: `!ec.failed()`, fills `arr[0..count-1]` with buffer descriptors
+* On success: `!ec`, fills `arr[0..count-1]` with buffer descriptors
 * On exhausted: `count == 0` indicates no more data
-* On error: `ec.failed()`
+* On error: `ec`
 
 The buffers point into the source's internal storage. You must consume all returned data before calling `pull()` again—the previous buffers become invalid.
 
@@ -73,7 +73,7 @@ task<> process_source(Source& source)
     {
         auto [ec, count] = co_await source.pull(bufs, 8);
         
-        if (ec.failed())
+        if (ec)
             throw std::system_error(ec);
         
         if (count == 0)
@@ -228,7 +228,7 @@ task<> decompress_stream(any_buffer_source& compressed, any_write_sink& output)
     for (;;)
     {
         auto [ec, count] = co_await compressed.pull(bufs, 8);
-        if (ec.failed())
+        if (ec)
             throw std::system_error(ec);
         if (count == 0)
             break;

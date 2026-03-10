@@ -224,7 +224,7 @@ if (ec == cond::eof)
     // Normal completion
     std::cout << "Transferred " << total << " bytes\n";
 }
-else if (ec.failed())
+else if (ec)
 {
     // Error occurred
     std::cerr << "Error after " << total << " bytes: " << ec.message() << "\n";

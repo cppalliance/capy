@@ -302,7 +302,7 @@ public:
             value to ensure the sequence lives in the coroutine
             frame across suspension points.
 
-        @return An awaitable yielding `(error_code,std::size_t)`.
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
             On success, `n` equals `buffer_size(buffers)`. On
             error, `n` is the number of bytes written before the
             error. Compare error codes to conditions:
@@ -341,11 +341,11 @@ public:
         {
             auto r =
                 co_await stream_.write_some(cb);
+            cb.consume(r.t1);
+            total_written += r.t1;
             if(r.ec)
                 co_return io_result<std::size_t>{
                     r.ec, total_written};
-            cb.consume(r.t1);
-            total_written += r.t1;
         }
         co_return io_result<std::size_t>{
             {}, total_written};
@@ -385,11 +385,11 @@ public:
         {
             auto r =
                 co_await stream_.write_some(cb);
+            cb.consume(r.t1);
+            total_written += r.t1;
             if(r.ec)
                 co_return io_result<std::size_t>{
                     r.ec, total_written};
-            cb.consume(r.t1);
-            total_written += r.t1;
         }
         co_return io_result<std::size_t>{
             {}, total_written};

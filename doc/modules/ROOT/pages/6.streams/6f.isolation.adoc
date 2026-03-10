@@ -38,7 +38,7 @@ task<> handle_protocol(any_stream& stream)
     for (;;)
     {
         auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
-        if (ec.failed())
+        if (ec)
             co_return;
         
         // Process and respond...

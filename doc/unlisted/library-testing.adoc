@@ -93,11 +93,11 @@ Systematic error injection that tests every failure path:
 fuse f;
 auto r = f.armed([](fuse& f) {
     auto ec = f.maybe_fail();
-    if (ec.failed())
+    if (ec)
         return;  // Exit on injected error
 
     ec = f.maybe_fail();
-    if (ec.failed())
+    if (ec)
         return;
 
     // Success path
@@ -126,12 +126,12 @@ Tests must handle injected errors by returning early:
 ----
 // CORRECT: early return on injected error
 auto [ec, n] = co_await rs.read_some(buf);
-if (ec.failed())
+if (ec)
     co_return;  // fuse injected error, exit gracefully
 
 // WRONG: asserting success unconditionally
 auto [ec, n] = co_await rs.read_some(buf);
-BOOST_TEST(!ec.failed());  // FAILS when fuse injects error!
+BOOST_TEST(!ec);  // FAILS when fuse injects error!
 ----
 
 === Coroutine Support
@@ -147,7 +147,7 @@ rs.provide("test data");
 auto r = f.armed([&](fuse&) -> task<> {
     char buf[32];
     auto [ec, n] = co_await rs.read_some(make_buffer(buf));
-    if (ec.failed())
+    if (ec)
         co_return;
     // Process data...
 });
@@ -184,7 +184,7 @@ public:
     system::error_code do_work()
     {
         auto ec = f_.maybe_fail();  // No-op in production
-        if (ec.failed())
+        if (ec)
             return ec;
         // ... actual work ...
         return {};
@@ -331,7 +331,7 @@ rs.provide("World!");
 auto r = f.armed([&](fuse&) -> task<> {
     char buf[32];
     auto [ec, n] = co_await rs.read_some(make_buffer(buf));
-    if (ec.failed())
+    if (ec)
         co_return;
     // buf contains up to 13 bytes
 });
@@ -400,7 +400,7 @@ write_stream ws(f);
 
 auto r = f.armed([&](fuse&) -> task<> {
     auto [ec, n] = co_await ws.write_some(make_buffer("Hello"));
-    if (ec.failed())
+    if (ec)
         co_return;
 });
 
@@ -467,7 +467,7 @@ rs.provide("Hello, World!");
 auto r = f.armed([&](fuse&) -> task<> {
     char buf[32];
     auto [ec, n] = co_await rs.read(make_buffer(buf));
-    if (ec.failed())
+    if (ec)
         co_return;
     // buf filled completely before returning
 });
@@ -510,10 +510,10 @@ write_sink ws(f);
 
 auto r = f.armed([&](fuse&) -> task<> {
     auto [ec, n] = co_await ws.write(make_buffer("Hello"));
-    if (ec.failed())
+    if (ec)
         co_return;
     auto [ec2] = co_await ws.write_eof();
-    if (ec2.failed())
+    if (ec2)
         co_return;
 });
 
@@ -585,7 +585,7 @@ void test_parser()
         auto r = f.armed([&](fuse&) -> task<> {
             http_request req;
             auto [ec] = co_await parse_request(rs, req);
-            if (ec.failed())
+            if (ec)
                 co_return;
             BOOST_TEST(req.method == "GET");
             BOOST_TEST(req.target == "/");

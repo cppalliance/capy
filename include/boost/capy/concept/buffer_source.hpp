@@ -26,9 +26,8 @@ namespace capy {
 /** Concept for types that produce buffer data asynchronously.
 
     A type satisfies `BufferSource` if it provides a `pull` member function
-    that fills a caller-provided span of buffer descriptors and is an
-    @ref IoAwaitable whose return value decomposes to
-    `(error_code,std::span<const_buffer>)`, plus a `consume` member function
+    that fills a caller-provided span of buffer descriptors and
+    await-returns `(error_code, std::span<const_buffer>)`, plus a `consume` member function
     to indicate how many bytes were used.
 
     Use this concept when you need to produce data asynchronously for

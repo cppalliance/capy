@@ -157,11 +157,10 @@ task<std::size_t> read_full(Stream& stream, Buffers buffers)
     while (buffer_size(remaining) > 0)
     {
         auto [ec, n] = co_await stream.read_some(remaining);
-        if (ec.failed())
-            co_return total;  // Return partial read on error
-        
         remaining.consume(n);
         total += n;
+        if (ec)
+            co_return total;
     }
     
     co_return total;
@@ -181,11 +180,10 @@ task<std::size_t> write_full(Stream& stream, Buffers buffers)
     while (buffer_size(remaining) > 0)
     {
         auto [ec, n] = co_await stream.write_some(remaining);
-        if (ec.failed())
-            co_return total;
-        
         remaining.consume(n);
         total += n;
+        if (ec)
+            co_return total;
     }
     
     co_return total;

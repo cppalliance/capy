@@ -31,17 +31,18 @@ capy::task<bool> echo_line_uppercase(capy::any_stream& stream)
         // ec: std::error_code, n: std::size_t
         auto [ec, n] = co_await stream.read_some(capy::mutable_buffer(&c, 1));
 
-        if (ec)
+        if (n > 0)
         {
-            if (ec == capy::cond::eof)
+            if (c == '\n')
                 break;
-            co_return false;
+            line += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         }
-        
-        if (c == '\n')
+
+        if (ec == capy::cond::eof)
             break;
-        
-        line += static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+        if (ec)
+            co_return false;
     }
     
     line += '\n';
@@ -53,11 +54,11 @@ capy::task<bool> echo_line_uppercase(capy::any_stream& stream)
         // wec: std::error_code, wn: std::size_t
         auto [wec, wn] = co_await stream.write_some(
             capy::const_buffer(line.data() + written, line.size() - written));
-        
+
+        written += wn;
+
         if (wec)
             co_return false;
-        
-        written += wn;
     }
     
     co_return true;
