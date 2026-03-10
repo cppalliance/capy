@@ -6,7 +6,7 @@
 # https://www.boost.org/LICENSE_1_0.txt
 #
 
-cmake_minimum_required(VERSION 3.5...3.16)
+cmake_minimum_required(VERSION 3.13...3.31)
 
 project(cmake_subdir_test LANGUAGES CXX)
 set(__ignore__ ${CMAKE_C_COMPILER})
@@ -16,11 +16,13 @@ if(BOOST_CI_INSTALL_TEST)
   find_package(Boost CONFIG REQUIRED COMPONENTS capy)
 else()
   set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
-  add_subdirectory(../.. boostorg/capy)
+  set(BOOST_INCLUDE_LIBRARIES capy)
+  add_subdirectory(../../../.. deps/boost EXCLUDE_FROM_ALL)
 endif()
 
 add_executable(main main.cpp)
 target_link_libraries(main Boost::capy)
+target_compile_features(main PRIVATE cxx_std_20)
 
 enable_testing()
 add_test(NAME main COMMAND main)

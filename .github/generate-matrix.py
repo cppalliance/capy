@@ -31,6 +31,15 @@ def load_compilers(path=None):
         return json.load(f)
 
 
+def platform_for_family(compiler_family):
+    """Return the platform name for a compiler family."""
+    if compiler_family in ("msvc", "clang-cl", "mingw"):
+        return "windows"
+    elif compiler_family == "apple-clang":
+        return "macos"
+    return "linux"
+
+
 def make_entry(compiler_family, spec, **overrides):
     """Build a matrix entry dict from a compiler spec and optional overrides."""
     entry = {
@@ -42,7 +51,7 @@ def make_entry(compiler_family, spec, **overrides):
         "b2-toolset": spec["b2_toolset"],
         "shared": True,
         "build-type": "Release",
-        "build-cmake": True,
+        platform_for_family(compiler_family): True,
     }
 
     if spec.get("container"):
@@ -57,8 +66,18 @@ def make_entry(compiler_family, spec, **overrides):
         entry["generator-toolset"] = spec["generator_toolset"]
     if spec.get("is_latest"):
         entry["is-latest"] = True
+    if spec.get("is_earliest"):
+        entry["is-earliest"] = True
+    if "shared" in spec:
+        entry["shared"] = spec["shared"]
+    if spec.get("vcpkg_triplet"):
+        entry["vcpkg-triplet"] = spec["vcpkg_triplet"]
+
+    # CMake builds only on earliest/latest compilers, unless explicitly disabled
     if spec.get("build_cmake") is False:
         entry["build-cmake"] = False
+    elif spec.get("is_latest") or spec.get("is_earliest"):
+        entry["build-cmake"] = True
     if spec.get("cmake_cxxstd"):
         entry["cmake-cxxstd"] = spec["cmake_cxxstd"]
     if spec.get("cxxflags"):
@@ -113,6 +132,15 @@ def generate_name(compiler_family, entry):
     if entry.get("x86"):
         modifiers.append("x86")
 
+    if entry.get("clang-tidy"):
+        modifiers.append("clang-tidy")
+
+    if entry.get("time-trace"):
+        modifiers.append("time-trace")
+
+    if entry.get("superproject-cmake"):
+        modifiers.append("superproject CMake")
+
     if entry.get("shared") is False:
         modifiers.append("static")
 
@@ -158,15 +186,36 @@ def generate_tsan_variant(compiler_family, spec):
 
 
 def generate_coverage_variant(compiler_family, spec):
-    """Generate coverage variant (GCC only)."""
-    return make_entry(compiler_family, spec, **{
+    """Generate coverage variant with platform-specific flags.
+
+    Linux/Windows: full gcov flags with atomic profile updates.
+    macOS: --coverage only (Apple-Clang uses llvm-cov).
+    """
+    platform = platform_for_family(compiler_family)
+
+    if platform == "macos":
+        cov_flags = "--coverage"
+    else:
+        cov_flags = ("--coverage -fprofile-arcs -ftest-coverage"
+                     " -fprofile-update=atomic")
+
+    overrides = {
         "coverage": True,
+        "coverage-flag": platform,
         "shared": False,
         "build-type": "Debug",
-        "cxxflags": "--coverage -fprofile-arcs -ftest-coverage",
-        "ccflags": "--coverage -fprofile-arcs -ftest-coverage",
-        "install": "lcov wget unzip",
-    })
+        "build-cmake": False,
+        "cxxflags": cov_flags,
+        "ccflags": cov_flags,
+    }
+
+    if platform == "linux":
+        overrides["install"] = "lcov wget unzip"
+
+    entry = make_entry(compiler_family, spec, **overrides)
+    entry.pop("is-latest", None)
+    entry.pop("is-earliest", None)
+    return entry
 
 
 def generate_x86_variant(compiler_family, spec):
@@ -186,6 +235,38 @@ def generate_arm_entry(compiler_family, spec):
     return make_entry(compiler_family, arm_spec)
 
 
+def generate_time_trace_variant(compiler_family, spec):
+    """Generate time-trace variant for compile-time profiling (Clang only)."""
+    return make_entry(compiler_family, spec, **{
+        "time-trace": True,
+        "build-cmake": True,
+        "cxxflags": "-ftime-trace",
+    })
+
+
+def generate_superproject_cmake_variant(compiler_family, spec):
+    """Generate a single superproject CMake build to verify integration."""
+    entry = make_entry(compiler_family, spec, **{
+        "superproject-cmake": True,
+        "build-cmake": False,
+    })
+    entry.pop("is-latest", None)
+    entry.pop("is-earliest", None)
+    return entry
+
+
+def apply_clang_tidy(entry, spec):
+    """Add clang-tidy flag and install package to an entry."""
+    entry["clang-tidy"] = True
+    entry["build-cmake"] = False
+    version = spec["version"]
+    existing_install = entry.get("install", "")
+    tidy_pkg = f"clang-tidy-{version}"
+    entry["install"] = f"{existing_install} {tidy_pkg}".strip()
+    entry["name"] = generate_name(entry["compiler"], entry)
+    return entry
+
+
 def main():
     compilers = load_compilers()
     matrix = []
@@ -193,7 +274,10 @@ def main():
     for family, specs in compilers.items():
         for spec in specs:
             # Base entry (x86_64 / default arch)
-            matrix.append(make_entry(family, spec))
+            base = make_entry(family, spec)
+            if spec.get("clang_tidy"):
+                apply_clang_tidy(base, spec)
+            matrix.append(base)
 
             # ARM entry if supported
             if spec.get("arm"):
@@ -201,17 +285,23 @@ def main():
 
             # Variants for the latest compiler in each family
             if spec.get("is_latest"):
-                matrix.append(generate_sanitizer_variant(family, spec))
+                if family != "mingw":
+                    matrix.append(generate_sanitizer_variant(family, spec))
 
                 # TSan is incompatible with ASan; separate variant for Linux
                 if family in ("gcc", "clang", "apple-clang"):
                     matrix.append(generate_tsan_variant(family, spec))
 
-                if family == "gcc":
+                # GCC always gets coverage; other families opt in via spec flag
+                if family == "gcc" or spec.get("coverage"):
                     matrix.append(generate_coverage_variant(family, spec))
+
+                if family == "gcc":
+                    matrix.append(generate_superproject_cmake_variant(family, spec))
 
                 if family == "clang":
                     matrix.append(generate_x86_variant(family, spec))
+                    matrix.append(generate_time_trace_variant(family, spec))
 
     json.dump(matrix, sys.stdout)
 
