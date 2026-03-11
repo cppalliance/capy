@@ -81,13 +81,12 @@ capy::task<std::string> fetch_with_side_effects()
 {
     std::cout << "\n=== Fetch with side effects ===\n";
     
-    // void tasks don't contribute to result tuple
-    std::tuple<std::string> results = co_await capy::when_all(
-        log_access("api/data"),           // void - no result
-        update_metrics("api_calls"),      // void - no result
+    // void tasks contribute monostate to preserve index mapping
+    auto [log, metrics, data] = co_await capy::when_all(
+        log_access("api/data"),           // void → monostate
+        update_metrics("api_calls"),      // void → monostate
         fetch_user_name(42)               // returns string
     );
-    std::string data = std::get<0>(results);  // std::string
     
     std::cout << "Data: " << data << "\n";
     co_return data;

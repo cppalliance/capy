@@ -11,6 +11,7 @@
 #define BOOST_CAPY_WHEN_ALL_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/detail/void_to_monostate.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <coroutine>
@@ -32,19 +33,6 @@ namespace capy {
 
 namespace detail {
 
-/** Type trait to filter void types from a tuple.
-
-    Void-returning tasks do not contribute a value to the result tuple.
-    This trait computes the filtered result type.
-
-    Example: filter_void_tuple_t<int, void, string> = tuple<int, string>
-*/
-template<typename T>
-using wrap_non_void_t = std::conditional_t<std::is_void_v<T>, std::tuple<>, std::tuple<T>>;
-
-template<typename... Ts>
-using filter_void_tuple_t = decltype(std::tuple_cat(std::declval<wrap_non_void_t<Ts>>()...));
-
 /** Holds the result of a single task within when_all.
 */
 template<typename T>
@@ -63,11 +51,12 @@ struct result_holder
     }
 };
 
-/** Specialization for void tasks - no value storage needed.
+/** Specialization for void tasks - returns monostate to preserve index mapping.
 */
 template<>
 struct result_holder<void>
 {
+    std::monostate get() && { return {}; }
 };
 
 /** Shared state for when_all operation.
@@ -358,45 +347,38 @@ private:
     }
 };
 
-/** Helper to extract a single result, returning empty tuple for void.
+/** Helper to extract a single result from state.
     This is a separate function to work around a GCC-11 ICE that occurs
     when using nested immediately-invoked lambdas with pack expansion.
 */
 template<std::size_t I, typename... Ts>
 auto extract_single_result(when_all_state<Ts...>& state)
 {
-    using T = std::tuple_element_t<I, std::tuple<Ts...>>;
-    if constexpr (std::is_void_v<T>)
-        return std::tuple<>();
-    else
-        return std::make_tuple(std::move(std::get<I>(state.results_)).get());
+    return std::move(std::get<I>(state.results_)).get();
 }
 
-/** Extract results from state, filtering void types.
+/** Extract all results from state as a tuple.
 */
 template<typename... Ts>
 auto extract_results(when_all_state<Ts...>& state)
 {
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        return std::tuple_cat(extract_single_result<Is>(state)...);
+        return std::tuple(extract_single_result<Is>(state)...);
     }(std::index_sequence_for<Ts...>{});
 }
 
 } // namespace detail
 
-/** Compute a tuple type with void types filtered out.
+/** Compute the when_all result tuple type.
 
-    Returns void when all types are void (P2300 aligned),
-    otherwise returns a std::tuple with void types removed.
+    Void-returning tasks contribute std::monostate to preserve the
+    task-index-to-result-index mapping, matching when_any's approach.
 
-    Example: non_void_tuple_t<int, void, string> = std::tuple<int, string>
-    Example: non_void_tuple_t<void, void> = void
+    Example: when_all_result_t<int, void, string> = std::tuple<int, std::monostate, string>
+    Example: when_all_result_t<void, void> = std::tuple<std::monostate, std::monostate>
 */
 template<typename... Ts>
-using non_void_tuple_t = std::conditional_t<
-    std::is_same_v<detail::filter_void_tuple_t<Ts...>, std::tuple<>>,
-    void,
-    detail::filter_void_tuple_t<Ts...>>;
+using when_all_result_t = std::tuple<void_to_monostate_t<Ts>...>;
 
 /** Execute multiple awaitables concurrently and collect their results.
 
@@ -407,8 +389,8 @@ using non_void_tuple_t = std::conditional_t<
 
     @li All child awaitables run concurrently on the caller's executor
     @li Results are returned as a tuple in input order
-    @li Void-returning awaitables do not contribute to the result tuple
-    @li If all awaitables return void, `when_all` returns `task<void>`
+    @li Void-returning awaitables contribute std::monostate to the
+        result tuple, preserving the task-index-to-result-index mapping
     @li First exception wins; subsequent exceptions are discarded
     @li Stop is requested for siblings on first error
     @li Completes only after all children have finished
@@ -422,8 +404,8 @@ using non_void_tuple_t = std::conditional_t<
         satisfy @ref IoAwaitable and is consumed (moved-from) when
         `when_all` is awaited.
 
-    @return A task yielding a tuple of non-void results. Returns
-        `task<void>` when all input awaitables return void.
+    @return A task yielding a tuple of results in input order. Void tasks
+        contribute std::monostate to preserve index correspondence.
 
     @par Example
 
@@ -436,12 +418,13 @@ using non_void_tuple_t = std::conditional_t<
             fetch_posts( id )      // task<std::vector<Post>>
         );
 
-        // Void awaitables don't contribute to result
-        co_await when_all(
-            log_event( "start" ),  // task<void>
-            notify_user( id )      // task<void>
+        // Void awaitables contribute monostate
+        auto [a, _, b] = co_await when_all(
+            fetch_int(),           // task<int>
+            log_event( "start" ),  // task<void>  → monostate
+            fetch_str()            // task<string>
         );
-        // Returns task<void>, no result tuple
+        // a is int, _ is monostate, b is string
     }
     @endcode
 
@@ -449,10 +432,8 @@ using non_void_tuple_t = std::conditional_t<
 */
 template<IoAwaitable... As>
 [[nodiscard]] auto when_all(As... awaitables)
-    -> task<non_void_tuple_t<awaitable_result_t<As>...>>
+    -> task<when_all_result_t<awaitable_result_t<As>...>>
 {
-    using result_type = non_void_tuple_t<awaitable_result_t<As>...>;
-
     // State is stored in the coroutine frame, using the frame allocator
     detail::when_all_state<awaitable_result_t<As>...> state;
 
@@ -469,11 +450,7 @@ template<IoAwaitable... As>
     if(state.first_exception_)
         std::rethrow_exception(state.first_exception_);
 
-    // Extract and return results
-    if constexpr (std::is_void_v<result_type>)
-        co_return;
-    else
-        co_return detail::extract_results(state);
+    co_return detail::extract_results(state);
 }
 
 } // namespace capy

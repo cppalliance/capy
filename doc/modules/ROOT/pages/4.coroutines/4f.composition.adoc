@@ -58,9 +58,9 @@ task<> example()
 
 `when_all` returns a tuple of results in the same order as the input tasks. Use structured bindings to unpack them.
 
-=== Void Filtering
+=== Void Tasks
 
-Tasks returning `void` do not contribute to the result tuple:
+Tasks returning `void` contribute `std::monostate` to the result tuple, preserving the task-index-to-result-index mapping:
 
 [source,cpp]
 ----
@@ -69,18 +69,21 @@ task<int> int_task() { co_return 42; }
 
 task<> example()
 {
-    auto [value] = co_await when_all(void_task(), int_task(), void_task());
-    // value == 42  (only the int_task contributes)
+    auto [a, b, c] = co_await when_all(int_task(), void_task(), int_task());
+    // a == 42       (int,        index 0)
+    // b == monostate (monostate, index 1)
+    // c == 42       (int,        index 2)
 }
 ----
 
-If all tasks return `void`, `when_all` returns `void`:
+If all tasks return `void`, `when_all` returns a tuple of `std::monostate`:
 
 [source,cpp]
 ----
 task<> example()
 {
-    co_await when_all(void_task_a(), void_task_b());  // Returns void
+    auto [a, b] = co_await when_all(void_task_a(), void_task_b());
+    // a and b are std::monostate
 }
 ----
 
