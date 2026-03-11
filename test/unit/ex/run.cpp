@@ -19,6 +19,10 @@
 #include "test/unit/custom_task.hpp"
 #include "test/unit/test_helpers.hpp"
 
+#include <boost/capy/ex/strand.hpp>
+#include <boost/capy/ex/thread_pool.hpp>
+
+#include <latch>
 #include <memory>
 
 namespace boost {
@@ -469,6 +473,34 @@ struct run_test
     }
 
     void
+    testRunExStrandFirstInstruction()
+    {
+        // Verify that the first instructions of a task passed
+        // to run(strand) execute inside the strand's serialization,
+        // not inline on an unprotected thread.
+        thread_pool pool(2, "str-pool-");
+        strand s(pool.get_executor());
+        bool inside_strand = false;
+        std::latch done(1);
+
+        auto inner = [&]() -> task<void> {
+            inside_strand = s.running_in_this_thread();
+            co_return;
+        };
+
+        auto outer = [&]() -> task<void> {
+            co_await capy::run(s)(inner());
+        };
+
+        run_async(pool.get_executor(),
+            [&]() { done.count_down(); })(outer());
+        done.wait();
+
+        BOOST_TEST(inside_strand);
+        pool.join();
+    }
+
+    void
     run()
     {
         testCustomTaskType();
@@ -490,6 +522,7 @@ struct run_test
         testStopTokenOverrideOuterStopped();
         testAllocatorPropagation();
         testAllocatorPropagationThroughRun();
+        testRunExStrandFirstInstruction();
     }
 };
 

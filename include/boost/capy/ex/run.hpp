@@ -241,7 +241,7 @@ struct [[nodiscard]] run_awaitable_ex
             env_.frame_allocator = caller_env->frame_allocator;
 
         p.set_environment(&env_);
-        return h;
+        return ex_.dispatch(h);
     }
 
     // Non-copyable
