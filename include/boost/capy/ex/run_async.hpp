@@ -154,9 +154,25 @@ struct run_async_trampoline
             return {};
         }
 
-        std::suspend_never final_suspend() noexcept
+        auto final_suspend() noexcept
         {
-            return {};
+            // Use an explicit destroyer awaiter instead of suspend_never.
+            // MSVC <= 19.39 misallocates the await_suspend return buffer
+            // inside the coroutine frame; destroying the frame from
+            // await_suspend then causes use-after-free. A void-returning
+            // await_suspend avoids the problem. See:
+            // https://developercommunity.visualstudio.com/t/destroy-coroutine-from-final_suspend-r/10096047
+            struct destroyer
+            {
+                bool await_ready() noexcept { return false; }
+                void await_suspend(
+                    std::coroutine_handle<> h) noexcept
+                {
+                    h.destroy();
+                }
+                void await_resume() noexcept {}
+            };
+            return destroyer{};
         }
 
         void return_void() noexcept
@@ -245,9 +261,25 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
             return {};
         }
 
-        std::suspend_never final_suspend() noexcept
+        auto final_suspend() noexcept
         {
-            return {};
+            // Use an explicit destroyer awaiter instead of suspend_never.
+            // MSVC <= 19.39 misallocates the await_suspend return buffer
+            // inside the coroutine frame; destroying the frame from
+            // await_suspend then causes use-after-free. A void-returning
+            // await_suspend avoids the problem. See:
+            // https://developercommunity.visualstudio.com/t/destroy-coroutine-from-final_suspend-r/10096047
+            struct destroyer
+            {
+                bool await_ready() noexcept { return false; }
+                void await_suspend(
+                    std::coroutine_handle<> h) noexcept
+                {
+                    h.destroy();
+                }
+                void await_resume() noexcept {}
+            };
+            return destroyer{};
         }
 
         void return_void() noexcept
