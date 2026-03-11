@@ -56,7 +56,7 @@ one finishes.
 
 == Return Value
 
-`when_all` returns a tuple of results, with void types filtered out:
+`when_all` returns a tuple of results. Void tasks contribute `std::monostate` to preserve the task-index-to-result-index mapping:
 
 [source,cpp]
 ----
@@ -67,20 +67,20 @@ auto [x, y] = co_await when_all(
 );
 // x is int, y is std::string
 
-// Mixed with void: void tasks don't contribute
-auto [value] = co_await when_all(
-    task_returning_int(),  // task<int>
-    task_void(),           // task<void> - no contribution
-    task_void()            // task<void> - no contribution
+// Mixed with void: void tasks contribute monostate
+auto [a, b, c] = co_await when_all(
+    task_returning_int(),  // task<int>       — index 0
+    task_void(),           // task<void>      — index 1 → monostate
+    task_void()            // task<void>      — index 2 → monostate
 );
-// value is int (only non-void result)
+// a is int, b and c are std::monostate
 
-// All void: returns void
-co_await when_all(
+// All void: returns tuple of monostate
+auto [m, n] = co_await when_all(
     task_void(),
     task_void()
 );
-// No tuple, no return value
+// m and n are std::monostate
 ----
 
 Results appear in the same order as the input tasks.
@@ -255,7 +255,7 @@ Do NOT use `when_all` when:
 | Launch tasks concurrently, wait for all
 
 | Return type
-| Tuple of non-void results in input order
+| Tuple of results in input order (`monostate` for void tasks)
 
 | Error handling
 | First exception propagated, siblings get stop

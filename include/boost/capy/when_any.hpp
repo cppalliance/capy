@@ -11,6 +11,7 @@
 #define BOOST_CAPY_WHEN_ANY_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/detail/void_to_monostate.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <coroutine>
@@ -114,17 +115,6 @@
 
 namespace boost {
 namespace capy {
-
-/** Convert void to monostate for variant storage.
-
-    std::variant<void, ...> is ill-formed, so void tasks contribute
-    std::monostate to the result variant instead. Non-void types
-    pass through unchanged.
-
-    @tparam T The type to potentially convert (void becomes monostate).
-*/
-template<typename T>
-using void_to_monostate_t = std::conditional_t<std::is_void_v<T>, std::monostate, T>;
 
 namespace detail {
 

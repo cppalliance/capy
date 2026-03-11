@@ -23,6 +23,7 @@
 #include <latch>
 #include <stdexcept>
 #include <string>
+#include <variant>
 #include <vector>
 
 // GCC-11 gives false positive -Wmaybe-uninitialized warnings when run_async.hpp's
@@ -37,33 +38,22 @@
 namespace boost {
 namespace capy {
 
-// Static assertions for void filtering type trait
+// Static assertions for when_all_result_t: void maps to monostate
 static_assert(std::is_same_v<
-    detail::filter_void_tuple_t<int>,
+    when_all_result_t<int>,
     std::tuple<int>>);
 static_assert(std::is_same_v<
-    detail::filter_void_tuple_t<void>,
-    std::tuple<>>);
+    when_all_result_t<void>,
+    std::tuple<std::monostate>>);
 static_assert(std::is_same_v<
-    detail::filter_void_tuple_t<int, void, std::string>,
+    when_all_result_t<int, void, std::string>,
+    std::tuple<int, std::monostate, std::string>>);
+static_assert(std::is_same_v<
+    when_all_result_t<void, void, void>,
+    std::tuple<std::monostate, std::monostate, std::monostate>>);
+static_assert(std::is_same_v<
+    when_all_result_t<int, std::string>,
     std::tuple<int, std::string>>);
-static_assert(std::is_same_v<
-    detail::filter_void_tuple_t<void, void, void>,
-    std::tuple<>>);
-
-// Verify result_type: void when all tasks are void, tuple otherwise
-static_assert(std::is_same_v<
-    non_void_tuple_t<int, std::string>,
-    std::tuple<int, std::string>>);
-static_assert(std::is_same_v<
-    non_void_tuple_t<int, void, std::string>,
-    std::tuple<int, std::string>>);
-static_assert(std::is_void_v<
-    non_void_tuple_t<void>>);
-static_assert(std::is_void_v<
-    non_void_tuple_t<void, void>>);
-static_assert(std::is_void_v<
-    non_void_tuple_t<void, void, void>>);
 
 // Verify when_all returns task which satisfies awaitable protocols
 static_assert(IoAwaitable<task<std::tuple<int, int>>>);
@@ -135,10 +125,10 @@ struct when_all_test
         bool completed = false;
         std::string result;
 
-        // void_task() doesn't contribute to result tuple
+        // void_task() contributes monostate to preserve index mapping
         run_async(ex,
-            [&](std::tuple<int, std::string> t) {
-                auto [a, b] = t;
+            [&](std::tuple<int, std::string, std::monostate> t) {
+                auto [a, b, c] = t;
                 completed = true;
                 result = b + std::to_string(a);
             },
@@ -237,7 +227,7 @@ struct when_all_test
         std::string error_msg;
 
         run_async(ex,
-            [](std::tuple<int>) {},
+            [](std::tuple<int, std::monostate>) {},
             [&](std::exception_ptr ep) {
                 try {
                     std::rethrow_exception(ep);
@@ -284,7 +274,7 @@ struct when_all_test
         BOOST_TEST_EQ(result, 10);  // (1+2) + (3+4) = 10
     }
 
-    // Test: All void tasks return void (not empty tuple)
+    // Test: All void tasks return tuple of monostate
     void
     testAllVoidTasks()
     {
@@ -292,32 +282,37 @@ struct when_all_test
         test_executor ex(dispatch_count);
         bool completed = false;
 
-        // All void tasks return void, not std::tuple<>
         run_async(ex,
-            [&]() { completed = true; },
+            [&](std::tuple<std::monostate, std::monostate, std::monostate>) {
+                completed = true;
+            },
             [](std::exception_ptr) {})(
             when_all(void_task(), void_task(), void_task()));
 
         BOOST_TEST(completed);
     }
 
-    // Test: Result type correctness - void types filtered, all-void returns void
+    // Test: Result type correctness - void maps to monostate
     void
     testResultType()
     {
-        // Mixed types: void filtered out
-        using mixed_result = non_void_tuple_t<int, void, std::string>;
+        // Mixed types: void becomes monostate
+        using mixed_result = when_all_result_t<int, void, std::string>;
         static_assert(std::is_same_v<
             mixed_result,
-            std::tuple<int, std::string>>);
+            std::tuple<int, std::monostate, std::string>>);
 
-        // All void: returns void (not empty tuple)
-        using all_void_result = non_void_tuple_t<void, void, void>;
-        static_assert(std::is_void_v<all_void_result>);
+        // All void: tuple of monostate
+        using all_void_result = when_all_result_t<void, void, void>;
+        static_assert(std::is_same_v<
+            all_void_result,
+            std::tuple<std::monostate, std::monostate, std::monostate>>);
 
-        // Single void: returns void
-        using single_void_result = non_void_tuple_t<void>;
-        static_assert(std::is_void_v<single_void_result>);
+        // Single void: tuple of monostate
+        using single_void_result = when_all_result_t<void>;
+        static_assert(std::is_same_v<
+            single_void_result,
+            std::tuple<std::monostate>>);
     }
 
     //----------------------------------------------------------
@@ -589,7 +584,7 @@ struct when_all_test
         BOOST_TEST(completed);
     }
 
-    // Test: Mixed void and value results maintain order
+    // Test: Mixed void and value results maintain order with monostate
     void
     testMixedVoidValueOrder()
     {
@@ -599,11 +594,10 @@ struct when_all_test
 
         // void at index 1, values at 0 and 2
         run_async(ex,
-            [&](std::tuple<int, int> t) {
-                // a should be from index 0, b from index 2
-                auto [a, b] = t;
+            [&](std::tuple<int, std::monostate, int> t) {
+                auto [a, b, c] = t;
                 BOOST_TEST_EQ(a, 100);
-                BOOST_TEST_EQ(b, 300);
+                BOOST_TEST_EQ(c, 300);
                 completed = true;
             },
             [](std::exception_ptr) {})(
@@ -904,9 +898,9 @@ struct when_all_io_awaitable_test
         std::stop_source parent_stop;
 
         run_async(ex, parent_stop.get_token(),
-            [&](std::tuple<int> t) {
+            [&](std::tuple<std::monostate, int> t) {
                 completed = true;
-                result = std::get<0>(t);
+                result = std::get<1>(t);
             },
             [](std::exception_ptr) {})(
             when_all(stop_only_awaitable{}, returns_int(42)));
@@ -969,7 +963,7 @@ struct when_all_io_awaitable_test
         std::stop_source parent_stop;
 
         run_async(ex, parent_stop.get_token(),
-            [&]() {
+            [&](std::tuple<std::monostate, std::monostate>) {
                 completed = true;
             },
             [](std::exception_ptr) {})(
