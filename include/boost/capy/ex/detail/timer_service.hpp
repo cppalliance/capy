@@ -47,6 +47,11 @@ public:
 
     explicit timer_service(execution_context& ctx);
 
+    // Calls shutdown() to join the background thread.
+    // Handles the discard path in use_service_impl where
+    // a duplicate service is deleted without shutdown().
+    ~timer_service();
+
     /** Schedule a callback to fire after a duration.
 
         The callback is invoked on the timer service's background
@@ -79,6 +84,7 @@ protected:
     void shutdown() override;
 
 private:
+    void stop_and_join();
     struct entry
     {
         std::chrono::steady_clock::time_point deadline;
