@@ -51,7 +51,7 @@ namespace detail {
 
     @param h The coroutine handle to transfer to.
 */
-#ifdef _MSC_VER
+#if BOOST_CAPY_WORKAROUND(_MSC_VER, >= 1)
 inline void symmetric_transfer(std::coroutine_handle<> h) noexcept
 {
     h.resume();

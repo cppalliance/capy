@@ -15,6 +15,58 @@
 # define BOOST_CAPY_ASSERT(expr) assert(expr)
 #endif
 
+//------------------------------------------------
+//
+// Compiler bug workarounds
+//
+//------------------------------------------------
+
+/* Standalone workaround macro modeled on Boost.Config's BOOST_WORKAROUND.
+
+   Guard mechanism: when a compiler symbol is not defined, the
+   corresponding _WORKAROUND_GUARD macro is 1, which makes
+   BOOST_CAPY_WORKAROUND evaluate to 0 on that compiler.
+
+   Usage:
+     #if BOOST_CAPY_WORKAROUND(_MSC_VER, >= 1)      // any MSVC
+     #if BOOST_CAPY_WORKAROUND(_MSC_VER, <= 1900)    // MSVC 14.0 and earlier
+     #if BOOST_CAPY_WORKAROUND(__GNUC__, < 12)        // GCC before 12
+*/
+
+#ifndef _MSC_VER
+# define _MSC_VER_WORKAROUND_GUARD 1
+#else
+# define _MSC_VER_WORKAROUND_GUARD 0
+#endif
+
+#ifndef __GNUC__
+# define __GNUC___WORKAROUND_GUARD 1
+#else
+# define __GNUC___WORKAROUND_GUARD 0
+#endif
+
+#ifndef __clang_major__
+# define __clang_major___WORKAROUND_GUARD 1
+#else
+# define __clang_major___WORKAROUND_GUARD 0
+#endif
+
+#define BOOST_CAPY_WORKAROUND(symbol, test)        \
+    ((symbol ## _WORKAROUND_GUARD + 0 == 0) &&     \
+     (symbol != 0) && (1 % (( (symbol test) ) + 1)))
+
+// MSVC warning suppression helpers.
+// On MSVC these expand to __pragma(); elsewhere they are empty.
+#ifdef _MSC_VER
+# define BOOST_CAPY_MSVC_WARNING_PUSH       __pragma(warning(push))
+# define BOOST_CAPY_MSVC_WARNING_DISABLE(x) __pragma(warning(disable: x))
+# define BOOST_CAPY_MSVC_WARNING_POP        __pragma(warning(pop))
+#else
+# define BOOST_CAPY_MSVC_WARNING_PUSH
+# define BOOST_CAPY_MSVC_WARNING_DISABLE(x)
+# define BOOST_CAPY_MSVC_WARNING_POP
+#endif
+
 // Efficient thread-local storage keyword for POD types
 #if !defined(BOOST_CAPY_TLS_KEYWORD)
 # if defined(_MSC_VER)

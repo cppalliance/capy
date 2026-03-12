@@ -22,10 +22,8 @@
 #include <type_traits>
 #include <vector>
 
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable: 4459)
-#endif
+BOOST_CAPY_MSVC_WARNING_PUSH
+BOOST_CAPY_MSVC_WARNING_DISABLE(4459)
 
 namespace boost {
 namespace capy {
@@ -531,8 +529,6 @@ make_buffer(
 } // capy
 } // boost
 
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
+BOOST_CAPY_MSVC_WARNING_POP
 
 #endif

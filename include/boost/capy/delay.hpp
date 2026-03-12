@@ -88,15 +88,11 @@ class delay_awaitable
     // Aligned storage for the stop callback.
     // Declared last: its destructor may block while
     // the callback accesses the members above.
-#ifdef _MSC_VER
-# pragma warning(push)
-# pragma warning(disable: 4324)
-#endif
+    BOOST_CAPY_MSVC_WARNING_PUSH
+    BOOST_CAPY_MSVC_WARNING_DISABLE(4324)
     alignas(stop_cb_t)
         unsigned char stop_cb_buf_[sizeof(stop_cb_t)];
-#ifdef _MSC_VER
-# pragma warning(pop)
-#endif
+    BOOST_CAPY_MSVC_WARNING_POP
 
     stop_cb_t& stop_cb_() noexcept
     {
