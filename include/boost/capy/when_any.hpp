@@ -577,43 +577,6 @@ template<IoAwaitable... As>
     co_return std::move(*state.result_);
 }
 
-/** Concept for ranges of full I/O awaitables.
-
-    A range satisfies `IoAwaitableRange` if it is a sized input range
-    whose value type satisfies @ref IoAwaitable. This enables when_any
-    to accept any container or view of awaitables, not just std::vector.
-
-    @tparam R The range type.
-
-    @par Requirements
-    @li `R` must satisfy `std::ranges::input_range`
-    @li `R` must satisfy `std::ranges::sized_range`
-    @li `std::ranges::range_value_t<R>` must satisfy @ref IoAwaitable
-
-    @par Syntactic Requirements
-    Given `r` of type `R`:
-    @li `std::ranges::begin(r)` is valid
-    @li `std::ranges::end(r)` is valid
-    @li `std::ranges::size(r)` returns `std::ranges::range_size_t<R>`
-    @li `*std::ranges::begin(r)` satisfies @ref IoAwaitable
-
-    @par Example
-    @code
-    template<IoAwaitableRange R>
-    task<void> race_all(R&& awaitables) {
-        auto winner = co_await when_any(std::forward<R>(awaitables));
-        // Process winner...
-    }
-    @endcode
-
-    @see when_any, IoAwaitable
-*/
-template<typename R>
-concept IoAwaitableRange =
-    std::ranges::input_range<R> &&
-    std::ranges::sized_range<R> &&
-    IoAwaitable<std::ranges::range_value_t<R>>;
-
 namespace detail {
 
 /** Shared state for homogeneous when_any (range overload).

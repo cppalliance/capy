@@ -13,6 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <coroutine>
 #include <boost/capy/ex/io_env.hpp>
+#include <ranges>
 
 namespace boost {
 namespace capy {
@@ -120,6 +121,19 @@ concept IoAwaitable =
 */
 template<typename A>
 using awaitable_result_t = decltype(std::declval<std::decay_t<A>&>().await_resume());
+
+/** Concept for ranges of I/O awaitables.
+
+    A range satisfies `IoAwaitableRange` if it is a sized input range
+    whose value type satisfies @ref IoAwaitable.
+
+    @tparam R The range type.
+*/
+template<typename R>
+concept IoAwaitableRange =
+    std::ranges::input_range<R> &&
+    std::ranges::sized_range<R> &&
+    IoAwaitable<std::ranges::range_value_t<R>>;
 
 } // namespace capy
 } // namespace boost
