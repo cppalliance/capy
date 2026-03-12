@@ -241,6 +241,33 @@ struct delay_test
 #endif
     }
 
+    // Test: concurrent delays on a multi-threaded pool
+    //       exercises use_service race and shared timer_service
+    void
+    testConcurrentDelays()
+    {
+        constexpr int N = 10;
+        thread_pool pool(4);
+        std::latch done(N);
+
+        auto delay_task = [](int i) -> task<void>
+        {
+            co_await delay(10ms * i);
+        };
+
+        for(int i = 0; i < N; ++i)
+        {
+            run_async(pool.get_executor(),
+                [&]() { done.count_down(); },
+                [&](std::exception_ptr) {
+                    done.count_down();
+                })(delay_task(i));
+        }
+
+        done.wait();
+        BOOST_TEST(true);
+    }
+
     void
     run()
     {
@@ -251,6 +278,7 @@ struct delay_test
         testZeroDuration();
         testSequentialDelays();
         testDestroyWhileSuspended();
+        testConcurrentDelays();
     }
 };
 

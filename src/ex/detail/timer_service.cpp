@@ -20,6 +20,12 @@ timer_service(execution_context& ctx)
     (void)ctx;
 }
 
+timer_service::
+~timer_service()
+{
+    stop_and_join();
+}
+
 timer_service::timer_id
 timer_service::
 schedule_at(
@@ -54,7 +60,7 @@ cancel(timer_id id)
 
 void
 timer_service::
-shutdown()
+stop_and_join()
 {
     {
         std::lock_guard lock(mutex_);
@@ -63,6 +69,13 @@ shutdown()
     cv_.notify_one();
     if(thread_.joinable())
         thread_.join();
+}
+
+void
+timer_service::
+shutdown()
+{
+    stop_and_join();
 }
 
 void
