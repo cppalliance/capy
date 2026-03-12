@@ -272,15 +272,11 @@ struct stop_only_awaitable
     // When ~jthread calls request_stop() before join(), the
     // destructor's _M_reset (on the requesting thread) races with
     // emplace's _M_engaged write (on the registering thread).
-#ifdef _MSC_VER
-# pragma warning(push)
-# pragma warning(disable: 4324) // padded due to alignas
-#endif
+    BOOST_CAPY_MSVC_WARNING_PUSH
+    BOOST_CAPY_MSVC_WARNING_DISABLE(4324) // padded due to alignas
     alignas(stop_resume_callback)
         unsigned char stop_cb_buf_[sizeof(stop_resume_callback)]{};
-#ifdef _MSC_VER
-# pragma warning(pop)
-#endif
+    BOOST_CAPY_MSVC_WARNING_POP
     std::atomic<bool> active_{false};
 
     ~stop_only_awaitable()

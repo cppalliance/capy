@@ -63,7 +63,7 @@ struct [[nodiscard]] io_result<>
     /** The error code from the operation. */
     std::error_code ec;
 
-#ifdef _MSC_VER
+#if BOOST_CAPY_WORKAROUND(_MSC_VER, >= 1)
     // Tuple protocol (unconditional - io_result<> is not an aggregate)
     template<std::size_t I>
     auto& get() & noexcept
@@ -108,7 +108,7 @@ struct [[nodiscard]] io_result<T1>
     /// The first payload value. Unspecified when `ec` is set.
     T1 t1{};
 
-#ifdef _MSC_VER
+#if BOOST_CAPY_WORKAROUND(_MSC_VER, >= 1)
     template<std::size_t I>
     auto& get() & noexcept
     {
@@ -164,7 +164,7 @@ struct [[nodiscard]] io_result<T1, T2>
     /// The second payload value. Unspecified when `ec` is set.
     T2 t2{};
 
-#ifdef _MSC_VER
+#if BOOST_CAPY_WORKAROUND(_MSC_VER, >= 1)
     template<std::size_t I>
     auto& get() & noexcept
     {
@@ -227,7 +227,7 @@ struct [[nodiscard]] io_result<T1, T2, T3>
     /// The third payload value. Unspecified when `ec` is set.
     T3 t3{};
 
-#ifdef _MSC_VER
+#if BOOST_CAPY_WORKAROUND(_MSC_VER, >= 1)
     template<std::size_t I>
     auto& get() & noexcept
     {
@@ -260,7 +260,7 @@ struct [[nodiscard]] io_result<T1, T2, T3>
 #endif
 };
 
-#ifdef _MSC_VER
+#if BOOST_CAPY_WORKAROUND(_MSC_VER, >= 1)
 
 // Free-standing get() overloads for ADL (MSVC aggregate workaround).
 /// @cond
@@ -339,12 +339,12 @@ auto&& get(io_result<T1, T2, T3>&& r) noexcept
 
 /// @endcond
 
-#endif // _MSC_VER
+#endif // BOOST_CAPY_WORKAROUND(_MSC_VER, >= 1)
 
 } // namespace capy
 } // namespace boost
 
-#ifdef _MSC_VER
+#if BOOST_CAPY_WORKAROUND(_MSC_VER, >= 1)
 
 // Tuple protocol for structured bindings (MSVC workaround)
 // MSVC has a bug with aggregate decomposition in coroutines, so we use
@@ -448,6 +448,6 @@ struct tuple_element<3, boost::capy::io_result<T1, T2, T3>>
 
 } // namespace std
 
-#endif // _MSC_VER
+#endif // BOOST_CAPY_WORKAROUND(_MSC_VER, >= 1)
 
 #endif // BOOST_CAPY_IO_RESULT_HPP

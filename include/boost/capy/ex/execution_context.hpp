@@ -163,15 +163,11 @@ public:
         service* next_ = nullptr;
 
 // warning C4251: 'std::type_index' needs to have dll-interface
-#ifdef _MSC_VER
-# pragma warning(push)
-# pragma warning(disable: 4251)
-#endif
+        BOOST_CAPY_MSVC_WARNING_PUSH
+        BOOST_CAPY_MSVC_WARNING_DISABLE(4251)
         detail::type_index t0_{detail::type_id<void>()};
         detail::type_index t1_{detail::type_id<void>()};
-#ifdef _MSC_VER
-# pragma warning(pop)
-#endif
+        BOOST_CAPY_MSVC_WARNING_POP
     };
 
     //------------------------------------------------
@@ -503,16 +499,12 @@ private:
     struct BOOST_CAPY_DECL
         factory
     {
-#ifdef _MSC_VER
-# pragma warning(push)
-# pragma warning(disable: 4251)
-#endif
 // warning C4251: 'std::type_index' needs to have dll-interface
+        BOOST_CAPY_MSVC_WARNING_PUSH
+        BOOST_CAPY_MSVC_WARNING_DISABLE(4251)
         detail::type_index t0;
         detail::type_index t1;
-#ifdef _MSC_VER
-# pragma warning(pop)
-#endif
+        BOOST_CAPY_MSVC_WARNING_POP
 
         factory(
             detail::type_info const& t0_,
@@ -531,16 +523,12 @@ private:
     service& use_service_impl(factory& f);
     service& make_service_impl(factory& f);
 
-#ifdef _MSC_VER
-# pragma warning(push)
-# pragma warning(disable: 4251)
-#endif
-// warning C4251: 'std::type_index' needs to have dll-interface
+// warning C4251: std::mutex, std::shared_ptr need dll-interface
+    BOOST_CAPY_MSVC_WARNING_PUSH
+    BOOST_CAPY_MSVC_WARNING_DISABLE(4251)
     mutable std::mutex mutex_;
     std::shared_ptr<void> owned_;
-#ifdef _MSC_VER
-# pragma warning(pop)
-#endif
+    BOOST_CAPY_MSVC_WARNING_POP
     std::pmr::memory_resource* frame_alloc_ = nullptr;
     service* head_ = nullptr;
     bool shutdown_ = false;

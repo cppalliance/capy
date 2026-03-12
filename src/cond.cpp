@@ -76,9 +76,9 @@ equivalent(
 // msvc 14.0 has a bug that warns about inability
 // to use constexpr construction here, even though
 // there's no constexpr construction
-#if defined(_MSC_VER) && _MSC_VER <= 1900
-# pragma warning( push )
-# pragma warning( disable : 4592 )
+#if BOOST_CAPY_WORKAROUND(_MSC_VER, <= 1900)
+BOOST_CAPY_MSVC_WARNING_PUSH
+BOOST_CAPY_MSVC_WARNING_DISABLE(4592)
 #endif
 
 #if defined(__cpp_constinit) && __cpp_constinit >= 201907L
@@ -87,8 +87,8 @@ constinit cond_cat_type cond_cat;
 cond_cat_type cond_cat;
 #endif
 
-#if defined(_MSC_VER) && _MSC_VER <= 1900
-# pragma warning( pop )
+#if BOOST_CAPY_WORKAROUND(_MSC_VER, <= 1900)
+BOOST_CAPY_MSVC_WARNING_POP
 #endif
 
 } // detail

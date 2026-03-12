@@ -104,10 +104,8 @@ private:
     void run();
 
 // warning C4251: std types need to have dll-interface
-#ifdef _MSC_VER
-# pragma warning(push)
-# pragma warning(disable: 4251)
-#endif
+    BOOST_CAPY_MSVC_WARNING_PUSH
+    BOOST_CAPY_MSVC_WARNING_DISABLE(4251)
     std::mutex mutex_;
     std::condition_variable cv_;
     std::condition_variable cancel_cv_;
@@ -120,9 +118,7 @@ private:
     timer_id executing_id_ = 0;
     bool stopped_ = false;
     std::thread thread_;
-#ifdef _MSC_VER
-# pragma warning(pop)
-#endif
+    BOOST_CAPY_MSVC_WARNING_POP
 };
 
 } // detail

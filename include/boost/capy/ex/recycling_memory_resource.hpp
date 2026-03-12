@@ -46,10 +46,8 @@ namespace capy {
     @see get_recycling_memory_resource
     @see run_async
 */
-#ifdef _MSC_VER
-# pragma warning(push)
-# pragma warning(disable: 4275) // non dll-interface base class
-#endif
+BOOST_CAPY_MSVC_WARNING_PUSH
+BOOST_CAPY_MSVC_WARNING_DISABLE(4275) // non dll-interface base class
 class BOOST_CAPY_DECL recycling_memory_resource : public std::pmr::memory_resource
 {
     static constexpr std::size_t num_classes = 6;
@@ -184,9 +182,7 @@ protected:
         return this == &other;
     }
 };
-#ifdef _MSC_VER
-# pragma warning(pop)
-#endif
+BOOST_CAPY_MSVC_WARNING_POP
 
 /** Returns pointer to the default recycling memory resource.
 
