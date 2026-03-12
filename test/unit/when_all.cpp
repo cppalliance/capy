@@ -1124,5 +1124,333 @@ TEST_SUITE(
     when_all_strand_test,
     "boost.capy.when_all_strand");
 
+//----------------------------------------------------------
+// Range-based when_all tests
+//----------------------------------------------------------
+
+// Verify IoAwaitableRange concept
+static_assert(IoAwaitableRange<std::vector<task<int>>>);
+static_assert(IoAwaitableRange<std::vector<task<void>>>);
+
+struct when_all_range_test
+{
+    // Test: Single-element vector
+    void
+    testSingleElement()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool completed = false;
+
+        std::vector<task<int>> tasks;
+        tasks.push_back(returns_int(42));
+
+        run_async(ex,
+            [&](std::vector<int> v) {
+                completed = true;
+                BOOST_TEST_EQ(v.size(), 1u);
+                BOOST_TEST_EQ(v[0], 42);
+            },
+            [](std::exception_ptr) {})(
+            when_all(std::move(tasks)));
+
+        BOOST_TEST(completed);
+    }
+
+    // Test: Multiple elements, results in input order
+    void
+    testMultipleElements()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool completed = false;
+
+        std::vector<task<int>> tasks;
+        tasks.push_back(returns_int(10));
+        tasks.push_back(returns_int(20));
+        tasks.push_back(returns_int(30));
+
+        run_async(ex,
+            [&](std::vector<int> v) {
+                completed = true;
+                BOOST_TEST_EQ(v.size(), 3u);
+                BOOST_TEST_EQ(v[0], 10);
+                BOOST_TEST_EQ(v[1], 20);
+                BOOST_TEST_EQ(v[2], 30);
+            },
+            [](std::exception_ptr) {})(
+            when_all(std::move(tasks)));
+
+        BOOST_TEST(completed);
+    }
+
+    // Test: Empty range throws std::invalid_argument
+    void
+    testEmptyRange()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool caught = false;
+
+        std::vector<task<int>> tasks;
+
+        run_async(ex,
+            [](std::vector<int>) {},
+            [&](std::exception_ptr ep) {
+                try {
+                    std::rethrow_exception(ep);
+                } catch (std::invalid_argument const&) {
+                    caught = true;
+                }
+            })(when_all(std::move(tasks)));
+
+        BOOST_TEST(caught);
+    }
+
+    // Test: Void range completes successfully
+    void
+    testVoidRange()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool completed = false;
+
+        std::vector<task<void>> tasks;
+        tasks.push_back(void_task());
+        tasks.push_back(void_task());
+        tasks.push_back(void_task());
+
+        run_async(ex,
+            [&]() {
+                completed = true;
+            },
+            [](std::exception_ptr) {})(
+            when_all(std::move(tasks)));
+
+        BOOST_TEST(completed);
+    }
+
+    // Test: Empty void range throws
+    void
+    testEmptyVoidRange()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool caught = false;
+
+        std::vector<task<void>> tasks;
+
+        run_async(ex,
+            []() {},
+            [&](std::exception_ptr ep) {
+                try {
+                    std::rethrow_exception(ep);
+                } catch (std::invalid_argument const&) {
+                    caught = true;
+                }
+            })(when_all(std::move(tasks)));
+
+        BOOST_TEST(caught);
+    }
+
+    // Test: Exception in one task propagates
+    void
+    testException()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool caught_exception = false;
+        std::string error_msg;
+
+        std::vector<task<int>> tasks;
+        tasks.push_back(returns_int(1));
+        tasks.push_back(throws_exception("range error"));
+        tasks.push_back(returns_int(3));
+
+        run_async(ex,
+            [](std::vector<int>) {},
+            [&](std::exception_ptr ep) {
+                try {
+                    std::rethrow_exception(ep);
+                } catch (test_exception const& e) {
+                    caught_exception = true;
+                    error_msg = e.what();
+                }
+            })(when_all(std::move(tasks)));
+
+        BOOST_TEST(caught_exception);
+        BOOST_TEST_EQ(error_msg, "range error");
+    }
+
+    // Test: Void range exception
+    void
+    testVoidRangeException()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool caught_exception = false;
+
+        std::vector<task<void>> tasks;
+        tasks.push_back(void_task());
+        tasks.push_back(void_throws_exception("void range error"));
+
+        run_async(ex,
+            []() {},
+            [&](std::exception_ptr ep) {
+                try {
+                    std::rethrow_exception(ep);
+                } catch (test_exception const&) {
+                    caught_exception = true;
+                }
+            })(when_all(std::move(tasks)));
+
+        BOOST_TEST(caught_exception);
+    }
+
+    // Test: All tasks complete even after stop is requested
+    void
+    testAllTasksCompleteAfterError()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        std::atomic<int> completion_count{0};
+        bool caught_exception = false;
+
+        auto counting_task = [&]() -> task<int> {
+            ++completion_count;
+            co_return 1;
+        };
+
+        auto failing_task = [&]() -> task<int> {
+            ++completion_count;
+            throw_test_exception("fail");
+            co_return 0;
+        };
+
+        std::vector<task<int>> tasks;
+        tasks.push_back(counting_task());
+        tasks.push_back(failing_task());
+        tasks.push_back(counting_task());
+
+        run_async(ex,
+            [](std::vector<int>) {},
+            [&](std::exception_ptr) {
+                caught_exception = true;
+            })(when_all(std::move(tasks)));
+
+        BOOST_TEST(caught_exception);
+        BOOST_TEST_EQ(completion_count.load(), 3);
+    }
+
+    // Test: Nested range when_all inside variadic when_all
+    void
+    testNestedRangeInVariadic()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool completed = false;
+
+        auto range_task = []() -> task<std::vector<int>> {
+            std::vector<task<int>> tasks;
+            tasks.push_back(returns_int(1));
+            tasks.push_back(returns_int(2));
+            tasks.push_back(returns_int(3));
+            co_return co_await when_all(std::move(tasks));
+        };
+
+        run_async(ex,
+            [&](std::tuple<std::vector<int>, int> t) {
+                auto& [vec, val] = t;
+                completed = true;
+                BOOST_TEST_EQ(vec.size(), 3u);
+                BOOST_TEST_EQ(vec[0] + vec[1] + vec[2], 6);
+                BOOST_TEST_EQ(val, 99);
+            },
+            [](std::exception_ptr) {})(
+            when_all(range_task(), returns_int(99)));
+
+        BOOST_TEST(completed);
+    }
+
+    // Test: String results (non-trivial type)
+    void
+    testStringResults()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        bool completed = false;
+
+        std::vector<task<std::string>> tasks;
+        tasks.push_back(returns_string("first"));
+        tasks.push_back(returns_string("second"));
+        tasks.push_back(returns_string("third"));
+
+        run_async(ex,
+            [&](std::vector<std::string> v) {
+                completed = true;
+                BOOST_TEST_EQ(v[0], "first");
+                BOOST_TEST_EQ(v[1], "second");
+                BOOST_TEST_EQ(v[2], "third");
+            },
+            [](std::exception_ptr) {})(
+            when_all(std::move(tasks)));
+
+        BOOST_TEST(completed);
+    }
+
+    // Test: Range when_all on strand executor
+    void
+    testStrandRange()
+    {
+        thread_pool pool(2);
+        strand s{pool.get_executor()};
+        std::latch done(1);
+        bool completed = false;
+        int result = 0;
+
+        auto outer = [&]() -> task<std::vector<int>> {
+            std::vector<task<int>> tasks;
+            tasks.push_back(returns_int(10));
+            tasks.push_back(returns_int(20));
+            co_return co_await when_all(std::move(tasks));
+        };
+
+        run_async(s,
+            [&](std::vector<int> v) {
+                completed = true;
+                result = v[0] + v[1];
+                done.count_down();
+            },
+            [&](auto) {
+                done.count_down();
+            }
+        )(outer());
+
+        done.wait();
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(result, 30);
+    }
+
+    void
+    run()
+    {
+        testSingleElement();
+        testMultipleElements();
+        testEmptyRange();
+        testVoidRange();
+        testEmptyVoidRange();
+        testException();
+        testVoidRangeException();
+        testAllTasksCompleteAfterError();
+        testNestedRangeInVariadic();
+        testStringResults();
+        testStrandRange();
+    }
+};
+
+TEST_SUITE(
+    when_all_range_test,
+    "boost.capy.when_all_range");
+
 } // capy
 } // boost
