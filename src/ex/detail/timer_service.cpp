@@ -26,18 +26,19 @@ timer_service::
     stop_and_join();
 }
 
-timer_service::timer_id
+void
 timer_service::
 schedule_at(
     std::chrono::steady_clock::time_point deadline,
-    std::function<void()> cb)
+    std::function<void()> cb,
+    timer_id& out)
 {
     std::lock_guard lock(mutex_);
     auto id = ++next_id_;
+    out = id;
     active_ids_.insert(id);
     queue_.push(entry{deadline, id, std::move(cb)});
     cv_.notify_one();
-    return id;
 }
 
 void

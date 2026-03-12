@@ -152,8 +152,24 @@ public:
 
         ts_ = &env->executor.context().use_service<detail::timer_service>();
 
-        // Schedule timer (won't fire inline since deadline is in the future)
-        tid_ = ts_->schedule_after(dur_,
+        // Register stop callback before arming the timer.
+        // Once the timer is armed, another thread can fire it,
+        // resume the coroutine, and destroy this awaitable.
+        stop_cb_active_ = true;
+        ::new(stop_cb_buf_) stop_cb_t(
+            env->stop_token,
+            cancel_fn{this, env->executor, h});
+
+        // If the stop callback already claimed the resume
+        // (inline invocation), skip the timer entirely.
+        if(claimed_.load(std::memory_order_acquire))
+            return std::noop_coroutine();
+
+        // Schedule timer using the output-reference overload so
+        // that tid_ is written while the timer_service lock is
+        // held — the timer thread cannot fire the callback until
+        // after the lock is released, at which point tid_ is set.
+        ts_->schedule_after(dur_,
             [this, h, ex = env->executor]()
             {
                 if(!claimed_.exchange(
@@ -161,13 +177,8 @@ public:
                 {
                     ex.post(h);
                 }
-            });
-
-        // Register stop callback (may fire inline)
-        ::new(stop_cb_buf_) stop_cb_t(
-            env->stop_token,
-            cancel_fn{this, env->executor, h});
-        stop_cb_active_ = true;
+            },
+            tid_);
 
         return std::noop_coroutine();
     }

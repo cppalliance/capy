@@ -57,15 +57,20 @@ public:
         The callback is invoked on the timer service's background
         thread. It must not block for extended periods.
 
-        @return An id that can be passed to cancel().
+        The id is written to @p out while the internal lock is
+        held, so the timer thread cannot fire the callback before
+        the write completes. This is required when the id
+        destination lives in memory that the callback itself may
+        free (e.g. a coroutine frame).
     */
     template<typename Rep, typename Period>
-    timer_id schedule_after(
+    void schedule_after(
         std::chrono::duration<Rep, Period> dur,
-        std::function<void()> cb)
+        std::function<void()> cb,
+        timer_id& out)
     {
         auto deadline = std::chrono::steady_clock::now() + dur;
-        return schedule_at(deadline, std::move(cb));
+        schedule_at(deadline, std::move(cb), out);
     }
 
     /** Cancel a pending timer.
@@ -97,9 +102,10 @@ private:
         }
     };
 
-    timer_id schedule_at(
+    void schedule_at(
         std::chrono::steady_clock::time_point deadline,
-        std::function<void()> cb);
+        std::function<void()> cb,
+        timer_id& out);
 
     void run();
 

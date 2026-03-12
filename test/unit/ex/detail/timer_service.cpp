@@ -35,10 +35,11 @@ struct timer_service_test
         std::latch done(1);
         bool fired = false;
 
+        detail::timer_service::timer_id id;
         ts.schedule_after(1ms, [&] {
             fired = true;
             done.count_down();
-        });
+        }, id);
 
         done.wait();
         BOOST_TEST(fired);
@@ -54,9 +55,10 @@ struct timer_service_test
 
         bool fired = false;
 
-        auto id = ts.schedule_after(1s, [&] {
+        detail::timer_service::timer_id id;
+        ts.schedule_after(1s, [&] {
             fired = true;
-        });
+        }, id);
 
         ts.cancel(id);
 
@@ -75,9 +77,10 @@ struct timer_service_test
 
         std::latch done(1);
 
-        auto id = ts.schedule_after(1ms, [&] {
+        detail::timer_service::timer_id id;
+        ts.schedule_after(1ms, [&] {
             done.count_down();
-        });
+        }, id);
 
         done.wait();
         // Should not block or crash
@@ -98,21 +101,22 @@ struct timer_service_test
 
         auto const scale = failsafe_scale;
 
+        detail::timer_service::timer_id id;
         ts.schedule_after(30ms * scale, [&] {
             std::lock_guard lock(mu);
             order.push_back(3);
             done.count_down();
-        });
+        }, id);
         ts.schedule_after(10ms * scale, [&] {
             std::lock_guard lock(mu);
             order.push_back(1);
             done.count_down();
-        });
+        }, id);
         ts.schedule_after(20ms * scale, [&] {
             std::lock_guard lock(mu);
             order.push_back(2);
             done.count_down();
-        });
+        }, id);
 
         done.wait();
         BOOST_TEST_EQ(order.size(), 3u);
@@ -132,9 +136,10 @@ struct timer_service_test
         std::latch done(1);
         auto start = std::chrono::steady_clock::now();
 
+        detail::timer_service::timer_id id;
         ts.schedule_after(0ms, [&] {
             done.count_down();
-        });
+        }, id);
 
         done.wait();
         auto elapsed = std::chrono::steady_clock::now() - start;
@@ -153,12 +158,13 @@ struct timer_service_test
         std::atomic<int> count{0};
         std::latch done(N);
 
+        detail::timer_service::timer_id id;
         for(int i = 0; i < N; ++i)
         {
             ts.schedule_after(1ms, [&] {
                 count.fetch_add(1, std::memory_order_relaxed);
                 done.count_down();
-            });
+            }, id);
         }
 
         done.wait();
@@ -176,16 +182,19 @@ struct timer_service_test
         std::atomic<int> count{0};
         std::latch done(1);
 
-        auto id1 = ts.schedule_after(10ms, [&] {
+        detail::timer_service::timer_id id1;
+        ts.schedule_after(10ms, [&] {
             count.fetch_add(1, std::memory_order_relaxed);
-        });
+        }, id1);
+        detail::timer_service::timer_id id2;
         ts.schedule_after(10ms, [&] {
             count.fetch_add(1, std::memory_order_relaxed);
             done.count_down();
-        });
-        auto id3 = ts.schedule_after(10ms, [&] {
+        }, id2);
+        detail::timer_service::timer_id id3;
+        ts.schedule_after(10ms, [&] {
             count.fetch_add(1, std::memory_order_relaxed);
-        });
+        }, id3);
 
         ts.cancel(id1);
         ts.cancel(id3);
@@ -207,9 +216,10 @@ struct timer_service_test
                 .use_service<detail::timer_service>();
 
             // Schedule timers far in the future
-            ts.schedule_after(10s, [] {});
-            ts.schedule_after(10s, [] {});
-            ts.schedule_after(10s, [] {});
+            detail::timer_service::timer_id id;
+            ts.schedule_after(10s, [] {}, id);
+            ts.schedule_after(10s, [] {}, id);
+            ts.schedule_after(10s, [] {}, id);
 
             // pool destructor calls shutdown — should not hang
         }
@@ -228,9 +238,10 @@ struct timer_service_test
         auto start = std::chrono::steady_clock::now();
         auto dur = 50ms;
 
+        detail::timer_service::timer_id id;
         ts.schedule_after(dur, [&] {
             done.count_down();
-        });
+        }, id);
 
         done.wait();
         auto elapsed = std::chrono::steady_clock::now() - start;
@@ -249,12 +260,13 @@ struct timer_service_test
         std::atomic<bool> callback_finished{false};
         std::latch started(1);
 
-        auto id = ts.schedule_after(1ms, [&] {
+        detail::timer_service::timer_id id;
+        ts.schedule_after(1ms, [&] {
             callback_started.store(true);
             started.count_down();
             std::this_thread::sleep_for(50ms);
             callback_finished.store(true);
-        });
+        }, id);
 
         // Wait for callback to start executing
         started.wait();
