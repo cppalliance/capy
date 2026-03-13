@@ -10,15 +10,17 @@
 #ifndef BOOST_CAPY_EXAMPLE_SENDER_AWAITABLE_HPP
 #define BOOST_CAPY_EXAMPLE_SENDER_AWAITABLE_HPP
 
+#include <boost/capy/error.hpp>
 #include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/io_result.hpp>
 
 #include <beman/execution/execution.hpp>
 
 #include <coroutine>
-#include <cstring>
 #include <exception>
 #include <new>
 #include <stop_token>
+#include <system_error>
 #include <tuple>
 #include <type_traits>
 #include <variant>
@@ -29,20 +31,20 @@ namespace detail {
 
 struct stopped_t {};
 
-// The receiver's environment exposes only the stop token.
+struct operation_cancelled {};
+
 struct bridge_env
 {
     std::stop_token st_;
 
     auto query(
-        beman::execution::get_stop_token_t const&) const noexcept
+        beman::execution::get_stop_token_t const&)
+            const noexcept
     {
         return st_;
     }
 };
 
-// Deduce the single value tuple type from a sender's completion
-// signatures using beman::execution::value_types_of_t.
 template<class Sender>
 using sender_single_value_t =
     beman::execution::value_types_of_t<
@@ -51,20 +53,68 @@ using sender_single_value_t =
         std::tuple,
         std::type_identity_t>;
 
-// Bridge receiver that stores the sender's completion result
-// and posts the coroutine handle back through the Capy executor.
+// Detect whether a sender can complete with
+// set_error(std::error_code).
+template<class Sender>
+struct has_error_code_completion
+{
+    template<class... Es>
+    struct checker
+    {
+        static constexpr bool value =
+            (std::is_same_v<
+                Es, std::error_code> || ...);
+    };
+
+    static constexpr bool value =
+        beman::execution::error_types_of_t<
+            Sender,
+            bridge_env,
+            checker>::value;
+};
+
+template<class Sender>
+constexpr bool has_error_code_v =
+    has_error_code_completion<Sender>::value;
+
+// Variant when sender can complete with
+// set_error(error_code): separate slot so
+// error_code is not wrapped in exception_ptr.
 template<class ValueTuple>
+using ec_result_variant = std::variant<
+    std::monostate,
+    ValueTuple,
+    std::error_code,
+    std::exception_ptr,
+    stopped_t>;
+
+// Variant when sender does not complete with
+// set_error(error_code).
+template<class ValueTuple>
+using no_ec_result_variant = std::variant<
+    std::monostate,
+    ValueTuple,
+    std::exception_ptr,
+    stopped_t>;
+
+template<class ValueTuple, bool HasEc>
+using result_variant = std::conditional_t<
+    HasEc,
+    ec_result_variant<ValueTuple>,
+    no_ec_result_variant<ValueTuple>>;
+
+// Bridge receiver that stores the sender's
+// completion result and posts the coroutine
+// handle back through the Capy executor.
+template<class ValueTuple, bool HasEc>
 struct bridge_receiver
 {
-    using receiver_concept = beman::execution::receiver_t;
+    using receiver_concept =
+        beman::execution::receiver_t;
 
-    std::variant<
-        std::monostate,
-        ValueTuple,
-        std::exception_ptr,
-        stopped_t>*         result_;
-    std::coroutine_handle<> cont_;
-    io_env const*           env_;
+    result_variant<ValueTuple, HasEc>* result_;
+    std::coroutine_handle<>            cont_;
+    io_env const*                      env_;
 
     auto get_env() const noexcept -> bridge_env
     {
@@ -83,56 +133,84 @@ struct bridge_receiver
     void set_error(E&& e) && noexcept
     {
         if constexpr (
+            HasEc &&
             std::is_same_v<
-                std::decay_t<E>, std::exception_ptr>)
+                std::decay_t<E>,
+                std::error_code>)
             result_->template emplace<2>(
                 std::forward<E>(e));
+        else if constexpr (
+            std::is_same_v<
+                std::decay_t<E>,
+                std::exception_ptr>)
+        {
+            constexpr auto idx = HasEc ? 3 : 2;
+            result_->template emplace<idx>(
+                std::forward<E>(e));
+        }
         else
-            result_->template emplace<2>(
+        {
+            constexpr auto idx = HasEc ? 3 : 2;
+            result_->template emplace<idx>(
                 std::make_exception_ptr(
                     std::forward<E>(e)));
+        }
         env_->executor.post(cont_);
     }
 
     void set_stopped() && noexcept
     {
-        result_->template emplace<3>(stopped_t{});
+        constexpr auto idx = HasEc ? 4 : 3;
+        result_->template emplace<idx>(
+            stopped_t{});
         env_->executor.post(cont_);
     }
 };
 
 } // namespace detail
 
-/** Awaitable that bridges a beman::execution sender into a Capy coroutine.
+/** Awaitable that bridges a beman::execution
+    sender into a Capy coroutine.
 
-    Satisfies IoAwaitable. When co_awaited inside a capy::task,
-    connects the sender to a bridge receiver, starts the operation,
-    and resumes the coroutine on the caller's executor when the
-    sender completes.
+    Satisfies IoAwaitable. When co_awaited inside
+    a capy::task, connects the sender to a bridge
+    receiver, starts the operation, and resumes
+    the coroutine on the caller's executor when
+    the sender completes.
 
-    Stop token propagation: the Capy coroutine's stop_token is
-    forwarded to the sender through the bridge receiver's
-    environment.
+    The bridge inspects the sender's error
+    completion signatures at compile time. If the
+    sender can complete with
+    set_error(std::error_code), await_resume
+    returns io_result so the error code is a
+    value, not an exception. Otherwise
+    await_resume returns the value directly and
+    genuine exceptions are rethrown.
 
-    @tparam Sender The beman::execution sender type.
+    @tparam Sender The beman::execution sender
+        type.
 */
 template<class Sender>
 struct [[nodiscard]] sender_awaitable
 {
-    using value_tuple = detail::sender_single_value_t<Sender>;
-    using receiver_type = detail::bridge_receiver<value_tuple>;
+    static constexpr bool has_ec =
+        detail::has_error_code_v<Sender>;
+
+    using value_tuple =
+        detail::sender_single_value_t<Sender>;
+    using variant_type =
+        detail::result_variant<
+            value_tuple, has_ec>;
+    using receiver_type =
+        detail::bridge_receiver<
+            value_tuple, has_ec>;
     using op_state_type = decltype(
         beman::execution::connect(
             std::declval<Sender>(),
             std::declval<receiver_type>()));
 
     Sender sndr_;
-
-    std::variant<
-        std::monostate,
-        value_tuple,
-        std::exception_ptr,
-        detail::stopped_t> result_{};
+    variant_type result_{};
 
     alignas(op_state_type)
     unsigned char op_buf_[sizeof(op_state_type)];
@@ -143,16 +221,20 @@ struct [[nodiscard]] sender_awaitable
     {
     }
 
-    // Movable only before await_suspend (op_state not yet constructed)
-    sender_awaitable(sender_awaitable&& o) noexcept(
-        std::is_nothrow_move_constructible_v<Sender>)
+    sender_awaitable(sender_awaitable&& o)
+        noexcept(
+            std::is_nothrow_move_constructible_v<
+                Sender>)
         : sndr_(std::move(o.sndr_))
     {
     }
 
-    sender_awaitable(sender_awaitable const&) = delete;
-    sender_awaitable& operator=(sender_awaitable const&) = delete;
-    sender_awaitable& operator=(sender_awaitable&&) = delete;
+    sender_awaitable(
+        sender_awaitable const&) = delete;
+    sender_awaitable& operator=(
+        sender_awaitable const&) = delete;
+    sender_awaitable& operator=(
+        sender_awaitable&&) = delete;
 
     ~sender_awaitable()
     {
@@ -162,7 +244,10 @@ struct [[nodiscard]] sender_awaitable
                     op_buf_))->~op_state_type();
     }
 
-    bool await_ready() const noexcept { return false; }
+    bool await_ready() const noexcept
+    {
+        return false;
+    }
 
     std::coroutine_handle<>
     await_suspend(
@@ -172,35 +257,123 @@ struct [[nodiscard]] sender_awaitable
         ::new(op_buf_) op_state_type(
             beman::execution::connect(
                 std::move(sndr_),
-                receiver_type{&result_, h, env}));
+                receiver_type{
+                    &result_, h, env}));
         op_constructed_ = true;
         beman::execution::start(
             *std::launder(
-                reinterpret_cast<op_state_type*>(
-                    op_buf_)));
+                reinterpret_cast<
+                    op_state_type*>(
+                        op_buf_)));
         return std::noop_coroutine();
     }
 
     auto await_resume()
     {
+        if constexpr (has_ec)
+            return await_resume_ec();
+        else
+            return await_resume_no_ec();
+    }
+
+private:
+    // Sender can complete with
+    // set_error(error_code). Return io_result
+    // so the error code is a value, not an
+    // exception.
+    auto await_resume_ec()
+    {
+        // exception_ptr at index 3
+        if(result_.index() == 3)
+            std::rethrow_exception(
+                std::get<3>(result_));
+
+        if constexpr (
+            std::tuple_size_v<
+                value_tuple> == 0)
+        {
+            // stopped at index 4
+            if(result_.index() == 4)
+                return io_result<>{
+                    make_error_code(
+                        error::canceled)};
+            if(result_.index() == 2)
+                return io_result<>{
+                    std::get<2>(result_)};
+            return io_result<>{};
+        }
+        else if constexpr (
+            std::tuple_size_v<
+                value_tuple> == 1)
+        {
+            using T = std::tuple_element_t<
+                0, value_tuple>;
+            if(result_.index() == 4)
+                return io_result<T>{
+                    make_error_code(
+                        error::canceled)};
+            if(result_.index() == 2)
+                return io_result<T>{
+                    std::get<2>(result_)};
+            return io_result<T>{
+                {},
+                std::get<0>(
+                    std::get<1>(
+                        std::move(result_)))};
+        }
+        else
+        {
+            if(result_.index() == 4)
+                return io_result<value_tuple>{
+                    make_error_code(
+                        error::canceled)};
+            if(result_.index() == 2)
+                return io_result<value_tuple>{
+                    std::get<2>(result_)};
+            return io_result<value_tuple>{
+                {},
+                std::get<1>(
+                    std::move(result_))};
+        }
+    }
+
+    // Sender does not complete with
+    // set_error(error_code). Return the value
+    // directly; rethrow exceptions.
+    auto await_resume_no_ec()
+    {
+        // exception_ptr at index 2
         if(result_.index() == 2)
             std::rethrow_exception(
                 std::get<2>(result_));
+        // stopped at index 3
         if(result_.index() == 3)
-            throw std::runtime_error(
-                "sender completed with set_stopped");
+            throw detail::operation_cancelled{};
 
-        if constexpr (std::tuple_size_v<value_tuple> == 0)
+        if constexpr (
+            std::tuple_size_v<
+                value_tuple> == 0)
             return;
-        else if constexpr (std::tuple_size_v<value_tuple> == 1)
+        else if constexpr (
+            std::tuple_size_v<
+                value_tuple> == 1)
             return std::get<0>(
-                std::get<1>(std::move(result_)));
+                std::get<1>(
+                    std::move(result_)));
         else
-            return std::get<1>(std::move(result_));
+            return std::get<1>(
+                std::move(result_));
     }
 };
 
-/** Create an IoAwaitable from a beman::execution sender.
+/** Create an IoAwaitable from a
+    beman::execution sender.
+
+    If the sender can complete with
+    set_error(std::error_code), the returned
+    awaitable yields io_result so the error code
+    is a value, not an exception. Otherwise the
+    awaitable yields the value directly.
 
     @par Example
     @code
@@ -215,13 +388,15 @@ struct [[nodiscard]] sender_awaitable
     @endcode
 
     @param sndr The sender to bridge.
-    @return An IoAwaitable that can be co_awaited in a capy::task.
+    @return An IoAwaitable that can be co_awaited
+        in a capy::task.
 */
 template<class Sender>
 auto await_sender(Sender&& sndr)
 {
-    return sender_awaitable<std::decay_t<Sender>>(
-        std::forward<Sender>(sndr));
+    return sender_awaitable<
+        std::decay_t<Sender>>(
+            std::forward<Sender>(sndr));
 }
 
 } // namespace boost::capy
