@@ -23,6 +23,7 @@ add_subdirectory(timeout-cancellation)
 add_subdirectory(type-erased-echo)
 add_subdirectory(when-any-cancellation)
 add_subdirectory(sender-bridge)
+add_subdirectory(awaitable-sender)
 
 if(TARGET Boost::asio)
     add_subdirectory(asio)
