@@ -39,6 +39,7 @@ endif()
 option(BOOST_CAPY_BUILD_TESTS "Build boost::capy tests" ${BUILD_TESTING})
 option(BOOST_CAPY_BUILD_EXAMPLES "Build boost::capy examples" ${BOOST_CAPY_IS_ROOT})
 option(BOOST_CAPY_BUILD_BENCH "Build boost::capy benchmarks" ${BOOST_CAPY_IS_ROOT})
+option(BOOST_CAPY_BUILD_P2300_EXAMPLES "Build examples that depend on beman-execution (P2300)" OFF)
 option(BOOST_CAPY_MRDOCS_BUILD "Build the target for MrDocs: see mrdocs.yml" OFF)
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
