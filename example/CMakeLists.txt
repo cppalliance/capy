@@ -22,6 +22,7 @@ add_subdirectory(stream-pipeline)
 add_subdirectory(timeout-cancellation)
 add_subdirectory(type-erased-echo)
 add_subdirectory(when-any-cancellation)
+add_subdirectory(sender-bridge)
 
 if(TARGET Boost::asio)
     add_subdirectory(asio)
