@@ -88,7 +88,7 @@ def main(ctx):
             globalenv=globalenv),
 
         linux_cxx("cmake-mainproject", "g++-13", packages="g++-13",
-            image="cppalliance/droneubuntu2404:1",
+            image="cppalliance/droneubuntu2510:1",
             buildtype="cmake-mainproject", buildscript="drone",
             environment={
                 'COMMENT': 'cmake-mainproject',
