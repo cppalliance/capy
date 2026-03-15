@@ -279,7 +279,10 @@ struct awaitable_sender
 
             env_ = io_env{ex, st, nullptr};
 
-            bridge_ = [](IoAw aw, Receiver rcvr)
+            bridge_ = [](
+                IoAw aw,
+                Receiver rcvr,
+                std::stop_token const* st)
                 -> detail::bridge_task<IoAw, Receiver>
             {
                 try
@@ -287,32 +290,48 @@ struct awaitable_sender
                     if constexpr (std::is_void_v<result_type>)
                     {
                         co_await std::move(aw);
-                        beman::execution::set_value(
-                            std::move(rcvr));
+                        if (st->stop_requested())
+                            beman::execution::set_stopped(
+                                std::move(rcvr));
+                        else
+                            beman::execution::set_value(
+                                std::move(rcvr));
                     }
                     else if constexpr (
                         detail::is_ec_outcome_v<result_type>)
                     {
                         auto result = co_await std::move(aw);
-                        std::error_code ec;
-                        if constexpr (std::is_same_v<
-                            result_type, std::error_code>)
-                            ec = result;
-                        else
-                            ec = get<0>(result);
-                        if (!ec)
-                            beman::execution::set_value(
+                        if (st->stop_requested())
+                        {
+                            beman::execution::set_stopped(
                                 std::move(rcvr));
+                        }
                         else
-                            beman::execution::set_error(
-                                std::move(rcvr), ec);
+                        {
+                            std::error_code ec;
+                            if constexpr (std::is_same_v<
+                                result_type, std::error_code>)
+                                ec = result;
+                            else
+                                ec = get<0>(result);
+                            if (!ec)
+                                beman::execution::set_value(
+                                    std::move(rcvr));
+                            else
+                                beman::execution::set_error(
+                                    std::move(rcvr), ec);
+                        }
                     }
                     else
                     {
                         auto result = co_await std::move(aw);
-                        beman::execution::set_value(
-                            std::move(rcvr),
-                            std::move(result));
+                        if (st->stop_requested())
+                            beman::execution::set_stopped(
+                                std::move(rcvr));
+                        else
+                            beman::execution::set_value(
+                                std::move(rcvr),
+                                std::move(result));
                     }
                 }
                 catch(...)
@@ -321,7 +340,8 @@ struct awaitable_sender
                         std::move(rcvr),
                         std::current_exception());
                 }
-            }(std::move(aw_), std::move(rcvr_));
+            }(std::move(aw_), std::move(rcvr_),
+                &env_.stop_token);
 
             bridge_.h_.promise().env_ = &env_;
             bridge_.h_.resume();
@@ -383,6 +403,148 @@ auto as_sender(IoAw&& aw)
         "compound result and returns the error code.");
     return awaitable_sender<std::decay_t<IoAw>>{
         std::forward<IoAw>(aw)};
+}
+
+// -------------------------------------------------------
+// split_ec: sender adapter that routes error_code to
+// set_value() or set_error(ec) at runtime.
+// -------------------------------------------------------
+
+namespace detail {
+
+template<class Sender>
+struct split_ec_sender
+{
+    using sender_concept = beman::execution::sender_t;
+
+    using completion_signatures =
+        beman::execution::completion_signatures<
+            beman::execution::set_value_t(),
+            beman::execution::set_error_t(std::error_code),
+            beman::execution::set_error_t(std::exception_ptr),
+            beman::execution::set_stopped_t()>;
+
+    Sender sndr_;
+
+    template<class Receiver>
+    struct ec_receiver
+    {
+        using receiver_concept = beman::execution::receiver_t;
+
+        Receiver rcvr_;
+
+        auto get_env() const noexcept
+        {
+            return beman::execution::get_env(rcvr_);
+        }
+
+        void set_value(std::error_code ec) && noexcept
+        {
+            if (!ec)
+                beman::execution::set_value(
+                    std::move(rcvr_));
+            else
+                beman::execution::set_error(
+                    std::move(rcvr_), ec);
+        }
+
+        void set_value() && noexcept
+        {
+            beman::execution::set_value(
+                std::move(rcvr_));
+        }
+
+        template<class E>
+        void set_error(E&& e) && noexcept
+        {
+            beman::execution::set_error(
+                std::move(rcvr_),
+                std::forward<E>(e));
+        }
+
+        void set_stopped() && noexcept
+        {
+            beman::execution::set_stopped(
+                std::move(rcvr_));
+        }
+    };
+
+    template<class Receiver>
+    struct op_state
+    {
+        using operation_state_concept =
+            beman::execution::operation_state_t;
+
+        using inner_op_t = decltype(
+            beman::execution::connect(
+                std::declval<Sender>(),
+                std::declval<ec_receiver<Receiver>>()));
+
+        inner_op_t op_;
+
+        op_state(Sender sndr, Receiver rcvr)
+            : op_(beman::execution::connect(
+                std::move(sndr),
+                ec_receiver<Receiver>{std::move(rcvr)}))
+        {
+        }
+
+        op_state(op_state const&) = delete;
+        op_state(op_state&&) = delete;
+        op_state& operator=(op_state const&) = delete;
+        op_state& operator=(op_state&&) = delete;
+
+        void start() noexcept
+        {
+            beman::execution::start(op_);
+        }
+    };
+
+    template<class Receiver>
+    auto connect(Receiver rcvr) &&
+        -> op_state<Receiver>
+    {
+        return op_state<Receiver>(
+            std::move(sndr_), std::move(rcvr));
+    }
+
+    template<class Receiver>
+    auto connect(Receiver rcvr) const&
+        -> op_state<Receiver>
+    {
+        return op_state<Receiver>(
+            sndr_, std::move(rcvr));
+    }
+};
+
+} // namespace detail
+
+/** Split an `error_code` value channel into success and error channels.
+
+    Takes a sender that completes with `set_value(error_code)` and
+    routes it at runtime: `set_value()` when the code is zero,
+    `set_error(ec)` otherwise. No exceptions.
+
+    @par Example
+    @code
+    do_read(sock, buf)
+        | split_ec()
+        | ex::upon_error(
+            [](std::error_code ec) {
+                // reachable, no exceptions
+            });
+    @endcode
+
+    @param sndr The predecessor sender.
+    @return A sender completing with `set_value()`,
+        `set_error(error_code)`, or `set_stopped()`.
+*/
+template<class Sender>
+auto split_ec(Sender&& sndr)
+{
+    return detail::split_ec_sender<
+        std::decay_t<Sender>>{
+            std::forward<Sender>(sndr)};
 }
 
 } // namespace boost::capy

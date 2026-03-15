@@ -16,6 +16,7 @@
 #include <chrono>
 #include <iostream>
 #include <latch>
+#include <stop_token>
 #include <system_error>
 #include <thread>
 
@@ -95,4 +96,67 @@ int main()
 
     done.wait();
     std::cout << "  delay completed\n";
+
+    // Test cancellation via stop token
+    std::cout << "\n--- cancellation test ---\n";
+    std::stop_source ss;
+    std::latch done2(1);
+
+    auto sndr2 = capy::as_sender(capy::delay(5s));
+    auto op2 = ex::connect(
+        std::move(sndr2),
+        demo_receiver{
+            {pool.get_executor(), ss.get_token()},
+            &done2});
+
+    std::cout << "  starting 5s delay...\n";
+    ex::start(op2);
+
+    std::this_thread::sleep_for(100ms);
+    std::cout << "  requesting stop...\n";
+    ss.request_stop();
+
+    done2.wait();
+    std::cout << "  cancellation test done\n";
+
+    // Test split_ec with success (error_code == 0)
+    std::cout << "\n--- split_ec success test ---\n";
+    std::latch done3(1);
+
+    auto sndr3 = capy::split_ec(
+        capy::as_sender(capy::delay(100ms)));
+    auto op3 = ex::connect(
+        std::move(sndr3),
+        demo_receiver{
+            {pool.get_executor(), std::stop_token{}},
+            &done3});
+
+    ex::start(op3);
+    done3.wait();
+    std::cout << "  split_ec success test done\n";
+
+    // Test split_ec with error (error_code != 0)
+    std::cout << "\n--- split_ec error test ---\n";
+    std::latch done4(1);
+
+    auto make_ec_sender = [&pool]() {
+        auto task = [](capy::executor_ref)
+            -> capy::task<std::error_code>
+        {
+            co_return std::make_error_code(
+                std::errc::connection_reset);
+        }(pool.get_executor());
+        return capy::as_sender(std::move(task));
+    };
+
+    auto sndr4 = capy::split_ec(make_ec_sender());
+    auto op4 = ex::connect(
+        std::move(sndr4),
+        demo_receiver{
+            {pool.get_executor(), std::stop_token{}},
+            &done4});
+
+    ex::start(op4);
+    done4.wait();
+    std::cout << "  split_ec error test done\n";
 }
