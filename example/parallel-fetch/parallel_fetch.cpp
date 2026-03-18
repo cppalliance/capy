@@ -11,6 +11,7 @@
 #include <iostream>
 #include <latch>
 #include <string>
+#include <vector>
 
 namespace capy = boost::capy;
 
@@ -49,15 +50,20 @@ capy::task<> fetch_user_dashboard(std::string username)
     int user_id = co_await fetch_user_id(username);
     std::cout << "Got user ID: " << user_id << "\n\n";
     
-    // Now fetch all user data in parallel
+    // Fetch all user data in parallel using variadic when_all.
+    // Heterogeneous return types are flattened into the result.
     std::cout << "Starting parallel fetches...\n";
-    // name: std::string, orders: int, balance: double
-    auto [name, orders, balance] = co_await capy::when_all(
-        fetch_user_name(user_id),
-        fetch_order_count(user_id),
-        fetch_account_balance(user_id)
-    );
-    
+
+    auto wrap = [](auto inner) -> capy::io_task<decltype(inner.await_resume())> {
+        co_return capy::io_result<decltype(inner.await_resume())>{
+            {}, co_await std::move(inner)};
+    };
+
+    auto [ec, name, orders, balance] = co_await capy::when_all(
+        wrap(fetch_user_name(user_id)),
+        wrap(fetch_order_count(user_id)),
+        wrap(fetch_account_balance(user_id)));
+
     std::cout << "\nDashboard results:\n";
     std::cout << "  Name: " << name << "\n";
     std::cout << "  Orders: " << orders << "\n";
@@ -65,45 +71,46 @@ capy::task<> fetch_user_dashboard(std::string username)
 }
 
 // Example with void tasks
-capy::task<> log_access(std::string resource)
+capy::io_task<> log_access(std::string resource)
 {
     std::cout << "Logging access to: " << resource << "\n";
-    co_return;
+    co_return capy::io_result<>{};
 }
 
-capy::task<> update_metrics(std::string metric)
+capy::io_task<> update_metrics(std::string metric)
 {
     std::cout << "Updating metric: " << metric << "\n";
-    co_return;
+    co_return capy::io_result<>{};
 }
 
 capy::task<std::string> fetch_with_side_effects()
 {
     std::cout << "\n=== Fetch with side effects ===\n";
-    
-    // void tasks contribute monostate to preserve index mapping
-    auto [log, metrics, data] = co_await capy::when_all(
-        log_access("api/data"),           // void → monostate
-        update_metrics("api_calls"),      // void → monostate
-        fetch_user_name(42)               // returns string
-    );
-    
+
+    auto r = co_await capy::when_all(
+        log_access("api/data"),
+        update_metrics("api_calls"));
+    if (r.ec)
+        co_return "error";
+
+    auto data = co_await fetch_user_name(42);
+
     std::cout << "Data: " << data << "\n";
     co_return data;
 }
 
 // Error handling example
-capy::task<int> might_fail(bool should_fail, std::string name)
+capy::io_task<int> might_fail(bool should_fail, std::string name)
 {
     std::cout << "Task " << name << " starting\n";
-    
+
     if (should_fail)
     {
         throw std::runtime_error(name + " failed!");
     }
-    
+
     std::cout << "Task " << name << " completed\n";
-    co_return 42;
+    co_return capy::io_result<int>{{}, 42};
 }
 
 capy::task<> demonstrate_error_handling()
@@ -112,13 +119,12 @@ capy::task<> demonstrate_error_handling()
     
     try
     {
-        // a: int, b: int, c: int
-        auto [a, b, c] = co_await capy::when_all(
+        auto [ec2, a, b, c] = co_await capy::when_all(
             might_fail(false, "A"),
             might_fail(true, "B"),   // This one fails
-            might_fail(false, "C")
-        );
-        std::cout << "All succeeded: " << a << ", " << b << ", " << c << "\n";
+            might_fail(false, "C"));
+        std::cout << "All succeeded: " << a << ", "
+                  << b << ", " << c << "\n";
     }
     catch (std::runtime_error const& e)
     {

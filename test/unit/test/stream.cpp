@@ -15,6 +15,7 @@
 #include <boost/capy/concept/stream.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/cond.hpp>
+#include <boost/capy/io_task.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 #include <boost/capy/when_all.hpp>
@@ -736,24 +737,26 @@ public:
         auto r = f.armed([&](fuse&) -> task<> {
             auto [a, b] = make_stream_pair(f);
 
-            co_await when_all(
-                [](stream a) -> task<> {
+            (void) co_await when_all(
+                [](stream a) -> io_task<> {
                     char buf[32] = {};
                     auto [ec, n] = co_await a.read_some(
                         make_buffer(buf));
                     if(ec)
-                        co_return;
+                        co_return io_result<>{ec};
                     BOOST_TEST_EQ(n, 5u);
                     BOOST_TEST_EQ(
                         std::string_view(buf, n),
                         "hello");
+                    co_return io_result<>{};
                 }(std::move(a)),
-                [](stream b) -> task<> {
+                [](stream b) -> io_task<> {
                     auto [ec, n] = co_await b.write_some(
                         make_buffer("hello", 5));
                     if(ec)
-                        co_return;
+                        co_return io_result<>{ec};
                     BOOST_TEST_EQ(n, 5u);
+                    co_return io_result<>{};
                 }(std::move(b))
             );
         });
@@ -953,24 +956,26 @@ public:
         auto r = f.armed([&](fuse&) -> task<> {
             auto [a, b] = make_stream_pair(f);
 
-            co_await when_all(
-                [](stream a) -> task<> {
+            (void) co_await when_all(
+                [](stream a) -> io_task<> {
                     char buf[3] = {};
                     auto [ec, n] = co_await a.read_some(
                         make_buffer(buf));
                     if(ec)
-                        co_return;
+                        co_return io_result<>{ec};
                     BOOST_TEST_EQ(n, 3u);
                     BOOST_TEST_EQ(
                         std::string_view(buf, n),
                         "hel");
+                    co_return io_result<>{};
                 }(std::move(a)),
-                [](stream b) -> task<> {
+                [](stream b) -> io_task<> {
                     auto [ec, n] = co_await b.write_some(
                         make_buffer("hello", 5));
                     if(ec)
-                        co_return;
+                        co_return io_result<>{ec};
                     BOOST_TEST_EQ(n, 5u);
+                    co_return io_result<>{};
                 }(std::move(b))
             );
         });
@@ -1042,17 +1047,18 @@ public:
         run_blocking()([&]() -> task<> {
             auto [a, b] = make_stream_pair(f);
 
-            co_await when_all(
-                [](stream a) -> task<> {
+            (void) co_await when_all(
+                [](stream a) -> io_task<> {
                     char buf[32] = {};
                     auto [ec, n] = co_await a.read_some(
                         make_buffer(buf));
                     BOOST_TEST(ec == cond::eof);
                     BOOST_TEST_EQ(n, 0u);
+                    co_return io_result<>{ec};
                 }(std::move(a)),
-                [](stream b) -> task<> {
+                [](stream b) -> io_task<> {
                     b.close();
-                    co_return;
+                    co_return io_result<>{};
                 }(std::move(b))
             );
         }());
@@ -1099,8 +1105,8 @@ public:
         auto r = f.armed([&](fuse&) -> task<> {
             auto [a, b] = make_stream_pair(f);
 
-            co_await when_all(
-                [](stream a) -> task<> {
+            (void) co_await when_all(
+                [](stream a) -> io_task<> {
                     // Reader suspends waiting for data.
                     // Gets data, eof from peer's guard,
                     // or its own fuse error on resume.
@@ -1108,17 +1114,19 @@ public:
                     auto [ec, n] = co_await a.read_some(
                         make_buffer(buf));
                     if(ec)
-                        co_return;
+                        co_return io_result<>{ec};
                     BOOST_TEST_EQ(n, 5u);
+                    co_return io_result<>{};
                 }(std::move(a)),
-                [](stream b) -> task<> {
+                [](stream b) -> io_task<> {
                     // Writer may get fuse error, which
                     // closes the peer via the guard
                     auto [ec, n] = co_await b.write_some(
                         make_buffer("hello", 5));
                     if(ec)
-                        co_return;
+                        co_return io_result<>{ec};
                     BOOST_TEST_EQ(n, 5u);
+                    co_return io_result<>{};
                 }(std::move(b))
             );
         });

@@ -20,11 +20,12 @@
 #include <latch>
 #include <sstream>
 #include <thread>
+#include <vector>
 
 namespace capy = boost::capy;
 
 // Sum integers in [lo, hi)
-capy::task<long long> partial_sum(int lo, int hi)
+capy::io_task<long long> partial_sum(int lo, int hi)
 {
     std::ostringstream oss;
     oss << "  range [" << lo << ", " << hi
@@ -34,7 +35,7 @@ capy::task<long long> partial_sum(int lo, int hi)
     long long sum = 0;
     for (int i = lo; i < hi; ++i)
         sum += i;
-    co_return sum;
+    co_return capy::io_result<long long>{{}, sum};
 }
 
 int main()
@@ -62,21 +63,27 @@ int main()
         std::cout << "Dispatching " << num_tasks
                   << " parallel tasks...\n";
 
-        auto [s0, s1, s2, s3] = co_await capy::when_all(
-            partial_sum(0 * chunk, 1 * chunk),
-            partial_sum(1 * chunk, 2 * chunk),
-            partial_sum(2 * chunk, 3 * chunk),
-            partial_sum(3 * chunk, 4 * chunk));
+        std::vector<capy::io_task<long long>> tasks;
+        for (int i = 0; i < num_tasks; ++i)
+            tasks.push_back(partial_sum(i * chunk, (i + 1) * chunk));
 
-        long long total_sum = s0 + s1 + s2 + s3;
+        auto [ec, sums] = co_await capy::when_all(std::move(tasks));
+
+        long long total_sum = 0;
+        for (auto s : sums)
+            total_sum += s;
 
         // Arithmetic series: sum [0, N) = N*(N-1)/2
         long long expected =
             static_cast<long long>(total) * (total - 1) / 2;
 
-        std::cout << "\nPartial sums: " << s0 << " + " << s1
-                  << " + " << s2 << " + " << s3 << "\n";
-        std::cout << "Total: " << total_sum
+        std::cout << "\nPartial sums:";
+        for (std::size_t i = 0; i < sums.size(); ++i)
+        {
+            if (i > 0) std::cout << " +";
+            std::cout << " " << sums[i];
+        }
+        std::cout << "\nTotal: " << total_sum
                   << " (expected " << expected << ")\n";
     };
 

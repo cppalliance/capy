@@ -15,7 +15,6 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/io_task.hpp>
-#include <boost/capy/task.hpp>
 
 #include "test_helpers.hpp"
 #include "test_suite.hpp"
@@ -32,16 +31,28 @@ using namespace std::chrono_literals;
 // Helper tasks for timeout testing
 //----------------------------------------------------------
 
-// Returns an int after a brief delay (via stop_only_awaitable pattern)
-inline task<int>
-slow_int(int value)
+// Returns an io_result<int> immediately
+inline io_task<int>
+returns_io_int(int value)
 {
-    // Yield to allow stop to be observed
-    co_await stop_only_awaitable{};
-    co_return value;
+    co_return io_result<int>{{}, value};
 }
 
-// Returns io_result after a brief delay
+// Returns an io_result<std::string> immediately
+inline io_task<std::string>
+returns_io_string(std::string value)
+{
+    co_return io_result<std::string>{{}, std::move(value)};
+}
+
+// Returns io_result<> immediately (void equivalent)
+inline io_task<>
+returns_io_void()
+{
+    co_return io_result<>{};
+}
+
+// Returns io_result<std::size_t> after stop is requested
 inline io_task<std::size_t>
 slow_io_result(std::size_t n)
 {
@@ -49,20 +60,28 @@ slow_io_result(std::size_t n)
     co_return io_result<std::size_t>{{}, n};
 }
 
-// Void task that waits for stop
-inline task<void>
-slow_void_task()
+// Returns io_result<int> after stop is requested
+inline io_task<int>
+slow_io_int(int value)
 {
     co_await stop_only_awaitable{};
-    co_return;
+    co_return io_result<int>{{}, value};
 }
 
-// Task that throws an exception immediately
-inline task<int>
-immediate_throw(char const* msg)
+// Returns io_result<> after stop is requested
+inline io_task<>
+slow_io_void()
+{
+    co_await stop_only_awaitable{};
+    co_return io_result<>{};
+}
+
+// io_task that throws an exception immediately
+inline io_task<int>
+io_immediate_throw(char const* msg)
 {
     throw test_exception(msg);
-    co_return 0;
+    co_return io_result<int>{{}, 0};
 }
 
 //----------------------------------------------------------
@@ -71,70 +90,72 @@ immediate_throw(char const* msg)
 
 struct timeout_test
 {
-    // Test: Task completes immediately, well within timeout
+    // Test: io_result<int> completes before timeout
     void
     testTaskCompletesBeforeTimeout()
     {
         thread_pool pool(1);
         std::latch done(1);
-        int result = 0;
+        io_result<int> result{};
 
         run_async(pool.get_executor(),
-            [&](int v) {
-                result = v;
+            [&](io_result<int> r) {
+                result = r;
                 done.count_down();
             },
             [&](std::exception_ptr) {
                 done.count_down();
-            })(timeout(returns_int(42), 5s));
+            })(timeout(returns_io_int(42), 5s));
 
         done.wait();
-        BOOST_TEST_EQ(result, 42);
+        BOOST_TEST(!result.ec);
+        BOOST_TEST_EQ(std::get<0>(result.values), 42);
     }
 
-    // Test: Task completes immediately with string
+    // Test: io_result<string> completes before timeout
     void
     testTaskCompletesWithString()
     {
         thread_pool pool(1);
         std::latch done(1);
-        std::string result;
+        io_result<std::string> result{};
 
         run_async(pool.get_executor(),
-            [&](std::string v) {
-                result = std::move(v);
+            [&](io_result<std::string> r) {
+                result = std::move(r);
                 done.count_down();
             },
             [&](std::exception_ptr) {
                 done.count_down();
-            })(timeout(returns_string("hello"), 5s));
+            })(timeout(returns_io_string("hello"), 5s));
 
         done.wait();
-        BOOST_TEST_EQ(result, "hello");
+        BOOST_TEST(!result.ec);
+        BOOST_TEST_EQ(std::get<0>(result.values), "hello");
     }
 
-    // Test: Void task completes before timeout
+    // Test: io_result<> completes before timeout
     void
     testVoidTaskCompletes()
     {
         thread_pool pool(1);
         std::latch done(1);
-        bool completed = false;
+        io_result<> result{make_error_code(error::timeout)};
 
         run_async(pool.get_executor(),
-            [&]() {
-                completed = true;
+            [&](io_result<> r) {
+                result = r;
                 done.count_down();
             },
             [&](std::exception_ptr) {
                 done.count_down();
-            })(timeout(void_task(), 5s));
+            })(timeout(returns_io_void(), 5s));
 
         done.wait();
-        BOOST_TEST(completed);
+        BOOST_TEST(!result.ec);
     }
 
-    // Test: Timeout fires - io_result path returns error::timeout
+    // Test: Timeout fires - io_result<size_t> path returns error::timeout
     void
     testTimeoutIoResult()
     {
@@ -146,7 +167,7 @@ struct timeout_test
         run_async(pool.get_executor(),
             [&](io_result<std::size_t> r) {
                 ec = r.ec;
-                n = r.t1;
+                n = std::get<0>(r.values);
                 done.count_down();
             },
             [&](std::exception_ptr) {
@@ -159,97 +180,46 @@ struct timeout_test
         BOOST_TEST_EQ(n, 0u);
     }
 
-    // Test: Timeout fires - non-io_result throws system_error
+    // Test: Timeout fires - io_result<int> reports error::timeout
     void
-    testTimeoutThrowsForNonIoResult()
+    testTimeoutReportsErrorForInt()
     {
         thread_pool pool(1);
         std::latch done(1);
-        bool got_timeout = false;
+        std::error_code ec;
 
         run_async(pool.get_executor(),
-            [&](int) {
+            [&](io_result<int> r) {
+                ec = r.ec;
                 done.count_down();
             },
-            [&](std::exception_ptr ep) {
-                try
-                {
-                    std::rethrow_exception(ep);
-                }
-                catch(std::system_error const& e)
-                {
-                    got_timeout = (e.code() == error::timeout);
-                }
-                catch(...)
-                {
-                }
+            [&](std::exception_ptr) {
                 done.count_down();
-            })(timeout(slow_int(42), 1ms));
+            })(timeout(slow_io_int(42), 1ms));
 
         done.wait();
-        BOOST_TEST(got_timeout);
+        BOOST_TEST(ec == error::timeout);
     }
 
-    // Test: Timeout fires - void task throws system_error
+    // Test: Timeout fires - io_result<> reports error::timeout
     void
-    testTimeoutThrowsForVoid()
+    testTimeoutReportsErrorForVoid()
     {
         thread_pool pool(1);
         std::latch done(1);
-        bool got_timeout = false;
+        std::error_code ec;
 
         run_async(pool.get_executor(),
-            [&]() {
+            [&](io_result<> r) {
+                ec = r.ec;
                 done.count_down();
             },
-            [&](std::exception_ptr ep) {
-                try
-                {
-                    std::rethrow_exception(ep);
-                }
-                catch(std::system_error const& e)
-                {
-                    got_timeout = (e.code() == error::timeout);
-                }
-                catch(...)
-                {
-                }
+            [&](std::exception_ptr) {
                 done.count_down();
-            })(timeout(slow_void_task(), 1ms));
+            })(timeout(slow_io_void(), 1ms));
 
         done.wait();
-        BOOST_TEST(got_timeout);
-    }
-
-    // Test: Task exception propagates (not converted to timeout)
-    void
-    testExceptionPropagates()
-    {
-        thread_pool pool(1);
-        std::latch done(1);
-        bool got_test_exception = false;
-
-        run_async(pool.get_executor(),
-            [&](int) {
-                done.count_down();
-            },
-            [&](std::exception_ptr ep) {
-                try
-                {
-                    std::rethrow_exception(ep);
-                }
-                catch(test_exception const&)
-                {
-                    got_test_exception = true;
-                }
-                catch(...)
-                {
-                }
-                done.count_down();
-            })(timeout(immediate_throw("test error"), 5s));
-
-        done.wait();
-        BOOST_TEST(got_test_exception);
+        BOOST_TEST(ec == error::timeout);
     }
 
     // Test: Zero duration times out immediately
@@ -258,29 +228,19 @@ struct timeout_test
     {
         thread_pool pool(1);
         std::latch done(1);
-        bool got_timeout = false;
+        std::error_code ec;
 
         run_async(pool.get_executor(),
-            [&](int) {
+            [&](io_result<int> r) {
+                ec = r.ec;
                 done.count_down();
             },
-            [&](std::exception_ptr ep) {
-                try
-                {
-                    std::rethrow_exception(ep);
-                }
-                catch(std::system_error const& e)
-                {
-                    got_timeout = (e.code() == error::timeout);
-                }
-                catch(...)
-                {
-                }
+            [&](std::exception_ptr) {
                 done.count_down();
-            })(timeout(slow_int(42), 0ms));
+            })(timeout(slow_io_int(42), 0ms));
 
         done.wait();
-        BOOST_TEST(got_timeout);
+        BOOST_TEST(ec == error::timeout);
     }
 
     // Test: cond::timeout equivalence
@@ -296,6 +256,34 @@ struct timeout_test
         BOOST_TEST(cond_ec.message() == "operation timed out");
     }
 
+    // Inner task throws before delay fires.
+    // Exception propagates to caller, not swallowed by timer.
+    void
+    testThrowPropagatesBeforeTimeout()
+    {
+        thread_pool pool(1);
+        std::latch done(1);
+        bool caught = false;
+        std::string msg;
+
+        run_async(pool.get_executor(),
+            [&](io_result<int>) {
+                done.count_down();
+            },
+            [&](std::exception_ptr ep) {
+                try { std::rethrow_exception(ep); }
+                catch (test_exception const& e) {
+                    caught = true;
+                    msg = e.what();
+                }
+                done.count_down();
+            })(timeout(io_immediate_throw("boom"), 5s));
+
+        done.wait();
+        BOOST_TEST(caught);
+        BOOST_TEST_EQ(msg, "boom");
+    }
+
     void
     run()
     {
@@ -303,11 +291,11 @@ struct timeout_test
         testTaskCompletesWithString();
         testVoidTaskCompletes();
         testTimeoutIoResult();
-        testTimeoutThrowsForNonIoResult();
-        testTimeoutThrowsForVoid();
-        testExceptionPropagates();
+        testTimeoutReportsErrorForInt();
+        testTimeoutReportsErrorForVoid();
         testZeroDuration();
         testCondEquivalence();
+        testThrowPropagatesBeforeTimeout();
     }
 };
 

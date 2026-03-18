@@ -38,7 +38,7 @@ struct delay_test
 
         auto delay_task = [&]() -> task<void>
         {
-            co_await delay(10ms);
+            (void) co_await delay(10ms);
             completed = true;
         };
 
@@ -63,7 +63,7 @@ struct delay_test
 
         auto delay_task = [&]() -> task<void>
         {
-            co_await delay(50ms);
+            (void) co_await delay(50ms);
         };
 
         auto start = std::chrono::steady_clock::now();
@@ -91,7 +91,7 @@ struct delay_test
 
         auto delay_task = [&]() -> task<void>
         {
-            co_await delay(10s);
+            (void) co_await delay(10s);
         };
 
         auto start = std::chrono::steady_clock::now();
@@ -126,7 +126,7 @@ struct delay_test
         {
             // Signal that we're about to suspend on delay
             suspended.count_down();
-            co_await delay(10s);
+            (void) co_await delay(10s);
         };
 
         auto start = std::chrono::steady_clock::now();
@@ -161,7 +161,7 @@ struct delay_test
 
         auto delay_task = [&]() -> task<void>
         {
-            co_await delay(0ms);
+            (void) co_await delay(0ms);
             completed = true;
         };
 
@@ -187,11 +187,11 @@ struct delay_test
 
         auto delay_task = [&]() -> task<void>
         {
-            co_await delay(5ms);
+            (void) co_await delay(5ms);
             step = 1;
-            co_await delay(5ms);
+            (void) co_await delay(5ms);
             step = 2;
-            co_await delay(5ms);
+            (void) co_await delay(5ms);
             step = 3;
         };
 
@@ -252,7 +252,7 @@ struct delay_test
 
         auto delay_task = [](int i) -> task<void>
         {
-            co_await delay(10ms * i);
+            (void) co_await delay(10ms * i);
         };
 
         for(int i = 0; i < N; ++i)

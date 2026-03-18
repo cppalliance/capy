@@ -20,6 +20,12 @@
 #include <queue>
 #include <stop_token>
 
+// GCC gives false positive -Wmaybe-uninitialized on structured bindings
+// via the tuple protocol inside coroutine frames.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
 #include "test_helpers.hpp"
 
 namespace boost {

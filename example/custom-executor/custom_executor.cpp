@@ -19,6 +19,7 @@
 #include <iostream>
 #include <queue>
 #include <thread>
+#include <vector>
 
 namespace capy = boost::capy;
 
@@ -123,24 +124,23 @@ run_loop::get_executor() noexcept
 // Verify the concept is satisfied
 static_assert(capy::Executor<run_loop::executor_type>);
 
-capy::task<int> compute(int x)
+capy::io_task<int> compute(int x)
 {
     std::cout << "  computing " << x << " * " << x << "\n";
-    co_return x * x;
+    co_return capy::io_result<int>{{}, x * x};
 }
 
 capy::task<> run_tasks()
 {
     std::cout << "Launching 3 tasks with when_all...\n";
 
-    auto [a, b, c] = co_await capy::when_all(
-        compute(3),
-        compute(7),
-        compute(11));
+    auto [ec, r1, r2, r3] = co_await capy::when_all(
+        compute(3), compute(7), compute(11));
 
-    std::cout << "\nResults: " << a << ", " << b << ", " << c
-              << "\n";
-    std::cout << "Sum of squares: " << a + b + c << "\n";
+    std::cout << "\nResults: " << r1 << ", " << r2
+              << ", " << r3 << "\n";
+    std::cout << "Sum of squares: "
+              << r1 + r2 + r3 << "\n";
 }
 
 int main()

@@ -341,8 +341,8 @@ public:
         {
             auto r =
                 co_await stream_.write_some(cb);
-            cb.consume(r.t1);
-            total_written += r.t1;
+            cb.consume(std::get<0>(r.values));
+            total_written += std::get<0>(r.values);
             if(r.ec)
                 co_return io_result<std::size_t>{
                     r.ec, total_written};
@@ -371,8 +371,8 @@ public:
             if(r.ec)
                 co_return io_result<std::size_t>{
                     r.ec, total_written};
-            cb.consume(r.t1);
-            total_written += r.t1;
+            cb.consume(std::get<0>(r.values));
+            total_written += std::get<0>(r.values);
         }
 
         if(total_written >= total_size)
@@ -385,8 +385,8 @@ public:
         {
             auto r =
                 co_await stream_.write_some(cb);
-            cb.consume(r.t1);
-            total_written += r.t1;
+            cb.consume(std::get<0>(r.values));
+            total_written += std::get<0>(r.values);
             if(r.ec)
                 co_return io_result<std::size_t>{
                     r.ec, total_written};

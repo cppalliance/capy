@@ -11,9 +11,11 @@
 #define BOOST_CAPY_DELAY_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/error.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/detail/timer_service.hpp>
+#include <boost/capy/io_result.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -35,13 +37,20 @@ namespace capy {
     Not intended to be named directly; use the @ref delay
     factory function instead.
 
+    @par Return Value
+
+    Returns `io_result<>{}` (no error) when the timer fires
+    normally, or `io_result<>{error::canceled}` when
+    cancellation claims the resume before the deadline.
+
     @par Cancellation
 
     If `stop_requested()` is true before suspension, the
-    coroutine resumes immediately without scheduling a timer.
-    If stop is requested while suspended, the stop callback
-    claims the resume and posts it through the executor; the
-    pending timer is cancelled on the next `await_resume` or
+    coroutine resumes immediately without scheduling a timer
+    and returns `io_result<>{error::canceled}`. If stop is
+    requested while suspended, the stop callback claims the
+    resume and posts it through the executor; the pending
+    timer is cancelled on the next `await_resume` or
     destructor call.
 
     @par Thread Safety
@@ -168,7 +177,7 @@ public:
         return std::noop_coroutine();
     }
 
-    void await_resume() noexcept
+    io_result<> await_resume() noexcept
     {
         if(stop_cb_active_)
         {
@@ -177,6 +186,9 @@ public:
         }
         if(ts_)
             ts_->cancel(tid_);
+        if(canceled_)
+            return io_result<>{make_error_code(error::canceled)};
+        return io_result<>{};
     }
 };
 
@@ -184,21 +196,21 @@ public:
 
     Returns an IoAwaitable that completes at or after the
     specified duration, or earlier if the environment's stop
-    token is activated. Completion is always normal (void
-    return); no exception is thrown on cancellation.
+    token is activated.
 
     Zero or negative durations complete synchronously without
     scheduling a timer.
 
     @par Example
     @code
-    co_await delay(std::chrono::milliseconds(100));
+    auto [ec] = co_await delay(std::chrono::milliseconds(100));
     @endcode
 
     @param dur The duration to wait.
 
     @return A @ref delay_awaitable whose `await_resume`
-        returns `void`.
+        returns `io_result<>`. On normal completion, `ec`
+        is clear. On cancellation, `ec == error::canceled`.
 
     @throws Nothing.
 

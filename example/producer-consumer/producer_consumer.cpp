@@ -33,27 +33,27 @@ int main()
     capy::async_event data_ready;
     int shared_value = 0;
 
-    auto producer = [&]() -> capy::task<> {
+    auto producer = [&]() -> capy::io_task<> {
         std::cout << "Producer: preparing data...\n";
         shared_value = 42;
         std::cout << "Producer: data ready, signaling\n";
         data_ready.set();
-        co_return;
+        co_return capy::io_result<>{};
     };
 
-    auto consumer = [&]() -> capy::task<> {
+    auto consumer = [&]() -> capy::io_task<> {
         std::cout << "Consumer: waiting for data...\n";
         auto [ec] = co_await data_ready.wait();
         (void)ec;
         std::cout << "Consumer: received value " << shared_value << "\n";
-        co_return;
+        co_return capy::io_result<>{};
     };
 
     // Run both tasks concurrently using when_all, through a strand.
     // The strand serializes execution, ensuring thread-safe access
     // to the shared async_event and shared_value.
     auto run_both = [&]() -> capy::task<> {
-        co_await capy::when_all(producer(), consumer());
+        (void) co_await capy::when_all(producer(), consumer());
     };
 
     capy::run_async(s, on_complete, on_error)(run_both());
