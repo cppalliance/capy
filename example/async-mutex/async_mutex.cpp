@@ -44,14 +44,14 @@ int main()
     int acquisition_order = 0;
     std::vector<int> order_log;
 
-    auto worker = [&](int id) -> capy::task<> {
+    auto worker = [&](int id) -> capy::io_task<> {
         std::cout << "Worker " << id << " waiting for lock\n";
         auto [ec, guard] = co_await mtx.scoped_lock();
         if (ec)
         {
             std::cout << "Worker " << id
                       << " canceled: " << ec.message() << "\n";
-            co_return;
+            co_return capy::io_result<>{ec};
         }
 
         int seq = acquisition_order++;
@@ -59,15 +59,17 @@ int main()
         std::cout << "Worker " << id
                   << " acquired lock (sequence " << seq << ")\n";
 
-        // Simulate work inside the critical section
         std::cout << "Worker " << id << " releasing lock\n";
-        co_return;
+        co_return capy::io_result<>{};
     };
 
     auto run_all = [&]() -> capy::task<> {
-        co_await capy::when_all(
+        auto r = co_await capy::when_all(
             worker(0), worker(1), worker(2),
             worker(3), worker(4), worker(5));
+        if(r.ec)
+            std::cerr << "when_all error: "
+                      << r.ec.message() << "\n";
     };
 
     // Run on a strand so async_mutex operations are single-threaded

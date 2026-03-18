@@ -18,6 +18,7 @@
 #include <boost/capy.hpp>
 #include <iostream>
 #include <latch>
+#include <vector>
 
 namespace capy = boost::capy;
 
@@ -46,20 +47,19 @@ int main()
 
     // Each coroutine increments the shared counter without locks.
     // The strand ensures only one coroutine runs at a time.
-    auto increment = [&](int id) -> capy::task<> {
+    auto increment = [&](int id) -> capy::io_task<> {
         for (int i = 0; i < increments_per_coro; ++i)
             ++counter;
         std::cout << "Coroutine " << id
                   << " finished, counter = " << counter << "\n";
-        co_return;
+        co_return capy::io_result<>{};
     };
 
     auto run_all = [&]() -> capy::task<> {
-        co_await capy::when_all(
-            increment(0), increment(1), increment(2),
-            increment(3), increment(4), increment(5),
-            increment(6), increment(7), increment(8),
-            increment(9));
+        std::vector<capy::io_task<>> tasks;
+        for (int i = 0; i < num_coroutines; ++i)
+            tasks.push_back(increment(i));
+        (void) co_await capy::when_all(std::move(tasks));
     };
 
     capy::run_async(s, on_complete, on_error)(run_all());

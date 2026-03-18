@@ -114,7 +114,7 @@ public:
                         std::size_t n) mutable
                     {
                         result_.ec = ec;
-                        result_.t1 = n;
+                        std::get<0>(result_.values) = n;
                         ex.post(h);
                     }));
 
@@ -176,7 +176,7 @@ public:
                         std::size_t n) mutable
                     {
                         result_.ec = ec;
-                        result_.t1 = n;
+                        std::get<0>(result_.values) = n;
                         ex.post(h);
                     }));
 

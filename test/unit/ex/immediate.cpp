@@ -77,7 +77,7 @@ struct immediate_test
             immediate<io_result<std::size_t>> im{{{}, 42}};
             auto r = im.await_resume();
             BOOST_TEST(!r.ec);
-            BOOST_TEST_EQ(r.t1, 42u);
+            BOOST_TEST_EQ(std::get<0>(r.values), 42u);
         }
     }
 
@@ -102,7 +102,7 @@ struct immediate_test
             io_result<std::size_t> result{};
             test::run_blocking([&](io_result<std::size_t> v) { result = v; })(coro());
             BOOST_TEST(!result.ec);
-            BOOST_TEST_EQ(result.t1, 100u);
+            BOOST_TEST_EQ(std::get<0>(result.values), 100u);
         }
 
         // Structured binding with co_await
@@ -151,7 +151,7 @@ struct immediate_test
             BOOST_TEST(im.await_ready());
             auto r = im.await_resume();
             BOOST_TEST(!r.ec);
-            BOOST_TEST_EQ(r.t1, 42u);
+            BOOST_TEST_EQ(std::get<0>(r.values), 42u);
         }
 
         // co_await ready(n)
@@ -177,8 +177,8 @@ struct immediate_test
             BOOST_TEST(im.await_ready());
             auto r = im.await_resume();
             BOOST_TEST(!r.ec);
-            BOOST_TEST_EQ(r.t1, 42);
-            BOOST_TEST_EQ(r.t2, 3.14);
+            BOOST_TEST_EQ(std::get<0>(r.values), 42);
+            BOOST_TEST_EQ(std::get<1>(r.values), 3.14);
         }
 
         // co_await ready(a, b)
@@ -204,9 +204,9 @@ struct immediate_test
             BOOST_TEST(im.await_ready());
             auto r = im.await_resume();
             BOOST_TEST(!r.ec);
-            BOOST_TEST_EQ(r.t1, 1);
-            BOOST_TEST_EQ(r.t2, 2);
-            BOOST_TEST_EQ(r.t3, 3);
+            BOOST_TEST_EQ(std::get<0>(r.values), 1);
+            BOOST_TEST_EQ(std::get<1>(r.values), 2);
+            BOOST_TEST_EQ(std::get<2>(r.values), 3);
         }
 
         // co_await ready(a, b, c)
@@ -242,7 +242,7 @@ struct immediate_test
             BOOST_TEST(im.await_ready());
             auto r = im.await_resume();
             BOOST_TEST(r.ec);
-            BOOST_TEST_EQ(r.t1, 0u);
+            BOOST_TEST_EQ(std::get<0>(r.values), 0u);
         }
 
         // ready(ec, T1, T2) creates failed two-value result

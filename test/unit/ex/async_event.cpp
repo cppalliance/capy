@@ -17,6 +17,7 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/io_result.hpp>
+#include <boost/capy/io_task.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/when_all.hpp>
 
@@ -680,18 +681,18 @@ struct async_event_test
         h.destroy();
     }
 
-    static task<void>
+    static io_task<>
     set_event_task(async_event& evt)
     {
         evt.set();
-        co_return;
+        co_return io_result<>{};
     }
 
     static task<void>
     when_all_set_event_main(bool& finished)
     {
         async_event evt;
-        co_await when_all(evt.wait(), set_event_task(evt));
+        (void) co_await when_all(evt.wait(), set_event_task(evt));
         finished = true;
     }
 
