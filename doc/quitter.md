@@ -11,7 +11,7 @@ author writes zero cancellation-handling code.
 
 ## Motivation
 
-Ville Voutilainen (WG21 chair) identified a gap in Capy's `task<T>`:
+Ville Voutilainen (the emeritus chair of EWG in WG21) identified a gap in Capy's `task<T>`:
 when an application needs to shut down (e.g. Qt "close all windows"),
 every in-flight coroutine should exit cleanly without the programmer
 writing `if (ec) co_return;` after every `co_await`. The sender model
