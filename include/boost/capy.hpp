@@ -22,6 +22,7 @@
 #include <boost/capy/error.hpp>
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/io_task.hpp>
+#include <boost/capy/quitter.hpp>
 #include <boost/capy/task.hpp>
 
 // Algorithms

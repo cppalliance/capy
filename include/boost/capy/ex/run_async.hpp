@@ -283,9 +283,16 @@ make_trampoline(Ex, Handlers, Alloc)
     // promise_type ctor steals the parameters
     auto& p = co_await get_promise_awaiter<
         typename run_async_trampoline<Ex, Handlers, Alloc>::promise_type>{};
-    
+
+    // Guard ensures the task frame is destroyed even when invoke_
+    // throws (e.g. default_handler rethrows an unhandled exception).
+    struct frame_guard
+    {
+        std::coroutine_handle<>& h;
+        ~frame_guard() { h.destroy(); }
+    } guard{p.task_h_};
+
     p.invoke_(p.task_promise_, p.handlers_);
-    p.task_h_.destroy();
 }
 
 } // namespace detail
