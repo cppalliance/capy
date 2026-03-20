@@ -94,7 +94,11 @@ struct run_async_trampoline
         io_env env_;
         invoke_fn invoke_ = nullptr;
         void* task_promise_ = nullptr;
+        // task_h_: raw handle for frame_guard cleanup in make_trampoline.
+        // task_cont_: continuation wrapping the same handle for executor dispatch.
+        // Both must reference the same coroutine and be kept in sync.
         std::coroutine_handle<> task_h_;
+        continuation task_cont_;
 
         promise_type(Ex& ex, Handlers& h, Alloc& a) noexcept
             : wg_(std::move(ex))
@@ -201,7 +205,11 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
         io_env env_;
         invoke_fn invoke_ = nullptr;
         void* task_promise_ = nullptr;
+        // task_h_: raw handle for frame_guard cleanup in make_trampoline.
+        // task_cont_: continuation wrapping the same handle for executor dispatch.
+        // Both must reference the same coroutine and be kept in sync.
         std::coroutine_handle<> task_h_;
+        continuation task_cont_;
 
         promise_type(
             Ex& ex, Handlers& h, std::pmr::memory_resource* mr) noexcept
@@ -404,7 +412,8 @@ public:
         task_promise.set_environment(&p.env_);
 
         // Start task through executor
-        p.wg_.executor().dispatch(task_h).resume();
+        p.task_cont_.h = task_h;
+        p.wg_.executor().dispatch(p.task_cont_).resume();
     }
 };
 

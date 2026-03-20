@@ -74,7 +74,7 @@ struct dispatch_trampoline
     struct promise_type
     {
         executor_ref caller_ex_;
-        std::coroutine_handle<> parent_;
+        continuation parent_;
 
         dispatch_trampoline get_return_object() noexcept
         {
@@ -169,6 +169,7 @@ struct [[nodiscard]] run_awaitable_ex
     std::conditional_t<InheritStopToken, std::monostate, std::stop_token> st_;
     io_env env_;
     dispatch_trampoline tr_;
+    continuation task_cont_;
     Task inner_;  // Last: destroyed first, while env_ is still valid
 
     // void allocator, inherit stop token
@@ -223,7 +224,7 @@ struct [[nodiscard]] run_awaitable_ex
     {
         tr_ = make_dispatch_trampoline();
         tr_.h_.promise().caller_ex_ = caller_env->executor;
-        tr_.h_.promise().parent_ = cont;
+        tr_.h_.promise().parent_.h = cont;
 
         auto h = inner_.handle();
         auto& p = h.promise();
@@ -241,7 +242,8 @@ struct [[nodiscard]] run_awaitable_ex
             env_.frame_allocator = caller_env->frame_allocator;
 
         p.set_environment(&env_);
-        return ex_.dispatch(h);
+        task_cont_.h = h;
+        return ex_.dispatch(task_cont_);
     }
 
     // Non-copyable

@@ -12,6 +12,7 @@
 #define BOOST_CAPY_EX_THREAD_POOL_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/continuation.hpp>
 #include <coroutine>
 #include <boost/capy/ex/execution_context.hpp>
 #include <cstddef>
@@ -193,34 +194,36 @@ public:
     void
     on_work_finished() const noexcept;
 
-    /** Dispatch a coroutine for execution.
+    /** Dispatch a continuation for execution.
 
-        Posts the coroutine to the thread pool for execution on a
+        Posts the continuation to the thread pool for execution on a
         worker thread and returns `std::noop_coroutine()`. Thread
         pools never execute inline because no single thread "owns"
         the pool.
 
-        @param h The coroutine handle to execute.
+        @param c The continuation to execute. Must remain at a
+                 stable address until dequeued and resumed.
 
         @return `std::noop_coroutine()` always.
     */
     std::coroutine_handle<>
-    dispatch(std::coroutine_handle<> h) const
+    dispatch(continuation& c) const
     {
-        post(h);
+        post(c);
         return std::noop_coroutine();
     }
 
-    /** Post a coroutine to the thread pool.
+    /** Post a continuation to the thread pool.
 
-        The coroutine will be resumed on one of the pool's
-        worker threads.
+        The continuation will be resumed on one of the pool's
+        worker threads. The continuation must remain at a stable
+        address until it is dequeued and resumed.
 
-        @param h The coroutine handle to execute.
+        @param c The continuation to execute.
     */
     BOOST_CAPY_DECL
     void
-    post(std::coroutine_handle<> h) const;
+    post(continuation& c) const;
 
     /// Return true if two executors refer to the same thread pool.
     bool

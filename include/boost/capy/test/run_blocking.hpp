@@ -77,12 +77,12 @@ struct BOOST_CAPY_DECL blocking_executor
         Returns the handle for symmetric transfer. The caller
         resumes the coroutine via the returned handle.
 
-        @param h The coroutine handle to execute.
+        @param c The continuation to execute.
 
-        @return `h` for symmetric transfer.
+        @return `c.h` for symmetric transfer.
     */
     std::coroutine_handle<>
-    dispatch(std::coroutine_handle<> h) const;
+    dispatch(continuation& c) const;
 
     /** Post work for deferred execution.
 
@@ -90,10 +90,10 @@ struct BOOST_CAPY_DECL blocking_executor
         queue. The handle is resumed when the blocking event
         loop processes it.
 
-        @param h The coroutine handle to enqueue.
+        @param c The continuation to enqueue.
     */
     void
-    post(std::coroutine_handle<> h) const;
+    post(continuation& c) const;
 
 private:
     blocking_context* ctx_;

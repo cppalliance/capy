@@ -14,6 +14,7 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/continuation.hpp>
 #include <coroutine>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
@@ -86,7 +87,7 @@ class stream
     {
         std::string buf;
         std::size_t max_read_size = std::size_t(-1);
-        std::coroutine_handle<> pending_h{};
+        continuation pending_cont_;
         executor_ref pending_ex;
         bool eof = false;
     };
@@ -109,13 +110,11 @@ class stream
             closed = true;
             for(auto& side : sides)
             {
-                if(side.pending_h)
+                if(side.pending_cont_.h)
                 {
-                    auto h = side.pending_h;
-                    side.pending_h = {};
-                    auto ex = side.pending_ex;
+                    side.pending_ex.post(side.pending_cont_);
+                    side.pending_cont_.h = {};
                     side.pending_ex = {};
-                    ex.post(h);
                 }
             }
         }
@@ -167,13 +166,11 @@ public:
         int peer = 1 - index_;
         auto& side = state_->sides[peer];
         side.eof = true;
-        if(side.pending_h)
+        if(side.pending_cont_.h)
         {
-            auto h = side.pending_h;
-            side.pending_h = {};
-            auto ex = side.pending_ex;
+            side.pending_ex.post(side.pending_cont_);
+            side.pending_cont_.h = {};
             side.pending_ex = {};
-            ex.post(h);
         }
     }
 
@@ -234,7 +231,7 @@ public:
             {
                 auto& side = self_->state_->sides[
                     self_->index_];
-                side.pending_h = h;
+                side.pending_cont_.h = h;
                 side.pending_ex = env->executor;
                 return std::noop_coroutine();
             }
@@ -336,13 +333,11 @@ public:
                     side.buf.data() + old_size, n),
                     buffers_, n);
 
-                if(side.pending_h)
+                if(side.pending_cont_.h)
                 {
-                    auto h = side.pending_h;
-                    side.pending_h = {};
-                    auto ex = side.pending_ex;
+                    side.pending_ex.post(side.pending_cont_);
+                    side.pending_cont_.h = {};
                     side.pending_ex = {};
-                    ex.post(h);
                 }
 
                 return {{}, n};
@@ -368,13 +363,11 @@ public:
         int peer = 1 - index_;
         auto& side = state_->sides[peer];
         side.buf.append(sv);
-        if(side.pending_h)
+        if(side.pending_cont_.h)
         {
-            auto h = side.pending_h;
-            side.pending_h = {};
-            auto ex = side.pending_ex;
+            side.pending_ex.post(side.pending_cont_);
+            side.pending_cont_.h = {};
             side.pending_ex = {};
-            ex.post(h);
         }
     }
 

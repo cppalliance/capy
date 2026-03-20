@@ -352,7 +352,8 @@ struct strand_test
         std::atomic<int> counter{0};
 
         auto coro = make_counter_coro(counter);
-        s.post(coro.handle());
+        continuation c{coro.handle()};
+        s.post(c);
         coro.release();
 
         BOOST_TEST(wait_for([&]{ return counter.load() >= 1; }));
@@ -368,7 +369,8 @@ struct strand_test
         std::atomic<int> counter{0};
 
         auto coro = make_counter_coro(counter);
-        s.dispatch(coro.handle());
+        continuation c{coro.handle()};
+        s.dispatch(c);
         coro.release();
 
         BOOST_TEST(wait_for([&]{ return counter.load() >= 1; }));
@@ -390,7 +392,8 @@ struct strand_test
         for(int i = 0; i < N; ++i)
         {
             coros.push_back(make_counter_coro(counter));
-            s.post(coros.back().handle());
+            continuation c{coros.back().handle()};
+            s.post(c);
             coros.back().release();
         }
 
@@ -417,7 +420,8 @@ struct strand_test
                 for(int j = 0; j < per_thread; ++j)
                 {
                     auto coro = make_counter_coro(counter);
-                    s.post(coro.handle());
+                    continuation c{coro.handle()};
+                    s.post(c);
                     coro.release();
                 }
             });
@@ -448,7 +452,8 @@ struct strand_test
         for(int i = 0; i < N; ++i)
         {
             coros.push_back(make_order_coro(log, log_mutex, i));
-            s.post(coros.back().handle());
+            continuation c{coros.back().handle()};
+            s.post(c);
             coros.back().release();
         }
 
@@ -549,7 +554,8 @@ struct strand_test
         for(int i = 0; i < N; ++i)
         {
             coros.push_back(make_tracking_coro());
-            s.post(coros.back().handle());
+            continuation c{coros.back().handle()};
+            s.post(c);
             coros.back().release();
         }
 
@@ -595,7 +601,8 @@ struct strand_test
             for(int i = 0; i < N; ++i)
             {
                 coros.push_back(make_counter_coro(counter));
-                s.post(coros.back().handle());
+                continuation c{coros.back().handle()};
+                s.post(c);
                 coros.back().release();
             }
 

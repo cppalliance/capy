@@ -11,6 +11,7 @@
 #define BOOST_CAPY_DELAY_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -71,6 +72,7 @@ class delay_awaitable
     // Declared before stop_cb_buf_: the callback
     // accesses these members, so they must still be
     // alive if the stop_cb_ destructor blocks.
+    continuation cont_;
     std::atomic<bool> claimed_{false};
     bool canceled_ = false;
     bool stop_cb_active_ = false;
@@ -79,7 +81,6 @@ class delay_awaitable
     {
         delay_awaitable* self_;
         executor_ref ex_;
-        std::coroutine_handle<> h_;
 
         void operator()() const noexcept
         {
@@ -87,7 +88,7 @@ class delay_awaitable
                 true, std::memory_order_acq_rel))
             {
                 self_->canceled_ = true;
-                ex_.post(h_);
+                ex_.post(self_->cont_);
             }
         }
     };
@@ -120,6 +121,7 @@ public:
         : dur_(o.dur_)
         , ts_(o.ts_)
         , tid_(o.tid_)
+        , cont_(o.cont_)
         , claimed_(o.claimed_.load(std::memory_order_relaxed))
         , canceled_(o.canceled_)
         , stop_cb_active_(std::exchange(o.stop_cb_active_, false))
@@ -155,23 +157,24 @@ public:
             return h;
         }
 
+        cont_.h = h;
         ts_ = &env->executor.context().use_service<detail::timer_service>();
 
         // Schedule timer (won't fire inline since deadline is in the future)
         tid_ = ts_->schedule_after(dur_,
-            [this, h, ex = env->executor]()
+            [this, ex = env->executor]()
             {
                 if(!claimed_.exchange(
                     true, std::memory_order_acq_rel))
                 {
-                    ex.post(h);
+                    ex.post(cont_);
                 }
             });
 
         // Register stop callback (may fire inline)
         ::new(stop_cb_buf_) stop_cb_t(
             env->stop_token,
-            cancel_fn{this, env->executor, h});
+            cancel_fn{this, env->executor});
         stop_cb_active_ = true;
 
         return std::noop_coroutine();

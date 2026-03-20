@@ -64,13 +64,13 @@ struct guard_test_executor
     }
 
     std::coroutine_handle<>
-    dispatch(std::coroutine_handle<> h) const
+    dispatch(continuation& c) const
     {
-        return h;
+        return c.h;
     }
 
     void
-    post(std::coroutine_handle<>) const
+    post(continuation&) const
     {
     }
 };

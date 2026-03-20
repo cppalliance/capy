@@ -79,16 +79,19 @@ namespace capy {
     struct my_io_op
     {
         io_env const* env_ = nullptr;
-        std::coroutine_handle<> cont_;
+        continuation cont_;
 
         auto await_suspend(
             std::coroutine_handle<> h,
             io_env const* env )
         {
             env_ = env;
-            cont_ = h;
+            cont_ = continuation{h};
             // Pass members by value; capturing this
-            // risks use-after-free in async callbacks
+            // risks use-after-free in async callbacks.
+            // When the async operation completes, resume
+            // via executor.post(cont_) or executor.dispatch(cont_)
+            // rather than calling h.resume() directly.
             start_async(
                 env_->stop_token,
                 env_->executor,

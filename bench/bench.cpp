@@ -81,14 +81,14 @@ public:
     {
     }
 
-    std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
+    std::coroutine_handle<> dispatch(continuation& c) const
     {
-        return h;
+        return c.h;
     }
 
-    void post(std::coroutine_handle<> h) const
+    void post(continuation& c) const
     {
-        h.resume();
+        c.h.resume();
     }
 
     void defer(std::coroutine_handle<> h) const

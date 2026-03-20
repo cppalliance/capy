@@ -11,6 +11,7 @@
 #define BOOST_CAPY_ANY_EXECUTOR_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/continuation.hpp>
 #include <concepts>
 #include <coroutine>
 #include <memory>
@@ -91,8 +92,8 @@ class any_executor
         virtual execution_context& context() const noexcept = 0;
         virtual void on_work_started() const noexcept = 0;
         virtual void on_work_finished() const noexcept = 0;
-        virtual std::coroutine_handle<> dispatch(std::coroutine_handle<>) const = 0;
-        virtual void post(std::coroutine_handle<>) const = 0;
+        virtual std::coroutine_handle<> dispatch(continuation&) const = 0;
+        virtual void post(continuation&) const = 0;
         virtual bool equals(impl_base const*) const noexcept = 0;
         virtual std::type_info const& target_type() const noexcept = 0;
     };
@@ -123,14 +124,14 @@ class any_executor
             ex_.on_work_finished();
         }
 
-        std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const override
+        std::coroutine_handle<> dispatch(continuation& c) const override
         {
-            return ex_.dispatch(h);
+            return ex_.dispatch(c);
         }
 
-        void post(std::coroutine_handle<> h) const override
+        void post(continuation& c) const override
         {
-            ex_.post(h);
+            ex_.post(c);
         }
 
         bool equals(impl_base const* other) const noexcept override
@@ -240,36 +241,39 @@ public:
         p_->on_work_finished();
     }
 
-    /** Dispatches a coroutine handle through the wrapped executor.
+    /** Dispatches a continuation through the wrapped executor.
 
         Returns a handle for symmetric transfer. If running in the
-        executor's thread, returns `h`. Otherwise, posts the coroutine
-        for later execution and returns `std::noop_coroutine()`.
+        executor's thread, returns `c.h`. Otherwise, posts the
+        continuation for later execution and returns
+        `std::noop_coroutine()`.
 
-        @param h The coroutine handle to dispatch for resumption.
+        @param c The continuation to dispatch for resumption.
+                 Must remain at a stable address until dequeued.
 
         @return A handle for symmetric transfer or `std::noop_coroutine()`.
 
         @pre This instance holds a valid executor.
     */
-    std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
+    std::coroutine_handle<> dispatch(continuation& c) const
     {
-        return p_->dispatch(h);
+        return p_->dispatch(c);
     }
 
-    /** Posts a coroutine handle to the wrapped executor.
+    /** Posts a continuation to the wrapped executor.
 
-        Posts the coroutine handle to the executor for later execution
+        Posts the continuation to the executor for later execution
         and returns. The caller should transfer to `std::noop_coroutine()`
         after calling this.
 
-        @param h The coroutine handle to post for resumption.
+        @param c The continuation to post for resumption.
+                 Must remain at a stable address until dequeued.
 
         @pre This instance holds a valid executor.
     */
-    void post(std::coroutine_handle<> h) const
+    void post(continuation& c) const
     {
-        p_->post(h);
+        p_->post(c);
     }
 
     /** Compares two executor wrappers for equality.

@@ -9,6 +9,7 @@
 
 #include "src/ex/detail/strand_queue.hpp"
 #include <boost/capy/ex/detail/strand_service.hpp>
+#include <boost/capy/continuation.hpp>
 #include <atomic>
 #include <coroutine>
 #include <mutex>
@@ -50,6 +51,11 @@ struct strand_invoker
 {
     struct promise_type
     {
+        // Used to post the invoker through the inner executor.
+        // Lives in the coroutine frame (heap-allocated), so has
+        // a stable address for the duration of the queue residency.
+        continuation self_;
+
         void* operator new(std::size_t n, strand_impl& impl)
         {
             constexpr auto A = alignof(strand_impl*);
@@ -205,6 +211,15 @@ private:
         }
     }
 
+    static void
+    post_invoker(strand_impl& impl, executor_ref ex)
+    {
+        auto invoker = make_invoker(impl);
+        auto& self = invoker.h_.promise().self_;
+        self.h = invoker.h_;
+        ex.post(self);
+    }
+
     friend class strand_service;
 };
 
@@ -234,7 +249,7 @@ dispatch(strand_impl& impl, executor_ref ex, std::coroutine_handle<> h)
         return h;
 
     if(strand_service_impl::enqueue(impl, h))
-        ex.post(strand_service_impl::make_invoker(impl).h_);
+        strand_service_impl::post_invoker(impl, ex);
     return std::noop_coroutine();
 }
 
@@ -243,7 +258,7 @@ strand_service::
 post(strand_impl& impl, executor_ref ex, std::coroutine_handle<> h)
 {
     if(strand_service_impl::enqueue(impl, h))
-        ex.post(strand_service_impl::make_invoker(impl).h_);
+        strand_service_impl::post_invoker(impl, ex);
 }
 
 strand_service&

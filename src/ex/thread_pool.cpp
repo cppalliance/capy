@@ -9,7 +9,7 @@
 //
 
 #include <boost/capy/ex/thread_pool.hpp>
-#include <boost/capy/detail/intrusive.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/test/thread_name.hpp>
 #include <algorithm>
 #include <atomic>
@@ -22,9 +22,11 @@
 /*
     Thread pool implementation using a shared work queue.
 
-    Work items are coroutine handles wrapped in intrusive list nodes, stored
-    in a single queue protected by a mutex. Worker threads wait on a
-    condition_variable until work is available or stop is requested.
+    Work items are continuations linked via their intrusive next pointer,
+    stored in a single queue protected by a mutex. No per-post heap
+    allocation: the continuation is owned by the caller and linked
+    directly. Worker threads wait on a condition_variable until work
+    is available or stop is requested.
 
     Threads are started lazily on first post() via std::call_once to avoid
     spawning threads for pools that are constructed but never used. Each
@@ -48,34 +50,39 @@ namespace capy {
 
 class thread_pool::impl
 {
-    struct work : detail::intrusive_queue<work>::node
+    // Intrusive queue of continuations via continuation::next.
+    // No per-post allocation: the continuation is owned by the caller.
+    continuation* head_ = nullptr;
+    continuation* tail_ = nullptr;
+
+    void push(continuation* c) noexcept
     {
-        std::coroutine_handle<> h_;
+        c->next = nullptr;
+        if(tail_)
+            tail_->next = c;
+        else
+            head_ = c;
+        tail_ = c;
+    }
 
-        explicit work(std::coroutine_handle<> h) noexcept
-            : h_(h)
-        {
-        }
+    continuation* pop() noexcept
+    {
+        if(!head_)
+            return nullptr;
+        continuation* c = head_;
+        head_ = head_->next;
+        if(!head_)
+            tail_ = nullptr;
+        return c;
+    }
 
-        void run()
-        {
-            auto h = h_;
-            delete this;
-            h.resume();
-        }
-
-        void destroy()
-        {
-            auto h = h_;
-            delete this;
-            if(h && h != std::noop_coroutine())
-                h.destroy();
-        }
-    };
+    bool empty() const noexcept
+    {
+        return head_ == nullptr;
+    }
 
     std::mutex mutex_;
     std::condition_variable cv_;
-    detail::intrusive_queue<work> q_;
     std::vector<std::thread> threads_;
     std::atomic<std::size_t> outstanding_work_{0};
     bool stop_{false};
@@ -85,10 +92,22 @@ class thread_pool::impl
     std::once_flag start_flag_;
 
 public:
-    ~impl()
+    ~impl() = default;
+
+    // Destroy abandoned coroutine frames. Must be called
+    // before execution_context::shutdown()/destroy() so
+    // that suspended-frame destructors (e.g. delay_awaitable
+    // calling timer_service::cancel()) run while services
+    // are still valid.
+    void
+    drain_abandoned() noexcept
     {
-        while(auto* w = q_.pop())
-            w->destroy();
+        while(auto* c = pop())
+        {
+            auto h = c->h;
+            if(h && h != std::noop_coroutine())
+                h.destroy();
+        }
     }
 
     impl(std::size_t num_threads, std::string_view thread_name_prefix)
@@ -104,13 +123,12 @@ public:
     }
 
     void
-    post(std::coroutine_handle<> h)
+    post(continuation& c)
     {
         ensure_started();
-        auto* w = new work(h);
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            q_.push(w);
+            push(&c);
         }
         cv_.notify_one();
     }
@@ -193,19 +211,19 @@ private:
 
         for(;;)
         {
-            work* w = nullptr;
+            continuation* c = nullptr;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
                 cv_.wait(lock, [this]{
-                    return !q_.empty() ||
+                    return !empty() ||
                         stop_;
                 });
                 if(stop_)
                     return;
-                w = q_.pop();
+                c = pop();
             }
-            if(w)
-                w->run();
+            if(c)
+                c->h.resume();
         }
     }
 };
@@ -217,6 +235,7 @@ thread_pool::
 {
     impl_->stop();
     impl_->join();
+    impl_->drain_abandoned();
     shutdown();
     destroy();
     delete impl_;
@@ -269,9 +288,9 @@ on_work_finished() const noexcept
 
 void
 thread_pool::executor_type::
-post(std::coroutine_handle<> h) const
+post(continuation& c) const
 {
-    pool_->impl_->post(h);
+    pool_->impl_->post(c);
 }
 
 } // capy

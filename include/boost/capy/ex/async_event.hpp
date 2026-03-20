@@ -12,6 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/intrusive.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -113,7 +114,7 @@ public:
         friend class async_event;
 
         async_event* e_;
-        std::coroutine_handle<> h_;
+        continuation cont_;
         executor_ref ex_;
 
         // Declared before stop_cb_buf_: the callback
@@ -134,7 +135,7 @@ public:
                     true, std::memory_order_acq_rel))
                 {
                     self_->canceled_ = true;
-                    self_->ex_.post(self_->h_);
+                    self_->ex_.post(self_->cont_);
                 }
             }
         };
@@ -173,7 +174,7 @@ public:
 
         wait_awaiter(wait_awaiter&& o) noexcept
             : e_(o.e_)
-            , h_(o.h_)
+            , cont_(o.cont_)
             , ex_(o.ex_)
             , claimed_(o.claimed_.load(
                 std::memory_order_relaxed))
@@ -203,7 +204,7 @@ public:
                 canceled_ = true;
                 return h;
             }
-            h_ = h;
+            cont_.h = h;
             ex_ = env->executor;
             e_->waiters_.push_back(this);
             in_list_ = true;
@@ -278,7 +279,7 @@ public:
             if(!w->claimed_.exchange(
                 true, std::memory_order_acq_rel))
             {
-                w->ex_.post(w->h_);
+                w->ex_.post(w->cont_);
             }
         }
     }
