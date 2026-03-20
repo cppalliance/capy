@@ -55,14 +55,16 @@ public:
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
+    std::coroutine_handle<> dispatch(continuation& c) const
     {
+        auto h = c.h;
         net::post(ex_, [h]{ h.resume(); });
         return std::noop_coroutine();
     }
 
-    void post(std::coroutine_handle<> h) const
+    void post(continuation& c) const
     {
+        auto h = c.h;
         net::post(ex_, [h]{ h.resume(); });
     }
 };

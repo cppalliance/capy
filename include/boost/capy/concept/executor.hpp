@@ -11,6 +11,7 @@
 #define BOOST_CAPY_CONCEPT_EXECUTOR_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/continuation.hpp>
 
 #include <concepts>
 #include <coroutine>
@@ -39,13 +40,13 @@ class execution_context;
     @par Syntactic Requirements
 
     @li `E` must be nothrow copy and move constructible
-    @li `e1 == e2` must return a type convertible to `bool`, `noexcept`
-    @li `e.context()` must return an lvalue reference to a type derived
+    @li `ce == ce2` must return a type convertible to `bool`, `noexcept`
+    @li `ce.context()` must return an lvalue reference to a type derived
         from `execution_context`, `noexcept`
-    @li `e.on_work_started()` must be valid and `noexcept`
-    @li `e.on_work_finished()` must be valid and `noexcept`
-    @li `e.dispatch(h)` must return `std::coroutine_handle<>`
-    @li `e.post(h)` must be valid
+    @li `ce.on_work_started()` must be valid and `noexcept`
+    @li `ce.on_work_finished()` must be valid and `noexcept`
+    @li `ce.dispatch(c)` must return `std::coroutine_handle<>`
+    @li `ce.post(c)` must be valid
 
     @par Semantic Requirements
 
@@ -75,9 +76,9 @@ class execution_context;
     resumed coroutine.
 
     @li If the executor determines it is safe to resume inline
-        (e.g., already on the correct thread), returns `h` for
+        (e.g., already on the correct thread), returns `c.h` for
         the caller to use in symmetric transfer
-    @li Otherwise, posts the coroutine for later execution and
+    @li Otherwise, posts the continuation for later execution and
         returns `std::noop_coroutine()`
     @li The caller is responsible for using the returned handle
         appropriately: returning it from `await_suspend` for
@@ -88,11 +89,11 @@ class execution_context;
 
     @code
     std::coroutine_handle<> dispatch(
-        std::coroutine_handle<> h ) const
+        continuation& c ) const
     {
         if( ctx_.is_running_on_this_thread() )
-            return h;              // symmetric transfer
-        post( h );
+            return c.h;            // symmetric transfer
+        post( c );
         return std::noop_coroutine();
     }
     @endcode
@@ -101,6 +102,21 @@ class execution_context;
 
     @li Never blocks the caller
     @li The coroutine executes on the executor's associated context
+
+    @par Continuation Lifetime
+
+    Both `dispatch` and `post` operate on the caller's
+    continuation object by reference. The continuation must
+    remain at a stable address and must not be moved or
+    destroyed until the executor has dequeued and resumed it.
+    Destroying or moving a continuation while it is linked
+    into an executor's queue is undefined behavior.
+
+    When `dispatch` returns `c.h` (the inline case), the
+    continuation is not enqueued and may be reused or
+    destroyed immediately. When `dispatch` falls through to
+    `post`, the continuation is enqueued and the lifetime
+    requirement applies.
 
     @par Executor Validity
 
@@ -126,8 +142,8 @@ class execution_context;
         void on_work_finished() const noexcept;
 
         std::coroutine_handle<> dispatch(
-            std::coroutine_handle<> h ) const;
-        void post( std::coroutine_handle<> h ) const;
+            continuation& c ) const;
+        void post( continuation& c ) const;
 
         bool operator==( E const& ) const noexcept;
     };
@@ -139,7 +155,7 @@ template<class E>
 concept Executor =
     std::is_nothrow_copy_constructible_v<E> &&
     std::is_nothrow_move_constructible_v<E> &&
-    requires(E& e, E const& ce, E const& ce2, std::coroutine_handle<> h) {
+    requires(E& e, E const& ce, E const& ce2, continuation c) {
         { ce == ce2 } noexcept -> std::convertible_to<bool>;
         { ce.context() } noexcept;
         requires std::is_lvalue_reference_v<decltype(ce.context())> &&
@@ -149,8 +165,8 @@ concept Executor =
         { ce.on_work_started() } noexcept;
         { ce.on_work_finished() } noexcept;
 
-        { ce.dispatch(h) } -> std::same_as<std::coroutine_handle<>>;
-        { ce.post(h) };
+        { ce.dispatch(c) } -> std::same_as<std::coroutine_handle<>>;
+        { ce.post(c) };
     };
 
 } // capy

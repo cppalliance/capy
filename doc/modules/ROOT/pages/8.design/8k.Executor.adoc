@@ -2,7 +2,7 @@
 
 == Overview
 
-This document describes the design of the `Executor` concept: the interface through which coroutines are scheduled for execution. It explains the relationship to Asio's executor model, why `dispatch` returns `void`, why `defer` was dropped, how `executor_ref` achieves zero-allocation type erasure, and the I/O completion pattern that motivates the entire design.
+This document describes the design of the `Executor` concept: the interface through which coroutines are scheduled for execution. It explains the relationship to Asio's executor model, why `dispatch` returns `std::coroutine_handle<>`, why `defer` was dropped, how `executor_ref` achieves zero-allocation type erasure, and the I/O completion pattern that motivates the entire design.
 
 The `Executor` concept exists to answer one question: when a coroutine is ready to run, _where_ does it run? The concept captures the rules for scheduling coroutine resumption, tracking outstanding work for graceful shutdown, and accessing the execution context that owns the executor. Every I/O awaitable in Corosio -- sockets, acceptors, timers, resolvers -- depends on this concept to dispatch completions back to the correct executor.
 
@@ -15,7 +15,7 @@ concept Executor =
     std::is_nothrow_copy_constructible_v<E> &&
     std::is_nothrow_move_constructible_v<E> &&
     requires(E& e, E const& ce, E const& ce2,
-             std::coroutine_handle<> h)
+             continuation c)
     {
         { ce == ce2 } noexcept -> std::convertible_to<bool>;
         { ce.context() } noexcept;
@@ -28,20 +28,22 @@ concept Executor =
         { ce.on_work_started() } noexcept;
         { ce.on_work_finished() } noexcept;
 
-        { ce.dispatch(h) };
-        { ce.post(h) };
+        { ce.dispatch(c) } -> std::same_as<std::coroutine_handle<>>;
+        { ce.post(c) };
     };
 ----
 
-An `Executor` provides exactly two operations on a coroutine handle:
+An `Executor` provides exactly two scheduling operations:
 
-=== `dispatch(h)` -- Execute If Safe
+=== `dispatch(c)` -- Execute If Safe
 
-If the executor determines it is safe (e.g., the current thread is already associated with the executor's context), resumes the coroutine inline via `h.resume()`. Otherwise, posts the coroutine for later execution. Returns `void`.
+If the executor determines it is safe (e.g., the current thread is already associated with the executor's context), returns `c.h` for symmetric transfer. Otherwise, posts the continuation for later execution and returns `std::noop_coroutine()`. The caller uses the returned handle for symmetric transfer from `await_suspend`, or calls `.resume()` at the event loop pump level.
 
-=== `post(h)` -- Always Queue
+=== `post(c)` -- Always Queue
 
-Queues the coroutine for later execution without ever executing it inline. Never blocks. Use when guaranteed asynchrony is required.
+Queues the continuation for later execution without ever executing it inline. Never blocks. The continuation is linked into the executor's internal queue via its intrusive `next` pointer -- no per-post heap allocation.
+
+Both operations accept `continuation&` rather than `std::coroutine_handle<>`. A `continuation` wraps a coroutine handle with an intrusive list pointer, enabling zero-allocation queuing. See xref:../continuation-rationale.adoc[Continuation Rationale] for the design of this type.
 
 The remaining operations support context access, lifecycle management, and identity:
 
@@ -77,52 +79,36 @@ Capy retains the core elements of this model:
 Capy removes or changes:
 
 - **`defer`.** Dropped entirely. See <<why-not-defer>>.
-- **Function object submission.** Asio executors accept arbitrary callables. Capy executors accept only `std::coroutine_handle<>`. This removes the need for allocator-aware function erasure and enables a simpler, cheaper type-erased wrapper (`executor_ref`).
-- **`dispatch` return type.** Asio's `dispatch` returns void for the same reason Capy's does, but Capy also considered and rejected a `coroutine_handle<>` return for symmetric transfer. See <<why-dispatch-returns-void>>.
+- **Function object submission.** Asio executors accept arbitrary callables. Capy executors accept `continuation&` -- a coroutine handle wrapped with an intrusive queue pointer. This removes the need for allocator-aware function erasure, eliminates per-post heap allocation, and enables a simpler, cheaper type-erased wrapper (`executor_ref`).
+- **`dispatch` return type.** Asio's `dispatch` returns void. Capy's `dispatch` returns `std::coroutine_handle<>` for symmetric transfer. See <<why-dispatch-returns-handle>>.
 
 The result is a concept that preserves Asio's proven execution model while removing the machinery that a coroutine-native library does not need.
 
-[[why-dispatch-returns-void]]
-== Why `dispatch` Returns `void`
+[[why-dispatch-returns-handle]]
+== Why `dispatch` Returns `std::coroutine_handle<>`
 
-An earlier design had `dispatch` return `std::coroutine_handle<>` so that callers could use it for symmetric transfer from `await_suspend`. This was rejected because it violates a fundamental constraint of the I/O layer.
+`dispatch` returns a `std::coroutine_handle<>` so that callers can use it for symmetric transfer from `await_suspend`. When the executor determines that inline resumption is safe, it returns `c.h` -- the caller returns this from `await_suspend` and the compiler performs a tail-call transfer to the target coroutine. When inline resumption is not safe, the executor queues the continuation and returns `std::noop_coroutine()`, which suspends the caller without resuming anything.
 
-=== The Problem: Synchronous Completion During `await_suspend`
-
-When an I/O awaitable initiates an operation inside `await_suspend`, the I/O might complete immediately. If it does, the completion path would call `dispatch(h)` while the caller's `await_suspend` is still on the call stack. If `dispatch` resumed the coroutine inline via `h.resume()`, the coroutine would execute while `await_suspend` has not yet returned -- resuming a coroutine from inside `await_suspend` before the suspension machinery completes risks undefined behavior.
-
-The {cpp} standard describes the sequencing in https://eel.is/c++draft/expr.await[[expr.await]/5.1]:
-
-[quote]
-____
-If the result of await-ready is false, the coroutine is
-considered suspended. Then, await-suspend is evaluated.
-____
-
-Although the standard considers the coroutine suspended before `await_suspend` is called, resuming it from _within_ `await_suspend` creates a nested resumption on the same call stack. The resumed coroutine runs, potentially suspends again or completes, and then control returns into the middle of `await_suspend`. If the coroutine was destroyed during resumption, `await_suspend` returns into a destroyed frame.
-
-=== Why I/O Awaitables Return `void` or `std::noop_coroutine()`
-
-To avoid this, all I/O awaitables return `void` or `std::noop_coroutine()` from `await_suspend`. Both forms guarantee that the caller is fully suspended and the call stack has unwound before any completion handler can resume the coroutine. The I/O operation is initiated during `await_suspend`, but the completion is dispatched later -- from the event loop, after `await_suspend` has returned.
-
-https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p0913r1.html[P0913R1] introduced the `coroutine_handle<Z>` return type for symmetric transfer, which is the correct mechanism for coroutine-to-coroutine control transfer (as used by `task<T>` internally). But I/O awaitables cannot use it because the I/O completion is asynchronous relative to `await_suspend` -- it comes from the reactor or proactor, not from the awaitable itself.
-
-=== Consequence for `dispatch`
-
-Since the primary consumer of `dispatch` is I/O completion -- called _after_ the coroutine is suspended, from the event loop -- `dispatch` does not need to participate in symmetric transfer. It calls `h.resume()` inline when safe and returns `void`. A conforming implementation looks like:
+A conforming implementation:
 
 [source,cpp]
 ----
-void dispatch(std::coroutine_handle<> h) const
+std::coroutine_handle<> dispatch(continuation& c) const
 {
     if(ctx_.running_in_this_thread())
-        h.resume();
-    else
-        post(h);
+        return c.h;            // symmetric transfer
+    post(c);
+    return std::noop_coroutine();
 }
 ----
 
-After `dispatch` returns, the state of `h` is unspecified. The coroutine may have completed, been destroyed, or suspended at a different point. Callers must not use `h` after calling `dispatch`.
+This design enables the common fast path -- same-executor dispatch at `final_suspend` -- to avoid queuing entirely, transferring control directly via symmetric transfer.
+
+=== I/O Awaitables and Symmetric Transfer
+
+I/O awaitables return `std::noop_coroutine()` from `await_suspend` rather than a handle for symmetric transfer. The I/O operation is initiated during `await_suspend`, but completion comes from the reactor or proactor asynchronously. The awaitable cannot know which coroutine to transfer to at suspension time.
+
+Symmetric transfer from `dispatch` is used at a different level: when a child coroutine completes and its `final_suspend` dispatches the parent's continuation through the executor. If the parent is on the same executor, `dispatch` returns the parent's handle for direct symmetric transfer. If not, it queues the continuation and returns `std::noop_coroutine()`.
 
 [[why-not-defer]]
 == Why Two Operations, Not Three
@@ -171,17 +157,28 @@ When `task<T>::await_suspend` returns the parent's coroutine handle, the compile
 
 Corosio confirms this in practice: its entire I/O layer -- sockets, acceptors, timers, resolvers, signals -- across all three backends (epoll, IOCP, select) uses only `dispatch` and `post`. No code path requires `defer`.
 
-== Why `std::coroutine_handle<>`, Not Typed Handles
+== Why `continuation`, Not Raw `coroutine_handle<>`
 
-The executor accepts `std::coroutine_handle<>` -- the type-erased handle -- rather than `std::coroutine_handle<P>` for a specific promise type `P`.
+The executor accepts `continuation&` rather than `std::coroutine_handle<>`. A `continuation` wraps the handle with an intrusive `next` pointer for zero-allocation queuing:
 
-This decision has three consequences:
+[source,cpp]
+----
+struct continuation
+{
+    std::coroutine_handle<> h;
+    continuation* next = nullptr;
+};
+----
 
-- **Type erasure is possible.** `executor_ref` wraps any executor behind a uniform interface. If `dispatch` and `post` were templated on the promise type, the vtable would need to be generic over all promise types, making type erasure impractical.
+This design has three consequences:
 
-- **Executor implementations are independent of coroutine internals.** An executor schedules resumption. It does not need to know what the coroutine's promise type is, what value it produces, or how it handles exceptions. The type-erased handle provides exactly the right interface: `resume()` and nothing else.
+- **Zero-allocation posting.** The thread pool links the `continuation` directly into its work queue via `next`. No `new work(h)` per post. The queue node is embedded in the thing being queued -- the awaitable, combinator state, or trampoline promise that owns the continuation.
 
-- **I/O operation structures stay simple.** Every pending I/O operation in Corosio stores two fields: `std::coroutine_handle<> h` (a typedef for `std::coroutine_handle<>`) and `capy::executor_ref ex`. Both are type-erased. The operation structure does not need to be templated on the coroutine's promise type, which keeps the I/O backend code non-generic and out of headers.
+- **Type erasure remains possible.** `executor_ref` wraps any executor behind a uniform vtable. The vtable function pointers accept `continuation&`, which is a concrete type. No templates on promise type are needed.
+
+- **I/O operation structures stay simple.** Every I/O awaitable embeds a `continuation` for the caller's handle and an `executor_ref` for the executor. Both are non-templated, keeping I/O backend code non-generic and out of headers.
+
+The handle within the `continuation` is still type-erased (`std::coroutine_handle<>`) for the same reasons that applied before: executor implementations are independent of coroutine internals, and the type-erased handle provides exactly the right interface (`resume()` and nothing else).
 
 == Why Nothrow Copy and Move
 
@@ -297,49 +294,33 @@ The executor concept is designed around a single use case: I/O completion dispat
 
 === Capture at Initiation
 
-When a coroutine `co_await`s an I/O awaitable, the awaitable's `await_suspend` receives the caller's executor and stores it as `executor_ref`:
+When a coroutine `co_await`s an I/O awaitable, the awaitable's `await_suspend` receives the caller's handle and executor. The awaitable embeds a `continuation` for the caller's handle:
 
 [source,cpp]
 ----
-template<typename Ex>
-auto await_suspend(
+std::coroutine_handle<>
+await_suspend(
     std::coroutine_handle<> h,
-    Ex const& ex) -> std::coroutine_handle<>
+    io_env const* env) noexcept
 {
-    // ex is captured as executor_ref in the operation
-    return socket_.connect(h, ex, endpoint_, token_, &ec_);
+    cont_.h = h;
+    ex_ = env->executor;
+    // ... initiate I/O operation ...
+    return std::noop_coroutine();
 }
-----
-
-The operation structure stores both the coroutine handle and the executor reference:
-
-[source,cpp]
-----
-struct io_op : scheduler_op
-{
-    std::coroutine_handle<> h;
-    capy::executor_ref ex;
-    // ... error codes, buffers, etc.
-};
 ----
 
 === Dispatch at Completion
 
-When the I/O completes (from the reactor thread for epoll, the completion port for IOCP, or the select loop), the operation uses the stored executor to resume the coroutine:
+When the I/O completes (from the reactor thread for epoll, the completion port for IOCP, or the select loop), the awaitable uses the stored executor to resume the coroutine via the embedded continuation:
 
 [source,cpp]
 ----
-void operator()() override
-{
-    // ... set error codes ...
-    capy::executor_ref saved_ex(std::move(ex));
-    std::coroutine_handle<> saved_h(std::move(h));
-    impl_ptr.reset();
-    saved_ex.dispatch(saved_h);
-}
+// Timer fires or I/O completes:
+ex_.post(cont_);
 ----
 
-`dispatch` checks whether the current thread is already running on the executor's context. If so, the coroutine resumes inline. If not, the coroutine is posted for later execution on the correct context.
+`post` links the continuation into the executor's work queue via `cont_.next`. No heap allocation occurs -- the continuation is embedded in the awaitable, which is alive for the duration of the suspension. A worker thread dequeues the continuation and calls `cont_.h.resume()`.
 
 === Platform Independence
 
@@ -376,8 +357,8 @@ public:
     void on_work_started() const noexcept;
     void on_work_finished() const noexcept;
 
-    void dispatch(std::coroutine_handle<> h) const;
-    void post(std::coroutine_handle<> h) const;
+    std::coroutine_handle<> dispatch(continuation& c) const;
+    void post(continuation& c) const;
 
     bool operator==(my_executor const&) const noexcept;
 };
@@ -385,6 +366,6 @@ public:
 
 == Summary
 
-The `Executor` concept provides `dispatch` and `post` for coroutine scheduling, work tracking for event loop lifetime, and `context()` for service access. The design descends from Asio's executor model but is adapted for coroutines: `defer` is replaced by symmetric transfer, function objects are replaced by `std::coroutine_handle<>`, and `dispatch` returns `void` because I/O completions are dispatched after suspension, not during it.
+The `Executor` concept provides `dispatch` and `post` for coroutine scheduling, work tracking for event loop lifetime, and `context()` for service access. The design descends from Asio's executor model but is adapted for coroutines: `defer` is replaced by symmetric transfer, function objects are replaced by `continuation&` for zero-allocation intrusive queuing, and `dispatch` returns `std::coroutine_handle<>` for symmetric transfer at `final_suspend`.
 
 `executor_ref` type-erases any executor into two pointers, enabling platform-independent I/O completion dispatch with zero allocation and predictable cache behavior. The capture-at-initiation / dispatch-at-completion pattern is the fundamental use case the concept serves.

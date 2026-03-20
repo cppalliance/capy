@@ -12,6 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/intrusive.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -164,7 +165,7 @@ public:
         friend class async_mutex;
 
         async_mutex* m_;
-        std::coroutine_handle<> h_;
+        continuation cont_;
         executor_ref ex_;
 
         // These members must be declared before stop_cb_
@@ -183,7 +184,7 @@ public:
                     true, std::memory_order_acq_rel))
                 {
                     self_->canceled_ = true;
-                    self_->ex_.post(self_->h_);
+                    self_->ex_.post(self_->cont_);
                 }
             }
         };
@@ -223,7 +224,7 @@ public:
 
         lock_awaiter(lock_awaiter&& o) noexcept
             : m_(o.m_)
-            , h_(o.h_)
+            , cont_(o.cont_)
             , ex_(o.ex_)
             , claimed_(o.claimed_.load(
                 std::memory_order_relaxed))
@@ -257,7 +258,7 @@ public:
                 canceled_ = true;
                 return h;
             }
-            h_ = h;
+            cont_.h = h;
             ex_ = env->executor;
             m_->waiters_.push_back(this);
             ::new(stop_cb_buf_) stop_cb_t(
@@ -422,7 +423,7 @@ public:
             if(!waiter->claimed_.exchange(
                 true, std::memory_order_acq_rel))
             {
-                waiter->ex_.post(waiter->h_);
+                waiter->ex_.post(waiter->cont_);
                 return;
             }
         }

@@ -20,11 +20,11 @@
 namespace boost {
 namespace capy {
 
-/** Callable that posts a coroutine handle to an executor.
+/** Callable that posts a continuation to an executor.
 
     Use this as the callback type for `std::stop_callback` instead
-    of a raw `std::coroutine_handle<>`. Raw handles resume the
-    coroutine inline on whatever thread calls `request_stop()`,
+    of resuming a coroutine handle directly. Direct resumption runs
+    the coroutine inline on whatever thread calls `request_stop()`,
     which bypasses the executor and corrupts the thread-local
     frame allocator.
 
@@ -36,13 +36,13 @@ namespace capy {
 struct resume_via_post
 {
     executor_ref ex;
-    std::coroutine_handle<> h;
+    mutable continuation cont;
 
     // post() must not throw; stop_callback requires a
     // non-throwing invocable.
     void operator()() const noexcept
     {
-        ex.post(h);
+        ex.post(cont);
     }
 };
 
@@ -99,17 +99,20 @@ struct io_env
     /** Create a resume_via_post callable for this environment.
 
         Convenience method for registering @ref stop_resume_callback
-        instances. Equivalent to `resume_via_post{executor, h}`.
+        instances. Wraps the coroutine handle in a @ref continuation
+        and pairs it with this environment's executor. Equivalent to
+        `resume_via_post{executor, continuation{h}}`.
 
         @par Example
         @code
         stop_cb_.emplace(env->stop_token, env->post_resume(h));
         @endcode
 
-        @param h The coroutine handle to post on cancellation.
+        @param h The coroutine handle to wrap in a continuation
+            and post on cancellation.
 
         @return A @ref resume_via_post callable that holds a
-        non-owning @ref executor_ref and the coroutine handle.
+        non-owning @ref executor_ref and a @ref continuation.
         The callable must not outlive the executor it references.
 
         @see resume_via_post, stop_resume_callback
@@ -117,7 +120,7 @@ struct io_env
     resume_via_post
     post_resume(std::coroutine_handle<> h) const noexcept
     {
-        return resume_via_post{executor, h};
+        return resume_via_post{executor, continuation{h}};
     }
 };
 

@@ -83,6 +83,7 @@ public:
         MB buffers_;
         capy::io_result<std::size_t> result_;
         std::shared_ptr<cancel_state> cancel_;
+        capy::continuation cont_;
 
     public:
         read_awaitable(
@@ -103,19 +104,20 @@ public:
             std::coroutine_handle<> h,
             capy::io_env const* env)
         {
+            cont_.h = h;
             cancel_ = std::make_shared<cancel_state>(env->stop_token);
 
             self_->socket_.async_read_some(
                 capy::to_asio(capy::mutable_buffer_array<8>(buffers_)),
                 net::bind_cancellation_slot(
                     cancel_->signal.slot(),
-                    [this, h, ex = env->executor](
+                    [this, ex = env->executor](
                         boost::system::error_code ec,
                         std::size_t n) mutable
                     {
                         result_.ec = ec;
                         std::get<0>(result_.values) = n;
-                        ex.post(h);
+                        ex.post(cont_);
                     }));
 
             return std::noop_coroutine();
@@ -145,6 +147,7 @@ public:
         CB buffers_;
         capy::io_result<std::size_t> result_;
         std::shared_ptr<cancel_state> cancel_;
+        capy::continuation cont_;
 
     public:
         write_awaitable(
@@ -165,19 +168,20 @@ public:
             std::coroutine_handle<> h,
             capy::io_env const* env)
         {
+            cont_.h = h;
             cancel_ = std::make_shared<cancel_state>(env->stop_token);
 
             self_->socket_.async_write_some(
                 capy::to_asio(capy::const_buffer_array<8>(buffers_)),
                 net::bind_cancellation_slot(
                     cancel_->signal.slot(),
-                    [this, h, ex = env->executor](
+                    [this, ex = env->executor](
                         boost::system::error_code ec,
                         std::size_t n) mutable
                     {
                         result_.ec = ec;
                         std::get<0>(result_.values) = n;
-                        ex.post(h);
+                        ex.post(cont_);
                     }));
 
             return std::noop_coroutine();
@@ -235,14 +239,16 @@ public:
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
+    std::coroutine_handle<> dispatch(continuation& c) const
     {
+        auto h = c.h;
         net::post(ex_, [h]{ h.resume(); });
         return std::noop_coroutine();
     }
 
-    void post(std::coroutine_handle<> h) const
+    void post(continuation& c) const
     {
+        auto h = c.h;
         net::post(ex_, [h]{ h.resume(); });
     }
 };

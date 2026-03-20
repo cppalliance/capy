@@ -108,17 +108,17 @@ struct test_executor
     void on_work_finished() const noexcept {}
 
     std::coroutine_handle<>
-    dispatch(std::coroutine_handle<> h) const
+    dispatch(continuation& c) const
     {
         if(dispatch_count_)
             ++(*dispatch_count_);
-        return h;
+        return c.h;
     }
 
     void
-    post(std::coroutine_handle<> h) const
+    post(continuation& c) const
     {
-        h.resume();
+        c.h.resume();
     }
 };
 
@@ -394,15 +394,15 @@ struct queuing_executor
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
+    std::coroutine_handle<> dispatch(continuation& c) const
     {
-        queue_->push(h);
+        queue_->push(c.h);
         return std::noop_coroutine();
     }
 
-    void post(std::coroutine_handle<> h) const
+    void post(continuation& c) const
     {
-        queue_->push(h);
+        queue_->push(c.h);
     }
 };
 
@@ -420,6 +420,8 @@ static_assert(Executor<queuing_executor>);
 */
 struct yield_awaitable
 {
+    continuation cont_;
+
     bool await_ready() const noexcept
     {
         return false;
@@ -428,7 +430,8 @@ struct yield_awaitable
     std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env)
     {
         // Post ourselves back to the queue
-        env->executor.post(h);
+        cont_.h = h;
+        env->executor.post(cont_);
         return std::noop_coroutine();
     }
 

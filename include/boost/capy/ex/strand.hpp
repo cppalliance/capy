@@ -11,6 +11,7 @@
 #define BOOST_CAPY_EX_STRAND_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/continuation.hpp>
 #include <coroutine>
 #include <boost/capy/ex/detail/strand_service.hpp>
 
@@ -45,8 +46,8 @@ namespace capy {
     This class satisfies the `Executor` concept, providing:
     - `context()` - Returns the underlying execution context
     - `on_work_started()` / `on_work_finished()` - Work tracking
-    - `dispatch(h)` - May run immediately if strand is idle
-    - `post(h)` - Always queues for later execution
+    - `dispatch(continuation&)` - May run immediately if strand is idle
+    - `post(continuation&)` - Always queues for later execution
 
     @par Thread Safety
     Distinct objects: Safe.
@@ -57,10 +58,11 @@ namespace capy {
     thread_pool pool(4);
     auto strand = make_strand(pool.get_executor());
 
-    // These coroutines will never run concurrently
-    strand.post(coro1);
-    strand.post(coro2);
-    strand.post(coro3);
+    // These continuations will never run concurrently
+    continuation c1{h1}, c2{h2}, c3{h3};
+    strand.post(c1);
+    strand.post(c2);
+    strand.post(c3);
     @endcode
 
     @tparam E The type of the underlying executor. Must
@@ -199,43 +201,47 @@ public:
         return impl_ == other.impl_;
     }
 
-    /** Post a coroutine to the strand.
+    /** Post a continuation to the strand.
 
-        The coroutine is always queued for execution, never resumed
+        The continuation is always queued for execution, never resumed
         immediately. When the strand becomes available, queued
-        coroutines execute in FIFO order on the underlying executor.
+        work executes in FIFO order on the underlying executor.
 
         @par Ordering
         Guarantees strict FIFO ordering relative to other post() calls.
         Use this instead of dispatch() when ordering matters.
 
-        @param h The coroutine handle to post.
+        @param c The continuation to post. The caller retains
+            ownership; the continuation must remain valid until
+            it is dequeued and resumed.
     */
     void
-    post(std::coroutine_handle<> h) const
+    post(continuation& c) const
     {
-        detail::strand_service::post(*impl_, executor_ref(ex_), h);
+        detail::strand_service::post(*impl_, executor_ref(ex_), c.h);
     }
 
-    /** Dispatch a coroutine through the strand.
+    /** Dispatch a continuation through the strand.
 
         Returns a handle for symmetric transfer. If the calling
-        thread is already executing within this strand, returns `h`.
-        Otherwise, the coroutine is queued and
+        thread is already executing within this strand, returns `c.h`.
+        Otherwise, the continuation is queued and
         `std::noop_coroutine()` is returned.
 
         @par Ordering
         Callers requiring strict FIFO ordering should use post()
-        instead, which always queues the coroutine.
+        instead, which always queues the continuation.
 
-        @param h The coroutine handle to dispatch.
+        @param c The continuation to dispatch. The caller retains
+            ownership; the continuation must remain valid until
+            it is dequeued and resumed.
 
         @return A handle for symmetric transfer or `std::noop_coroutine()`.
     */
     std::coroutine_handle<>
-    dispatch(std::coroutine_handle<> h) const
+    dispatch(continuation& c) const
     {
-        return detail::strand_service::dispatch(*impl_, executor_ref(ex_), h);
+        return detail::strand_service::dispatch(*impl_, executor_ref(ex_), c.h);
     }
 };
 

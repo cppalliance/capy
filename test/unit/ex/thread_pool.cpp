@@ -18,6 +18,7 @@
 
 #include "test_helpers.hpp"
 
+#include <array>
 #include <atomic>
 #include <thread>
 #include <vector>
@@ -160,11 +161,13 @@ struct thread_pool_test
     void
     testPostWork()
     {
+        // continuation must outlive pool (LIFO destruction order)
+        continuation c{std::noop_coroutine()};
         thread_pool pool(1);
         auto ex = pool.get_executor();
 
         // Post a noop coroutine and verify no exceptions
-        ex.post(std::noop_coroutine());
+        ex.post(c);
 
         // Basic test: pool constructs and destructs without issue
         (void)ex;
@@ -186,11 +189,12 @@ struct thread_pool_test
     void
     testDispatch()
     {
+        continuation c{std::noop_coroutine()};
         thread_pool pool(1);
         auto ex = pool.get_executor();
 
         // dispatch() always posts for thread_pool (returns void)
-        ex.dispatch(std::noop_coroutine());
+        ex.dispatch(c);
     }
 
     void
@@ -233,10 +237,18 @@ struct thread_pool_test
     void
     testConcurrentPost()
     {
+        // Pre-allocate continuations: must outlive the pool
+        // (LIFO destruction order).
+        constexpr int num_threads = 8;
+        constexpr int posts_per_thread = 10;
+        std::vector<std::array<continuation, posts_per_thread>> all_conts(num_threads);
+        for(auto& arr : all_conts)
+            for(auto& c : arr)
+                c.h = std::noop_coroutine();
+
         thread_pool pool(4);
         auto ex = pool.get_executor();
 
-        constexpr int num_threads = 8;
         std::atomic<int> post_count{0};
 
         std::vector<std::thread> threads;
@@ -244,11 +256,11 @@ struct thread_pool_test
 
         for(int i = 0; i < num_threads; ++i)
         {
-            threads.emplace_back([&ex, &post_count]{
+            threads.emplace_back([&ex, &post_count, conts = all_conts[i].data()]{
                 // Multiple threads posting concurrently
-                for(int j = 0; j < 10; ++j)
+                for(int j = 0; j < posts_per_thread; ++j)
                 {
-                    ex.post(std::noop_coroutine());
+                    ex.post(conts[j]);
                     ++post_count;
                 }
             });
@@ -290,9 +302,11 @@ struct thread_pool_test
 #if defined(BOOST_CAPY_TEST_CAN_GET_THREAD_NAME)
         // Verify default thread name from within pool thread
         {
-            thread_pool pool(1);
             name_check_result result;
-            pool.get_executor().post(check_thread_name(result, "capy-pool-"));
+            auto nc = check_thread_name(result, "capy-pool-");
+            continuation c{nc.h};
+            thread_pool pool(1);
+            pool.get_executor().post(c);
 
             BOOST_TEST(wait_for([&]{ return result.done.load(); }));
             BOOST_TEST(result.matches.load());
@@ -300,9 +314,11 @@ struct thread_pool_test
 
         // Verify custom thread name from within pool thread
         {
-            thread_pool pool(1, "mypool-");
             name_check_result result;
-            pool.get_executor().post(check_thread_name(result, "mypool-"));
+            auto nc = check_thread_name(result, "mypool-");
+            continuation c{nc.h};
+            thread_pool pool(1, "mypool-");
+            pool.get_executor().post(c);
 
             BOOST_TEST(wait_for([&]{ return result.done.load(); }));
             BOOST_TEST(result.matches.load());
@@ -310,9 +326,11 @@ struct thread_pool_test
 
         // Verify thread naming works with index suffix
         {
-            thread_pool pool(1, "idx-");
             name_check_result result;
-            pool.get_executor().post(check_thread_name(result, "idx-0"));
+            auto nc = check_thread_name(result, "idx-0");
+            continuation c{nc.h};
+            thread_pool pool(1, "idx-");
+            pool.get_executor().post(c);
 
             BOOST_TEST(wait_for([&]{ return result.done.load(); }));
             BOOST_TEST(result.matches.load());
@@ -411,6 +429,7 @@ struct thread_pool_test
         {
             std::atomic<bool> busy{false};
             std::atomic<bool> release{false};
+            std::array<continuation, 50> conts;
 
             thread_pool pool(1);
             auto ex = pool.get_executor();
@@ -428,7 +447,10 @@ struct thread_pool_test
 
             // Queue items that can't be processed yet
             for(int i = 0; i < 50; ++i)
-                ex.post(std::noop_coroutine());
+            {
+                conts[i].h = std::noop_coroutine();
+                ex.post(conts[i]);
+            }
 
             // Release worker, then pool destructs immediately.
             // stop() races with the worker — pending items

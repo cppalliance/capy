@@ -250,7 +250,8 @@ struct any_executor_test
 
         std::atomic<int> counter{0};
         auto coro = make_counter_coro(counter);
-        ex.dispatch(coro.handle());
+        continuation c{coro.handle()};
+        ex.dispatch(c);
         coro.release();
 
         BOOST_TEST(wait_for([&]{ return counter.load() >= 1; }));
@@ -266,7 +267,8 @@ struct any_executor_test
 
         std::atomic<int> counter{0};
         auto coro = make_counter_coro(counter);
-        ex.post(coro.handle());
+        continuation c{coro.handle()};
+        ex.post(c);
         coro.release();
 
         BOOST_TEST(wait_for([&]{ return counter.load() >= 1; }));
@@ -276,18 +278,34 @@ struct any_executor_test
     void
     testMultiplePost()
     {
+        std::atomic<int> counter{0};
+        constexpr int N = 10;
+
+        // continuations must outlive pool to avoid
+        // dangling pointers in the executor queue.
+        counter_coro coros[N] = {
+            make_counter_coro(counter),
+            make_counter_coro(counter),
+            make_counter_coro(counter),
+            make_counter_coro(counter),
+            make_counter_coro(counter),
+            make_counter_coro(counter),
+            make_counter_coro(counter),
+            make_counter_coro(counter),
+            make_counter_coro(counter),
+            make_counter_coro(counter),
+        };
+        continuation conts[N] = {};
+
         thread_pool pool(2);
         auto executor = pool.get_executor();
         any_executor ex(executor);
 
-        std::atomic<int> counter{0};
-        constexpr int N = 10;
-
         for(int i = 0; i < N; ++i)
         {
-            auto coro = make_counter_coro(counter);
-            ex.post(coro.handle());
-            coro.release();
+            conts[i] = continuation{coros[i].handle()};
+            ex.post(conts[i]);
+            coros[i].release();
         }
 
         BOOST_TEST(wait_for([&]{ return counter.load() >= N; }));
@@ -297,10 +315,19 @@ struct any_executor_test
     void
     testSharedOwnership()
     {
+        std::atomic<int> counter{0};
+
+        // continuations must outlive pool to avoid
+        // dangling pointers in the executor queue.
+        auto coro1 = make_counter_coro(counter);
+        auto coro2 = make_counter_coro(counter);
+        auto coro3 = make_counter_coro(counter);
+        continuation c1{coro1.handle()};
+        continuation c2{coro2.handle()};
+        continuation c3{coro3.handle()};
+
         thread_pool pool(1);
         auto executor = pool.get_executor();
-
-        std::atomic<int> counter{0};
 
         // Create any_executor and make copies
         any_executor ex1(executor);
@@ -312,21 +339,12 @@ struct any_executor_test
         BOOST_TEST(ex2 == ex3);
 
         // Post through different copies
-        {
-            auto coro = make_counter_coro(counter);
-            ex1.post(coro.handle());
-            coro.release();
-        }
-        {
-            auto coro = make_counter_coro(counter);
-            ex2.post(coro.handle());
-            coro.release();
-        }
-        {
-            auto coro = make_counter_coro(counter);
-            ex3.post(coro.handle());
-            coro.release();
-        }
+        ex1.post(c1);
+        coro1.release();
+        ex2.post(c2);
+        coro2.release();
+        ex3.post(c3);
+        coro3.release();
 
         BOOST_TEST(wait_for([&]{ return counter.load() >= 3; }));
         BOOST_TEST_EQ(counter.load(), 3);

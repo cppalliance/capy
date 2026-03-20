@@ -35,7 +35,7 @@ struct timeout_state
     std::atomic<int> winner_{-1}; // -1=none, 0=inner, 1=delay
     std::optional<T> inner_result_;
     std::exception_ptr inner_exception_;
-    std::array<std::coroutine_handle<>, 2> runner_handles_{};
+    std::array<continuation, 2> runner_handles_{};
 
     timeout_state()
         : core_(2)
@@ -103,7 +103,7 @@ public:
         std::coroutine_handle<> continuation,
         io_env const* caller_env)
     {
-        state_->core_.continuation_ = continuation;
+        state_->core_.continuation_.h = continuation;
         state_->core_.caller_env_ = caller_env;
 
         if(caller_env->stop_token.stop_possible())
@@ -126,7 +126,7 @@ public:
         h0.promise().env_ = io_env{
             caller_env->executor, token,
             caller_env->frame_allocator};
-        state_->runner_handles_[0] =
+        state_->runner_handles_[0].h =
             std::coroutine_handle<>{h0};
 
         auto r1 = make_timeout_delay_runner(
@@ -136,7 +136,7 @@ public:
         h1.promise().env_ = io_env{
             caller_env->executor, token,
             caller_env->frame_allocator};
-        state_->runner_handles_[1] =
+        state_->runner_handles_[1].h =
             std::coroutine_handle<>{h1};
 
         caller_env->executor.post(

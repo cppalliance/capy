@@ -120,16 +120,16 @@ blocking_executor::on_work_finished() const noexcept
 
 std::coroutine_handle<>
 blocking_executor::dispatch(
-    std::coroutine_handle<> h) const
+    continuation& c) const
 {
-    return h;
+    return c.h;
 }
 
 void
 blocking_executor::post(
-    std::coroutine_handle<> h) const
+    continuation& c) const
 {
-    ctx_->enqueue(h);
+    ctx_->enqueue(c.h);
 }
 
 } // namespace test

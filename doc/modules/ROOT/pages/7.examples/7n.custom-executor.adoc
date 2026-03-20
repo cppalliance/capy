@@ -95,17 +95,17 @@ public:
     void on_work_finished() const noexcept {}
 
     std::coroutine_handle<> dispatch(
-        std::coroutine_handle<> h) const
+        capy::continuation& c) const
     {
         if (loop_->is_running_on_this_thread())
-            return h;
-        loop_->enqueue(h);
+            return c.h;
+        loop_->enqueue(c.h);
         return std::noop_coroutine();
     }
 
-    void post(std::coroutine_handle<> h) const
+    void post(capy::continuation& c) const
     {
-        loop_->enqueue(h);
+        loop_->enqueue(c.h);
     }
 
     bool operator==(executor_type const& other) const noexcept
@@ -192,8 +192,8 @@ The nested `executor_type` must provide:
 
 * `context()` -- returns a reference to the owning `execution_context`
 * `on_work_started()` / `on_work_finished()` -- work-tracking hooks
-* `dispatch(h)` -- resume immediately if already on this context, otherwise enqueue
-* `post(h)` -- always enqueue for later execution
+* `dispatch(c)` -- resume immediately if already on this context, otherwise enqueue. Takes a `continuation&` and returns `std::coroutine_handle<>`.
+* `post(c)` -- always enqueue for later execution. Takes a `continuation&`.
 * `operator==` -- compare two executors for identity
 
 [source,cpp]
@@ -208,16 +208,16 @@ The `static_assert` verifies at compile time that all concept requirements are m
 [source,cpp]
 ----
 std::coroutine_handle<> dispatch(
-    std::coroutine_handle<> h) const
+    capy::continuation& c) const
 {
     if (loop_->is_running_on_this_thread())
-        return h;          // resume inline
-    loop_->enqueue(h);
+        return c.h;        // resume inline
+    loop_->enqueue(c.h);
     return std::noop_coroutine();  // defer
 }
 ----
 
-`dispatch` checks whether the caller is already running on the loop's thread. If so, it returns the handle directly for inline resumption. Otherwise it enqueues and returns `noop_coroutine` so the caller continues without blocking.
+`dispatch` takes a `continuation&` and checks whether the caller is already running on the loop's thread. If so, it returns `c.h` directly for inline resumption via symmetric transfer. Otherwise it enqueues `c.h` and returns `noop_coroutine` so the caller continues without blocking.
 
 `post` always enqueues, even if already on the right thread.
 

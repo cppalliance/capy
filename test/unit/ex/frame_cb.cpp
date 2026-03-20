@@ -8,6 +8,7 @@
 //
 
 #include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -20,6 +21,7 @@
 
 #include <coroutine>
 #include <latch>
+#include <memory>
 
 namespace boost {
 namespace capy {
@@ -129,6 +131,7 @@ struct frame_cb_test
     struct async_awaitable
     {
         int value;
+        continuation cont_;
 
         bool await_ready() const noexcept
         {
@@ -140,7 +143,8 @@ struct frame_cb_test
             std::coroutine_handle<> h,
             io_env const* env) noexcept
         {
-            env->executor.post(h);
+            cont_.h = h;
+            env->executor.post(cont_);
             return std::noop_coroutine();
         }
 
@@ -155,18 +159,19 @@ struct frame_cb_test
     static task<int>
     await_async(int v)
     {
-        auto [ec, result] = co_await async_awaitable{v};
+        auto [ec, result] = co_await async_awaitable{v, {}};
         co_return result;
     }
 
     void
     testWithAsyncAwaitable()
     {
-        thread_pool pool(1);
+        auto pool = std::make_unique<thread_pool>(1);
+        auto ex = pool->get_executor();
         std::latch done(1);
         int result = 0;
 
-        run_async(pool.get_executor(),
+        run_async(ex,
             [&](int v) {
                 result = v;
                 done.count_down();

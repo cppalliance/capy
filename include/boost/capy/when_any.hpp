@@ -13,6 +13,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/io_result_combinators.hpp>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <coroutine>
@@ -24,6 +25,7 @@
 #include <array>
 #include <atomic>
 #include <exception>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <ranges>
@@ -138,7 +140,7 @@ struct when_any_core
     using stop_callback_t = std::stop_callback<stop_callback_fn>;
     std::optional<stop_callback_t> parent_stop_callback_;
 
-    std::coroutine_handle<> continuation_;
+    continuation continuation_;
     io_env const* caller_env_ = nullptr;
 
     // Placed last to avoid padding (1-byte atomic followed by 8-byte aligned members)
@@ -185,7 +187,7 @@ struct when_any_io_state
 
     when_any_core core_;
     std::optional<variant_type> result_;
-    std::array<std::coroutine_handle<>, task_count> runner_handles_{};
+    std::array<continuation, task_count> runner_handles_{};
 
     // Last failure (error or exception) for the all-fail case.
     // Last writer wins — no priority between errors and exceptions.
@@ -243,7 +245,7 @@ struct when_any_io_runner
                     auto& core = p_->state_->core_;
                     auto* counter = &core.remaining_count_;
                     auto* caller_env = core.caller_env_;
-                    auto cont = core.continuation_;
+                    auto& cont = core.continuation_;
 
                     h.destroy();
 
@@ -381,7 +383,7 @@ public:
     std::coroutine_handle<> await_suspend(
         std::coroutine_handle<> continuation, io_env const* caller_env)
     {
-        state_->core_.continuation_ = continuation;
+        state_->core_.continuation_.h = continuation;
         state_->core_.caller_env_ = caller_env;
 
         if(caller_env->stop_token.stop_possible())
@@ -417,9 +419,8 @@ private:
         h.promise().env_ = io_env{caller_ex, token,
             state_->core_.caller_env_->frame_allocator};
 
-        std::coroutine_handle<> ch{h};
-        state_->runner_handles_[I] = ch;
-        caller_ex.post(ch);
+        state_->runner_handles_[I].h = std::coroutine_handle<>{h};
+        caller_ex.post(state_->runner_handles_[I]);
     }
 };
 
@@ -432,7 +433,7 @@ struct when_any_io_homogeneous_state
 {
     when_any_core core_;
     std::optional<T> result_;
-    std::vector<std::coroutine_handle<>> runner_handles_;
+    std::unique_ptr<continuation[]> runner_handles_;
 
     std::mutex failure_mu_;
     std::error_code last_error_;
@@ -440,7 +441,7 @@ struct when_any_io_homogeneous_state
 
     explicit when_any_io_homogeneous_state(std::size_t count)
         : core_(count)
-        , runner_handles_(count)
+        , runner_handles_(std::make_unique<continuation[]>(count))
     {
     }
 
@@ -464,7 +465,7 @@ template<>
 struct when_any_io_homogeneous_state<std::tuple<>>
 {
     when_any_core core_;
-    std::vector<std::coroutine_handle<>> runner_handles_;
+    std::unique_ptr<continuation[]> runner_handles_;
 
     std::mutex failure_mu_;
     std::error_code last_error_;
@@ -472,7 +473,7 @@ struct when_any_io_homogeneous_state<std::tuple<>>
 
     explicit when_any_io_homogeneous_state(std::size_t count)
         : core_(count)
-        , runner_handles_(count)
+        , runner_handles_(std::make_unique<continuation[]>(count))
     {
     }
 
@@ -556,7 +557,7 @@ public:
     std::coroutine_handle<> await_suspend(
         std::coroutine_handle<> continuation, io_env const* caller_env)
     {
-        state_->core_.continuation_ = continuation;
+        state_->core_.continuation_.h = continuation;
         state_->core_.caller_env_ = caller_env;
 
         if(caller_env->stop_token.stop_possible())
@@ -584,13 +585,13 @@ public:
             h.promise().env_ = io_env{caller_env->executor, token,
                 caller_env->frame_allocator};
 
-            state_->runner_handles_[index] = std::coroutine_handle<>{h};
+            state_->runner_handles_[index].h = std::coroutine_handle<>{h};
             ++index;
         }
 
         // Phase 2: Post all runners. Any may complete synchronously.
-        std::coroutine_handle<>* handles = state_->runner_handles_.data();
-        std::size_t count = state_->runner_handles_.size();
+        auto* handles = state_->runner_handles_.get();
+        std::size_t count = state_->core_.remaining_count_.load(std::memory_order_relaxed);
         for(std::size_t i = 0; i < count; ++i)
             caller_env->executor.post(handles[i]);
 

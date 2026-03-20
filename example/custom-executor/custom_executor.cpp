@@ -95,17 +95,17 @@ public:
     void on_work_finished() const noexcept {}
 
     std::coroutine_handle<> dispatch(
-        std::coroutine_handle<> h) const
+        capy::continuation& c) const
     {
         if (loop_->is_running_on_this_thread())
-            return h;
-        loop_->enqueue(h);
+            return c.h;
+        loop_->enqueue(c.h);
         return std::noop_coroutine();
     }
 
-    void post(std::coroutine_handle<> h) const
+    void post(capy::continuation& c) const
     {
-        loop_->enqueue(h);
+        loop_->enqueue(c.h);
     }
 
     bool operator==(executor_type const& other) const noexcept

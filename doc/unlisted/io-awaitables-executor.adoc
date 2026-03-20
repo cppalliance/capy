@@ -20,9 +20,9 @@ the executor determines _where_ and _when_ the coroutine resumes:
 [source,cpp]
 ----
 // Completion arrives on I/O thread
-void on_io_complete(std::coroutine_handle<> h)
+void on_io_complete(continuation& c)
 {
-    executor.dispatch(h).resume();  // Resume on executor's context
+    executor.dispatch(c).resume();  // Resume on executor's context
 }
 ----
 
@@ -36,10 +36,10 @@ Capy's `Executor` concept requires two operations:
 [source,cpp]
 ----
 template<typename Ex>
-concept Executor = requires(Ex const& ex, std::coroutine_handle<> h)
+concept Executor = requires(Ex const& ex, continuation& c)
 {
-    { ex.dispatch(h) } -> std::same_as<std::coroutine_handle<>>;
-    { ex.post(h) } -> std::same_as<void>;
+    { ex.dispatch(c) } -> std::same_as<std::coroutine_handle<>>;
+    { ex.post(c) } -> std::same_as<void>;
 };
 ----
 
@@ -52,11 +52,11 @@ Returns a handle to resume. The implementation decides whether to:
 
 [source,cpp]
 ----
-std::coroutine_handle<> dispatch(std::coroutine_handle<> h) const
+std::coroutine_handle<> dispatch(continuation& c) const
 {
     if (running_in_this_context())
-        return h;  // Resume inline
-    queue_work(h);
+        return c.h;  // Resume inline
+    queue_work(c.h);
     return std::noop_coroutine();  // Don't resume now
 }
 ----
@@ -69,9 +69,9 @@ Always queues, never executes inline:
 
 [source,cpp]
 ----
-void post(std::coroutine_handle<> h) const
+void post(continuation& c) const
 {
-    queue_work(h);  // Always queue, never inline
+    queue_work(c.h);  // Always queue, never inline
 }
 ----
 
@@ -92,8 +92,8 @@ thread_pool pool(4);
 executor_ref ex = pool.get_executor();
 
 // Use uniformly
-ex.dispatch(handle);
-ex.post(handle);
+ex.dispatch(cont);
+ex.post(cont);
 ----
 
 === Why Type Erasure?
@@ -128,7 +128,7 @@ executor_ref ex = some_executor;
 
 // Check if valid
 if (ex)
-    ex.dispatch(h);
+    ex.dispatch(c);
 
 // Compare (pointer equality on underlying executor)
 executor_ref ex2 = some_executor;
@@ -288,7 +288,7 @@ task<void> example()
     }
 
     // Use for manual dispatch
-    ex.post(some_handle);
+    ex.post(some_continuation);
 }
 ----
 
@@ -307,11 +307,11 @@ actually suspends—`await_ready()` returns `true`.
 | `executor_ref`
 | Type-erased executor wrapper
 
-| `dispatch(h)`
-| Resume inline if safe, queue otherwise
+| `dispatch(c)`
+| Resume inline if safe, queue otherwise. Takes `continuation&`, returns `std::coroutine_handle<>`.
 
-| `post(h)`
-| Always queue, never inline
+| `post(c)`
+| Always queue, never inline. Takes `continuation&`.
 
 | `run(ex)(task)`
 | Override inherited executor for a subtask
