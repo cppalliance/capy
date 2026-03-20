@@ -11,6 +11,7 @@
 #define BOOST_CAPY_EXAMPLE_AWAITABLE_SENDER_HPP
 
 #include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
@@ -113,93 +114,19 @@ constexpr bool is_compound_ec_result_v =
     is_compound_ec_result<T>::value;
 
 // -------------------------------------------------------
-// Bridge coroutine: provides a coroutine_handle to feed
-// into IoAwaitable::await_suspend, then relays the result
-// to the sender receiver.
+// frame_cb: synthetic coroutine frame for callback handles
+//
+// The first two members match the coroutine frame layout
+// used by MSVC, GCC, and Clang. from_address produces a
+// coroutine_handle whose .resume() calls our function
+// pointer and whose .destroy() is a no-op.
 // -------------------------------------------------------
 
-template<class IoAw, class Receiver>
-struct bridge_task
+struct frame_cb
 {
-    struct promise_type;
-    using handle_type = std::coroutine_handle<promise_type>;
-
-    struct promise_type
-    {
-        io_env const* env_ = nullptr;
-
-        bridge_task get_return_object() noexcept
-        {
-            return bridge_task{handle_type::from_promise(*this)};
-        }
-
-        std::suspend_always initial_suspend() noexcept { return {}; }
-        std::suspend_always final_suspend() noexcept { return {}; }
-        void return_void() noexcept {}
-        void unhandled_exception() noexcept {}
-
-        // Wraps the IoAwaitable so its await_suspend
-        // receives the io_env* from this promise.
-        template<class A>
-        struct transform_awaiter
-        {
-            std::decay_t<A>& aw_;
-            promise_type* p_;
-
-            bool await_ready() noexcept
-            {
-                return aw_.await_ready();
-            }
-
-            decltype(auto) await_resume()
-            {
-                return aw_.await_resume();
-            }
-
-            auto await_suspend(std::coroutine_handle<> h) noexcept
-            {
-                return aw_.await_suspend(h, p_->env_);
-            }
-        };
-
-        template<class A>
-        auto await_transform(A&& a)
-        {
-            return transform_awaiter<A>{a, this};
-        }
-    };
-
-    handle_type h_{};
-
-    ~bridge_task()
-    {
-        if(h_)
-            h_.destroy();
-    }
-
-    bridge_task() noexcept = default;
-
-    bridge_task(bridge_task&& o) noexcept
-        : h_(std::exchange(o.h_, {}))
-    {
-    }
-
-    bridge_task& operator=(bridge_task&& o) noexcept
-    {
-        if(h_)
-            h_.destroy();
-        h_ = std::exchange(o.h_, {});
-        return *this;
-    }
-
-    bridge_task(bridge_task const&) = delete;
-    bridge_task& operator=(bridge_task const&) = delete;
-
-private:
-    explicit bridge_task(handle_type h) noexcept
-        : h_(h)
-    {
-    }
+    void (*resume)(frame_cb*);
+    void (*destroy)(frame_cb*);
+    void* data;
 };
 
 } // namespace detail
@@ -250,11 +177,12 @@ struct awaitable_sender
         IoAw aw_;
         Receiver rcvr_;
         io_env env_;
-        detail::bridge_task<IoAw, Receiver> bridge_;
+        detail::frame_cb cb_;
 
         op_state(IoAw aw, Receiver rcvr)
             : aw_(std::move(aw))
             , rcvr_(std::move(rcvr))
+            , cb_{}
         {
         }
 
@@ -262,6 +190,77 @@ struct awaitable_sender
         op_state(op_state&&) = delete;
         op_state& operator=(op_state const&) = delete;
         op_state& operator=(op_state&&) = delete;
+
+        static void
+        on_resume(detail::frame_cb* p) noexcept
+        {
+            auto* self = static_cast<op_state*>(p->data);
+            self->complete();
+        }
+
+        static void
+        on_destroy(detail::frame_cb*) noexcept
+        {
+        }
+
+        void complete() noexcept
+        {
+            try
+            {
+                if constexpr (std::is_void_v<result_type>)
+                {
+                    aw_.await_resume();
+                    if(env_.stop_token.stop_requested())
+                        beman::execution::set_stopped(
+                            std::move(rcvr_));
+                    else
+                        beman::execution::set_value(
+                            std::move(rcvr_));
+                }
+                else if constexpr (
+                    detail::is_ec_outcome_v<result_type>)
+                {
+                    auto result = aw_.await_resume();
+                    if(env_.stop_token.stop_requested())
+                    {
+                        beman::execution::set_stopped(
+                            std::move(rcvr_));
+                    }
+                    else
+                    {
+                        std::error_code ec;
+                        if constexpr (std::is_same_v<
+                            result_type, std::error_code>)
+                            ec = result;
+                        else
+                            ec = get<0>(result);
+                        if(!ec)
+                            beman::execution::set_value(
+                                std::move(rcvr_));
+                        else
+                            beman::execution::set_error(
+                                std::move(rcvr_), ec);
+                    }
+                }
+                else
+                {
+                    auto result = aw_.await_resume();
+                    if(env_.stop_token.stop_requested())
+                        beman::execution::set_stopped(
+                            std::move(rcvr_));
+                    else
+                        beman::execution::set_value(
+                            std::move(rcvr_),
+                            std::move(result));
+                }
+            }
+            catch(...)
+            {
+                beman::execution::set_error(
+                    std::move(rcvr_),
+                    std::current_exception());
+            }
+        }
 
         void start() noexcept
         {
@@ -279,72 +278,20 @@ struct awaitable_sender
 
             env_ = io_env{ex, st, nullptr};
 
-            bridge_ = [](
-                IoAw aw,
-                Receiver rcvr,
-                std::stop_token const* st)
-                -> detail::bridge_task<IoAw, Receiver>
+            if(aw_.await_ready())
             {
-                try
-                {
-                    if constexpr (std::is_void_v<result_type>)
-                    {
-                        co_await std::move(aw);
-                        if (st->stop_requested())
-                            beman::execution::set_stopped(
-                                std::move(rcvr));
-                        else
-                            beman::execution::set_value(
-                                std::move(rcvr));
-                    }
-                    else if constexpr (
-                        detail::is_ec_outcome_v<result_type>)
-                    {
-                        auto result = co_await std::move(aw);
-                        if (st->stop_requested())
-                        {
-                            beman::execution::set_stopped(
-                                std::move(rcvr));
-                        }
-                        else
-                        {
-                            std::error_code ec;
-                            if constexpr (std::is_same_v<
-                                result_type, std::error_code>)
-                                ec = result;
-                            else
-                                ec = get<0>(result);
-                            if (!ec)
-                                beman::execution::set_value(
-                                    std::move(rcvr));
-                            else
-                                beman::execution::set_error(
-                                    std::move(rcvr), ec);
-                        }
-                    }
-                    else
-                    {
-                        auto result = co_await std::move(aw);
-                        if (st->stop_requested())
-                            beman::execution::set_stopped(
-                                std::move(rcvr));
-                        else
-                            beman::execution::set_value(
-                                std::move(rcvr),
-                                std::move(result));
-                    }
-                }
-                catch(...)
-                {
-                    beman::execution::set_error(
-                        std::move(rcvr),
-                        std::current_exception());
-                }
-            }(std::move(aw_), std::move(rcvr_),
-                &env_.stop_token);
+                complete();
+                return;
+            }
 
-            bridge_.h_.promise().env_ = &env_;
-            bridge_.h_.resume();
+            cb_.resume = &on_resume;
+            cb_.destroy = &on_destroy;
+            cb_.data = this;
+
+            auto h = std::coroutine_handle<>::from_address(
+                static_cast<void*>(&cb_));
+
+            detail::call_await_suspend(&aw_, h, &env_);
         }
     };
 
