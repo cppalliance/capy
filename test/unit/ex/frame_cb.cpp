@@ -10,8 +10,11 @@
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/io_result.hpp>
+#include <boost/capy/task.hpp>
+#include <boost/capy/test/run_blocking.hpp>
 
 #include "test/unit/test_helpers.hpp"
 
@@ -45,10 +48,7 @@ struct frame_cb_test
         cb.destroy = +[](detail::frame_cb*) {};
         cb.data = &called;
 
-        auto h = std::coroutine_handle<>::from_address(
-            static_cast<void*>(&cb));
-
-        h.resume();
+        cb.resume(&cb);
         BOOST_TEST(called);
     }
 
@@ -63,10 +63,7 @@ struct frame_cb_test
         };
         cb.data = &destroy_called;
 
-        auto h = std::coroutine_handle<>::from_address(
-            static_cast<void*>(&cb));
-
-        h.destroy();
+        cb.destroy(&cb);
         BOOST_TEST(destroy_called);
     }
 
@@ -81,76 +78,85 @@ struct frame_cb_test
         cb.destroy = +[](detail::frame_cb*) {};
         cb.data = &value;
 
-        auto h = std::coroutine_handle<>::from_address(
-            static_cast<void*>(&cb));
-
-        h.resume();
+        cb.resume(&cb);
         BOOST_TEST_EQ(value, 42);
+    }
+
+    // IoAwaitable that resumes synchronously and returns a value
+    struct sync_awaitable
+    {
+        int value;
+
+        bool await_ready() const noexcept
+        {
+            return false;
+        }
+
+        std::coroutine_handle<>
+        await_suspend(
+            std::coroutine_handle<> h,
+            io_env const*) noexcept
+        {
+            return h;
+        }
+
+        io_result<int> await_resume() noexcept
+        {
+            return {std::error_code{}, value};
+        }
+    };
+
+    static_assert(IoAwaitable<sync_awaitable>);
+
+    static task<int>
+    await_sync(int v)
+    {
+        auto [ec, result] = co_await sync_awaitable{v};
+        co_return result;
     }
 
     void
     testWithIoAwaitable()
     {
-        struct test_awaitable
-        {
-            int* result;
-
-            bool await_ready() const noexcept
-            {
-                return false;
-            }
-
-            std::coroutine_handle<>
-            await_suspend(
-                std::coroutine_handle<> h,
-                io_env const*) noexcept
-            {
-                h.resume();
-                return std::noop_coroutine();
-            }
-
-            io_result<> await_resume() noexcept
-            {
-                *result = 99;
-                return {};
-            }
-        };
-
-        static_assert(IoAwaitable<test_awaitable>);
-
         int result = 0;
-        bool resumed = false;
-
-        struct state
-        {
-            test_awaitable* aw;
-            bool* resumed;
-        };
-
-        state st{nullptr, &resumed};
-        test_awaitable aw{&result};
-        st.aw = &aw;
-
-        detail::frame_cb cb;
-        cb.resume = +[](detail::frame_cb* p) {
-            auto* s = static_cast<state*>(p->data);
-            (void)s->aw->await_resume();
-            *s->resumed = true;
-        };
-        cb.destroy = +[](detail::frame_cb*) {};
-        cb.data = &st;
-
-        int dispatch_count = 0;
-        test_executor ex(dispatch_count);
-        io_env env{ex, {}};
-
-        auto h = std::coroutine_handle<>::from_address(
-            static_cast<void*>(&cb));
-
-        detail::call_await_suspend(&aw, h, &env);
-
-        BOOST_TEST(resumed);
+        test::run_blocking(
+            [&](int v) { result = v; })(
+            await_sync(99));
         BOOST_TEST_EQ(result, 99);
+    }
+
+    // IoAwaitable that posts to executor (async resume)
+    struct async_awaitable
+    {
+        int value;
+
+        bool await_ready() const noexcept
+        {
+            return false;
+        }
+
+        std::coroutine_handle<>
+        await_suspend(
+            std::coroutine_handle<> h,
+            io_env const* env) noexcept
+        {
+            env->executor.post(h);
+            return std::noop_coroutine();
+        }
+
+        io_result<int> await_resume() noexcept
+        {
+            return {std::error_code{}, value};
+        }
+    };
+
+    static_assert(IoAwaitable<async_awaitable>);
+
+    static task<int>
+    await_async(int v)
+    {
+        auto [ec, result] = co_await async_awaitable{v};
+        co_return result;
     }
 
     void
@@ -158,56 +164,19 @@ struct frame_cb_test
     {
         thread_pool pool(1);
         std::latch done(1);
-        bool resumed = false;
+        int result = 0;
 
-        struct state
-        {
-            bool* resumed;
-            std::latch* done;
-        };
-
-        state st{&resumed, &done};
-
-        detail::frame_cb cb;
-        cb.resume = +[](detail::frame_cb* p) {
-            auto* s = static_cast<state*>(p->data);
-            *s->resumed = true;
-            s->done->count_down();
-        };
-        cb.destroy = +[](detail::frame_cb*) {};
-        cb.data = &st;
-
-        struct post_awaitable
-        {
-            bool await_ready() const noexcept
-            {
-                return false;
-            }
-
-            std::coroutine_handle<>
-            await_suspend(
-                std::coroutine_handle<> h,
-                io_env const* env) noexcept
-            {
-                env->executor.post(h);
-                return std::noop_coroutine();
-            }
-
-            void await_resume() noexcept {}
-        };
-
-        static_assert(IoAwaitable<post_awaitable>);
-
-        post_awaitable aw;
-        io_env env{pool.get_executor(), {}};
-
-        auto h = std::coroutine_handle<>::from_address(
-            static_cast<void*>(&cb));
-
-        detail::call_await_suspend(&aw, h, &env);
+        run_async(pool.get_executor(),
+            [&](int v) {
+                result = v;
+                done.count_down();
+            },
+            [&](std::exception_ptr) {
+                done.count_down();
+            })(await_async(99));
 
         done.wait();
-        BOOST_TEST(resumed);
+        BOOST_TEST_EQ(result, 99);
     }
 
     void
