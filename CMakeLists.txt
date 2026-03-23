@@ -42,6 +42,13 @@ option(BOOST_CAPY_BUILD_BENCH "Build boost::capy benchmarks" ${BOOST_CAPY_IS_ROO
 option(BOOST_CAPY_BUILD_P2300_EXAMPLES "Build examples that depend on beman-execution (P2300)" OFF)
 option(BOOST_CAPY_MRDOCS_BUILD "Build the target for MrDocs: see mrdocs.yml" OFF)
 
+if(BOOST_CAPY_BUILD_P2300_EXAMPLES)
+    if(NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 23)
+        message(FATAL_ERROR
+            "BOOST_CAPY_BUILD_P2300_EXAMPLES requires CMAKE_CXX_STANDARD >= 23")
+    endif()
+endif()
+
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 if(BOOST_CAPY_IS_ROOT AND BUILD_SHARED_LIBS)

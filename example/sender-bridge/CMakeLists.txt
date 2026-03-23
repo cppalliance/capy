@@ -10,12 +10,12 @@
 include(FetchContent)
 
 FetchContent_Declare(
-    beman-execution
+    execution
     GIT_REPOSITORY https://github.com/bemanproject/execution.git
     GIT_TAG main
     SYSTEM
 )
-FetchContent_MakeAvailable(beman-execution)
+FetchContent_MakeAvailable(execution)
 
 file(GLOB_RECURSE PFILES CONFIGURE_DEPENDS *.cpp *.hpp
     CMakeLists.txt

@@ -82,7 +82,8 @@ class thread_pool::impl
     }
 
     std::mutex mutex_;
-    std::condition_variable cv_;
+    std::condition_variable work_cv_;
+    std::condition_variable done_cv_;
     std::vector<std::thread> threads_;
     std::atomic<std::size_t> outstanding_work_{0};
     bool stop_{false};
@@ -130,7 +131,7 @@ public:
             std::lock_guard<std::mutex> lock(mutex_);
             push(&c);
         }
-        cv_.notify_one();
+        work_cv_.notify_one();
     }
 
     void
@@ -148,7 +149,8 @@ public:
             std::lock_guard<std::mutex> lock(mutex_);
             if(joined_ && !stop_)
                 stop_ = true;
-            cv_.notify_all();
+            done_cv_.notify_all();
+            work_cv_.notify_all();
         }
     }
 
@@ -165,11 +167,11 @@ public:
                 std::memory_order_acquire) == 0)
             {
                 stop_ = true;
-                cv_.notify_all();
+                work_cv_.notify_all();
             }
             else
             {
-                cv_.wait(lock, [this]{
+                done_cv_.wait(lock, [this]{
                     return stop_;
                 });
             }
@@ -187,7 +189,8 @@ public:
             std::lock_guard<std::mutex> lock(mutex_);
             stop_ = true;
         }
-        cv_.notify_all();
+        work_cv_.notify_all();
+        done_cv_.notify_all();
     }
 
 private:
@@ -214,7 +217,7 @@ private:
             continuation* c = nullptr;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                cv_.wait(lock, [this]{
+                work_cv_.wait(lock, [this]{
                     return !empty() ||
                         stop_;
                 });

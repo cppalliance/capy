@@ -10,6 +10,7 @@
 #ifndef BOOST_CAPY_EXAMPLE_SENDER_AWAITABLE_HPP
 #define BOOST_CAPY_EXAMPLE_SENDER_AWAITABLE_HPP
 
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
@@ -113,7 +114,7 @@ struct bridge_receiver
         beman::execution::receiver_t;
 
     result_variant<ValueTuple, HasEc>* result_;
-    std::coroutine_handle<>            cont_;
+    continuation                       cont_;
     io_env const*                      env_;
 
     auto get_env() const noexcept -> bridge_env
@@ -258,7 +259,7 @@ struct [[nodiscard]] sender_awaitable
             beman::execution::connect(
                 std::move(sndr_),
                 receiver_type{
-                    &result_, h, env}));
+                    &result_, {h}, env}));
         op_constructed_ = true;
         beman::execution::start(
             *std::launder(
