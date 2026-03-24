@@ -9,6 +9,7 @@
 
 #include <boost/capy/test/run_blocking.hpp>
 
+#include <boost/capy/ex/frame_allocator.hpp>
 #include <condition_variable>
 #include <mutex>
 #include <queue>
@@ -76,7 +77,7 @@ blocking_context::run()
             h = impl_->queue.front();
             impl_->queue.pop();
         }
-        h.resume();
+        safe_resume(h);
     }
     if(impl_->ep)
         std::rethrow_exception(impl_->ep);

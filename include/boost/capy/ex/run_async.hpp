@@ -411,7 +411,9 @@ public:
         p.env_ = {p.wg_.executor(), st_, p.get_resource()};
         task_promise.set_environment(&p.env_);
 
-        // Start task through executor
+        // Start task through executor.
+        // safe_resume is not needed here: TLS is already saved in the
+        // constructor (saved_tls_) and restored in the destructor.
         p.task_cont_.h = task_h;
         p.wg_.executor().dispatch(p.task_cont_).resume();
     }

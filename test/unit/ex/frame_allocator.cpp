@@ -78,6 +78,14 @@ TLS restoration on resume:
     After awaiting a child, the parent's TLS may have been changed by the child.
     transform_awaiter::await_resume restores parent's allocator from its promise.
 
+Event loops must use safe_resume:
+    Between a coroutine's await_resume (which sets TLS) and the next child
+    invocation (whose operator new reads TLS), arbitrary user code runs. If
+    that code resumes a coroutine from a different chain on the same thread,
+    the other coroutine's await_resume overwrites TLS. Event loops, strand
+    dispatch loops, and any code that calls .resume() must use safe_resume()
+    to save and restore TLS around the call.
+
 memory_resource* lifetime:
     When passing memory_resource* directly, the user is responsible for ensuring
     it outlives all tasks. This matches std::pmr conventions.

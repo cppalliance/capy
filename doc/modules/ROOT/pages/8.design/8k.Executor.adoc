@@ -326,6 +326,39 @@ ex_.post(cont_);
 
 This pattern is identical across all three Corosio backends: epoll (Linux), IOCP (Windows), and select (POSIX fallback). The executor concept and `executor_ref` provide the abstraction that makes this possible. The backend-specific code deals with I/O readiness or completion notification. The executor-specific code deals with coroutine scheduling. The two concerns are cleanly separated.
 
+== Frame Allocator Preservation
+
+Capy propagates frame allocators via thread-local storage (see xref:../4.coroutines/4g.allocators.adoc#_thread_local_propagation[Thread-Local Propagation]). The TLS value is set in `await_resume` when a coroutine resumes and read in `operator new` when a child coroutine is created. Between these two points, the coroutine body executes arbitrary user code.
+
+If that user code resumes a coroutine from a different chain on the same thread -- by calling `.resume()` directly, pumping a dispatch queue, or running nested event loop work -- the other coroutine's `await_resume` overwrites TLS. The original coroutine's next child then allocates from the wrong resource.
+
+=== The Save/Restore Protocol
+
+The fix is to save and restore TLS around every `.resume()` call:
+
+[source,cpp]
+----
+inline void
+safe_resume(std::coroutine_handle<> h) noexcept
+{
+    auto* saved = get_current_frame_allocator();
+    h.resume();
+    set_current_frame_allocator(saved);
+}
+----
+
+This makes TLS behave like a stack. Each nested resume pushes its own allocator; when the coroutine suspends and `.resume()` returns, the previous value is restored. The cost is two TLS accesses (one read, one write) per `.resume()` call -- negligible compared to the cost of resuming a coroutine.
+
+=== Where It Applies
+
+All executor event loops and strand dispatch loops must use `safe_resume` instead of calling `.resume()` directly. Capy's `thread_pool`, `blocking_context`, and `strand_queue` all use it internally.
+
+Two `.resume()` call sites intentionally do _not_ use `safe_resume`:
+
+* **`symmetric_transfer`** (MSVC workaround). The calling coroutine is about to suspend unconditionally. When it later resumes, `await_resume` restores TLS from the promise's stored environment. Save/restore would add overhead with no benefit.
+
+* **`run_async_wrapper::operator()`**. TLS is already saved in the wrapper's constructor and restored in its destructor, which bracket the entire task lifetime.
+
 == Why Not `std::execution` (P2300)
 
 https://wg21.link/P2300[P2300] defines a sender/receiver model where execution context flows _backward_ from receiver to sender via queries after `connect()`:

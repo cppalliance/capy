@@ -10,6 +10,7 @@
 
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/continuation.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/test/thread_name.hpp>
 #include <algorithm>
 #include <atomic>
@@ -226,7 +227,7 @@ private:
                 c = pop();
             }
             if(c)
-                c->h.resume();
+                safe_resume(c->h);
         }
     }
 };

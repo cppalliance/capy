@@ -118,6 +118,17 @@ class execution_context;
     `post`, the continuation is enqueued and the lifetime
     requirement applies.
 
+    @par Frame Allocator TLS
+
+    The library propagates a frame allocator via thread-local
+    storage. When a custom executor's event loop calls
+    `.resume()` to drain its work queue, it must use
+    `safe_resume()` from `<boost/capy/ex/frame_allocator.hpp>`
+    instead of calling `h.resume()` directly. This saves and
+    restores the thread-local frame allocator around the call,
+    preventing a resumed coroutine from permanently overwriting
+    the caller's value.
+
     @par Executor Validity
 
     An executor becomes invalid when the first call to

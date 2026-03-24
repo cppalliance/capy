@@ -54,6 +54,9 @@ namespace detail {
 #if BOOST_CAPY_WORKAROUND(_MSC_VER, >= 1)
 inline void symmetric_transfer(std::coroutine_handle<> h) noexcept
 {
+    // safe_resume is not needed here: the calling coroutine is
+    // about to suspend unconditionally. When it later resumes,
+    // await_resume restores TLS from the promise's environment.
     h.resume();
 }
 #else
