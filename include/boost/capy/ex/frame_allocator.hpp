@@ -12,6 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 
+#include <coroutine>
 #include <memory_resource>
 
 /*  Design rationale (pdimov):
@@ -107,6 +108,39 @@ set_current_frame_allocator(
     std::pmr::memory_resource* mr) noexcept
 {
     detail::current_frame_allocator_ref() = mr;
+}
+
+/** Resume a coroutine handle with frame-allocator TLS protection.
+
+    Saves the current thread-local frame allocator before
+    calling `h.resume()`, then restores it after the call
+    returns. This prevents a resumed coroutine's
+    `await_resume` from permanently overwriting the caller's
+    allocator value.
+
+    Between a coroutine's resumption and its next child
+    invocation, arbitrary user code may run. If that code
+    resumes a coroutine from a different chain on this
+    thread, the other coroutine's `await_resume` overwrites
+    TLS with its own allocator. Without save/restore, the
+    original coroutine's next child would allocate from
+    the wrong resource.
+
+    Event loops, strand dispatch loops, and any code that
+    calls `.resume()` on a coroutine handle should use
+    this function instead of calling `.resume()` directly.
+    See the @ref Executor concept documentation for details.
+
+    @param h The coroutine handle to resume.
+
+    @see get_current_frame_allocator, set_current_frame_allocator
+*/
+inline void
+safe_resume(std::coroutine_handle<> h) noexcept
+{
+    auto* saved = get_current_frame_allocator();
+    h.resume();
+    set_current_frame_allocator(saved);
 }
 
 } // namespace capy

@@ -41,6 +41,20 @@ The "window" is the interval between setting the thread-local allocator and the 
 
 After the window closes (at the first suspension), the TLS allocator may be restored to a previous value. The task retains its captured allocator regardless.
 
+== TLS Preservation
+
+Between a coroutine's `await_resume` (which sets TLS to the correct allocator) and the next child coroutine invocation (whose `operator new` reads TLS), arbitrary user code runs. If that code resumes a coroutine from a different chain on the same thread -- by calling `.resume()` directly, pumping a completion queue, or running nested dispatch -- the other coroutine's `await_resume` overwrites TLS with its own allocator. The original coroutine's next child would then allocate from the wrong resource.
+
+To prevent this, any code that calls `.resume()` on a coroutine handle must use `safe_resume` from `<boost/capy/ex/frame_allocator.hpp>`:
+
+[source,cpp]
+----
+// In your event loop or dispatch path:
+capy::safe_resume(h);   // saves and restores TLS around h.resume()
+----
+
+`safe_resume` saves the current thread-local allocator, calls `h.resume()`, then restores the saved value. This makes TLS behave like a stack: nested resumes cannot spoil the outer value. All of Capy's built-in executors (`thread_pool`, strands, `blocking_context`) use `safe_resume` internally. Custom executor event loops must do the same -- see xref:7.examples/7n.custom-executor.adoc[Custom Executor] for an example.
+
 == The FrameAllocator Concept
 
 Custom allocators must satisfy the `FrameAllocator` concept, which is compatible with {cpp} allocator requirements:

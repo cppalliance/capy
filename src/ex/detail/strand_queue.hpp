@@ -11,6 +11,7 @@
 #define BOOST_CAPY_SRC_EX_DETAIL_STRAND_QUEUE_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
 
 #include <coroutine>
 #include <cstddef>
@@ -128,7 +129,7 @@ class strand_queue
         std::coroutine_handle<void> target)
     {
         (void)q;
-        target.resume();
+        safe_resume(target);
         co_return;
     }
 
@@ -220,7 +221,7 @@ public:
                 tail_ = nullptr;
 
             auto h = std::coroutine_handle<promise_type>::from_promise(*p);
-            h.resume();
+            safe_resume(h);
             h.destroy();
         }
     }
@@ -265,7 +266,7 @@ public:
             batch.head = p->next;
 
             auto h = std::coroutine_handle<promise_type>::from_promise(*p);
-            h.resume();
+            safe_resume(h);
             // Don't use h.destroy() - it would call operator delete which
             // accesses the queue's free_list_ (race with push).
             // Instead, manually free the frame without recycling.

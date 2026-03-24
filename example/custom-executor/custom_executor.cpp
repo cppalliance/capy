@@ -16,6 +16,7 @@
 //
 
 #include <boost/capy.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
 #include <iostream>
 #include <queue>
 #include <thread>
@@ -56,7 +57,7 @@ public:
         {
             auto h = queue_.front();
             queue_.pop();
-            h.resume();
+            capy::safe_resume(h);
         }
     }
 
