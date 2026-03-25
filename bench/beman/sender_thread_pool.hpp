@@ -20,6 +20,8 @@
 
 #include "thread_pool.hpp"
 
+#include <boost/capy/ex/execution_context.hpp>
+
 #include <atomic>
 #include <condition_variable>
 #include <coroutine>
@@ -46,6 +48,7 @@ struct sender_executor
 };
 
 class sender_thread_pool
+    : public boost::capy::execution_context
 {
     struct coro_work : work_item
     {
@@ -105,7 +108,8 @@ public:
     using executor_type = sender_executor;
 
     explicit sender_thread_pool(std::size_t num_threads = 0)
-        : num_threads_(num_threads == 0
+        : execution_context(this)
+        , num_threads_(num_threads == 0
             ? (std::max)(std::thread::hardware_concurrency(), 1u)
             : num_threads)
     {}
@@ -114,6 +118,8 @@ public:
     {
         stop();
         join();
+        shutdown();
+        destroy();
     }
 
     sender_thread_pool(sender_thread_pool const&) = delete;
