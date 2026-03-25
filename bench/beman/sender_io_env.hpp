@@ -19,6 +19,10 @@
 #define BOOST_CAPY_BENCH_SENDER_IO_ENV_HPP
 
 #include "sender_thread_pool.hpp"
+#include "awaitable_sender.hpp"
+
+#include <boost/capy/continuation.hpp>
+#include <boost/capy/ex/execution_context.hpp>
 
 #include <beman/execution/execution.hpp>
 #include <beman/task/task.hpp>
@@ -27,6 +31,46 @@
 #include <memory_resource>
 #include <type_traits>
 #include <utility>
+
+// Adapter making sender_executor satisfy capy's Executor
+// concept so capy::task can run on sender_thread_pool.
+struct sender_as_capy_executor
+{
+    sender_executor ex_;
+
+    boost::capy::execution_context& context() const noexcept
+    {
+        return *ex_.pool_;
+    }
+
+    void on_work_started() const noexcept
+    {
+        ex_.pool_->on_work_started();
+    }
+
+    void on_work_finished() const noexcept
+    {
+        ex_.pool_->on_work_finished();
+    }
+
+    void post(boost::capy::continuation& c) const
+    {
+        ex_.post(c.h);
+    }
+
+    // Return the handle for symmetric transfer so the
+    // caller resumes the coroutine inline. Posting would
+    // cause a lifetime issue since run_async expects to
+    // hand off ownership via symmetric transfer.
+    std::coroutine_handle<>
+    dispatch(boost::capy::continuation& c) const
+    {
+        return c.h;
+    }
+
+    bool operator==(
+        sender_as_capy_executor const&) const noexcept = default;
+};
 
 namespace ex = beman::execution;
 
@@ -39,6 +83,7 @@ struct pool_scheduler
     struct env
     {
         sender_executor ex_;
+
         auto query(
             ex::get_completion_scheduler_t<ex::set_value_t> const&
         ) const noexcept
@@ -94,28 +139,16 @@ struct pool_scheduler
         }
     };
 
+    auto query(
+        boost::capy::get_io_executor_t const&
+    ) const noexcept -> sender_as_capy_executor
+    {
+        return sender_as_capy_executor{ex_};
+    }
+
     auto schedule() -> sender { return {ex_}; }
     bool operator==(pool_scheduler const&) const = default;
 };
-
-struct get_sender_executor_t
-{
-    constexpr bool query(
-        ex::forwarding_query_t const&) const noexcept
-    {
-        return true;
-    }
-
-    template <typename Env>
-        requires requires(Env const& env) {
-            env.query(std::declval<get_sender_executor_t const&>());
-        }
-    auto operator()(Env const& env) const noexcept
-    {
-        return env.query(*this);
-    }
-};
-inline constexpr get_sender_executor_t get_sender_executor{};
 
 struct io_env
 {
@@ -123,12 +156,6 @@ struct io_env
     using allocator_type = std::pmr::polymorphic_allocator<std::byte>;
 
     sender_executor executor;
-
-    auto query(
-        get_sender_executor_t const&) const noexcept -> sender_executor
-    {
-        return executor;
-    }
 
     io_env() = default;
 
@@ -140,8 +167,5 @@ struct io_env
         : executor(pool_scheduler{ex::get_scheduler(e)}.ex_)
     {}
 };
-
-template <typename T = void>
-using io_task = ex::task<T, io_env>;
 
 #endif

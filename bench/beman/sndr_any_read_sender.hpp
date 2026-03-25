@@ -10,15 +10,15 @@
 //
 // Type-erased sender for benchmarks.
 //
-// any_read_sender wraps a concrete sender behind a virtual interface.
-// connect() heap-allocates the operation state because its type is
-// erased. This is the structural cost of type-erasing a sender:
-// connect(sender, receiver) produces op_state<S, R> whose type
-// depends on both arguments.
+// sndr_any_read_sender wraps a concrete sender behind a virtual
+// interface. connect() heap-allocates the operation state because
+// its type is erased.
 //
 
-#ifndef BOOST_CAPY_BENCH_SENDER_ANY_SENDER_HPP
-#define BOOST_CAPY_BENCH_SENDER_ANY_SENDER_HPP
+#ifndef BOOST_CAPY_BENCH_SNDR_ANY_READ_SENDER_HPP
+#define BOOST_CAPY_BENCH_SNDR_ANY_READ_SENDER_HPP
+
+#include <boost/capy/ex/recycling_memory_resource.hpp>
 
 #include <beman/execution/execution.hpp>
 
@@ -30,8 +30,28 @@
 
 namespace ex = beman::execution;
 
-class any_read_sender
+class sndr_any_read_sender
 {
+public:
+    struct op_base
+    {
+        static void* operator new(std::size_t n)
+        {
+            return boost::capy::get_recycling_memory_resource()
+                ->allocate(n, alignof(std::max_align_t));
+        }
+
+        static void operator delete(void* p, std::size_t n) noexcept
+        {
+            boost::capy::get_recycling_memory_resource()
+                ->deallocate(p, n, alignof(std::max_align_t));
+        }
+
+        virtual void start() noexcept = 0;
+        virtual ~op_base() = default;
+    };
+
+private:
     struct callback_receiver
     {
         using receiver_concept = ex::receiver_t;
@@ -60,12 +80,6 @@ class any_read_sender
         }
     };
 
-    struct op_base
-    {
-        virtual void start() noexcept = 0;
-        virtual ~op_base() = default;
-    };
-
     using factory_fn = std::unique_ptr<op_base>(*)(
         void* sender_buf, callback_receiver cr);
     using destroy_fn = void(*)(void* sender_buf) noexcept;
@@ -81,7 +95,7 @@ public:
         ex::completion_signatures<ex::set_value_t(std::size_t)>;
 
     template <class Sender>
-    explicit any_read_sender(Sender s)
+    explicit sndr_any_read_sender(Sender s)
     {
         static_assert(sizeof(Sender) <= buf_size);
         static_assert(alignof(Sender) <= alignof(std::max_align_t));
@@ -117,19 +131,83 @@ public:
         };
     }
 
-    ~any_read_sender() { destroy_(buf_); }
+    ~sndr_any_read_sender() { destroy_(buf_); }
 
-    any_read_sender(any_read_sender const&) = delete;
-    any_read_sender& operator=(any_read_sender const&) = delete;
+    sndr_any_read_sender(sndr_any_read_sender const&) = delete;
+    sndr_any_read_sender& operator=(sndr_any_read_sender const&) = delete;
 
-    any_read_sender(any_read_sender&& o) noexcept
+    sndr_any_read_sender(sndr_any_read_sender&& o) noexcept
         : factory_(o.factory_), destroy_(o.destroy_)
     {
         std::memcpy(buf_, o.buf_, buf_size);
         o.destroy_ = +[](void*) noexcept {};
     }
 
-    any_read_sender& operator=(any_read_sender&&) = delete;
+    sndr_any_read_sender& operator=(sndr_any_read_sender&&) = delete;
+
+    /// Connect a callback receiver for sender/receiver pipeline use.
+    auto connect(
+        void* data,
+        void (*on_value)(void*, std::size_t) noexcept,
+        void (*on_stopped)(void*) noexcept)
+        -> std::unique_ptr<op_base>
+    {
+        return factory_(buf_,
+            callback_receiver{data, on_value, on_stopped});
+    }
+
+    /// Standard connect for ex::connect CPO. Defers the factory
+    /// call to start() so the callback points to the final address.
+    template <ex::receiver Receiver>
+    struct bridge_op
+    {
+        using operation_state_concept = ex::operation_state_t;
+
+        std::remove_cvref_t<Receiver> rcvr_;
+        factory_fn factory_;
+        destroy_fn destroy_;
+        alignas(std::max_align_t) char sbuf_[buf_size];
+        std::unique_ptr<op_base> inner_;
+
+        bridge_op(Receiver rcvr, sndr_any_read_sender&& sndr)
+            : rcvr_(std::move(rcvr))
+            , factory_(sndr.factory_)
+            , destroy_(sndr.destroy_)
+        {
+            std::memcpy(sbuf_, sndr.buf_, buf_size);
+            sndr.destroy_ = +[](void*) noexcept {};
+        }
+
+        ~bridge_op() { destroy_(sbuf_); }
+
+        bridge_op(bridge_op const&) = delete;
+        bridge_op(bridge_op&&) = delete;
+        bridge_op& operator=(bridge_op const&) = delete;
+        bridge_op& operator=(bridge_op&&) = delete;
+
+        void start() & noexcept
+        {
+            inner_ = factory_(sbuf_, callback_receiver{
+                this,
+                +[](void* p, std::size_t n) noexcept {
+                    auto* self = static_cast<bridge_op*>(p);
+                    ex::set_value(std::move(self->rcvr_), n);
+                },
+                +[](void* p) noexcept {
+                    auto* self = static_cast<bridge_op*>(p);
+                    ex::set_stopped(std::move(self->rcvr_));
+                }
+            });
+            inner_->start();
+        }
+    };
+
+    template <ex::receiver Receiver>
+    auto connect(Receiver&& rcvr) &&
+        -> bridge_op<std::remove_cvref_t<Receiver>>
+    {
+        return {std::forward<Receiver>(rcvr), std::move(*this)};
+    }
 
     template <typename Promise>
     auto as_awaitable(Promise&)
@@ -143,7 +221,7 @@ public:
             std::coroutine_handle<> cont_{};
             std::size_t result_{};
 
-            explicit aw(any_read_sender& sndr)
+            explicit aw(sndr_any_read_sender& sndr)
                 : factory_(sndr.factory_)
                 , destroy_(sndr.destroy_)
             {
