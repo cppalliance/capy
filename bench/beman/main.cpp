@@ -246,9 +246,8 @@ int main()
     // Native — sndr_read_stream
     {
         sender_thread_pool pool(1);
-        auto ex = pool.get_executor();
-        sndr_read_stream stream{ex};
-        pool_scheduler sched{ex};
+        sndr_read_stream stream{&pool};
+        auto sched = pool.get_scheduler();
         int count = OPS_PER_CELL;
         char buf[64];
         auto before = g_alloc_count.load(
@@ -275,9 +274,8 @@ int main()
     // Abstract — sndr_io_read_stream
     {
         sender_thread_pool pool(1);
-        auto ex = pool.get_executor();
-        sndr_io_read_stream_impl stream{ex};
-        pool_scheduler sched{ex};
+        sndr_io_read_stream_impl stream{&pool};
+        auto sched = pool.get_scheduler();
         int count = OPS_PER_CELL;
         char buf[64];
         auto before = g_alloc_count.load(
@@ -305,9 +303,8 @@ int main()
     // Type erased — sndr_any_read_stream
     {
         sender_thread_pool pool(1);
-        auto ex = pool.get_executor();
-        sndr_any_read_stream stream(sndr_read_stream{ex});
-        pool_scheduler sched{ex};
+        sndr_any_read_stream stream(sndr_read_stream{&pool});
+        auto sched = pool.get_scheduler();
         int count = OPS_PER_CELL;
         char buf[64];
         auto before = g_alloc_count.load(
@@ -337,7 +334,7 @@ int main()
     {
         sender_thread_pool pool(1);
         ioaw_read_stream stream;
-        pool_scheduler sched{pool.get_executor()};
+        auto sched = pool.get_scheduler();
         int count = OPS_PER_CELL;
         char buf[64];
         auto before = g_alloc_count.load(
@@ -365,7 +362,7 @@ int main()
     {
         sender_thread_pool pool(1);
         ioaw_io_read_stream_impl stream;
-        pool_scheduler sched{pool.get_executor()};
+        auto sched = pool.get_scheduler();
         int count = OPS_PER_CELL;
         char buf[64];
         auto before = g_alloc_count.load(
@@ -397,7 +394,7 @@ int main()
         sender_thread_pool pool(1);
         ioaw_read_stream concrete;
         capy::any_read_stream stream(&concrete);
-        pool_scheduler sched{pool.get_executor()};
+        auto sched = pool.get_scheduler();
         int count = OPS_PER_CELL;
         char buf[64];
         auto before = g_alloc_count.load(
@@ -459,9 +456,8 @@ int main()
     // Native — sndr_read_stream
     {
         sender_thread_pool pool(1);
-        auto ex = pool.get_executor();
-        sender_as_capy_executor adapter{ex};
-        sndr_read_stream stream{ex};
+        sender_as_capy_executor adapter{&pool};
+        sndr_read_stream stream{&pool};
         capy::run_async(adapter)(
             capy_accept_sndr(stream, grid[run][CAPY_TASK][NATIVE_STREAM][BRIDGED_EXEC_MODEL]));
         pool.join();
@@ -470,9 +466,8 @@ int main()
     // Abstract — sndr_io_read_stream
     {
         sender_thread_pool pool(1);
-        auto ex = pool.get_executor();
-        sender_as_capy_executor adapter{ex};
-        sndr_io_read_stream_impl stream{ex};
+        sender_as_capy_executor adapter{&pool};
+        sndr_io_read_stream_impl stream{&pool};
         capy::run_async(adapter)(
             capy_accept_sndr(
                 static_cast<sndr_io_read_stream&>(stream),
@@ -483,9 +478,8 @@ int main()
     // Type erased — sndr_any_read_stream
     {
         sender_thread_pool pool(1);
-        auto ex = pool.get_executor();
-        sender_as_capy_executor adapter{ex};
-        sndr_any_read_stream stream(sndr_read_stream{ex});
+        sender_as_capy_executor adapter{&pool};
+        sndr_any_read_stream stream(sndr_read_stream{&pool});
         capy::run_async(adapter)(
             capy_accept_sndr(stream, grid[run][CAPY_TASK][TYPE_ERASED_STREAM][BRIDGED_EXEC_MODEL]));
         pool.join();
@@ -498,9 +492,8 @@ int main()
     // Native — sndr_read_stream
     {
         sender_thread_pool pool(1);
-        auto ex = pool.get_executor();
-        sndr_read_stream stream{ex};
-        pool_scheduler sched{ex};
+        sndr_read_stream stream{&pool};
+        auto sched = pool.get_scheduler();
         auto* mr = capy::get_recycling_memory_resource();
         bex::sync_wait(bex::starts_on(sched,
             bex_accept(
@@ -513,9 +506,8 @@ int main()
     // Abstract — sndr_io_read_stream
     {
         sender_thread_pool pool(1);
-        auto ex = pool.get_executor();
-        sndr_io_read_stream_impl stream{ex};
-        pool_scheduler sched{ex};
+        sndr_io_read_stream_impl stream{&pool};
+        auto sched = pool.get_scheduler();
         auto* mr = capy::get_recycling_memory_resource();
         bex::sync_wait(bex::starts_on(sched,
             bex_accept(
@@ -529,9 +521,8 @@ int main()
     // Type erased — sndr_any_read_stream
     {
         sender_thread_pool pool(1);
-        auto ex = pool.get_executor();
-        sndr_any_read_stream stream(sndr_read_stream{ex});
-        pool_scheduler sched{ex};
+        sndr_any_read_stream stream(sndr_read_stream{&pool});
+        auto sched = pool.get_scheduler();
         auto* mr = capy::get_recycling_memory_resource();
         bex::sync_wait(bex::starts_on(sched,
             bex_accept(
@@ -546,9 +537,8 @@ int main()
     // Native — ioaw_read_stream
     {
         sender_thread_pool pool(1);
-        auto ex = pool.get_executor();
         ioaw_read_stream stream;
-        pool_scheduler sched{ex};
+        auto sched = pool.get_scheduler();
         auto* mr = capy::get_recycling_memory_resource();
         bex::sync_wait(bex::starts_on(sched,
             bex_accept_ioaw(
@@ -561,9 +551,8 @@ int main()
     // Abstract — ioaw_io_read_stream
     {
         sender_thread_pool pool(1);
-        auto ex = pool.get_executor();
         ioaw_io_read_stream_impl stream;
-        pool_scheduler sched{ex};
+        auto sched = pool.get_scheduler();
         auto* mr = capy::get_recycling_memory_resource();
         bex::sync_wait(bex::starts_on(sched,
             bex_accept_ioaw(
@@ -577,10 +566,9 @@ int main()
     // Type erased — capy::any_read_stream
     {
         sender_thread_pool pool(1);
-        auto ex = pool.get_executor();
         ioaw_read_stream concrete;
         capy::any_read_stream stream(&concrete);
-        pool_scheduler sched{ex};
+        auto sched = pool.get_scheduler();
         auto* mr = capy::get_recycling_memory_resource();
         bex::sync_wait(bex::starts_on(sched,
             bex_accept_ioaw(

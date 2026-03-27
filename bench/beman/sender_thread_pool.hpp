@@ -8,11 +8,11 @@
 //
 
 //
-// Minimal thread pool + executor for sender benchmarks.
+// Minimal thread pool for sender benchmarks.
 //
 // sender_thread_pool is the execution context.
-// sender_executor is the lightweight handle obtained via
-// get_executor(). Streams hold the executor, not the pool.
+// pool_scheduler (defined in sender_io_env.hpp)
+// is the P2300 scheduler handle.
 //
 
 #ifndef BOOST_CAPY_BENCH_SENDER_THREAD_POOL_HPP
@@ -24,47 +24,16 @@
 
 #include <atomic>
 #include <condition_variable>
-#include <coroutine>
 #include <cstddef>
 #include <mutex>
 #include <thread>
 #include <vector>
 
-class sender_thread_pool;
-
-/// Lightweight executor handle referencing a sender_thread_pool.
-struct sender_executor
-{
-    sender_thread_pool* pool_ = nullptr;
-
-    void post(std::coroutine_handle<> h) const;
-    void enqueue(work_item* w) const;
-
-    auto dispatch(std::coroutine_handle<> h) const
-        -> std::coroutine_handle<>;
-
-    bool operator==(
-        sender_executor const&) const noexcept = default;
-};
+struct pool_scheduler;
 
 class sender_thread_pool
     : public boost::capy::execution_context
 {
-    struct coro_work : work_item
-    {
-        std::coroutine_handle<> h_;
-
-        explicit coro_work(std::coroutine_handle<> h) noexcept
-            : h_(h) {}
-
-        void execute() noexcept override
-        {
-            auto h = h_;
-            delete this;
-            h.resume();
-        }
-    };
-
     std::mutex mutex_;
     std::condition_variable work_cv_;
     std::condition_variable done_cv_;
@@ -105,8 +74,6 @@ class sender_thread_pool
     }
 
 public:
-    using executor_type = sender_executor;
-
     explicit sender_thread_pool(std::size_t num_threads = 0)
         : execution_context(this)
         , num_threads_(num_threads == 0
@@ -125,10 +92,8 @@ public:
     sender_thread_pool(sender_thread_pool const&) = delete;
     sender_thread_pool& operator=(sender_thread_pool const&) = delete;
 
-    sender_executor get_executor() noexcept
-    {
-        return sender_executor{this};
-    }
+    // Defined in sender_io_env.hpp after pool_scheduler
+    pool_scheduler get_scheduler() noexcept;
 
     void enqueue(work_item* w)
     {
@@ -138,11 +103,6 @@ public:
             q_.push(w);
         }
         work_cv_.notify_one();
-    }
-
-    void post(std::coroutine_handle<> h)
-    {
-        enqueue(new coro_work(h));
     }
 
     void on_work_started() noexcept
@@ -198,24 +158,5 @@ public:
         done_cv_.notify_all();
     }
 };
-
-// sender_executor inline definitions (need sender_thread_pool complete)
-
-inline void sender_executor::post(std::coroutine_handle<> h) const
-{
-    pool_->post(h);
-}
-
-inline void sender_executor::enqueue(work_item* w) const
-{
-    pool_->enqueue(w);
-}
-
-inline auto sender_executor::dispatch(std::coroutine_handle<> h) const
-    -> std::coroutine_handle<>
-{
-    pool_->post(h);
-    return std::noop_coroutine();
-}
 
 #endif
