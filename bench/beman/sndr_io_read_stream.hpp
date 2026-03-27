@@ -28,8 +28,8 @@ struct sndr_io_read_stream_impl : sndr_io_read_stream
 {
     sndr_read_stream stream_;
 
-    explicit sndr_io_read_stream_impl(sender_executor ex)
-        : stream_{ex} {}
+    explicit sndr_io_read_stream_impl(sender_thread_pool* pool)
+        : stream_{pool} {}
 
     sndr_any_read_sender
         read_some(boost::capy::mutable_buffer buf) override

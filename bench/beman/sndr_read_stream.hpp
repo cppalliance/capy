@@ -10,11 +10,12 @@
 //
 // No-op sender stream for benchmarks.
 //
-// The stream holds a sender_executor (I/O context handle),
-// analogous to how a socket holds a reference to io_context.
-// read_some() returns a sender that captures this handle.
-// The sender provides both as_awaitable (for coroutine
-// consumption) and connect (for sender pipeline consumption).
+// The stream holds a sender_thread_pool* (I/O context
+// handle), analogous to how a socket holds a reference
+// to its execution context. read_some() returns a sender
+// that captures this handle. The sender provides both
+// as_awaitable (for coroutine consumption) and connect
+// (for sender pipeline consumption).
 //
 
 #ifndef BOOST_CAPY_BENCH_SNDR_READ_STREAM_HPP
@@ -34,7 +35,7 @@ namespace ex = beman::execution;
 
 struct sndr_read_stream
 {
-    sender_executor ex_;
+    sender_thread_pool* pool_;
 
     struct read_sender
     {
@@ -42,24 +43,24 @@ struct sndr_read_stream
         using completion_signatures =
             ex::completion_signatures<ex::set_value_t(std::size_t)>;
 
-        sender_executor ex_;
+        sender_thread_pool* pool_;
 
         // awaitable path (co_awaited from io_task via as_awaitable)
         template <typename Promise>
         struct awaitable : work_item
         {
-            sender_executor ex_;
+            sender_thread_pool* pool_;
             std::coroutine_handle<> h_{};
 
-            explicit awaitable(sender_executor ex) noexcept
-                : ex_(ex) {}
+            explicit awaitable(sender_thread_pool* pool) noexcept
+                : pool_(pool) {}
 
             bool await_ready() const noexcept { return false; }
 
             void await_suspend(std::coroutine_handle<> h)
             {
                 h_ = h;
-                ex_.enqueue(this);
+                pool_->enqueue(this);
             }
 
             std::size_t await_resume() noexcept { return 0; }
@@ -70,7 +71,7 @@ struct sndr_read_stream
         template <typename Promise>
         auto as_awaitable(Promise&) -> awaitable<Promise>
         {
-            return awaitable<Promise>{ex_};
+            return awaitable<Promise>{pool_};
         }
 
         // sender path (consumed via ex::connect)
@@ -80,11 +81,11 @@ struct sndr_read_stream
             using operation_state_concept = ex::operation_state_t;
 
             std::remove_cvref_t<Receiver> rcvr_;
-            sender_executor ex_;
+            sender_thread_pool* pool_;
 
-            op_state(Receiver rcvr, sender_executor ex)
+            op_state(Receiver rcvr, sender_thread_pool* pool)
                 : rcvr_(std::move(rcvr))
-                , ex_(ex)
+                , pool_(pool)
             {}
 
             op_state(op_state const&) = delete;
@@ -99,7 +100,7 @@ struct sndr_read_stream
 
             void start() & noexcept
             {
-                ex_.enqueue(this);
+                pool_->enqueue(this);
             }
         };
 
@@ -107,13 +108,13 @@ struct sndr_read_stream
         auto connect(Receiver&& rcvr)
             -> op_state<std::remove_cvref_t<Receiver>>
         {
-            return {std::forward<Receiver>(rcvr), ex_};
+            return {std::forward<Receiver>(rcvr), pool_};
         }
     };
 
     read_sender read_some(auto)
     {
-        return {ex_};
+        return {pool_};
     }
 };
 
