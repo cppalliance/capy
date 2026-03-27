@@ -16,6 +16,7 @@
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <coroutine>
+#include <boost/capy/ex/frame_alloc_mixin.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/task.hpp>
@@ -207,9 +208,10 @@ struct when_all_homogeneous_state<std::tuple<>>
     @tparam StateType The state type (when_all_state or when_all_homogeneous_state).
 */
 template<typename StateType>
-struct when_all_runner
+struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE when_all_runner
 {
     struct promise_type
+        : frame_alloc_mixin
     {
         StateType* state_ = nullptr;
         std::size_t index_ = 0;
@@ -253,7 +255,7 @@ struct when_all_runner
 
         void return_void() noexcept {}
 
-        void unhandled_exception()
+        void unhandled_exception() noexcept
         {
             state_->core_.capture_exception(std::current_exception());
             state_->core_.stop_source_.request_stop();

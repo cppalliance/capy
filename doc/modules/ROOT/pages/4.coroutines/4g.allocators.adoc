@@ -176,6 +176,84 @@ void process_batch(std::vector<item> const& items)
 }
 ----
 
+=== Scope Variables to Reduce Frame Size
+
+Compilers use declaration scope (braces) to decide which variables cross suspend points and must live in the coroutine frame. Variables declared in an outer scope remain in the frame even after their last use, as long as a `co_await` follows within the same scope.
+
+Wrapping buffer usage in explicit braces can dramatically reduce frame size:
+
+[source,cpp]
+----
+// BAD: buf lives in frame across all subsequent co_awaits
+task<> process(stream& s)
+{
+    char buf[4096];
+    auto [ec, n] = co_await s.read_some(buf);
+    co_await do_work(buf, n);
+    co_await s.write_some(reply);   // buf wastes 4K in frame
+}
+
+// GOOD: braces end buf's lifetime before next suspend
+task<> process(stream& s)
+{
+    std::size_t n;
+    {
+        char buf[4096];
+        auto [ec, n_] = co_await s.read_some(buf);
+        n = n_;
+        co_await do_work(buf, n);
+    }
+    co_await s.write_some(reply);  // 4K saved
+}
+----
+
+This technique also enables the compiler to *overlap* variables in the frame. When two variables have completely non-overlapping lifetimes (in separate scoped blocks), the compiler can reuse the same frame memory for both — even on Clang:
+
+[source,cpp]
+----
+// BAD: both arrays in frame simultaneously (8K)
+task<> pipeline(stream& in, stream& out)
+{
+    char read_buf[4096];
+    auto [ec1, n] = co_await in.read_some(read_buf);
+
+    char write_buf[4096];
+    prepare(write_buf, read_buf, n);
+    co_await out.write_some(write_buf);
+}
+
+// GOOD: non-overlapping scopes allow frame reuse (4K)
+task<> pipeline(stream& in, stream& out)
+{
+    std::size_t n;
+    {
+        char read_buf[4096];
+        auto [ec, n_] = co_await in.read_some(read_buf);
+        n = n_;
+    }
+    {
+        char write_buf[4096];
+        prepare(write_buf, n);
+        co_await out.write_some(write_buf);
+    }
+}
+----
+
+In the second version, `read_buf` and `write_buf` never coexist, so the compiler can place them at the same frame offset — halving the frame's buffer footprint. This optimization applies to any variables with non-overlapping lifetimes, not just arrays.
+
+=== GCC vs Clang Frame Sizes
+
+NOTE: This section draws on https://chuanqixu9.github.io/c++/2026/03/27/C++20-Coroutines-from-compiler-and-library-authors-perspective.en.html[C++20 Coroutines from compiler and library authors' perspective] by Chuanqi Xu.
+
+GCC and Clang use fundamentally different strategies for coroutine frame layout:
+
+* **Clang** performs frame layout after middle-end optimizations. Dead variables, unused temporaries, and constant-folded intermediates are eliminated before the frame is sized.
+* **GCC** performs frame layout in the frontend, before optimizations. Every local variable whose scope spans a suspend point ends up in the frame, even if optimizations would later prove it dead.
+
+The practical consequence is that GCC coroutine frames are often 5-10x larger than Clang's for the same source code. In one benchmark, the same coroutine produced a 24-byte frame on Clang and a 16,032-byte frame on GCC.
+
+For production coroutine workloads, Clang currently produces substantially better code. If you must use GCC, pay extra attention to variable scoping (above) and consider supplying a custom `memory_resource` with larger block sizes, since frames above 2048 bytes bypass the default recycling allocator's pooling.
+
 === Profile Before Optimizing
 
 Coroutine frame allocation is rarely the bottleneck. Profile your application before investing in custom allocators.
@@ -188,6 +266,9 @@ Coroutine frame allocation is rarely the bottleneck. Profile your application be
 
 | `<boost/capy/ex/frame_allocator.hpp>`
 | Frame allocator concept and utilities
+
+| `<boost/capy/ex/frame_alloc_promise.hpp>`
+| Mixin base for promise types that use the TLS frame allocator
 
 | `<boost/capy/ex/recycling_memory_resource.hpp>`
 | Default recycling allocator implementation

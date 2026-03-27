@@ -178,7 +178,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             return awaiter{this};
         }
 
-        void unhandled_exception()
+        void unhandled_exception() noexcept
         {
             new (&ep_) std::exception_ptr(std::current_exception());
             has_ep_ = true;

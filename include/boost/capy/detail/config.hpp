@@ -132,11 +132,18 @@
 # define BOOST_CAPY_DECL
 #endif
 
-// Clang 20+ supports coro_await_elidable for heap elision
-#if defined(__clang__) && !defined(__apple_build_version__) && __clang_major__ >= 20
+// Heap elision: compiler may allocate elided coroutine frames on the caller's frame
+#if __has_cpp_attribute(clang::coro_await_elidable)
 #define BOOST_CAPY_CORO_AWAIT_ELIDABLE [[clang::coro_await_elidable]]
 #else
 #define BOOST_CAPY_CORO_AWAIT_ELIDABLE
+#endif
+
+// Simpler destroy codegen for coroutines that always run to completion
+#if __has_cpp_attribute(clang::coro_only_destroy_when_complete)
+#define BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE [[clang::coro_only_destroy_when_complete]]
+#else
+#define BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE
 #endif
 
 namespace boost::capy::detail {

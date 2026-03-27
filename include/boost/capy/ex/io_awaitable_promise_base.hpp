@@ -11,14 +11,12 @@
 #define BOOST_CAPY_EX_IO_AWAITABLE_PROMISE_BASE_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/ex/frame_alloc_mixin.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 
 #include <coroutine>
-#include <cstddef>
-#include <cstring>
 #include <memory_resource>
 #include <stop_token>
 #include <type_traits>
@@ -131,59 +129,12 @@ namespace capy {
 */
 template<typename Derived>
 class io_awaitable_promise_base
+    : public frame_alloc_mixin
 {
     io_env const* env_ = nullptr;
     mutable std::coroutine_handle<> cont_{std::noop_coroutine()};
 
 public:
-    /** Allocate a coroutine frame.
-
-        Uses the thread-local frame allocator set by run_async.
-        Falls back to default memory resource if not set.
-        Stores the allocator pointer at the end of each frame for
-        correct deallocation even when TLS changes. Uses memcpy
-        to avoid alignment requirements on the trailing pointer.
-        Bypasses virtual dispatch for the recycling allocator.
-    */
-    static void* operator new(std::size_t size)
-    {
-        static auto* const rmr = get_recycling_memory_resource();
-
-        auto* mr = get_current_frame_allocator();
-        if(!mr)
-            mr = std::pmr::get_default_resource();
-
-        auto total = size + sizeof(std::pmr::memory_resource*);
-        void* raw;
-        if(mr == rmr)
-            raw = static_cast<recycling_memory_resource*>(mr)
-                ->allocate_fast(total, alignof(std::max_align_t));
-        else
-            raw = mr->allocate(total, alignof(std::max_align_t));
-        std::memcpy(static_cast<char*>(raw) + size, &mr, sizeof(mr));
-        return raw;
-    }
-
-    /** Deallocate a coroutine frame.
-
-        Reads the allocator pointer stored at the end of the frame
-        to ensure correct deallocation regardless of current TLS.
-        Bypasses virtual dispatch for the recycling allocator.
-    */
-    static void operator delete(void* ptr, std::size_t size) noexcept
-    {
-        static auto* const rmr = get_recycling_memory_resource();
-
-        std::pmr::memory_resource* mr;
-        std::memcpy(&mr, static_cast<char*>(ptr) + size, sizeof(mr));
-        auto total = size + sizeof(std::pmr::memory_resource*);
-        if(mr == rmr)
-            static_cast<recycling_memory_resource*>(mr)
-                ->deallocate_fast(ptr, total, alignof(std::max_align_t));
-        else
-            mr->deallocate(ptr, total, alignof(std::max_align_t));
-    }
-
     ~io_awaitable_promise_base()
     {
         // Abnormal teardown: destroy orphaned continuation
