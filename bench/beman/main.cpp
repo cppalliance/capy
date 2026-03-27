@@ -32,6 +32,8 @@
 #include "sndr_any_read_stream.hpp"
 #include "sndr_io_read_stream.hpp"
 #include "sndr_read_stream.hpp"
+#include "sndr_sync_read_stream.hpp"
+#include "ioaw_sync_read_stream.hpp"
 #include "sender_io_env.hpp"
 
 #include <boost/capy.hpp>
@@ -61,7 +63,7 @@ static constexpr int INNER_LOOPS = 10'000;
 
 static constexpr int NUM_RUNS    = 5;
 static constexpr int NUM_TABLES  = 3;
-static constexpr int NUM_STREAMS = 3;
+static constexpr int NUM_STREAMS = 4;
 static constexpr int NUM_COLUMNS = 2;
 
 static constexpr int SENDER_RECEIVER = 0;
@@ -71,6 +73,7 @@ static constexpr int BEMAN_TASK      = 2;
 static constexpr int NATIVE_STREAM       = 0;
 static constexpr int ABSTRACT_STREAM     = 1;
 static constexpr int TYPE_ERASED_STREAM  = 2;
+static constexpr int SYNC_STREAM         = 3;
 
 static constexpr int NATIVE_EXEC_MODEL = 0;
 static constexpr int BRIDGED_EXEC_MODEL = 1;
@@ -418,6 +421,12 @@ int main()
             after - before};
     }
 
+    // Synchronous — sender pipeline cannot run synchronous
+    // senders. repeat_effect_until requires a trampoline for
+    // synchronous completions, and the trampoline interacts
+    // poorly with the let_value/starts_on sender layering.
+    // Table 1 SYNC_STREAM cells are left at zero.
+
     // ---------------------------------------------------------------
     // Table 2: capy::task (capy::thread_pool)
     // ---------------------------------------------------------------
@@ -448,6 +457,15 @@ int main()
         capy::any_read_stream stream(&concrete);
         capy::run_async(pool.get_executor())(
             capy_accept(stream, grid[run][CAPY_TASK][TYPE_ERASED_STREAM][NATIVE_EXEC_MODEL]));
+        pool.join();
+    }
+
+    // Synchronous — ioaw_sync_read_stream
+    {
+        capy::thread_pool pool(1);
+        ioaw_sync_read_stream stream;
+        capy::run_async(pool.get_executor())(
+            capy_accept(stream, grid[run][CAPY_TASK][SYNC_STREAM][NATIVE_EXEC_MODEL]));
         pool.join();
     }
 
@@ -482,6 +500,16 @@ int main()
         sndr_any_read_stream stream(sndr_read_stream{&pool});
         capy::run_async(adapter)(
             capy_accept_sndr(stream, grid[run][CAPY_TASK][TYPE_ERASED_STREAM][BRIDGED_EXEC_MODEL]));
+        pool.join();
+    }
+
+    // Synchronous — sndr_sync_read_stream
+    {
+        sender_thread_pool pool(1);
+        sender_as_capy_executor adapter{&pool};
+        sndr_sync_read_stream stream;
+        capy::run_async(adapter)(
+            capy_accept_sndr(stream, grid[run][CAPY_TASK][SYNC_STREAM][BRIDGED_EXEC_MODEL]));
         pool.join();
     }
 
@@ -527,6 +555,20 @@ int main()
         bex::sync_wait(bex::starts_on(sched,
             bex_accept(
                 stream, grid[run][BEMAN_TASK][TYPE_ERASED_STREAM][NATIVE_EXEC_MODEL],
+                std::allocator_arg,
+                std::pmr::polymorphic_allocator<std::byte>(mr))));
+        pool.join();
+    }
+
+    // Synchronous — sndr_sync_read_stream
+    {
+        sender_thread_pool pool(1);
+        sndr_sync_read_stream stream;
+        auto sched = pool.get_scheduler();
+        auto* mr = capy::get_recycling_memory_resource();
+        bex::sync_wait(bex::starts_on(sched,
+            bex_accept(
+                stream, grid[run][BEMAN_TASK][SYNC_STREAM][NATIVE_EXEC_MODEL],
                 std::allocator_arg,
                 std::pmr::polymorphic_allocator<std::byte>(mr))));
         pool.join();
@@ -578,6 +620,20 @@ int main()
         pool.join();
     }
 
+    // Synchronous — ioaw_sync_read_stream
+    {
+        sender_thread_pool pool(1);
+        ioaw_sync_read_stream stream;
+        auto sched = pool.get_scheduler();
+        auto* mr = capy::get_recycling_memory_resource();
+        bex::sync_wait(bex::starts_on(sched,
+            bex_accept_ioaw(
+                stream, grid[run][BEMAN_TASK][SYNC_STREAM][BRIDGED_EXEC_MODEL],
+                std::allocator_arg,
+                std::pmr::polymorphic_allocator<std::byte>(mr))));
+        pool.join();
+    }
+
     } // for (run)
 
     // ---------------------------------------------------------------
@@ -592,7 +648,7 @@ int main()
         OPS_PER_CELL, NUM_RUNS);
 
     char const* row_labels[] = {
-        "Native", "Abstract", "Type-erased"};
+        "Native", "Abstract", "Type-erased", "Synchronous"};
 
     auto print_table = [&](
         char const* title,
@@ -612,6 +668,18 @@ int main()
 
         for (int s = 0; s < NUM_STREAMS; ++s)
         {
+            if (s == SYNC_STREAM &&
+                table == SENDER_RECEIVER)
+            {
+                std::printf(
+                    "  %-18s"
+                    "  %-30s  %-30s\n",
+                    row_labels[s],
+                    "              N/A",
+                    "              N/A");
+                continue;
+            }
+
             double sum[NUM_COLUMNS]{};
             double sum2[NUM_COLUMNS]{};
             double al[NUM_COLUMNS]{};
