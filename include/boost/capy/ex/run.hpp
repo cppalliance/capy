@@ -17,6 +17,7 @@
 #include <boost/capy/concept/io_runnable.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <coroutine>
+#include <boost/capy/ex/frame_alloc_mixin.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
 
@@ -69,9 +70,10 @@ namespace boost::capy::detail {
 
     The trampoline never touches the task's result.
 */
-struct dispatch_trampoline
+struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE dispatch_trampoline
 {
     struct promise_type
+        : frame_alloc_mixin
     {
         executor_ref caller_ex_;
         continuation parent_;
