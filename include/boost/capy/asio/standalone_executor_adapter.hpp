@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_ASIO_EXECUTOR_STANDALONE_ADAPTER_HPP
-#define BOOST_CAPY_ASIO_EXECUTOR_STANDALONE_ADAPTER_HPP
+#ifndef BOOST_CAPY_ASIO_STANDALONE_EXECUTOR_ADAPTER_HPP
+#define BOOST_CAPY_ASIO_STANDALONE_EXECUTOR_ADAPTER_HPP
 
 #include <boost/capy/ex/any_executor.hpp>
 #include <boost/capy/ex/execution_context.hpp>
