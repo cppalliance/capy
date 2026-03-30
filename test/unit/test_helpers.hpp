@@ -71,8 +71,9 @@ struct test_executor
 {
     int id_ = 0;
     int* dispatch_count_ = nullptr;
+    int* work_count_ = nullptr;
     test_io_context* ctx_ = nullptr;
-
+    
     test_executor() = default;
 
     explicit
@@ -87,9 +88,23 @@ struct test_executor
     {
     }
 
+    explicit
+    test_executor(int& count, int & work) noexcept
+        : dispatch_count_(&count)
+        , work_count_(&work)
+    {
+    }
+
     test_executor(int id, int& count) noexcept
         : id_(id)
         , dispatch_count_(&count)
+    {
+    }
+
+    test_executor(int id, int& count, int& work) noexcept
+        : id_(id)
+        , dispatch_count_(&count)
+        , work_count_(&work)
     {
     }
 
@@ -104,8 +119,8 @@ struct test_executor
     test_io_context&
     context() const noexcept;
 
-    void on_work_started() const noexcept {}
-    void on_work_finished() const noexcept {}
+    void on_work_started() const noexcept  {if (work_count_) (*work_count_)++;}
+    void on_work_finished() const noexcept {if (work_count_) (*work_count_)--;}
 
     std::coroutine_handle<>
     dispatch(continuation& c) const
