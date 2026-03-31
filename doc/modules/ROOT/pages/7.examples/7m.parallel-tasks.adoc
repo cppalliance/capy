@@ -25,7 +25,7 @@ Distributing CPU-bound work across a thread pool and collecting results.
 namespace capy = boost::capy;
 
 // Sum integers in [lo, hi)
-capy::task<long long> partial_sum(int lo, int hi)
+capy::io_task<long long> partial_sum(int lo, int hi)
 {
     std::ostringstream oss;
     oss << "  range [" << lo << ", " << hi
@@ -35,7 +35,7 @@ capy::task<long long> partial_sum(int lo, int hi)
     long long sum = 0;
     for (int i = lo; i < hi; ++i)
         sum += i;
-    co_return sum;
+    co_return capy::io_result<long long>{{}, sum};
 }
 
 int main()
@@ -63,7 +63,7 @@ int main()
         std::cout << "Dispatching " << num_tasks
                   << " parallel tasks...\n";
 
-        auto [s0, s1, s2, s3] = co_await capy::when_all(
+        auto [ec, s0, s1, s2, s3] = co_await capy::when_all(
             partial_sum(0 * chunk, 1 * chunk),
             partial_sum(1 * chunk, 2 * chunk),
             partial_sum(2 * chunk, 3 * chunk),
@@ -113,14 +113,14 @@ The range `[0, 10000)` is divided into 4 equal chunks, one per task. Each task c
 
 [source,cpp]
 ----
-auto [s0, s1, s2, s3] = co_await capy::when_all(
+auto [ec, s0, s1, s2, s3] = co_await capy::when_all(
     partial_sum(0 * chunk, 1 * chunk),
     partial_sum(1 * chunk, 2 * chunk),
     partial_sum(2 * chunk, 3 * chunk),
     partial_sum(3 * chunk, 4 * chunk));
 ----
 
-`when_all` launches all four tasks concurrently on the thread pool. Each task may run on a different thread. Results are returned via structured bindings in the same order as the input tasks.
+`when_all` launches all four tasks concurrently on the thread pool. Each task may run on a different thread. The result is `io_result<long long, long long, long long, long long>`, a single `ec` plus the four partial sums in input order.
 
 === Observing Thread IDs
 

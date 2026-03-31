@@ -21,6 +21,7 @@ Running multiple operations concurrently with `when_all`.
 #include <iostream>
 #include <latch>
 #include <string>
+#include <vector>
 
 namespace capy = boost::capy;
 
@@ -50,24 +51,29 @@ capy::task<double> fetch_account_balance(int user_id)
     co_return user_id * 1.5;  // Fake balance
 }
 
-// Fetch all user data in parallel
+// Fetch all user data in parallel using variadic when_all.
+// Heterogeneous return types are flattened into the result.
 capy::task<> fetch_user_dashboard(std::string username)
 {
     std::cout << "\n=== Fetching dashboard for: " << username << " ===\n";
-    
+
     // First, get the user ID (needed for other queries)
     int user_id = co_await fetch_user_id(username);
     std::cout << "Got user ID: " << user_id << "\n\n";
-    
-    // Now fetch all user data in parallel
+
+    // when_all requires io_task children. Wrap plain tasks:
     std::cout << "Starting parallel fetches...\n";
-    // name: std::string, orders: int, balance: double
-    auto [name, orders, balance] = co_await capy::when_all(
-        fetch_user_name(user_id),
-        fetch_order_count(user_id),
-        fetch_account_balance(user_id)
-    );
-    
+
+    auto wrap = [](auto inner) -> capy::io_task<decltype(inner.await_resume())> {
+        co_return capy::io_result<decltype(inner.await_resume())>{
+            {}, co_await std::move(inner)};
+    };
+
+    auto [ec, name, orders, balance] = co_await capy::when_all(
+        wrap(fetch_user_name(user_id)),
+        wrap(fetch_order_count(user_id)),
+        wrap(fetch_account_balance(user_id)));
+
     std::cout << "\nDashboard results:\n";
     std::cout << "  Name: " << name << "\n";
     std::cout << "  Orders: " << orders << "\n";
@@ -75,61 +81,60 @@ capy::task<> fetch_user_dashboard(std::string username)
 }
 
 // Example with void tasks
-capy::task<> log_access(std::string resource)
+capy::io_task<> log_access(std::string resource)
 {
     std::cout << "Logging access to: " << resource << "\n";
-    co_return;
+    co_return capy::io_result<>{};
 }
 
-capy::task<> update_metrics(std::string metric)
+capy::io_task<> update_metrics(std::string metric)
 {
     std::cout << "Updating metric: " << metric << "\n";
-    co_return;
+    co_return capy::io_result<>{};
 }
 
 capy::task<std::string> fetch_with_side_effects()
 {
     std::cout << "\n=== Fetch with side effects ===\n";
-    
-    // void tasks don't contribute to result tuple
-    std::tuple<std::string> results = co_await capy::when_all(
-        log_access("api/data"),           // void - no result
-        update_metrics("api_calls"),      // void - no result
-        fetch_user_name(42)               // returns string
-    );
-    std::string data = std::get<0>(results);  // std::string
-    
+
+    auto r = co_await capy::when_all(
+        log_access("api/data"),
+        update_metrics("api_calls"));
+    if (r.ec)
+        co_return "error";
+
+    auto data = co_await fetch_user_name(42);
+
     std::cout << "Data: " << data << "\n";
     co_return data;
 }
 
 // Error handling example
-capy::task<int> might_fail(bool should_fail, std::string name)
+capy::io_task<int> might_fail(bool should_fail, std::string name)
 {
     std::cout << "Task " << name << " starting\n";
-    
+
     if (should_fail)
     {
         throw std::runtime_error(name + " failed!");
     }
-    
+
     std::cout << "Task " << name << " completed\n";
-    co_return 42;
+    co_return capy::io_result<int>{{}, 42};
 }
 
 capy::task<> demonstrate_error_handling()
 {
     std::cout << "\n=== Error handling ===\n";
-    
+
     try
     {
-        // a: int, b: int, c: int
-        auto [a, b, c] = co_await capy::when_all(
+        auto [ec2, a, b, c] = co_await capy::when_all(
             might_fail(false, "A"),
             might_fail(true, "B"),   // This one fails
-            might_fail(false, "C")
-        );
-        std::cout << "All succeeded: " << a << ", " << b << ", " << c << "\n";
+            might_fail(false, "C"));
+        std::cout << "All succeeded: " << a << ", "
+                  << b << ", " << c << "\n";
     }
     catch (std::runtime_error const& e)
     {
@@ -152,7 +157,7 @@ int main()
     capy::run_async(pool.get_executor(), on_complete, on_error)(fetch_user_dashboard("alice"));
     capy::run_async(pool.get_executor(), on_complete, on_error)(fetch_with_side_effects());
     capy::run_async(pool.get_executor(), on_complete, on_error)(demonstrate_error_handling());
-    
+
     done.wait();  // Block until all tasks complete
     return 0;
 }
@@ -172,28 +177,26 @@ target_link_libraries(parallel_fetch PRIVATE capy)
 
 [source,cpp]
 ----
-auto [name, orders, balance] = co_await capy::when_all(
-    fetch_user_name(user_id),
-    fetch_order_count(user_id),
-    fetch_account_balance(user_id)
-);
+auto [ec, name, orders, balance] = co_await capy::when_all(
+    wrap(fetch_user_name(user_id)),
+    wrap(fetch_order_count(user_id)),
+    wrap(fetch_account_balance(user_id)));
 ----
 
-All three tasks run concurrently. `when_all` completes when all tasks finish. Results are returned in a tuple matching input order.
+`when_all` requires children returning `io_result`, so plain tasks are wrapped. All three run concurrently. The result is `io_result<std::string, int, double>`, a single `ec` plus the flattened payloads in input order.
 
-=== Void Filtering
+=== Void io_tasks
 
 [source,cpp]
 ----
-std::tuple<std::string> results = co_await capy::when_all(
-    log_access("api/data"),      // void - filtered out
-    update_metrics("api_calls"), // void - filtered out
-    fetch_user_name(42)          // string - in tuple
-);
-std::string data = std::get<0>(results);  // std::string
+auto r = co_await capy::when_all(
+    log_access("api/data"),
+    update_metrics("api_calls"));
+if (r.ec)
+    co_return "error";
 ----
 
-Tasks returning `void` don't contribute to the result tuple. Only non-void results appear.
+`io_task<>` children return `io_result<>` (just an error code, no payload). Check `r.ec` to detect failure.
 
 === Error Propagation
 
@@ -201,7 +204,10 @@ Tasks returning `void` don't contribute to the result tuple. Only non-void resul
 ----
 try
 {
-    auto results = co_await capy::when_all(task_a(), task_b(), task_c());
+    auto [ec2, a, b, c] = co_await capy::when_all(
+        might_fail(false, "A"),
+        might_fail(true, "B"),
+        might_fail(false, "C"));
 }
 catch (...)
 {
@@ -210,12 +216,7 @@ catch (...)
 }
 ----
 
-When a task throws:
-
-1. The exception is captured
-2. Stop is requested for siblings
-3. All tasks complete (or respond to stop)
-4. First exception is rethrown
+I/O errors are reported via `ec` in the `io_result`. Thrown exceptions are captured separately — Upon error cancellation is requested and the first exception is rethrown after all tasks complete.
 
 == Output
 

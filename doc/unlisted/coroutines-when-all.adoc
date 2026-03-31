@@ -19,11 +19,15 @@ Tasks are sequential by default. When you await multiple tasks:
 
 [source,cpp]
 ----
-task<void> sequential()
+io_task<int> fetch_a();
+io_task<int> fetch_b();
+io_task<int> fetch_c();
+
+task<> sequential()
 {
-    int a = co_await fetch_a();  // Wait for A
-    int b = co_await fetch_b();  // Then wait for B
-    int c = co_await fetch_c();  // Then wait for C
+    auto [ec_a, a] = co_await fetch_a();  // Wait for A
+    auto [ec_b, b] = co_await fetch_b();  // Then wait for B
+    auto [ec_c, c] = co_await fetch_c();  // Then wait for C
     // Total time: A + B + C
 }
 ----
@@ -40,9 +44,9 @@ all of them to complete:
 ----
 #include <boost/capy/when_all.hpp>
 
-task<void> concurrent()
+task<> concurrent()
 {
-    auto [a, b, c] = co_await when_all(
+    auto [ec, a, b, c] = co_await when_all(
         fetch_a(),
         fetch_b(),
         fetch_c()
@@ -52,55 +56,80 @@ task<void> concurrent()
 ----
 
 All three fetches run in parallel. The `co_await` completes when the slowest
-one finishes.
+one finishes. Children must return `io_result<...>` (i.e., be `io_task<T>`).
 
 == Return Value
 
-`when_all` returns a tuple of results. Void tasks contribute `std::monostate` to preserve the task-index-to-result-index mapping:
+`when_all` returns `task<io_result<R1, R2, ..., Rn>>`, a single `ec` followed by each child's payload type. Each `Ri` is the child's payload flattened: `io_result<T>` contributes `T`, `io_result<>` contributes `tuple<>`.
 
 [source,cpp]
 ----
-// All non-void: get a tuple of all results
-auto [x, y] = co_await when_all(
-    task_returning_int(),     // task<int>
-    task_returning_string()   // task<std::string>
+// All non-void: single ec + flattened payloads
+auto [ec, x, y] = co_await when_all(
+    task_returning_int(),     // io_task<int>
+    task_returning_string()   // io_task<std::string>
 );
-// x is int, y is std::string
+// ec is std::error_code, x is int, y is std::string
 
-// Mixed with void: void tasks contribute monostate
-auto [a, b, c] = co_await when_all(
-    task_returning_int(),  // task<int>       — index 0
-    task_void(),           // task<void>      — index 1 → monostate
-    task_void()            // task<void>      — index 2 → monostate
+// Mixed with void: io_task<> contributes tuple<>
+auto [ec2, a, b, c] = co_await when_all(
+    task_returning_int(),  // io_task<int>    — a is int
+    task_void(),           // io_task<>       — b is tuple<>
+    task_void()            // io_task<>       — c is tuple<>
 );
-// a is int, b and c are std::monostate
 
-// All void: returns tuple of monostate
-auto [m, n] = co_await when_all(
+// All void: just check ec
+auto r = co_await when_all(
     task_void(),
     task_void()
 );
-// m and n are std::monostate
+if (r.ec)
+    // handle error
 ----
 
-Results appear in the same order as the input tasks.
+Results appear in the same order as the input tasks. Values are only meaningful when `!ec`.
 
 == Error Handling
 
-Exceptions propagate from child tasks to the parent. When a task throws:
+There are two error paths. I/O errors are reported through the `ec` field of the returned `io_result`. Thrown exceptions are captured separately.
+
+=== I/O Errors (ec)
+
+When a child returns a non-zero `ec`:
+
+1. Stop is requested for sibling tasks
+2. All tasks are allowed to complete (or respond to stop)
+3. The first `ec` is propagated in the outer `io_result`
+
+[source,cpp]
+----
+task<> handle_errors()
+{
+    auto [ec, a, b] = co_await when_all(
+        might_fail_io(),
+        another_io_task()
+    );
+    if (ec)
+        std::cerr << "I/O error: " << ec.message() << "\n";
+}
+----
+
+=== Exceptions
+
+When a child throws:
 
 1. The exception is captured
 2. Stop is requested for sibling tasks
 3. All tasks are allowed to complete (or respond to stop)
-4. The first exception is rethrown
+4. The first exception is rethrown (exception takes priority over `ec`)
 
 [source,cpp]
 ----
-task<void> handle_errors()
+task<> handle_exceptions()
 {
     try {
         co_await when_all(
-            might_fail(),
+            might_throw(),
             another_task(),
             third_task()
         );
@@ -113,8 +142,9 @@ task<void> handle_errors()
 
 === First-Error Semantics
 
-Only the first exception is captured; subsequent exceptions are discarded.
-This matches the behavior of most concurrent frameworks.
+Only the first error wins, whether `ec` or exception. Subsequent errors
+are discarded. If both an exception and an `ec` occur, the exception takes
+priority.
 
 === Stop Propagation
 
@@ -123,20 +153,21 @@ that support cancellation can respond by exiting early:
 
 [source,cpp]
 ----
-task<void> cancellable_work()
+io_task<> cancellable_work()
 {
     auto token = co_await this_coro::stop_token;
     for (int i = 0; i < 1000; ++i)
     {
         if (token.stop_requested())
-            co_return;  // Exit early
+            co_return io_result<>{};  // Exit early
         co_await do_chunk(i);
     }
+    co_return io_result<>{};
 }
 
-task<void> example()
+task<> example()
 {
-    // If failing_task throws, cancellable_work sees stop_requested
+    // If failing_task returns ec, cancellable_work sees stop_requested
     co_await when_all(
         failing_task(),
         cancellable_work()
@@ -151,7 +182,7 @@ cancelled, all children see the request:
 
 [source,cpp]
 ----
-task<void> parent()
+task<> parent()
 {
     // Parent has a stop token from run_async
     co_await when_all(
@@ -173,7 +204,7 @@ All child tasks inherit the parent's executor affinity:
 
 [source,cpp]
 ----
-task<void> parent()  // Running on executor ex
+task<> parent()  // Running on executor ex
 {
     co_await when_all(
         child_a(),  // Runs on ex
@@ -212,18 +243,25 @@ run_async(pool.get_executor())(parent());
 
 [source,cpp]
 ----
-task<std::string> fetch(http_client& client, std::string url)
+io_task<std::string> fetch(http_client& client, std::string url)
 {
-    co_return co_await client.get(url);
+    auto [ec, body] = co_await client.get(url);
+    co_return io_result<std::string>{ec, std::move(body)};
 }
 
-task<void> fetch_all(http_client& client)
+task<> fetch_all(http_client& client)
 {
-    auto [home, about, contact] = co_await when_all(
+    auto [ec, home, about, contact] = co_await when_all(
         fetch(client, "https://example.com/"),
         fetch(client, "https://example.com/about"),
         fetch(client, "https://example.com/contact")
     );
+
+    if (ec)
+    {
+        std::cerr << "Fetch failed: " << ec.message() << "\n";
+        co_return;
+    }
 
     std::cout << "Home: " << home.size() << " bytes\n";
     std::cout << "About: " << about.size() << " bytes\n";
@@ -252,13 +290,13 @@ Do NOT use `when_all` when:
 | Feature | Description
 
 | `when_all(tasks...)`
-| Launch tasks concurrently, wait for all
+| Launch `io_task` children concurrently, wait for all
 
 | Return type
-| Tuple of results in input order (`monostate` for void tasks)
+| `task<io_result<R1, ..., Rn>>` — single `ec` + flattened payloads
 
 | Error handling
-| First exception propagated, siblings get stop
+| First `ec` or exception propagated, siblings get stop
 
 | Affinity
 | Children inherit parent's executor

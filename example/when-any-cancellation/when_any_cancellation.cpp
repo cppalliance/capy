@@ -114,22 +114,6 @@ capy::io_task<> timeout(int ms)
     co_return capy::io_result<>{};
 }
 
-// Use when_any with a timeout to bound the lifetime of a background worker.
-// With void tasks, the range overload returns size_t (the winner's index).
-capy::task<> timeout_a_worker()
-{
-    std::cout << "\n=== Timeout a background worker ===\n\n";
-
-    auto result = co_await capy::when_any(
-        background_worker("worker", 30),
-        timeout(100));
-
-    if (result.index() == 1)
-        std::cout << "\nWorker finished before timeout\n";
-    else if (result.index() == 2)
-        std::cout << "\nTimeout fired — worker was cancelled\n";
-}
-
 // Race three replicas using variadic overload.
 capy::task<> race_vector_of_sources()
 {
@@ -154,7 +138,6 @@ capy::task<> race_vector_of_sources()
 capy::task<> run_demos()
 {
     co_await race_data_sources();
-    co_await timeout_a_worker();
     co_await race_vector_of_sources();
 }
 
