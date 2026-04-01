@@ -91,7 +91,7 @@ struct asio_coroutine_completion_handler
   };
   asio_coroutine_unique_handle handle;
   std::optional<std::tuple<Args...>> & result;
-  capy::io_env * env;
+  const capy::io_env * env;
   boost::asio::cancellation_slot slot;
   asio_immediate_executor_helper::completed_immediately_t * completed_immediately = nullptr;
   
@@ -113,7 +113,7 @@ struct asio_coroutine_completion_handler
   asio_coroutine_completion_handler(
     std::coroutine_handle<void> h, 
     std::optional<std::tuple<Args...>> & result,
-    capy::io_env * env,
+    const capy::io_env * env,
     boost::asio::cancellation_slot slot = {},
     asio_immediate_executor_helper::completed_immediately_t * ci = nullptr)
     : handle(h), result(result), env(env), slot(slot), completed_immediately(ci) {}
