@@ -166,7 +166,7 @@ template<class E>
 concept Executor =
     std::is_nothrow_copy_constructible_v<E> &&
     std::is_nothrow_move_constructible_v<E> &&
-    requires(E& e, E const& ce, E const& ce2, continuation c) {
+    requires(E& e, E const& ce, E const& ce2, continuation& c) {
         { ce == ce2 } noexcept -> std::convertible_to<bool>;
         { ce.context() } noexcept;
         requires std::is_lvalue_reference_v<decltype(ce.context())> &&

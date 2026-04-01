@@ -12,6 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/type_id.hpp>
+#include <boost/capy/concept/executor.hpp>
 #include <boost/capy/continuation.hpp>
 #include <concepts>
 #include <coroutine>
@@ -149,7 +150,8 @@ public:
             std::decay_t<Ex>, executor_ref>, int> = 0>
 #else
     template<class Ex>
-        requires (!std::same_as<std::decay_t<Ex>, executor_ref>)
+        requires (!std::same_as<std::decay_t<Ex>, executor_ref>
+            && Executor<Ex>)
 #endif
     executor_ref(Ex const& ex) noexcept
         : ex_(&ex)
@@ -266,7 +268,7 @@ public:
             `nullptr` if the type does not match.
     */
     template< typename Executor >
-    const Executor* target() const
+    const Executor* target() const noexcept
     {
         if ( *vt_->type_id == detail::type_id< Executor >() )
            return static_cast< Executor const* >( ex_ );
@@ -275,7 +277,7 @@ public:
 
     /// @copydoc target() const
     template< typename Executor>
-    Executor* target()
+    Executor* target() noexcept
     {
         if ( *vt_->type_id == detail::type_id< Executor >() )
            return const_cast< Executor* >(
