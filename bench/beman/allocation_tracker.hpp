@@ -13,9 +13,41 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdlib>
+#include <memory_resource>
 #include <new>
 
 static std::atomic<int64_t> g_alloc_count{0};
+
+/// Counts every allocate call, then delegates to upstream.
+class counting_memory_resource
+    : public std::pmr::memory_resource
+{
+    std::pmr::memory_resource* upstream_;
+
+    void* do_allocate(
+        std::size_t n, std::size_t align) override
+    {
+        g_alloc_count.fetch_add(1, std::memory_order_relaxed);
+        return upstream_->allocate(n, align);
+    }
+
+    void do_deallocate(
+        void* p, std::size_t n, std::size_t align) override
+    {
+        upstream_->deallocate(p, n, align);
+    }
+
+    bool do_is_equal(
+        memory_resource const& other) const noexcept override
+    {
+        return this == &other;
+    }
+
+public:
+    explicit counting_memory_resource(
+        std::pmr::memory_resource* upstream) noexcept
+        : upstream_(upstream) {}
+};
 
 void* operator new(std::size_t n)
 {

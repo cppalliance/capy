@@ -18,15 +18,16 @@
 #ifndef BOOST_CAPY_BENCH_SNDR_ANY_READ_SENDER_HPP
 #define BOOST_CAPY_BENCH_SNDR_ANY_READ_SENDER_HPP
 
-#include <boost/capy/ex/recycling_memory_resource.hpp>
-
 #include <beman/execution/execution.hpp>
 
 #include <coroutine>
 #include <cstddef>
 #include <cstring>
 #include <memory>
+#include <memory_resource>
 #include <utility>
+
+auto get_counting_resource() -> std::pmr::memory_resource*;
 
 namespace ex = beman::execution;
 
@@ -37,13 +38,13 @@ public:
     {
         static void* operator new(std::size_t n)
         {
-            return boost::capy::get_recycling_memory_resource()
+            return get_counting_resource()
                 ->allocate(n, alignof(std::max_align_t));
         }
 
         static void operator delete(void* p, std::size_t n) noexcept
         {
-            boost::capy::get_recycling_memory_resource()
+            get_counting_resource()
                 ->deallocate(p, n, alignof(std::max_align_t));
         }
 
