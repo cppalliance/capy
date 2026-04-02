@@ -20,32 +20,6 @@
 namespace boost {
 namespace capy {
 
-/** Callable that posts a continuation to an executor.
-
-    Use this as the callback type for `std::stop_callback` instead
-    of resuming a coroutine handle directly. Direct resumption runs
-    the coroutine inline on whatever thread calls `request_stop()`,
-    which bypasses the executor and corrupts the thread-local
-    frame allocator.
-
-    Prefer @ref io_env::post_resume and the @ref stop_resume_callback
-    alias to construct these—see examples there.
-
-    @see io_env::post_resume, stop_resume_callback
-*/
-struct resume_via_post
-{
-    executor_ref ex;
-    mutable continuation cont;
-
-    // post() must not throw; stop_callback requires a
-    // non-throwing invocable.
-    void operator()() const noexcept
-    {
-        ex.post(cont);
-    }
-};
-
 /** Execution environment for IoAwaitables.
 
     This struct bundles the execution context passed through
@@ -60,27 +34,11 @@ struct resume_via_post
     chain. Awaitables receive `io_env const*` in `await_suspend`
     and should store it directly, never copy the pointed-to object.
 
-    @par Stop Callback Contract
-
-    Awaitables that register a `std::stop_callback` **must not**
-    resume the coroutine handle directly. The callback fires
-    synchronously on the thread that calls `request_stop()`, which
-    may not be an executor-managed thread. Resuming inline poisons
-    that thread's TLS frame allocator with the pool's allocator,
-    causing use-after-free on the next coroutine allocation.
-
-    Use @ref io_env::post_resume and @ref stop_resume_callback:
-    @code
-    std::optional<stop_resume_callback> stop_cb_;
-    // In await_suspend:
-    stop_cb_.emplace(env->stop_token, env->post_resume(h));
-    @endcode
-
     @par Thread Safety
     The referenced executor and allocator must remain valid
     for the lifetime of any coroutine using this environment.
 
-    @see IoAwaitable, IoRunnable, resume_via_post
+    @see IoAwaitable, IoRunnable
 */
 struct io_env
 {
@@ -96,44 +54,7 @@ struct io_env
     */
     std::pmr::memory_resource* frame_allocator = nullptr;
 
-    /** Create a resume_via_post callable for this environment.
-
-        Convenience method for registering @ref stop_resume_callback
-        instances. Wraps the coroutine handle in a @ref continuation
-        and pairs it with this environment's executor. Equivalent to
-        `resume_via_post{executor, continuation{h}}`.
-
-        @par Example
-        @code
-        stop_cb_.emplace(env->stop_token, env->post_resume(h));
-        @endcode
-
-        @param h The coroutine handle to wrap in a continuation
-            and post on cancellation.
-
-        @return A @ref resume_via_post callable that holds a
-        non-owning @ref executor_ref and a @ref continuation.
-        The callable must not outlive the executor it references.
-
-        @see resume_via_post, stop_resume_callback
-    */
-    resume_via_post
-    post_resume(std::coroutine_handle<> h) const noexcept
-    {
-        return resume_via_post{executor, continuation{h}};
-    }
 };
-
-/** Type alias for a stop callback that posts through the executor.
-
-    Use this to declare the stop callback member in your awaitable:
-    @code
-    std::optional<stop_resume_callback> stop_cb_;
-    @endcode
-
-    @see resume_via_post, io_env::post_resume
-*/
-using stop_resume_callback = std::stop_callback<resume_via_post>;
 
 } // capy
 } // boost

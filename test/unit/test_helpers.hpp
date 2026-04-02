@@ -256,6 +256,31 @@ struct self_destroy_awaitable
 };
 
 
+// Callable that posts a continuation to an executor instead of
+// resuming a coroutine handle inline.  Use as the callback type
+// for std::stop_callback — direct resumption runs the coroutine
+// on whatever thread calls request_stop(), bypassing the executor.
+struct resume_via_post
+{
+    executor_ref ex;
+    mutable continuation cont;
+
+    void operator()() const noexcept
+    {
+        ex.post(cont);
+    }
+};
+
+using stop_resume_callback = std::stop_callback<resume_via_post>;
+
+inline resume_via_post
+post_resume(
+    io_env const& env,
+    std::coroutine_handle<> h) noexcept
+{
+    return resume_via_post{env.executor, continuation{h}};
+}
+
 // test awaitable that must be stopped in order to resume.
 // Uses resume_via_post to ensure the coroutine resumes on the
 // executor's thread, not on whatever thread calls request_stop().
@@ -293,7 +318,7 @@ struct stop_only_awaitable
         if (env->stop_token.stop_requested())
             return h;
         ::new(stop_cb_buf_) stop_resume_callback(
-            env->stop_token, env->post_resume(h));
+            env->stop_token, post_resume(*env, h));
         active_.store(true, std::memory_order_release);
         return std::noop_coroutine();
     }
