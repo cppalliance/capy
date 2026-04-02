@@ -175,15 +175,13 @@ When implementing a stoppable awaitable, you may register a `std::stop_callback`
 *Never resume a coroutine handle directly from a stop_callback.* Doing so executes the coroutine on the wrong thread, corrupting the thread-local frame allocator. This causes use-after-free on the next coroutine allocation—potentially in completely unrelated code.
 ====
 
-Use `stop_resume_callback` and `io_env::post_resume` from `<boost/capy/ex/io_env.hpp>` to post the resume through the executor:
+Post the resume through the executor instead of resuming inline:
 
 [source,cpp]
 ----
-#include <boost/capy/ex/io_env.hpp>
-
 struct stoppable_awaitable
 {
-    std::optional<stop_resume_callback> stop_cb_;
+    mutable continuation cont_;
 
     bool await_ready() { return false; }
 
@@ -194,7 +192,10 @@ struct stoppable_awaitable
             return h;  // Already cancelled, resume immediately
 
         // Post through executor when stop is requested
-        stop_cb_.emplace(env->stop_token, env->post_resume(h));
+        cont_.h = h;
+        auto ex = env->executor;
+        stop_cb_.emplace(env->stop_token,
+            [this, ex]() mutable noexcept { ex.post(cont_); });
 
         start_async_operation();
         return std::noop_coroutine();

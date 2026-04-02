@@ -318,17 +318,15 @@ When an external thread calls `request_stop()`, `h.resume()` executes the corout
 
 This bug is deterministic, not a race condition. It manifests as a heap-use-after-free in *unrelated* code—wherever the next coroutine frame happens to be allocated on the poisoned thread.
 
-=== The Correct Pattern: resume_via_post
+=== The Correct Pattern: Post Through the Executor
 
-Use `stop_resume_callback` and `io_env::post_resume` to post the resume through the executor, ensuring the coroutine runs on the correct thread:
+Post the coroutine handle through the executor instead of resuming it inline. This ensures the coroutine runs on the correct thread:
 
 [source,cpp]
 ----
-#include <boost/capy/ex/io_env.hpp>
-
 struct my_stoppable_awaitable
 {
-    std::optional<stop_resume_callback> stop_cb_;
+    mutable continuation cont_;
     // ... other members for the async operation ...
 
     bool await_ready() { return false; }
@@ -339,7 +337,10 @@ struct my_stoppable_awaitable
         if (env->stop_token.stop_requested())
             return h;  // Already cancelled
 
-        stop_cb_.emplace(env->stop_token, env->post_resume(h));
+        cont_.h = h;
+        auto ex = env->executor;
+        stop_cb_.emplace(env->stop_token,
+            [this, ex]() mutable noexcept { ex.post(cont_); });
 
         start_async_operation(h, env);
         return std::noop_coroutine();
@@ -348,8 +349,6 @@ struct my_stoppable_awaitable
     void await_resume() { /* check result or throw */ }
 };
 ----
-
-`stop_resume_callback` is a type alias for `std::stop_callback<resume_via_post>`. `post_resume(h)` creates a `resume_via_post` callable that posts the coroutine handle through this environment's executor.
 
 When `request_stop()` fires the callback, the coroutine handle is posted to the executor's queue instead of resumed inline. The executor's worker thread picks it up and resumes it in the correct execution context.
 
