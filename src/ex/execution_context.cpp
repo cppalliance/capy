@@ -55,8 +55,6 @@ destroy() noexcept
         delete p;
         p = next;
     }
-    for(auto& s : slots_)
-        s.store(nullptr, std::memory_order_relaxed);
 }
 
 execution_context::service*
@@ -80,13 +78,7 @@ use_service_impl(factory& f)
     std::unique_lock<std::mutex> lock(mutex_);
 
     if(auto* p = find_impl(f.t0))
-    {
-        if(f.slot0 < max_service_slots)
-            slots_[f.slot0].store(p, std::memory_order_release);
-        if(f.slot0 != f.slot1 && f.slot1 < max_service_slots)
-            slots_[f.slot1].store(p, std::memory_order_release);
         return *p;
-    }
 
     lock.unlock();
 
@@ -99,21 +91,12 @@ use_service_impl(factory& f)
 
     if(auto* p = find_impl(f.t0))
     {
-        if(f.slot0 < max_service_slots)
-            slots_[f.slot0].store(p, std::memory_order_release);
-        if(f.slot0 != f.slot1 && f.slot1 < max_service_slots)
-            slots_[f.slot1].store(p, std::memory_order_release);
         delete sp;
         return *p;
     }
 
     sp->next_ = head_;
     head_ = sp;
-
-    if(f.slot0 < max_service_slots)
-        slots_[f.slot0].store(sp, std::memory_order_release);
-    if(f.slot0 != f.slot1 && f.slot1 < max_service_slots)
-        slots_[f.slot1].store(sp, std::memory_order_release);
 
     return *sp;
 }
@@ -157,11 +140,6 @@ make_service_impl(factory& f)
 
     p->next_ = head_;
     head_ = p;
-
-    if(f.slot0 < max_service_slots)
-        slots_[f.slot0].store(p, std::memory_order_release);
-    if(f.slot0 != f.slot1 && f.slot1 < max_service_slots)
-        slots_[f.slot1].store(p, std::memory_order_release);
 
     return *p;
 }

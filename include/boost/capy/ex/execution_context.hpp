@@ -12,10 +12,8 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/frame_memory_resource.hpp>
-#include <boost/capy/detail/service_slot.hpp>
 #include <boost/capy/detail/type_id.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <atomic>
 #include <concepts>
 #include <memory>
 #include <memory_resource>
@@ -225,14 +223,6 @@ public:
     template<class T>
     T* find_service() const noexcept
     {
-        auto id = detail::service_slot<T>();
-        if(id < max_service_slots)
-        {
-            auto* p = slots_[id].load(
-                std::memory_order_acquire);
-            if(p)
-                return static_cast<T*>(p);
-        }
         std::lock_guard<std::mutex> lock(mutex_);
         return static_cast<T*>(find_impl(detail::type_id<T>()));
     }
@@ -265,24 +255,6 @@ public:
             "T must derive from service");
         static_assert(std::is_constructible<T, execution_context&>::value,
             "T must be constructible from execution_context&");
-        if constexpr(get_key<T>::value)
-        {
-            static_assert(
-                std::is_convertible<T&, typename get_key<T>::type&>::value,
-                "T& must be convertible to key_type&");
-        }
-
-        // Fast path: O(1) slot lookup
-        {
-            auto id = detail::service_slot<T>();
-            if(id < max_service_slots)
-            {
-                auto* p = slots_[id].load(
-                    std::memory_order_acquire);
-                if(p)
-                    return static_cast<T&>(*p);
-            }
-        }
 
         struct impl : factory
         {
@@ -291,11 +263,7 @@ public:
                     detail::type_id<T>(),
                     get_key<T>::value
                         ? detail::type_id<typename get_key<T>::type>()
-                        : detail::type_id<T>(),
-                    detail::service_slot<T>(),
-                    get_key<T>::value
-                        ? detail::service_slot<typename get_key<T>::type>()
-                        : detail::service_slot<T>())
+                        : detail::type_id<T>())
             {
             }
 
@@ -357,11 +325,7 @@ public:
                     detail::type_id<T>(),
                     get_key<T>::value
                         ? detail::type_id<typename get_key<T>::type>()
-                        : detail::type_id<T>(),
-                    detail::service_slot<T>(),
-                    get_key<T>::value
-                        ? detail::service_slot<typename get_key<T>::type>()
-                        : detail::service_slot<T>())
+                        : detail::type_id<T>())
                 , args_(std::forward<Args>(a)...)
             {
             }
@@ -541,16 +505,11 @@ private:
         detail::type_index t0;
         detail::type_index t1;
         BOOST_CAPY_MSVC_WARNING_POP
-        std::size_t slot0;
-        std::size_t slot1;
 
         factory(
             detail::type_info const& t0_,
-            detail::type_info const& t1_,
-            std::size_t s0,
-            std::size_t s1)
+            detail::type_info const& t1_)
             : t0(t0_), t1(t1_)
-            , slot0(s0), slot1(s1)
         {
         }
 
@@ -564,7 +523,7 @@ private:
     service& use_service_impl(factory& f);
     service& make_service_impl(factory& f);
 
-// warning C4251: std::mutex, std::shared_ptr, std::atomic need dll-interface
+// warning C4251: std::mutex, std::shared_ptr need dll-interface
     BOOST_CAPY_MSVC_WARNING_PUSH
     BOOST_CAPY_MSVC_WARNING_DISABLE(4251)
     mutable std::mutex mutex_;
@@ -573,12 +532,6 @@ private:
     std::pmr::memory_resource* frame_alloc_ = nullptr;
     service* head_ = nullptr;
     bool shutdown_ = false;
-
-    static constexpr std::size_t max_service_slots = 32;
-    BOOST_CAPY_MSVC_WARNING_PUSH
-    BOOST_CAPY_MSVC_WARNING_DISABLE(4251)
-    std::atomic<service*> slots_[max_service_slots] = {};
-    BOOST_CAPY_MSVC_WARNING_POP
 };
 
 template< typename Derived >
