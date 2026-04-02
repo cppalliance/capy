@@ -271,13 +271,6 @@ Service management functions (`use_service`, `make_service`, `find_service`)
 are thread-safe. The `shutdown()` and `destroy()` functions are NOT thread-safe
 and must only be called during destruction.
 
-=== Performance
-
-The first 32 distinct service types registered across the program benefit from
-an O(1) lock-free fast path for `find_service` and `use_service`. Beyond 32
-types, lookups fall back to a mutex-protected linear scan. In practice, 32
-slots is sufficient for any realistic program.
-
 == When NOT to Use execution_context Directly
 
 Use `execution_context` directly when:

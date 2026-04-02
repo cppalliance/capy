@@ -388,85 +388,6 @@ struct execution_context_test
     }
 
     void
-    testSlotLookupConsistency()
-    {
-        // Verify that find_service returns the same pointer
-        // whether from the slot fast path or linked list fallback.
-        test_io_context ctx;
-
-        auto& svc = ctx.make_service<simple_service>(77);
-        auto* p1 = ctx.find_service<simple_service>();
-        auto* p2 = ctx.find_service<simple_service>();
-
-        BOOST_TEST_NE(p1, nullptr);
-        BOOST_TEST_EQ(p1, p2);
-        BOOST_TEST_EQ(p1, &svc);
-    }
-
-    void
-    testSlotKeyTypeLookup()
-    {
-        // Verify slot lookup works for both concrete and key_type.
-        test_io_context ctx;
-
-        ctx.make_service<derived_service>(55);
-
-        auto* p1 = ctx.find_service<derived_service>();
-        BOOST_TEST_NE(p1, nullptr);
-        BOOST_TEST_EQ(p1->value, 55);
-
-        auto* p2 = ctx.find_service<base_service>();
-        BOOST_TEST_NE(p2, nullptr);
-        BOOST_TEST_EQ(p2->get_value(), 55);
-
-        // Both should point to the same object
-        BOOST_TEST_EQ(
-            static_cast<base_service*>(p1), p2);
-    }
-
-    void
-    testUseServiceSlotFastPath()
-    {
-        // Verify use_service fast path returns same instance.
-        test_io_context ctx;
-
-        auto& svc1 = ctx.use_service<simple_service>();
-        auto& svc2 = ctx.use_service<simple_service>();
-
-        BOOST_TEST_EQ(&svc1, &svc2);
-    }
-
-    void
-    testConcurrentUseServiceSlots()
-    {
-        // Stress test: many threads calling use_service simultaneously.
-        // All must get the same service instance.
-        test_io_context ctx;
-        constexpr int num_threads = 16;
-        std::atomic<simple_service*> results[num_threads] = {};
-
-        std::vector<std::thread> threads;
-        threads.reserve(num_threads);
-
-        for(int i = 0; i < num_threads; ++i)
-        {
-            threads.emplace_back([&ctx, &results, i]{
-                auto& svc = ctx.use_service<simple_service>();
-                results[i].store(&svc,
-                    std::memory_order_relaxed);
-            });
-        }
-
-        for(auto& t : threads)
-            t.join();
-
-        auto* expected = results[0].load();
-        BOOST_TEST_NE(expected, nullptr);
-        for(int i = 1; i < num_threads; ++i)
-            BOOST_TEST_EQ(results[i].load(), expected);
-    }
-
-    void
     run()
     {
         testConstruct();
@@ -485,10 +406,6 @@ struct execution_context_test
         testGetFrameAllocator();
         testSetFrameAllocatorRawPointer();
         testSetFrameAllocatorTemplate();
-        testSlotLookupConsistency();
-        testSlotKeyTypeLookup();
-        testUseServiceSlotFastPath();
-        testConcurrentUseServiceSlots();
     }
 };
 
