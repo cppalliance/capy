@@ -184,6 +184,7 @@ struct asio_executor_adapter
   void execute(Function&& f) const
   {
     constexpr static boost::asio::execution::blocking_t b;
+    
     if constexpr (Blocking() == b.never)
       executor_.post(make_handle_(std::forward<Function>(f)).cont);
     else if constexpr(Blocking() == b.possibly)

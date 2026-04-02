@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_ASIO_DETAIL_COMPLETION_HANDLER
-#define BOOST_CAPY_ASIO_DETAIL_COMPLETION_HANDLER
+#ifndef BOOST_CAPY_ASIO_DETAIL_COMPLETION_HANDLER_HPP
+#define BOOST_CAPY_ASIO_DETAIL_COMPLETION_HANDLER_HPP
 
 #include <boost/capy/asio/detail/asio_coroutine_unique_handle.hpp>
 #include <boost/capy/asio/executor_adapter.hpp>
