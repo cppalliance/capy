@@ -47,6 +47,14 @@
 namespace bex = beman::execution;
 namespace capy = boost::capy;
 
+static counting_memory_resource g_counting_resource{
+    capy::get_recycling_memory_resource()};
+
+auto get_counting_resource() -> std::pmr::memory_resource*
+{
+    return &g_counting_resource;
+}
+
 // ===================================================================
 // result collection
 // ===================================================================
@@ -522,7 +530,7 @@ int main()
         sender_thread_pool pool(1);
         sndr_read_stream stream{&pool};
         auto sched = pool.get_scheduler();
-        auto* mr = capy::get_recycling_memory_resource();
+        auto* mr = get_counting_resource();
         bex::sync_wait(bex::starts_on(sched,
             bex_accept(
                 stream, grid[run][BEMAN_TASK][NATIVE_STREAM][NATIVE_EXEC_MODEL],
@@ -536,7 +544,7 @@ int main()
         sender_thread_pool pool(1);
         sndr_io_read_stream_impl stream{&pool};
         auto sched = pool.get_scheduler();
-        auto* mr = capy::get_recycling_memory_resource();
+        auto* mr = get_counting_resource();
         bex::sync_wait(bex::starts_on(sched,
             bex_accept(
                 static_cast<sndr_io_read_stream&>(stream),
@@ -551,7 +559,7 @@ int main()
         sender_thread_pool pool(1);
         sndr_any_read_stream stream(sndr_read_stream{&pool});
         auto sched = pool.get_scheduler();
-        auto* mr = capy::get_recycling_memory_resource();
+        auto* mr = get_counting_resource();
         bex::sync_wait(bex::starts_on(sched,
             bex_accept(
                 stream, grid[run][BEMAN_TASK][TYPE_ERASED_STREAM][NATIVE_EXEC_MODEL],
@@ -565,7 +573,7 @@ int main()
         sender_thread_pool pool(1);
         sndr_sync_read_stream stream;
         auto sched = pool.get_scheduler();
-        auto* mr = capy::get_recycling_memory_resource();
+        auto* mr = get_counting_resource();
         bex::sync_wait(bex::starts_on(sched,
             bex_accept(
                 stream, grid[run][BEMAN_TASK][SYNC_STREAM][NATIVE_EXEC_MODEL],
@@ -581,7 +589,7 @@ int main()
         sender_thread_pool pool(1);
         ioaw_read_stream stream;
         auto sched = pool.get_scheduler();
-        auto* mr = capy::get_recycling_memory_resource();
+        auto* mr = get_counting_resource();
         bex::sync_wait(bex::starts_on(sched,
             bex_accept_ioaw(
                 stream, grid[run][BEMAN_TASK][NATIVE_STREAM][BRIDGED_EXEC_MODEL],
@@ -595,7 +603,7 @@ int main()
         sender_thread_pool pool(1);
         ioaw_io_read_stream_impl stream;
         auto sched = pool.get_scheduler();
-        auto* mr = capy::get_recycling_memory_resource();
+        auto* mr = get_counting_resource();
         bex::sync_wait(bex::starts_on(sched,
             bex_accept_ioaw(
                 static_cast<ioaw_io_read_stream&>(stream),
@@ -611,7 +619,7 @@ int main()
         ioaw_read_stream concrete;
         capy::any_read_stream stream(&concrete);
         auto sched = pool.get_scheduler();
-        auto* mr = capy::get_recycling_memory_resource();
+        auto* mr = get_counting_resource();
         bex::sync_wait(bex::starts_on(sched,
             bex_accept_ioaw(
                 stream, grid[run][BEMAN_TASK][TYPE_ERASED_STREAM][BRIDGED_EXEC_MODEL],
@@ -625,7 +633,7 @@ int main()
         sender_thread_pool pool(1);
         ioaw_sync_read_stream stream;
         auto sched = pool.get_scheduler();
-        auto* mr = capy::get_recycling_memory_resource();
+        auto* mr = get_counting_resource();
         bex::sync_wait(bex::starts_on(sched,
             bex_accept_ioaw(
                 stream, grid[run][BEMAN_TASK][SYNC_STREAM][BRIDGED_EXEC_MODEL],
