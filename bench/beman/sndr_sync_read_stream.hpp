@@ -15,11 +15,9 @@
 // as_awaitable path returns the coroutine handle
 // for symmetric transfer.
 //
-// WARNING: Using this sender in a loop algorithm
-// like repeat_effect_until will stack overflow —
-// there is no trampoline for synchronous
-// completions. Coroutines handle this via symmetric
-// transfer; sender pipelines cannot.
+// repeat_until's trampoline bounds stack depth for
+// sender pipelines. Coroutines handle this via
+// symmetric transfer.
 //
 
 #ifndef BOOST_CAPY_BENCH_SNDR_SYNC_READ_STREAM_HPP
