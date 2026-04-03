@@ -10,7 +10,7 @@ content:
   sources:
     - url: ..
       start_path: doc
-      edit_url: 'https://github.com/cppalliance/capy/edit/{refname}/{path}'
+      edit_url: 'https://github.com/cppalliance/capy/edit/develop/{path}'
 
 ui:
   bundle:
