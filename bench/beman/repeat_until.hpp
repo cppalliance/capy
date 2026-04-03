@@ -1,10 +1,10 @@
 //
-// Adapted from beman execution examples (Apache-2.0 WITH LLVM-exception)
+// Adapted from stdexec (Apache-2.0 WITH LLVM-exception)
 // for benchmark use.
 //
 
-#ifndef BOOST_CAPY_BENCH_REPEAT_EFFECT_UNTIL_HPP
-#define BOOST_CAPY_BENCH_REPEAT_EFFECT_UNTIL_HPP
+#ifndef BOOST_CAPY_BENCH_REPEAT_UNTIL_HPP
+#define BOOST_CAPY_BENCH_REPEAT_UNTIL_HPP
 
 #include <beman/execution/execution.hpp>
 
@@ -29,7 +29,13 @@ struct repeat_connector
     auto start() & noexcept -> void { bex::start(op); }
 };
 
-inline constexpr struct repeat_effect_until_t
+/// Sender algorithm that repeats a child sender until
+/// a predicate returns true. Predicate is called with
+/// no arguments (child values are discarded).
+///
+/// Includes a trampoline that bounds recursion depth
+/// for synchronous completions (max_depth = 19).
+inline constexpr struct repeat_until_t
 {
     template <bex::sender Child, typename Pred>
     struct sender
@@ -46,6 +52,8 @@ inline constexpr struct repeat_effect_until_t
         {
             using operation_state_concept =
                 bex::operation_state_t;
+
+            static constexpr std::size_t max_depth = 19;
 
             struct own_receiver
             {
@@ -97,24 +105,58 @@ inline constexpr struct repeat_effect_until_t
             std::optional<repeat_connector<
                 std::remove_cvref_t<Child>,
                 own_receiver>> child_op;
+            std::size_t depth_ = 0;
+            bool draining_ = false;
+            bool again_ = false;
 
             auto start() & noexcept -> void
             {
-                run_one();
+                drain();
             }
 
-            auto run_one() & noexcept -> void
+            // Iterative trampoline that bounds stack
+            // depth for synchronous completions
+            auto drain() & noexcept -> void
             {
-                child_op.emplace(child, own_receiver{this});
-                child_op->start();
+                draining_ = true;
+                do
+                {
+                    again_ = false;
+                    depth_ = 0;
+                    child_op.emplace(
+                        child, own_receiver{this});
+                    child_op->start();
+                }
+                while (again_);
+                draining_ = false;
             }
 
             auto next() & noexcept -> void
             {
                 if (pred())
+                {
                     bex::set_value(std::move(receiver));
-                else
-                    run_one();
+                    return;
+                }
+
+                if (!draining_)
+                {
+                    // Async completion — enter drain loop
+                    drain();
+                    return;
+                }
+
+                if (++depth_ >= max_depth)
+                {
+                    // Hit depth limit — trampoline
+                    again_ = true;
+                    return;
+                }
+
+                // Within limit — recurse inline
+                child_op.emplace(
+                    child, own_receiver{this});
+                child_op->start();
             }
         };
 
@@ -137,6 +179,6 @@ inline constexpr struct repeat_effect_until_t
         return {std::forward<Child>(child),
             std::forward<Pred>(pred)};
     }
-} repeat_effect_until{};
+} repeat_until{};
 
 #endif

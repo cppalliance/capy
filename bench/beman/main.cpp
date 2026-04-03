@@ -11,7 +11,7 @@
 // I/O Read Stream Benchmark
 //
 // Compares three execution models across three stream abstraction
-// levels. 100M read_some calls per cell, single thread.
+// levels. 20M read_some calls per cell, single thread.
 //
 // Table 1: sender pipeline   (connect/start)
 // Table 2: capy::task        (capy::thread_pool)
@@ -27,7 +27,7 @@
 #include "awaitable_sender.hpp"
 #include "ioaw_read_stream.hpp"
 #include "ioaw_io_read_stream.hpp"
-#include "repeat_effect_until.hpp"
+#include "repeat_until.hpp"
 #include "sender_awaitable.hpp"
 #include "sndr_any_read_stream.hpp"
 #include "sndr_io_read_stream.hpp"
@@ -248,11 +248,13 @@ int main()
     for (int run = 0; run <= NUM_RUNS; ++run)
     {
 
+
     // ---------------------------------------------------------------
-    // Table 1: sender/receiver pipeline (repeat_effect_until)
+    // Table 1: sender/receiver pipeline (repeat_until)
     // ---------------------------------------------------------------
 
     // Col A: Sender (native)
+
 
     // Native — sndr_read_stream
     {
@@ -265,7 +267,7 @@ int main()
             std::memory_order_relaxed);
         auto start = std::chrono::steady_clock::now();
         bex::sync_wait(bex::starts_on(sched,
-            repeat_effect_until(
+            repeat_until(
                 bex::let_value(bex::just(), [&]() {
                     return stream.read_some(
                         capy::mutable_buffer(buf, sizeof(buf)));
@@ -293,7 +295,7 @@ int main()
             std::memory_order_relaxed);
         auto start = std::chrono::steady_clock::now();
         bex::sync_wait(bex::starts_on(sched,
-            repeat_effect_until(
+            repeat_until(
                 bex::let_value(bex::just(), [&]() {
                     return static_cast<sndr_io_read_stream&>(
                         stream).read_some(
@@ -322,7 +324,7 @@ int main()
             std::memory_order_relaxed);
         auto start = std::chrono::steady_clock::now();
         bex::sync_wait(bex::starts_on(sched,
-            repeat_effect_until(
+            repeat_until(
                 bex::let_value(bex::just(), [&]() {
                     return stream.read_some(
                         capy::mutable_buffer(buf, sizeof(buf)));
@@ -341,6 +343,7 @@ int main()
 
     // Col B: Awaitable (via as_sender bridge)
 
+
     // Native — ioaw_read_stream
     {
         sender_thread_pool pool(1);
@@ -352,7 +355,7 @@ int main()
             std::memory_order_relaxed);
         auto start = std::chrono::steady_clock::now();
         bex::sync_wait(bex::starts_on(sched,
-            repeat_effect_until(
+            repeat_until(
                 bex::let_value(bex::just(), [&]() {
                     return capy::as_sender(stream.read_some(
                         capy::mutable_buffer(buf, sizeof(buf))));
@@ -380,7 +383,7 @@ int main()
             std::memory_order_relaxed);
         auto start = std::chrono::steady_clock::now();
         bex::sync_wait(bex::starts_on(sched,
-            repeat_effect_until(
+            repeat_until(
                 bex::let_value(bex::just(), [&]() {
                     return capy::as_sender(
                         static_cast<ioaw_io_read_stream&>(
@@ -412,7 +415,7 @@ int main()
             std::memory_order_relaxed);
         auto start = std::chrono::steady_clock::now();
         bex::sync_wait(bex::starts_on(sched,
-            repeat_effect_until(
+            repeat_until(
                 bex::let_value(bex::just(), [&]() {
                     return capy::as_sender(stream.read_some(
                         capy::mutable_buffer(buf, sizeof(buf))));
@@ -429,15 +432,67 @@ int main()
             after - before};
     }
 
-    // Synchronous — sender pipeline cannot run synchronous
-    // senders. repeat_effect_until requires a trampoline for
-    // synchronous completions, and the trampoline interacts
-    // poorly with the let_value/starts_on sender layering.
-    // Table 1 SYNC_STREAM cells are left at zero.
+
+    // Synchronous — sndr_sync_read_stream (Col A)
+    {
+        sender_thread_pool pool(1);
+        sndr_sync_read_stream stream;
+        auto sched = pool.get_scheduler();
+        int count = OPS_PER_CELL;
+        char buf[64];
+        auto before = g_alloc_count.load(
+            std::memory_order_relaxed);
+        auto start = std::chrono::steady_clock::now();
+        bex::sync_wait(bex::starts_on(sched,
+            repeat_until(
+                bex::let_value(bex::just(), [&]() {
+                    return stream.read_some(
+                        capy::mutable_buffer(buf, sizeof(buf)));
+                }),
+                [&count]() { return --count == 0; })));
+        pool.join();
+        auto elapsed =
+            std::chrono::steady_clock::now() - start;
+        auto after = g_alloc_count.load(
+            std::memory_order_relaxed);
+        grid[run][SENDER_RECEIVER][SYNC_STREAM][NATIVE_EXEC_MODEL] = {
+            std::chrono::duration_cast<
+                std::chrono::nanoseconds>(elapsed).count(),
+            after - before};
+    }
+
+    // Synchronous — ioaw_sync_read_stream (Col B)
+    {
+        sender_thread_pool pool(1);
+        ioaw_sync_read_stream stream;
+        auto sched = pool.get_scheduler();
+        int count = OPS_PER_CELL;
+        char buf[64];
+        auto before = g_alloc_count.load(
+            std::memory_order_relaxed);
+        auto start = std::chrono::steady_clock::now();
+        bex::sync_wait(bex::starts_on(sched,
+            repeat_until(
+                bex::let_value(bex::just(), [&]() {
+                    return capy::as_sender(stream.read_some(
+                        capy::mutable_buffer(buf, sizeof(buf))));
+                }),
+                [&count]() { return --count == 0; })));
+        pool.join();
+        auto elapsed =
+            std::chrono::steady_clock::now() - start;
+        auto after = g_alloc_count.load(
+            std::memory_order_relaxed);
+        grid[run][SENDER_RECEIVER][SYNC_STREAM][BRIDGED_EXEC_MODEL] = {
+            std::chrono::duration_cast<
+                std::chrono::nanoseconds>(elapsed).count(),
+            after - before};
+    }
 
     // ---------------------------------------------------------------
     // Table 2: capy::task (capy::thread_pool)
     // ---------------------------------------------------------------
+
 
     // Native — ioaw_read_stream
     {
@@ -524,6 +579,7 @@ int main()
     // ---------------------------------------------------------------
     // Table 3: beman::execution::task (bex::task<void, io_env>)
     // ---------------------------------------------------------------
+
 
     // Native — sndr_read_stream
     {
@@ -676,18 +732,6 @@ int main()
 
         for (int s = 0; s < NUM_STREAMS; ++s)
         {
-            if (s == SYNC_STREAM &&
-                table == SENDER_RECEIVER)
-            {
-                std::printf(
-                    "  %-18s"
-                    "  %-30s  %-30s\n",
-                    row_labels[s],
-                    "              N/A",
-                    "              N/A");
-                continue;
-            }
-
             double sum[NUM_COLUMNS]{};
             double sum2[NUM_COLUMNS]{};
             double al[NUM_COLUMNS]{};

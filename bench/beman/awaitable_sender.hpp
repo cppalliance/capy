@@ -314,7 +314,10 @@ struct awaitable_sender
             auto h = std::coroutine_handle<>::from_address(
                 static_cast<void*>(&cb_));
 
-            detail::call_await_suspend(&aw_, h, &env_);
+            auto resumed = detail::call_await_suspend(
+                &aw_, h, &env_);
+            if(resumed == h)
+                complete();
         }
     };
 
