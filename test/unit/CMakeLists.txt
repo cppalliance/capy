@@ -12,11 +12,6 @@ list(APPEND PFILES
     CMakeLists.txt
     Jamfile)
 
-# TODO REMOVE
-include_directories(/home/klemens/develop/asio/include /home/klemens/develop/boost)
- 
-
-
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} PREFIX "" FILES ${PFILES})
 
@@ -26,7 +21,6 @@ target_link_libraries(
     Boost::capy_test_suite_main
     Boost::capy)
 
-set_property(TARGET boost_capy_tests PROPERTY COMPILE_WARNING_AS_ERROR ON)
 target_include_directories(boost_capy_tests PRIVATE . ../../)
 
 if(TARGET Boost::asio)

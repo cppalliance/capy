@@ -422,16 +422,6 @@ public:
         p.wg_.executor().dispatch(p.task_cont_).resume();
     }
 };
-/*
-
-template<typename Handler>
-concept value_handler = std::invocable<Handler> || 
-                        std::invocable<Handler, decltype(std::declval<T&>().await_resume())>
-
-template<typename Handler>
-concept error_handler = std::invocable<Handler, std::exception_ptr>;
-
-*/
 
 // Executor only (uses default recycling allocator)
 
@@ -507,7 +497,7 @@ run_async(Ex ex)
     @see task
     @see executor
 */
-template<Executor Ex, typename H1>
+template<Executor Ex, class H1>
 [[nodiscard]] auto
 run_async(Ex ex, H1 h1)
 {
