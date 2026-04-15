@@ -181,7 +181,10 @@ struct boost_asio_both_test
 TEST_SUITE(
     boost_asio_both_test,
     "boost.capy.asio.both");
-#endif
 
 } // namespace capy
 } // namespace boost
+
+#endif
+
+
