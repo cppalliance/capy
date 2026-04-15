@@ -122,9 +122,10 @@ continuation & make_continuation(
     Function && func, 
     Allocator && alloc)
 {
-  return detail::make_continuation_helper(
+  continuation & c = detail::make_continuation_helper(
           std::forward<Function>(func), 
           std::forward<Allocator>(alloc)).cont;
+  return c;
 }
 
 }
