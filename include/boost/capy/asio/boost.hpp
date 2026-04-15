@@ -339,15 +339,14 @@ struct boost_asio_promise_type_allocator_base
   template<typename Handler, Executor Ex, IoRunnable Runnable>
   void * operator new   (std::size_t n, boost_asio_init &, 
                          Handler & handler, 
-                         Ex & exec, Runnable & r)
+                         Ex &, Runnable &)
   {
     using allocator_type = std::allocator_traits<Allocator>
                               ::template rebind_alloc<char>;
     allocator_type allocator(boost::asio::get_associated_allocator(handler));
-    using traits = std::allocator_traits<allocator_type>; //::rebind_alloc<char>()
 
     // round n up to max_align
-    if (const auto d = n % sizeof(std::max_align_t); d >= 0u)
+    if (const auto d = n % sizeof(std::max_align_t); d > 0u)
       n += (sizeof(std::max_align_t) - d);
 
     auto mem = std::allocator_traits<allocator_type>::
@@ -360,7 +359,7 @@ struct boost_asio_promise_type_allocator_base
   }
   void   operator delete(void * ptr, std::size_t n)
   {
-    if (const auto d = n % sizeof(std::max_align_t); d >= 0u)
+    if (const auto d = n % sizeof(std::max_align_t); d > 0u)
       n += (sizeof(std::max_align_t) - d);
   
     using allocator_type = std::allocator_traits<Allocator>
@@ -386,7 +385,7 @@ struct boost_asio_init_promise_type
       boost_asio_init &, 
       Handler & h, 
       Ex & exec, 
-      Runnable & r)
+      Runnable &)
         : handler(h), ex(exec) {}
 
     Handler & handler;
@@ -444,6 +443,11 @@ struct boost_asio_init_promise_type
       boost::asio::cancellation_slot cancel_slot;
 
       continuation c;
+
+      wrapper(Runnable && r, const Ex &ex) 
+          : r(std::move(r)), ex(ex)
+      {
+      }
 
       bool await_ready() {return r.await_ready(); }
 
@@ -529,8 +533,8 @@ struct boost_asio_init
 {
   template<typename Handler, Executor Ex, IoRunnable Runnable> 
   void operator()(
-                  Handler h, 
-                  Ex executor,
+                  Handler , 
+                  Ex,
                   Runnable runnable)
   {
     auto res = co_await runnable;

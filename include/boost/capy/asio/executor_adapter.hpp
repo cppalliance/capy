@@ -27,7 +27,7 @@ struct asio_adapter_context_service
       // shutdown is protected
       ExecutionContext
 {
-    asio_adapter_context_service(boost::capy::execution_context & ctx) {}
+    asio_adapter_context_service(boost::capy::execution_context &) {}
     void shutdown() override {ExecutionContext::shutdown();}
 };
 

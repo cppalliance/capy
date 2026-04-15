@@ -74,7 +74,7 @@ struct boost_asio_both_test
         aw_boost(te, foo()),
         [&](std::exception_ptr ep_, int i_) 
         {
-          ep = ep; 
+          ep = ep_; 
           i = i_;
         });
 
@@ -101,7 +101,7 @@ struct boost_asio_both_test
         aw_boost_tuple(te, foo()),
         [&](std::exception_ptr ep_, int i_) 
         {
-          ep = ep; 
+          ep = ep_; 
           i = i_;
         });
 
@@ -127,7 +127,7 @@ struct boost_asio_both_test
         aw_standalone(te, foo()),
         [&](std::exception_ptr ep_, int i_) 
         {
-          ep = ep; 
+          ep = ep_; 
           i = i_;
         });
 
@@ -154,7 +154,7 @@ struct boost_asio_both_test
         aw_standalone_tuple(te, foo()),
         [&](std::exception_ptr ep_, int i_) 
         {
-          ep = ep; 
+          ep = ep_; 
           i = i_;
         });
 

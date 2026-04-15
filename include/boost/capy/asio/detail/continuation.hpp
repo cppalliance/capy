@@ -112,7 +112,7 @@ struct continuation_helper
 template<std::invocable<> Function, typename Allocator>
 continuation_helper<Allocator> make_continuation_helper(
     Function func, 
-    Allocator alloc)
+    Allocator)
 {
   co_yield func;
 }
