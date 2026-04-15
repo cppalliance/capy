@@ -15,8 +15,6 @@
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
 
-#include <boost/asio/cancellation_signal.hpp>
-#include <boost/asio/post.hpp>
 
 #include <memory_resource>
 #include <optional>
@@ -25,7 +23,6 @@
 namespace boost::capy::detail
 {
 
-
 struct asio_immediate_executor_helper
 {
   enum completed_immediately_t
@@ -33,7 +30,7 @@ struct asio_immediate_executor_helper
     no, maybe, yes, initiating
   };
 
-  asio_executor_adapter<executor_ref> exec;
+  executor_ref exec;
   completed_immediately_t * completed_immediately = nullptr;
 
   template<typename Fn>
@@ -54,7 +51,10 @@ struct asio_immediate_executor_helper
     }
     else
     {
-      boost::asio::post(exec, std::forward<Fn>(fn));
+      exec.post(
+        make_continuation(
+          std::forward<Fn>(fn), 
+          exec.context().get_frame_allocator()));
     }
   }
   
@@ -78,21 +78,13 @@ struct asio_immediate_executor_helper
 };
 
 
-template<typename ... Args>
+template<typename CancellationSlot, typename ... Args>
 struct asio_coroutine_completion_handler
 {
-  struct deleter 
-  {
-    deleter() = default;
-    void operator()(void * h) const
-    {
-      std::coroutine_handle<void>::from_address(h).destroy();
-    }
-  };
   asio_coroutine_unique_handle handle;
   std::optional<std::tuple<Args...>> & result;
   const capy::io_env * env;
-  boost::asio::cancellation_slot slot;
+  CancellationSlot slot;
   asio_immediate_executor_helper::completed_immediately_t * completed_immediately = nullptr;
   
   using allocator_type = std::pmr::polymorphic_allocator<void>;
@@ -101,7 +93,7 @@ struct asio_coroutine_completion_handler
   using executor_type = asio_executor_adapter<executor_ref>;
   executor_type get_executor() const {return env->executor;}
 
-  using cancellation_slot_type = boost::asio::cancellation_slot;
+  using cancellation_slot_type = CancellationSlot;
   cancellation_slot_type get_cancellation_slot() const {return slot;}
 
   using immediate_executor_type = asio_immediate_executor_helper;
@@ -114,7 +106,7 @@ struct asio_coroutine_completion_handler
     std::coroutine_handle<void> h, 
     std::optional<std::tuple<Args...>> & result,
     const capy::io_env * env,
-    boost::asio::cancellation_slot slot = {},
+    CancellationSlot slot = {},
     asio_immediate_executor_helper::completed_immediately_t * ci = nullptr)
     : handle(h), result(result), env(env), slot(slot), completed_immediately(ci) {}
 
@@ -128,6 +120,78 @@ struct asio_coroutine_completion_handler
     std::move(handle)();
   }
 };
+
+
+template<typename CancellationSignal, typename CancellationType, typename ... Ts> 
+struct async_result_impl
+{
+
+    template<typename Initiation, typename... Args>
+    struct awaitable_t
+    {
+        using completed_immediately_t =  capy::detail::asio_immediate_executor_helper::completed_immediately_t;
+    
+        CancellationSignal signal;
+        completed_immediately_t completed_immediately;
+        struct cb
+        {
+          CancellationSignal &signal;
+          cb(CancellationSignal &signal) : signal(signal) {}
+          void operator()() {signal.emit(CancellationType::terminal); }
+        };
+        std::optional<std::stop_callback<cb>> stopper;
+        
+        bool await_ready() const {return false;}
+
+        bool await_suspend(std::coroutine_handle<> h, const capy::io_env * env)
+        {
+          completed_immediately = capy::detail::asio_immediate_executor_helper::completed_immediately_t::initiating;
+          stopper.emplace(env->stop_token, signal);
+          using slot_t = decltype(CancellationSignal().slot());
+          capy::detail::asio_coroutine_completion_handler<slot_t, Ts...> ch(
+            h, result_, env, 
+            signal.slot(), 
+            &completed_immediately);
+
+          std::apply(
+            [&](auto ... args) 
+            {
+              std::move(init_)(
+                std::move(ch), 
+                std::move(args)...);
+            }, 
+            std::move(args_));
+
+          if (completed_immediately == completed_immediately_t::initiating)
+            completed_immediately = completed_immediately_t::no;
+          return completed_immediately != completed_immediately_t::yes;
+        }
+
+        std::tuple<Ts...> await_resume() {return std::move(*result_); }
+
+
+        awaitable_t(Initiation init, std::tuple<Args...> args) 
+              : init_(std::move(init)), args_(std::move(args)) {}
+        awaitable_t(awaitable_t && rhs) noexcept 
+            : init_(std::move(rhs.init_)), args_(std::move(rhs.args_)), result_(std::move(rhs.result_)) {}
+      private:
+        Initiation init_;
+        std::tuple<Args...> args_;
+        std::optional<std::tuple<Ts...>> result_;
+    };
+
+    template <typename Initiation, typename RawCompletionToken, typename... Args>
+    static auto initiate(Initiation&& initiation,
+        RawCompletionToken&&, Args&&... args)
+    {
+      return awaitable_t<
+            std::decay_t<Initiation>, 
+            std::decay_t<Args>...>(
+            std::forward<Initiation>(initiation),
+            std::make_tuple(std::forward<Args>(args)...));
+    }
+};
+
 
 }
 

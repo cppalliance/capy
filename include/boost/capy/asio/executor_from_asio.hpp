@@ -11,125 +11,60 @@
 #define BOOST_CAPY_ASIO_EXECUTOR_FROM_ASIO_HPP
 
 #include <boost/capy/asio/detail/asio_context_service.hpp>
-#include <boost/capy/asio/detail/completion_handler.hpp>
+#include <boost/capy/asio/detail/asio_coroutine_unique_handle.hpp>
+#include <boost/capy/asio/detail/fwd.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 
-#include <boost/asio/dispatch.hpp>
-#include <boost/asio/any_io_executor.hpp>
-#include <boost/asio/io_context.hpp>
+
+#include <memory_resource>
+#include <type_traits>
 
 namespace boost {
 namespace capy {
-
-
-
-template<typename Executor = boost::asio::any_io_executor>
-  requires requires (Executor exec)
-  {
-    {
-      boost::asio::prefer(
-        std::move(exec), 
-        boost::asio::execution::outstanding_work.tracked
-        )
-    } -> std::convertible_to<Executor>;
-    {
-      boost::asio::prefer(
-        std::move(exec), 
-        boost::asio::execution::outstanding_work.untracked
-        )
-    } -> std::convertible_to<Executor>;
-  }
-struct executor_from_asio_properties
+namespace detail
 {
-  executor_from_asio_properties(Executor executor) 
-      noexcept(std::is_nothrow_move_constructible_v<Executor>) 
-      : executor_(std::move(executor)) 
-  {
-  }
-  executor_from_asio_properties(executor_from_asio_properties && rhs) 
-      noexcept(std::is_nothrow_move_constructible_v<Executor>) 
-      : executor_(std::move(rhs.executor_)) 
-  {
-  }
-  executor_from_asio_properties(const executor_from_asio_properties & rhs) 
-      noexcept(std::is_nothrow_copy_constructible_v<Executor>) 
-      : executor_(rhs.executor_)
-  {
-  }
-
-  execution_context& context() const noexcept
-  {
-    auto & ec = boost::asio::query(executor_, boost::asio::execution::context);
-    return boost::asio::use_service<detail::asio_context_service<boost::asio::execution_context>>(ec); 
-  }
-
-  void on_work_started() const noexcept
-  {
-
-    using boost::asio::execution::outstanding_work;
-    if (boost::asio::query(executor_, outstanding_work) == outstanding_work.untracked)
-        executor_ = boost::asio::prefer(
-          std::move(executor_), outstanding_work.tracked);
-  }
-
-  void on_work_finished() const noexcept
-  {
-    using boost::asio::execution::outstanding_work;
-    if (boost::asio::query(executor_, outstanding_work) == outstanding_work.tracked)
-      executor_ = boost::asio::prefer(
-          std::move(executor_), outstanding_work.untracked);
-  }
-
-  std::coroutine_handle<> dispatch(continuation & c) const
-  {
-    boost::asio::dispatch(
-      executor_, 
-      detail::asio_coroutine_unique_handle(c.h)
-    );
-    return std::noop_coroutine();
-  }
-
-  void post(continuation & c) const
-  {
-    boost::asio::post(
-      executor_, 
-      detail::asio_coroutine_unique_handle(c.h)
-    );
-  }
-
-  bool operator==(const executor_from_asio_properties & rhs) const noexcept 
-  { 
-    return executor_  == rhs.executor_;
-  }
-  bool operator!=(const executor_from_asio_properties & rhs) const noexcept 
-  {
-    return executor_  != rhs.executor_;
-  }
-
- private:
-  mutable Executor executor_;
-};
-
 
 template<typename Executor>
-  requires requires (Executor exec)
-  {
-    exec.on_work_started();
-    exec.on_work_finished();
-  }
-struct executor_from_asio_net_ts
+concept AsioNetTsExecutor =  requires (Executor exec, 
+                     std::coroutine_handle<> h,
+                     std::pmr::polymorphic_allocator<void> a)
+    {
+      exec.on_work_started();
+      exec.on_work_finished();
+      exec.dispatch(h, a);
+      exec.post(h, a);
+      exec.context();
+    } ;
+
+template<typename Executor>
+concept AsioBoostStandardExecutor = std::same_as<typename boost::asio::query_result<
+      Executor, 
+      boost::asio::execution::detail::context_t<0>>::type, 
+      boost::asio::execution_context&>;
+
+template<typename Executor>
+concept AsioStandaloneStandardExecutor = std::same_as<typename ::asio::query_result<
+      Executor, 
+      ::asio::execution::detail::context_t<0>>::type, 
+      ::asio::execution_context&>;
+
+}
+
+
+template<detail::AsioNetTsExecutor Executor>
+struct asio_net_ts_executor
 {
-  executor_from_asio_net_ts(Executor executor) 
+  asio_net_ts_executor(Executor executor) 
       noexcept(std::is_nothrow_move_constructible_v<Executor>) 
       : executor_(std::move(executor)) 
   {
   }
-  executor_from_asio_net_ts(executor_from_asio_net_ts && rhs) 
+  asio_net_ts_executor(asio_net_ts_executor && rhs) 
       noexcept(std::is_nothrow_move_constructible_v<Executor>) 
       : executor_(std::move(rhs.executor_)) 
   {
   }
-  executor_from_asio_net_ts(const executor_from_asio_net_ts & rhs) 
+  asio_net_ts_executor(const asio_net_ts_executor & rhs) 
       noexcept(std::is_nothrow_copy_constructible_v<Executor>) 
       : executor_(rhs.executor_)
   {
@@ -137,7 +72,8 @@ struct executor_from_asio_net_ts
 
   execution_context& context() const noexcept
   {
-      return boost::asio::use_service<detail::asio_context_service<boost::asio::execution_context>>
+      using ex_t = std::remove_reference_t<decltype(executor_.context())>;
+      return use_service<detail::asio_context_service<ex_t>>
             (
               executor_.context()
             ); 
@@ -171,11 +107,11 @@ struct executor_from_asio_net_ts
         boost::capy::get_current_frame_allocator()));
   }
 
-  bool operator==(const executor_from_asio_net_ts & rhs) const noexcept 
+  bool operator==(const asio_net_ts_executor & rhs) const noexcept 
   { 
     return executor_  == rhs.executor_;
   }
-  bool operator!=(const executor_from_asio_net_ts & rhs) const noexcept 
+  bool operator!=(const asio_net_ts_executor & rhs) const noexcept 
   {
     return executor_  != rhs.executor_;
   }
@@ -185,40 +121,32 @@ struct executor_from_asio_net_ts
 };
 
 
-namespace detail
-{
+template<detail::AsioBoostStandardExecutor Executor>
+struct asio_boost_standard_executor;
 
+template<detail::AsioStandaloneStandardExecutor Executor>
+struct asio_standalone_standard_executor;
 
-struct executor_from_asio_net_ts_helper
-{
-  template<typename Executor>
-  using impl = executor_from_asio_net_ts<Executor>;
-};
-
-struct executor_from_asio_properties_helper
-{
-  template<typename Executor>
-  using impl = executor_from_asio_properties<Executor>;
-};
 
 template<typename Executor>
-using executor_from_asio_helper = 
-  std::conditional_t<
-      requires (Executor exec) {{exec.on_work_started()};},
-      executor_from_asio_net_ts_helper, 
-      executor_from_asio_properties_helper>
-    ::template impl<Executor>;
-
-}
-
-template<typename Executor = boost::asio::any_io_executor>
-struct executor_from_asio : detail::executor_from_asio_helper<Executor>
+auto wrap_asio_executor(Executor && exec)
 {
-    using detail::executor_from_asio_helper<Executor>::executor_from_asio_helper;
+  using executor_t = std::decay_t<Executor>;
+  if constexpr (detail::AsioNetTsExecutor<executor_t>)
+    return asio_net_ts_executor<executor_t>(std::forward<Executor>(exec));
+  else if constexpr (detail::AsioBoostStandardExecutor<executor_t>)
+    return asio_boost_standard_executor<executor_t>(std::forward<Executor>(exec));
+  else if constexpr (detail::AsioStandaloneStandardExecutor<executor_t>)
+    return asio_standalone_standard_executor<executor_t>(std::forward<Executor>(exec));
+  else
+    static_assert(sizeof(Executor) == 0, "Unknown executor type");
 };
 
+
 template<typename Executor>
-executor_from_asio(Executor) -> executor_from_asio<Executor>;
+using wrap_asio_executor_t = decltype(wrap_asio_executor(std::declval<const Executor &>()));
+
+
 
 }
 }

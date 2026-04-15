@@ -1,0 +1,133 @@
+//
+// Copyright (c) 2026 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+#ifndef BOOST_CAPY_ASIO_CONTINUATION_HPP
+#define BOOST_CAPY_ASIO_CONTINUATION_HPP
+
+#include <boost/capy/continuation.hpp>
+#include <boost/capy/concept/executor.hpp>
+
+#include <memory>
+
+namespace boost::capy
+{
+
+namespace detail
+{
+
+template<typename Allocator>
+struct continuation_handle_promise_base_
+{
+  using alloc_t = std::allocator_traits<Allocator>
+                      ::template rebind_alloc<char>;
+                      
+  template<typename Func>
+  void * operator new(std::size_t n, Func &, Allocator &allocator_)
+  {
+    alloc_t alloc(allocator_);
+    std::size_t m = n;
+    if (n % alignof(alloc_t) > 0)
+      m += alignof(alloc_t) - (n % alignof(alloc_t));
+
+    char * mem = alloc.allocate(m + sizeof(alloc));
+
+    new (mem + m) alloc_t(std::move(alloc));
+    return mem;
+  }
+
+  void operator delete(void * p, std::size_t n)
+  {
+    std::size_t m = n;
+    if (n % alignof(alloc_t) > 0)
+      m += alignof(alloc_t) - (n % alignof(alloc_t));
+
+    auto * a = reinterpret_cast<alloc_t*>(static_cast<char*>(p) + m);
+
+    alloc_t alloc(std::move(*a));
+    a->~alloc_t();
+
+    alloc.deallocate(static_cast<char*>(p), n);
+  }
+};
+
+
+template<>
+struct continuation_handle_promise_base_<std::allocator<void>>
+{
+};
+
+template<typename Allocator>
+struct continuation_handle_promise_type : continuation_handle_promise_base_<Allocator>
+{
+  std::suspend_always initial_suspend() const noexcept  {return {};}
+  std::suspend_never    final_suspend() const noexcept  {return {};}
+
+  template<typename Function>
+  auto yield_value(Function & func)
+  {
+    struct yielder
+    {
+      Function func;
+
+      bool await_ready() const {return false;}
+      void await_suspend(std::coroutine_handle<> h)
+      {
+        auto f = std::move(func);
+        h.destroy();
+        std::move(f)();
+      }
+      void await_resume() {}
+    };
+
+    return yielder{std::move(func)};
+  }
+
+  continuation cont;
+
+  void unhandled_exception() { throw; }
+  continuation &  get_return_object() 
+  {
+    using handle_t = std::coroutine_handle<continuation_handle_promise_type>;
+    cont.h = handle_t::from_promise(*this);
+    cont.next = nullptr;
+    return cont;
+  }
+};
+
+template<typename Allocator>
+struct continuation_helper 
+{
+    capy::continuation &cont;
+    continuation_helper(continuation & cont) noexcept : cont(cont) {}
+    using promise_type = continuation_handle_promise_type<Allocator>;
+};
+
+template<std::invocable<> Function, typename Allocator>
+continuation_helper<Allocator> make_continuation_helper(Function func, Allocator alloc)
+{
+  co_yield func;
+}
+
+template<std::invocable<> Function, typename Allocator>
+continuation & make_continuation(
+    Function && func, 
+    Allocator && alloc)
+{
+  return detail::make_continuation_helper(
+          std::forward<Function>(func), 
+          std::forward<Allocator>(alloc)).cont;
+}
+
+}
+
+
+}
+
+#endif 
+

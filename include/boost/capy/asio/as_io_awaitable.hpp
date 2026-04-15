@@ -1,4 +1,3 @@
-//
 // Copyright (c) 2026 Vinnie Falco (vinnie.falco@gmail.com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
@@ -7,80 +6,72 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_ASIO_AS_IO_AWAITABLE 
-#define BOOST_CAPY_ASIO_AS_IO_AWAITABLE
+#ifndef BOOST_CAPY_ASIO_DETAIL_AS_IO_AWAITABLE_HPP
+#define BOOST_CAPY_ASIO_DETAIL_AS_IO_AWAITABLE_HPP
 
-#include <boost/capy/asio/detail/as_io_awaitable.hpp>
-#include <boost/capy/asio/detail/completion_handler.hpp>
-#include <boost/asio/async_result.hpp>
+#include <type_traits>
+#include <utility>
 
-#include <optional>
-
-
-template <typename... Ts>
-struct boost::asio::async_result<boost::capy::as_io_awaitable_t, void(Ts...)>
+namespace boost::capy
 {
-    template<typename Initiation, typename... Args>
-    struct awaitable_t
+
+
+struct as_io_awaitable_t 
+{
+  /// Default constructor.
+  constexpr as_io_awaitable_t()
+  {
+  }
+
+  /// Adapts an executor to add the @c use_op_t completion token as the
+  /// default.
+  template <typename InnerExecutor>
+  struct executor_with_default : InnerExecutor
+  {
+    /// Specify @c use_op_t as the default completion token type.
+    typedef as_io_awaitable_t default_completion_token_type;
+
+    executor_with_default(const InnerExecutor& ex) noexcept
+        : InnerExecutor(ex)
     {
-        cancellation_signal signal;
-        capy::detail::asio_immediate_executor_helper::completed_immediately_t ci;
-
-        struct cb
-        {
-          cancellation_signal &signal;
-          cb(cancellation_signal &signal) : signal(signal) {}
-          void operator()() {signal.emit(cancellation_type::terminal); }
-        };
-        std::optional<std::stop_callback<cb>> stopper;
-        
-        bool await_ready() const {return false;}
-
-        void await_suspend(std::coroutine_handle<> h, const capy::io_env * env)
-        {
-          stopper.emplace(env->stop_token, signal);
-          capy::detail::asio_coroutine_completion_handler<Ts...> ch(
-            h, result_, env, 
-            signal.slot(), 
-            &ci);
-
-          std::apply(
-            [&](auto ... args) 
-            {
-              std::move(init_)(
-                std::move(ch), 
-                std::move(args)...);
-            }, 
-            std::move(args_));
-          
-        }
-
-        std::tuple<Ts...> await_resume() {return std::move(*result_); }
-
-
-        awaitable_t(Initiation init, std::tuple<Args...> args) 
-              : init_(std::move(init)), args_(std::move(args)) {}
-        awaitable_t(awaitable_t && rhs) noexcept 
-            : init_(std::move(rhs.init_)), args_(std::move(rhs.args_)), result_(std::move(rhs.result_)) {}
-      private:
-        Initiation init_;
-        std::tuple<Args...> args_;
-        std::optional<std::tuple<Ts...>> result_;
-    
-    };
-
-    template <typename Initiation, typename RawCompletionToken, typename... Args>
-    static auto initiate(Initiation&& initiation,
-        RawCompletionToken&&, Args&&... args)
-    {
-      return awaitable_t<
-            std::decay_t<Initiation>, 
-            std::decay_t<Args>...>(
-            std::forward<Initiation>(initiation),
-            std::make_tuple(std::forward<Args>(args)...));
     }
-};
 
+    /// Construct the adapted executor from the inner executor type.
+    template <typename InnerExecutor1>
+    executor_with_default(const InnerExecutor1& ex,
+                          typename std::enable_if<
+                              std::conditional<
+                              !std::is_same<InnerExecutor1, executor_with_default>::value,
+                                  std::is_convertible<InnerExecutor1, InnerExecutor>,
+                          std::false_type
+          >::type::value>::type = 0) noexcept
+      : InnerExecutor(ex)
+    {
+    }
+  };
+
+  /// Type alias to adapt an I/O object to use @c use_op_t as its
+  /// default completion token type.
+  template <typename T>
+  using as_default_on_t = typename T::template rebind_executor<
+        executor_with_default<typename T::executor_type> >::other;
+
+  /// Function helper to adapt an I/O object to use @c use_op_t as its
+  /// default completion token type.
+  template <typename T>
+  static typename std::decay_t<T>::template rebind_executor<
+      executor_with_default<typename std::decay_t<T>::executor_type>
+    >::other
+  as_default_on(T && object)
+  {
+    return typename std::decay_t<T>::template rebind_executor<
+        executor_with_default<typename std::decay_t<T>::executor_type>
+      >::other(std::forward<T>(object));
+  }
+};
+constexpr as_io_awaitable_t as_io_awaitable;
+
+
+}
 
 #endif
-
