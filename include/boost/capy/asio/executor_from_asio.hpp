@@ -37,16 +37,18 @@ concept AsioNetTsExecutor =  requires (Executor exec,
     } ;
 
 template<typename Executor>
-concept AsioBoostStandardExecutor = std::same_as<typename boost::asio::query_result<
-      Executor, 
-      boost::asio::execution::detail::context_t<0>>::type, 
-      boost::asio::execution_context&>;
+concept AsioBoostStandardExecutor = std::same_as<
+      typename boost::asio::query_result<
+        Executor, 
+        boost::asio::execution::detail::context_t<0>>::type, 
+        boost::asio::execution_context&>;
 
 template<typename Executor>
-concept AsioStandaloneStandardExecutor = std::same_as<typename ::asio::query_result<
-      Executor, 
-      ::asio::execution::detail::context_t<0>>::type, 
-      ::asio::execution_context&>;
+concept AsioStandaloneStandardExecutor = std::same_as<
+      typename ::asio::query_result<
+        Executor, 
+        ::asio::execution::detail::context_t<0>>::type, 
+        ::asio::execution_context&>;
 
 }
 
@@ -133,18 +135,25 @@ auto wrap_asio_executor(Executor && exec)
 {
   using executor_t = std::decay_t<Executor>;
   if constexpr (detail::AsioNetTsExecutor<executor_t>)
-    return asio_net_ts_executor<executor_t>(std::forward<Executor>(exec));
+    return asio_net_ts_executor<executor_t>(
+              std::forward<Executor>(exec)
+            );
   else if constexpr (detail::AsioBoostStandardExecutor<executor_t>)
-    return asio_boost_standard_executor<executor_t>(std::forward<Executor>(exec));
+    return asio_boost_standard_executor<executor_t>(
+              std::forward<Executor>(exec)
+            );
   else if constexpr (detail::AsioStandaloneStandardExecutor<executor_t>)
-    return asio_standalone_standard_executor<executor_t>(std::forward<Executor>(exec));
+    return asio_standalone_standard_executor<executor_t>(
+              std::forward<Executor>(exec)
+            );
   else
     static_assert(sizeof(Executor) == 0, "Unknown executor type");
 };
 
 
 template<typename Executor>
-using wrap_asio_executor_t = decltype(wrap_asio_executor(std::declval<const Executor &>()));
+using wrap_asio_executor_t 
+        = decltype(wrap_asio_executor(std::declval<const Executor &>()));
 
 
 

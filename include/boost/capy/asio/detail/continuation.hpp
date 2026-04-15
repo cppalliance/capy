@@ -63,7 +63,8 @@ struct continuation_handle_promise_base_<std::allocator<void>>
 };
 
 template<typename Allocator>
-struct continuation_handle_promise_type : continuation_handle_promise_base_<Allocator>
+struct continuation_handle_promise_type 
+    : continuation_handle_promise_base_<Allocator>
 {
   std::suspend_always initial_suspend() const noexcept  {return {};}
   std::suspend_never    final_suspend() const noexcept  {return {};}
@@ -109,7 +110,9 @@ struct continuation_helper
 };
 
 template<std::invocable<> Function, typename Allocator>
-continuation_helper<Allocator> make_continuation_helper(Function func, Allocator alloc)
+continuation_helper<Allocator> make_continuation_helper(
+    Function func, 
+    Allocator alloc)
 {
   co_yield func;
 }

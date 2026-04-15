@@ -38,13 +38,14 @@ struct as_io_awaitable_t
 
     /// Construct the adapted executor from the inner executor type.
     template <typename InnerExecutor1>
-    executor_with_default(const InnerExecutor1& ex,
-                          typename std::enable_if<
-                              std::conditional<
-                              !std::is_same<InnerExecutor1, executor_with_default>::value,
-                                  std::is_convertible<InnerExecutor1, InnerExecutor>,
-                          std::false_type
-          >::type::value>::type = 0) noexcept
+    executor_with_default(
+      const InnerExecutor1& ex,
+      typename std::enable_if<
+        std::conditional<
+          !std::is_same<InnerExecutor1, executor_with_default>::value,
+          std::is_convertible<InnerExecutor1, InnerExecutor>,
+          std::false_type
+        >::type::value>::type = 0) noexcept
       : InnerExecutor(ex)
     {
     }
@@ -75,3 +76,4 @@ constexpr as_io_awaitable_t as_io_awaitable;
 }
 
 #endif
+

@@ -41,7 +41,7 @@ struct asio_immediate_executor_helper
         ((*completed_immediately == initiating)
       || (*completed_immediately == maybe)))
     {
-      // only use this indicator if the fn will actually call our completion-handler
+      // only use this indicator if the fn will actually call our handler
       // otherwise this was a single op in a composed operation
       *completed_immediately = maybe;
       fn();
@@ -70,9 +70,13 @@ struct asio_immediate_executor_helper
     return lhs.exec != rhs.exec;
   }
   
-  asio_immediate_executor_helper(const asio_immediate_executor_helper & rhs) noexcept = default;
-  asio_immediate_executor_helper(executor_ref inner, completed_immediately_t * completed_immediately)
-        : exec(std::move(inner)), completed_immediately(completed_immediately)
+  asio_immediate_executor_helper(
+      const asio_immediate_executor_helper & rhs) noexcept = default;
+      
+  asio_immediate_executor_helper(
+      executor_ref inner, 
+      completed_immediately_t * completed_immediately
+      ) : exec(std::move(inner)), completed_immediately(completed_immediately)
   {
   }
 };
@@ -85,7 +89,9 @@ struct asio_coroutine_completion_handler
   std::optional<std::tuple<Args...>> & result;
   const capy::io_env * env;
   CancellationSlot slot;
-  asio_immediate_executor_helper::completed_immediately_t * completed_immediately = nullptr;
+  using completed_immediately_t = asio_immediate_executor_helper::completed_immediately_t;
+  
+  completed_immediately_t * completed_immediately = nullptr;
   
   using allocator_type = std::pmr::polymorphic_allocator<void>;
   allocator_type get_allocator() const {return env->frame_allocator;}
@@ -107,8 +113,12 @@ struct asio_coroutine_completion_handler
     std::optional<std::tuple<Args...>> & result,
     const capy::io_env * env,
     CancellationSlot slot = {},
-    asio_immediate_executor_helper::completed_immediately_t * ci = nullptr)
-    : handle(h), result(result), env(env), slot(slot), completed_immediately(ci) {}
+    completed_immediately_t * ci = nullptr)
+    : handle(h)
+    , result(result)
+    , env(env)
+    , slot(slot), completed_immediately(ci)
+  {}
 
   asio_coroutine_completion_handler(
       asio_coroutine_completion_handler &&
@@ -129,10 +139,12 @@ struct async_result_impl
     template<typename Initiation, typename... Args>
     struct awaitable_t
     {
-        using completed_immediately_t =  capy::detail::asio_immediate_executor_helper::completed_immediately_t;
+        using completed_immediately_t 
+            = asio_immediate_executor_helper::completed_immediately_t;
     
         CancellationSignal signal;
         completed_immediately_t completed_immediately;
+        
         struct cb
         {
           CancellationSignal &signal;
@@ -145,7 +157,7 @@ struct async_result_impl
 
         bool await_suspend(std::coroutine_handle<> h, const capy::io_env * env)
         {
-          completed_immediately = capy::detail::asio_immediate_executor_helper::completed_immediately_t::initiating;
+          completed_immediately = completed_immediately_t::initiating;
           stopper.emplace(env->stop_token, signal);
           using slot_t = decltype(CancellationSignal().slot());
           capy::detail::asio_coroutine_completion_handler<slot_t, Ts...> ch(
@@ -171,18 +183,23 @@ struct async_result_impl
 
 
         awaitable_t(Initiation init, std::tuple<Args...> args) 
-              : init_(std::move(init)), args_(std::move(args)) {}
+              : init_(std::move(init)), args_(std::move(args)) 
+        {
+        }
+        
         awaitable_t(awaitable_t && rhs) noexcept 
-            : init_(std::move(rhs.init_)), args_(std::move(rhs.args_)), result_(std::move(rhs.result_)) {}
+            : init_(std::move(rhs.init_))
+            , args_(std::move(rhs.args_))
+            , result_(std::move(rhs.result_)) {}
       private:
         Initiation init_;
         std::tuple<Args...> args_;
         std::optional<std::tuple<Ts...>> result_;
     };
 
-    template <typename Initiation, typename RawCompletionToken, typename... Args>
+    template <typename Initiation, typename RawToken, typename... Args>
     static auto initiate(Initiation&& initiation,
-        RawCompletionToken&&, Args&&... args)
+        RawToken&&, Args&&... args)
     {
       return awaitable_t<
             std::decay_t<Initiation>, 
@@ -196,3 +213,4 @@ struct async_result_impl
 }
 
 #endif //BOOST_CAPY_ASIO_DETAIL_COMPLETION_HANDLER
+

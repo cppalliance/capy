@@ -14,7 +14,6 @@
 
 #include <exception>
 #include <tuple>
-#include <type_traits>
 
 namespace boost {
 namespace capy {
@@ -70,3 +69,4 @@ using completion_tuple_for_io_runnable
 }
 
 #endif
+

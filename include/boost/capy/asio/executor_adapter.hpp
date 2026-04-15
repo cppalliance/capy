@@ -49,18 +49,21 @@ struct asio_executor_adapter
   
 
   template<int Bits_>
-  asio_executor_adapter(const asio_executor_adapter<Executor, Allocator, Bits_> & rhs) 
-      noexcept(std::is_nothrow_copy_constructible_v<Executor>)
-      : executor_(rhs.executor_), allocator_(rhs.allocator_)
+  asio_executor_adapter(
+      const asio_executor_adapter<Executor, Allocator, Bits_> & rhs)
+        noexcept(std::is_nothrow_copy_constructible_v<Executor>)
+        : executor_(rhs.executor_), allocator_(rhs.allocator_)
   {  
     if constexpr((Bits & work_mask) == work_tracked)
       executor_.on_work_started();
   }
   
   template<int Bits_>
-  asio_executor_adapter(asio_executor_adapter<Executor, Allocator, Bits_> && rhs) 
-    noexcept(std::is_nothrow_move_constructible_v<Executor>)
-      : executor_(std::move(rhs.executor_)), allocator_(std::move(rhs.allocator_))
+  asio_executor_adapter(
+      asio_executor_adapter<Executor, Allocator, Bits_> && rhs) 
+        noexcept(std::is_nothrow_move_constructible_v<Executor>)
+        : executor_(std::move(rhs.executor_))
+        , allocator_(std::move(rhs.allocator_))
   {
     if constexpr((Bits & work_mask) == work_tracked)
       executor_.on_work_started();
@@ -81,15 +84,17 @@ struct asio_executor_adapter
             const Allocator & alloc) 
         noexcept(std::is_nothrow_move_constructible_v<Executor> && 
                  std::is_nothrow_copy_constructible_v<Allocator>)
-      : executor_(std::move(executor.executor_)), allocator_(alloc)
+        : executor_(std::move(executor.executor_)), allocator_(alloc)
   {
     if constexpr((Bits & work_mask) == work_tracked)
       executor_.on_work_started();
   }
   
   
-  asio_executor_adapter(Executor executor) noexcept(std::is_nothrow_move_constructible_v<Executor>)
-        : executor_(std::move(executor)), allocator_(executor_.context().get_frame_allocator())
+  asio_executor_adapter(Executor executor) 
+        noexcept(std::is_nothrow_move_constructible_v<Executor>)
+        : executor_(std::move(executor))
+        , allocator_(executor_.context().get_frame_allocator())
   {
     if constexpr((Bits & work_mask) == work_tracked)
       executor_.on_work_started();
@@ -102,7 +107,8 @@ struct asio_executor_adapter
   }
 
   template<int Bits_>
-  asio_executor_adapter & operator=(const asio_executor_adapter<Executor, Allocator, Bits_> & rhs) 
+  asio_executor_adapter & operator=(
+      const asio_executor_adapter<Executor, Allocator, Bits_> & rhs) 
   {
     
     if constexpr((Bits & work_mask) == work_tracked)        
@@ -131,9 +137,12 @@ struct asio_executor_adapter
   void execute(Function&& f) const
   {
     if constexpr ((Bits & blocking_mask)  == blocking_never)
-      executor_.post(detail::make_continuation(std::forward<Function>(f), allocator_));
+      executor_.post(
+          detail::make_continuation(std::forward<Function>(f), allocator_));
     else if constexpr((Bits & blocking_mask) == blocking_possibly)
-      executor_.dispatch(detail::make_continuation(std::forward<Function>(f), allocator_)).resume();
+      executor_.dispatch(
+          detail::make_continuation(std::forward<Function>(f), allocator_)
+        ).resume();
     else if constexpr((Bits & blocking_mask) == blocking_always)
       std::forward<Function>(f)();    
   }
@@ -151,11 +160,9 @@ struct asio_executor_adapter
   
 };
 
-
-
-
 }
 }
 
 
 #endif //BOOST_CAPY_ASIO_EXECUTOR_ADAPTER_HPP
+

@@ -50,3 +50,4 @@ struct query_result;
 
 
 #endif // BOOST_CAPY_ASIO_DETAIL_FWD_HPP
+

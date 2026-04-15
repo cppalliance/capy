@@ -71,7 +71,8 @@ struct asio_spawn_op
   template<detail::asio_standalone_spawn_token<Executor, Runnable> Token>
   auto operator()(Token && token)
   {
-    return detail::initialize_asio_standalone_spawn_helper<Runnable, Token>::init(
+    return detail::initialize_asio_standalone_spawn_helper<Runnable, Token>::init
+          (
             std::move(executor_), 
             std::move(runnable_), 
             std::forward<Token>(token)

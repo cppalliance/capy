@@ -42,7 +42,8 @@ boost::asio::execution_context&
     query(const asio_executor_adapter<Executor, Allocator, Bits> & exec, 
           boost::asio::execution::context_t) noexcept
 {
-  using service = detail::asio_adapter_context_service<boost::asio::execution_context>;
+  using service = detail::asio_adapter_context_service<
+                                        boost::asio::execution_context>;
   return exec.context().
         template use_service<service>();
 }
@@ -54,9 +55,12 @@ constexpr boost::asio::execution::blocking_t
 {
   switch (Bits & exec.blocking_mask)
   {
-    case exec.blocking_never:  return boost::asio::execution::blocking.never;
-    case exec.blocking_always: return boost::asio::execution::blocking.always;
-    case exec.blocking_possibly:  return boost::asio::execution::blocking.possibly;
+    case exec.blocking_never: 
+        return boost::asio::execution::blocking.never;
+    case exec.blocking_always: 
+        return boost::asio::execution::blocking.always;
+    case exec.blocking_possibly:
+        return boost::asio::execution::blocking.possibly;
     default: return {};
   }
 }
@@ -66,8 +70,8 @@ constexpr auto
     require(const asio_executor_adapter<Executor, Allocator, Bits> & exec, 
             boost::asio::execution::blocking_t::possibly_t)
 {
-  constexpr int new_bits = (Bits & ~exec.blocking_mask) | exec.blocking_possibly;
-  return asio_executor_adapter<Executor, Allocator, new_bits>(exec);
+  constexpr int nb = (Bits & ~exec.blocking_mask) | exec.blocking_possibly;
+  return asio_executor_adapter<Executor, Allocator, nb>(exec);
 }
 
 template<typename Executor, typename Allocator, int Bits>
@@ -75,8 +79,8 @@ constexpr auto
     require(const asio_executor_adapter<Executor, Allocator, Bits> & exec, 
             boost::asio::execution::blocking_t::never_t) 
 {
-  constexpr int new_bits = (Bits & ~exec.blocking_mask) | exec.blocking_never;
-  return asio_executor_adapter<Executor, Allocator, new_bits>(exec);
+  constexpr int nb = (Bits & ~exec.blocking_mask) | exec.blocking_never;
+  return asio_executor_adapter<Executor, Allocator, nb>(exec);
 }
 
 template<typename Executor, typename Allocator, int Bits>
@@ -84,8 +88,8 @@ constexpr auto
     require(const asio_executor_adapter<Executor, Allocator, Bits> & exec, 
             boost::asio::execution::blocking_t::always_t)
 {
-  constexpr int new_bits = (Bits & ~exec.blocking_mask) | exec.blocking_always;
-  return asio_executor_adapter<Executor, Allocator, new_bits>(exec);
+  constexpr int nb = (Bits & ~exec.blocking_mask) | exec.blocking_always;
+  return asio_executor_adapter<Executor, Allocator, nb>(exec);
 }
 
 template<typename Executor, typename Allocator, int Bits>
@@ -105,7 +109,7 @@ static constexpr boost::asio::execution::outstanding_work_t query(
 
 template<typename Executor, typename Allocator, int Bits>
 constexpr auto
-    require(const asio_executor_adapter<Executor, Allocator, Bits> & exec, 
+    require(const asio_executor_adapter<Executor, Allocator, Bits> & exec,
             boost::asio::execution::outstanding_work_t::tracked_t) 
 {
   constexpr int new_bits = (Bits & ~exec.work_mask) | exec.work_tracked;
@@ -146,10 +150,14 @@ constexpr auto
             boost::asio::execution::allocator_t<void> a) 
               noexcept(std::is_nothrow_move_constructible_v<Executor>)
 {
-  return asio_executor_adapter<Executor, std::pmr::polymorphic_allocator<void>, Bits>(
-          exec,
-          exec.context().get_frame_allocator()
-        );
+  return asio_executor_adapter<
+        Executor, 
+        std::pmr::polymorphic_allocator<void>, 
+        Bits>
+          (
+            exec,
+            exec.context().get_frame_allocator()
+          );
 }
 
 namespace detail
@@ -225,19 +233,25 @@ struct asio_boost_standard_executor
   execution_context& context() const noexcept
   {
     auto & ec = boost::asio::query(executor_, boost::asio::execution::context);
-    return boost::asio::use_service<detail::asio_context_service<boost::asio::execution_context>>(ec); 
+    return boost::asio::use_service<
+              detail::asio_context_service<boost::asio::execution_context>
+            >(ec); 
   }
 
   void on_work_started() const noexcept
   {
     auto & ec = boost::asio::query(executor_, boost::asio::execution::context);
-    boost::asio::use_service<detail::asio_work_tracker_service<Executor>>(ec).work_started(executor_);
+    boost::asio::use_service<
+        detail::asio_work_tracker_service<Executor>
+      >(ec).work_started(executor_);
   }
 
   void on_work_finished() const noexcept
   {
     auto & ec = boost::asio::query(executor_, boost::asio::execution::context);
-    boost::asio::use_service<detail::asio_work_tracker_service<Executor>>(ec).work_finished();
+    boost::asio::use_service<
+        detail::asio_work_tracker_service<Executor>
+      >(ec).work_finished();
   }
 
 
@@ -257,14 +271,14 @@ struct asio_boost_standard_executor
   void post(continuation & c) const
   {
     boost::asio::prefer(
-        boost::asio::require(executor_, boost::asio::execution::blocking.never),
-        boost::asio::execution::relationship.fork,
-        boost::asio::execution::allocator(
-          std::pmr::polymorphic_allocator<void>(
-            context().get_frame_allocator()
-            )
+      boost::asio::require(executor_, boost::asio::execution::blocking.never),
+      boost::asio::execution::relationship.fork,
+      boost::asio::execution::allocator(
+        std::pmr::polymorphic_allocator<void>(
+          context().get_frame_allocator()
           )
-        ).execute(detail::asio_coroutine_unique_handle(c.h));
+        )
+      ).execute(detail::asio_coroutine_unique_handle(c.h));
   }
   bool operator==(const asio_boost_standard_executor & rhs) const noexcept 
   { 
@@ -280,15 +294,21 @@ struct asio_boost_standard_executor
 };
 
 
-template<Executor ExecutorType, IoRunnable Runnable,
-         boost::asio::completion_token_for<detail::completion_signature_for_io_runnable<Runnable>> Token>
+template<Executor ExecutorType, 
+         IoRunnable Runnable,
+         boost::asio::completion_token_for<
+          detail::completion_signature_for_io_runnable<Runnable>
+         > Token>
 auto asio_spawn(ExecutorType exec, Runnable && runnable, Token token)
 {
   return asio_spawn(exec, std::forward<Runnable>(runnable))(std::move(token));
 }
 
-template<ExecutionContext Context, IoRunnable Runnable,
-         boost::asio::completion_token_for<detail::completion_signature_for_io_runnable<Runnable>> Token>
+template<ExecutionContext Context, 
+         IoRunnable Runnable,
+         boost::asio::completion_token_for<
+          detail::completion_signature_for_io_runnable<Runnable>
+         > Token>
 auto asio_spawn(Context & ctx, Runnable && runnable, Token token)
 {
   return asio_spawn(ctx.get_executor(), std::forward<Runnable>(runnable))(std::move(token));
@@ -298,7 +318,10 @@ auto asio_spawn(Context & ctx, Runnable && runnable, Token token)
 
 template<typename ... Ts>
 struct boost::asio::async_result<boost::capy::as_io_awaitable_t, void(Ts...)>
-  : boost::capy::detail::async_result_impl<boost::asio::cancellation_signal, boost::asio::cancellation_type, Ts...>
+  : boost::capy::detail::async_result_impl<
+      boost::asio::cancellation_signal, 
+      boost::asio::cancellation_type, 
+      Ts...>
 {
 };
 
@@ -318,7 +341,8 @@ struct boost_asio_promise_type_allocator_base
                          Handler & handler, 
                          Ex & exec, Runnable & r)
   {
-    using allocator_type = std::allocator_traits<Allocator>::template rebind_alloc<char>;
+    using allocator_type = std::allocator_traits<Allocator>
+                              ::template rebind_alloc<char>;
     allocator_type allocator(boost::asio::get_associated_allocator(handler));
     using traits = std::allocator_traits<allocator_type>; //::rebind_alloc<char>()
 
@@ -339,8 +363,10 @@ struct boost_asio_promise_type_allocator_base
     if (const auto d = n % sizeof(std::max_align_t); d >= 0u)
       n += (sizeof(std::max_align_t) - d);
   
-    using allocator_type = std::allocator_traits<Allocator>::template rebind_alloc<char>;
-    auto allocator_p = reinterpret_cast<allocator_type*>(static_cast<char*>(ptr) + n);
+    using allocator_type = std::allocator_traits<Allocator>
+                              ::template rebind_alloc<char>;
+    auto allocator_p = reinterpret_cast<allocator_type*>(
+                                static_cast<char*>(ptr) + n);
     auto allocator = std::move(*allocator_p);
 
     allocator_p->~allocator_type();
@@ -351,11 +377,16 @@ struct boost_asio_promise_type_allocator_base
 
 template<typename Handler, Executor Ex, IoRunnable Runnable>
 struct boost_asio_init_promise_type 
-  : boost_asio_promise_type_allocator_base<boost::asio::associated_allocator_t<Handler>>
+  : boost_asio_promise_type_allocator_base<
+      boost::asio::associated_allocator_t<Handler>>
 {
     using args_type = completion_tuple_for_io_runnable<Runnable>;
   
-    boost_asio_init_promise_type(boost_asio_init &, Handler & h, Ex & exec, Runnable & r)  
+    boost_asio_init_promise_type(
+      boost_asio_init &, 
+      Handler & h, 
+      Ex & exec, 
+      Runnable & r)
         : handler(h), ex(exec) {}
 
     Handler & handler;
@@ -392,7 +423,8 @@ struct boost_asio_init_promise_type
               args_);
 
         asio_executor_adapter aex(ex);
-        auto exec = boost::asio::get_associated_immediate_executor(handler, ex_);
+        auto exec = 
+            boost::asio::get_associated_immediate_executor(handler, ex_);
         boost::asio::dispatch(exec, std::move(handler));                  
       }
       void await_resume() const {}
@@ -415,7 +447,8 @@ struct boost_asio_init_promise_type
 
       bool await_ready() {return r.await_ready(); }
 
-      std::coroutine_handle<> await_suspend(std::coroutine_handle<boost_asio_init_promise_type> tr)
+      std::coroutine_handle<> await_suspend(
+          std::coroutine_handle<boost_asio_init_promise_type> tr)
       {
         // always post in
         auto h = r.handle();
@@ -424,7 +457,9 @@ struct boost_asio_init_promise_type
         env.executor = ex;
 
         env.stop_token = stop_src.get_token();
-        cancel_slot = boost::asio::get_associated_cancellation_slot(tr.promise().handler);
+        cancel_slot = 
+          boost::asio::get_associated_cancellation_slot(tr.promise().handler);
+          
         if (cancel_slot.is_connected())
           cancel_slot.assign(
               [this](boost::asio::cancellation_type ct)
@@ -505,7 +540,10 @@ struct boost_asio_init
 
 template<typename Runnable, typename Token> 
   requires
-    boost::asio::completion_token_for<Token, completion_signature_for_io_runnable<Runnable>>
+    boost::asio::completion_token_for<
+        Token, 
+        completion_signature_for_io_runnable<Runnable>
+    >
 struct initialize_asio_spawn_helper<Runnable, Token>
 {
   template<typename Executor>
@@ -524,9 +562,17 @@ struct initialize_asio_spawn_helper<Runnable, Token>
 
 
 template<typename Handler, typename Executor, typename Runnable>
-struct std::coroutine_traits<void, boost::capy::detail::boost_asio_init&, Handler, Executor, Runnable>
+struct std::coroutine_traits<void, 
+                            boost::capy::detail::boost_asio_init&, 
+                            Handler, 
+                            Executor, 
+                            Runnable>
 {
-  using promise_type = boost::capy::detail::boost_asio_init_promise_type<Handler, Executor, Runnable>;
+  using promise_type 
+      = boost::capy::detail::boost_asio_init_promise_type<
+                      Handler, 
+                      Executor, 
+                      Runnable>;
 }; 
 
 #endif //BOOST_CAPY_ASIO_BOOST_HPP
