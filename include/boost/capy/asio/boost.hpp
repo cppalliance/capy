@@ -104,16 +104,18 @@ boost::asio::execution_context&
  */
 template<typename Executor, typename Allocator, int Bits>
 constexpr boost::asio::execution::blocking_t
-    query(const asio_executor_adapter<Executor, Allocator, Bits> & exec,
+    query(const asio_executor_adapter<Executor, Allocator, Bits> &,
           boost::asio::execution::blocking_t) noexcept
 {
-  switch (Bits & exec.blocking_mask)
+  using ex = asio_executor_adapter<Executor, Allocator, Bits>;
+
+  switch (Bits & ex::blocking_mask)
   {
-    case exec.blocking_never:
+    case ex::blocking_never:
         return boost::asio::execution::blocking.never;
-    case exec.blocking_always:
+    case ex::blocking_always:
         return boost::asio::execution::blocking.always;
-    case exec.blocking_possibly:
+    case ex::blocking_possibly:
         return boost::asio::execution::blocking.possibly;
     default: return {};
   }
@@ -132,8 +134,9 @@ constexpr auto
     require(const asio_executor_adapter<Executor, Allocator, Bits> & exec,
             boost::asio::execution::blocking_t::possibly_t)
 {
-  constexpr int nb = (Bits & ~exec.blocking_mask) | exec.blocking_possibly;
-  return asio_executor_adapter<Executor, Allocator, nb>(exec);
+  using ex = asio_executor_adapter<Executor, Allocator, Bits>;
+  constexpr int new_bits = (Bits & ~ex::blocking_mask) | ex::blocking_possibly;
+  return asio_executor_adapter<Executor, Allocator, new_bits>(exec);
 }
 
 /** @brief Requires blocking.never property.
@@ -144,8 +147,9 @@ constexpr auto
     require(const asio_executor_adapter<Executor, Allocator, Bits> & exec,
             boost::asio::execution::blocking_t::never_t)
 {
-  constexpr int nb = (Bits & ~exec.blocking_mask) | exec.blocking_never;
-  return asio_executor_adapter<Executor, Allocator, nb>(exec);
+  using ex = asio_executor_adapter<Executor, Allocator, Bits>;
+  constexpr int new_bits = (Bits & ~ex::blocking_mask) | ex::blocking_never;
+  return asio_executor_adapter<Executor, Allocator, new_bits>(exec);
 }
 
 /** @brief Requires blocking.always property.
@@ -156,8 +160,9 @@ constexpr auto
     require(const asio_executor_adapter<Executor, Allocator, Bits> & exec,
             boost::asio::execution::blocking_t::always_t)
 {
-  constexpr int nb = (Bits & ~exec.blocking_mask) | exec.blocking_always;
-  return asio_executor_adapter<Executor, Allocator, nb>(exec);
+    using ex = asio_executor_adapter<Executor, Allocator, Bits>;
+constexpr int new_bits = (Bits & ~ex::blocking_mask) | ex::blocking_always;
+  return asio_executor_adapter<Executor, Allocator, new_bits>(exec);
 }
 
 /** @brief Queries the outstanding_work property.
@@ -166,14 +171,15 @@ constexpr auto
  */
 template<typename Executor, typename Allocator, int Bits>
 static constexpr boost::asio::execution::outstanding_work_t query(
-    const asio_executor_adapter<Executor, Allocator, Bits> & exec,
+    const asio_executor_adapter<Executor, Allocator, Bits> &,
     boost::asio::execution::outstanding_work_t) noexcept
 {
-  switch (Bits & exec.work_mask)
+  using ex = asio_executor_adapter<Executor, Allocator, Bits>;
+  switch (Bits & ex::work_mask)
   {
-    case exec.work_tracked:
+    case ex::work_tracked:
       return boost::asio::execution::outstanding_work.tracked;
-    case exec.work_untracked:
+    case ex::work_untracked:
       return boost::asio::execution::outstanding_work.untracked;
     default: return {};
   }
@@ -187,7 +193,8 @@ constexpr auto
     require(const asio_executor_adapter<Executor, Allocator, Bits> & exec,
             boost::asio::execution::outstanding_work_t::tracked_t)
 {
-  constexpr int new_bits = (Bits & ~exec.work_mask) | exec.work_tracked;
+  using ex = asio_executor_adapter<Executor, Allocator, Bits>;
+  constexpr int new_bits = (Bits & ~ex::work_mask) | ex::work_tracked;
   return asio_executor_adapter<Executor, Allocator, new_bits>(exec);
 }
 
@@ -199,7 +206,8 @@ constexpr auto
     require(const asio_executor_adapter<Executor, Allocator, Bits> & exec,
             boost::asio::execution::outstanding_work_t::untracked_t)
 {
-  constexpr int new_bits = (Bits & ~exec.work_mask) | exec.work_untracked;
+  using ex = asio_executor_adapter<Executor, Allocator, Bits>;
+  constexpr int new_bits = (Bits & ~ex::work_mask) | ex::work_untracked;
   return asio_executor_adapter<Executor, Allocator, new_bits>(exec);
 }
 
