@@ -5,10 +5,12 @@
 #include <boost/capy/asio/standalone.hpp>
 
 
+#include <boost/asio/as_tuple.hpp>
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/io_context.hpp>
 
+#include <asio/as_tuple.hpp>
 #include <asio/awaitable.hpp>
 #include <asio/co_spawn.hpp>
 #include <asio/io_context.hpp>
@@ -38,7 +40,24 @@ struct boost_asio_both_test
     co_return i;
   }
 
+  
+  boost::asio::awaitable<int> aw_boost_tuple(executor_ref exec, task<int> t)
+  {
+    auto [ep, i] = co_await asio_spawn(exec, std::move(t))(boost::asio::as_tuple);
+    BOOST_TEST(i == 42);
+    co_return i;
+  }
+
+  
+  ::asio::awaitable<int> aw_standalone_tuple(executor_ref exec, task<int> t)
+  {
+    auto [ep, i] = co_await asio_spawn(exec, std::move(t))(::asio::as_tuple);
+    BOOST_TEST(i == 42);
+    co_return i;
+  }
+
   task<int> foo() {co_return 42;}
+  task<int> bar() {throw 42; co_return 0;}
 
 
   void testBoost()
@@ -53,6 +72,33 @@ struct boost_asio_both_test
     boost::asio::co_spawn( 
         ctx,
         aw_boost(te, foo()),
+        [&](std::exception_ptr ep_, int i_) 
+        {
+          ep = ep; 
+          i = i_;
+        });
+
+    BOOST_TEST(i == 0);
+    ctx.run();
+
+    BOOST_TEST(i == 42);
+    BOOST_TEST(!ep);
+    BOOST_TEST(dispatch_count == 1);
+  }
+
+  
+  void testBoostTuple()
+  {
+    boost::asio::io_context ctx;
+
+    int dispatch_count = 0;
+    test_executor te{dispatch_count};
+    std::exception_ptr ep;
+    int i = 0;
+
+    boost::asio::co_spawn( 
+        ctx,
+        aw_boost_tuple(te, foo()),
         [&](std::exception_ptr ep_, int i_) 
         {
           ep = ep; 
@@ -94,10 +140,40 @@ struct boost_asio_both_test
   }
 
 
+  void testStandaloneTuple()
+  {
+    ::asio::io_context ctx;
+
+    int dispatch_count = 0;
+    test_executor te{dispatch_count};
+    std::exception_ptr ep;
+    int i = 0;
+
+    ::asio::co_spawn( 
+        ctx,
+        aw_standalone_tuple(te, foo()),
+        [&](std::exception_ptr ep_, int i_) 
+        {
+          ep = ep; 
+          i = i_;
+        });
+
+    BOOST_TEST(i == 0);
+    ctx.run();
+
+    BOOST_TEST(i == 42);
+    BOOST_TEST(!ep);
+    BOOST_TEST(dispatch_count == 1);
+  }
+
   void run()
   {
     testBoost();
+    testBoostTuple();
+
     testStandalone();
+    
+    testStandaloneTuple();
   }
 
 };

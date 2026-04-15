@@ -552,7 +552,13 @@ template<typename Runnable, typename Token>
 struct initialize_asio_standalone_spawn_helper<Runnable, Token>
 {
   template<typename Executor>
-  static auto init(Executor ex, Runnable r, Token && tk)
+  static auto init(Executor ex, Runnable r, Token && tk) 
+      -> decltype(::asio::async_initiate<
+        Token, 
+        completion_signature_for_io_runnable<Runnable>>(
+          boost_asio_standalone_init{},
+          tk, std::move(ex), std::move(r)
+          ))
   {
     return ::asio::async_initiate<
         Token, 

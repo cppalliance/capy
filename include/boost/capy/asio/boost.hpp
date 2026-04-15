@@ -539,7 +539,7 @@ struct boost_asio_init
 };
 
 template<typename Runnable, typename Token> 
-  requires
+  requires 
     boost::asio::completion_token_for<
         Token, 
         completion_signature_for_io_runnable<Runnable>
@@ -547,7 +547,13 @@ template<typename Runnable, typename Token>
 struct initialize_asio_spawn_helper<Runnable, Token>
 {
   template<typename Executor>
-  static auto init(Executor ex, Runnable r, Token && tk)
+  static auto init(Executor ex, Runnable r, Token && tk) 
+    -> decltype( boost::asio::async_initiate<
+        Token, 
+        completion_signature_for_io_runnable<Runnable>>(
+          boost_asio_init{},
+          tk, std::move(ex), std::move(r)
+          ))
   {
     return boost::asio::async_initiate<
         Token, 
