@@ -141,7 +141,6 @@ struct asio_coroutine_completion_handler
 template<typename CancellationSignal, typename CancellationType, typename ... Ts> 
 struct async_result_impl
 {
-
     template<typename Initiation, typename... Args>
     struct awaitable_t
     {
@@ -185,7 +184,10 @@ struct async_result_impl
           return completed_immediately != completed_immediately_t::yes;
         }
 
-        std::tuple<Ts...> await_resume() {return std::move(*result_); }
+        auto await_resume() 
+        {
+          return std::move(*result_); 
+        }
 
 
         awaitable_t(Initiation init, std::tuple<Args...> args) 

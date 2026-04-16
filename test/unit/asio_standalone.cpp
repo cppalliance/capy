@@ -155,6 +155,7 @@ struct asio_standalone_test
         t.async_wait(
             [&](auto ec)
             {
+              BOOST_TEST(!ec);
               done = true;   
             });
 

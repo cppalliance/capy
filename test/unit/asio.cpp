@@ -158,6 +158,7 @@ struct boost_asio_test
         t.async_wait(
             [&](auto ec)
             {
+              BOOST_TEST(!ec);
               done = true;   
             });
 
