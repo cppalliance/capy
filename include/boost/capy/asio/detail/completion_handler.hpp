@@ -19,6 +19,7 @@
 #include <memory_resource>
 #include <optional>
 #include <tuple>
+#include <type_traits>
 
 namespace boost::capy::detail
 {
@@ -164,7 +165,7 @@ struct async_result_impl
         {
           completed_immediately = completed_immediately_t::initiating;
           stopper.emplace(env->stop_token, signal);
-          using slot_t = decltype(CancellationSignal().slot());
+          using slot_t = std::decay_t<decltype(CancellationSignal().slot())>;
           capy::detail::asio_coroutine_completion_handler<slot_t, Ts...> ch(
             h, result_, env, 
             signal.slot(), 
