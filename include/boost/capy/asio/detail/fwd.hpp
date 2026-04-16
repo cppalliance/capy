@@ -32,7 +32,7 @@ struct query_result;
 namespace asio
 {
 
-struct execution_context;
+class execution_context;
 
 namespace execution::detail
 {
