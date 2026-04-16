@@ -15,6 +15,7 @@
 #include <asio/post.hpp>
 #include <asio/dispatch.hpp>
 #include <asio/execution/outstanding_work.hpp>
+#include <asio/steady_timer.hpp>
 #include <asio/use_future.hpp>
 
 
@@ -139,6 +140,27 @@ struct asio_standalone_test
         BOOST_TEST(done);
         BOOST_TEST(dispatch_count == 1);
     }
+
+    
+    void testTimer()
+    {
+        int dispatch_count = 0;
+        test_executor te{dispatch_count};
+        boost::capy::asio_executor_adapter wrapped_te{te};
+
+        ::asio::steady_timer t{wrapped_te};
+        t.expires_after(std::chrono::milliseconds(1));
+
+        bool done = false;
+        t.async_wait(
+            [&](auto ec)
+            {
+              done = true;   
+            });
+
+        while (!done)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     
     void run() 
     {
@@ -147,6 +169,7 @@ struct asio_standalone_test
         testFromAnyIOExecutor();
         testAsIoAwaitable();
         testAsioSpawn();
+        testTimer();
     }
 };
 

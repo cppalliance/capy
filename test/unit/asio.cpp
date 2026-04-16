@@ -8,6 +8,8 @@
 //
 
 
+#include <chrono>
+#include <thread>
 #if __has_include(<boost/asio.hpp>)
 #include <boost/capy/asio/boost.hpp>
 
@@ -17,6 +19,7 @@
 #include <boost/asio/post.hpp>
 #include <boost/asio/execution/outstanding_work.hpp>
 #include <boost/asio/io_context.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <boost/asio/use_future.hpp>
 
 
@@ -141,6 +144,26 @@ struct boost_asio_test
         BOOST_TEST(done);
         BOOST_TEST(dispatch_count == 1);
     }
+
+    void testTimer()
+    {
+        int dispatch_count = 0;
+        test_executor te{dispatch_count};
+        boost::capy::asio_executor_adapter wrapped_te{te};
+
+        boost::asio::steady_timer t{wrapped_te};
+        t.expires_after(std::chrono::milliseconds(1));
+
+        bool done = false;
+        t.async_wait(
+            [&](auto ec)
+            {
+              done = true;   
+            });
+
+        while (!done)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
     
     void run() 
     {
@@ -149,6 +172,7 @@ struct boost_asio_test
         testFromAnyIOExecutor();
         testAsIoAwaitable();
         testAsioSpawn();
+        testTimer();
     }
 };
 
