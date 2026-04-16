@@ -541,7 +541,7 @@ struct boost_asio_standalone_init_promise_type
 
     void get_return_object() {}
     void unhandled_exception() {throw;}
-    void return_value() {}
+    void return_void() {}
 
     std::suspend_never initial_suspend() noexcept {return {};}
     std::suspend_never   final_suspend() noexcept {return {};}
