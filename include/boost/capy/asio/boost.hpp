@@ -276,28 +276,34 @@ struct asio_work_tracker_service : boost::asio::execution_context::service
 
   alignas(tracked_executor) char buffer[sizeof(tracked_executor) ];
 
-  std::atomic_size_t work = 0u;
+
+  std::mutex mutex;
+  std::size_t work = 0u;
 
   void shutdown()
   {
-    if (work.exchange(0) > 0u)
+    std::lock_guard _(mutex);
+    if (std::exchange(work, 0) > 0u)
       reinterpret_cast<tracked_executor*>(buffer)->~tracked_executor();
   }
 
 
   void work_started(const Executor & exec)
   {
-    if (work.fetch_add(1u) == 0u)
+    std::lock_guard _(mutex);
+    if (work ++ == 0u)
       new (buffer) tracked_executor(
-        boost::asio::prefer(exec,
+        boost::asio::prefer(exec, 
         boost::asio::execution::outstanding_work.tracked));
   }
 
-  void work_finished()
+  void work_finished() 
   {
-      if (work.fetch_sub(1u) == 1u)
+      std::lock_guard _(mutex);
+      if (--work == 0u)
         reinterpret_cast<tracked_executor*>(buffer)->~tracked_executor();
   }
+
 };
 
 
@@ -602,7 +608,6 @@ struct boost_asio_init_promise_type
               },
               args_);
 
-        asio_executor_adapter aex(ex);
         auto exec = 
             boost::asio::get_associated_immediate_executor(handler, ex_);
         boost::asio::dispatch(exec, std::move(handler));                  
