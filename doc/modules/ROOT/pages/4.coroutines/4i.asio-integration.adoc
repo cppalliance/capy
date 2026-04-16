@@ -202,7 +202,8 @@ auto [ep, result] = future.get();
 
 === Completion Signature
 
-The completion signature depends on the coroutine's return type and exception specification:
+The completion signature depends on the coroutine's return type 
+and the exception specification of `await_resume`:
 
 [cols="2,2"]
 |===
