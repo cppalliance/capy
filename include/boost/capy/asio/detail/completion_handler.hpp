@@ -127,7 +127,12 @@ struct asio_coroutine_completion_handler
   void operator()(Args ... args)
   {
     result.emplace(std::forward<Args>(args)...);
-    std::move(handle)();
+
+    if (completed_immediately != nullptr
+    && *completed_immediately == completed_immediately_t::maybe)
+      *completed_immediately = completed_immediately_t::yes;
+    else
+      std::move(handle)();
   }
 };
 
