@@ -14,6 +14,7 @@
 #include <boost/capy/asio/executor_adapter.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/io_result.hpp>
 
 
 #include <memory_resource>
@@ -137,6 +138,22 @@ struct asio_coroutine_completion_handler
   }
 };
 
+template<typename ... Ts>
+struct async_result_impl_result_tuple
+{
+  using type = std::tuple<Ts...>;
+};
+
+
+template<typename T0, typename ... Ts>
+  requires std::constructible_from<io_result<Ts...>, T0, Ts...>
+struct async_result_impl_result_tuple<T0, Ts...>
+{
+  using type = io_result<Ts...>;
+};
+
+
+
 
 template<typename CancellationSignal, typename CancellationType, typename ... Ts> 
 struct async_result_impl
@@ -201,7 +218,8 @@ struct async_result_impl
             , result_(std::move(rhs.result_)) {}
       private:
         Initiation init_;
-        std::tuple<Args...> args_;
+        // if Args<0> == error_code this needs to be an io_result.
+        typename async_result_impl_result_tuple<Args...>::type args_;
         std::optional<std::tuple<Ts...>> result_;
     };
 

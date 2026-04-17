@@ -82,20 +82,28 @@ The `as_io_awaitable` token transforms the operation into an awaitable that:
 
 === Completion Signatures
 
-The result type depends on the Asio operation's completion signature:
+The result type depends on the Asio operation's completion signature.
+When the signature begins with `error_code`, the result is an `io_result<Ts...>`
+containing the error code plus any additional values. See xref:../3.error-handling/3b.io-result.adoc[io_result] for details.
 
 [cols="1,1"]
 |===
 | Asio Signature | co_await Result
 
 | `void(error_code, std::size_t)`
-| `std::tuple<error_code, std::size_t>`
+| `io_result<std::size_t>`
 
 | `void(error_code)`
-| `std::tuple<error_code>`
+| `io_result<>`
+
+| `void(std::exception_ptr, std::size_t)`
+| `std::size_t`
+
+| `void(std::exception_ptr)`
+| `void`
 
 | `void()`
-| `std::tuple<>`
+| `void`
 |===
 
 Use structured bindings for clean syntax:

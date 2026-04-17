@@ -11,6 +11,7 @@
 #define BOOST_CAPY_ASIO_DETAIL_COMPLETION_TRAITS_HPP
 
 #include <boost/capy/concept/io_runnable.hpp>
+#include <boost/capy/io_result.hpp>
 
 #include <exception>
 #include <tuple>
@@ -32,6 +33,14 @@ struct completion_traits<ResultType, true>
 {
   using signature_type = void(ResultType);
   using result_type = std::tuple<ResultType>;        
+};
+
+
+template<typename ... Ts> 
+struct completion_traits<io_result<Ts...>, true>
+{
+  using signature_type = void(Ts...);
+  using result_type = io_result<Ts...>;        
 };
 
 
