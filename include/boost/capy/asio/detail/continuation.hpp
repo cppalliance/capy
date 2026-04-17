@@ -66,7 +66,24 @@ template<typename Allocator>
 struct continuation_handle_promise_type 
     : continuation_handle_promise_base_<Allocator>
 {
-  std::suspend_always initial_suspend() const noexcept  {return {};}
+
+  struct initial_aw_t
+  {
+    bool await_ready() const {return false;}
+    void await_suspend(
+      std::coroutine_handle<continuation_handle_promise_type<Allocator>> h)
+    {
+      auto & c = h.promise().cont;
+      c.h = h;
+      c.next = nullptr;
+    }
+    void await_resume() {}
+  };
+
+  initial_aw_t initial_suspend() const noexcept  
+  {
+    return initial_aw_t{};
+  }
   std::suspend_never    final_suspend() const noexcept  {return {};}
 
   template<typename Function>
@@ -89,30 +106,29 @@ struct continuation_handle_promise_type
     return yielder{std::move(func)};
   }
 
+  void unhandled_exception() { throw; }
+  void return_void() {}
+  
   continuation cont;
 
-  void unhandled_exception() { throw; }
-  continuation &  get_return_object() 
+  struct helper 
   {
-    using handle_t = std::coroutine_handle<continuation_handle_promise_type>;
-    cont.h = handle_t::from_promise(*this);
-    cont.next = nullptr;
-    return cont;
+    continuation * cont;
+    using promise_type = continuation_handle_promise_type;
+  };
+  
+  helper get_return_object() 
+  {
+    return helper{&cont};
   }
 };
 
-template<typename Allocator>
-struct continuation_helper 
-{
-    capy::continuation &cont;
-    continuation_helper(continuation & cont) noexcept : cont(cont) {}
-    using promise_type = continuation_handle_promise_type<Allocator>;
-};
 
 template<std::invocable<> Function, typename Allocator>
-continuation_helper<Allocator> make_continuation_helper(
+auto make_continuation_helper(
     Function func, 
     Allocator)
+    -> continuation_handle_promise_type<Allocator>::helper
 {
   co_yield func;
 }
@@ -122,10 +138,10 @@ continuation & make_continuation(
     Function && func, 
     Allocator && alloc)
 {
-  continuation & c = detail::make_continuation_helper(
+  continuation * c = detail::make_continuation_helper(
           std::forward<Function>(func), 
           std::forward<Allocator>(alloc)).cont;
-  return c;
+  return *c;
 }
 
 }
