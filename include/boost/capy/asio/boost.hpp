@@ -600,7 +600,7 @@ struct boost_asio_init_promise_type
         asio_executor_adapter ex_ = std::move(ex);
         h.destroy();
 
-        auto handler =         
+        auto handler_ =         
             std::apply( 
               [&](auto ... args) 
               {
@@ -609,8 +609,8 @@ struct boost_asio_init_promise_type
               args_);
 
         auto exec = 
-            boost::asio::get_associated_immediate_executor(handler, ex_);
-        boost::asio::dispatch(exec, std::move(handler));                  
+            boost::asio::get_associated_immediate_executor(handler_, ex_);
+        boost::asio::dispatch(exec, std::move(handler_));                  
       }
       void await_resume() const {}
     };
