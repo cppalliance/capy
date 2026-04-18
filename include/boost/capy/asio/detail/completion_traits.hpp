@@ -10,7 +10,7 @@
 #ifndef BOOST_CAPY_ASIO_DETAIL_COMPLETION_TRAITS_HPP
 #define BOOST_CAPY_ASIO_DETAIL_COMPLETION_TRAITS_HPP
 
-#include <boost/capy/concept/io_runnable.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/io_result.hpp>
 
 #include <exception>
@@ -58,18 +58,18 @@ struct completion_traits<void, true>
   using result_type = std::tuple<>;        
 };
 
-template<IoRunnable Runnable>
-using completion_signature_for_io_runnable 
+template<IoAwaitable Awaitable>
+using completion_signature_for_io_awaitable 
   = typename completion_traits<
-      decltype(std::declval<Runnable&>().await_resume()),
-      noexcept(std::declval<Runnable&>().await_resume())
+      decltype(std::declval<Awaitable&>().await_resume()),
+      noexcept(std::declval<Awaitable&>().await_resume())
       >::signature_type;
 
-template<IoRunnable Runnable>
-using completion_tuple_for_io_runnable 
+template<IoAwaitable Awaitable>
+using completion_tuple_for_io_awaitable 
   = typename completion_traits<
-      decltype(std::declval<Runnable&>().await_resume()),
-      noexcept(std::declval<Runnable&>().await_resume())
+      decltype(std::declval<Awaitable&>().await_resume()),
+      noexcept(std::declval<Awaitable&>().await_resume())
       >::result_type;
 
 

@@ -16,7 +16,7 @@
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/concept/io_runnable.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 
 
 namespace boost::capy
@@ -34,7 +34,7 @@ namespace detail
  *
  *  Specialized in `boost.hpp` for actual Boost.Asio completion tokens.
  */
-template<typename Runnable, typename Token>
+template<typename Awaitable, typename Token>
 struct initialize_asio_spawn_helper;
 
 /** @brief Concept for valid Boost.Asio spawn completion tokens.
@@ -43,11 +43,11 @@ struct initialize_asio_spawn_helper;
  *  A token satisfies this concept if `initialize_asio_spawn_helper` can
  *  initialize the spawn operation with it.
  */
-template<typename Token, typename Executor, typename Runnable>
+template<typename Token, typename Executor, typename Awaitable>
 concept asio_spawn_token =
-  requires (Token && tk, Executor ex, Runnable rn)
+  requires (Token && tk, Executor ex, Awaitable rn)
   {
-    initialize_asio_spawn_helper<Runnable, Token>::
+    initialize_asio_spawn_helper<Awaitable, Token>::
         init(std::move(ex), std::move(rn), std::forward<Token>(tk));
   };
 
@@ -56,7 +56,7 @@ concept asio_spawn_token =
  *
  *  Specialized in `standalone.hpp` for actual standalone Asio completion tokens.
  */
-template<typename Runnable, typename Token>
+template<typename Awaitable, typename Token>
 struct initialize_asio_standalone_spawn_helper;
 
 /** @brief Concept for valid standalone Asio spawn completion tokens.
@@ -65,11 +65,11 @@ struct initialize_asio_standalone_spawn_helper;
  *  A token satisfies this concept if `initialize_asio_standalone_spawn_helper`
  *  can initialize the spawn operation with it.
  */
-template<typename Token, typename Executor, typename Runnable>
+template<typename Token, typename Executor, typename Awaitable>
 concept asio_standalone_spawn_token =
-  requires (Token && tk, Executor ex, Runnable rn)
+  requires (Token && tk, Executor ex, Awaitable rn)
   {
-    initialize_asio_standalone_spawn_helper<Runnable, Token>::
+    initialize_asio_standalone_spawn_helper<Awaitable, Token>::
         init(std::move(ex), std::move(rn), std::forward<Token>(tk));
   };
 
@@ -79,11 +79,11 @@ concept asio_standalone_spawn_token =
 /** @brief Deferred spawn operation that can be initiated with a completion token.
  *
  *  This class represents a spawn operation that has captured an executor and
- *  runnable but hasn't been initiated yet. Call `operator()` with a completion
+ *  awaitable but hasn't been initiated yet. Call `operator()` with a completion
  *  token to start the operation.
  *
  *  @tparam Executor The executor type for running the coroutine
- *  @tparam Runnable The coroutine type (must satisfy `IoRunnable`)
+ *  @tparam Awaitable The coroutine type (must satisfy `IoAwaitable`)
  *
  *  @par Example
  *  @code
@@ -97,15 +97,15 @@ concept asio_standalone_spawn_token =
  *
  *  @see asio_spawn Factory function to create spawn operations
  */
-template<Executor Executor, IoRunnable Runnable>
+template<Executor Executor, IoAwaitable Awaitable>
 struct asio_spawn_op
 {
   /** @brief Constructs the spawn operation.
    *  @param executor The executor to run on
-   *  @param runnable The coroutine to spawn
+   *  @param awaitable The coroutine to spawn
    */
-  asio_spawn_op(Executor executor, Runnable runnable)
-    : executor_(std::move(executor)), runnable_(std::move(runnable))
+  asio_spawn_op(Executor executor, Awaitable awaitable)
+    : executor_(std::move(executor)), awaitable_(std::move(awaitable))
   {}
 
   /** @brief Initiates the spawn with a Boost.Asio completion token.
@@ -114,12 +114,12 @@ struct asio_spawn_op
    *  @param token The completion token determining how to handle completion
    *  @return Depends on the token (e.g., void for callbacks, awaitable for use_awaitable)
    */
-  template<detail::asio_spawn_token<Executor, Runnable> Token>
+  template<detail::asio_spawn_token<Executor, Awaitable> Token>
   auto operator()(Token && token)
   {
-    return detail::initialize_asio_spawn_helper<Runnable, Token>::init(
+    return detail::initialize_asio_spawn_helper<Awaitable, Token>::init(
             std::move(executor_),
-            std::move(runnable_),
+            std::move(awaitable_),
             std::forward<Token>(token)
           );
   }
@@ -130,20 +130,20 @@ struct asio_spawn_op
    *  @param token The completion token determining how to handle completion
    *  @return Depends on the token
    */
-  template<detail::asio_standalone_spawn_token<Executor, Runnable> Token>
+  template<detail::asio_standalone_spawn_token<Executor, Awaitable> Token>
   auto operator()(Token && token)
   {
-    return detail::initialize_asio_standalone_spawn_helper<Runnable, Token>::init
+    return detail::initialize_asio_standalone_spawn_helper<Awaitable, Token>::init
           (
             std::move(executor_),
-            std::move(runnable_),
+            std::move(awaitable_),
             std::forward<Token>(token)
           );
   }
 
  private:
   Executor executor_;
-  Runnable runnable_;
+  Awaitable awaitable_;
 };
 
 
@@ -153,9 +153,9 @@ struct asio_spawn_op
  *  completion token. The coroutine will run on the specified executor.
  *
  *  @tparam ExecutorType The executor type (must satisfy `Executor`)
- *  @tparam Runnable The coroutine type (must satisfy `IoRunnable`)
+ *  @tparam Awaitable The coroutine type (must satisfy `IoAwaitable`)
  *  @param exec The executor to run the coroutine on
- *  @param runnable The coroutine to spawn
+ *  @param awaitable The coroutine to spawn
  *  @return An `asio_spawn_op` that can be called with a completion token
  *
  *  @par Completion Signature
@@ -181,10 +181,10 @@ struct asio_spawn_op
  *
  *  @see asio_spawn_op The returned operation type
  */
-template<Executor ExecutorType, IoRunnable Runnable>
-auto asio_spawn(ExecutorType exec, Runnable && runnable)
+template<Executor ExecutorType, IoAwaitable Awaitable>
+auto asio_spawn(ExecutorType exec, Awaitable && awaitable)
 {
-  return asio_spawn_op(std::move(exec), std::forward<Runnable>(runnable));
+  return asio_spawn_op(std::move(exec), std::forward<Awaitable>(awaitable));
 }
 
 /** @brief Spawns a capy coroutine using a context's executor.
@@ -192,9 +192,9 @@ auto asio_spawn(ExecutorType exec, Runnable && runnable)
  *  Convenience overload that extracts the executor from an execution context.
  *
  *  @tparam Context The execution context type (must satisfy `ExecutionContext`)
- *  @tparam Runnable The coroutine type (must satisfy `IoRunnable`)
+ *  @tparam Awaitable The coroutine type (must satisfy `IoAwaitable`)
  *  @param ctx The execution context providing the executor
- *  @param runnable The coroutine to spawn
+ *  @param awaitable The coroutine to spawn
  *  @return An `asio_spawn_op` that can be called with a completion token
  *
  *  @par Example
@@ -204,10 +204,10 @@ auto asio_spawn(ExecutorType exec, Runnable && runnable)
  *  io.run();
  *  @endcode
  */
-template<ExecutionContext Context, IoRunnable Runnable>
-auto asio_spawn(Context & ctx, Runnable && runnable)
+template<ExecutionContext Context, IoAwaitable Awaitable>
+auto asio_spawn(Context & ctx, Awaitable && awaitable)
 {
-  return asio_spawn_op(ctx.get_executor(), std::forward<Runnable>(runnable));
+  return asio_spawn_op(ctx.get_executor(), std::forward<Awaitable>(awaitable));
 }
 
 /** @} */ // end of asio group

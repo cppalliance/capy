@@ -48,7 +48,7 @@
  */
 
 #include <boost/capy/asio/as_io_awaitable.hpp>
-#include <boost/capy/concept/io_runnable.hpp>
+#include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/asio/detail/completion_handler.hpp>
 #include <boost/capy/asio/executor_adapter.hpp>
 #include <boost/capy/asio/executor_from_asio.hpp>
@@ -411,21 +411,21 @@ struct asio_standalone_standard_executor
  *  Convenience overload that combines the two-step spawn process into one call.
  *
  *  @tparam ExecutorType The executor type
- *  @tparam Runnable The coroutine type
+ *  @tparam Awaitable The coroutine type
  *  @tparam Token A standalone Asio completion token
  *  @param exec The executor to run on
- *  @param runnable The coroutine to spawn
+ *  @param awaitable The coroutine to spawn
  *  @param token The completion token
  *  @return Depends on the token type
  */
 template<Executor ExecutorType,
-         IoRunnable Runnable,
+         IoAwaitable Awaitable,
          ::asio::completion_token_for<
-              detail::completion_signature_for_io_runnable<Runnable>
+              detail::completion_signature_for_io_awaitable<Awaitable>
                                      > Token>
-auto asio_spawn(ExecutorType exec, Runnable && runnable, Token token)
+auto asio_spawn(ExecutorType exec, Awaitable && awaitable, Token token)
 {
-  return asio_spawn(exec, std::forward<Runnable>(runnable))(std::move(token));
+  return asio_spawn(exec, std::forward<Awaitable>(awaitable))(std::move(token));
 }
 
 /** @brief Spawns a capy coroutine with a standalone Asio completion token (context overload).
@@ -433,22 +433,22 @@ auto asio_spawn(ExecutorType exec, Runnable && runnable, Token token)
  *  Convenience overload that extracts the executor from a context.
  *
  *  @tparam Context The execution context type
- *  @tparam Runnable The coroutine type
+ *  @tparam Awaitable The coroutine type
  *  @tparam Token A standalone Asio completion token
  *  @param ctx The execution context
- *  @param runnable The coroutine to spawn
+ *  @param awaitable The coroutine to spawn
  *  @param token The completion token
  *  @return Depends on the token type
  */
 template<ExecutionContext Context,
-         IoRunnable Runnable,
+         IoAwaitable Awaitable,
          ::asio::completion_token_for<
-            detail::completion_signature_for_io_runnable<Runnable>
+            detail::completion_signature_for_io_awaitable<Awaitable>
           > Token
         >
-auto asio_spawn(Context & ctx, Runnable && runnable, Token token)
+auto asio_spawn(Context & ctx, Awaitable && awaitable, Token token)
 {
-  return asio_spawn(ctx.get_executor(), std::forward<Runnable>(runnable))
+  return asio_spawn(ctx.get_executor(), std::forward<Awaitable>(awaitable))
                     (std::move(token));
 }
 
@@ -483,10 +483,10 @@ struct boost_asio_standalone_init;
 template<typename Allocator>
 struct boost_asio_standalone_promise_type_allocator_base
 {
-  template<typename Handler, Executor Ex, IoRunnable Runnable>
+  template<typename Handler, Executor Ex, IoAwaitable Awaitable>
   void * operator new   (std::size_t n, boost_asio_standalone_init &, 
                          Handler & handler, 
-                         Ex &, Runnable &)
+                         Ex &, Awaitable &)
   {
     using allocator_type = std::allocator_traits<Allocator>
                               ::template rebind_alloc<char>;
@@ -521,19 +521,19 @@ struct boost_asio_standalone_promise_type_allocator_base
 };
 
 
-template<typename Handler, Executor Ex, IoRunnable Runnable>
+template<typename Handler, Executor Ex, IoAwaitable Awaitable>
 struct boost_asio_standalone_init_promise_type
     : boost_asio_standalone_promise_type_allocator_base<
             ::asio::associated_allocator_t<Handler>
           >
 {
-    using args_type = completion_tuple_for_io_runnable<Runnable>;
+    using args_type = completion_tuple_for_io_awaitable<Awaitable>;
 
     boost_asio_standalone_init_promise_type(
           boost_asio_standalone_init &, 
           Handler & h, 
           Ex & exec, 
-          Runnable &)  
+          Awaitable &)  
             : handler(h), ex(exec) {}
 
     Handler & handler;
@@ -582,13 +582,13 @@ struct boost_asio_standalone_init_promise_type
         
     struct wrapper
     {
-      Runnable r;
+      Awaitable r;
       const Ex &ex;
       io_env env;
       std::stop_source stop_src;
       ::asio::cancellation_slot cancel_slot;
 
-      wrapper(Runnable && r, const Ex &ex) 
+      wrapper(Awaitable && r, const Ex &ex) 
           : r(std::move(r)), ex(ex)
       {
       }
@@ -603,7 +603,6 @@ struct boost_asio_standalone_init_promise_type
         // always post in
         auto h = r.handle();
         auto & p = h.promise();
-        p.set_continuation(tr);
         env.executor = ex;
 
         env.stop_token = stop_src.get_token();
@@ -620,12 +619,11 @@ struct boost_asio_standalone_init_promise_type
         env.frame_allocator = get_current_frame_allocator();
 
 
-        p.set_environment(&env);
-        c.h = h;
+        c.h = r.await_suspend(tr, &env);
         return ex.dispatch(c);
       }
       
-      completion_tuple_for_io_runnable<Runnable> await_resume()
+      completion_tuple_for_io_awaitable<Awaitable> await_resume()
       {
         if (cancel_slot.is_connected())
           cancel_slot.clear();
@@ -666,7 +664,7 @@ struct boost_asio_standalone_init_promise_type
       }
     };
 
-    wrapper await_transform(Runnable & r)
+    wrapper await_transform(Awaitable & r)
     {
       return wrapper{std::move(r), ex};
     }
@@ -676,37 +674,37 @@ struct boost_asio_standalone_init_promise_type
     
 struct boost_asio_standalone_init
 {
-  template<typename Handler, Executor Ex, IoRunnable Runnable>
+  template<typename Handler, Executor Ex, IoAwaitable Awaitable>
   void operator()(
                   Handler ,
                   Ex,
-                  Runnable runnable)
+                  Awaitable awaitable)
   {
-    auto res = co_await runnable;
+    auto res = co_await awaitable;
     co_yield std::move(res);
   }
 };
 
-template<typename Runnable, typename Token>
+template<typename Awaitable, typename Token>
   requires
     ::asio::completion_token_for<
           Token,
-          completion_signature_for_io_runnable<Runnable>
+          completion_signature_for_io_awaitable<Awaitable>
         >
-struct initialize_asio_standalone_spawn_helper<Runnable, Token>
+struct initialize_asio_standalone_spawn_helper<Awaitable, Token>
 {
   template<typename Executor>
-  static auto init(Executor ex, Runnable r, Token && tk)
+  static auto init(Executor ex, Awaitable r, Token && tk)
       -> decltype(::asio::async_initiate<
         Token,
-        completion_signature_for_io_runnable<Runnable>>(
+        completion_signature_for_io_awaitable<Awaitable>>(
           boost_asio_standalone_init{},
           tk, std::move(ex), std::move(r)
           ))
   {
     return ::asio::async_initiate<
         Token,
-        completion_signature_for_io_runnable<Runnable>>(
+        completion_signature_for_io_awaitable<Awaitable>>(
           boost_asio_standalone_init{},
           tk, std::move(ex), std::move(r)
           );
@@ -716,19 +714,19 @@ struct initialize_asio_standalone_spawn_helper<Runnable, Token>
 }
 
 
-template<typename Handler, typename Executor, typename Runnable>
+template<typename Handler, typename Executor, typename Awaitable>
 struct std::coroutine_traits<
               void,
               boost::capy::detail::boost_asio_standalone_init&,
               Handler,
               Executor,
-              Runnable>
+              Awaitable>
 {
   using promise_type
           = boost::capy::detail::boost_asio_standalone_init_promise_type<
                     Handler,
                     Executor,
-                    Runnable>;
+                    Awaitable>;
 }; 
 
 #endif // BOOST_CAPY_ASIO_STANDALONE_HPP

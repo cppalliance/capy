@@ -84,7 +84,7 @@ The `as_io_awaitable` token transforms the operation into an awaitable that:
 
 The result type depends on the Asio operation's completion signature.
 When the signature begins with `error_code`, the result is an `io_result<Ts...>`
-containing the error code plus any additional values. See xref:../3.error-handling/3b.io-result.adoc[io_result] for details.
+which bundles the error code with any additional values and supports structured bindings.
 
 [cols="1,1"]
 |===
