@@ -11,6 +11,7 @@
 #define BOOST_CAPY_ASIO_BUFFERS_HPP
 
 #include <boost/capy/buffers.hpp>
+#include <concepts>
 #include <utility>
 
 namespace asio 
@@ -396,10 +397,24 @@ auto as_asio_buffer_sequence(mutable_buffer mb)
     return std::array<asio_mutable_buffer, 1u>{mb};
 }
 
-/** Convert a single capy const_buffer to a buffer sequence.
+/** Convert a buffer type that might support both mutable & const buffer
+    to an asio buffer sequence.
 
+    @param buf The const buffer
+    @return A single-element array containing an asio_mutable_buffer
+
+*/
+template<std::convertible_to<mutable_buffer> Buffer>
+inline
+auto as_asio_buffer_sequence(const Buffer & buf)
+{
+    return as_asio_buffer_sequence(static_cast<mutable_buffer>(buf));
+}
+
+/** Convert a single capy const_buffer to a buffer sequence.
     @param cb The const buffer
     @return A single-element array containing an asio_const_buffer
+
 */
 inline
 auto as_asio_buffer_sequence(const_buffer cb)
@@ -422,6 +437,7 @@ auto as_asio_buffer_sequence(const_buffer cb)
     @return A transforming range over the buffer sequence
 */
 template<ConstBufferSequence Seq>
+  requires (!std::convertible_to<Seq, const_buffer> && !std::convertible_to<Seq, mutable_buffer>)
 inline
 auto as_asio_buffer_sequence(const Seq & seq)
 {

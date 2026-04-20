@@ -19,6 +19,7 @@
 
 #include <memory_resource>
 #include <optional>
+#include <system_error>
 #include <tuple>
 #include <type_traits>
 
@@ -56,7 +57,8 @@ struct asio_immediate_executor_helper
       exec.post(
         make_continuation(
           std::forward<Fn>(fn), 
-          exec.context().get_frame_allocator()));
+          std::pmr::polymorphic_allocator<void>(
+            exec.context().get_frame_allocator())));
     }
   }
   
@@ -130,11 +132,15 @@ struct asio_coroutine_completion_handler
   {
     result.emplace(std::forward<Args>(args)...);
 
+    auto h = handle.release();
+
     if (completed_immediately != nullptr
     && *completed_immediately == completed_immediately_t::maybe)
+    {
       *completed_immediately = completed_immediately_t::yes;
+    }
     else
-      std::move(handle)();
+      h();
   }
 };
 
@@ -152,7 +158,22 @@ struct async_result_impl_result_tuple<T0, Ts...>
   using type = io_result<Ts...>;
 };
 
+inline std::tuple<> make_async_result(const std::tuple<> &) { return {}; }
 
+template<typename E, typename ... Ts>
+inline auto make_async_result(std::tuple<E, Ts...> && tup) 
+{
+  if constexpr (std::convertible_to<E, std::error_code>) 
+    return std::apply(
+              [](auto &&e, auto &&... args)
+              {
+                  return io_result(std::move(e), std::move(args)...);
+              },
+              std::move(tup));
+  
+  else
+    return std::move(tup);
+}
 
 
 template<typename CancellationSignal, typename CancellationType, typename ... Ts> 
@@ -203,7 +224,7 @@ struct async_result_impl
 
         auto await_resume() 
         {
-          return std::move(*result_); 
+          return make_async_result(std::move(*result_)); 
         }
 
 

@@ -38,9 +38,14 @@ struct asio_coroutine_unique_handle
       
   void operator()()
   {    
-    std::coroutine_handle<void>::from_address(
+    release().resume();
+  }
+
+  std::coroutine_handle<> release()
+  {
+    return std::coroutine_handle<void>::from_address(
         handle.release()
-        ).resume();
+        );
   }
 };
 

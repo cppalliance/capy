@@ -13,26 +13,39 @@
 #include <thread>
 #if __has_include(<boost/asio.hpp>)
 #include <boost/capy/asio/boost.hpp>
-
+#include <boost/capy/asio/buffers.hpp>
+#include <boost/capy/asio/stream.hpp>
+#include <boost/capy/ex/thread_pool.hpp>
+#include <boost/capy/test/read_stream.hpp>
+#include <boost/capy/test/write_stream.hpp>
 
 #include <boost/asio/any_io_executor.hpp>
 #include <boost/asio/buffer.hpp>
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/post.hpp>
+#include <boost/asio/read.hpp>
+#include <boost/asio/write.hpp>
 #include <boost/asio/execution/outstanding_work.hpp>
 #include <boost/asio/io_context.hpp>
+
 #include <boost/asio/steady_timer.hpp>
+#include <boost/asio/connect_pipe.hpp>
+#include <boost/asio/readable_pipe.hpp>
 #include <boost/asio/writable_pipe.hpp>
 #include <boost/asio/use_future.hpp>
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_pair.hpp>
 
+#include <boost/capy/when_all.hpp>
+
+
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include "test_helpers.hpp"
 #include "test_suite.hpp"
+
 
 
 namespace boost {
@@ -207,6 +220,80 @@ struct boost_asio_test
         static_assert(boost::asio::  is_const_buffer_sequence<seq2_t>::value);
     }
 
+    void testStreamToAsio()
+    {
+        thread_pool tp;
+        
+        async_write_stream ws{test::write_stream(), tp.get_executor()};
+
+        std::atomic<int> done{0};
+
+        boost::asio::async_write(
+            ws,
+            boost::asio::buffer("Test", 4),
+            [&](boost::system::error_code ec, std::size_t n)
+            {
+                BOOST_TEST(!ec);
+                BOOST_TEST_EQ(n, 4);
+                done ++;
+            });
+
+        BOOST_TEST_EQ(ws.next_layer().data(), "Test");   
+
+        async_read_stream rs{test::read_stream(), tp.get_executor()};
+        rs.next_layer().provide("foobar");
+        
+
+        char data[100];
+        boost::asio::async_read(
+            rs,
+            boost::asio::buffer(data), 
+            [&](boost::system::error_code ec, std::size_t n)
+            {
+                BOOST_TEST_EQ(ec, boost::capy::error::eof);
+                BOOST_TEST_EQ(n, 6);
+                BOOST_TEST_EQ(std::string_view(data, n), "foobar");
+                done ++;
+            });
+            
+        while (done.load() < 2u);
+
+        tp.join();
+    }
+
+    void testStreamFromAsio()
+    {
+        boost::asio::io_context ctx;
+        boost::asio::readable_pipe rp{ctx};
+        boost::asio::writable_pipe wp{ctx};
+        boost::asio::connect_pipe(rp, wp);
+
+        any_read_stream  rs{asio_read_stream(std::move(rp)) };
+        any_write_stream ws{asio_write_stream(std::move(wp))};
+
+        bool done = false;
+
+        auto t = 
+            [&]() -> task<void>
+            {
+                std::string rb;
+                rb.resize(10);
+
+                auto [r1, r2, r3] = co_await capy::when_all(
+                    ws.write_some(make_buffer("hello pipe", 10)),
+                    rs.read_some(make_buffer(rb))
+                );
+
+                BOOST_TEST(!r1);
+                BOOST_TEST_EQ(r2, r3);
+                BOOST_TEST_EQ(rb, "hello pipe");
+            };
+
+        run_async(wrap_asio_executor(ctx.get_executor()), [&]{done = true;})(t());
+
+        ctx.run();
+        BOOST_TEST(done);
+    }
     
     void run() 
     {
@@ -216,6 +303,8 @@ struct boost_asio_test
         testAsIoAwaitable();
         testAsioSpawn();
         testTimer();
+        testStreamToAsio();
+        testStreamFromAsio();
     }
 };
 

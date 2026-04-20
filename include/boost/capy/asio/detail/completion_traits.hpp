@@ -26,6 +26,7 @@ struct completion_traits
 {
   using signature_type = void(std::exception_ptr, ResultType);
   using result_type = std::tuple<std::exception_ptr, ResultType>;        
+
 };
 
 template<typename ResultType> 
@@ -39,7 +40,7 @@ struct completion_traits<ResultType, true>
 template<typename ... Ts> 
 struct completion_traits<io_result<Ts...>, true>
 {
-  using signature_type = void(Ts...);
+  using signature_type = void(std::error_code, Ts...);
   using result_type = io_result<Ts...>;        
 };
 

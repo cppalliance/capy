@@ -167,7 +167,7 @@ struct asio_spawn_op
  *
  *  @par Example
  *  @code
- *  capy::io_task<int> compute() { co_return 42; }
+ *  capy::task<int> compute() { co_return 42; }
  *
  *  // Using with Boost.Asio
  *  asio_spawn(executor, compute())(

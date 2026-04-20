@@ -47,6 +47,7 @@
  */
 
 #include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/decomposes_to.hpp>
 
 #include <boost/capy/asio/as_io_awaitable.hpp>
 #include <boost/capy/asio/buffers.hpp>
@@ -70,6 +71,7 @@
 #include <boost/asio/execution/context.hpp>
 #include <boost/asio/execution/outstanding_work.hpp>
 #include <boost/asio/execution/relationship.hpp>
+#include <tuple>
 #include <type_traits>
 
 namespace boost::capy
@@ -546,6 +548,7 @@ struct boost_asio_promise_type_allocator_base
 
     void* p = static_cast<char*>(mem) + n;
     new (p) allocator_type(std::move(allocator));
+
     return mem;
   }
   void   operator delete(void * ptr, std::size_t n)
@@ -564,6 +567,10 @@ struct boost_asio_promise_type_allocator_base
   }
 };
 
+template<>
+struct boost_asio_promise_type_allocator_base<std::allocator<void>>
+{
+};
 
 template<typename Handler, Executor Ex, IoAwaitable Awaitable>
 struct boost_asio_init_promise_type
@@ -577,7 +584,9 @@ struct boost_asio_init_promise_type
       Handler & h, 
       Ex & exec, 
       Awaitable &)
-        : handler(h), ex(exec) {}
+        : handler(h), ex(exec) 
+    {
+    }
 
     Handler & handler;
     Ex &ex;
@@ -594,27 +603,27 @@ struct boost_asio_init_promise_type
       Handler handler;
       Ex ex;
       args_type args;
-      
-      bool await_ready() const {return false;}
-      void await_suspend(
-        std::coroutine_handle<boost_asio_init_promise_type> h)
-      {
-        auto h_ = std::move(handler);
-        auto args_ = std::move(args);
-        asio_executor_adapter ex_ = std::move(ex);
-        h.destroy();
 
+
+      bool await_ready() const {return false;}
+
+      auto await_suspend(
+            std::coroutine_handle<boost_asio_init_promise_type> h) 
+      {
         auto handler_ =         
             std::apply( 
               [&](auto ... args) 
               {
-                return boost::asio::append(std::move(h_), std::move(args)...);
+                return boost::asio::append(std::move(handler), 
+                                           std::move(args)...);
               },
-              args_);
+              detail::decomposed_types(std::move(args)));
 
-        auto exec = 
-            boost::asio::get_associated_immediate_executor(handler_, ex_);
-        boost::asio::dispatch(exec, std::move(handler_));                  
+        auto exec = boost::asio::get_associated_immediate_executor(
+                        handler_, 
+                        asio_executor_adapter(std::move(ex)));
+        h.destroy();
+        boost::asio::dispatch(exec, std::move(handler_));
       }
       void await_resume() const {}
     };
@@ -641,14 +650,10 @@ struct boost_asio_init_promise_type
 
       bool await_ready() {return r.await_ready(); }
 
-      std::coroutine_handle<> await_suspend(
+      auto await_suspend(
           std::coroutine_handle<boost_asio_init_promise_type> tr)
       {
-        // always post in
-        auto h = r.handle();
-        auto & p = h.promise();
         env.executor = ex;
-
         env.stop_token = stop_src.get_token();
         cancel_slot = 
           boost::asio::get_associated_cancellation_slot(tr.promise().handler);
@@ -663,9 +668,16 @@ struct boost_asio_init_promise_type
               });
         env.frame_allocator = get_current_frame_allocator();
 
-
-        c.h = r.await_suspend(tr, &env);
-        return ex.dispatch(c);
+        using suspend_kind = decltype(r.await_suspend(tr, &env));
+        if constexpr (std::is_void_v<suspend_kind>)
+          r.await_suspend(tr, &env);
+        else if constexpr (std::same_as<suspend_kind, bool>)
+          return r.await_suspend(tr, &env);
+        else
+        {
+          c.h = r.await_suspend(tr, &env);
+          return ex.dispatch(c);
+        }        
       }
       
       completion_tuple_for_io_awaitable<Awaitable> await_resume()
