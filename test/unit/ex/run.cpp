@@ -21,9 +21,11 @@
 
 #include <boost/capy/ex/strand.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
+#include <boost/capy/test/run_blocking.hpp>
 
 #include <latch>
 #include <memory>
+#include <thread>
 
 namespace boost {
 namespace capy {
@@ -500,6 +502,35 @@ struct run_test
         pool.join();
     }
 
+    // co_await run(compute_exec)(...) from an io loop must return
+    // the caller to the io thread, not leave it on a compute worker.
+    void
+    testHopsBackToIoThread()
+    {
+        thread_pool compute_pool(2, "compute-");
+
+        std::thread::id io_tid = std::this_thread::get_id();
+        std::thread::id compute_tid{};
+        std::thread::id parent_tid_after_run{};
+
+        test::run_blocking()([&]() -> task<void> {
+            auto compute_exec = compute_pool.get_executor();
+
+            co_await capy::run(compute_exec)([&]() -> task<void> {
+                compute_tid = std::this_thread::get_id();
+                co_return;
+            }());
+
+            parent_tid_after_run = std::this_thread::get_id();
+        }());
+
+        BOOST_TEST(compute_tid != std::thread::id{});
+        BOOST_TEST(compute_tid != io_tid);
+        BOOST_TEST_EQ(parent_tid_after_run, io_tid);
+
+        compute_pool.join();
+    }
+
     void
     run()
     {
@@ -523,6 +554,7 @@ struct run_test
         testAllocatorPropagation();
         testAllocatorPropagationThroughRun();
         testRunExStrandFirstInstruction();
+        testHopsBackToIoThread();
     }
 };
 
