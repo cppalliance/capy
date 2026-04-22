@@ -12,7 +12,11 @@
 
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/ex/any_executor.hpp>
+#include <boost/capy/ex/run.hpp>
+#include <boost/capy/ex/this_coro.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
+#include <boost/capy/task.hpp>
+#include <boost/capy/test/run_blocking.hpp>
 
 #include "test_suite.hpp"
 
@@ -566,6 +570,30 @@ struct strand_test
         BOOST_TEST_EQ(completed.load(), N);
     }
 
+    // After co_await run(strand)(...) returns, caller must be outside
+    // the strand. User-reported bug: today it is still inside.
+    void
+    testExitStrandAfterRun()
+    {
+        bool running_in_strand_after_run = true;
+        bool inner_ran = false;
+
+        test::run_blocking()([&]() -> task<void> {
+            auto ex = co_await this_coro::executor;
+            auto str = capy::strand(ex);
+
+            co_await capy::run(str)([&]() -> task<void> {
+                inner_ran = true;
+                co_return;
+            }());
+
+            running_in_strand_after_run = str.running_in_this_thread();
+        }());
+
+        BOOST_TEST(inner_ran);
+        BOOST_TEST(!running_in_strand_after_run);
+    }
+
     void
     testAnyExecutor()
     {
@@ -637,6 +665,7 @@ struct strand_test
         testConcurrentPost();
         testFifoOrder();
         testSerialization();
+        testExitStrandAfterRun();
         testAnyExecutor();
     }
 };
