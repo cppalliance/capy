@@ -35,9 +35,10 @@ namespace detail {
         The return value is written to the now-destroyed frame.
 
     @li `await_suspend` hands the continuation to another thread
-        via `executor::dispatch()`, which may resume the parent.
-        The parent can destroy this frame before the runtime reads
-        `__$ReturnUdt$` (e.g. `dispatch_trampoline` final_suspend).
+        via an executor handoff (e.g. `post()` or `dispatch()`),
+        which may resume the parent. The parent can destroy this
+        frame before the runtime reads `__$ReturnUdt$` (e.g.
+        `boundary_trampoline` final_suspend).
 
     On MSVC this function calls `h.resume()` on the current stack
     and returns `void`, causing unconditional suspension. The
