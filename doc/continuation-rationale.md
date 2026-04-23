@@ -432,7 +432,7 @@ their own `continuation`:
 
 - `when_all_core::continuation_` (parent handle for combinator)
 - `when_any_core::continuation_` (same)
-- `dispatch_trampoline::parent_` (cross-executor trampoline)
+- `boundary_trampoline::parent_` (cross-executor trampoline)
 - `run_awaitable_ex::task_cont_` (initial task dispatch)
 - `run_async_trampoline::task_cont_` (same)
 

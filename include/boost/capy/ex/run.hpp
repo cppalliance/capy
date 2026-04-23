@@ -70,7 +70,7 @@ namespace boost::capy::detail {
 
     The trampoline never touches the task's result.
 */
-struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE dispatch_trampoline
+struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE boundary_trampoline
 {
     struct promise_type
         : frame_alloc_mixin
@@ -78,9 +78,9 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE dispatch_trampoline
         executor_ref caller_ex_;
         continuation parent_;
 
-        dispatch_trampoline get_return_object() noexcept
+        boundary_trampoline get_return_object() noexcept
         {
-            return dispatch_trampoline{
+            return boundary_trampoline{
                 std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
@@ -96,8 +96,9 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE dispatch_trampoline
                 auto await_suspend(
                     std::coroutine_handle<>) noexcept
                 {
+                    p_->caller_ex_.post(p_->parent_);
                     return detail::symmetric_transfer(
-                        p_->caller_ex_.dispatch(p_->parent_));
+                        std::noop_coroutine());
                 }
 
                 void await_resume() const noexcept {}
@@ -111,20 +112,20 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE dispatch_trampoline
 
     std::coroutine_handle<promise_type> h_{nullptr};
 
-    dispatch_trampoline() noexcept = default;
+    boundary_trampoline() noexcept = default;
 
-    ~dispatch_trampoline()
+    ~boundary_trampoline()
     {
         if(h_) h_.destroy();
     }
 
-    dispatch_trampoline(dispatch_trampoline const&) = delete;
-    dispatch_trampoline& operator=(dispatch_trampoline const&) = delete;
+    boundary_trampoline(boundary_trampoline const&) = delete;
+    boundary_trampoline& operator=(boundary_trampoline const&) = delete;
 
-    dispatch_trampoline(dispatch_trampoline&& o) noexcept
+    boundary_trampoline(boundary_trampoline&& o) noexcept
         : h_(std::exchange(o.h_, nullptr)) {}
 
-    dispatch_trampoline& operator=(dispatch_trampoline&& o) noexcept
+    boundary_trampoline& operator=(boundary_trampoline&& o) noexcept
     {
         if(this != &o)
         {
@@ -135,11 +136,11 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE dispatch_trampoline
     }
 
 private:
-    explicit dispatch_trampoline(std::coroutine_handle<promise_type> h) noexcept
+    explicit boundary_trampoline(std::coroutine_handle<promise_type> h) noexcept
         : h_(h) {}
 };
 
-inline dispatch_trampoline make_dispatch_trampoline()
+inline boundary_trampoline make_boundary_trampoline()
 {
     co_return;
 }
@@ -170,7 +171,7 @@ struct [[nodiscard]] run_awaitable_ex
     frame_memory_resource<Alloc> resource_;
     std::conditional_t<InheritStopToken, std::monostate, std::stop_token> st_;
     io_env env_;
-    dispatch_trampoline tr_;
+    boundary_trampoline tr_;
     continuation task_cont_;
     Task inner_;  // Last: destroyed first, while env_ is still valid
 
@@ -224,7 +225,7 @@ struct [[nodiscard]] run_awaitable_ex
 
     std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const* caller_env)
     {
-        tr_ = make_dispatch_trampoline();
+        tr_ = make_boundary_trampoline();
         tr_.h_.promise().caller_ex_ = caller_env->executor;
         tr_.h_.promise().parent_.h = cont;
 
@@ -245,7 +246,8 @@ struct [[nodiscard]] run_awaitable_ex
 
         p.set_environment(&env_);
         task_cont_.h = h;
-        return ex_.dispatch(task_cont_);
+        ex_.post(task_cont_);
+        return std::noop_coroutine();
     }
 
     // Non-copyable
