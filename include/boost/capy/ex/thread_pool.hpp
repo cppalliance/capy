@@ -196,22 +196,22 @@ public:
 
     /** Dispatch a continuation for execution.
 
-        Posts the continuation to the thread pool for execution on a
-        worker thread and returns `std::noop_coroutine()`. Thread
-        pools never execute inline because no single thread "owns"
-        the pool.
+        If the calling thread is a worker of this pool, returns
+        `c.h` for symmetric transfer so the caller can resume the
+        continuation inline. Otherwise, posts the continuation to
+        the pool for execution on a worker thread and returns
+        `std::noop_coroutine()`.
 
-        @param c The continuation to execute. Must remain at a
-                 stable address until dequeued and resumed.
+        @param c The continuation to execute. On the post path,
+                 must remain at a stable address until dequeued
+                 and resumed.
 
-        @return `std::noop_coroutine()` always.
+        @return `c.h` when the calling thread is a pool worker;
+                `std::noop_coroutine()` otherwise.
     */
+    BOOST_CAPY_DECL
     std::coroutine_handle<>
-    dispatch(continuation& c) const
-    {
-        post(c);
-        return std::noop_coroutine();
-    }
+    dispatch(continuation& c) const;
 
     /** Post a continuation to the thread pool.
 

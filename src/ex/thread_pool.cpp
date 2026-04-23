@@ -10,6 +10,7 @@
 
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/continuation.hpp>
+#include <boost/capy/detail/thread_local_ptr.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/test/thread_name.hpp>
 #include <algorithm>
@@ -51,6 +52,12 @@ namespace capy {
 
 class thread_pool::impl
 {
+    // Identifies the pool owning the current worker thread, or
+    // nullptr if the calling thread is not a pool worker. Checked
+    // by dispatch() to decide between symmetric transfer (inline
+    // resume) and post.
+    static inline detail::thread_local_ptr<impl const> current_;
+
     // Intrusive queue of continuations via continuation::next.
     // No per-post allocation: the continuation is owned by the caller.
     continuation* head_ = nullptr;
@@ -95,6 +102,12 @@ class thread_pool::impl
 
 public:
     ~impl() = default;
+
+    bool
+    running_in_this_thread() const noexcept
+    {
+        return current_.get() == this;
+    }
 
     // Destroy abandoned coroutine frames. Must be called
     // before execution_context::shutdown()/destroy() so
@@ -213,6 +226,14 @@ private:
         std::snprintf(name, sizeof(name), "%s%zu", thread_name_prefix_, index);
         set_current_thread_name(name);
 
+        // Mark this thread as a worker of this pool so dispatch()
+        // can symmetric-transfer when called from within pool work.
+        struct scoped_pool
+        {
+            scoped_pool(impl const* p) noexcept { current_.set(p); }
+            ~scoped_pool() noexcept { current_.set(nullptr); }
+        } guard(this);
+
         for(;;)
         {
             continuation* c = nullptr;
@@ -295,6 +316,16 @@ thread_pool::executor_type::
 post(continuation& c) const
 {
     pool_->impl_->post(c);
+}
+
+std::coroutine_handle<>
+thread_pool::executor_type::
+dispatch(continuation& c) const
+{
+    if(pool_->impl_->running_in_this_thread())
+        return c.h;
+    pool_->impl_->post(c);
+    return std::noop_coroutine();
 }
 
 } // capy
