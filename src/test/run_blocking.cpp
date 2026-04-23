@@ -87,10 +87,8 @@ void
 blocking_context::enqueue(
     std::coroutine_handle<> h)
 {
-    {
-        std::lock_guard<std::mutex> lock(impl_->mtx);
-        impl_->queue.push(h);
-    }
+    std::lock_guard<std::mutex> lock(impl_->mtx);
+    impl_->queue.push(h);
     impl_->cv.notify_one();
 }
 
