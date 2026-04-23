@@ -49,6 +49,46 @@ struct test_service : execution_context::service
     void shutdown() override {}
 };
 
+// Probe coroutine starts suspended; resuming it completes and
+// auto-destroys the frame (suspend_never final). If never
+// resumed, probe_coro's dtor destroys it.
+struct probe_coro
+{
+    struct promise_type
+    {
+        probe_coro
+        get_return_object() noexcept
+        {
+            return probe_coro{
+                std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+        std::suspend_always initial_suspend() noexcept { return {}; }
+        std::suspend_never final_suspend() noexcept { return {}; }
+        void return_void() noexcept {}
+        void unhandled_exception() { std::terminate(); }
+    };
+
+    std::coroutine_handle<promise_type> h_;
+
+    ~probe_coro() { if(h_) h_.destroy(); }
+
+    probe_coro(probe_coro&& other) noexcept
+        : h_(other.h_) { other.h_ = nullptr; }
+
+    std::coroutine_handle<void> handle() const noexcept { return h_; }
+    void release() noexcept { h_ = nullptr; }
+
+private:
+    explicit probe_coro(std::coroutine_handle<promise_type> h)
+        : h_(h) {}
+};
+
+inline probe_coro
+make_probe()
+{
+    co_return;
+}
+
 #if defined(BOOST_CAPY_TEST_CAN_GET_THREAD_NAME)
 // Result storage for thread name check
 struct name_check_result
@@ -189,12 +229,95 @@ struct thread_pool_test
     void
     testDispatch()
     {
-        continuation c{std::noop_coroutine()};
-        thread_pool pool(1);
-        auto ex = pool.get_executor();
+        // From outside any pool, dispatch() posts.
+        auto probe = make_probe();
+        auto probe_h = probe.handle();
+        auto* target = new continuation{probe_h};
 
-        // dispatch() always posts for thread_pool (returns void)
-        ex.dispatch(c);
+        std::coroutine_handle<> returned;
+        {
+            thread_pool pool(1);
+            auto ex = pool.get_executor();
+            returned = ex.dispatch(*target);
+        }
+
+        BOOST_TEST(returned != probe_h);
+        if(returned != probe_h)
+            probe.release();
+        delete target;
+    }
+
+    void
+    testDispatchSymmetricTransfer()
+    {
+        // From a worker thread of the same pool, dispatch()
+        // returns c.h for symmetric transfer and does not
+        // enqueue the continuation.
+        auto probe = make_probe();
+        auto probe_h = probe.handle();
+
+        // Heap-allocated so target outlives the pool if a buggy
+        // implementation erroneously posts it.
+        auto* target = new continuation{probe_h};
+
+        std::atomic<bool> done{false};
+        std::coroutine_handle<> returned;
+
+        {
+            thread_pool pool(1);
+            auto ex = pool.get_executor();
+
+            run_async(ex, [&]{
+                returned = ex.dispatch(*target);
+                done.store(true);
+            })(void_task());
+
+            BOOST_TEST(wait_for([&]{ return done.load(); }));
+        }
+
+        // On symmetric transfer the returned handle equals the
+        // target's handle and the probe is never enqueued.
+        BOOST_TEST(returned == probe_h);
+
+        // If the dispatch posted (buggy), the pool destructor's
+        // drain_abandoned already destroyed probe_h; release so
+        // the probe_coro dtor does not double-destroy.
+        if(returned != probe_h)
+            probe.release();
+        delete target;
+    }
+
+    void
+    testDispatchCrossPool()
+    {
+        // Worker threads of pool A are not workers of pool B:
+        // dispatch() on B from an A worker must post, not
+        // symmetric-transfer.
+        auto probe = make_probe();
+        auto probe_h = probe.handle();
+        auto* target = new continuation{probe_h};
+
+        std::atomic<bool> done{false};
+        std::coroutine_handle<> returned;
+
+        {
+            thread_pool pool_a(1);
+            thread_pool pool_b(1);
+            auto ex_a = pool_a.get_executor();
+            auto ex_b = pool_b.get_executor();
+
+            run_async(ex_a, [&]{
+                returned = ex_b.dispatch(*target);
+                done.store(true);
+            })(void_task());
+
+            BOOST_TEST(wait_for([&]{ return done.load(); }));
+        }
+
+        BOOST_TEST(returned != probe_h);
+        if(returned != probe_h)
+            probe.release();
+        delete target;
     }
 
     void
@@ -584,6 +707,8 @@ struct thread_pool_test
         testPostWork();
         testWorkCounting();
         testDispatch();
+        testDispatchSymmetricTransfer();
+        testDispatchCrossPool();
         testServiceManagement();
         testMakeService();
         testConcurrentPost();
