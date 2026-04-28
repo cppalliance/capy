@@ -220,15 +220,14 @@ void callback()
 
 == Implementation Notes
 
-Capy's strand uses a fixed pool of 211 implementation objects. New strands
-hash to select an impl from the pool. Strands that hash to the same index
-share serialization:
+Each strand owns a private serialization state. Strands sharing an
+execution context draw from a small pool of mutexes (193 entries) for
+their internal critical sections; mutex sharing causes only brief
+contention on push/pop, never cross-strand state sharing.
 
-* This is harmless — just extra serialization
-* Rare with 211 buckets
-* No allocation for strand creation
-
-This design trades minimal extra serialization for zero per-strand allocation.
+* Construction cost: one `std::make_shared` per strand
+* Two distinct strands always serialize independently
+* The mutex pool keeps memory bounded as strand count grows
 
 == When NOT to Use Strands
 

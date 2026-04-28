@@ -36,11 +36,12 @@ namespace capy {
     Coroutines resumed through a strand shall not run concurrently.
 
     @par Implementation
-    The strand uses a service-based architecture with a fixed pool
-    of 211 implementation objects. New strands hash to select an
-    impl from the pool. Strands that hash to the same index share
-    serialization, which is harmless (just extra serialization)
-    and rare with 211 buckets.
+    Each strand allocates a private serialization state. Strands
+    constructed from the same execution context share a small pool
+    of mutexes (193 entries) selected by hash; mutex sharing causes
+    only brief contention on the push/pop critical section, never
+    cross-strand state sharing. Construction cost: one
+    `std::make_shared` per strand.
 
     @par Executor Concept
     This class satisfies the `Executor` concept, providing:
@@ -73,8 +74,10 @@ namespace capy {
 template<typename Ex>
 class strand
 {
-    detail::strand_impl* impl_;
+    std::shared_ptr<detail::strand_impl> impl_;
     Ex ex_;
+
+    friend struct strand_test;
 
 public:
     /** The type of the underlying executor.
@@ -83,9 +86,8 @@ public:
 
     /** Construct a strand for the specified executor.
 
-        Obtains a strand implementation from the service associated
-        with the executor's context. The implementation is selected
-        from a fixed pool using a hash function.
+        Allocates a fresh strand implementation from the service
+        associated with the executor's context.
 
         @param ex The inner executor to wrap. Coroutines will
             ultimately be dispatched through this executor.
@@ -101,7 +103,7 @@ public:
     explicit
     strand(Ex1&& ex)
         : impl_(detail::get_strand_service(ex.context())
-            .get_implementation())
+            .create_implementation())
         , ex_(std::forward<Ex1>(ex))
     {
     }
@@ -198,7 +200,7 @@ public:
     bool
     operator==(strand const& other) const noexcept
     {
-        return impl_ == other.impl_;
+        return impl_.get() == other.impl_.get();
     }
 
     /** Post a continuation to the strand.
@@ -218,7 +220,7 @@ public:
     void
     post(continuation& c) const
     {
-        detail::strand_service::post(*impl_, executor_ref(ex_), c.h);
+        detail::strand_service::post(impl_, executor_ref(ex_), c.h);
     }
 
     /** Dispatch a continuation through the strand.
@@ -241,7 +243,7 @@ public:
     std::coroutine_handle<>
     dispatch(continuation& c) const
     {
-        return detail::strand_service::dispatch(*impl_, executor_ref(ex_), c.h);
+        return detail::strand_service::dispatch(impl_, executor_ref(ex_), c.h);
     }
 };
 

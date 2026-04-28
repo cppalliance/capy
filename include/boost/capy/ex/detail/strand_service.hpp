@@ -15,7 +15,7 @@
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 
-#include <cstddef>
+#include <memory>
 
 namespace boost {
 namespace capy {
@@ -32,13 +32,11 @@ struct is_strand : std::false_type {};
 template<typename E>
 struct is_strand<strand<E>> : std::true_type {};
 
-//----------------------------------------------------------
+/** Service that manages strand implementations.
 
-/** Service that manages pooled strand implementations.
-
-    This service maintains a fixed pool of strand_impl objects.
-    When a strand is constructed, it obtains a pointer to one
-    of these pooled implementations based on a hash.
+    Allocates one `strand_impl` per strand. Maintains a shared pool of
+    mutexes that strand_impls borrow, sized to keep memory bounded as
+    strand count grows.
 
     @par Thread Safety
     The service operations are thread-safe.
@@ -51,16 +49,16 @@ public:
     */
     virtual ~strand_service();
 
-    /** Return a pointer to a pooled implementation.
+    /** Allocate a new strand implementation.
 
-        Uses a hash to select an implementation from the pool.
-        The salt is incremented after each call to distribute
-        strands across the pool.
+        Each call returns a fresh `strand_impl` owned by the returned
+        `shared_ptr`. The implementation borrows a mutex from the
+        service's shared pool.
 
-        @return Pointer to a strand_impl from the pool.
+        @return shared_ptr to the new strand_impl.
     */
-    virtual strand_impl*
-    get_implementation() = 0;
+    virtual std::shared_ptr<strand_impl>
+    create_implementation() = 0;
 
     /** Check if THIS thread is currently executing in the strand. */
     static bool
@@ -68,11 +66,17 @@ public:
 
     /** Dispatch through strand; returns handle for symmetric transfer. */
     static std::coroutine_handle<>
-    dispatch(strand_impl& impl, executor_ref ex, std::coroutine_handle<> h);
+    dispatch(
+        std::shared_ptr<strand_impl> const& impl,
+        executor_ref ex,
+        std::coroutine_handle<> h);
 
     /** Post to strand queue. */
     static void
-    post(strand_impl& impl, executor_ref ex, std::coroutine_handle<> h);
+    post(
+        std::shared_ptr<strand_impl> const& impl,
+        executor_ref ex,
+        std::coroutine_handle<> h);
 
 protected:
     strand_service();
