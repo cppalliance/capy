@@ -43,7 +43,7 @@ If the executor determines it is safe (e.g., the current thread is already assoc
 
 Queues the continuation for later execution without ever executing it inline. Never blocks. The continuation is linked into the executor's internal queue via its intrusive `next` pointer -- no per-post heap allocation.
 
-Both operations accept `continuation&` rather than `std::coroutine_handle<>`. A `continuation` wraps a coroutine handle with an intrusive list pointer, enabling zero-allocation queuing. See xref:../continuation-rationale.adoc[Continuation Rationale] for the design of this type.
+Both operations accept `continuation&` rather than `std::coroutine_handle<>`. A `continuation` wraps a coroutine handle with an intrusive list pointer, enabling zero-allocation queuing.
 
 The remaining operations support context access, lifecycle management, and identity:
 

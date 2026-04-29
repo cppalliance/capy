@@ -115,6 +115,6 @@ capy::run_async(executor)(might_fail(),
 
 Now that you have a working program:
 
-* xref:coroutines/tasks.adoc[Tasks] — Learn how lazy tasks work
-* xref:coroutines/launching.adoc[Launching Tasks] — Understand `run_async` in detail
-* xref:coroutines/affinity.adoc[Executor Affinity] — Control where coroutines execute
+* xref:4.coroutines/4a.tasks.adoc[Tasks] — Learn how lazy tasks work
+* xref:4.coroutines/4b.launching.adoc[Launching Tasks] — Understand `run_async` in detail
+* xref:4.coroutines/4c.executors.adoc[Executors and Execution Contexts] — Control where coroutines execute
