@@ -202,7 +202,8 @@ std::string header = build_header();
 std::vector<char> body = load_body();
 
 // No copying—header and body are written directly
-co_await write(stream, cat(make_buffer(header), make_buffer(body)));
+std::array buffers = {make_buffer(header), make_buffer(body)};
+co_await write(stream, buffers);
 ----
 
 === Scatter/Gather Operations

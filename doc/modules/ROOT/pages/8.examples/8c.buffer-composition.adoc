@@ -223,8 +223,7 @@ Prepared 2 buffers with 128 bytes total capacity
 == Exercises
 
 1. Create a function that takes any `ConstBufferSequence` and prints its contents
-2. Measure the difference between copying data into a single buffer vs. using `cat()`
-3. Implement a simple message framing protocol using buffer composition
+2. Implement a simple message framing protocol using buffer composition
 
 == Next Steps
 
