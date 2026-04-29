@@ -10,7 +10,7 @@ Composing buffer sequences without allocation for scatter/gather I/O.
 
 == Prerequisites
 
-* Completed xref:7.examples/7b.producer-consumer.adoc[Producer-Consumer]
+* Completed xref:8.examples/8b.producer-consumer.adoc[Producer-Consumer]
 * Understanding of buffer types from xref:../5.buffers/5b.types.adoc[Buffer Types]
 
 == Source Code
@@ -228,4 +228,4 @@ Prepared 2 buffers with 128 bytes total capacity
 
 == Next Steps
 
-* xref:7.examples/7d.mock-stream-testing.adoc[Mock Stream Testing] — Unit testing with mock streams
+* xref:8.examples/8d.mock-stream-testing.adoc[Mock Stream Testing] — Unit testing with mock streams

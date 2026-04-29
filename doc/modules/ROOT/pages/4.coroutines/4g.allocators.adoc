@@ -53,7 +53,7 @@ To prevent this, any code that calls `.resume()` on a coroutine handle must use 
 capy::safe_resume(h);   // saves and restores TLS around h.resume()
 ----
 
-`safe_resume` saves the current thread-local allocator, calls `h.resume()`, then restores the saved value. This makes TLS behave like a stack: nested resumes cannot spoil the outer value. All of Capy's built-in executors (`thread_pool`, strands, `blocking_context`) use `safe_resume` internally. Custom executor event loops must do the same -- see xref:7.examples/7n.custom-executor.adoc[Custom Executor] for an example.
+`safe_resume` saves the current thread-local allocator, calls `h.resume()`, then restores the saved value. This makes TLS behave like a stack: nested resumes cannot spoil the outer value. All of Capy's built-in executors (`thread_pool`, strands, `blocking_context`) use `safe_resume` internally. Custom executor event loops must do the same -- see xref:8.examples/8n.custom-executor.adoc[Custom Executor] for an example.
 
 == The FrameAllocator Concept
 

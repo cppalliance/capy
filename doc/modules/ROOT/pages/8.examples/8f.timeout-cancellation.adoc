@@ -10,7 +10,7 @@ Using stop tokens to implement operation timeouts.
 
 == Prerequisites
 
-* Completed xref:7.examples/7e.type-erased-echo.adoc[Type-Erased Echo]
+* Completed xref:8.examples/8e.type-erased-echo.adoc[Type-Erased Echo]
 * Understanding of stop tokens from xref:../4.coroutines/4e.cancellation.adoc[Cancellation]
 
 == Source Code
@@ -241,4 +241,4 @@ Cancelled (returned nullopt)
 
 == Next Steps
 
-* xref:7.examples/7g.parallel-fetch.adoc[Parallel Fetch] — Concurrent operations with when_all
+* xref:8.examples/8g.parallel-fetch.adoc[Parallel Fetch] — Concurrent operations with when_all

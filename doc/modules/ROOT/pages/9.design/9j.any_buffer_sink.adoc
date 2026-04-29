@@ -153,7 +153,7 @@ The serializer never allocates a scratch buffer for the formatted output. The by
 
 == Awaitable Caching
 
-`any_buffer_sink` uses the split vtable pattern described in xref:8.design/8h.TypeEraseAwaitable.adoc[Type-Erasing Awaitables]. Multiple async operations (`commit`, `commit_eof`, plus the four `WriteSink` operations when the concrete type supports them) share a single cached awaitable storage region.
+`any_buffer_sink` uses the split vtable pattern described in xref:9.design/9i.TypeEraseAwaitable.adoc[Type-Erasing Awaitables]. Multiple async operations (`commit`, `commit_eof`, plus the four `WriteSink` operations when the concrete type supports them) share a single cached awaitable storage region.
 
 The constructor computes the maximum size and alignment across all awaitable types that the concrete type can produce and allocates that storage once. This reserves all virtual address space at construction time, so memory usage is measurable at server startup rather than growing piecemeal as requests arrive.
 

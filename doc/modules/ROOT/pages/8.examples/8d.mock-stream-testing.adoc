@@ -10,7 +10,7 @@ Unit testing protocol code with mock streams and error injection.
 
 == Prerequisites
 
-* Completed xref:7.examples/7c.buffer-composition.adoc[Buffer Composition]
+* Completed xref:8.examples/8c.buffer-composition.adoc[Buffer Composition]
 * Understanding of streams from xref:../6.streams/6b.streams.adoc[Streams]
 
 == Source Code
@@ -253,4 +253,4 @@ All tests passed!
 
 == Next Steps
 
-* xref:7.examples/7e.type-erased-echo.adoc[Type-Erased Echo] — Compilation firewall pattern
+* xref:8.examples/8e.type-erased-echo.adoc[Type-Erased Echo] — Compilation firewall pattern

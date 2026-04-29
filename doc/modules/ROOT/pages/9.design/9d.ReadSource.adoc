@@ -352,7 +352,7 @@ Examples of types that satisfy `ReadSource`:
 
 == Errors May Accompany Data
 
-The `read_some` contract (inherited from `ReadStream`) permits `n > 0` when `ec` is set, including on EOF. The implementation reports exactly what happened: the bytes that arrived and the condition that stopped the transfer. See xref:8.design/8c.ReadStream.adoc#_design_foundations_why_errors_may_accompany_data[ReadStream: Why Errors May Accompany Data] for the full rationale. The key points:
+The `read_some` contract (inherited from `ReadStream`) permits `n > 0` when `ec` is set, including on EOF. The implementation reports exactly what happened: the bytes that arrived and the condition that stopped the transfer. See xref:9.design/9c.ReadStream.adoc#_design_foundations_why_errors_may_accompany_data[ReadStream: Why Errors May Accompany Data] for the full rationale. The key points:
 
 - The `(error_code, size_t)` return type can carry both values simultaneously, transcending the POSIX limitation of reporting only one per call.
 - Layered streams (TLS, compression) may encounter an error after a partial transfer. Allowing `(ec, n)` with `n > 0` avoids forcing deferred-error bookkeeping or data loss.

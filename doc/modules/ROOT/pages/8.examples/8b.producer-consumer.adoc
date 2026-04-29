@@ -11,7 +11,7 @@ Two tasks communicating via an async event, with strand serialization.
 
 == Prerequisites
 
-* Completed xref:7.examples/7a.hello-task.adoc[Hello Task]
+* Completed xref:8.examples/8a.hello-task.adoc[Hello Task]
 * Understanding of basic task creation and launching
 
 == Source Code
@@ -173,4 +173,4 @@ Consumer: received value 42
 
 == Next Steps
 
-* xref:7.examples/7c.buffer-composition.adoc[Buffer Composition] — Zero-allocation buffer composition
+* xref:8.examples/8c.buffer-composition.adoc[Buffer Composition] — Zero-allocation buffer composition

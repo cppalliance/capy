@@ -1,0 +1,281 @@
+//
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Mock Sources and Sinks
+
+Concept-conforming test doubles for the complete-I/O concepts in
+xref:6.streams/6c.sources-sinks.adoc[Sources and Sinks]. Sources fill the
+buffer completely (looping internally if needed); sinks accept all bytes
+and report EOF.
+
+== read_source
+
+`read_source` implements the `ReadSource` concept. Test code stages bytes
+via `provide()`, then the system under test calls `read()` and receives the
+entire requested length back (or an error or EOF). The attached `fuse`
+injects errors at every read call, exercising the caller's error-handling
+paths. Because `fuse` copies share state (see
+xref:7.testing/7a.drivers.adoc#_shared_state_across_copies[Shared State Across Copies]),
+constructing `read_source rs(f)` by value still ties `rs` to the same
+fail-point machinery as `f`.
+
+[source,cpp]
+----
+#include <boost/capy/test/read_source.hpp>
+#include <boost/capy/test/fuse.hpp>
+#include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/task.hpp>
+
+using namespace boost::capy;
+using namespace boost::capy::test;
+
+void test_read_source()
+{
+    fuse f;
+    read_source rs(f);
+    rs.provide("Hello, ");
+    rs.provide("World!");
+
+    auto r = f.armed([&](fuse&) -> task<void> {
+        char buf[32];
+        auto [ec, n] = co_await rs.read(
+            mutable_buffer(buf, sizeof(buf)));
+        if(ec)
+            co_return;
+        BOOST_TEST(std::string_view(buf, n) == "Hello, World!");
+    });
+    BOOST_TEST(r.success);
+}
+----
+
+=== Complete vs. Partial Reads
+
+`read_source` exposes both `read()` and `read_some()`. The distinction
+matters:
+
+`read_some()` is a partial read, inherited from `ReadStream`. It returns
+up to `max_read_size` bytes per call and may return fewer bytes than the
+buffer can hold. Callers must loop to fill a buffer.
+
+`read()` is a complete read, satisfying `ReadSource`. It transfers all
+available data in a single operation, ignoring the `max_read_size` limit.
+On success `n` equals `buffer_size(buffers)`. If available data runs out
+before the buffer is filled, `read()` returns `error::eof` with `n`
+set to however many bytes were transferred. Callers do not need to loop.
+
+This is the key behavioral difference from `read_stream::read_some()`,
+which always returns a partial result and never fills the buffer on its
+own.
+
+[cols="1,2"]
+|===
+| Member | Description
+
+| `read_source(fuse f = {}, std::size_t max_read_size = std::size_t(-1))`
+| Construct with an optional shared `fuse` and an optional per-read byte limit.
+  When omitted, the fuse is inert and reads return all available data at once.
+  Set `max_read_size` to simulate chunked delivery; the limit applies to
+  `read_some()` only -- `read()` ignores it.
+
+| `provide(std::string_view sv)`
+| Append bytes to the internal buffer for subsequent reads. Multiple
+  calls accumulate data.
+
+| `read(MutableBufferSequence buffers)`
+| Complete read. Transfers all available data in a single step, ignoring
+  `max_read_size`. Returns `error::eof` with partial `n` if data runs
+  out before the buffer is filled. Consults the fuse before every call.
+
+| `read_some(MutableBufferSequence buffers)`
+| Partial read. Returns up to `max_read_size` bytes (or all available if
+  no limit was set). Returns `error::eof` when the buffer is drained.
+  Consults the fuse before every call.
+
+| `available() -> std::size_t`
+| Return the number of bytes remaining to be read.
+
+| `clear()`
+| Clear all data and reset the read position.
+|===
+
+== write_sink
+
+`write_sink` implements the `WriteSink` concept. The system under test
+calls `write()` and `write_eof()` while the test inspects what was written
+via `data()` and checks whether EOF was signaled via `eof_called()`.
+Test code may also call `expect()` to register the data it anticipates;
+any mismatch between written bytes and that prefix causes `write_some()`
+to return `error::test_failure`. Because `fuse` copies share state (see
+xref:7.testing/7a.drivers.adoc#_shared_state_across_copies[Shared State Across Copies]),
+constructing `write_sink ws(f)` by value still ties `ws` to the same
+fail-point machinery as `f`.
+
+[source,cpp]
+----
+#include <boost/capy/test/write_sink.hpp>
+#include <boost/capy/test/fuse.hpp>
+#include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/task.hpp>
+
+using namespace boost::capy;
+using namespace boost::capy::test;
+
+void test_write_sink()
+{
+    fuse f;
+    write_sink ws(f);
+
+    auto r = f.armed([&](fuse&) -> task<void> {
+        auto [ec, n] = co_await ws.write(
+            const_buffer("Hello", 5));
+        if(ec)
+            co_return;
+        auto [ec2] = co_await ws.write_eof();
+        if(ec2)
+            co_return;
+    });
+    BOOST_TEST(r.success);
+    BOOST_TEST(ws.data() == "Hello");
+    BOOST_TEST(ws.eof_called());
+}
+----
+
+=== EOF Signal
+
+`write_eof()` is the explicit end-of-stream marker, with no analog in
+`write_stream`. Some protocols treat connection close as the end-of-body
+signal (HTTP/1.0 without `Content-Length` is one example), so the sink
+needs a way to capture that event separately from the data transfer.
+
+`write_sink` provides two forms of the signal:
+
+* `write_eof()` -- signal EOF without data.
+* `write_eof(buffers)` -- atomically write the last chunk and signal EOF
+  in a single awaitable. This form lets protocol code optimize the final
+  send so data and the termination marker travel together.
+
+After either form succeeds, `eof_called()` returns `true`. The fuse is
+consulted before the operation, so both forms participate in error
+injection.
+
+[cols="1,2"]
+|===
+| Member | Description
+
+| `write_sink(fuse f = {}, std::size_t max_write_size = std::size_t(-1))`
+| Construct with an optional shared `fuse` and an optional per-write byte limit.
+  When omitted, the fuse is inert and writes accept all bytes at once.
+  Set `max_write_size` to simulate chunked delivery; the limit applies to
+  `write_some()` only -- `write()` and `write_eof(buffers)` ignore it.
+
+| `write(ConstBufferSequence buffers)`
+| Complete write. Transfers all bytes from `buffers` to the internal
+  buffer, ignoring `max_write_size`. Checks against expected data after
+  appending. Consults the fuse before every call.
+
+| `write_some(ConstBufferSequence buffers)`
+| Partial write. Appends up to `max_write_size` bytes to the internal
+  buffer. Checks against expected data after appending; returns
+  `error::test_failure` on mismatch. Consults the fuse before every call.
+
+| `write_eof(ConstBufferSequence buffers)`
+| Atomically write remaining bytes and signal end-of-stream. Sets
+  `eof_called()` to `true` on success. Consults the fuse before the call.
+
+| `write_eof()`
+| Signal end-of-stream without writing data. Sets `eof_called()` to
+  `true` on success. Consults the fuse before the call.
+
+| `data() -> std::string_view`
+| Return bytes written but not yet matched by `expect()`.
+
+| `size() -> std::size_t`
+| Return the number of bytes written.
+
+| `eof_called() -> bool`
+| Return `true` if `write_eof()` or `write_eof(buffers)` has succeeded.
+
+| `expect(std::string_view sv) -> std::error_code`
+| Register expected data and immediately check any already-written bytes.
+  Matched bytes are consumed from both sides. Returns an error if existing
+  data does not match.
+
+| `clear()`
+| Clear all data, expected data, and reset `eof_called` to `false`.
+|===
+
+== Putting It Together
+
+The following snippet tests a request-handler coroutine that reads a
+fixed-size request from a `ReadSource`, processes it, and writes the
+response to a `WriteSink`. The `fuse.armed()` loop exercises every
+error site in both the read and write paths.
+
+[source,cpp]
+----
+#include <boost/capy/test/read_source.hpp>
+#include <boost/capy/test/write_sink.hpp>
+#include <boost/capy/test/fuse.hpp>
+#include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/task.hpp>
+
+using namespace boost::capy;
+using namespace boost::capy::test;
+
+// Function under test: echo the request back as the response
+template<ReadSource Source, WriteSink Sink>
+task<> handle_request(Source& source, Sink& sink)
+{
+    char buf[64];
+    auto [ec, n] = co_await source.read(
+        mutable_buffer(buf, sizeof(buf)));
+    if(ec)
+        co_return;
+
+    auto [ec2, n2] = co_await sink.write(
+        const_buffer(buf, n));
+    if(ec2)
+        co_return;
+
+    auto [ec3] = co_await sink.write_eof();
+    if(ec3)
+        co_return;
+}
+
+void test_handle_request()
+{
+    fuse f;
+    read_source rs(f);
+    write_sink ws(f);
+
+    rs.provide("ping");
+
+    auto r = f.armed([&](fuse&) -> task<void> {
+        co_await handle_request(rs, ws);
+    });
+    BOOST_TEST(r.success);
+    BOOST_TEST(ws.data() == "ping");
+    BOOST_TEST(ws.eof_called());
+}
+----
+
+== Reference
+
+[cols="1,3"]
+|===
+| Header | Contents
+
+| `<boost/capy/test/read_source.hpp>`
+| Mock ReadSource with complete reads.
+
+| `<boost/capy/test/write_sink.hpp>`
+| Mock WriteSink with complete writes and explicit EOF.
+|===
+
+Continue to xref:7.testing/7d.mock-buffer-concepts.adoc[Mock Buffer Sources and Sinks].

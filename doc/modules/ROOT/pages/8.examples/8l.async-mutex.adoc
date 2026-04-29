@@ -11,7 +11,7 @@ Fair FIFO coroutine locking with `async_mutex`.
 
 == Prerequisites
 
-* Completed xref:7.examples/7k.strand-serialization.adoc[Strand Serialization]
+* Completed xref:8.examples/8k.strand-serialization.adoc[Strand Serialization]
 
 == Source Code
 
@@ -165,4 +165,4 @@ Acquisition order: W0 -> W1 -> W2 -> W3 -> W4 -> W5
 
 == Next Steps
 
-* xref:7.examples/7m.parallel-tasks.adoc[Parallel Tasks] -- Distributing work across a thread pool
+* xref:8.examples/8m.parallel-tasks.adoc[Parallel Tasks] -- Distributing work across a thread pool

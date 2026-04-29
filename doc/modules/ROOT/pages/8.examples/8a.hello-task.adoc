@@ -100,4 +100,4 @@ Hello from Capy!
 
 == Next Steps
 
-* xref:7.examples/7b.producer-consumer.adoc[Producer-Consumer] — Multiple tasks communicating
+* xref:8.examples/8b.producer-consumer.adoc[Producer-Consumer] — Multiple tasks communicating
