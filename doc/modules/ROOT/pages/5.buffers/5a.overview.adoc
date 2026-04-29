@@ -99,23 +99,6 @@ This single signature accepts:
 * A custom composite type
 * *Any composition of the above—without allocation*
 
-== Zero-Allocation Composition
-
-With concepts, composition creates views, not copies:
-
-[source,cpp]
-----
-HeaderBuffers headers = /* ... */;
-BodyBuffers body = /* ... */;
-
-// cat() creates a view that iterates both sequences
-auto combined = cat(headers, body);  // No allocation!
-
-write_data(combined);  // Works because combined satisfies ConstBufferSequence
-----
-
-The `cat` function returns a lightweight object that, when iterated, first yields buffers from `headers`, then from `body`. The buffers themselves are not copied—only iterators are composed.
-
 == STL Parallel
 
 This design follows Stepanov's insight from the STL: algorithms parameterized on concepts (iterators), not concrete types (containers), enable composition that concrete types forbid.

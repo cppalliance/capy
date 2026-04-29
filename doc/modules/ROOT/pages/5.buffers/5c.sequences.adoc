@@ -133,23 +133,6 @@ task<std::size_t> read_all(Stream& stream, Buffers buffers)
 * Iteration over unconsumed buffers
 * `buffer_size()` of remaining bytes
 
-== Zero-Allocation Composition
-
-The `cat()` function composes buffer sequences without allocation:
-
-[source,cpp]
-----
-auto headers = std::array{header_buf1, header_buf2};
-auto body = body_buffer;
-
-auto combined = cat(headers, body);  // No allocation
-
-// combined satisfies ConstBufferSequence
-// Iteration yields: header_buf1, header_buf2, body_buffer
-----
-
-The returned object stores references (or small copies for single buffers) and iterates through the composed sequence on demand.
-
 == Why Bidirectional?
 
 The concepts require bidirectional ranges (not just forward ranges) for two reasons:
