@@ -10,7 +10,7 @@ A complete echo server using Corosio for real network I/O.
 
 == Prerequisites
 
-* Completed xref:7.examples/7h.custom-dynamic-buffer.adoc[Custom Dynamic Buffer]
+* Completed xref:8.examples/8h.custom-dynamic-buffer.adoc[Custom Dynamic Buffer]
 * Corosio library installed
 * Understanding of TCP networking basics
 
@@ -188,4 +188,4 @@ Connection from 127.0.0.1:54321
 
 == Next Steps
 
-* xref:7.examples/7j.stream-pipeline.adoc[Stream Pipeline] -- Data transformation chains
+* xref:8.examples/8j.stream-pipeline.adoc[Stream Pipeline] -- Data transformation chains

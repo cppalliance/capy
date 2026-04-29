@@ -10,7 +10,7 @@ Protecting shared state with a strand instead of a mutex.
 
 == Prerequisites
 
-* Completed xref:7.examples/7b.producer-consumer.adoc[Producer-Consumer] (introduces `strand`)
+* Completed xref:8.examples/8b.producer-consumer.adoc[Producer-Consumer] (introduces `strand`)
 * Understanding of `when_all` from xref:../4.coroutines/4f.composition.adoc[Composition]
 
 == Source Code
@@ -143,4 +143,4 @@ Final counter: 10000 (expected 10000)
 
 == Next Steps
 
-* xref:7.examples/7l.async-mutex.adoc[Async Mutex] -- FIFO coroutine locking
+* xref:8.examples/8l.async-mutex.adoc[Async Mutex] -- FIFO coroutine locking

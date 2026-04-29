@@ -1,0 +1,267 @@
+//
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Buffer Inspection
+
+Two small utilities round out the toolkit. `bufgrind` iterates every split
+point of a buffer sequence, exercising every chunk-boundary condition in the
+system under test. `buffer_to_string` concatenates buffer sequences into a
+`std::string` for assertion.
+
+== bufgrind
+
+`bufgrind` is a test utility that iterates through every way to split a buffer
+sequence into two contiguous pieces. For an N-byte input it produces N+1 split
+positions: `(0, N)`, `(1, N-1)`, ..., `(N, 0)`. The two pieces at each
+position concatenate back to the original sequence. Any code that processes
+a buffer in chunks is exercised at every possible chunk boundary with a single
+`while` loop.
+
+[source,cpp]
+----
+#include <boost/capy/test/bufgrind.hpp>
+#include <boost/capy/test/buffer_to_string.hpp>
+#include <boost/capy/test/fuse.hpp>
+#include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/task.hpp>
+
+using namespace boost::capy;
+using namespace boost::capy::test;
+
+void test_all_splits()
+{
+    std::string data = "hello";
+    auto cb = make_buffer(data);
+
+    fuse f;
+    auto r = f.inert([&](fuse&) -> task<> {
+        bufgrind bg(cb);
+        while(bg)
+        {
+            auto [b1, b2] = co_await bg.next();
+            BOOST_TEST_EQ(buffer_to_string(b1, b2), data);
+        }
+    });
+    BOOST_TEST(r.success);
+}
+----
+
+=== Iteration Pattern
+
+For a 5-byte input `"hello"`, `bufgrind` yields six positions:
+
+----
+pos=0: b1=""      b2="hello"
+pos=1: b1="h"     b2="ello"
+pos=2: b1="he"    b2="llo"
+pos=3: b1="hel"   b2="lo"
+pos=4: b1="hell"  b2="o"
+pos=5: b1="hello" b2=""
+----
+
+An empty buffer sequence yields one position where both pieces are empty,
+so the loop body always executes at least once.
+
+=== Step Size
+
+When the input is large, visiting every byte boundary is expensive. Pass a
+`step` parameter to skip positions. The final position (equal to the total
+size) is always visited regardless of step alignment.
+
+[source,cpp]
+----
+std::string data = "0123456789";  // 10 bytes
+auto cb = make_buffer(data);
+
+bufgrind bg(cb, 3);
+// Visits positions: 0, 3, 6, 9, 10
+while(bg)
+{
+    auto [b1, b2] = co_await bg.next();
+    // exercise parser at each split point
+}
+----
+
+A step of 0 is treated as 1. A step larger than the total size reduces to
+two positions: 0 and size.
+
+=== Mutability Preservation
+
+`bufgrind` is templated on a `ConstBufferSequence` but the split type it
+produces follows the mutability of the input. Passing a `mutable_buffer`
+yields `mutable_buffer` slices; passing a `const_buffer` yields
+`const_buffer` slices. This matters for tests that need to write into the
+produced buffers rather than only read from them.
+
+[source,cpp]
+----
+char data[] = "hello";
+mutable_buffer mb(data, 5);
+
+bufgrind bg(mb);
+while(bg)
+{
+    auto [b1, b2] = co_await bg.next();
+    // b1 and b2 are mutable_buffer; callers may write into them
+    static_assert(std::is_same_v<decltype(b1), mutable_buffer>);
+}
+----
+
+[cols="1,2"]
+|===
+| Member | Description
+
+| `bufgrind(BS const& bs, std::size_t step = 1)`
+| Construct over a buffer sequence. `step` controls how many bytes to
+  advance on each call to `next()`. A step of 0 is treated as 1.
+  The final split at `buffer_size(bs)` is always included.
+
+| `operator bool() const`
+| Return `true` while more split positions remain.
+
+| `next()`
+| Advance to the next split position. Returns an awaitable that yields
+  `split_type`, a `std::pair` of `slice_type<BS>` values representing
+  the two pieces at the current position.
+|===
+
+== buffer_to_string
+
+`buffer_to_string` concatenates one or more buffer sequences into a
+`std::string`. With a single argument it converts that buffer sequence;
+with multiple arguments it concatenates them in order. The most common
+use is asserting the combined content of a `bufgrind` split.
+
+[source,cpp]
+----
+#include <boost/capy/test/buffer_to_string.hpp>
+#include <boost/capy/buffers/make_buffer.hpp>
+
+using namespace boost::capy;
+using namespace boost::capy::test;
+
+void test_buffer_to_string()
+{
+    // Single buffer sequence
+    const_buffer cb(make_buffer(std::string_view("hello")));
+    BOOST_TEST_EQ(buffer_to_string(cb), "hello");
+
+    // Multiple buffer sequences concatenated in order
+    const_buffer b1(make_buffer(std::string_view("hello")));
+    const_buffer b2(make_buffer(std::string_view(" world")));
+    BOOST_TEST_EQ(buffer_to_string(b1, b2), "hello world");
+}
+----
+
+=== Use With bufgrind
+
+The typical pattern passes both halves of a `bufgrind` split directly to
+`buffer_to_string` to verify that each split reconstructs the original
+input:
+
+[source,cpp]
+----
+std::string original = "hello world";
+auto cb = make_buffer(original);
+
+fuse f;
+auto r = f.inert([&](fuse&) -> task<> {
+    bufgrind bg(cb);
+    while(bg)
+    {
+        auto [b1, b2] = co_await bg.next();
+        BOOST_TEST_EQ(buffer_to_string(b1, b2), original);
+    }
+});
+BOOST_TEST(r.success);
+----
+
+[cols="1,2"]
+|===
+| Function | Description
+
+| `buffer_to_string(Buffers const&... bufs) -> std::string`
+| Concatenate one or more `ConstBufferSequence` arguments into a single
+  `std::string`. Arguments are appended in the order given.
+|===
+
+== Putting It Together
+
+The following snippet tests a hypothetical parser that reads from a
+`read_stream`. `bufgrind` exercises every split of the input so the parser
+is run against every possible chunk boundary; `buffer_to_string` verifies
+the output at each split:
+
+[source,cpp]
+----
+#include <boost/capy/test/bufgrind.hpp>
+#include <boost/capy/test/buffer_to_string.hpp>
+#include <boost/capy/test/fuse.hpp>
+#include <boost/capy/test/read_stream.hpp>
+#include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/task.hpp>
+
+using namespace boost::capy;
+using namespace boost::capy::test;
+
+// Hypothetical parser: reads all bytes from a ReadStream
+task<std::string> read_all(read_stream& rs)
+{
+    std::string out;
+    std::array<char, 64> buf;
+    for(;;)
+    {
+        auto [ec, n] = co_await rs.read_some(make_buffer(buf));
+        if(ec)
+            co_return out;
+        out.append(buf.data(), n);
+    }
+}
+
+void test_parser_all_splits()
+{
+    std::string input = "GET / HTTP/1.1\r\n";
+    auto cb = make_buffer(input);
+
+    fuse f;
+    auto r = f.inert([&](fuse&) -> task<> {
+        bufgrind bg(cb);
+        while(bg)
+        {
+            auto [b1, b2] = co_await bg.next();
+
+            // Feed the split as two discrete reads
+            read_stream rs(f);
+            rs.provide(buffer_to_string(b1));
+            rs.provide(buffer_to_string(b2));
+
+            std::string got = co_await read_all(rs);
+            BOOST_TEST_EQ(got, input);
+        }
+    });
+    BOOST_TEST(r.success);
+}
+----
+
+== Reference
+
+[cols="1,3"]
+|===
+| Header | Contents
+
+| `<boost/capy/test/bufgrind.hpp>`
+| Exhaustive buffer split-point iterator.
+
+| `<boost/capy/test/buffer_to_string.hpp>`
+| Buffer-sequence to string helper.
+|===
+
+You have reached the end of the Testing Facilities section. Continue
+to xref:8.examples/8.intro.adoc[Example Programs] for end-to-end usage
+or xref:reference:boost/capy.adoc[Reference] for the API browser.

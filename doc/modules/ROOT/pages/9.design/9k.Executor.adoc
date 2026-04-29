@@ -372,7 +372,7 @@ start(op);                           //   -- too late
 
 For coroutines, this ordering is fatal. Coroutine frame allocation happens _before_ the coroutine body executes. The compiler calls `operator new` first, then constructs the promise, then begins execution. Any mechanism that provides the allocator _after_ the coroutine call -- receiver queries, `await_transform`, explicit method calls -- arrives after the frame is already allocated with the wrong (or default) allocator.
 
-Capy's model flows context _forward_ from launcher to task. The `run_async(ex, alloc)(my_task())` two-phase invocation sets the thread-local allocator _before_ the task expression is evaluated, so `operator new` reads it in time. This is described in detail in xref:8.design/8l.RunApi.adoc[Run API].
+Capy's model flows context _forward_ from launcher to task. The `run_async(ex, alloc)(my_task())` two-phase invocation sets the thread-local allocator _before_ the task expression is evaluated, so `operator new` reads it in time. This is described in detail in xref:9.design/9l.RunApi.adoc[Run API].
 
 The same forward-flowing model applies to executors. The launcher binds the executor before the task runs. The task's promise stores the executor and propagates it to nested awaitables via `await_transform`. Context flows from caller to callee at every level, never backward.
 

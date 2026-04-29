@@ -1,0 +1,420 @@
+//
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Driving Tests
+
+Three utilities work together to run capy code synchronously inside a unit
+test: `run_blocking` drives a coroutine to completion on the calling thread,
+`fuse` injects errors at controlled points and reruns the test body until
+every failure path is covered, and `set_current_thread_name` labels worker
+threads so that multi-threaded test output is readable.
+
+== Prerequisites
+
+* xref:4.coroutines/4.intro.adoc[Coroutines in Capy]
+* xref:6.streams/6.intro.adoc[Stream Concepts]
+
+== run_blocking
+
+`run_blocking` bridges async coroutine code into a synchronous test body.
+It creates a single-threaded event loop on the calling thread, launches the
+coroutine through it, and blocks until the coroutine finishes or throws.
+No real executor or thread pool is involved.
+
+[source,cpp]
+----
+#include <boost/capy/task.hpp>
+#include <boost/capy/test/run_blocking.hpp>
+
+using namespace boost::capy;
+using namespace boost::capy::test;
+
+task<int> compute(int x)
+{
+    co_return x * 2;
+}
+
+void test_compute()
+{
+    int result = 0;
+    run_blocking([&](int v) { result = v; })(compute(21));
+    BOOST_TEST(result == 42);
+}
+----
+
+=== Result Capture
+
+Call `run_blocking` with a lambda to capture the result. The lambda
+receives the coroutine's return value on success. Separate lambdas can
+handle the success and error cases independently:
+
+[source,cpp]
+----
+// Discard result; rethrow on exception
+run_blocking()(my_task());
+
+// Capture result; rethrow on exception
+int out = 0;
+run_blocking([&](int v) { out = v; })(compute(21));
+
+// Capture result; handle exception separately
+run_blocking(
+    [&](int v) { out = v; },
+    [](std::exception_ptr ep) { std::rethrow_exception(ep); }
+)(compute(21));
+
+// With a stop token (discards result)
+std::stop_source src;
+run_blocking(src.get_token())(my_task());
+
+// With a stop token and a result handler
+run_blocking(src.get_token(), [&](int v) { out = v; })(compute(21));
+
+// With a stop token and separate handlers
+run_blocking(
+    src.get_token(),
+    [&](int v) { out = v; },
+    [](std::exception_ptr ep) { std::rethrow_exception(ep); }
+)(compute(21));
+----
+
+=== How It Works
+
+`run_blocking` creates a `blocking_context`, an internal single-threaded
+execution context. Work posted to it is queued and processed on the calling
+thread until the coroutine signals completion, then control returns to the
+caller. The inline executor performs symmetric transfer for `dispatch` calls
+so that the coroutine chain runs without unnecessary context switches.
+Use this only in test code. Production code should use a real execution
+context such as a thread pool.
+
+[cols="1,2"]
+|===
+| Overload | Behavior
+
+| `run_blocking()`
+| Discard result. Rethrows captured exceptions.
+
+| `run_blocking(on_value)`
+| Invoke `on_value(v)` on success. Rethrows exceptions if `on_value`
+  does not accept `std::exception_ptr`.
+
+| `run_blocking(on_value, on_error)`
+| Invoke `on_value(v)` on success or `on_error(ep)` with
+  `std::exception_ptr` on failure.
+
+| `run_blocking(stop_token)`
+| Drive with an external stop token; discard result.
+
+| `run_blocking(stop_token, on_value)`
+| Drive with an external stop token; invoke `on_value(v)` on success.
+
+| `run_blocking(stop_token, on_value, on_error)`
+| Drive with an external stop token; invoke `on_value(v)` on success or
+  `on_error(ep)` on failure.
+|===
+
+== fuse
+
+`fuse` tests every error-handling path in a coroutine by injecting failures
+systematically. Each call to `maybe_fail()` is a potential failure point.
+The returned `result` converts to `bool` and, on failure, carries the source
+location of the failing call.
+
+[source,cpp]
+----
+#include <boost/capy/test/fuse.hpp>
+
+using namespace boost::capy;
+using namespace boost::capy::test;
+
+void test_with_fuse()
+{
+    fuse f;
+    auto r = f.armed([](fuse& f) {
+        auto ec = f.maybe_fail();
+        if(ec)
+            return;  // injected error: exit gracefully
+
+        ec = f.maybe_fail();
+        if(ec)
+            return;
+    });
+    BOOST_TEST(r.success);
+}
+----
+
+=== armed() vs. inert()
+
+`armed()` runs the test body in two full passes (error-code mode, then
+exception mode) and is the normal choice for exhaustive error coverage.
+
+`inert()` runs the test body exactly once with no injection. Calls to
+`maybe_fail()` always return an empty error code and never throw. Use
+`inert()` when you want to verify the happy path is reachable, or when
+combining with `bufgrind` where only one run is needed.
+
+[source,cpp]
+----
+fuse f;
+auto r = f.inert([](fuse& f) {
+    auto ec = f.maybe_fail();  // always returns {}
+    assert(!ec);
+
+    if(some_condition_failed)
+        f.fail();  // the only way to signal failure in inert mode
+});
+BOOST_TEST(r.success);
+----
+
+=== The Early-Return Pattern
+
+When `armed()` injects an error, the test body receives it from
+`maybe_fail()`. The body must exit immediately rather than continuing
+as though the operation succeeded. The mock streams also call `maybe_fail()`
+internally, so this pattern applies to all I/O calls inside an armed test.
+
+[source,cpp]
+----
+// Correct: early return on injected error
+auto [ec, n] = co_await rs.read_some(buf);
+if(ec)
+    co_return;  // fuse injected an error -- exit gracefully
+
+// Wrong: asserting success unconditionally
+auto [ec, n] = co_await rs.read_some(buf);
+BOOST_TEST(!ec);  // fails when fuse injects an error
+----
+
+=== Coroutine Support
+
+`armed()` detects when the test lambda returns an `IoRunnable` (such as
+`task<void>`) and drives it to completion via `run_blocking` internally.
+You do not need to call `run_blocking` yourself:
+
+[source,cpp]
+----
+fuse f;
+auto r = f.armed([&](fuse&) -> task<void> {
+    auto ec = f.maybe_fail();
+    if(ec)
+        co_return;
+
+    auto [ec2, n] = co_await rs.read_some(buf);
+    if(ec2)
+        co_return;
+});
+BOOST_TEST(r.success);
+----
+
+=== Dependency Injection
+
+A `fuse` constructed outside of `armed()` or `inert()` is a no-op. Passing
+it to a service at construction time lets the same service be tested without
+any code changes:
+
+[source,cpp]
+----
+class DataService
+{
+    fuse& f_;
+public:
+    explicit DataService(fuse& f) : f_(f) {}
+
+    std::error_code fetch()
+    {
+        auto ec = f_.maybe_fail();  // no-op in production
+        if(ec)
+            return ec;
+        // ... actual work ...
+        return {};
+    }
+};
+
+// Production: fuse is never armed, maybe_fail() is always a no-op
+fuse f;
+DataService svc(f);
+svc.fetch();
+
+// Tests: armed() injects failures through the same fuse
+auto r = f.armed([&](fuse&) { svc.fetch(); });
+BOOST_TEST(r.success);
+----
+
+=== Custom Error Code
+
+The default injected code is `error::test_failure`. Pass any
+`std::error_code` to the constructor to change it:
+
+[source,cpp]
+----
+fuse f(std::make_error_code(std::errc::operation_canceled));
+auto r = f.armed([](fuse& f) {
+    auto ec = f.maybe_fail();
+    if(ec)
+    {
+        assert(ec == std::errc::operation_canceled);
+        return;
+    }
+});
+BOOST_TEST(r.success);
+----
+
+[cols="1,2"]
+|===
+| Member | Description
+
+| `fuse()`
+| Construct with the default error code (`error::test_failure`).
+
+| `fuse(std::error_code ec)`
+| Construct with a custom error code delivered by `maybe_fail()`.
+
+| `armed(fn) -> result`
+| Run `fn` repeatedly in error-code mode then exception mode, failing
+  at successive `maybe_fail()` sites. Accepts plain lambdas and coroutine
+  lambdas returning `IoRunnable`.
+
+| `inert(fn) -> result`
+| Run `fn` once with no injection. `maybe_fail()` always returns `{}`.
+  Accepts plain lambdas and coroutine lambdas returning `IoRunnable`.
+
+| `operator()(fn) -> result`
+| Alias for `armed(fn)`.
+
+| `maybe_fail() -> std::error_code`
+| Return the injected error code at the active failure point, or `{}`
+  otherwise. In exception mode, throws `std::system_error` instead of
+  returning an error. Outside `armed`/`inert`, always returns `{}`.
+
+| `fail()`
+| Signal an explicit test failure and stop execution. Records the call
+  site in `result::loc`.
+
+| `fail(std::exception_ptr)`
+| Signal a test failure with an associated exception. Stored in
+  `result::ep`.
+
+| `result::success`
+| `true` if the run completed without any failure.
+
+| `result::loc`
+| Source location of the last `maybe_fail()` or `fail()` call on failure.
+
+| `result::ep`
+| Exception pointer captured from a `fail(ep)` call, or `nullptr`.
+
+| `result::operator bool()`
+| Returns `result::success`.
+|===
+
+== thread_name
+
+`set_current_thread_name` names the calling thread so that debuggers,
+`htop`, and core dumps show a recognizable label instead of a generic thread
+ID. This is most useful when a test failure occurs inside a thread pool
+worker and you need to identify which worker was involved. The function is a
+no-op on platforms without thread-naming support.
+
+Platform limits on the name length:
+
+* Linux, FreeBSD, NetBSD: 15 characters
+* macOS: 63 characters
+* Windows: no practical limit
+
+[source,cpp]
+----
+#include <boost/capy/test/thread_name.hpp>
+#include <boost/capy/thread_pool.hpp>
+
+using namespace boost::capy;
+
+thread_pool pool(4);
+int worker = 0;
+pool.post([&] {
+    set_current_thread_name("test-worker-0");
+    // ... test work runs here; name appears in gdb thread list
+});
+pool.join();
+----
+
+Note that `set_current_thread_name` lives in namespace `boost::capy`, not
+`boost::capy::test`, because the function is useful in any context, not only
+tests.
+
+[cols="1,2"]
+|===
+| Function | Description
+
+| `set_current_thread_name(char const* name)`
+| Set the OS thread name for the calling thread. Truncated to the
+  platform limit. No-op on unsupported platforms.
+|===
+
+== Putting It Together
+
+The canonical test skeleton combines a small coroutine and `fuse.armed()`.
+The coroutine overload of `armed()` drives the task itself via `run_blocking`
+internally, so the test body uses `co_await` directly:
+
+[source,cpp]
+----
+#include <boost/capy/task.hpp>
+#include <boost/capy/test/fuse.hpp>
+
+using namespace boost::capy;
+using namespace boost::capy::test;
+
+task<int> add(int a, int b)
+{
+    co_return a + b;
+}
+
+void test_add()
+{
+    fuse f;
+    auto r = f.armed([&](fuse&) -> task<void> {
+        auto sum = co_await add(3, 4);
+        BOOST_TEST(sum == 7);
+    });
+    BOOST_TEST(r.success);
+}
+----
+
+=== Shared State Across Copies
+
+`fuse` is a value type backed by a `std::shared_ptr<state>`. Every copy
+of a `fuse` object shares the same internal state, so all copies respond
+to the same `armed()` or `inert()` call. This is what makes the canonical
+pattern work: pass a copy of `f` to each mock at construction time, then
+call `f.armed(...)` once -- the injection machinery reaches every mock
+because they all hold a copy pointing to the same shared state.
+
+For tests that need mocks, replace `add` with a function that takes a
+`read_stream`, `write_stream`, or other mock, and construct those mocks
+with the same `fuse f`. The armed loop will then exercise every I/O
+failure path through both error-code and exception modes automatically.
+
+== Reference
+
+[cols="1,3"]
+|===
+| Header | Contents
+
+| `<boost/capy/test/run_blocking.hpp>`
+| Synchronous coroutine driver.
+
+| `<boost/capy/test/fuse.hpp>`
+| Systematic error injection.
+
+| `<boost/capy/test/thread_name.hpp>`
+| Thread naming for diagnostics.
+|===
+
+Continue to xref:7.testing/7b.mock-streams.adoc[Mock Streams].

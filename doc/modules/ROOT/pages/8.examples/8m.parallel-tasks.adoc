@@ -10,7 +10,7 @@ Distributing CPU-bound work across a thread pool and collecting results.
 
 == Prerequisites
 
-* Completed xref:7.examples/7g.parallel-fetch.adoc[Parallel Fetch] (introduces `when_all`)
+* Completed xref:8.examples/8g.parallel-fetch.adoc[Parallel Fetch] (introduces `when_all`)
 
 == Source Code
 
@@ -159,4 +159,4 @@ Total: 49995000 (expected 49995000)
 
 == Next Steps
 
-* xref:7.examples/7n.custom-executor.adoc[Custom Executor] -- Building your own execution context
+* xref:8.examples/8n.custom-executor.adoc[Custom Executor] -- Building your own execution context

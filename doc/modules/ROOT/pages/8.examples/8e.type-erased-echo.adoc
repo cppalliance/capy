@@ -10,7 +10,7 @@ Echo server demonstrating the compilation firewall pattern.
 
 == Prerequisites
 
-* Completed xref:7.examples/7d.mock-stream-testing.adoc[Mock Stream Testing]
+* Completed xref:8.examples/8d.mock-stream-testing.adoc[Mock Stream Testing]
 * Understanding of type erasure from xref:../6.streams/6f.isolation.adoc[Physical Isolation]
 
 == Source Code
@@ -184,4 +184,4 @@ Echo output: Hello, World!
 
 == Next Steps
 
-* xref:7.examples/7f.timeout-cancellation.adoc[Timeout with Cancellation] — Stop tokens for timeout
+* xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation] — Stop tokens for timeout

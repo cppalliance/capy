@@ -10,7 +10,7 @@ Running multiple operations concurrently with `when_all`.
 
 == Prerequisites
 
-* Completed xref:7.examples/7f.timeout-cancellation.adoc[Timeout with Cancellation]
+* Completed xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation]
 * Understanding of `when_all` from xref:../4.coroutines/4f.composition.adoc[Composition]
 
 == Source Code
@@ -258,4 +258,4 @@ Caught error: B failed!
 
 == Next Steps
 
-* xref:7.examples/7h.custom-dynamic-buffer.adoc[Custom Dynamic Buffer] — Implementing your own buffer
+* xref:8.examples/8h.custom-dynamic-buffer.adoc[Custom Dynamic Buffer] — Implementing your own buffer
