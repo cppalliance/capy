@@ -7,7 +7,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-= Testing Facilities
+= Testing
 
 Real I/O is a poor foundation for unit tests. Network operations are slow,
 non-deterministic, and do not fail on demand -- so error-handling paths go

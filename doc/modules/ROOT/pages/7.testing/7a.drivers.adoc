@@ -156,9 +156,50 @@ void test_with_fuse()
 exception mode) and is the normal choice for exhaustive error coverage.
 
 `inert()` runs the test body exactly once with no injection. Calls to
-`maybe_fail()` always return an empty error code and never throw. Use
-`inert()` when you want to verify the happy path is reachable, or when
-combining with `bufgrind` where only one run is needed.
+`maybe_fail()` always return an empty error code and never throw.
+
+Use `inert()` for happy-path verification ("does this work when nothing
+fails?"). Use `armed()` for fault-tolerance verification ("does this
+handle a failure at every async step?"). A typical test suite pairs
+both -- `inert()` confirms the function works at all, then `armed()`
+confirms it handles every error site:
+
+[source,cpp]
+----
+fuse f;
+
+// Smoke test: happy path
+auto r1 = f.inert([&](fuse&) -> task<void> {
+    read_stream rs(f);
+    rs.provide("hello");
+
+    char buf[8];
+    auto [ec, n] = co_await rs.read_some(make_buffer(buf));
+    BOOST_TEST(!ec);
+    BOOST_TEST(std::string_view(buf, n) == "hello");
+});
+BOOST_TEST(r1.success);
+
+// Fault coverage: every error site
+auto r2 = f.armed([&](fuse&) -> task<void> {
+    read_stream rs(f);
+    rs.provide("hello");
+
+    char buf[8];
+    auto [ec, n] = co_await rs.read_some(make_buffer(buf));
+    if(ec)
+        co_return;  // fuse injected an error; exit gracefully
+    BOOST_TEST(std::string_view(buf, n) == "hello");
+});
+BOOST_TEST(r2.success);
+----
+
+The only difference is the `if(ec) co_return;` guard. In `inert()`,
+that guard is dead code (`maybe_fail()` never returns an error); in
+`armed()`, it is essential.
+
+The only way to signal a test failure under `inert()` is to call
+`f.fail()` from inside the body:
 
 [source,cpp]
 ----
@@ -213,23 +254,25 @@ auto r = f.armed([&](fuse&) -> task<void> {
 BOOST_TEST(r.success);
 ----
 
-=== Dependency Injection
+=== Custom Fail Points
 
-A `fuse` constructed outside of `armed()` or `inert()` is a no-op. Passing
-it to a service at construction time lets the same service be tested without
-any code changes:
+A type that holds a `fuse` reference can call `maybe_fail()` from its own
+methods to declare additional fail points beyond those built into the
+mocks. Outside `armed()` or `inert()` the call is a no-op (returns an
+empty error code immediately); inside `armed()` it participates in
+fault injection alongside every other site.
 
 [source,cpp]
 ----
-class DataService
+class widget
 {
     fuse& f_;
 public:
-    explicit DataService(fuse& f) : f_(f) {}
+    explicit widget(fuse& f) : f_(f) {}
 
-    std::error_code fetch()
+    std::error_code process()
     {
-        auto ec = f_.maybe_fail();  // no-op in production
+        auto ec = f_.maybe_fail();
         if(ec)
             return ec;
         // ... actual work ...
@@ -237,13 +280,11 @@ public:
     }
 };
 
-// Production: fuse is never armed, maybe_fail() is always a no-op
 fuse f;
-DataService svc(f);
-svc.fetch();
+widget w(f);
+w.process();                                    // maybe_fail() returns {}
 
-// Tests: armed() injects failures through the same fuse
-auto r = f.armed([&](fuse&) { svc.fetch(); });
+auto r = f.armed([&](fuse&) { w.process(); });  // both branches exercised
 BOOST_TEST(r.success);
 ----
 
@@ -273,7 +314,7 @@ BOOST_TEST(r.success);
 | `fuse()`
 | Construct with the default error code (`error::test_failure`).
 
-| `fuse(std::error_code ec)`
+| `explicit fuse(std::error_code ec)`
 | Construct with a custom error code delivered by `maybe_fail()`.
 
 | `armed(fn) -> result`
@@ -330,17 +371,19 @@ Platform limits on the name length:
 
 [source,cpp]
 ----
+#include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/ex/thread_pool.hpp>
+#include <boost/capy/task.hpp>
 #include <boost/capy/test/thread_name.hpp>
-#include <boost/capy/thread_pool.hpp>
 
 using namespace boost::capy;
 
 thread_pool pool(4);
-int worker = 0;
-pool.post([&] {
+run_async(pool.get_executor())([]() -> task<void> {
     set_current_thread_name("test-worker-0");
     // ... test work runs here; name appears in gdb thread list
-});
+    co_return;
+}());
 pool.join();
 ----
 

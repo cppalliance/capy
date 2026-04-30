@@ -82,7 +82,7 @@ BOOST_TEST(r.success);
 === EOF Behavior
 
 When all provided data has been consumed, `read_some` returns
-`error::eof` with a byte count of zero. The stream does not
+`cond::eof` with a byte count of zero. The stream does not
 suspend; the result is available immediately.
 
 [source,cpp]
@@ -102,7 +102,7 @@ auto r = f.inert([&](fuse&) -> task<void> {
     // Second read: EOF
     auto [ec2, n2] = co_await rs.read_some(
         mutable_buffer(buf, sizeof(buf)));
-    BOOST_TEST(ec2 == error::eof);
+    BOOST_TEST(ec2 == cond::eof);
     BOOST_TEST(n2 == 0);
 });
 BOOST_TEST(r.success);
@@ -112,7 +112,7 @@ BOOST_TEST(r.success);
 |===
 | Member | Description
 
-| `read_stream(fuse f = {}, std::size_t max_read_size = std::size_t(-1))`
+| `explicit read_stream(fuse f = {}, std::size_t max_read_size = std::size_t(-1))`
 | Construct with an optional shared `fuse` and an optional per-read byte limit.
   When omitted, the fuse is inert and reads return all available data at once.
   Set `max_read_size` to simulate chunked network delivery.
@@ -123,7 +123,7 @@ BOOST_TEST(r.success);
 
 | `read_some(MutableBufferSequence buffers)`
 | Partial read. Returns up to `max_read_size` bytes (or all available
-  if no limit was set). Returns `error::eof` when the buffer is drained.
+  if no limit was set). Returns `cond::eof` when the buffer is drained.
   Consults the fuse before every read.
 
 | `available() -> std::size_t`
@@ -218,16 +218,16 @@ BOOST_TEST(r.success);
 |===
 | Member | Description
 
-| `write_stream(fuse f = {}, std::size_t max_write_size = std::size_t(-1))`
+| `explicit write_stream(fuse f = {}, std::size_t max_write_size = std::size_t(-1))`
 | Construct with an optional shared `fuse` and an optional per-write byte limit.
   When omitted, the fuse is inert and writes accept all bytes at once.
   Set `max_write_size` to simulate chunked network delivery.
 
 | `write_some(ConstBufferSequence buffers)`
 | Partial write. Appends up to `max_write_size` bytes to the internal
-  buffer. Checks against expected data after appending; returns
-  `error::test_failure` on mismatch. Consults the fuse before every
-  write.
+  buffer, then checks against the expected prefix. On mismatch, rolls
+  back the appended bytes and returns `(error::test_failure, 0)`.
+  Consults the fuse before every write.
 
 | `data() -> std::string_view`
 | Return bytes written but not yet matched by `expect()`.
@@ -300,14 +300,14 @@ operation under test.
 
 Calling `close()` on one end signals EOF to the peer. The peer drains
 any buffered data first; once the buffer is empty, subsequent
-`read_some` calls on the peer return `error::eof`. The peer may still
+`read_some` calls on the peer return `cond::eof`. The peer may still
 call `write_some` after receiving EOF.
 
 When the fuse injects an error during `read_some` or `write_some`, the
 pair is automatically closed: the calling end returns the injected
 error, any suspended reader on the other end is resumed with
-`error::eof`, and all subsequent operations on both ends return
-`error::eof`.
+`cond::eof`, and all subsequent operations on both ends return
+`cond::eof`.
 
 === Thread Safety
 
@@ -324,13 +324,13 @@ concurrent coroutines is undefined behavior.
 
 | `read_some(MutableBufferSequence buffers)`
 | Partial read from the peer's outgoing data. Suspends if no data is
-  available. Returns `error::eof` when the stream is closed or the peer
+  available. Returns `cond::eof` when the stream is closed or the peer
   called `close()`. Consults the fuse before every read (unless
   draining after `close()`).
 
 | `write_some(ConstBufferSequence buffers)`
 | Partial write into the peer's incoming buffer. Resumes a suspended
-  peer reader if any. Returns `error::eof` if the stream is closed.
+  peer reader if any. Returns `cond::eof` if the stream is closed.
   Consults the fuse before every write.
 
 | `close()`
@@ -364,17 +364,19 @@ a different error-handling branch inside `read_line`.
 
 [source,cpp]
 ----
-#include <boost/capy/test/read_stream.hpp>
-#include <boost/capy/test/fuse.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/task.hpp>
+#include <boost/capy/test/fuse.hpp>
+#include <boost/capy/test/read_stream.hpp>
 
 using namespace boost::capy;
 using namespace boost::capy::test;
 
 // Function under test: read until '\n' or EOF
 template<ReadStream S>
-task<std::string> read_line(S& stream)
+task<std::pair<std::error_code, std::string>>
+read_line(S& stream)
 {
     std::string line;
     char ch;
@@ -383,23 +385,23 @@ task<std::string> read_line(S& stream)
         auto [ec, n] = co_await stream.read_some(
             mutable_buffer(&ch, 1));
         if(ec)
-            co_return line;
+            co_return {ec, std::move(line)};
         if(ch == '\n')
             break;
         line += ch;
     }
-    co_return line;
+    co_return {std::error_code{}, std::move(line)};
 }
 
 void test_read_line()
 {
     fuse f;
-    read_stream rs(f);
-    rs.provide("hello\n");
-
     auto r = f.armed([&](fuse&) -> task<void> {
-        auto line = co_await read_line(rs);
-        if(line.empty())
+        read_stream rs(f);
+        rs.provide("hello\n");
+
+        auto [ec, line] = co_await read_line(rs);
+        if(ec)
             co_return;  // fuse injected an error; exit gracefully
         BOOST_TEST(line == "hello");
     });

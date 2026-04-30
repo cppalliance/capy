@@ -66,7 +66,7 @@ buffer can hold. Callers must loop to fill a buffer.
 `read()` is a complete read, satisfying `ReadSource`. It transfers all
 available data in a single operation, ignoring the `max_read_size` limit.
 On success `n` equals `buffer_size(buffers)`. If available data runs out
-before the buffer is filled, `read()` returns `error::eof` with `n`
+before the buffer is filled, `read()` returns `cond::eof` with `n`
 set to however many bytes were transferred. Callers do not need to loop.
 
 This is the key behavioral difference from `read_stream::read_some()`,
@@ -77,7 +77,7 @@ own.
 |===
 | Member | Description
 
-| `read_source(fuse f = {}, std::size_t max_read_size = std::size_t(-1))`
+| `explicit read_source(fuse f = {}, std::size_t max_read_size = std::size_t(-1))`
 | Construct with an optional shared `fuse` and an optional per-read byte limit.
   When omitted, the fuse is inert and reads return all available data at once.
   Set `max_read_size` to simulate chunked delivery; the limit applies to
@@ -89,12 +89,12 @@ own.
 
 | `read(MutableBufferSequence buffers)`
 | Complete read. Transfers all available data in a single step, ignoring
-  `max_read_size`. Returns `error::eof` with partial `n` if data runs
+  `max_read_size`. Returns `cond::eof` with partial `n` if data runs
   out before the buffer is filled. Consults the fuse before every call.
 
 | `read_some(MutableBufferSequence buffers)`
 | Partial read. Returns up to `max_read_size` bytes (or all available if
-  no limit was set). Returns `error::eof` when the buffer is drained.
+  no limit was set). Returns `cond::eof` when the buffer is drained.
   Consults the fuse before every call.
 
 | `available() -> std::size_t`
@@ -168,7 +168,7 @@ injection.
 |===
 | Member | Description
 
-| `write_sink(fuse f = {}, std::size_t max_write_size = std::size_t(-1))`
+| `explicit write_sink(fuse f = {}, std::size_t max_write_size = std::size_t(-1))`
 | Construct with an optional shared `fuse` and an optional per-write byte limit.
   When omitted, the fuse is inert and writes accept all bytes at once.
   Set `max_write_size` to simulate chunked delivery; the limit applies to
@@ -177,12 +177,15 @@ injection.
 | `write(ConstBufferSequence buffers)`
 | Complete write. Transfers all bytes from `buffers` to the internal
   buffer, ignoring `max_write_size`. Checks against expected data after
-  appending. Consults the fuse before every call.
+  appending; on mismatch returns `(error::test_failure, n)` with the
+  appended bytes left in place. Consults the fuse before every call.
 
 | `write_some(ConstBufferSequence buffers)`
 | Partial write. Appends up to `max_write_size` bytes to the internal
-  buffer. Checks against expected data after appending; returns
-  `error::test_failure` on mismatch. Consults the fuse before every call.
+  buffer, then checks against the expected prefix. On mismatch, rolls
+  back the appended bytes and returns `(error::test_failure, 0)` -- in
+  contrast to `write()`, which leaves the partial write in place.
+  Consults the fuse before every call.
 
 | `write_eof(ConstBufferSequence buffers)`
 | Atomically write remaining bytes and signal end-of-stream. Sets
@@ -219,49 +222,56 @@ error site in both the read and write paths.
 
 [source,cpp]
 ----
+#include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/concept/read_source.hpp>
+#include <boost/capy/concept/write_sink.hpp>
+#include <boost/capy/cond.hpp>
+#include <boost/capy/task.hpp>
+#include <boost/capy/test/fuse.hpp>
 #include <boost/capy/test/read_source.hpp>
 #include <boost/capy/test/write_sink.hpp>
-#include <boost/capy/test/fuse.hpp>
-#include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/task.hpp>
 
 using namespace boost::capy;
 using namespace boost::capy::test;
 
 // Function under test: echo the request back as the response
 template<ReadSource Source, WriteSink Sink>
-task<> handle_request(Source& source, Sink& sink)
+task<std::error_code>
+handle_request(Source& source, Sink& sink)
 {
     char buf[64];
     auto [ec, n] = co_await source.read(
         mutable_buffer(buf, sizeof(buf)));
-    if(ec)
-        co_return;
+    if(ec && ec != cond::eof)
+        co_return ec;
 
     auto [ec2, n2] = co_await sink.write(
         const_buffer(buf, n));
     if(ec2)
-        co_return;
+        co_return ec2;
 
     auto [ec3] = co_await sink.write_eof();
     if(ec3)
-        co_return;
+        co_return ec3;
+
+    co_return std::error_code{};
 }
 
 void test_handle_request()
 {
     fuse f;
-    read_source rs(f);
-    write_sink ws(f);
-
-    rs.provide("ping");
-
     auto r = f.armed([&](fuse&) -> task<void> {
-        co_await handle_request(rs, ws);
+        read_source rs(f);
+        write_sink  ws(f);
+        rs.provide("ping");
+
+        auto ec = co_await handle_request(rs, ws);
+        if(ec)
+            co_return;  // fuse injected an error; exit gracefully
+        BOOST_TEST(ws.data() == "ping");
+        BOOST_TEST(ws.eof_called());
     });
     BOOST_TEST(r.success);
-    BOOST_TEST(ws.data() == "ping");
-    BOOST_TEST(ws.eof_called());
 }
 ----
 

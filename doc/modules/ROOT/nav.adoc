@@ -34,7 +34,7 @@
 ** xref:6.streams/6d.buffer-concepts.adoc[Buffer Sources and Sinks]
 ** xref:6.streams/6e.algorithms.adoc[Transfer Algorithms]
 ** xref:6.streams/6f.isolation.adoc[Physical Isolation]
-* xref:7.testing/7.intro.adoc[Testing Facilities]
+* xref:7.testing/7.intro.adoc[Testing]
 ** xref:7.testing/7a.drivers.adoc[Driving Tests]
 ** xref:7.testing/7b.mock-streams.adoc[Mock Streams]
 ** xref:7.testing/7c.mock-sources-sinks.adoc[Mock Sources and Sinks]

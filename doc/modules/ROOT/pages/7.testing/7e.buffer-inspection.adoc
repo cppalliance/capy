@@ -23,6 +23,10 @@ position concatenate back to the original sequence. Any code that processes
 a buffer in chunks is exercised at every possible chunk boundary with a single
 `while` loop.
 
+`bufgrind` does not perform I/O and does not consult a fuse, so the snippets
+on this page drive it under `f.inert(...)`: a single pass is sufficient to
+visit every split position, and there are no async failure sites to inject.
+
 [source,cpp]
 ----
 #include <boost/capy/test/bufgrind.hpp>
@@ -262,6 +266,6 @@ void test_parser_all_splits()
 | Buffer-sequence to string helper.
 |===
 
-You have reached the end of the Testing Facilities section. Continue
+You have reached the end of the Testing section. Continue
 to xref:8.examples/8.intro.adoc[Example Programs] for end-to-end usage
 or xref:reference:boost/capy.adoc[Reference] for the API browser.
