@@ -107,7 +107,7 @@ bs.provide("hello world");
 |===
 | Member | Description
 
-| `buffer_source(fuse f = {}, std::size_t max_pull_size = std::size_t(-1))`
+| `explicit buffer_source(fuse f = {}, std::size_t max_pull_size = std::size_t(-1))`
 | Construct with an optional shared `fuse` and an optional per-pull byte ceiling.
   When omitted, the fuse is inert and each pull returns all remaining data.
   Set `max_pull_size` to simulate chunked delivery.
@@ -160,13 +160,11 @@ using namespace boost::capy::test;
 void test_buffer_sink()
 {
     fuse f;
-    buffer_sink bs(f);
-
     auto r = f.armed([&](fuse&) -> task<void> {
+        buffer_sink bs(f);
+
         mutable_buffer arr[16];
         auto bufs = bs.prepare(arr);
-        if(bufs.empty())
-            co_return;
 
         std::memcpy(bufs[0].data(), "Hello", 5);
 
@@ -177,10 +175,11 @@ void test_buffer_sink()
         auto [ec2] = co_await bs.commit_eof(0);
         if(ec2)
             co_return;
+
+        BOOST_TEST(bs.data() == "Hello");
+        BOOST_TEST(bs.eof_called());
     });
     BOOST_TEST(r.success);
-    BOOST_TEST(bs.data() == "Hello");
-    BOOST_TEST(bs.eof_called());
 }
 ----
 
@@ -197,8 +196,9 @@ BOOST_TEST(bs.size() == 15u);
 BOOST_TEST(bs.eof_called());
 ----
 
-These accessors are valid outside the `f.armed()` lambda and are the
-primary mechanism for asserting what the system under test produced.
+Call these accessors inside the `f.armed()` lambda after the system
+under test completes successfully. They are the primary mechanism for
+asserting what the system under test produced.
 
 === The prepare/commit Protocol
 
@@ -223,7 +223,7 @@ buffer_sink bs(f, 8);   // prepare returns at most 8 bytes at a time
 |===
 | Member | Description
 
-| `buffer_sink(fuse f = {}, std::size_t max_prepare_size = 4096)`
+| `explicit buffer_sink(fuse f = {}, std::size_t max_prepare_size = 4096)`
 | Construct with an optional shared `fuse` and an optional per-prepare byte ceiling.
   When omitted, the fuse is inert and `prepare()` exposes `4096` bytes of buffer
   space. Set `max_prepare_size` to simulate limited buffer space.
@@ -265,11 +265,14 @@ exercises every error site in both the pull and commit paths.
 
 [source,cpp]
 ----
-#include <boost/capy/test/buffer_source.hpp>
-#include <boost/capy/test/buffer_sink.hpp>
-#include <boost/capy/test/fuse.hpp>
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/concept/buffer_sink.hpp>
+#include <boost/capy/concept/buffer_source.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/task.hpp>
+#include <boost/capy/test/buffer_sink.hpp>
+#include <boost/capy/test/buffer_source.hpp>
+#include <boost/capy/test/fuse.hpp>
 
 #include <cstring>
 
@@ -278,7 +281,8 @@ using namespace boost::capy::test;
 
 // Function under test: copy all bytes from source into sink
 template<BufferSource Source, BufferSink Sink>
-task<> copy_all(Source& source, Sink& sink)
+task<std::error_code>
+copy_all(Source& source, Sink& sink)
 {
     const_buffer src_arr[16];
     mutable_buffer dst_arr[16];
@@ -289,19 +293,17 @@ task<> copy_all(Source& source, Sink& sink)
         if(ec1 == cond::eof)
         {
             auto [eof_ec] = co_await sink.commit_eof(0);
-            if(eof_ec)
-                co_return;
-            break;
+            co_return eof_ec;
         }
         if(ec1)
-            co_return;
+            co_return ec1;
 
         auto dst_bufs = sink.prepare(dst_arr);
         std::size_t n = buffer_copy(dst_bufs, src_bufs);
 
         auto [ec2] = co_await sink.commit(n);
         if(ec2)
-            co_return;
+            co_return ec2;
 
         source.consume(n);
     }
@@ -310,17 +312,18 @@ task<> copy_all(Source& source, Sink& sink)
 void test_copy_all()
 {
     fuse f;
-    buffer_source src(f);
-    buffer_sink   dst(f);
-
-    src.provide("ping");
-
     auto r = f.armed([&](fuse&) -> task<void> {
-        co_await copy_all(src, dst);
+        buffer_source src(f);
+        buffer_sink   dst(f);
+        src.provide("ping");
+
+        auto ec = co_await copy_all(src, dst);
+        if(ec)
+            co_return;  // fuse injected an error; exit gracefully
+        BOOST_TEST(dst.data() == "ping");
+        BOOST_TEST(dst.eof_called());
     });
     BOOST_TEST(r.success);
-    BOOST_TEST(dst.data() == "ping");
-    BOOST_TEST(dst.eof_called());
 }
 ----
 
