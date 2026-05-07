@@ -216,13 +216,24 @@ Inside a task, use `get_stop_token()` to access the current stop token:
 task<> cancellable_work()
 {
     auto token = co_await get_stop_token();
-    
+
     while (!token.stop_requested())
     {
         co_await do_chunk_of_work();
     }
 }
 ----
+
+=== Why Not `coroutine_handle::destroy()`?
+
+`std::coroutine_handle::destroy()` is the {cpp}20 primitive that frees a coroutine frame. It is not a cancellation mechanism, and it has the same flaw as forceful thread interruption: the coroutine is torn down with no opportunity to complete pending I/O, release locks, or run RAII destructors in the expected order.
+
+Capy exposes `task::handle()` and `quitter::handle()` so that Capy's own launchers (`run_async`, `run`) and custom integrations can dispatch coroutines through executors. Calling `destroy()` on such a handle while the coroutine is being awaited by a parent produces undefined behavior: the destruction cascades back through the parent's continuation, re-entering frame destruction that is already in progress.
+
+The rule:
+
+* To cancel work, request a stop on a `std::stop_source` whose token the work observes. The work unwinds cleanly through `final_suspend` and any RAII guards run in the correct order.
+* Do not call `destroy()` on a handle returned by `task::handle()` or `quitter::handle()` while the coroutine is being awaited.
 
 == Part 6: Responding to Cancellation
 
