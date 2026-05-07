@@ -313,13 +313,29 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         return h_;
     }
 
-    /// Return the coroutine handle.
+    /** Return the coroutine handle.
+
+        @note Do not call `destroy()` on the returned handle while
+        the quitter is being awaited. The quitter's lifetime is
+        normally managed by `run_async`, `run`, or the awaiting
+        parent; manually destroying a suspended quitter that another
+        coroutine is awaiting produces undefined behavior. For
+        cooperative cancellation, use `std::stop_token`.
+
+        @return The coroutine handle.
+    */
     std::coroutine_handle<promise_type> handle() const noexcept
     {
         return h_;
     }
 
-    /// Release ownership of the coroutine frame.
+    /** Release ownership of the coroutine frame.
+
+        @note If the caller intends to call `destroy()` on the
+        released handle, it must do so only when the quitter has not
+        started or has fully completed. Destroying a suspended
+        quitter that is being awaited produces undefined behavior.
+    */
     void release() noexcept
     {
         h_ = nullptr;

@@ -263,7 +263,17 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         return h_;
     }
 
-    /// Return the coroutine handle.
+    /** Return the coroutine handle.
+
+        @note Do not call `destroy()` on the returned handle while the
+        task is being awaited. The task's lifetime is normally managed
+        by `run_async`, `run`, or the awaiting parent; manually
+        destroying a suspended task that another coroutine is awaiting
+        produces undefined behavior. For cooperative cancellation, use
+        `std::stop_token`.
+
+        @return The coroutine handle.
+    */
     std::coroutine_handle<promise_type> handle() const noexcept
     {
         return h_;
@@ -274,6 +284,11 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         After calling this, destroying the task does not destroy the
         coroutine frame. The caller becomes responsible for the frame's
         lifetime.
+
+        @note If the caller intends to call `destroy()` on the
+        released handle, it must do so only when the task has not
+        started or has fully completed. Destroying a suspended task
+        that is being awaited produces undefined behavior.
 
         @par Postconditions
         `handle()` returns the original handle, but the task no longer

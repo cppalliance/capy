@@ -137,7 +137,13 @@ class io_awaitable_promise_base
 public:
     ~io_awaitable_promise_base()
     {
-        // Abnormal teardown: destroy orphaned continuation
+        // Abnormal teardown: destroy an orphaned continuation, e.g.
+        // a run_async trampoline when the task is destroyed before
+        // reaching final_suspend. Callers must not destroy a task
+        // via handle().destroy() while it is being awaited by a
+        // parent coroutine: that puts cont_ under another owner
+        // and would produce a double-destroy from this branch. See
+        // task::handle() / quitter::handle() for the contract.
         if(cont_ != std::noop_coroutine())
             cont_.destroy();
     }
