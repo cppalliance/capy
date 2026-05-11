@@ -252,12 +252,45 @@ struct write_test
         }));
     }
 
+    // Regression: capy#263. Free-function write() must take its buffer
+    // sequence by value so that storing the returned awaitable past
+    // the full-expression that created the sequence does not dangle.
+    void
+    testWriteStoredAwaitableTemporarySequence()
+    {
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::write_stream ws(f);
+
+            char const data1[] = "hello";
+            char const data2[] = "world";
+
+            // The std::array<const_buffer, 2> argument is a temporary
+            // that ends its lifetime at the end of this full-expression.
+            auto aw = write(ws, std::array<const_buffer, 2>{{
+                const_buffer(data1, 5),
+                const_buffer(data2, 5)
+            }});
+
+            // If write() bound the sequence by const&, the awaitable now
+            // holds a dangling reference and the next line trips ASan
+            // (or silently reads stale stack).
+            auto [ec, n] = co_await std::move(aw);
+            if(ec)
+                co_return;
+
+            BOOST_TEST_EQ(n, 10u);
+            BOOST_TEST_EQ(ws.data(), "helloworld");
+        }));
+    }
+
     void
     testWriteStream()
     {
         testWriteSingleBuffer();
         testWriteBufferArray();
         testWriteBufferPair();
+        testWriteStoredAwaitableTemporarySequence();
     }
 
     //----------------------------------------------------------

@@ -68,21 +68,24 @@ namespace capy {
 
     @par Conforming Signatures
     @code
-    // Templated for any MutableBufferSequence
     template< MutableBufferSequence MB >
-    IoAwaitable auto read_some( MB const& buffers );
-
-    template< MutableBufferSequence MB >
-    IoAwaitable auto read_some( MB buffers );  // by-value also permitted
+    IoAwaitable auto read_some( MB buffers );
     @endcode
 
-    @warning **Coroutine Buffer Lifetime**: When implementing coroutine
-    member functions, prefer accepting buffer sequences **by value**
-    rather than by reference. Buffer sequences passed by reference may
-    become dangling if the caller's stack frame is destroyed before the
-    coroutine completes. Passing by value ensures the buffer sequence
-    is copied into the coroutine frame and remains valid across
-    suspension points.
+    @warning **Pass buffer sequences by value.** A by-value parameter
+    is copied into the coroutine frame (or the awaitable's state),
+    so the returned awaitable is self-contained and may be stored,
+    moved across threads, or wrapped into a sender without lifetime
+    concerns. A by-const-reference parameter binds to caller storage
+    and is only safe when the awaitable is consumed immediately by
+    `co_await` in the same scope; storing such an awaitable produces
+    a dangling reference.
+
+    @note Callers who want to avoid copying an expensive buffer
+    sequence (for example, a `std::vector<mutable_buffer>` with many
+    entries) can pass `std::views::all(seq)` at the call site. The
+    resulting `ref_view` satisfies the buffer-sequence concepts and
+    copies in O(1). See `doc/buffers-passing-rationale.md`.
 
     @par Example
     @code

@@ -64,7 +64,7 @@ namespace capy {
 auto
 write(
     WriteStream auto& stream,
-    ConstBufferSequence auto const& buffers) ->
+    ConstBufferSequence auto buffers) ->
         io_task<std::size_t>
 {
     consuming_buffers consuming(buffers);
