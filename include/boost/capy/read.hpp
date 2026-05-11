@@ -70,7 +70,7 @@ namespace capy {
 auto
 read(
     ReadStream auto& stream,
-    MutableBufferSequence auto const& buffers) ->
+    MutableBufferSequence auto buffers) ->
         io_task<std::size_t>
 {
     consuming_buffers consuming(buffers);

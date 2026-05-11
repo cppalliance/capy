@@ -320,12 +320,45 @@ struct read_test
         }));
     }
 
+    // Regression: capy#263. Free-function read() must take its buffer
+    // sequence by value so that storing the returned awaitable past
+    // the full-expression that created the sequence does not dangle.
+    void
+    testReadStoredAwaitableTemporarySequence()
+    {
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+            rs.provide("helloworld");
+
+            char storage[10] = {};
+
+            // The std::array<mutable_buffer, 2> argument is a temporary
+            // that ends its lifetime at the end of this full-expression.
+            auto aw = read(rs, std::array<mutable_buffer, 2>{{
+                mutable_buffer(storage, 5),
+                mutable_buffer(storage + 5, 5)
+            }});
+
+            // If read() bound the sequence by const&, the awaitable now
+            // holds a dangling reference and the next line trips ASan
+            // (or silently reads stale stack).
+            auto [ec, n] = co_await std::move(aw);
+            if(ec)
+                co_return;
+
+            BOOST_TEST_EQ(n, 10u);
+            BOOST_TEST_EQ(std::string_view(storage, 10), "helloworld");
+        }));
+    }
+
     void
     testReadStream()
     {
         testReadSingleBuffer();
         testReadBufferArray();
         testReadBufferPair();
+        testReadStoredAwaitableTemporarySequence();
     }
 
     //----------------------------------------------------------

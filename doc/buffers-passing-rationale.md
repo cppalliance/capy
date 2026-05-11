@@ -316,3 +316,55 @@ accept by `const&`. Whether the standard should mandate that
 implementations keep at least one copy alive for the duration of the
 operation - regardless of how the parameter is passed - remains an open
 question.
+
+## Resolution
+
+Tracked in [cppalliance/capy#263](https://github.com/cppalliance/capy/issues/263).
+
+**All capy I/O entry points that accept a buffer sequence take it by
+value.** This applies uniformly to member operations (`read_some`,
+`write_some`) and to the free-function composed operations (`read`,
+`write`).
+
+The "distinguish the two cases" idea floated in the section above did
+not survive scrutiny. The argument that coroutine tasks can safely
+accept by `const&` because "the sequence is not a temporary relative
+to the suspension" assumed that the coroutine body has run by the
+point of suspension. With lazy coroutines, it has not:
+
+```cpp
+auto aw = capy::read(stream, mutable_buffer{p, n});
+// The temporary mutable_buffer dies here, at the end of the
+// full-expression. The coroutine body has not begun executing.
+auto [ec, k] = co_await std::move(aw);
+// If read() took the sequence by const&, this co_await
+// dereferences a dangling reference.
+```
+
+By-rvalue-reference (`Buffers&&`) fails for the same reason: the
+coroutine has no opportunity to copy the rvalue into its frame before
+the full-expression ends and the rvalue is destroyed.
+
+**By-value is therefore the only safe convention for any lazy
+awaitable** - coroutine-backed or not. The same rule applies to raw
+awaitables for the reasons already given (the awaitable must own its
+state to support sender pipelines and detached storage).
+
+### Caller-side workaround for expensive sequences
+
+The Asio-style assumption that buffer sequences are cheap to copy
+still leaks through in cases like `std::vector<mutable_buffer>` with
+many entries. Callers in that situation can opt into a reference-like
+view at the call site:
+
+```cpp
+std::vector<mutable_buffer> bufs = /* many entries */;
+auto [ec, n] = co_await capy::read(stream, std::views::all(bufs));
+```
+
+`std::views::all(bufs)` produces a `std::ranges::ref_view` that
+satisfies the buffer-sequence concepts and copies in O(1). The caller
+takes on the lifetime obligation in exchange for the cheap copy -
+the same trade-off any reference-passing convention would impose,
+but now opt-in and visible at the call site rather than baked into
+the API.
