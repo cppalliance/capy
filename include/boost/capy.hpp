@@ -39,8 +39,8 @@
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/buffer_pair.hpp>
 #include <boost/capy/buffers/buffer_param.hpp>
+#include <boost/capy/buffers/buffer_slice.hpp>
 #include <boost/capy/buffers/circular_dynamic_buffer.hpp>
-#include <boost/capy/buffers/consuming_buffers.hpp>
 #include <boost/capy/buffers/flat_dynamic_buffer.hpp>
 #include <boost/capy/buffers/front.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
@@ -64,6 +64,7 @@
 #include <boost/capy/concept/mutable_buffer_sequence.hpp>
 #include <boost/capy/concept/read_source.hpp>
 #include <boost/capy/concept/read_stream.hpp>
+#include <boost/capy/concept/slice.hpp>
 #include <boost/capy/concept/stream.hpp>
 #include <boost/capy/concept/write_sink.hpp>
 #include <boost/capy/concept/write_stream.hpp>

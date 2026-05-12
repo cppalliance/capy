@@ -151,18 +151,19 @@ The algorithm fills target buffers sequentially, reading from source buffers as 
 template<ReadStream Stream, MutableBufferSequence Buffers>
 task<std::size_t> read_full(Stream& stream, Buffers buffers)
 {
-    consuming_buffers<Buffers> remaining(buffers);
+    auto remaining = buffer_slice(buffers);
+    std::size_t const total_size = buffer_size(buffers);
     std::size_t total = 0;
-    
-    while (buffer_size(remaining) > 0)
+
+    while (total < total_size)
     {
-        auto [ec, n] = co_await stream.read_some(remaining);
-        remaining.consume(n);
+        auto [ec, n] = co_await stream.read_some(remaining.data());
+        remaining.remove_prefix(n);
         total += n;
         if (ec)
             co_return total;
     }
-    
+
     co_return total;
 }
 ----
@@ -174,18 +175,19 @@ task<std::size_t> read_full(Stream& stream, Buffers buffers)
 template<WriteStream Stream, ConstBufferSequence Buffers>
 task<std::size_t> write_full(Stream& stream, Buffers buffers)
 {
-    consuming_buffers<Buffers> remaining(buffers);
+    auto remaining = buffer_slice(buffers);
+    std::size_t const total_size = buffer_size(buffers);
     std::size_t total = 0;
-    
-    while (buffer_size(remaining) > 0)
+
+    while (total < total_size)
     {
-        auto [ec, n] = co_await stream.write_some(remaining);
-        remaining.consume(n);
+        auto [ec, n] = co_await stream.write_some(remaining.data());
+        remaining.remove_prefix(n);
         total += n;
         if (ec)
             co_return total;
     }
-    
+
     co_return total;
 }
 ----

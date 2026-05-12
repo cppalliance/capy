@@ -128,8 +128,8 @@ task<void> echo(ReadStream auto& in, WriteStream auto& out)
 | `<boost/capy/buffers/buffer_copy.hpp>`
 | `buffer_copy` algorithm
 
-| `<boost/capy/buffers/consuming_buffers.hpp>`
-| Incremental buffer consumption
+| `<boost/capy/buffers/buffer_slice.hpp>`
+| Byte sub-range slicing algorithm
 
 | `<boost/capy/buffers/flat_dynamic_buffer.hpp>`
 | Contiguous dynamic buffer
