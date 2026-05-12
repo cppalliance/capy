@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/consuming_buffers.hpp>
+#include <boost/capy/buffers/buffer_slice.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <coroutine>
@@ -336,12 +336,12 @@ public:
     {
         std::size_t const total_size = buffer_size(buffers);
         std::size_t total_written = 0;
-        consuming_buffers cb(buffers);
+        auto cb = buffer_slice(buffers);
         while(total_written < total_size)
         {
             auto r =
-                co_await stream_.write_some(cb);
-            cb.consume(std::get<0>(r.values));
+                co_await stream_.write_some(cb.data());
+            cb.remove_prefix(std::get<0>(r.values));
             total_written += std::get<0>(r.values);
             if(r.ec)
                 co_return io_result<std::size_t>{
@@ -359,19 +359,19 @@ public:
         std::size_t total_written = 0;
 
         // GCC ICE in expand_expr_real_1 (expr.cc:11376)
-        // when consuming_buffers spans a co_yield, so
+        // when the buffer slice spans a co_yield, so
         // the GCC path uses a separate simple coroutine.
-        consuming_buffers cb(buffers);
+        auto cb = buffer_slice(buffers);
         while(total_written < total_size)
         {
-            auto inner = stream_.write_some(cb);
+            auto inner = stream_.write_some(cb.data());
             if(!inner.await_ready())
                 break;
             auto r = inner.await_resume();
             if(r.ec)
                 co_return io_result<std::size_t>{
                     r.ec, total_written};
-            cb.consume(std::get<0>(r.values));
+            cb.remove_prefix(std::get<0>(r.values));
             total_written += std::get<0>(r.values);
         }
 
@@ -384,8 +384,8 @@ public:
         while(total_written < total_size)
         {
             auto r =
-                co_await stream_.write_some(cb);
-            cb.consume(std::get<0>(r.values));
+                co_await stream_.write_some(cb.data());
+            cb.remove_prefix(std::get<0>(r.values));
             total_written += std::get<0>(r.values);
             if(r.ec)
                 co_return io_result<std::size_t>{

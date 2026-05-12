@@ -100,45 +100,47 @@ void process(Buffers const& bufs)
 
 These functions handle both single buffers (returning pointer-to-self) and ranges (returning standard iterators).
 
-== consuming_buffers
+== buffer_slice
 
-When transferring data incrementally, `consuming_buffers` tracks progress:
+When transferring data incrementally, `buffer_slice` returns a slice that tracks progress:
 
 [source,cpp]
 ----
-#include <boost/capy/buffers/consuming_buffers.hpp>
+#include <boost/capy/buffers/buffer_slice.hpp>
 
 template<MutableBufferSequence Buffers>
 task<std::size_t> read_all(Stream& stream, Buffers buffers)
 {
-    consuming_buffers<Buffers> remaining(buffers);
+    auto remaining = buffer_slice(buffers);
+    std::size_t const total_size = buffer_size(buffers);
     std::size_t total = 0;
-    
-    while (buffer_size(remaining) > 0)
+
+    while (total < total_size)
     {
-        auto [ec, n] = co_await stream.read_some(remaining);
-        remaining.consume(n);
+        auto [ec, n] = co_await stream.read_some(remaining.data());
+        remaining.remove_prefix(n);
         total += n;
         if (ec)
             break;
     }
-    
+
     co_return total;
 }
 ----
 
-`consuming_buffers` wraps a buffer sequence and provides:
+`buffer_slice(seq, offset, length)` returns an object of unspecified type that satisfies the `Slice` concept, providing:
 
-* `consume(n)` — Mark `n` bytes as consumed (remove from front)
-* Iteration over unconsumed buffers
-* `buffer_size()` of remaining bytes
+* `data()` — Buffer sequence view of the slice's current bytes (pass to `read_some`/`write_some`)
+* `remove_prefix(n)` — Advance the start by `n` bytes
+
+The `offset` and `length` parameters (both optional) make `buffer_slice` a general byte sub-range primitive, not just an iteration-state holder.
 
 == Why Bidirectional?
 
 The concepts require bidirectional ranges (not just forward ranges) for two reasons:
 
 1. Some algorithms traverse buffers backwards
-2. `consuming_buffers` needs to adjust the first buffer's start position
+2. The buffer sequence view returned by `Slice::data()` needs to adjust the first and last buffers' bounds
 
 If your custom buffer sequence only provides forward iteration, wrap it in a type that provides bidirectional access.
 
@@ -151,8 +153,11 @@ If your custom buffer sequence only provides forward iteration, wrap it in a typ
 | `<boost/capy/buffers.hpp>`
 | Concepts and iteration functions
 
-| `<boost/capy/buffers/consuming_buffers.hpp>`
-| Incremental consumption wrapper
+| `<boost/capy/buffers/buffer_slice.hpp>`
+| Byte sub-range slicing algorithm
+
+| `<boost/capy/concept/slice.hpp>`
+| `Slice` concept
 |===
 
 You have now learned how buffer sequences enable zero-allocation composition. Continue to xref:5.buffers/5d.system-io.adoc[System I/O Integration] to see how buffer sequences interface with operating system I/O.

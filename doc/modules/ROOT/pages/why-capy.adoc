@@ -162,7 +162,7 @@ Asio got buffer sequences right. The concept-driven approach—`ConstBufferSeque
 
 Capy doesn't reinvent this. We adopt Asio's buffer sequence model because it works.
 
-But we improve on it. Asio provides the basics; Capy extends them. Need to trim bytes from the front of a buffer sequence? Asio makes you work for it. Capy provides `slice`, `front`, `consuming_buffers`—customization points for efficient byte-level manipulation. Need a circular buffer for protocol parsing? Capy has `circular_dynamic_buffer`. Need to compose two buffers without copying? `buffer_pair`.
+But we improve on it. Asio provides the basics; Capy extends them. Need to trim bytes from the front of a buffer sequence? Asio makes you work for it. Capy provides `buffer_slice` and `front`—byte-range slicing primitives for efficient byte-level manipulation. Need a circular buffer for protocol parsing? Capy has `circular_dynamic_buffer`. Need to compose two buffers without copying? `buffer_pair`.
 
 And then there's the `DynamicBuffer` mess. If you've used Asio, you've encountered the confusing split between `DynamicBuffer_v1` and `DynamicBuffer_v2`. This exists because of a fundamental problem: when an async operation takes a buffer by value and completes via callback, who owns the buffer? The original design had flaws. The "fix" created two incompatible versions. (See https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p1100r0.html[P1100R0] for the full story.)
 
@@ -174,7 +174,7 @@ One more thing: `std::ranges` cannot help here. `ranges::size` returns the numbe
 
 * `ConstBufferSequence`, `MutableBufferSequence`, `DynamicBuffer` — core concepts (Asio-compatible)
 * `flat_dynamic_buffer`, `circular_dynamic_buffer`, `buffer_pair` — additional concrete types
-* `slice`, `front`, `buffer_array`, `consuming_buffers` — byte-level manipulation utilities
+* `buffer_slice`, `front`, `buffer_array` — byte-level manipulation utilities
 
 === Comparison
 
@@ -232,7 +232,7 @@ One more thing: `std::ranges` cannot help here. `ranges::size` returns the numbe
 |
 |
 
-| `consuming_buffers`
+| `buffer_slice`
 |
 |
 |

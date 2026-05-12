@@ -445,7 +445,7 @@ Capy has one `DynamicBuffer` concept. The v1/v2 split in Asio exists because of 
 | Yes
 |
 
-| `consuming_buffers`
+| `buffer_slice`
 | Yes
 |
 
