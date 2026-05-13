@@ -10,7 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/buffers/buffer_copy.hpp>
 
-#include <boost/capy/buffers/buffer_pair.hpp>
+#include <array>
 #include <span>
 #include "test_buffers.hpp"
 
@@ -34,12 +34,12 @@ struct buffer_copy_test
                 for(std::size_t k = 0;
                     k < N + 2; ++k)
                 {
-                    const_buffer_pair p0{{
+                    std::array<const_buffer, 2> p0{{
                         const_buffer(s.data(), i),
                         const_buffer(s.data() + i, N - i) }};
                     char tmp[13];
                     std::memset(tmp, 0, sizeof(tmp));
-                    mutable_buffer_pair p1{{
+                    std::array<mutable_buffer, 2> p1{{
                         mutable_buffer(tmp, j),
                         mutable_buffer(tmp + j, N - j) }};
                     auto const n = buffer_copy(

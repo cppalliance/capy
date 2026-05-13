@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/buffer_array.hpp>
+#include <boost/capy/detail/buffer_array.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -380,7 +380,7 @@ any_read_stream::read_some(MB buffers)
     struct awaitable
     {
         any_read_stream* self_;
-        mutable_buffer_array<detail::max_iovec_> ba_;
+        detail::mutable_buffer_array<detail::max_iovec_> ba_;
 
         bool
         await_ready()
@@ -417,7 +417,7 @@ any_read_stream::read_some(MB buffers)
         }
     };
     return awaitable{this,
-        mutable_buffer_array<detail::max_iovec_>(buffers)};
+        detail::mutable_buffer_array<detail::max_iovec_>(buffers)};
 }
 
 } // namespace capy

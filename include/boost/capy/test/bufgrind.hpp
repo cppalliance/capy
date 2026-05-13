@@ -12,12 +12,13 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/slice.hpp>
+#include <boost/capy/buffers/buffer_slice.hpp>
 #include <coroutine>
 #include <boost/capy/ex/io_env.hpp>
 
 #include <algorithm>
 #include <cstddef>
+#include <type_traits>
 #include <utility>
 
 namespace boost {
@@ -32,9 +33,12 @@ namespace test {
     that allows `co_await` between iterations.
 
     The split type automatically preserves mutability: passing a
-    `MutableBufferSequence` yields mutable slices, while passing a
-    `ConstBufferSequence` yields const slices. This is handled
-    automatically through `slice_type<BS>`.
+    `MutableBufferSequence` yields halves that model
+    @ref MutableBufferSequence, while passing a `ConstBufferSequence`
+    yields halves that model @ref ConstBufferSequence. Each half is
+    the buffer-sequence view exposed by a @ref buffer_slice over the
+    corresponding byte range, and can be passed directly to
+    `read_some`, `write_some`, `buffer_size`, etc.
 
     @par Thread Safety
     Not thread-safe.
@@ -50,8 +54,8 @@ namespace test {
         bufgrind bg( cb );
         while( bg ) {
             auto [b1, b2] = co_await bg.next();
-            // b1 contains first N bytes
-            // b2 contains remaining bytes
+            // b1 contains first N bytes (as a buffer sequence)
+            // b2 contains remaining bytes (as a buffer sequence)
             // concatenating b1 + b2 equals original
             co_await some_async_operation( b1, b2 );
         }
@@ -81,7 +85,7 @@ namespace test {
     }
     @endcode
 
-    @see prefix, sans_prefix, slice_type
+    @see buffer_slice
 */
 template<ConstBufferSequence BS>
 class bufgrind
@@ -92,8 +96,13 @@ class bufgrind
     std::size_t pos_ = 0;
 
 public:
-    /// The type returned by @ref next.
-    using split_type = std::pair<slice_type<BS>, slice_type<BS>>;
+    /// The slice type produced for each half of a split.
+    using slice_type = std::decay_t<
+        decltype(buffer_slice(std::declval<BS const&>()))>;
+
+    /// The type returned by @ref next. Each half is a Slice; use
+    /// `.data()` to obtain the buffer sequence view.
+    using split_type = std::pair<slice_type, slice_type>;
 
     /** Construct a buffer grinder.
 
@@ -135,13 +144,15 @@ public:
         split_type
         await_resume()
         {
-            auto b1 = prefix(self_->bs_, self_->pos_);
-            auto b2 = sans_prefix(self_->bs_, self_->pos_);
+            split_type result{
+                buffer_slice(self_->bs_, 0, self_->pos_),
+                buffer_slice(self_->bs_, self_->pos_)
+            };
             if(self_->pos_ < self_->size_)
                 self_->pos_ = (std::min)(self_->pos_ + self_->step_, self_->size_);
             else
                 ++self_->pos_;
-            return {std::move(b1), std::move(b2)};
+            return result;
         }
     };
 

@@ -11,8 +11,8 @@
 #define BOOST_CAPY_BUFFERS_TEST_BUFFERS_HPP
 
 #include <boost/capy/buffers/buffer_copy.hpp>
+#include <boost/capy/buffers/buffer_slice.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/buffers/slice.hpp>
 #include <string>
 #include <string_view>
 
@@ -261,40 +261,39 @@ grind_front(
     bool deep)
 {
     std::string tmp;
+    std::size_t const total = buffer_size(bs0);
 
     for(std::size_t n = 0; n <= pat0.size() + 1; ++n)
     {
         {
+            // remove_prefix: drop the first n bytes
             auto pat = trimmed_front(pat0, n);
-            slice_type<ConstBufferSequence> bs(bs0);
-            remove_prefix(bs, n);
-            check_eq(bs, pat);
-            check_iterators(bs, pat, tmp);
+            auto bs = buffer_slice(bs0);
+            bs.remove_prefix(n);
+            check_eq(bs.data(), pat);
+            check_iterators(bs.data(), pat, tmp);
 
             if(deep)
             {
-                // Take a copy, blank out the original to invalidate any
-                // iterators, and redo the test
-                slice_type<ConstBufferSequence> bsc(bs);
-                {
-                    slice_type<ConstBufferSequence> dummy{};
-                    std::swap(bs, dummy);
-                }
+                // Take a copy, blank out the original, and redo the test
+                auto bsc = bs;
+                bs = decltype(bs){};
                 for(std::size_t m = 0; m <= pat.size() + 1; ++m)
                 {
                     auto pat2 = trimmed_front(pat, m);
-                    slice_type<ConstBufferSequence> bs2(bsc);
-                    remove_prefix(bs2, m);
-                    check_eq(bs2, pat2);
+                    auto bs2 = bsc;
+                    bs2.remove_prefix(m);
+                    check_eq(bs2.data(), pat2);
                 }
             }
         }
         {
+            // keep_prefix: keep only the first n bytes
             auto pat = kept_front(pat0, n);
-            slice_type<ConstBufferSequence> bs(bs0);
-            keep_prefix(bs, n);
-            check_eq(bs, pat);
-            check_iterators(bs, pat, tmp);
+            std::size_t const len = (n < total) ? n : total;
+            auto bs = buffer_slice(bs0, 0, len);
+            check_eq(bs.data(), pat);
+            check_iterators(bs.data(), pat, tmp);
         }
     }
 }
@@ -307,39 +306,47 @@ grind_back(
     bool deep)
 {
     std::string tmp;
+    std::size_t const total = buffer_size(bs0);
 
     for(std::size_t n = 0; n <= pat0.size() + 1; ++n)
     {
         {
+            // remove_suffix: drop the last n bytes
             auto pat = trimmed_back(pat0, n);
-            slice_type<ConstBufferSequence> bs(bs0);
-            remove_suffix(bs, n);
-            check_eq(bs, pat);
-            check_iterators(bs, pat, tmp);
+            std::size_t const len = (n < total) ? total - n : 0;
+            auto bs = buffer_slice(bs0, 0, len);
+            check_eq(bs.data(), pat);
+            check_iterators(bs.data(), pat, tmp);
             if(deep)
             {
-                // Take a copy, blank out the original to invalidate any
-                // iterators, and redo the test
-                slice_type<ConstBufferSequence> bsc(bs);
-                {
-                    slice_type<ConstBufferSequence> dummy{};
-                    std::swap(bs, dummy);
-                }
+                // Take a copy, blank out the original, and redo the test
+                auto bsc = bs;
+                bs = decltype(bs){};
                 for(std::size_t m = 0; m <= pat.size() + 1; ++m)
                 {
                     auto pat2 = trimmed_back(pat, m);
-                    slice_type<ConstBufferSequence> bs2(bsc);
-                    remove_suffix(bs2, m);
-                    check_eq(bs2, pat2);
+                    // Drop another m bytes from the back of bsc by
+                    // length-capping a fresh slice of the same data.
+                    std::size_t const len2 = buffer_size(bsc.data());
+                    std::size_t const new_len =
+                        (m < len2) ? len2 - m : 0;
+                    auto bs2 = bsc;
+                    // Walk forward (current state) and use remove_prefix
+                    // to drop the front; for the back we need a fresh
+                    // slice over the inner-window. Easiest: construct
+                    // a new slice from the original at the right offset/length.
+                    bs2 = buffer_slice(bs0, 0, new_len);
+                    check_eq(bs2.data(), pat2);
                 }
             }
         }
         {
+            // keep_suffix: keep only the last n bytes
             auto pat = kept_back(pat0, n);
-            slice_type<ConstBufferSequence> bs(bs0);
-            keep_suffix(bs, n);
-            check_eq(bs, pat);
-            check_iterators(bs, pat, tmp);
+            std::size_t const offset = (n < total) ? total - n : 0;
+            auto bs = buffer_slice(bs0, offset);
+            check_eq(bs.data(), pat);
+            check_iterators(bs.data(), pat, tmp);
         }
     }
 }

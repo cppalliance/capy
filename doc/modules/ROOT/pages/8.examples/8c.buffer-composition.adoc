@@ -5,7 +5,7 @@ Composing buffer sequences without allocation for scatter/gather I/O.
 == What You Will Learn
 
 * Creating buffers from different sources
-* Using `const_buffer_pair` and `mutable_buffer_pair` for scatter/gather I/O
+* Using `std::array<const_buffer, N>` and `std::array<mutable_buffer, N>` for scatter/gather I/O
 * Zero-allocation buffer sequence patterns
 
 == Prerequisites
@@ -44,15 +44,15 @@ void demonstrate_single_buffers()
     std::cout << "Vector buffer: " << vec_buf.size() << " bytes\n";
 }
 
-void demonstrate_buffer_pair()
+void demonstrate_two_buffer_scatter()
 {
-    std::cout << "\n=== Buffer Pair (Scatter/Gather) ===\n\n";
-    
-    // capy::const_buffer_pair is std::array<const_buffer, 2>
+    std::cout << "\n=== Two-Buffer Scatter/Gather ===\n\n";
+
+    // A 2-element buffer sequence is just a std::array
     std::string header = "Content-Type: text/plain\r\n\r\n";
     std::string body = "Hello, World!";
-    
-    capy::const_buffer_pair message = {{
+
+    std::array<capy::const_buffer, 2> message = {{
         capy::make_buffer(header),
         capy::make_buffer(body)
     }};
@@ -108,7 +108,7 @@ void demonstrate_mutable_buffers()
     char buf1[64];
     char buf2[64];
     
-    capy::mutable_buffer_pair recv_buffers = {{
+    std::array<capy::mutable_buffer, 2> recv_buffers = {{
         capy::mutable_buffer(buf1, sizeof(buf1)),
         capy::mutable_buffer(buf2, sizeof(buf2))
     }};
@@ -124,7 +124,7 @@ void demonstrate_mutable_buffers()
 int main()
 {
     demonstrate_single_buffers();
-    demonstrate_buffer_pair();
+    demonstrate_two_buffer_scatter();
     demonstrate_buffer_array();
     demonstrate_mutable_buffers();
     
@@ -152,17 +152,17 @@ auto arr_buf = capy::make_buffer(arr, sizeof(arr) - 1);  // mutable_buffer
 
 `make_buffer` creates buffer views from various sources. No data is copied—the buffers reference the original storage.
 
-=== Buffer Pairs
+=== Two-Buffer Scatter/Gather
 
 [source,cpp]
 ----
-capy::const_buffer_pair message = {{
+std::array<capy::const_buffer, 2> message = {{
     capy::make_buffer(header),
     capy::make_buffer(body)
 }};
 ----
 
-`const_buffer_pair` is `std::array<const_buffer, 2>` — a fixed-size buffer sequence for scatter/gather I/O. Similarly, `mutable_buffer_pair` holds two mutable buffers.
+Capy's buffer-sequence concepts accept any range of `const_buffer` or `mutable_buffer`, so `std::array<X, 2>` is a buffer sequence with no further wrapping required. Use `mutable_buffer` for receive paths.
 
 === Multi-Buffer Arrays
 
@@ -175,7 +175,7 @@ std::array<capy::const_buffer, 5> http_response = {{
 }};
 ----
 
-For more than two buffers, use `std::array` directly. Buffer sequences support `buffer_size()` and `buffer_length()` for querying total bytes and buffer count.
+For more than two buffers, the same pattern works with a larger `std::array`. Buffer sequences support `buffer_size()` and `buffer_length()` for querying total bytes and buffer count.
 
 === Scatter/Gather I/O
 
@@ -199,7 +199,7 @@ String buffer: 13 bytes
 Array buffer:  10 bytes
 Vector buffer: 6 bytes
 
-=== Buffer Pair (Scatter/Gather) ===
+=== Two-Buffer Scatter/Gather ===
 
 Total message size: 41 bytes
 Buffer count: 2

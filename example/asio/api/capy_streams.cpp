@@ -18,7 +18,6 @@
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/asio.hpp>
-#include <boost/capy/buffers/buffer_array.hpp>
 #include <boost/capy/concept/stream.hpp>
 #include <coroutine>
 #include <boost/capy/ex/io_env.hpp>
@@ -108,7 +107,7 @@ public:
             cancel_ = std::make_shared<cancel_state>(env->stop_token);
 
             self_->socket_.async_read_some(
-                capy::to_asio(capy::mutable_buffer_array<8>(buffers_)),
+                capy::to_asio(buffers_),
                 net::bind_cancellation_slot(
                     cancel_->signal.slot(),
                     [this, ex = env->executor](
@@ -172,7 +171,7 @@ public:
             cancel_ = std::make_shared<cancel_state>(env->stop_token);
 
             self_->socket_.async_write_some(
-                capy::to_asio(capy::const_buffer_array<8>(buffers_)),
+                capy::to_asio(buffers_),
                 net::bind_cancellation_slot(
                     cancel_->signal.slot(),
                     [this, ex = env->executor](

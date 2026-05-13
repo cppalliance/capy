@@ -105,16 +105,15 @@ struct circular_dynamic_buffer_test
         }
     }
 
-    // Helper: total size of a const_buffer_pair
+    // Helper: total size of a 2-element buffer pair
     static std::size_t
-    bp_total_size(const_buffer_pair const& bp) noexcept
+    bp_total_size(std::array<const_buffer, 2> const& bp) noexcept
     {
         return bp[0].size() + bp[1].size();
     }
 
-    // Helper: total size of a mutable_buffer_pair
     static std::size_t
-    bp_total_size(mutable_buffer_pair const& bp) noexcept
+    bp_total_size(std::array<mutable_buffer, 2> const& bp) noexcept
     {
         return bp[0].size() + bp[1].size();
     }

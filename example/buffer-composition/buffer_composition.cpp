@@ -34,15 +34,15 @@ void demonstrate_single_buffers()
     std::cout << "Vector buffer: " << vec_buf.size() << " bytes\n";
 }
 
-void demonstrate_buffer_pair()
+void demonstrate_two_buffer_scatter()
 {
-    std::cout << "\n=== Buffer Pair (Scatter/Gather) ===\n\n";
+    std::cout << "\n=== Two-Buffer Scatter/Gather ===\n\n";
     
-    // capy::const_buffer_pair is std::array<const_buffer, 2>
+    // Two-element scatter/gather sequence (just a std::array)
     std::string header = "Content-Type: text/plain\r\n\r\n";
     std::string body = "Hello, World!";
-    
-    capy::const_buffer_pair message = {{
+
+    std::array<capy::const_buffer, 2> message = {{
         capy::make_buffer(header),
         capy::make_buffer(body)
     }};
@@ -98,7 +98,7 @@ void demonstrate_mutable_buffers()
     char buf1[64];
     char buf2[64];
     
-    capy::mutable_buffer_pair recv_buffers = {{
+    std::array<capy::mutable_buffer, 2> recv_buffers = {{
         capy::mutable_buffer(buf1, sizeof(buf1)),
         capy::mutable_buffer(buf2, sizeof(buf2))
     }};
@@ -114,7 +114,7 @@ void demonstrate_mutable_buffers()
 int main()
 {
     demonstrate_single_buffers();
-    demonstrate_buffer_pair();
+    demonstrate_two_buffer_scatter();
     demonstrate_buffer_array();
     demonstrate_mutable_buffers();
     

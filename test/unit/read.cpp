@@ -10,7 +10,6 @@
 // Test that header file is self-contained.
 #include <boost/capy/read.hpp>
 
-#include <boost/capy/buffers/buffer_pair.hpp>
 #include <boost/capy/buffers/circular_dynamic_buffer.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/buffers/string_dynamic_buffer.hpp>
@@ -108,7 +107,7 @@ struct buffer_pair_factory
         std::memset(storage2, 0, sizeof(storage2));
     }
 
-    mutable_buffer_pair
+    std::array<mutable_buffer, 2>
     buffer()
     {
         return {{

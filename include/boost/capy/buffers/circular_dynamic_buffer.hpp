@@ -11,8 +11,10 @@
 #define BOOST_CAPY_BUFFERS_CIRCULAR_DYNAMIC_BUFFER_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/buffers/buffer_pair.hpp>
+#include <boost/capy/buffers.hpp>
 #include <boost/capy/detail/except.hpp>
+
+#include <array>
 
 namespace boost {
 namespace capy {
@@ -62,10 +64,10 @@ public:
     using is_dynamic_buffer_adapter = void;
 
     /// The ConstBufferSequence type for readable bytes.
-    using const_buffers_type = const_buffer_pair;
+    using const_buffers_type = std::array<const_buffer, 2>;
 
     /// The MutableBufferSequence type for writable bytes.
-    using mutable_buffers_type = mutable_buffer_pair;
+    using mutable_buffers_type = std::array<mutable_buffer, 2>;
 
     /// Construct an empty circular buffer with zero capacity.
     circular_dynamic_buffer() = default;

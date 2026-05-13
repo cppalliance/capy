@@ -7,8 +7,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_BUFFERS_BUFFER_ARRAY_HPP
-#define BOOST_CAPY_BUFFERS_BUFFER_ARRAY_HPP
+#ifndef BOOST_CAPY_DETAIL_BUFFER_ARRAY_HPP
+#define BOOST_CAPY_DETAIL_BUFFER_ARRAY_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/except.hpp>
@@ -21,42 +21,7 @@
 
 namespace boost {
 namespace capy {
-
 namespace detail {
-
-BOOST_CAPY_DECL
-void
-buffer_array_remove_prefix(
-    const_buffer* arr,
-    std::size_t* count,
-    std::size_t* total_size,
-    std::size_t n) noexcept;
-
-BOOST_CAPY_DECL
-void
-buffer_array_remove_prefix(
-    mutable_buffer* arr,
-    std::size_t* count,
-    std::size_t* total_size,
-    std::size_t n) noexcept;
-
-BOOST_CAPY_DECL
-void
-buffer_array_keep_prefix(
-    const_buffer* arr,
-    std::size_t* count,
-    std::size_t* total_size,
-    std::size_t n) noexcept;
-
-BOOST_CAPY_DECL
-void
-buffer_array_keep_prefix(
-    mutable_buffer* arr,
-    std::size_t* count,
-    std::size_t* total_size,
-    std::size_t n) noexcept;
-
-} // namespace detail
 
 /** A buffer sequence holding up to N buffers.
 
@@ -69,7 +34,7 @@ buffer_array_keep_prefix(
     @code
     void process(ConstBufferSequence auto const& buffers)
     {
-        const_buffer_array<4> bufs(buffers);
+        detail::const_buffer_array<4> bufs(buffers);
         // use bufs.begin(), bufs.end(), bufs.to_span()
     }
     @endcode
@@ -332,56 +297,10 @@ public:
 
     /** Return the total byte count in O(1).
     */
-    friend
     std::size_t
-    tag_invoke(
-        size_tag const&,
-        buffer_array const& ba) noexcept
+    byte_size() const noexcept
     {
-        return ba.size_;
-    }
-
-    /** Slice customization point.
-    */
-    friend
-    void
-    tag_invoke(
-        slice_tag const&,
-        buffer_array& ba,
-        slice_how how,
-        std::size_t n) noexcept
-    {
-        ba.slice_impl(how, n);
-    }
-
-private:
-    void
-    slice_impl(
-        slice_how how,
-        std::size_t n) noexcept
-    {
-        switch(how)
-        {
-        case slice_how::remove_prefix:
-            remove_prefix_impl(n);
-            break;
-
-        case slice_how::keep_prefix:
-            keep_prefix_impl(n);
-            break;
-        }
-    }
-
-    void
-    remove_prefix_impl(std::size_t n) noexcept
-    {
-        detail::buffer_array_remove_prefix(arr_, &n_, &size_, n);
-    }
-
-    void
-    keep_prefix_impl(std::size_t n) noexcept
-    {
-        detail::buffer_array_keep_prefix(arr_, &n_, &size_, n);
+        return size_;
     }
 };
 
@@ -399,6 +318,7 @@ using const_buffer_array = buffer_array<N, true>;
 template<std::size_t N>
 using mutable_buffer_array = buffer_array<N, false>;
 
+} // namespace detail
 } // namespace capy
 } // namespace boost
 

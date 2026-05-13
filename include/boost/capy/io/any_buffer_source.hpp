@@ -15,7 +15,6 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/buffer_param.hpp>
-#include <boost/capy/buffers/slice.hpp>
 #include <boost/capy/concept/buffer_source.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/read_source.hpp>

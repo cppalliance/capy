@@ -32,26 +32,6 @@ namespace capy {
 class const_buffer;
 class mutable_buffer;
 
-/// Tag type for customizing `buffer_size` via `tag_invoke`.
-struct size_tag {};
-
-/// Tag type for customizing slice operations via `tag_invoke`.
-struct slice_tag {};
-
-/** Constants for slice customization.
-
-    Passed to `tag_invoke` overloads to specify which portion
-    of a buffer sequence to retain.
-*/
-enum class slice_how
-{
-    /// Remove bytes from the front of the sequence.
-    remove_prefix,
-
-    /// Keep only the first N bytes.
-    keep_prefix
-};
-
 /** A reference to a contiguous region of writable memory.
 
     Represents a pointer and size pair for a modifiable byte range.
@@ -110,35 +90,6 @@ public:
         p_ += n;
         n_ -= n;
         return *this;
-    }
-
-    /// Slice customization point for `tag_invoke`.
-    friend
-    void
-    tag_invoke(
-        slice_tag const&,
-        mutable_buffer& b,
-        slice_how how,
-        std::size_t n) noexcept
-    {
-        b.do_slice(how, n);
-    }
-
-private:
-    void do_slice(
-        slice_how how, std::size_t n) noexcept
-    {
-        switch(how)
-        {
-        case slice_how::remove_prefix:
-            *this += n;
-            return;
-
-        case slice_how::keep_prefix:
-            if( n < n_)
-                n_ = n;
-            return;
-        }
     }
 };
 
@@ -207,35 +158,6 @@ public:
         p_ += n;
         n_ -= n;
         return *this;
-    }
-
-    /// Slice customization point for `tag_invoke`.
-    friend
-    void
-    tag_invoke(
-        slice_tag const&,
-        const_buffer& b,
-        slice_how how,
-        std::size_t n) noexcept
-    {
-        b.do_slice(how, n);
-    }
-
-private:
-    void do_slice(
-        slice_how how, std::size_t n) noexcept
-    {
-        switch(how)
-        {
-        case slice_how::remove_prefix:
-            *this += n;
-            return;
-
-        case slice_how::keep_prefix:
-            if( n < n_)
-                n_ = n;
-            return;
-        }
     }
 };
 
@@ -332,19 +254,6 @@ constexpr struct end_mrdocs_workaround_t
     }
 } end {};
 
-template<ConstBufferSequence CB>
-std::size_t
-tag_invoke(
-    size_tag const&,
-    CB const& bs) noexcept
-{
-    std::size_t n = 0;
-    auto const e = end(bs);
-    for(auto it = begin(bs); it != e; ++it)
-        n += const_buffer(*it).size();
-    return n;
-}
-
 /** Return the total byte count across all buffers in a sequence.
 
     Sums the `size()` of each buffer in the sequence. This differs
@@ -358,12 +267,29 @@ tag_invoke(
 */
 constexpr struct buffer_size_mrdocs_workaround_t
 {
+    // GCC 13 falsely flags reads of arr_[i].n_ in detail::buffer_array
+    // when iterating here. The class uses union storage with placement
+    // new for slots 0..n_-1, so reads inside this bounded loop are
+    // well-defined, but the optimizer can't prove the loop bound and
+    // warns. The runtime cost of value-initializing all N slots is
+    // non-trivial for non-trivial value types, so we suppress instead.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
     template<ConstBufferSequence CB>
     constexpr std::size_t operator()(
         CB const& bs) const noexcept
     {
-        return tag_invoke(size_tag{}, bs);
+        std::size_t n = 0;
+        auto const e = capy::end(bs);
+        for(auto it = capy::begin(bs); it != e; ++it)
+            n += const_buffer(*it).size();
+        return n;
     }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 } buffer_size {};
 
 /** Check if a buffer sequence contains no data.
@@ -373,6 +299,11 @@ constexpr struct buffer_size_mrdocs_workaround_t
 */
 constexpr struct buffer_empty_mrdocs_workaround_t
 {
+    // See note on buffer_size above — same union-storage false positive.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
     template<ConstBufferSequence CB>
     constexpr bool operator()(
         CB const& bs) const noexcept
@@ -387,6 +318,9 @@ constexpr struct buffer_empty_mrdocs_workaround_t
         }
         return true;
     }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 } buffer_empty {};
 
 namespace detail {

@@ -10,7 +10,6 @@
 // Test that header file is self-contained.
 #include <boost/capy/write.hpp>
 
-#include <boost/capy/buffers/buffer_pair.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/test/fuse.hpp>
@@ -97,7 +96,7 @@ struct buffer_pair_factory
     {
     }
 
-    const_buffer_pair
+    std::array<const_buffer, 2>
     buffer() const
     {
         return {{

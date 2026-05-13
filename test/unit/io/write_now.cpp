@@ -10,7 +10,6 @@
 // Test that header file is self-contained.
 #include <boost/capy/io/write_now.hpp>
 
-#include <boost/capy/buffers/buffer_pair.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/test/fuse.hpp>
@@ -148,7 +147,7 @@ public:
 
             std::string s1("ab");
             std::string s2("cdefgh");
-            const_buffer_pair bp{{
+            std::array<const_buffer, 2> bp{{
                 const_buffer(s1.data(), s1.size()),
                 const_buffer(s2.data(), s2.size())
             }};
