@@ -11,7 +11,7 @@
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/asio.hpp>
-#include <boost/capy/buffers/buffer_array.hpp>
+#include <boost/capy/detail/buffer_array.hpp>
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/asio/buffer.hpp>
 
@@ -28,9 +28,9 @@ namespace capy {
 // to_asio result satisfies asio buffer sequence traits
 
 using to_asio_const_t = decltype(
-    to_asio(std::declval<const_buffer_array<4> const&>()));
+    to_asio(std::declval<detail::const_buffer_array<4> const&>()));
 using to_asio_mutable_t = decltype(
-    to_asio(std::declval<mutable_buffer_array<4> const&>()));
+    to_asio(std::declval<detail::mutable_buffer_array<4> const&>()));
 
 static_assert(asio::is_const_buffer_sequence<to_asio_const_t>::value);
 static_assert(asio::is_const_buffer_sequence<to_asio_mutable_t>::value);
@@ -117,8 +117,8 @@ struct asio_test
     {
         char d1[] = "abc";
         char d2[] = "defgh";
-        mutable_buffer_array<4> bufs;
-        bufs = mutable_buffer_array<4>(
+        detail::mutable_buffer_array<4> bufs;
+        bufs = detail::mutable_buffer_array<4>(
             std::array<mutable_buffer, 2>{{
                 mutable_buffer(d1, 3),
                 mutable_buffer(d2, 5)
@@ -292,8 +292,8 @@ struct asio_test
     test_move_semantics()
     {
         char d1[] = "abc";
-        mutable_buffer_array<4> bufs;
-        bufs = mutable_buffer_array<4>(
+        detail::mutable_buffer_array<4> bufs;
+        bufs = detail::mutable_buffer_array<4>(
             mutable_buffer(d1, 3));
 
         auto adapted = to_asio(std::move(bufs));

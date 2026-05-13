@@ -31,16 +31,25 @@ namespace capy {
 
     @par Semantic Requirements
     @li `s.data()` returns a buffer sequence view of the slice's current
-        live bytes. The view is valid until the next mutating operation
-        on `s` or `s`'s destruction.
+        live bytes.
     @li `s.remove_prefix(n)` makes the first `min(n, total_live_bytes)`
         bytes no longer part of the slice.
 
     @par Lifetime
-    The underlying buffer sequence referenced by the slice must outlive
-    any `Slice`-modeling object that views it. Iterators and buffer
-    descriptors obtained through `data()` follow the same invalidation
-    rules as those of the underlying sequence.
+    A `Slice` is associated, on construction, with an underlying
+    buffer sequence. The slice is valid for as long as that sequence
+    — and the memory referenced by its buffer descriptors — remains
+    valid. Operating on a slice whose underlying sequence is no
+    longer valid is undefined behavior.
+
+    The buffer sequence returned by `data()` is independent of the
+    slice object: subsequent operations on the slice
+    (`remove_prefix`, copy, move, destruction) do not invalidate
+    an already-obtained `data()` view. It remains valid for as
+    long as the slice's underlying buffer sequence is valid.
+
+    Buffer descriptors obtained through `data()` follow the same
+    invalidation rules as those of the underlying sequence.
 
     @par Concrete Types
     Objects modeling `Slice` are produced by the @ref buffer_slice free

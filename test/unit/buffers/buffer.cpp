@@ -88,15 +88,15 @@ static_assert(std::ranges::bidirectional_range<std::array<mutable_buffer, 3>>);
 static_assert(std::ranges::random_access_range<std::array<mutable_buffer, 3>>);
 static_assert(std::ranges::contiguous_range<std::array<mutable_buffer, 3>>);
 
-// std::ranges concepts for const_buffer_pair / mutable_buffer_pair
+// std::ranges concepts for 2-element buffer arrays
 
-static_assert(std::ranges::range<const_buffer_pair>);
-static_assert(std::ranges::bidirectional_range<const_buffer_pair>);
-static_assert(std::ranges::random_access_range<const_buffer_pair>);
+static_assert(std::ranges::range<std::array<const_buffer, 2>>);
+static_assert(std::ranges::bidirectional_range<std::array<const_buffer, 2>>);
+static_assert(std::ranges::random_access_range<std::array<const_buffer, 2>>);
 
-static_assert(std::ranges::range<mutable_buffer_pair>);
-static_assert(std::ranges::bidirectional_range<mutable_buffer_pair>);
-static_assert(std::ranges::random_access_range<mutable_buffer_pair>);
+static_assert(std::ranges::range<std::array<mutable_buffer, 2>>);
+static_assert(std::ranges::bidirectional_range<std::array<mutable_buffer, 2>>);
+static_assert(std::ranges::random_access_range<std::array<mutable_buffer, 2>>);
 
 // std::views producing valid ConstBufferSequence
 
@@ -178,9 +178,9 @@ struct fixt<mutable_buffer>
 };
 
 template<>
-struct fixt<const_buffer_pair>
+struct fixt<std::array<const_buffer, 2>>
 {
-    const_buffer_pair t;
+    std::array<const_buffer, 2> t;
     fixt(std::string_view pat)
         : t{{ {buf(pat.substr(0, 3))}, {buf(pat.substr(3))} }}
     {
@@ -188,10 +188,10 @@ struct fixt<const_buffer_pair>
 };
 
 template<>
-struct fixt<mutable_buffer_pair>
+struct fixt<std::array<mutable_buffer, 2>>
 {
     char data[64];
-    mutable_buffer_pair t;
+    std::array<mutable_buffer, 2> t;
     fixt(std::string_view pat)
         : t{{{data,3}, {data+3, pat.size()-3}}}
     {
@@ -316,7 +316,8 @@ struct buffer_test
             char data[64];
             mutable_buffer mb(data, sizeof(data));
             fixt<T> f(pat);
-            keep_prefix(mb, buffer_copy(mb, f.t));
+            auto const n = buffer_copy(mb, f.t);
+            mb = mutable_buffer(mb.data(), n);
             BOOST_TEST_EQ(test::make_string(mb), pat);
         }
     }
@@ -325,8 +326,8 @@ struct buffer_test
     {
         testBuffer<const_buffer>();
         testBuffer<mutable_buffer>();
-        testBuffer<const_buffer_pair>();
-        testBuffer<mutable_buffer_pair>();
+        testBuffer<std::array<const_buffer, 2>>();
+        testBuffer<std::array<mutable_buffer, 2>>();
         testBuffer<std::span<const_buffer,3>>();
         testBuffer<std::span<mutable_buffer,3>>();
         testBuffer<std::array<const_buffer,3>>();
@@ -483,17 +484,17 @@ struct buffer_test
 
         // empty buffer_pair (both empty)
         {
-            const_buffer_pair cbp{{ {data, 0}, {data, 0} }};
+            std::array<const_buffer, 2> cbp{{ {data, 0}, {data, 0} }};
             BOOST_TEST(buffer_empty(cbp));
         }
 
         // non-empty buffer_pair (one non-empty)
         {
-            const_buffer_pair cbp{{ {data, 0}, {data, 3} }};
+            std::array<const_buffer, 2> cbp{{ {data, 0}, {data, 3} }};
             BOOST_TEST(! buffer_empty(cbp));
         }
         {
-            const_buffer_pair cbp{{ {data, 3}, {data, 0} }};
+            std::array<const_buffer, 2> cbp{{ {data, 3}, {data, 0} }};
             BOOST_TEST(! buffer_empty(cbp));
         }
 

@@ -8,9 +8,9 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/buffers/buffer_array.hpp>
+#include <boost/capy/detail/buffer_array.hpp>
 
-#include "test_buffers.hpp"
+#include "../buffers/test_buffers.hpp"
 
 #include <ranges>
 #include <span>
@@ -19,29 +19,29 @@
 namespace boost {
 namespace capy {
 
-// std::ranges concepts for const_buffer_array
+// std::ranges concepts for detail::const_buffer_array
 
-static_assert(std::ranges::range<const_buffer_array<4>>);
-static_assert(std::ranges::input_range<const_buffer_array<4>>);
-static_assert(std::ranges::forward_range<const_buffer_array<4>>);
-static_assert(std::ranges::bidirectional_range<const_buffer_array<4>>);
-static_assert(std::ranges::random_access_range<const_buffer_array<4>>);
-static_assert(std::ranges::contiguous_range<const_buffer_array<4>>);
+static_assert(std::ranges::range<detail::const_buffer_array<4>>);
+static_assert(std::ranges::input_range<detail::const_buffer_array<4>>);
+static_assert(std::ranges::forward_range<detail::const_buffer_array<4>>);
+static_assert(std::ranges::bidirectional_range<detail::const_buffer_array<4>>);
+static_assert(std::ranges::random_access_range<detail::const_buffer_array<4>>);
+static_assert(std::ranges::contiguous_range<detail::const_buffer_array<4>>);
 
-static_assert(ConstBufferSequence<const_buffer_array<4>>);
-static_assert(!MutableBufferSequence<const_buffer_array<4>>);
+static_assert(ConstBufferSequence<detail::const_buffer_array<4>>);
+static_assert(!MutableBufferSequence<detail::const_buffer_array<4>>);
 
-// std::ranges concepts for mutable_buffer_array
+// std::ranges concepts for detail::mutable_buffer_array
 
-static_assert(std::ranges::range<mutable_buffer_array<4>>);
-static_assert(std::ranges::input_range<mutable_buffer_array<4>>);
-static_assert(std::ranges::forward_range<mutable_buffer_array<4>>);
-static_assert(std::ranges::bidirectional_range<mutable_buffer_array<4>>);
-static_assert(std::ranges::random_access_range<mutable_buffer_array<4>>);
-static_assert(std::ranges::contiguous_range<mutable_buffer_array<4>>);
+static_assert(std::ranges::range<detail::mutable_buffer_array<4>>);
+static_assert(std::ranges::input_range<detail::mutable_buffer_array<4>>);
+static_assert(std::ranges::forward_range<detail::mutable_buffer_array<4>>);
+static_assert(std::ranges::bidirectional_range<detail::mutable_buffer_array<4>>);
+static_assert(std::ranges::random_access_range<detail::mutable_buffer_array<4>>);
+static_assert(std::ranges::contiguous_range<detail::mutable_buffer_array<4>>);
 
-static_assert(ConstBufferSequence<mutable_buffer_array<4>>);
-static_assert(MutableBufferSequence<mutable_buffer_array<4>>);
+static_assert(ConstBufferSequence<detail::mutable_buffer_array<4>>);
+static_assert(MutableBufferSequence<detail::mutable_buffer_array<4>>);
 
 struct buffer_array_test
 {
@@ -52,7 +52,7 @@ struct buffer_array_test
 
         // default constructor
         {
-            const_buffer_array<4> ba;
+            detail::const_buffer_array<4> ba;
             BOOST_TEST_EQ(ba.to_span().size(), 0);
             BOOST_TEST_EQ(buffer_size(ba), 0);
         }
@@ -60,7 +60,7 @@ struct buffer_array_test
         // single buffer constructor
         {
             const_buffer b(pat.data(), pat.size());
-            const_buffer_array<4> ba(b);
+            detail::const_buffer_array<4> ba(b);
             BOOST_TEST_EQ(ba.to_span().size(), 1);
             BOOST_TEST_EQ(buffer_size(ba), pat.size());
             BOOST_TEST_EQ(test::make_string(ba), pat);
@@ -69,7 +69,7 @@ struct buffer_array_test
         // empty buffer is skipped
         {
             const_buffer b(pat.data(), 0);
-            const_buffer_array<4> ba(b);
+            detail::const_buffer_array<4> ba(b);
             BOOST_TEST_EQ(ba.to_span().size(), 0);
             BOOST_TEST_EQ(buffer_size(ba), 0);
         }
@@ -80,7 +80,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 5);
             v.emplace_back(pat.data() + 8, pat.size() - 8);
-            const_buffer_array<4> ba(v);
+            detail::const_buffer_array<4> ba(v);
             BOOST_TEST_EQ(ba.to_span().size(), 3);
             BOOST_TEST_EQ(buffer_size(ba), pat.size());
             BOOST_TEST_EQ(test::make_string(ba), pat);
@@ -89,8 +89,8 @@ struct buffer_array_test
         // copy constructor
         {
             const_buffer b(pat.data(), pat.size());
-            const_buffer_array<4> ba1(b);
-            const_buffer_array<4> ba2(ba1);
+            detail::const_buffer_array<4> ba1(b);
+            detail::const_buffer_array<4> ba2(ba1);
             BOOST_TEST_EQ(ba2.to_span().size(), 1);
             BOOST_TEST_EQ(buffer_size(ba2), pat.size());
             BOOST_TEST_EQ(test::make_string(ba2), pat);
@@ -99,8 +99,8 @@ struct buffer_array_test
         // copy assignment
         {
             const_buffer b(pat.data(), pat.size());
-            const_buffer_array<4> ba1(b);
-            const_buffer_array<4> ba2;
+            detail::const_buffer_array<4> ba1(b);
+            detail::const_buffer_array<4> ba2;
             ba2 = ba1;
             BOOST_TEST_EQ(ba2.to_span().size(), 1);
             BOOST_TEST_EQ(buffer_size(ba2), pat.size());
@@ -113,7 +113,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 5);
             v.emplace_back(pat.data() + 8, pat.size() - 8);
-            const_buffer_array<2> ba;
+            detail::const_buffer_array<2> ba;
             ba = v;
             BOOST_TEST_EQ(ba.to_span().size(), 2);
             BOOST_TEST_EQ(buffer_size(ba), 8);
@@ -122,7 +122,7 @@ struct buffer_array_test
         // span conversion
         {
             const_buffer b(pat.data(), pat.size());
-            const_buffer_array<4> ba(b);
+            detail::const_buffer_array<4> ba(b);
             std::span<const_buffer const> sp = ba;
             BOOST_TEST_EQ(sp.size(), 1);
             BOOST_TEST_EQ(sp[0].data(), pat.data());
@@ -131,7 +131,7 @@ struct buffer_array_test
         // to_span
         {
             const_buffer b(pat.data(), pat.size());
-            const_buffer_array<4> ba(b);
+            detail::const_buffer_array<4> ba(b);
             auto sp = ba.to_span();
             BOOST_TEST_EQ(sp.size(), 1);
             BOOST_TEST_EQ(sp[0].data(), pat.data());
@@ -143,7 +143,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 5);
             v.emplace_back(pat.data() + 8, pat.size() - 8);
-            const_buffer_array<2> ba(v);
+            detail::const_buffer_array<2> ba(v);
             BOOST_TEST_EQ(ba.to_span().size(), 2);
             BOOST_TEST_EQ(buffer_size(ba), 8);
         }
@@ -157,7 +157,7 @@ struct buffer_array_test
             bool threw = false;
             try
             {
-                const_buffer_array<2> ba(std::in_place, v);
+                detail::const_buffer_array<2> ba(std::in_place, v);
                 (void)ba;
             }
             catch(std::length_error const&)
@@ -173,7 +173,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 5);
             v.emplace_back(pat.data() + 8, pat.size() - 8);
-            const_buffer_array<4> ba(std::in_place, v);
+            detail::const_buffer_array<4> ba(std::in_place, v);
             BOOST_TEST_EQ(ba.to_span().size(), 3);
             BOOST_TEST_EQ(buffer_size(ba), pat.size());
             BOOST_TEST_EQ(test::make_string(ba), pat);
@@ -185,7 +185,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 5);
             v.emplace_back(pat.data() + 8, pat.size() - 8);
-            const_buffer_array<4> ba(v.begin(), v.end());
+            detail::const_buffer_array<4> ba(v.begin(), v.end());
             BOOST_TEST_EQ(ba.to_span().size(), 3);
             BOOST_TEST_EQ(buffer_size(ba), pat.size());
             BOOST_TEST_EQ(test::make_string(ba), pat);
@@ -197,7 +197,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 5);
             v.emplace_back(pat.data() + 8, pat.size() - 8);
-            const_buffer_array<2> ba(v.begin(), v.end());
+            detail::const_buffer_array<2> ba(v.begin(), v.end());
             BOOST_TEST_EQ(ba.to_span().size(), 2);
             BOOST_TEST_EQ(buffer_size(ba), 8);
         }
@@ -205,7 +205,7 @@ struct buffer_array_test
         // iterator-pair empty range
         {
             std::vector<const_buffer> v;
-            const_buffer_array<4> ba(v.begin(), v.end());
+            detail::const_buffer_array<4> ba(v.begin(), v.end());
             BOOST_TEST_EQ(ba.to_span().size(), 0);
             BOOST_TEST_EQ(buffer_size(ba), 0);
         }
@@ -217,7 +217,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 0);
             v.emplace_back(pat.data() + 3, 5);
-            const_buffer_array<4> ba(v.begin(), v.end());
+            detail::const_buffer_array<4> ba(v.begin(), v.end());
             BOOST_TEST_EQ(ba.to_span().size(), 2);
             BOOST_TEST_EQ(buffer_size(ba), 8);
         }
@@ -231,7 +231,7 @@ struct buffer_array_test
             bool threw = false;
             try
             {
-                const_buffer_array<2> ba(
+                detail::const_buffer_array<2> ba(
                     std::in_place, v.begin(), v.end());
                 (void)ba;
             }
@@ -248,7 +248,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 5);
             v.emplace_back(pat.data() + 8, pat.size() - 8);
-            const_buffer_array<4> ba(
+            detail::const_buffer_array<4> ba(
                 std::in_place, v.begin(), v.end());
             BOOST_TEST_EQ(ba.to_span().size(), 3);
             BOOST_TEST_EQ(buffer_size(ba), pat.size());
@@ -262,7 +262,7 @@ struct buffer_array_test
                 std::vector<const_buffer> v;
                 v.emplace_back(pat.data(), i);
                 v.emplace_back(pat.data() + i, pat.size() - i);
-                const_buffer_array<4> ba(v);
+                detail::const_buffer_array<4> ba(v);
                 test::check_sequence(ba, pat);
             }
         }
@@ -275,7 +275,7 @@ struct buffer_array_test
 
         // default constructor
         {
-            mutable_buffer_array<4> ba;
+            detail::mutable_buffer_array<4> ba;
             BOOST_TEST_EQ(ba.to_span().size(), 0);
             BOOST_TEST_EQ(buffer_size(ba), 0);
         }
@@ -283,7 +283,7 @@ struct buffer_array_test
         // single buffer constructor
         {
             mutable_buffer b(pat.data(), pat.size());
-            mutable_buffer_array<4> ba(b);
+            detail::mutable_buffer_array<4> ba(b);
             BOOST_TEST_EQ(ba.to_span().size(), 1);
             BOOST_TEST_EQ(buffer_size(ba), pat.size());
             BOOST_TEST_EQ(test::make_string(ba), pat);
@@ -295,7 +295,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 5);
             v.emplace_back(pat.data() + 8, pat.size() - 8);
-            mutable_buffer_array<4> ba(v);
+            detail::mutable_buffer_array<4> ba(v);
             BOOST_TEST_EQ(ba.to_span().size(), 3);
             BOOST_TEST_EQ(buffer_size(ba), pat.size());
             BOOST_TEST_EQ(test::make_string(ba), pat);
@@ -304,8 +304,8 @@ struct buffer_array_test
         // copy constructor
         {
             mutable_buffer b(pat.data(), pat.size());
-            mutable_buffer_array<4> ba1(b);
-            mutable_buffer_array<4> ba2(ba1);
+            detail::mutable_buffer_array<4> ba1(b);
+            detail::mutable_buffer_array<4> ba2(ba1);
             BOOST_TEST_EQ(ba2.to_span().size(), 1);
             BOOST_TEST_EQ(buffer_size(ba2), pat.size());
             BOOST_TEST_EQ(test::make_string(ba2), pat);
@@ -314,8 +314,8 @@ struct buffer_array_test
         // copy assignment
         {
             mutable_buffer b(pat.data(), pat.size());
-            mutable_buffer_array<4> ba1(b);
-            mutable_buffer_array<4> ba2;
+            detail::mutable_buffer_array<4> ba1(b);
+            detail::mutable_buffer_array<4> ba2;
             ba2 = ba1;
             BOOST_TEST_EQ(ba2.to_span().size(), 1);
             BOOST_TEST_EQ(buffer_size(ba2), pat.size());
@@ -328,7 +328,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 5);
             v.emplace_back(pat.data() + 8, pat.size() - 8);
-            mutable_buffer_array<2> ba;
+            detail::mutable_buffer_array<2> ba;
             ba = v;
             BOOST_TEST_EQ(ba.to_span().size(), 2);
             BOOST_TEST_EQ(buffer_size(ba), 8);
@@ -337,7 +337,7 @@ struct buffer_array_test
         // span conversion
         {
             mutable_buffer b(pat.data(), pat.size());
-            mutable_buffer_array<4> ba(b);
+            detail::mutable_buffer_array<4> ba(b);
             std::span<mutable_buffer> sp = ba;
             BOOST_TEST_EQ(sp.size(), 1);
             BOOST_TEST_EQ(sp[0].data(), pat.data());
@@ -346,7 +346,7 @@ struct buffer_array_test
         // to_span
         {
             mutable_buffer b(pat.data(), pat.size());
-            mutable_buffer_array<4> ba(b);
+            detail::mutable_buffer_array<4> ba(b);
             auto sp = ba.to_span();
             BOOST_TEST_EQ(sp.size(), 1);
             BOOST_TEST_EQ(sp[0].data(), pat.data());
@@ -358,7 +358,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 5);
             v.emplace_back(pat.data() + 8, pat.size() - 8);
-            mutable_buffer_array<2> ba(v);
+            detail::mutable_buffer_array<2> ba(v);
             BOOST_TEST_EQ(ba.to_span().size(), 2);
             BOOST_TEST_EQ(buffer_size(ba), 8);
         }
@@ -372,7 +372,7 @@ struct buffer_array_test
             bool threw = false;
             try
             {
-                mutable_buffer_array<2> ba(std::in_place, v);
+                detail::mutable_buffer_array<2> ba(std::in_place, v);
                 (void)ba;
             }
             catch(std::length_error const&)
@@ -388,7 +388,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 5);
             v.emplace_back(pat.data() + 8, pat.size() - 8);
-            mutable_buffer_array<4> ba(std::in_place, v);
+            detail::mutable_buffer_array<4> ba(std::in_place, v);
             BOOST_TEST_EQ(ba.to_span().size(), 3);
             BOOST_TEST_EQ(buffer_size(ba), pat.size());
             BOOST_TEST_EQ(test::make_string(ba), pat);
@@ -400,7 +400,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 5);
             v.emplace_back(pat.data() + 8, pat.size() - 8);
-            mutable_buffer_array<4> ba(v.begin(), v.end());
+            detail::mutable_buffer_array<4> ba(v.begin(), v.end());
             BOOST_TEST_EQ(ba.to_span().size(), 3);
             BOOST_TEST_EQ(buffer_size(ba), pat.size());
             BOOST_TEST_EQ(test::make_string(ba), pat);
@@ -412,7 +412,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 5);
             v.emplace_back(pat.data() + 8, pat.size() - 8);
-            mutable_buffer_array<2> ba(v.begin(), v.end());
+            detail::mutable_buffer_array<2> ba(v.begin(), v.end());
             BOOST_TEST_EQ(ba.to_span().size(), 2);
             BOOST_TEST_EQ(buffer_size(ba), 8);
         }
@@ -420,7 +420,7 @@ struct buffer_array_test
         // iterator-pair empty range
         {
             std::vector<mutable_buffer> v;
-            mutable_buffer_array<4> ba(v.begin(), v.end());
+            detail::mutable_buffer_array<4> ba(v.begin(), v.end());
             BOOST_TEST_EQ(ba.to_span().size(), 0);
             BOOST_TEST_EQ(buffer_size(ba), 0);
         }
@@ -432,7 +432,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 0);
             v.emplace_back(pat.data() + 3, 5);
-            mutable_buffer_array<4> ba(v.begin(), v.end());
+            detail::mutable_buffer_array<4> ba(v.begin(), v.end());
             BOOST_TEST_EQ(ba.to_span().size(), 2);
             BOOST_TEST_EQ(buffer_size(ba), 8);
         }
@@ -446,7 +446,7 @@ struct buffer_array_test
             bool threw = false;
             try
             {
-                mutable_buffer_array<2> ba(
+                detail::mutable_buffer_array<2> ba(
                     std::in_place, v.begin(), v.end());
                 (void)ba;
             }
@@ -463,7 +463,7 @@ struct buffer_array_test
             v.emplace_back(pat.data(), 3);
             v.emplace_back(pat.data() + 3, 5);
             v.emplace_back(pat.data() + 8, pat.size() - 8);
-            mutable_buffer_array<4> ba(
+            detail::mutable_buffer_array<4> ba(
                 std::in_place, v.begin(), v.end());
             BOOST_TEST_EQ(ba.to_span().size(), 3);
             BOOST_TEST_EQ(buffer_size(ba), pat.size());
@@ -477,7 +477,7 @@ struct buffer_array_test
                 std::vector<mutable_buffer> v;
                 v.emplace_back(pat.data(), i);
                 v.emplace_back(pat.data() + i, pat.size() - i);
-                mutable_buffer_array<4> ba(v);
+                detail::mutable_buffer_array<4> ba(v);
                 test::check_sequence(ba, pat);
             }
         }

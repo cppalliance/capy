@@ -24,8 +24,7 @@ namespace capy {
 
     Constructs a view over a contiguous byte range of `seq`. The
     slice exposes its current bytes via `data()` (a buffer sequence)
-    and supports incremental consumption via `remove_prefix(n)` and
-    `remove_suffix(n)`.
+    and supports incremental consumption via `remove_prefix(n)`.
 
     @par Return Value
     An object of unspecified type satisfying the @ref Slice concept.
@@ -34,13 +33,24 @@ namespace capy {
     additionally models @ref MutableSlice.
 
     @par Lifetime
-    The returned object holds a non-owning reference to data within
-    `seq`. `seq` must remain valid until the returned object is
-    destroyed. Iterators and buffer descriptors obtained through
-    `data()` follow the same invalidation rules as those of `seq`.
+    The returned slice is associated with `seq` as its underlying
+    buffer sequence. `seq` — and the memory referenced by its buffer
+    descriptors — must remain valid for as long as the slice, or
+    any buffer sequence obtained from its `data()`, is in use.
+    Passing a temporary buffer sequence to `buffer_slice` produces
+    a dangling slice.
+
+    The buffer sequence returned by `data()` is independent of the
+    slice object: subsequent operations on the slice (mutation,
+    copy, move, destruction) do not invalidate an already-obtained
+    `data()` view. It remains valid for as long as `seq` is valid.
+
+    Iterators and buffer descriptors obtained through `data()`
+    follow the same invalidation rules as those of `seq`.
 
     @par Parameters
-    @li `seq` The underlying buffer sequence.
+    @li `seq` The underlying buffer sequence. Must outlive the
+        returned slice and any `data()` view obtained from it.
     @li `offset` Number of bytes to skip from the start of `seq`.
         Clamped to `buffer_size(seq)`.
     @li `length` Maximum number of bytes the slice will expose,
@@ -82,6 +92,32 @@ buffer_slice(
 {
     return detail::slice_impl<BufferSequence>(seq, offset, length);
 }
+
+/** Deleted overload that rejects rvalue arguments at compile time.
+
+    Because the returned slice's validity depends on the underlying
+    buffer sequence remaining alive, calling `buffer_slice` with a
+    temporary buffer sequence would produce an immediately dangling
+    slice. This overload makes such calls ill-formed, surfacing the
+    lifetime error at compile time rather than as runtime UB.
+
+    To slice a buffer sequence produced as a temporary, hoist it
+    into a named variable first:
+
+    @code
+    auto bufs = some_dynamic_buffer.data();   // named, lives in scope
+    auto s = buffer_slice( bufs );            // OK
+    @endcode
+*/
+template<class BufferSequence>
+    requires MutableBufferSequence<BufferSequence>
+          || ConstBufferSequence<BufferSequence>
+auto
+buffer_slice(
+    BufferSequence const&& seq,
+    std::size_t offset = 0,
+    std::size_t length =
+        (std::numeric_limits<std::size_t>::max)()) = delete;
 
 } // namespace capy
 } // namespace boost

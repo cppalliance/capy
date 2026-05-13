@@ -433,23 +433,11 @@ Capy has one `DynamicBuffer` concept. The v1/v2 split in Asio exists because of 
 | Yes
 |
 
-| `buffer_pair`
-| Yes
-|
-
-| `slice`
-| Yes
-|
-
 | `front`
 | Yes
 |
 
 | `buffer_slice`
-| Yes
-|
-
-| `buffer_array`
 | Yes
 |
 

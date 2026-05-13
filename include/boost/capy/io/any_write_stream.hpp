@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/buffer_array.hpp>
+#include <boost/capy/detail/buffer_array.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <coroutine>
@@ -379,7 +379,7 @@ any_write_stream::write_some(CB buffers)
     struct awaitable
     {
         any_write_stream* self_;
-        const_buffer_array<detail::max_iovec_> ba_;
+        detail::const_buffer_array<detail::max_iovec_> ba_;
 
         awaitable(
             any_write_stream* self,

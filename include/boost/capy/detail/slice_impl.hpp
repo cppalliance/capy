@@ -65,20 +65,20 @@ private:
 
     static buffer_type adjust_buffer(
         buffer_type const& buf,
-        std::size_t front,
-        std::size_t back) noexcept
+        std::size_t front_n,
+        std::size_t back_n) noexcept
     {
         if constexpr (std::is_same_v<buffer_type, mutable_buffer>)
         {
             return mutable_buffer(
-                static_cast<char*>(buf.data()) + front,
-                buf.size() - front - back);
+                static_cast<char*>(buf.data()) + front_n,
+                buf.size() - front_n - back_n);
         }
         else
         {
             return const_buffer(
-                static_cast<char const*>(buf.data()) + front,
-                buf.size() - front - back);
+                static_cast<char const*>(buf.data()) + front_n,
+                buf.size() - front_n - back_n);
         }
     }
 
@@ -136,11 +136,11 @@ public:
             value_type operator*() const noexcept
             {
                 buffer_type buf = *cur_;
-                auto front = (cur_ == anchor_first_) ? front_skip_ : 0;
+                auto front_n = (cur_ == anchor_first_) ? front_skip_ : 0;
                 auto next = cur_;
                 ++next;
-                auto back = (next == anchor_last_) ? back_skip_ : 0;
-                return adjust_buffer(buf, front, back);
+                auto back_n = (next == anchor_last_) ? back_skip_ : 0;
+                return adjust_buffer(buf, front_n, back_n);
             }
 
             const_iterator& operator++() noexcept
