@@ -71,10 +71,10 @@ public:
     }
 
     static bool
-    enqueue(strand_impl& impl, std::coroutine_handle<> h)
+    enqueue(strand_impl& impl, continuation& c)
     {
         std::lock_guard<std::mutex> lock(*impl.mutex_);
-        impl.pending_.push(h);
+        impl.pending_.push(c);
         if(!impl.locked_)
         {
             impl.locked_ = true;
@@ -269,12 +269,12 @@ strand_service::
 dispatch(
     std::shared_ptr<strand_impl> const& impl,
     executor_ref ex,
-    std::coroutine_handle<> h)
+    continuation& c)
 {
     if(running_in_this_thread(*impl))
-        return h;
+        return c.h;
 
-    if(strand_service_impl::enqueue(*impl, h))
+    if(strand_service_impl::enqueue(*impl, c))
         strand_service_impl::post_invoker(impl, ex);
     return std::noop_coroutine();
 }
@@ -284,9 +284,9 @@ strand_service::
 post(
     std::shared_ptr<strand_impl> const& impl,
     executor_ref ex,
-    std::coroutine_handle<> h)
+    continuation& c)
 {
-    if(strand_service_impl::enqueue(*impl, h))
+    if(strand_service_impl::enqueue(*impl, c))
         strand_service_impl::post_invoker(impl, ex);
 }
 

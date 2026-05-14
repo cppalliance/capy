@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -487,11 +488,14 @@ struct strand_test
         std::atomic<bool> done{false};
         std::weak_ptr<detail::strand_impl> impl_weak;
 
+        // c must outlive its time in the strand queue; the strand
+        // links it intrusively rather than copying.
+        continuation c;
         {
             auto s = strand(pool.get_executor());
             impl_weak = s.impl_;
             auto coro = make_lifetime_coro(done);
-            continuation c{coro.handle()};
+            c.h = coro.handle();
             s.post(c);
             coro.release();
         }   // strand handle dropped here
@@ -518,14 +522,16 @@ struct strand_test
 
         std::vector<counter_coro> coros;
         coros.reserve(num_strands * posts_per_strand);
+        std::vector<continuation> conts;
+        conts.reserve(num_strands * posts_per_strand);
 
         for(int i = 0; i < num_strands; ++i)
         {
             for(int j = 0; j < posts_per_strand; ++j)
             {
                 coros.push_back(make_counter_coro(total));
-                continuation c{coros.back().handle()};
-                strands[i].post(c);
+                conts.push_back({coros.back().handle()});
+                strands[i].post(conts.back());
                 coros.back().release();
             }
         }
@@ -671,12 +677,14 @@ struct strand_test
 
         std::vector<counter_coro> coros;
         coros.reserve(N);
+        std::vector<continuation> conts;
+        conts.reserve(N);
 
         for(int i = 0; i < N; ++i)
         {
             coros.push_back(make_counter_coro(counter));
-            continuation c{coros.back().handle()};
-            s.post(c);
+            conts.push_back({coros.back().handle()});
+            s.post(conts.back());
             coros.back().release();
         }
 
@@ -697,17 +705,31 @@ struct strand_test
         std::vector<std::thread> threads;
         threads.reserve(num_threads);
 
+        // Storage hoisted out of the threads so each continuation
+        // outlives its time in the strand queue.
+        std::vector<std::vector<counter_coro>> coros_per_thread(num_threads);
+        std::vector<std::vector<continuation>> conts_per_thread(num_threads);
         for(int i = 0; i < num_threads; ++i)
         {
-            threads.emplace_back([&s, &counter]{
-                for(int j = 0; j < per_thread; ++j)
+            coros_per_thread[i].reserve(per_thread);
+            conts_per_thread[i].reserve(per_thread);
+        }
+
+        for(int i = 0; i < num_threads; ++i)
+        {
+            threads.emplace_back(
+                [&s, &counter,
+                 &my_coros = coros_per_thread[i],
+                 &my_conts = conts_per_thread[i]]
                 {
-                    auto coro = make_counter_coro(counter);
-                    continuation c{coro.handle()};
-                    s.post(c);
-                    coro.release();
-                }
-            });
+                    for(int j = 0; j < per_thread; ++j)
+                    {
+                        my_coros.push_back(make_counter_coro(counter));
+                        my_conts.push_back({my_coros.back().handle()});
+                        s.post(my_conts.back());
+                        my_coros.back().release();
+                    }
+                });
         }
 
         for(auto& t : threads)
@@ -730,13 +752,15 @@ struct strand_test
 
         std::vector<order_coro> coros;
         coros.reserve(N);
+        std::vector<continuation> conts;
+        conts.reserve(N);
 
         // Post coroutines with sequential IDs
         for(int i = 0; i < N; ++i)
         {
             coros.push_back(make_order_coro(log, log_mutex, i));
-            continuation c{coros.back().handle()};
-            s.post(c);
+            conts.push_back({coros.back().handle()});
+            s.post(conts.back());
             coros.back().release();
         }
 
@@ -833,12 +857,14 @@ struct strand_test
 
         std::vector<tracking_coro> coros;
         coros.reserve(N);
+        std::vector<continuation> conts;
+        conts.reserve(N);
 
         for(int i = 0; i < N; ++i)
         {
             coros.push_back(make_tracking_coro());
-            continuation c{coros.back().handle()};
-            s.post(c);
+            conts.push_back({coros.back().handle()});
+            s.post(conts.back());
             coros.back().release();
         }
 
@@ -904,12 +930,14 @@ struct strand_test
 
             std::vector<counter_coro> coros;
             coros.reserve(N);
+            std::vector<continuation> conts;
+            conts.reserve(N);
 
             for(int i = 0; i < N; ++i)
             {
                 coros.push_back(make_counter_coro(counter));
-                continuation c{coros.back().handle()};
-                s.post(c);
+                conts.push_back({coros.back().handle()});
+                s.post(conts.back());
                 coros.back().release();
             }
 
