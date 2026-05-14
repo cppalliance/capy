@@ -59,7 +59,9 @@ namespace capy {
     thread_pool pool(4);
     auto strand = make_strand(pool.get_executor());
 
-    // These continuations will never run concurrently
+    // Continuations are linked intrusively into the strand's queue,
+    // so each one must outlive its time there. Storage is typically
+    // owned by the awaitable or operation state that posted it.
     continuation c1{h1}, c2{h2}, c3{h3};
     strand.post(c1);
     strand.post(c2);
@@ -220,7 +222,7 @@ public:
     void
     post(continuation& c) const
     {
-        detail::strand_service::post(impl_, executor_ref(ex_), c.h);
+        detail::strand_service::post(impl_, executor_ref(ex_), c);
     }
 
     /** Dispatch a continuation through the strand.
@@ -243,7 +245,7 @@ public:
     std::coroutine_handle<>
     dispatch(continuation& c) const
     {
-        return detail::strand_service::dispatch(impl_, executor_ref(ex_), c.h);
+        return detail::strand_service::dispatch(impl_, executor_ref(ex_), c);
     }
 };
 

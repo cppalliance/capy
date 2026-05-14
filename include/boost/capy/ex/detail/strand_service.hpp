@@ -10,6 +10,7 @@
 #ifndef BOOST_CAPY_EX_DETAIL_STRAND_SERVICE_HPP
 #define BOOST_CAPY_EX_DETAIL_STRAND_SERVICE_HPP
 
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/detail/config.hpp>
 #include <coroutine>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -69,14 +70,14 @@ public:
     dispatch(
         std::shared_ptr<strand_impl> const& impl,
         executor_ref ex,
-        std::coroutine_handle<> h);
+        continuation& c);
 
     /** Post to strand queue. */
     static void
     post(
         std::shared_ptr<strand_impl> const& impl,
         executor_ref ex,
-        std::coroutine_handle<> h);
+        continuation& c);
 
 protected:
     strand_service();
