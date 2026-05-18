@@ -31,31 +31,32 @@ namespace capy {
     until:
 
     @li either the full content of @c buffers is processed,
-    @li or an irregular situation occurs.
+    @li or a contingency occurs.
 
-    @par Irregular outcomes
 
-    Whatever the first irregular outcome is reported from
-    awaiting on `stream.write_some`.
+    @par Await-returns
+
+    An object of type `io_result<std::size_t>` destructuring as `[ec, n]`.
+
+    Upon a contingency, `n` represents the number of bytes written
+    so far.
+
+    Otherwise `n` represents the number of bytes written.
+
+    Contingencies:
+
+    @li Whatever the first contingency is reported from
+    awaiting on @c stream.write_some .
 
     Notable conditions:
 
     @li @c cond::canceled — Operation was cancelled,
     @li @c std::errc::broken_pipe — Peer closed connection.
 
-    @par Await-returns
-
-    An object of type `io_result<std::size_t>` destructuring as `[ec, n]`.
-
-    Upon an irregular outcome, `n` represents the number of bytes written
-    so far.
-
-    Otherwise `n` represents the number of bytes written.
-
 
     @par Await-postcondition
 
-    `ec || n == buffer_size(buffers)` is `true`.
+    `ec || n == buffer_size(buffers)`.
 
 
     @par Cancellation
@@ -72,11 +73,12 @@ namespace capy {
     @par Example
 
     @code
-    task<> send_response( WriteStream auto& stream, std::string_view body )
+    task<> send_response(capy::WriteStream auto& stream, std::string_view body)
     {
-        auto [ec, n] = co_await write( stream, make_buffer( body ) );
-        if( ec )
-            detail::throw_system_error( ec );
+        auto [ec, n] = co_await capy::write(stream, capy::make_buffer(body));
+        if (ec)
+            throw std::system_error(ec);
+
         // All bytes written successfully
     }
     @endcode
