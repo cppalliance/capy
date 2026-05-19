@@ -2,7 +2,7 @@
 
 Boost.Asio is currently the world leader in portable asynchronous I/O. The standard is silent here. The global ecosystem offers nothing comparable.
 
-*Capy is the first offering which surpasses Boost.Asio in its domain*
+*Capy advances beyond Boost.Asio in several specific domains*
 
 The sections that follow will demonstrate this claim. Each section examines a domain where Capy innovates—not by reinventing what works, but by solving problems that have remained unsolved.
 
@@ -14,7 +14,7 @@ But Asio made a pragmatic choice: support every continuation style. Callbacks. F
 
 Capy makes a different choice. It commits fully to coroutines. This isn't a limitation—it's a liberation. When you know the continuation is always a coroutine, you can optimize in ways that hybrid approaches cannot. The frame is always there. The executor context propagates naturally. Cancellation flows downward without ceremony.
 
-No other library in existence offers coroutine-only stream concepts. Capy is the first.
+Asio's stream concepts are hybrid by design. Capy's are coroutine-only, which is what enables the optimizations above.
 
 === What Capy Offers
 
@@ -24,44 +24,30 @@ No other library in existence offers coroutine-only stream concepts. Capy is the
 
 === Comparison
 
-[cols="1,1,1,1"]
+[cols="1,1"]
 |===
-| Capy | Asio | std | World
+| Capy | Asio
 
 | `ReadStream`
 | `AsyncReadStream`*
-|
-|
 
 | `WriteStream`
 | `AsyncWriteStream`*
-|
-|
 
 | `Stream`
-|
-|
-|
+^| -
 
 | `ReadSource`
-|
-|
-|
+^| -
 
 | `WriteSink`
-|
-|
-|
+^| -
 
 | `BufferSource`
-|
-|
-|
+^| -
 
 | `BufferSink`
-|
-|
-|
+^| -
 |===
 
 *Asio's concepts are hybrid (callbacks/futures/coroutines), not coroutine-only
@@ -78,8 +64,6 @@ Coroutines change this equation. A coroutine's continuation is always the same t
 
 Write `any_stream&` and accept any stream. Your function compiles once. It links anywhere. Your build times drop. Your binaries shrink. Your error messages become readable. And because coroutines are ordinary functions (not templates), you get natural ABI stability. Link against a new stream implementation without recompiling your code.
 
-No other library in the world does this. Boost would be first.
-
 === What Capy Offers
 
 * `any_read_stream`, `any_write_stream`, `any_stream` — type-erased partial I/O
@@ -89,69 +73,45 @@ No other library in the world does this. Boost would be first.
 
 === Comparison
 
-[cols="1,1,1,1"]
+[cols="1,1"]
 |===
-| Capy | Asio | std | World
+| Capy | Asio
 
 | `any_read_stream`
-|
-|
-|
+^| -
 
 | `any_write_stream`
-|
-|
-|
+^| -
 
 | `any_stream`
-|
-|
-|
+^| -
 
 | `any_read_source`
-|
-|
-|
+^| -
 
 | `any_write_sink`
-|
-|
-|
+^| -
 
 | `any_buffer_source`
-|
-|
-|
+^| -
 
 | `any_buffer_sink`
-|
-|
-|
+^| -
 
 | `read`
 | `async_read`*
-|
-|
 
 | `write`
 | `async_write`*
-|
-|
 
 | `read_until`
 | `async_read_until`*
-|
-|
 
 | `push_to`
-|
-|
-|
+^| -
 
 | `pull_from`
-|
-|
-|
+^| -
 |===
 
 *Asio's algorithms only support `AsyncReadStream` and `AsyncWriteStream`
@@ -178,79 +138,54 @@ One more thing: `std::ranges` cannot help here. `ranges::size` returns the numbe
 
 === Comparison
 
-[cols="1,1,1,1"]
+[cols="1,1"]
 |===
-| Capy | Asio | std | World
+| Capy | Asio
 
 | `ConstBufferSequence`
 | `ConstBufferSequence`
-|
-|
 
 | `MutableBufferSequence`
 | `MutableBufferSequence`
-|
-|
 
 | `DynamicBuffer`
 | `DynamicBuffer_v1`/`v2`*
-|
-|
 
 | `const_buffer`
 | `const_buffer`
-|
-|
 
 | `mutable_buffer`
 | `mutable_buffer`
-|
-|
 
 | `flat_dynamic_buffer`
-|
-|
-|
+^| -
 
 | `circular_dynamic_buffer`
-|
-|
-|
+^| -
 
 | `vector_dynamic_buffer`
 | `dynamic_vector_buffer`
-|
-|
 
 | `string_dynamic_buffer`
 | `dynamic_string_buffer`
-|
-|
 
 | `buffer_slice`
-|
-|
-|
+^| -
 
-| `slice`
-|
-|
-|
+| `Slice`
+^| -
+
+| `MutableSlice`
+^| -
 
 | `front`
-|
-|
-|
+^| -
 
 | `buffer_copy`
 | `buffer_copy`
-|
-|
 
 | Byte-level trimming
-|
-|
-|
+^| -
 |===
 
 *Asio has confusing v1/v2 split due to callback composition problems
@@ -283,7 +218,7 @@ And Capy *separates execution from platform*. The execution model—executors, c
 
 Most importantly, Capy defines a *taxonomy of awaitables*. `IoAwaitable` is the base protocol for any type that participates in context propagation. `IoRunnable` refines it with the launch interface needed by `run_async` and `run`. This hierarchy means you can write your own task types that integrate with Capy's execution model. Asio's `awaitable<T>` is a concrete type, not a concept. You use it or you don't. Capy gives you building blocks.
 
-No other solution like this exists. Not Asio. Not `std::execution`. Not anywhere in the global ecosystem. Capy is the first.
+Neither Asio nor `std::execution` offers this combination of forward-flow allocator control, automatic stop-token propagation, and execution/platform separation.
 
 === What Capy Offers
 
@@ -295,99 +230,81 @@ No other solution like this exists. Not Asio. Not `std::execution`. Not anywhere
 
 === Comparison
 
-[cols="1,1,1,1"]
+[cols="1,1,1"]
 |===
-| Capy | Asio | std | World
+| Capy | Asio | std
 
 | `IoAwaitable`
-|
-|
-|
+^| -
+^| -
 
 | `IoRunnable`
-|
-|
-|
+^| -
+^| -
 
 | `io_awaitable_promise_base`
-|
-|
-|
+^| -
+^| -
 
 | `task<T>`
 | `awaitable<T>`*
 | P3552R3**
-|
 
 | `run`
-|
-|
-|
+^| -
+^| -
 
 | `run_async`
 | `co_spawn`*
-|
-|
+^| -
 
 | `strand`
 | `strand`
-|
-|
+^| -
 
 | `executor_ref`
 | `any_executor`
-|
-|
+^| -
 
 | `thread_pool`
 | `thread_pool`
-| `static_thread_pool`
-|
+^| -
 
 | `execution_context`
 | `execution_context`
-|
-|
+^| -
 
 | `frame_allocator`
-|
-|
-|
+^| -
+^| -
 
 | `recycling_memory_resource`
-|
-|
-|
+^| -
+^| -
 
 | `async_mutex`
-|
-|
-|
+^| -
+^| -
 
 | `async_event`
-|
-|
-|
+^| -
+^| -
 
 | `stop_token` propagation
-|
+^| -
 | `stop_token`***
-|
 
 | User-defined task types
-|
-|
-|
+^| -
+^| -
 
 | Execution/platform isolation
-|
-|
-|
+^| -
+^| -
 
 | Forward-flow allocator control
-|
-|
-|
+^| -
+^| -
 |===
 
 *Asio's are not extensible, no concept taxonomy
@@ -408,6 +325,6 @@ Meanwhile, the {cpp} standards committee has produced `std::execution`—a sende
 
 Boost has always been where the practical meets the principled. Where real-world feedback shapes design. Where code ships before papers standardize. Capy continues this tradition.
 
-If you are reading this as a Boost contributor, know what you are part of. This is the first library to advance beyond Asio in the domains where they overlap. Not by abandoning what works, but by building on it. Not by chasing theoretical purity, but by solving the problems that have frustrated {cpp} developers for years: template explosion, compile-time costs, error message novels, ergonomic concurrency, and more.
+If you are reading this as a Boost contributor, know what you are part of. This library advances beyond Asio in the domains where they overlap. Not by abandoning what works, but by building on it. Not by chasing theoretical purity, but by solving the problems that have frustrated {cpp} developers for years: template explosion, compile-time costs, error message novels, ergonomic concurrency, and more.
 
 The coroutine era has arrived. And Boost, as it has so many times before, is leading the way.
