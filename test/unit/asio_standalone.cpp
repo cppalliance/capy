@@ -9,6 +9,8 @@
 
 #if __has_include(<asio.hpp>)
 #include <boost/capy/asio/standalone.hpp>
+#include <boost/capy/buffers.hpp>
+#include <boost/capy/buffers/buffer_pair.hpp>
 
 #include <asio/any_io_executor.hpp>
 #include <asio/io_context.hpp>
@@ -17,6 +19,7 @@
 #include <asio/execution/outstanding_work.hpp>
 #include <asio/steady_timer.hpp>
 #include <asio/use_future.hpp>
+#include <asio/writable_pipe.hpp>
 
 
 #include <boost/capy/ex/run_async.hpp>
@@ -161,6 +164,41 @@ struct asio_standalone_test
 
         while (!done)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    void staticTestBuffer(::asio::writable_pipe & wp)
+    {
+        ::asio::mutable_buffer boofer;
+        boost::capy::MutableBufferSequence auto seq 
+            = boost::capy::as_asio_buffer_sequence(boofer);
+
+        using seq_t = decltype(seq);
+
+        boost::capy::ConstBufferSequence auto cseq 
+            = boost::capy::as_asio_buffer_sequence(boofer);
+
+        using cseq_t = decltype(cseq);
+
+        boost::capy::mutable_buffer_pair p;
+        auto seq2 = boost::capy::as_asio_buffer_sequence(p);
+        using seq2_t = decltype(seq2);
+
+        auto s = seq;
+        auto cs = cseq;
+        auto s2 = seq2;
+
+        wp.write_some(seq2);
+
+        static_assert(::asio::is_mutable_buffer_sequence<cseq_t>::value);
+        static_assert(::asio::  is_const_buffer_sequence<cseq_t>::value);
+    
+
+        static_assert(::asio::is_mutable_buffer_sequence<seq_t>::value);
+        static_assert(::asio::  is_const_buffer_sequence<seq_t>::value);
+    
+        
+        static_assert(::asio::is_mutable_buffer_sequence<seq2_t>::value);
+        static_assert(::asio::  is_const_buffer_sequence<seq2_t>::value);
     }
     
     void run() 

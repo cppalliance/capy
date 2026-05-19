@@ -378,11 +378,128 @@ int main()
 }
 ----
 
+== Buffer Sequence Integration
+
+Capy provides utilities for seamless bidirectional conversion between Asio buffer sequences and capy's native buffer types. This allows:
+
+* Using capy's `MutableBufferSequence` and `ConstBufferSequence` with Asio I/O operations
+* Using Asio buffer sequences with capy's buffer concepts and algorithms
+
+=== Buffer Types
+
+Capy provides Asio-compatible buffer wrappers that inherit from capy's native buffer types:
+
+[cols="1,2"]
+|===
+| Type | Description
+
+| `asio_const_buffer`
+| Extends `const_buffer` with implicit conversions to `asio::const_buffer` and `boost::asio::const_buffer`
+
+| `asio_mutable_buffer`
+| Extends `mutable_buffer` with implicit conversions to both mutable and const Asio buffer types
+|===
+
+These types allow capy buffers to be used directly with Asio operations:
+
+[source,cpp]
+----
+capy::asio_mutable_buffer buf(data, size);
+
+// Works with Asio operations
+co_await socket.async_read_some(buf, capy::as_io_awaitable);
+----
+
+=== The as_asio_buffer_sequence Function
+
+The `as_asio_buffer_sequence` function provides bidirectional conversion between Asio and capy buffer sequences. The returned range satisfies both Asio's buffer sequence requirements and capy's `MutableBufferSequence`/`ConstBufferSequence` concepts.
+
+==== Capy to Asio
+
+Convert capy buffer sequences for use with Asio operations:
+
+[source,cpp]
+----
+// Single buffers -> array of 1
+auto seq1 = capy::as_asio_buffer_sequence(my_mutable_buffer);
+auto seq2 = capy::as_asio_buffer_sequence(my_const_buffer);
+
+// Capy buffer sequences -> wrapped with transforming range
+capy::mutable_buffer_pair buffers = /* ... */;
+auto seq3 = capy::as_asio_buffer_sequence(buffers);
+
+// Use with Asio
+co_await socket.async_read_some(seq3, capy::as_io_awaitable);
+----
+
+==== Asio to Capy
+
+Convert Asio buffer sequences for use with capy's buffer concepts:
+
+[source,cpp]
+----
+// Asio buffer sequences -> wrapped with transforming range
+std::vector<boost::asio::mutable_buffer> asio_buffers = /* ... */;
+auto seq = capy::as_asio_buffer_sequence(asio_buffers);
+
+// Now satisfies capy::MutableBufferSequence
+static_assert(capy::MutableBufferSequence<decltype(seq)>);
+
+// Use with capy buffer algorithms
+std::size_t total = capy::buffer_size(seq);
+----
+
+==== Pass-Through
+
+Ranges that already contain `asio_const_buffer` or `asio_mutable_buffer` elements are forwarded unchanged:
+
+[source,cpp]
+----
+std::vector<capy::asio_mutable_buffer> already_compatible = /* ... */;
+auto seq = capy::as_asio_buffer_sequence(already_compatible);
+// Returns the range as-is, no wrapping needed
+----
+
+=== Example: Scatter/Gather I/O
+
+Using buffer sequences enables efficient scatter/gather I/O:
+
+[source,cpp]
+----
+#include <boost/capy/asio/boost.hpp>
+#include <boost/capy/buffers/buffer_pair.hpp>
+
+capy::io_task<std::size_t> read_message(
+    boost::asio::ip::tcp::socket& socket)
+{
+    // Header + body buffers
+    std::array<char, 4> header;
+    std::array<char, 256> body;
+
+    capy::mutable_buffer_pair buffers(
+        capy::mutable_buffer(header.data(), header.size()),
+        capy::mutable_buffer(body.data(), body.size()));
+
+    // Scatter read into both buffers
+    auto [ec, n] = co_await socket.async_read_some(
+        capy::as_asio_buffer_sequence(buffers),
+        capy::as_io_awaitable);
+
+    if (ec)
+        throw std::system_error(ec);
+
+    co_return n;
+}
+----
+
 == Reference
 
 [cols="1,2"]
 |===
 | Header | Description
+
+| `<boost/capy/asio/buffers.hpp>`
+| Buffer types, iterator, and `as_asio_buffer_sequence` (included by boost.hpp/standalone.hpp)
 
 | `<boost/capy/asio/boost.hpp>`
 | Complete Boost.Asio integration
@@ -421,5 +538,14 @@ int main()
 
 | `asio_executor_adapter`
 | Adapt capy executors for Asio
+
+| `asio_const_buffer`
+| Capy const buffer with Asio conversion operators
+
+| `asio_mutable_buffer`
+| Capy mutable buffer with Asio conversion operators
+
+| `as_asio_buffer_sequence`
+| Convert any buffer sequence for Asio compatibility
 |===
 

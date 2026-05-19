@@ -47,8 +47,11 @@
  *  @ingroup asio
  */
 
-#include <boost/capy/asio/as_io_awaitable.hpp>
+#include <algorithm>
 #include <boost/capy/concept/io_awaitable.hpp>
+
+#include <boost/capy/asio/as_io_awaitable.hpp>
+#include <boost/capy/asio/buffers.hpp>
 #include <boost/capy/asio/detail/completion_handler.hpp>
 #include <boost/capy/asio/executor_adapter.hpp>
 #include <boost/capy/asio/executor_from_asio.hpp>
@@ -59,6 +62,7 @@
 #include <asio/associated_allocator.hpp>
 #include <asio/associated_cancellation_slot.hpp>
 #include <asio/associated_immediate_executor.hpp>
+#include <asio/buffer.hpp>
 #include <asio/dispatch.hpp>
 #include <asio/cancellation_signal.hpp>
 #include <asio/cancellation_type.hpp>
@@ -68,6 +72,7 @@
 #include <asio/execution/context.hpp>
 #include <asio/execution/outstanding_work.hpp>
 #include <asio/execution/relationship.hpp>
+#include <concepts>
 
 namespace boost::capy
 {
@@ -727,7 +732,143 @@ struct std::coroutine_traits<
                     Handler,
                     Executor,
                     Awaitable>;
-}; 
+};
+
+namespace boost::capy
+{
+
+
+namespace detail
+{
+
+
+template<typename Sequence>
+struct asio_standalone_buffer_sequence_wrapper
+{
+  Sequence seq;
+  auto begin() const {return ::asio::buffer_sequence_begin(seq); }
+  auto   end() const {return ::asio::buffer_sequence_end(seq); }
+};
+
+/** A bidirectional range that transforms buffer sequences using asio_buffer_transformer.
+ *
+ *  Wraps an asio buffer sequence and provides begin/end iterators that transform
+ *  buffer elements via asio_buffer_transformer. Uses ::asio::buffer_sequence_begin/end.
+ *
+ *  @tparam Sequence The underlying buffer sequence type
+ */
+template<typename Sequence>
+class asio_standalone_buffer_range
+{
+public:
+    using sequence_type  = Sequence;
+    using iterator       = asio_buffer_iterator<
+                             decltype(::asio::buffer_sequence_begin(std::declval<const Sequence&>()))>;
+    using const_iterator = iterator;
+
+    asio_standalone_buffer_range() = default;
+
+    explicit asio_standalone_buffer_range(Sequence seq)
+        noexcept(std::is_nothrow_move_constructible_v<Sequence>)
+        : seq_(std::move(seq))
+    {
+    }
+
+    asio_standalone_buffer_range(const asio_standalone_buffer_range&) = default;
+    asio_standalone_buffer_range(asio_standalone_buffer_range&&) = default;
+    asio_standalone_buffer_range& operator=(const asio_standalone_buffer_range&) = default;
+    asio_standalone_buffer_range& operator=(asio_standalone_buffer_range&&) = default;
+
+    iterator begin() const
+        noexcept(noexcept(::asio::buffer_sequence_begin(std::declval<const Sequence&>())))
+    {
+        return iterator(::asio::buffer_sequence_begin(seq_));
+    }
+
+    iterator end() const
+        noexcept(noexcept(::asio::buffer_sequence_end(std::declval<const Sequence&>())))
+    {
+        return iterator(::asio::buffer_sequence_end(seq_));
+    }
+
+    /// Returns the underlying sequence.
+    const Sequence& base() const noexcept { return seq_; }
+
+private:
+    Sequence seq_{};
+};
+
+// Deduction guide
+template<typename Sequence>
+asio_standalone_buffer_range(Sequence) -> asio_standalone_buffer_range<Sequence>;
+
+
+asio_mutable_buffer asio_buffer_transformer_t::
+    operator()(const ::asio::mutable_buffer &mb) const noexcept
+{
+  return {mb.data(), mb.size()};
+}
+
+asio_const_buffer asio_buffer_transformer_t::
+    operator()(const ::asio::const_buffer &cb) const noexcept
+{
+  return {cb.data(), cb.size()};
+}
+
+}
+
+/** Convert a standalone Asio buffer sequence for bidirectional Asio/capy compatibility.
+
+    Wraps a standalone Asio buffer sequence in a transforming range that converts
+    each buffer element to asio_const_buffer or asio_mutable_buffer.
+    The returned range satisfies both standalone Asio's buffer sequence requirements
+    and capy's buffer sequence concepts.
+
+    This overload uses `::asio::buffer_sequence_begin` and
+    `::asio::buffer_sequence_end` for iteration.
+
+    @par Example: Asio to Capy
+    @code
+    std::vector<asio::mutable_buffer> asio_bufs = ...;
+    auto seq = capy::as_asio_buffer_sequence(asio_bufs);
+    std::size_t total = capy::buffer_size(seq);  // Use capy algorithms
+    @endcode
+
+    @param seq The standalone Asio buffer sequence to convert
+    @return A transforming range over the buffer sequence
+
+    @see as_asio_buffer_sequence in buffers.hpp for capy buffer sequences
+*/
+template<typename T>
+  requires requires (const T & seq)
+  {
+    {::asio::buffer_sequence_begin(seq)}  -> std::bidirectional_iterator;
+    {::asio::buffer_sequence_end(seq)}    -> std::bidirectional_iterator;
+    {*::asio::buffer_sequence_begin(seq)} -> std::convertible_to<::asio::const_buffer>;
+    {*::asio::buffer_sequence_end(seq)}   -> std::convertible_to<::asio::const_buffer>;
+  }
+auto as_asio_buffer_sequence(const T & seq)
+{
+  return detail::asio_standalone_buffer_range(seq);
+}
+
+asio_const_buffer::operator ::asio::const_buffer() const 
+{
+  return {data(), size()};
+}
+
+asio_mutable_buffer::operator ::asio::const_buffer() const 
+{
+  return {data(), size()};
+}
+
+asio_mutable_buffer::operator ::asio::mutable_buffer() const 
+{
+  return {data(), size()};
+}
+
+
+}
 
 #endif // BOOST_CAPY_ASIO_STANDALONE_HPP
 
