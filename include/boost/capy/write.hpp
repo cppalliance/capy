@@ -22,16 +22,19 @@
 namespace boost {
 namespace capy {
 
-/** Make an awaitable for writing a buffer sequence to a stream.
+/** Write an entire buffer sequence to a stream.
 
     @par Await-effects
 
     Writes the contents of `buffers` to `stream` via awaiting on
-    `stream.write_some` with consecutive portions of data form `buffers`
+    `stream.write_some` with consecutive portions of data from `buffers`
     until:
 
     @li either the full content of @c buffers is processed,
     @li or a contingency occurs.
+
+    If `buffer_size(buffers) == 0` then no awaiting on `stream.write_some`
+    is performed. This is not a contingency.
 
 
     @par Await-returns
@@ -45,7 +48,7 @@ namespace capy {
 
     Contingencies:
 
-    @li Whatever the first contingency is reported from
+    @li The first contingency reported from
     awaiting on @c stream.write_some .
 
     Notable conditions:
@@ -66,7 +69,8 @@ namespace capy {
     @param stream The stream to write to. If the lifetime of `stream` ends
     before the coroutine finishes, the behavior is undefined.
 
-    @param buffers The buffer sequence to write. If the lifetime of `buffers` ends
+    @param buffers The buffer sequence to write. If the lifetime of the buffer
+    sequence represented by `buffers` ends
     before the coroutine finishes, the behavior is undefined.
 
 
@@ -85,7 +89,7 @@ namespace capy {
 
     @return
 
-    @see write_some, WriteStream, ConstBufferSequence
+    @see WriteStream, ConstBufferSequence, IoAwaitable, io_result, cond.
 */
 template <WriteStream S, ConstBufferSequence CB>
 auto write(S& stream, CB buffers) -> io_task<std::size_t>
