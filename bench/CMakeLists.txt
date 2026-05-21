@@ -9,7 +9,19 @@
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} PREFIX "" FILES
     CMakeLists.txt bench.cpp allocation.cpp
-    beman/main.cpp beman/beman_env.hpp beman/bench_pool.hpp)
+    beman/main.cpp beman/beman_env.hpp beman/bench_pool.hpp
+    stdexec/main.cpp
+    stdexec/allocation_tracker.hpp
+    stdexec/awaitable_sender.hpp
+    stdexec/ioaw_io_read_stream.hpp
+    stdexec/ioaw_read_stream.hpp
+    stdexec/ioaw_sync_read_stream.hpp
+    stdexec/sender_awaitable.hpp
+    stdexec/sender_io_env.hpp
+    stdexec/sndr_any_read_stream.hpp
+    stdexec/sndr_io_read_stream.hpp
+    stdexec/sndr_read_stream.hpp
+    stdexec/sndr_sync_read_stream.hpp)
 
 add_executable(boost_capy_bench bench.cpp)
 target_link_libraries(boost_capy_bench PRIVATE Boost::capy)
@@ -34,6 +46,24 @@ if(BOOST_CAPY_BUILD_P2300_EXAMPLES)
     target_compile_features(boost_capy_bench_beman PRIVATE cxx_std_23)
     target_link_libraries(boost_capy_bench_beman PRIVATE
         Boost::capy beman::task beman::execution_headers)
+endif()
+
+if(BOOST_CAPY_BUILD_STDEXEC_EXAMPLES)
+    include(FetchContent)
+    FetchContent_Declare(
+        stdexec
+        GIT_REPOSITORY https://github.com/NVIDIA/stdexec
+        GIT_TAG 307b83c5689ea7c2e5b31561cdc428697705333e
+        SYSTEM
+        FIND_PACKAGE_ARGS
+            NAMES stdexec
+    )
+    FetchContent_MakeAvailable(stdexec)
+
+    add_executable(boost_capy_bench_stdexec stdexec/main.cpp)
+    target_compile_features(boost_capy_bench_stdexec PRIVATE cxx_std_23)
+    target_link_libraries(boost_capy_bench_stdexec PRIVATE
+        Boost::capy STDEXEC::stdexec)
 endif()
 
 if(BUILD_SHARED_LIBS)
