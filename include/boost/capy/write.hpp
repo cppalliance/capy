@@ -77,7 +77,7 @@ namespace capy {
     @par Example
 
     @code
-    task<> send_response(capy::WriteStream auto& stream, std::string_view body)
+    capy::task<> send_response(capy::WriteStream auto& stream, std::string_view body)
     {
         auto [ec, n] = co_await capy::write(stream, capy::make_buffer(body));
         if (ec)
