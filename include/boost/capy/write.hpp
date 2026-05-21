@@ -22,50 +22,77 @@
 namespace boost {
 namespace capy {
 
-/** Asynchronously write the entire buffer sequence.
+/** Write an entire buffer sequence to a stream.
 
-    Writes data to the stream by calling `write_some` repeatedly
-    until the entire buffer sequence is written or an error occurs.
+    @par Await-effects
 
-    @li The operation completes when:
-    @li The entire buffer sequence has been written
-    @li An error occurs
-    @li The operation is cancelled
+    Writes the contents of `buffers` to `stream` via awaiting on
+    `stream.write_some` with consecutive portions of data from `buffers`
+    until:
+
+    @li either the full content of @c buffers is processed,
+    @li or a contingency occurs.
+
+    If `buffer_size(buffers) == 0` then no awaiting on `stream.write_some`
+    is performed. This is not a contingency.
+
+
+    @par Await-returns
+
+    An object of type `io_result<std::size_t>` destructuring as `[ec, n]`.
+
+    Upon a contingency, `n` represents the number of bytes written
+    so far.
+
+    Otherwise `n` represents the number of bytes written.
+
+    Contingencies:
+
+    @li The first contingency reported from
+    awaiting on @c stream.write_some .
+
+    Notable conditions:
+
+    @li @c cond::canceled — Operation was cancelled,
+    @li @c std::errc::broken_pipe — Peer closed connection.
+
+
+    @par Await-postcondition
+
+    `ec || n == buffer_size(buffers)`.
+
 
     @par Cancellation
     Supports cancellation via `stop_token` propagated through the
-    IoAwaitable protocol. When cancelled, returns with `cond::canceled`.
+    `IoAwaitable` protocol. When cancelled, returns with `cond::canceled`.
 
-    @param stream The stream to write to. The caller retains ownership.
-    @param buffers The buffer sequence to write. The caller retains
-        ownership and must ensure validity until the operation completes.
+    @param stream The stream to write to. If the lifetime of `stream` ends
+    before the coroutine finishes, the behavior is undefined.
 
-    @return An awaitable that await-returns `(error_code, std::size_t)`.
-        On success, `n` equals `buffer_size(buffers)`. On error,
-        `n` is the number of bytes written before the error. Compare
-        error codes to conditions:
-        @li `cond::canceled` - Operation was cancelled
-        @li `std::errc::broken_pipe` - Peer closed connection
+    @param buffers The buffer sequence to write. If the lifetime of the buffer
+    sequence represented by `buffers` ends
+    before the coroutine finishes, the behavior is undefined.
+
 
     @par Example
 
     @code
-    task<> send_response( WriteStream auto& stream, std::string_view body )
+    capy::task<> send_response(capy::WriteStream auto& stream, std::string_view body)
     {
-        auto [ec, n] = co_await write( stream, make_buffer( body ) );
-        if( ec )
-            detail::throw_system_error( ec );
+        auto [ec, n] = co_await capy::write(stream, capy::make_buffer(body));
+        if (ec)
+            throw std::system_error(ec);
+
         // All bytes written successfully
     }
     @endcode
 
-    @see write_some, WriteStream, ConstBufferSequence
+    @return
+
+    @see WriteStream, ConstBufferSequence, IoAwaitable, io_result, cond.
 */
-auto
-write(
-    WriteStream auto& stream,
-    ConstBufferSequence auto buffers) ->
-        io_task<std::size_t>
+template <WriteStream S, ConstBufferSequence CB>
+auto write(S& stream, CB buffers) -> io_task<std::size_t>
 {
     auto consuming = buffer_slice(buffers);
     std::size_t const total_size = buffer_size(buffers);
