@@ -1,0 +1,105 @@
+= Capy-Coroutines
+
+To make the event-driven flows manageable for users, Capy uses Capy-coroutines.
+Capy-coroutines are function definitions that:
+
+ 1. Use one of the two C++ coroutine keywords: `co_return`, `co_await`.
+ 2. Use an instance of class template `capy::task` as a return type.
+
+C++ coroutines are a very versatile and a very configurable tool. Capy comes with coroutine
+configuration that is tailored for the I/O-specific event-driven flows. You
+employ this configuration by using `capy::task` return types for your coroutines.
+
+The following example shows how Capy-coroutines look like in a user server using
+Capy's framework and an accompanying library, Corosio, offering a concrete socket implementation.
+
+[source,cpp]
+----
+capy::task<> echo_session(corosio::tcp_socket sock)
+{
+    char buf[1024];
+
+    for (;;)
+    {
+        auto [ec1, n] = co_await sock.read_some(capy::mutable_buffer(buf, sizeof(buf)));
+
+        auto [ec2, _] = co_await capy::write(sock, capy::const_buffer(buf, n));
+
+        if (ec1 || ec2)
+            break;
+    }
+}
+----
+
+To the caller, this appears as a function taking a socket object and returning a `capy::task`.
+When invoked, the caller indeed obtains this `task` -- a sort of handle -- but nothing in the
+coroutine body is executed. In some sense, this is analogous to creating a lambda object:
+
+[source,cpp]
+----
+auto session = [](corosio::tcp_socket sock) { /*...*/ };
+----
+
+that is, you invoked something that contains the function body, you got a "handle"
+(function object `session`), but the body has not been executed yet.
+
+This is the most counter-intuitive thing about {cpp} coroutines: you get a function
+which, when called, returns an object of type `capy::task<>` but there is no
+`return`-statement in the function body. We cannot see in the sources the code that
+performs this return: it is compiler-generated from the customization points
+related to class template `capy::task`.
+
+`capy::task<>` is an xref:4.coroutines/4d.io-awaitable.adoc[`IoAwaitable`].
+This means it can be awaited on with expression `co_await t` inside any other
+Capy-coroutine. When this happens, the body of the coroutine is executed.
+
+The body of function `echo_session` is a callback. It is intended to
+be called in response to an event: having established a TCP connection. When it
+is invoked, the instructions from the body are executed up until the `co_await`-expression.
+
+Expression
+
+[source,cpp]
+----
+sock.read_some(capy::mutable_buffer(buf, sizeof(buf)))
+----
+
+does a couple of things. It creates a
+xref:5.buffers/5.intro.adoc[_buffer_] object. It is a non-owing object
+that represents access to contiguous byte storage. It is conceptually similar
+to `std::span<byte>`. Next, `sock.read_some` is another coroutine. This one is provided
+by the library. As explained above, calling it does not execute that coroutine's body.
+It only gives us a handle: another xref:4.coroutines/4d.io-awaitable.adoc[`IoAwaitable`].
+
+Only when we evaluate the `co_await` operator does the magic happen. This
+instructs the framework to do the following things:
+
+ 1. Observe on the socket for the incoming bytes.
+ 2. When any portion of the bytes arrives put it into the provided buffer.
+ 3. Then invoke the handler, additionally providing it the number of written bytes,
+    and possibly information on contingencies encountered during the read.
+
+After the registration has been completed, the framework moves on to processing
+other tasks in the queue, unrelated to the current coroutine.
+
+At some point, the data on our socket will arrive and the framework will invoke the callback.
+In the case of Capy-coroutines, this means _resuming_ the coroutine right after the
+ `co_await`-expression. The expression returns value of type `io_result<std::size>`
+which we immediately destructure to `[ec1, n]`. The function body keeps executing
+until the next `co_await`-expression, where analogous event-callback association
+is registered and the coroutine execution suspended.
+
+If we look at the execution of a coroutine body, with its suspensions and resumptions,
+as a series of callback registrations and invocations, we immediately see a unique challenge
+with the lifetimes of arguments passed to coroutines. The entire "session" represented
+by the body of `echo_session` needs access to socket `sock`. But different parts of the
+session are executed at different unpredictable points in time. These points occur
+long after the caller invoked `echo_session`, long after it passed the function arguments,
+and long after it destroyed these arguments in its scope. Therefore having reference coroutine
+parameters is risky. This is why `echo_session` takes the socket parameter by value
+and then the compiler puts it in the special storage -- the coroutine frame -- that
+lasts as long as the coroutine body has anything left to execute. Also, the byte sequence
+that we use, represented by array `buf` needs to live between the callback calls.
+This is why we represent it as an automatic object in the coroutine body.
+This means it will be stored in the same coroutine frame -- not in the function call stack
+-- and therefore will survive until the end of the coroutine body.
