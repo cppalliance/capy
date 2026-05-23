@@ -5,7 +5,7 @@ Lambda captures are a common source of undefined behavior in coroutine code. Thi
 == Prerequisites
 
 * Completed xref:4.coroutines/4g.allocators.adoc[Frame Allocators]
-* Understanding of coroutine frame lifetime from xref:../2.cpp20-coroutines/2c.machinery.adoc[Part III: Coroutine Machinery]
+* Understanding of coroutine frame lifetime from xref:../1.cpp20-coroutines/1c.machinery.adoc[Part III: Coroutine Machinery]
 
 == The Problem
 

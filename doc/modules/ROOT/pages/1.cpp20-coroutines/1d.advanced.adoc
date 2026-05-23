@@ -4,7 +4,7 @@ This section covers advanced coroutine topics: symmetric transfer for efficient 
 
 == Prerequisites
 
-* Completed xref:2.cpp20-coroutines/2c.machinery.adoc[Part III: Coroutine Machinery]
+* Completed xref:1.cpp20-coroutines/1c.machinery.adoc[Part III: Coroutine Machinery]
 * Understanding of promise types, coroutine handles, and generators
 
 == Symmetric Transfer
