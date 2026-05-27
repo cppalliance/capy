@@ -1,0 +1,12 @@
+#
+# Copyright (c) 2026 Steve Gerbino
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/capy
+#
+
+# This example requires CUDA, nvc++, and NVIDIA/stdexec (nvexec).
+# It is built only via the CMake build (BOOST_CAPY_BUILD_NVEXEC_EXAMPLES=ON);
+# the b2 build does not currently provide CUDA support for capy.
