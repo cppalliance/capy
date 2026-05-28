@@ -25,52 +25,69 @@
 namespace boost {
 namespace capy {
 
-/** Asynchronously read until the buffer sequence is full.
+/** Read data from a stream until the buffer sequence is full.
 
-    Reads data from the stream by calling `read_some` repeatedly
-    until the entire buffer sequence is filled or an error occurs.
+    @par Await-effects
 
-    @li The operation completes when:
-    @li The buffer sequence is completely filled
-    @li An error occurs (including `cond::eof`)
-    @li The operation is cancelled
+    Reads data from `stream` via awaiting `stream.read_some` repeatedly
+    until:
 
-    @par Cancellation
-    Supports cancellation via `stop_token` propagated through the
-    IoAwaitable protocol. When cancelled, returns with `cond::canceled`.
+    @li either the entire buffer sequence  @c buffers is filled,
+    @li or a contingency occurs.
 
-    @param stream The stream to read from. The caller retains ownership.
-    @param buffers The buffer sequence to fill. The caller retains
-        ownership and must ensure validity until the operation completes.
+    If `buffer_size(buffers) == 0` then no awaiting `stream.read_some`
+    is performed. This is not a contingency.
 
-    @return An awaitable that await-returns `(error_code, std::size_t)`.
-        On success, `n` equals `buffer_size(buffers)`. On error,
-        `n` is the number of bytes read before the error. Compare
-        error codes to conditions:
-        @li `cond::eof` - Stream reached end before buffer was filled
-        @li `cond::canceled` - Operation was cancelled
+    @par Await-returns
+    An object of type `io_result<std::size_t>` destructuring as `[ec, n]`.
+
+    Upon a contingency, `n` represents the number of bytes read so far.
+
+    Contingencies:
+
+    @li The first contingency reported from awaiting @c stream.read_some .
+
+    Notable conditions:
+
+    @li @c cond::canceled — Operation was cancelled,
+    @li @c cond::eof — Stream reached end before `buffers` was filled.
+
+    @par Await-postcondition
+    `ec || n == buffer_size(buffers)`.
+
+    @param stream The stream to read from. If the lifetime of `stream` ends
+    before the coroutine finishes, the behavior is undefined.
+
+    @param buffers The buffer sequence to fill. If the lifetime of the buffer
+    sequence represented by `buffers` ends before the coroutine finishes, the behavior is undefined.
+
+
+    @par Remarks
+    Supports _IoAwaitable cancellation_.
+
 
     @par Example
 
     @code
-    task<> read_message( ReadStream auto& stream )
+    capy::task<> process_message(capy::ReadStream auto& stream)
     {
-        char header[16];
-        auto [ec, n] = co_await read( stream, mutable_buffer( header ) );
-        if( ec == cond::eof )
+        std::vector<char> header(16);  // known header size for some protocol
+        auto [ec, n] = co_await capy::read(stream, capy::mutable_buffer(header));
+        if (ec == capy::cond::eof)
             co_return;  // Connection closed
-        if( ec )
-            detail::throw_system_error( ec );
-        // header contains exactly 16 bytes
+        if (ec)
+            throw std::system_error(ec);
+
+        // at this point `header` contains exactly 16 bytes
     }
     @endcode
 
-    @see read_some, ReadStream, MutableBufferSequence
+    @see ReadStream, MutableBufferSequence
 */
+template <typename S, typename MB>
+  requires ReadStream<S> && MutableBufferSequence<MB>
 auto
-read(
-    ReadStream auto& stream,
-    MutableBufferSequence auto buffers) ->
+read(S& stream, MB buffers) ->
         io_task<std::size_t>
 {
     auto consuming = buffer_slice(buffers);
@@ -89,51 +106,66 @@ read(
     co_return {{}, total_read};
 }
 
-/** Asynchronously read all data from a stream into a dynamic buffer.
+/** Read all data from a stream into a dynamic buffer.
 
-    Reads data by calling `read_some` repeatedly until EOF is reached
-    or an error occurs. Data is appended using prepare/commit semantics.
+    @par Await-effects
+
+    Reads data from `stream` via awaiting `stream.read_some` repeatedly
+    and appending the results to `dynbuf`,
+    until a contingency occurs.
+
+    Data is appended using prepare/commit semantics.
     The buffer grows with 1.5x factor when filled.
 
-    @li The operation completes when:
-    @li End-of-stream is reached (`cond::eof`)
-    @li An error occurs
-    @li The operation is cancelled
+    @par Await-returns
 
-    @par Cancellation
-    Supports cancellation via `stop_token` propagated through the
-    IoAwaitable protocol. When cancelled, returns with `cond::canceled`.
+    An object of type `io_result<std::size_t>` destructuring as `[ec, n]`.
 
-    @param stream The stream to read from. The caller retains ownership.
-    @param buffers The dynamic buffer to append data to. Must remain
-        valid until the operation completes.
+    Upon a contingency, `n` represents the number of bytes read so far.
+
+    Otherwise `n` represents the number of bytes read until the first
+    contingency from awaiting `stream.read_some` matching to `cond::eof`.
+
+    Contingencies:
+
+    @li The first contingency, other than one maching to @c cond::eof, reported from awaiting @c stream.read_some .
+
+    @par Await-throws
+    `std::bad_alloc` when append to `dynbuf` fails.
+
+    @param stream The stream to read from. If the lifetime of `stream` ends
+    before the coroutine finishes, the behavior is undefined.
+
+    @param dynbuf The dynamic buffer to append data to. If the lifetime of the buffer
+    sequence represented by `dynbuf` ends before the coroutine finishes, the behavior is undefined.
+
     @param initial_amount Initial bytes to prepare (default 2048).
 
-    @return An awaitable that await-returns `(error_code, std::size_t)`.
-        On success (EOF), `ec` is clear and `n` is total bytes read.
-        On error, `n` is bytes read before the error. Compare error
-        codes to conditions:
-        @li `cond::canceled` - Operation was cancelled
+    
+    @par Remarks
+    Supports _IoAwaitable cancellation_.
 
     @par Example
 
     @code
-    task<std::string> read_body( ReadStream auto& stream )
+    capy::task<std::string> read_body(capy::ReadStream auto& stream)
     {
         std::string body;
-        auto [ec, n] = co_await read( stream, string_dynamic_buffer( &body ) );
-        if( ec )
-            detail::throw_system_error( ec );
+        auto [ec, n] = co_await read(stream, capy::dynamic_buffer(body));
+        if (ec)
+            throw std::system_error(ec);
         return body;
     }
     @endcode
 
     @see read_some, ReadStream, DynamicBufferParam
 */
+template <typename S, typename DB>
+  requires ReadStream<S> && DynamicBufferParam<DB>
 auto
 read(
-    ReadStream auto& stream,
-    DynamicBufferParam auto&& buffers,
+    S& stream,
+    DB&& dynbuf,
     std::size_t initial_amount = 2048) ->
         io_task<std::size_t>
 {
@@ -141,10 +173,10 @@ read(
     std::size_t total_read = 0;
     for(;;)
     {
-        auto mb = buffers.prepare(amount);
+        auto mb = dynbuf.prepare(amount);
         auto const mb_size = buffer_size(mb);
         auto [ec, n] = co_await stream.read_some(mb);
-        buffers.commit(n);
+        dynbuf.commit(n);
         total_read += n;
         if(ec == cond::eof)
             co_return {{}, total_read};
@@ -155,51 +187,66 @@ read(
     }
 }
 
-/** Asynchronously read all data from a source into a dynamic buffer.
+/** Read all data from a source into a dynamic buffer.
 
-    Reads data by calling `source.read` repeatedly until EOF is reached
-    or an error occurs. Data is appended using prepare/commit semantics.
+    @par Await-effects
+
+    Reads data from `stream` by calling `source.read` repeatedly 
+    and appending it to `dynbuf` until a contingency occurs.
+    
+    Data is appended using prepare/commit semantics.
     The buffer grows with 1.5x factor when filled.
 
-    @li The operation completes when:
-    @li End-of-stream is reached (`cond::eof`)
-    @li An error occurs
-    @li The operation is cancelled
+    @par Await-returns
 
-    @par Cancellation
-    Supports cancellation via `stop_token` propagated through the
-    IoAwaitable protocol. When cancelled, returns with `cond::canceled`.
+    An object of type `io_result<std::size_t>` destructuring as `[ec, n]`.
 
-    @param source The source to read from. The caller retains ownership.
-    @param buffers The dynamic buffer to append data to. Must remain
-        valid until the operation completes.
+    Upon a contingency, `n` represents the number of bytes read so far.
+
+    Otherwise `n` represents the number of bytes read until the first
+    contingency from awaiting `stream.read_some` matching to `cond::eof`.
+
+    Contingencies:
+
+    @li The first contingency, other than one maching to @c cond::eof, reported from awaiting @c stream.read_some .
+
+    @par Await-throws
+
+    `std::bad_alloc` when append to `dynbuf` fails.
+
+    @param source The source to read from. If the lifetime of `source` ends
+    before the coroutine finishes, the behavior is undefined.
+
+    @param dynbuf The dynamic buffer to append data to. If the lifetime of the 
+    buffer sequence represented by `dynbuf` ends before the coroutine finishes, 
+    the behavior is undefined.
+
     @param initial_amount Initial bytes to prepare (default 2048).
 
-    @return An awaitable that await-returns `(error_code, std::size_t)`.
-        On success (EOF), `ec` is clear and `n` is total bytes read.
-        On error, `n` is bytes read before the error. Compare error
-        codes to conditions:
-        @li `cond::canceled` - Operation was cancelled
+    @par Remarks
+    Supports _IoAwaitable cancellation_.
 
     @par Example
 
     @code
-    task<std::string> read_body( ReadSource auto& source )
+    capy::task<std::string> read_body(capy::ReadSource auto& source)
     {
         std::string body;
-        auto [ec, n] = co_await read( source, string_dynamic_buffer( &body ) );
-        if( ec )
-            detail::throw_system_error( ec );
+        auto [ec, n] = co_await capy::read(source, capy::dynamic_buffer(body));
+        if (ec)
+            throw std::system_error(ec);
         return body;
     }
     @endcode
 
     @see ReadSource, DynamicBufferParam
 */
+template <typename S, typename DB>
+  requires ReadSource<S> && DynamicBufferParam<DB>
 auto
 read(
-    ReadSource auto& source,
-    DynamicBufferParam auto&& buffers,
+    S& source,
+    DB&& dynbuf,
     std::size_t initial_amount = 2048) ->
         io_task<std::size_t>
 {
@@ -207,10 +254,10 @@ read(
     std::size_t total_read = 0;
     for(;;)
     {
-        auto mb = buffers.prepare(amount);
+        auto mb = dynbuf.prepare(amount);
         auto const mb_size = buffer_size(mb);
         auto [ec, n] = co_await source.read(mb);
-        buffers.commit(n);
+        dynbuf.commit(n);
         total_read += n;
         if(ec == cond::eof)
             co_return {{}, total_read};

@@ -71,4 +71,7 @@
 ** xref:9.design/9m.WhyNotCobalt.adoc[Why Not Cobalt?]
 ** xref:9.design/9n.WhyNotCobaltConcepts.adoc[Why Not Cobalt Concepts?]
 ** xref:9.design/9o.WhyNotTMC.adoc[Why Not TooManyCooks?]
+* xref:A.specification-methods/A.intro.adoc[Methods of API Description]
+** xref:A.specification-methods/Ab.cancellation.adoc[Cancellation]
+** xref:A.specification-methods/Ac.contingencies.adoc[Contingencies]
 * xref:reference:boost/capy.adoc[Reference]

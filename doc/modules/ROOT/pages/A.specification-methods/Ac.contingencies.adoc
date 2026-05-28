@@ -1,0 +1,33 @@
+//
+// Copyright (c) 2026 Andrzej Krzemieński (akrzemi1@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Contingencies
+
+A _contingency_ is any situation caused by the state of streams,
+occurring during the operation on these objects that prevents them form reading or 
+writing the requested number of bytes.
+
+These situations do not violate the postconditions of the corresponding operations, 
+as their postconditions never say that the requested number of bytes will indeed be
+processed.
+
+Each stream operation that may encounter a contingency await-returns
+a type which is a specialization of `capy::io_result`. These objects can be _destructured_
+using a structured binding. The first binding of such destructuring is of type
+`std::error_code`. This subobject, call it `ec`, is used to signal if and which
+contingency occured:
+
+ * If `ec == std::error_code{}`, no contingency occurred.
+ * Otherwise a contingency ocurred. In order to determine which contingency ocurred,
+   compare `ec` to error conditions, in particular to `capy::cond`.
+
+NOTE: The stream operations can still throw exceptions to indicate conditions
+      unrelated to stream state that prevent these operations from satisfying
+      their postconditions, such as failures to grow a buffer, or failure to 
+      allocate a coroutine frame.
