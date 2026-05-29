@@ -122,11 +122,8 @@ read(S& stream, MB buffers) ->
 
     An object of type `io_result<std::size_t>` destructuring as `[ec, n]`.
 
-    Upon a contingency, `n` represents the number of bytes read so far,
+    `n` represents the total number of bytes read,
     inclusive of the last partial read.
-
-    Otherwise `n` represents the number of bytes read until the first
-    contingency from awaiting `stream.read_some` matching to `cond::eof`.
 
     Contingencies:
 
@@ -204,7 +201,7 @@ read(
 
     An object of type `io_result<std::size_t>` destructuring as `[ec, n]`.
 
-    `n` represents the number of bytes read so far,
+    `n` represents the total number of bytes read,
     inclusive of the last partial read.
 
 
