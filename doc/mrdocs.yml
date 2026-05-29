@@ -26,4 +26,7 @@ multipage: true
 # use-system-libc: true
 # use-system-stdlib: true
 
+# Automation
+auto-function-metadata: false
+
 cmake: '-DCMAKE_CXX_STANDARD=20 -DBOOST_CAPY_MRDOCS_BUILD=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=OFF'

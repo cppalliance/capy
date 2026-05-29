@@ -26,14 +26,14 @@ namespace capy {
 
     @par Await-effects
 
-    Writes the contents of `buffers` to `stream` via awaiting on
+    Writes the contents of `buffers` to `stream` via awaiting
     `stream.write_some` with consecutive portions of data from `buffers`
     until:
 
     @li either the full content of @c buffers is processed,
     @li or a contingency occurs.
 
-    If `buffer_size(buffers) == 0` then no awaiting on `stream.write_some`
+    If `buffer_size(buffers) == 0` then no awaiting `stream.write_some`
     is performed. This is not a contingency.
 
 
@@ -49,7 +49,7 @@ namespace capy {
     Contingencies:
 
     @li The first contingency reported from
-    awaiting on @c stream.write_some .
+    awaiting @c stream.write_some .
 
     Notable conditions:
 
@@ -62,10 +62,6 @@ namespace capy {
     `ec || n == buffer_size(buffers)`.
 
 
-    @par Cancellation
-    Supports cancellation via `stop_token` propagated through the
-    `IoAwaitable` protocol. When cancelled, returns with `cond::canceled`.
-
     @param stream The stream to write to. If the lifetime of `stream` ends
     before the coroutine finishes, the behavior is undefined.
 
@@ -73,6 +69,9 @@ namespace capy {
     sequence represented by `buffers` ends
     before the coroutine finishes, the behavior is undefined.
 
+    @par Remarks
+
+    Supports _IoAwaitable cancellation_.
 
     @par Example
 
@@ -86,8 +85,6 @@ namespace capy {
         // All bytes written successfully
     }
     @endcode
-
-    @return
 
     @see WriteStream, ConstBufferSequence, IoAwaitable, io_result, cond.
 */
