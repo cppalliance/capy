@@ -13,7 +13,8 @@ A function is said to _support IoAwaitable cancellation_ when its return type
 models concept `IoAwaitable` and this return object `a` controls a coroutine which
 can be prematurely stopped using the `std::stop_token` propagated through the 
 `IoAwaitable` protocol. Additionally, if the result type of expression `co_await a`
-in the context of a Capy-coroutine is a specialization of `io_result` then the cancelling of operation is 
+in the context of a Capy-coroutine is a specialization of `io_result` 
+then the cancelling of an operation is 
 considered a contingency represented by condition `cond::canceled`.
 
 
