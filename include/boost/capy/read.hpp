@@ -128,7 +128,7 @@ read(S& stream, MB buffers) ->
 
     Contingencies:
 
-    @li The first contingency, other than one maching to @c cond::eof, reported from awaiting @c stream.read_some .
+    @li The first contingency, other than one matching to @c cond::eof, reported from awaiting @c stream.read_some .
 
     @par Await-throws
     `std::bad_alloc` when append to `dynbuf` fails.
@@ -151,7 +151,7 @@ read(S& stream, MB buffers) ->
     capy::task<std::string> read_body(capy::ReadStream auto& stream)
     {
         std::string body;
-        auto [ec, n] = co_await read(stream, capy::dynamic_buffer(body));
+        auto [ec, n] = co_await capy::read(stream, capy::dynamic_buffer(body));
         if (ec)
             throw std::system_error(ec);
         return body;
@@ -208,7 +208,7 @@ read(
 
     Contingencies:
 
-    @li The first contingency, other than one maching to @c cond::eof, reported from awaiting @c stream.read_some .
+    @li The first contingency, other than one matching to @c cond::eof, reported from awaiting @c stream.read_some .
 
     @par Await-throws
 
