@@ -23,12 +23,15 @@
 #include "sender_awaitable.hpp"
 
 #include <boost/capy.hpp>
+#include <boost/capy/io/any_read_source.hpp>
+#include <boost/capy/io/any_write_sink.hpp>
 #include <boost/capy/test/stream.hpp>
 
 #include <stdexec/execution.hpp>
 #include <exec/static_thread_pool.hpp>
 #include <nvexec/stream_context.cuh>
 
+#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdio>
@@ -124,6 +127,57 @@ scene1(nvexec::stream_scheduler gpu,
     cuda_check(cudaFree(d_y), "cudaFree y");
 
     co_return h_y0;
+}
+
+// Scene 3 (P4251R0): the inference-handler shape. Network I/O uses
+// type-erased coroutine streams (any_read_source / any_write_sink); GPU
+// dispatch uses a sender bridged with await_sender. The paper's
+// listing runs a host run_model() under a device-side then(), which does
+// not compile on nvexec; this mirrors Scene 1 instead, dispatching a real
+// kernel and hopping continues_on(cpu) before the host-only bridge.
+[[maybe_unused]] capy::task<>
+handle_request(
+    capy::any_read_source& client,
+    capy::any_write_sink& response,
+    nvexec::stream_context& gpu_ctx,
+    exec::static_thread_pool::scheduler cpu)
+{
+    // receive request (coroutine, type-erased)
+    std::array<std::byte, 4096> buf;
+    auto [ec, n] = co_await client.read_some(
+        capy::mutable_buffer(buf.data(), buf.size()));
+    if(ec)
+        co_return;
+    (void) n;
+
+    // dispatch to GPU (sender, compile-time composition)
+    auto gpu = gpu_ctx.get_scheduler();
+    constexpr int N = 64;
+    float* d_y = nullptr;
+    cuda_check(cudaMalloc(&d_y, N * sizeof(float)), "scene3 malloc");
+
+    co_await capy::await_sender(
+        ex::just(N, d_y)
+        | ex::continues_on(gpu)
+        | nvexec::launch({.grid_size = 1, .block_size = N},
+            [] (cudaStream_t, int len, float* y) {
+                int i = blockIdx.x * blockDim.x + threadIdx.x;
+                if (i < len)
+                    y[i] = static_cast<float>(i);
+            })
+        | ex::continues_on(cpu));
+
+    cuda_check(cudaSetDevice(0), "scene3 setdevice");
+    std::array<float, N> result{};
+    cuda_check(cudaMemcpy(result.data(), d_y,
+        N * sizeof(float), cudaMemcpyDeviceToHost), "scene3 D2H");
+    cuda_check(cudaFree(d_y), "scene3 free");
+
+    // send result back (coroutine, type-erased)
+    auto [wec, wn] = co_await capy::write(response,
+        capy::make_buffer(result.data(), result.size() * sizeof(float)));
+    (void) wec;
+    (void) wn;
 }
 
 // Adapter run_async-like driver: kicks off scene1 on the capy

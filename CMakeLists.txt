@@ -41,6 +41,7 @@ option(BOOST_CAPY_BUILD_EXAMPLES "Build boost::capy examples" ${BOOST_CAPY_IS_RO
 option(BOOST_CAPY_BUILD_BENCH "Build boost::capy benchmarks" ${BOOST_CAPY_IS_ROOT})
 option(BOOST_CAPY_BUILD_P2300_EXAMPLES "Build examples that depend on beman-execution (P2300)" OFF)
 option(BOOST_CAPY_BUILD_NVEXEC_EXAMPLES "Build examples that depend on NVIDIA nvexec (CUDA)" OFF)
+option(BOOST_CAPY_BUILD_CUDA_EXAMPLES "Build examples that depend only on CUDA (no stdexec/nvexec)" OFF)
 option(BOOST_CAPY_MRDOCS_BUILD "Build the target for MrDocs: see mrdocs.yml" OFF)
 
 if(BOOST_CAPY_BUILD_P2300_EXAMPLES)
@@ -60,12 +61,23 @@ if(BOOST_CAPY_BUILD_NVEXEC_EXAMPLES)
         message(FATAL_ERROR
             "BOOST_CAPY_BUILD_NVEXEC_EXAMPLES requires CMAKE_CXX_STANDARD >= 23")
     endif()
-    enable_language(CUDA)
-    find_package(CUDAToolkit REQUIRED)
     # Tell NVIDIA/stdexec to build the nvexec target when its
     # FetchContent is processed (bench/ and/or the example itself).
     set(STDEXEC_ENABLE_CUDA ON CACHE BOOL
         "Build nvexec when configuring NVIDIA/stdexec" FORCE)
+endif()
+
+if(BOOST_CAPY_BUILD_CUDA_EXAMPLES)
+    if(NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 20)
+        message(FATAL_ERROR
+            "BOOST_CAPY_BUILD_CUDA_EXAMPLES requires CMAKE_CXX_STANDARD >= 20")
+    endif()
+endif()
+
+# Enable the CUDA language once for whichever CUDA example set is requested.
+if(BOOST_CAPY_BUILD_NVEXEC_EXAMPLES OR BOOST_CAPY_BUILD_CUDA_EXAMPLES)
+    enable_language(CUDA)
+    find_package(CUDAToolkit REQUIRED)
 endif()
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
