@@ -1,8 +1,9 @@
-# GPU pipeline example
+# CUDA pipeline example
 
 This example demonstrates that `boost::capy::await_sender` and
 `boost::capy::as_sender` compose with NVIDIA's `nvexec::stream_scheduler`,
-not just with CPU schedulers. Two scenes:
+not just with CPU schedulers. Two runnable scenes, plus a third that is
+built but not run (P4251R0):
 
 1. **Scene 1 (Direction 1).** A `boost::capy::task` running on
    `boost::capy::thread_pool` `co_await`s a sender whose terminal action is
@@ -22,6 +23,16 @@ not just with CPU schedulers. Two scenes:
    IoAwaitable works because its `await_suspend` is either ready-with-data
    or returns `noop_coroutine()` after stashing the continuation for the
    peer to resume.
+
+3. **Scene 3 (P4251R0), built but not run.** `handle_request` shows the
+   inference-handler shape: a type-erased `any_read_source` read, GPU
+   dispatch via `await_sender` over a real nvexec kernel, and a type-erased
+   `any_write_sink` write. It is compiled but not executed (`main` does not
+   call it). The paper's listing runs a host `run_model()` under a
+   device-side `then()`, which does not compile on nvexec (host call from
+   device); this mirrors Scene 1's pattern instead, dispatching a real
+   kernel and hopping `continues_on(cpu)` before the host-only bridge, and
+   takes a CPU scheduler the paper's signature omits.
 
 The bridge headers (`awaitable_sender.hpp`, `sender_awaitable.hpp`) are
 copied verbatim from `bench/stdexec/`; the bridge in the bench was already
@@ -53,8 +64,8 @@ CXX=clang++ cmake -S . -B build \
     -DCUDAToolkit_ROOT=/opt/cuda \
     -DBOOST_CAPY_BUILD_STDEXEC_EXAMPLES=ON \
     -DBOOST_CAPY_BUILD_NVEXEC_EXAMPLES=ON
-cmake --build build --config Release --target capy_example_gpu_pipeline
-./build/example/gpu-pipeline/capy_example_gpu_pipeline
+cmake --build build --config Release --target capy_example_cuda_pipeline
+./build/example/cuda-pipeline/capy_example_cuda_pipeline
 ```
 
 Replace `89` with your GPU's compute capability (`nvidia-smi

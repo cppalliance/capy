@@ -11,7 +11,7 @@
 # Honor a clean error if the user wired around it.
 if(NOT CMAKE_CUDA_COMPILER)
     message(FATAL_ERROR
-        "example/gpu-pipeline requires CUDA; "
+        "example/cuda-pipeline requires CUDA; "
         "did you set BOOST_CAPY_BUILD_NVEXEC_EXAMPLES?")
 endif()
 
@@ -41,17 +41,17 @@ file(GLOB_RECURSE PFILES CONFIGURE_DEPENDS
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} PREFIX "" FILES ${PFILES})
 
-add_executable(capy_example_gpu_pipeline ${PFILES})
+add_executable(capy_example_cuda_pipeline ${PFILES})
 
-set_target_properties(capy_example_gpu_pipeline PROPERTIES
+set_target_properties(capy_example_cuda_pipeline PROPERTIES
     FOLDER "examples"
     CUDA_STANDARD 20
     CUDA_STANDARD_REQUIRED ON
     CUDA_SEPARABLE_COMPILATION OFF)
 
-target_compile_features(capy_example_gpu_pipeline PRIVATE cxx_std_23)
+target_compile_features(capy_example_cuda_pipeline PRIVATE cxx_std_23)
 
-target_link_libraries(capy_example_gpu_pipeline PRIVATE
+target_link_libraries(capy_example_cuda_pipeline PRIVATE
     Boost::capy
     STDEXEC::stdexec
     STDEXEC::nvexec

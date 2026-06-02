@@ -28,9 +28,15 @@ if(BOOST_CAPY_BUILD_P2300_EXAMPLES)
     add_subdirectory(awaitable-sender)
 endif()
 
-if(BOOST_CAPY_BUILD_NVEXEC_EXAMPLES)
-    add_subdirectory(gpu-pipeline)
+if(BOOST_CAPY_BUILD_CUDA_EXAMPLES)
+    add_subdirectory(cuda/datamovement)
 endif()
+
+if(BOOST_CAPY_BUILD_NVEXEC_EXAMPLES)
+    add_subdirectory(cuda/pipeline)
+endif()
+
+add_subdirectory(fabrics)
 
 if(TARGET Boost::asio)
     add_subdirectory(asio)
