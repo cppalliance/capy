@@ -18,6 +18,7 @@
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
 
+#include <concepts>
 #include <exception>
 #include <optional>
 #include <type_traits>
@@ -26,6 +27,9 @@
 
 namespace boost {
 namespace capy {
+
+template<typename ... Ts>
+struct io_result;
 
 namespace detail {
 
@@ -53,6 +57,12 @@ struct task_return_base<void>
     {
     }
 };
+
+template<typename ... Us>
+void handle_yield_result(io_result<Us...> & res, std::error_code ec)
+{
+    static_assert((std::constructible_from<Us> && ...), "co_yield requires all result value to be default constructible");
+}
 
 } // namespace detail
 
@@ -102,7 +112,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         : io_awaitable_promise_base<promise_type>
         , detail::task_return_base<T>
     {
-    private:
+    protected:
         friend task;
         union { std::exception_ptr ep_; };
         bool has_ep_;
@@ -226,6 +236,36 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             {
                 static_assert(sizeof(A) == 0, "requires IoAwaitable");
             }
+        }
+
+                
+
+        template<class ... Ts>
+        auto yield_value(io_result<Ts...> res)
+        {
+            struct awaitable
+            {
+                io_result<Ts...> res;
+                
+                bool await_ready() const {return !res.ec;}
+                void await_suspend(std::coroutine_handle<promise_type> h)
+                {
+                    auto & p = h.promise();
+                    try 
+                    {
+                        detail::handle_yield_result(h.promise(), res.ec);
+                    }
+                    catch (...)
+                    {
+                        p.uncaught_exception();
+                    }
+                    
+                }
+                std::tuple<Ts...> await_resume() 
+                {
+                    return std::move(res.values);
+                }
+            };
         }
     };
 

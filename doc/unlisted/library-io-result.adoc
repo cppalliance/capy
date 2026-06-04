@@ -189,6 +189,57 @@ io_task<std::size_t> read_all(stream& s, buffer& buf)
 }
 ----
 
+== Short-Circuiting with co_yield
+
+Inside an `io_task<Ts...>`, `co_yield` accepts an `io_result<Us...>` and
+collapses the "check `ec`, propagate on error, otherwise use the values"
+pattern into a single expression:
+
+* On success (`!ec`): the `co_yield` expression evaluates to
+  `std::tuple<Us...>` of the payload values and execution continues.
+* On error: the task completes immediately, returning
+  `io_result<Ts...>{ec, Ts{}...}` to its caller. Each `Ts` must be
+  default-constructible.
+
+The pattern is most useful when chaining many fallible operations:
+
+[source,cpp]
+----
+io_task<std::size_t> echo(stream& s, mutable_buffer buf)
+{
+    // Without co_yield:
+    //   auto [ec, n] = co_await s.read_some(buf);
+    //   if (ec) co_return io_result<std::size_t>{ec, 0};
+    //   auto [ec2, w] = co_await s.write_some(buf.first(n));
+    //   if (ec2) co_return io_result<std::size_t>{ec2, 0};
+
+    auto [n] = co_yield co_await s.read_some(buf);
+    auto [w] = co_yield co_await s.write_some(buf.first(n));
+    co_return io_result<std::size_t>{{}, w};
+}
+----
+
+When the task returns its own payload values (`Ts...` non-empty), those
+values are default-constructed on the error path. Use explicit
+`co_return` when you need to surface a partially-computed value instead:
+
+[source,cpp]
+----
+io_task<std::size_t> read_all(stream& s, buffer& buf)
+{
+    std::size_t total = 0;
+    while (buf.size() < buf.max_size())
+    {
+        auto [ec, n] = co_await s.read_some(buf.prepare(1024));
+        if (ec)
+            co_return {ec, total};  // co_yield would lose `total`
+        buf.commit(n);
+        total += n;
+    }
+    co_return {{}, total};
+}
+----
+
 == Error Code vs Exception Trade-offs
 
 **Prefer error codes when:**
