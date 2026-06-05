@@ -19,7 +19,9 @@
 #include "test_suite.hpp"
 
 #include <cstring>
+#include <span>
 #include <string>
+#include <string_view>
 
 namespace boost {
 namespace capy {
@@ -201,6 +203,24 @@ struct read_until_test
                 co_return;
 
             BOOST_TEST_EQ(n, 12u);  // "helloENDMARK"
+        }));
+
+        // Lvalue (non-owning) buffer with a chunked read: the
+        // delimiter is not present up front, so the inner coroutine
+        // runs and dereferences the pointer-stored buffer.
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f, 3);  // max 3 bytes per read
+            rs.provide("hello\r\nworld");
+
+            std::string data;
+            string_dynamic_buffer db(&data);  // lvalue: pointer storage
+            auto [ec, n] = co_await read_until(rs, db, "\r\n");
+            if(ec)
+                co_return;
+
+            BOOST_TEST_EQ(n, 7u);
+            BOOST_TEST_EQ(data.substr(0, n), "hello\r\n");
         }));
     }
 
@@ -434,6 +454,30 @@ struct read_until_test
     //----------------------------------------------------------
 
     void
+    testMatchHelpers()
+    {
+        // A multi-buffer sequence forces linearize_buffers and the
+        // multi-buffer branch of search_buffer_for_match, which the
+        // contiguous string_dynamic_buffer never reaches.
+        const_buffer bufs[2] = {
+            const_buffer("hel", 3),
+            const_buffer("lo\r\nx", 5)
+        };
+        std::span<const_buffer> seq(bufs, 2);
+
+        BOOST_TEST_EQ(detail::linearize_buffers(seq), "hello\r\nx");
+
+        match_delim m{"\r\n"};
+        BOOST_TEST_EQ(detail::search_buffer_for_match(seq, m), 7u);
+
+        // On a miss, a multi-character delimiter records an overlap
+        // hint of delim.size() - 1.
+        std::size_t hint = 999;
+        BOOST_TEST(m("partial te", &hint) == std::string_view::npos);
+        BOOST_TEST_EQ(hint, 1u);
+    }
+
+    void
     run()
     {
         testFastPath();
@@ -442,6 +486,7 @@ struct read_until_test
         testErrorConditions();
         testPrefilledBuffer();
         testMatchCondition();
+        testMatchHelpers();
     }
 };
 

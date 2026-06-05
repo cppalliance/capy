@@ -389,6 +389,17 @@ struct buffer_test
             std::span<const_buffer const> bs(&b[0], 3);
             test::check_sequence(bs, "123456789");
         }
+
+        // operator+= advances and clamps to size()
+        {
+            char const* p = "12345";
+            const_buffer b(p, 5);
+            b += 2;
+            BOOST_TEST_EQ(b.data(), p + 2);
+            BOOST_TEST_EQ(b.size(), 3);
+            b += 100;  // over-advance is clamped
+            BOOST_TEST_EQ(b.size(), 0);
+        }
     }
 
     void testMutableBuffer()
@@ -441,6 +452,17 @@ struct buffer_test
             };
             std::span<mutable_buffer const> bs(&b[0], 3);
             test::check_sequence(bs, "123456789");
+        }
+
+        // operator+= advances and clamps to size()
+        {
+            char p[6] = "12345";
+            mutable_buffer b(p, 5);
+            b += 2;
+            BOOST_TEST_EQ(b.data(), p + 2);
+            BOOST_TEST_EQ(b.size(), 3);
+            b += 100;  // over-advance is clamped
+            BOOST_TEST_EQ(b.size(), 0);
         }
     }
 

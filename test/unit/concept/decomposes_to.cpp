@@ -19,6 +19,8 @@
 #include <tuple>
 #include <utility>
 
+#include "test_suite.hpp"
+
 namespace boost {
 namespace capy {
 
@@ -282,6 +284,49 @@ struct bad_aw
     bad_agg await_resume() const { return {}; }
 };
 #endif
+
+// A type whose awaiter is obtained via a free operator co_await.
+struct mock_free_co_await { };
+
+inline mock_int_awaitable
+operator co_await(mock_free_co_await) noexcept
+{
+    return {};
+}
+
+// The static_asserts above cover decomposes_to at compile time; this
+// suite drives get_awaiter at runtime, which otherwise appears only in
+// the unevaluated operand of awaitable_return_t.
+class decomposes_to_test
+{
+public:
+    void
+    run()
+    {
+        // No operator co_await: get_awaiter returns the value itself.
+        {
+            mock_int_awaitable a;
+            auto aw = detail::get_awaiter(a);
+            BOOST_TEST(aw.await_ready());
+        }
+
+        // Member operator co_await.
+        {
+            mock_with_co_await_op a;
+            auto aw = detail::get_awaiter(a);
+            BOOST_TEST(aw.await_ready());
+        }
+
+        // Free operator co_await.
+        {
+            mock_free_co_await a;
+            auto aw = detail::get_awaiter(a);
+            BOOST_TEST(aw.await_ready());
+        }
+    }
+};
+
+TEST_SUITE(decomposes_to_test, "boost.capy.concept.decomposes_to");
 
 } // namespace capy
 } // namespace boost

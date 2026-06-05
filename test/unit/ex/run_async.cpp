@@ -17,6 +17,8 @@
 #include "test_helpers.hpp"
 
 #include <atomic>
+#include <cstddef>
+#include <memory>
 #include <queue>
 #include <stdexcept>
 #include <string>
@@ -193,7 +195,23 @@ struct run_async_test
         int result = 0;
 
         run_async(d, [&](int v) { result = v; })(returns_int());
-        
+
+        BOOST_TEST_EQ(result, 42);
+        BOOST_TEST_EQ(dispatch_count, 1);
+    }
+
+    void
+    testValueAllocator()
+    {
+        // The value-type allocator overload wraps the allocator in a
+        // frame_memory_resource and uses the allocating trampoline.
+        int dispatch_count = 0;
+        sync_executor d(dispatch_count);
+        int result = 0;
+
+        run_async(d, std::allocator<std::byte>{},
+            [&](int v) { result = v; })(returns_int());
+
         BOOST_TEST_EQ(result, 42);
         BOOST_TEST_EQ(dispatch_count, 1);
     }
@@ -669,6 +687,7 @@ struct run_async_test
     {
         // Basic Functionality
         testNoHandlers();
+        testValueAllocator();
         testResultHandler();
         testVoidTaskResultHandler();
         testDualHandlers();

@@ -79,6 +79,55 @@ struct pending_write_sink
         { return pending_sink_eof_awaitable{counter_}; }
 };
 
+// Suspends, then resumes from await_suspend, to exercise the
+// type-erased await_suspend forwarding the always-ready mocks skip.
+struct resuming_sink_awaitable
+{
+    bool await_ready() const noexcept { return false; }
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> h, io_env const*) noexcept
+        { return h; }
+    io_result<std::size_t> await_resume() { return {{}, 1}; }
+};
+
+struct resuming_sink_eof_awaitable
+{
+    bool await_ready() const noexcept { return false; }
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> h, io_env const*) noexcept
+        { return h; }
+    io_result<> await_resume() { return {}; }
+};
+
+struct resuming_write_sink
+{
+    resuming_sink_awaitable write_some(ConstBufferSequence auto)
+        { return {}; }
+    resuming_sink_awaitable write(ConstBufferSequence auto)
+        { return {}; }
+    resuming_sink_awaitable write_eof(ConstBufferSequence auto)
+        { return {}; }
+    resuming_sink_eof_awaitable write_eof() { return {}; }
+};
+
+// Move constructor throws so owning construction fails after storage
+// is allocated but before the sink is constructed.
+struct throwing_move_write_sink
+{
+    int* destroyed_;
+    explicit throwing_move_write_sink(int* d) : destroyed_(d) {}
+    throwing_move_write_sink(throwing_move_write_sink&& o) : destroyed_(o.destroyed_)
+        { throw_test_exception_opaque("move ctor"); }
+    ~throwing_move_write_sink() { if(destroyed_) ++(*destroyed_); }
+    resuming_sink_awaitable write_some(ConstBufferSequence auto)
+        { return {}; }
+    resuming_sink_awaitable write(ConstBufferSequence auto)
+        { return {}; }
+    resuming_sink_awaitable write_eof(ConstBufferSequence auto)
+        { return {}; }
+    resuming_sink_eof_awaitable write_eof() { return {}; }
+};
+
 class any_write_sink_test
 {
 public:
@@ -635,6 +684,87 @@ public:
     }
 
     void
+    testMoveAssignWithActiveEofAwaitable()
+    {
+        // Move-assign while an eof awaitable is active exercises the
+        // active_eof_ops_ destroy branch in operator=.
+        int destroyed = 0;
+        pending_write_sink ps{&destroyed};
+        {
+            any_write_sink aws(&ps);
+            auto aw = aws.write_eof();
+            BOOST_TEST(!aw.await_ready());
+
+            test::blocking_context bctx;
+            auto ex = bctx.get_executor();
+            io_env env{executor_ref(ex), {}};
+            aw.await_suspend(std::noop_coroutine(), &env);
+
+            any_write_sink empty;
+            aws = std::move(empty);
+            BOOST_TEST_EQ(destroyed, 1);
+        }
+    }
+
+    void
+    testMoveAssignOwning()
+    {
+        // Move-assign over an owning wrapper to exercise the storage_
+        // teardown branch in operator=.
+        test::fuse f1;
+        test::fuse f2;
+        any_write_sink a(test::write_sink{f1});
+        any_write_sink b(test::write_sink{f2});
+        BOOST_TEST(a.has_value());
+
+        a = std::move(b);
+        BOOST_TEST(a.has_value());
+        BOOST_TEST(!b.has_value());
+    }
+
+    void
+    testConstructThrows()
+    {
+        // Owning construction whose sink move-ctor throws must not run
+        // the sink destructor on a null pointer.
+        int destroyed = 0;
+        BOOST_TEST_THROWS(
+            any_write_sink(throwing_move_write_sink{&destroyed}),
+            test_exception);
+        BOOST_TEST_EQ(destroyed, 1);
+    }
+
+    void
+    testSuspends()
+    {
+        // Drive write/write_some/write_eof whose awaitables suspend
+        // then resume, covering the type-erased await_suspend paths.
+        resuming_write_sink sink;
+        any_write_sink aws(&sink);
+
+        auto coro = [&]() -> task<std::size_t> {
+            char const data[] = "x";
+            auto [ec1, n1] = co_await aws.write_some(const_buffer(data, 1));
+            if(ec1)
+                co_return 0;
+            auto [ec2, n2] = co_await aws.write(const_buffer(data, 1));
+            if(ec2)
+                co_return 0;
+            auto [ec3, n3] = co_await aws.write_eof(const_buffer(data, 1));
+            if(ec3)
+                co_return 0;
+            auto [ec4] = co_await aws.write_eof();
+            if(ec4)
+                co_return 0;
+            co_return n1 + n2 + n3;
+        };
+
+        std::size_t result{};
+        test::run_blocking([&](std::size_t v) { result = v; })(coro());
+        BOOST_TEST_EQ(result, 3u);
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -661,6 +791,10 @@ public:
         testDestroyWithActiveWriteAwaitable();
         testDestroyWithActiveEofAwaitable();
         testMoveAssignWithActiveAwaitable();
+        testMoveAssignWithActiveEofAwaitable();
+        testMoveAssignOwning();
+        testConstructThrows();
+        testSuspends();
     }
 };
 

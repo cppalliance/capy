@@ -183,6 +183,22 @@ public:
     }
 
     void
+    testMoveAssignOwning()
+    {
+        // Move-assign over an owning wrapper to exercise the storage_
+        // teardown branch in operator=.
+        test::fuse f1;
+        test::fuse f2;
+        any_stream a(mock_stream{f1});
+        any_stream b(mock_stream{f2});
+        BOOST_TEST(a.has_value());
+
+        a = std::move(b);
+        BOOST_TEST(a.has_value());
+        BOOST_TEST(!b.has_value());
+    }
+
+    void
     testImplicitConversion()
     {
         test::fuse f;
@@ -279,6 +295,7 @@ public:
     {
         testConstruct();
         testMove();
+        testMoveAssignOwning();
         testImplicitConversion();
         testReadWrite();
         testReadViaBase();

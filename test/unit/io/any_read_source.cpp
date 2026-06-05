@@ -60,6 +60,44 @@ struct pending_read_source
         { return pending_source_awaitable{counter_}; }
 };
 
+// Reports not-ready, then resumes from await_suspend, exercising the
+// type-erased await_suspend forwarding the always-ready mocks skip.
+struct resuming_source_awaitable
+{
+    bool await_ready() const noexcept { return false; }
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> h, io_env const*) noexcept
+        { return h; }
+    io_result<std::size_t> await_resume() { return {{}, 5}; }
+};
+
+struct resuming_read_source
+{
+    resuming_source_awaitable read_some(
+        MutableBufferSequence auto)
+        { return {}; }
+    resuming_source_awaitable read(
+        MutableBufferSequence auto)
+        { return {}; }
+};
+
+// Move constructor throws so owning construction fails after storage
+// is allocated but before the source is constructed.
+struct throwing_move_read_source
+{
+    int* destroyed_;
+    explicit throwing_move_read_source(int* d) : destroyed_(d) {}
+    throwing_move_read_source(throwing_move_read_source&& o) : destroyed_(o.destroyed_)
+        { throw_test_exception_opaque("move ctor"); }
+    ~throwing_move_read_source() { if(destroyed_) ++(*destroyed_); }
+    resuming_source_awaitable read_some(
+        MutableBufferSequence auto)
+        { return {}; }
+    resuming_source_awaitable read(
+        MutableBufferSequence auto)
+        { return {}; }
+};
+
 class any_read_source_test
 {
 public:
@@ -143,6 +181,55 @@ public:
         ars1 = std::move(ars2);
         BOOST_TEST(ars1.has_value());
         BOOST_TEST(!ars2.has_value());
+    }
+
+    void
+    testMoveAssignOwning()
+    {
+        // Move-assign over an owning wrapper to exercise the storage_
+        // teardown branch in operator=.
+        test::fuse f1;
+        test::fuse f2;
+        any_read_source a(test::read_source{f1});
+        any_read_source b(test::read_source{f2});
+        BOOST_TEST(a.has_value());
+
+        a = std::move(b);
+        BOOST_TEST(a.has_value());
+        BOOST_TEST(!b.has_value());
+    }
+
+    void
+    testConstructThrows()
+    {
+        // Owning construction whose source move-ctor throws must not
+        // run the source destructor on a null pointer.
+        int destroyed = 0;
+        BOOST_TEST_THROWS(
+            any_read_source(throwing_move_read_source{&destroyed}),
+            test_exception);
+        BOOST_TEST_EQ(destroyed, 1);
+    }
+
+    void
+    testReadSuspends()
+    {
+        // Drive a read whose awaitable suspends and then resumes,
+        // covering the type-erased await_suspend forwarding.
+        resuming_read_source rs;
+        any_read_source ars(&rs);
+
+        auto coro = [&]() -> task<std::size_t> {
+            char buf[1];
+            auto [ec, n] = co_await ars.read(make_buffer(buf, 1));
+            if(ec)
+                co_return 0;
+            co_return n;
+        };
+
+        std::size_t result{};
+        test::run_blocking([&](std::size_t v) { result = v; })(coro());
+        BOOST_TEST_EQ(result, 5u);
     }
 
     void
@@ -724,6 +811,9 @@ public:
         testConstructOwning();
         testMove();
         testMoveAssignNonEmpty();
+        testMoveAssignOwning();
+        testConstructThrows();
+        testReadSuspends();
         testSelfAssign();
         testReadSome();
         testReadSomePartial();

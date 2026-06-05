@@ -57,6 +57,20 @@ struct pending_write_stream
         { return pending_write_awaitable{counter_}; }
 };
 
+// Move constructor throws so owning construction fails after storage
+// is allocated but before the stream is constructed.
+struct throwing_move_write_stream
+{
+    int* destroyed_;
+    explicit throwing_move_write_stream(int* d) : destroyed_(d) {}
+    throwing_move_write_stream(throwing_move_write_stream&& o) : destroyed_(o.destroyed_)
+        { throw_test_exception_opaque("move ctor"); }
+    ~throwing_move_write_stream() { if(destroyed_) ++(*destroyed_); }
+    pending_write_awaitable write_some(
+        ConstBufferSequence auto)
+        { return pending_write_awaitable{nullptr}; }
+};
+
 class any_write_stream_test
 {
 public:
@@ -122,6 +136,34 @@ public:
             BOOST_TEST(a.has_value());
             BOOST_TEST(!b.has_value());
         }
+    }
+
+    void
+    testMoveAssignOwning()
+    {
+        // Move-assign over an owning wrapper to exercise the storage_
+        // teardown branch in operator=.
+        test::fuse f1;
+        test::fuse f2;
+        any_write_stream a(test::write_stream{f1});
+        any_write_stream b(test::write_stream{f2});
+        BOOST_TEST(a.has_value());
+
+        a = std::move(b);
+        BOOST_TEST(a.has_value());
+        BOOST_TEST(!b.has_value());
+    }
+
+    void
+    testConstructThrows()
+    {
+        // Owning construction whose stream move-ctor throws must not
+        // run the stream destructor on a null pointer.
+        int destroyed = 0;
+        BOOST_TEST_THROWS(
+            any_write_stream(throwing_move_write_stream{&destroyed}),
+            test_exception);
+        BOOST_TEST_EQ(destroyed, 1);
     }
 
     void
@@ -456,6 +498,8 @@ public:
         testTrichotomyError();
         testDestroyWithActiveAwaitable();
         testMoveAssignWithActiveAwaitable();
+        testMoveAssignOwning();
+        testConstructThrows();
     }
 };
 
