@@ -9,3 +9,46 @@
 
 // Test that header file is self-contained.
 #include <boost/capy/error.hpp>
+
+#include <string>
+#include <system_error>
+
+#include "test_suite.hpp"
+
+namespace boost {
+namespace capy {
+
+class error_category_test
+{
+public:
+    void
+    run()
+    {
+        auto const ec = make_error_code(error::eof);
+        auto const& cat = ec.category();
+
+        BOOST_TEST(std::string(cat.name()) == "boost.capy");
+
+        BOOST_TEST(cat.message(static_cast<int>(error::eof)) == "eof");
+        BOOST_TEST(
+            cat.message(static_cast<int>(error::canceled)) ==
+            "operation canceled");
+        BOOST_TEST(
+            cat.message(static_cast<int>(error::test_failure)) ==
+            "test failure");
+        BOOST_TEST(
+            cat.message(static_cast<int>(error::stream_truncated)) ==
+            "stream truncated");
+        BOOST_TEST(
+            cat.message(static_cast<int>(error::not_found)) == "not found");
+        BOOST_TEST(cat.message(static_cast<int>(error::timeout)) == "timeout");
+
+        // Out-of-range value hits the default branch.
+        BOOST_TEST(cat.message(9999) == "unknown");
+    }
+};
+
+TEST_SUITE(error_category_test, "boost.capy.error");
+
+} // capy
+} // boost

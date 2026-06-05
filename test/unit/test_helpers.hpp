@@ -345,6 +345,22 @@ throw_test_exception(char const* msg)
     throw test_exception(msg);
 }
 
+// Throw test_exception in a way the optimizer cannot prove always
+// happens. Used by throwing move-constructors in the type-erasure
+// tests: an unconditional throw lets the optimizer prove construction
+// never completes, which flags the code after the placement-new (and
+// after the BOOST_TEST_THROWS expression) as unreachable (MSVC /O2
+// C4702). Gating the throw on a volatile read forces a re-read the
+// optimizer cannot fold, so the call is not provably non-returning,
+// while at runtime the throw always fires.
+inline void
+throw_test_exception_opaque(char const* msg)
+{
+    volatile bool always = true;
+    if(always)
+        throw test_exception(msg);
+}
+
 //----------------------------------------------------------
 // Common Test Task Helpers
 //----------------------------------------------------------

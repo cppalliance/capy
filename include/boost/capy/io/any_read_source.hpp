@@ -439,7 +439,10 @@ any_read_source::any_read_source(S s)
         bool committed = false;
         ~guard() {
             if(!committed && self->storage_) {
-                self->vt_->destroy(self->source_);
+                // source_ is null if the source move-ctor threw before
+                // the placement-new assigned it.
+                if(self->source_)
+                    self->vt_->destroy(self->source_);
                 ::operator delete(self->storage_);
                 self->storage_ = nullptr;
                 self->source_ = nullptr;

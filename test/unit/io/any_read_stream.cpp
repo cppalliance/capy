@@ -16,6 +16,7 @@
 #include <boost/capy/io_result.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/read_stream.hpp>
+#include <boost/capy/test/run_blocking.hpp>
 
 #include "test/unit/test_helpers.hpp"
 
@@ -53,6 +54,40 @@ struct pending_read_stream
     pending_read_awaitable read_some(
         MutableBufferSequence auto)
         { return pending_read_awaitable{counter_}; }
+};
+
+// Reports not-ready, then resumes the awaiting coroutine from
+// await_suspend. This exercises the type-erased await_suspend
+// thunk, which the always-ready test mocks never reach.
+struct resuming_read_awaitable
+{
+    bool await_ready() const noexcept { return false; }
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> h, io_env const*) noexcept
+        { return h; }
+    io_result<std::size_t> await_resume() { return {{}, 7}; }
+};
+
+struct resuming_read_stream
+{
+    resuming_read_awaitable read_some(
+        MutableBufferSequence auto)
+        { return {}; }
+};
+
+// Move constructor throws so owning construction fails after storage
+// is allocated but before the stream is constructed. The destructor
+// touches a member, so destroying a null instance would fault.
+struct throwing_move_read_stream
+{
+    int* destroyed_;
+    explicit throwing_move_read_stream(int* d) : destroyed_(d) {}
+    throwing_move_read_stream(throwing_move_read_stream&& o) : destroyed_(o.destroyed_)
+        { throw_test_exception_opaque("move ctor"); }
+    ~throwing_move_read_stream() { if(destroyed_) ++(*destroyed_); }
+    resuming_read_awaitable read_some(
+        MutableBufferSequence auto)
+        { return {}; }
 };
 
 class any_read_stream_test
@@ -496,6 +531,55 @@ public:
     }
 
     void
+    testMoveAssignOwning()
+    {
+        // Move-assign over an owning wrapper to exercise the
+        // storage_ teardown branch in operator=.
+        test::fuse f1;
+        test::fuse f2;
+        any_read_stream a(test::read_stream{f1});
+        any_read_stream b(test::read_stream{f2});
+        BOOST_TEST(a.has_value());
+
+        a = std::move(b);
+        BOOST_TEST(a.has_value());
+        BOOST_TEST(!b.has_value());
+    }
+
+    void
+    testConstructThrows()
+    {
+        // Owning construction whose stream move-ctor throws must not
+        // run the stream destructor on a null pointer.
+        int destroyed = 0;
+        BOOST_TEST_THROWS(
+            any_read_stream(throwing_move_read_stream{&destroyed}),
+            test_exception);
+        BOOST_TEST_EQ(destroyed, 1);
+    }
+
+    void
+    testReadSomeSuspends()
+    {
+        // Drive a read whose awaitable suspends and then resumes,
+        // covering the type-erased await_suspend forwarding.
+        resuming_read_stream rs;
+        any_read_stream ars(&rs);
+
+        auto coro = [&]() -> task<std::size_t> {
+            char buf[1];
+            auto [ec, n] = co_await ars.read_some(mutable_buffer(buf, 1));
+            if(ec)
+                co_return 0;
+            co_return n;
+        };
+
+        std::size_t result{};
+        test::run_blocking([&](std::size_t v) { result = v; })(coro());
+        BOOST_TEST_EQ(result, 7u);
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -515,6 +599,9 @@ public:
         testReadSomeManyBuffers();
         testDestroyWithActiveAwaitable();
         testMoveAssignWithActiveAwaitable();
+        testMoveAssignOwning();
+        testConstructThrows();
+        testReadSomeSuspends();
     }
 };
 

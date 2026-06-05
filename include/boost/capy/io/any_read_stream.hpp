@@ -345,7 +345,10 @@ any_read_stream::any_read_stream(S s)
         bool committed = false;
         ~guard() {
             if(!committed && self->storage_) {
-                self->vt_->destroy(self->stream_);
+                // stream_ is null if the stream move-ctor threw before
+                // the placement-new assigned it.
+                if(self->stream_)
+                    self->vt_->destroy(self->stream_);
                 ::operator delete(self->storage_);
                 self->storage_ = nullptr;
                 self->stream_ = nullptr;

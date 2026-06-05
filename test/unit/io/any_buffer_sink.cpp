@@ -17,6 +17,7 @@
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/buffer_sink.hpp>
+#include <boost/capy/test/run_blocking.hpp>
 #include <boost/capy/test/read_source.hpp>
 #include <boost/capy/test/read_stream.hpp>
 #include <boost/capy/test/write_sink.hpp>
@@ -274,6 +275,72 @@ static_assert(WriteSink<buffer_write_sink>);
 
 // Verify BufferSink-only mock does NOT satisfy WriteSink
 static_assert(!WriteSink<test::buffer_sink>);
+
+//----------------------------------------------------------
+
+// Suspends, then resumes from await_suspend, to exercise the
+// type-erased await_suspend forwarding the always-ready mocks skip.
+struct resuming_eof_awaitable
+{
+    bool await_ready() const noexcept { return false; }
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> h, io_env const*) noexcept
+        { return h; }
+    io_result<> await_resume() { return {}; }
+};
+
+struct resuming_size_awaitable
+{
+    bool await_ready() const noexcept { return false; }
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> h, io_env const*) noexcept
+        { return h; }
+    io_result<std::size_t> await_resume() { return {{}, 1}; }
+};
+
+// Satisfies BufferSink + WriteSink with suspending operations.
+struct resuming_buffer_sink
+{
+    char buf_[8] = {};
+    std::span<mutable_buffer> prepare(std::span<mutable_buffer> dest)
+    {
+        if(dest.empty())
+            return {};
+        dest[0] = make_buffer(buf_, sizeof(buf_));
+        return dest.first(1);
+    }
+    resuming_eof_awaitable commit(std::size_t) { return {}; }
+    resuming_eof_awaitable commit_eof(std::size_t) { return {}; }
+    template<ConstBufferSequence CB>
+    resuming_size_awaitable write_some(CB) { return {}; }
+    template<ConstBufferSequence CB>
+    resuming_size_awaitable write(CB) { return {}; }
+    template<ConstBufferSequence CB>
+    resuming_size_awaitable write_eof(CB) { return {}; }
+    resuming_eof_awaitable write_eof() { return {}; }
+};
+
+// Move constructor throws so owning construction fails after storage
+// is allocated but before the sink is constructed.
+struct throwing_move_buffer_sink
+{
+    int* destroyed_;
+    explicit throwing_move_buffer_sink(int* d) : destroyed_(d) {}
+    throwing_move_buffer_sink(throwing_move_buffer_sink&& o) : destroyed_(o.destroyed_)
+        { throw_test_exception_opaque("move ctor"); }
+    ~throwing_move_buffer_sink() { if(destroyed_) ++(*destroyed_); }
+    std::span<mutable_buffer> prepare(std::span<mutable_buffer> dest)
+        { return dest.empty() ? std::span<mutable_buffer>{} : dest.first(0); }
+    resuming_eof_awaitable commit(std::size_t) { return {}; }
+    resuming_eof_awaitable commit_eof(std::size_t) { return {}; }
+    template<ConstBufferSequence CB>
+    resuming_size_awaitable write_some(CB) { return {}; }
+    template<ConstBufferSequence CB>
+    resuming_size_awaitable write(CB) { return {}; }
+    template<ConstBufferSequence CB>
+    resuming_size_awaitable write_eof(CB) { return {}; }
+    resuming_eof_awaitable write_eof() { return {}; }
+};
 
 //----------------------------------------------------------
 
@@ -1270,10 +1337,67 @@ public:
     }
 
     void
+    testConstructThrows()
+    {
+        // Owning construction whose sink move-ctor throws must not run
+        // the sink destructor on a null pointer.
+        int destroyed = 0;
+        BOOST_TEST_THROWS(
+            any_buffer_sink(throwing_move_buffer_sink{&destroyed}),
+            test_exception);
+        BOOST_TEST_EQ(destroyed, 1);
+    }
+
+    void
+    testSuspends()
+    {
+        // Drive every operation through an awaitable that suspends and
+        // then resumes, covering the type-erased await_suspend paths.
+        resuming_buffer_sink sink;
+        any_buffer_sink abs(&sink);
+
+        auto coro = [&]() -> task<std::size_t> {
+            mutable_buffer arr[detail::max_iovec_];
+            abs.prepare(arr);
+
+            auto [ec1] = co_await abs.commit(1);
+            if(ec1)
+                co_return 0;
+
+            char const data[] = "x";
+            auto [ec2, n2] = co_await abs.write_some(const_buffer(data, 1));
+            if(ec2)
+                co_return 0;
+            auto [ec3, n3] = co_await abs.write(const_buffer(data, 1));
+            if(ec3)
+                co_return 0;
+            auto [ec4, n4] = co_await abs.write_eof(const_buffer(data, 1));
+            if(ec4)
+                co_return 0;
+
+            abs.prepare(arr);
+            auto [ec5] = co_await abs.commit_eof(1);
+            if(ec5)
+                co_return 0;
+            auto [ec6] = co_await abs.write_eof();
+            if(ec6)
+                co_return 0;
+
+            co_return n2 + n3 + n4;
+        };
+
+        std::size_t result{};
+        test::run_blocking([&](std::size_t v) { result = v; })(coro());
+        BOOST_TEST_EQ(result, 3u);
+    }
+
+    void
     run()
     {
         testConstruct();
         testConstructOwning();
+        testConstructThrows();
+        testSuspends();
         testMove();
         testMoveAssignOverExisting();
         testPrepareCommit();

@@ -576,7 +576,10 @@ any_write_sink::any_write_sink(S s)
         bool committed = false;
         ~guard() {
             if(!committed && self->storage_) {
-                self->vt_->destroy(self->sink_);
+                // sink_ is null if the sink move-ctor threw before
+                // the placement-new assigned it.
+                if(self->sink_)
+                    self->vt_->destroy(self->sink_);
                 ::operator delete(self->storage_);
                 self->storage_ = nullptr;
                 self->sink_ = nullptr;

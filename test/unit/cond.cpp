@@ -76,6 +76,28 @@ public:
             auto ec = make_error_code(error::eof);
             BOOST_TEST(!(ec == cond::not_found));
         }
+
+        // Remaining messages, including the default branch.
+        auto const ecnd = make_error_condition(cond::eof);
+        auto const& cat = ecnd.category();
+        BOOST_TEST(
+            cat.message(static_cast<int>(cond::stream_truncated)) ==
+            "stream truncated");
+        BOOST_TEST(
+            cat.message(static_cast<int>(cond::timeout)) ==
+            "operation timed out");
+        BOOST_TEST(cat.message(9999) == "unknown");
+
+        // Equivalence: stream_truncated and timeout.
+        BOOST_TEST(make_error_code(error::stream_truncated) ==
+            cond::stream_truncated);
+        BOOST_TEST(make_error_code(error::timeout) == cond::timeout);
+
+        // Out-of-range condition is equivalent to nothing.
+        {
+            auto ec = make_error_code(error::eof);
+            BOOST_TEST(! cat.equivalent(ec, 9999));
+        }
     }
 };
 

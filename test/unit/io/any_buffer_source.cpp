@@ -18,6 +18,7 @@
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/buffer_source.hpp>
+#include <boost/capy/test/run_blocking.hpp>
 #include <boost/capy/test/write_sink.hpp>
 
 #include "test/unit/test_helpers.hpp"
@@ -202,6 +203,66 @@ public:
     }
 };
 
+// Suspends, then resumes from await_suspend, to exercise the
+// type-erased await_suspend forwarding the always-ready mock skips.
+struct resuming_pull_awaitable
+{
+    std::span<const_buffer> dest_;
+    char const* data_;
+    bool await_ready() const noexcept { return false; }
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> h, io_env const*) noexcept
+        { return h; }
+    io_result<std::span<const_buffer>>
+    await_resume()
+    {
+        if(dest_.empty())
+            return {{}, {}};
+        dest_[0] = make_buffer(data_, 3);
+        return {{}, dest_.first(1)};
+    }
+};
+
+struct resuming_io_awaitable
+{
+    bool await_ready() const noexcept { return false; }
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> h, io_env const*) noexcept
+        { return h; }
+    io_result<std::size_t> await_resume() { return {{}, 3}; }
+};
+
+// Satisfies BufferSource + ReadSource with suspending operations.
+struct resuming_buffer_source
+{
+    char data_[4] = "abc";
+    resuming_pull_awaitable pull(std::span<const_buffer> dest)
+        { return {dest, data_}; }
+    void consume(std::size_t) noexcept {}
+    template<MutableBufferSequence MB>
+    resuming_io_awaitable read_some(MB) { return {}; }
+    template<MutableBufferSequence MB>
+    resuming_io_awaitable read(MB) { return {}; }
+};
+
+// Move constructor throws so owning construction fails after storage
+// is allocated but before the source is constructed.
+struct throwing_move_buffer_source
+{
+    int* destroyed_;
+    explicit throwing_move_buffer_source(int* d) : destroyed_(d) {}
+    throwing_move_buffer_source(throwing_move_buffer_source&& o) : destroyed_(o.destroyed_)
+        { throw_test_exception_opaque("move ctor"); }
+    ~throwing_move_buffer_source() { if(destroyed_) ++(*destroyed_); }
+    resuming_pull_awaitable pull(std::span<const_buffer> dest)
+        { return {dest, nullptr}; }
+    void consume(std::size_t) noexcept {}
+    template<MutableBufferSequence MB>
+    resuming_io_awaitable read_some(MB) { return {}; }
+    template<MutableBufferSequence MB>
+    resuming_io_awaitable read(MB) { return {}; }
+};
+
 // Verify concepts at compile time
 static_assert(BufferSource<buffer_read_source>);
 static_assert(ReadSource<buffer_read_source>);
@@ -289,6 +350,63 @@ public:
         abs3 = std::move(abs2);
         BOOST_TEST(abs3.has_value());
         BOOST_TEST(!abs2.has_value());
+    }
+
+    void
+    testMoveAssignOwning()
+    {
+        // Move-assign over an owning wrapper to exercise the storage_
+        // teardown branch in operator=.
+        any_buffer_source a(buffer_read_source{test::fuse{}});
+        any_buffer_source b(buffer_read_source{test::fuse{}});
+        BOOST_TEST(a.has_value());
+
+        a = std::move(b);
+        BOOST_TEST(a.has_value());
+        BOOST_TEST(!b.has_value());
+    }
+
+    void
+    testConstructThrows()
+    {
+        // Owning construction whose source move-ctor throws must not
+        // run the source destructor on a null pointer.
+        int destroyed = 0;
+        BOOST_TEST_THROWS(
+            any_buffer_source(throwing_move_buffer_source{&destroyed}),
+            test_exception);
+        BOOST_TEST_EQ(destroyed, 1);
+    }
+
+    void
+    testSuspends()
+    {
+        // Drive pull/read/read_some whose awaitables suspend then
+        // resume, covering the type-erased await_suspend forwarding.
+        resuming_buffer_source src;
+        any_buffer_source abs(&src);
+
+        auto coro = [&]() -> task<std::size_t> {
+            const_buffer arr[detail::max_iovec_];
+            auto [ec1, bufs] = co_await abs.pull(arr);
+            if(ec1)
+                co_return 0;
+
+            char buf[3] = {};
+            auto [ec2, n2] = co_await abs.read(make_buffer(buf, 3));
+            if(ec2)
+                co_return 0;
+
+            auto [ec3, n3] = co_await abs.read_some(make_buffer(buf, 3));
+            if(ec3)
+                co_return 0;
+
+            co_return bufs.size() + n2 + n3;
+        };
+
+        std::size_t result{};
+        test::run_blocking([&](std::size_t v) { result = v; })(coro());
+        BOOST_TEST_EQ(result, 7u);
     }
 
     void
@@ -787,6 +905,9 @@ public:
         testConstruct();
         testMove();
         testMoveNative();
+        testMoveAssignOwning();
+        testConstructThrows();
+        testSuspends();
         testPull();
         testConsume();
         testPullWithoutConsume();

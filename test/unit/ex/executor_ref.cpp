@@ -128,6 +128,33 @@ make_counter_coro(std::atomic<int>& counter)
     }(&counter);
 }
 
+// Executor whose work-tracking hooks are observable, so tests can
+// confirm on_work_started/on_work_finished forward through the wrapper.
+struct counting_context : execution_context
+{
+    int work = 0;
+};
+
+struct counting_executor
+{
+    counting_context* ctx_ = nullptr;
+
+    counting_executor() = default;
+    explicit counting_executor(counting_context& ctx) noexcept : ctx_(&ctx) {}
+
+    bool operator==(counting_executor const& other) const noexcept
+    {
+        return ctx_ == other.ctx_;
+    }
+    execution_context& context() const noexcept { return *ctx_; }
+    void on_work_started() const noexcept { ++ctx_->work; }
+    void on_work_finished() const noexcept { --ctx_->work; }
+    std::coroutine_handle<> dispatch(continuation& c) const { return c.h; }
+    void post(continuation&) const { }
+};
+
+static_assert(Executor<counting_executor>);
+
 } // namespace
 
 struct executor_ref_test
@@ -181,6 +208,29 @@ struct executor_ref_test
 
         BOOST_TEST(ex1 == ex2);
         BOOST_TEST(!(ex1 == ex3));
+
+        // Different executor types compare unequal via the vtable
+        // mismatch path, without invoking the per-type equals thunk.
+        test::blocking_context bctx;
+        auto ie = bctx.get_executor();
+        executor_ref ex4(ie);
+        BOOST_TEST(!(ex1 == ex4));
+    }
+
+    void
+    testWorkTracking()
+    {
+        // on_work_started/on_work_finished forward through the vtable
+        // thunks to the wrapped executor.
+        counting_context ctx;
+        counting_executor under(ctx);
+        executor_ref ex(under);
+
+        BOOST_TEST_EQ(ctx.work, 0);
+        ex.on_work_started();
+        BOOST_TEST_EQ(ctx.work, 1);
+        ex.on_work_finished();
+        BOOST_TEST_EQ(ctx.work, 0);
     }
 
     void
@@ -277,6 +327,12 @@ struct executor_ref_test
         BOOST_TEST_EQ(
             ex2.target<thread_pool::executor_type>(),
             nullptr);
+
+        // Wrong type through the const overload returns nullptr.
+        executor_ref const& cex2 = ex2;
+        BOOST_TEST_EQ(
+            cex2.target<thread_pool::executor_type>(),
+            nullptr);
     }
 
     void
@@ -285,6 +341,7 @@ struct executor_ref_test
         testConstruct();
         testCopy();
         testEquality();
+        testWorkTracking();
         testDispatch();
         testPost();
         testMultiplePost();

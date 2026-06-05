@@ -131,6 +131,33 @@ make_counter_coro(std::atomic<int>& counter)
     }(&counter);
 }
 
+// Executor whose work-tracking hooks are observable, so tests can
+// confirm on_work_started/on_work_finished forward through the wrapper.
+struct counting_context : execution_context
+{
+    int work = 0;
+};
+
+struct counting_executor
+{
+    counting_context* ctx_ = nullptr;
+
+    counting_executor() = default;
+    explicit counting_executor(counting_context& ctx) noexcept : ctx_(&ctx) {}
+
+    bool operator==(counting_executor const& other) const noexcept
+    {
+        return ctx_ == other.ctx_;
+    }
+    execution_context& context() const noexcept { return *ctx_; }
+    void on_work_started() const noexcept { ++ctx_->work; }
+    void on_work_finished() const noexcept { --ctx_->work; }
+    std::coroutine_handle<> dispatch(continuation& c) const { return c.h; }
+    void post(continuation&) const { }
+};
+
+static_assert(Executor<counting_executor>);
+
 } // namespace
 
 struct any_executor_test
@@ -211,6 +238,22 @@ struct any_executor_test
         any_executor ex5;
         BOOST_TEST(ex4 == ex5);       // Both empty
         BOOST_TEST(!(ex1 == ex4));    // Non-empty vs empty
+    }
+
+    void
+    testWorkTracking()
+    {
+        // on_work_started/on_work_finished forward through the
+        // type-erased impl to the wrapped executor.
+        counting_context ctx;
+        counting_executor under(ctx);
+        any_executor ex(under);
+
+        BOOST_TEST_EQ(ctx.work, 0);
+        ex.on_work_started();
+        BOOST_TEST_EQ(ctx.work, 1);
+        ex.on_work_finished();
+        BOOST_TEST_EQ(ctx.work, 0);
     }
 
     void
@@ -357,6 +400,7 @@ struct any_executor_test
         testCopy();
         testMove();
         testEquality();
+        testWorkTracking();
         testTargetType();
         testContext();
         testDispatch();
