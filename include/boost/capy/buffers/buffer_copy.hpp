@@ -18,25 +18,8 @@
 namespace boost {
 namespace capy {
 
-/** Copy the contents of a buffer sequence into another buffer sequence.
-
-    This function copies bytes from the constant buffer sequence `src` into
-    the mutable buffer sequence `dest`, stopping when any limit is reached.
-
-    @par Constraints
-    @code
-    MutableBufferSequence<decltype(dest)> &&
-    ConstBufferSequence<decltype(src)>
-    @endcode
-
-    @return The number of bytes copied, equal to
-    `std::min(size(dest), size(src), at_most)`.
-
-    @param dest The destination buffer sequence.
-    @param src The source buffer sequence.
-    @param at_most The maximum bytes to copy. Default copies all available.
-*/
-constexpr struct buffer_copy_mrdocs_workaround_t
+namespace detail {
+struct buffer_copy_fn
 {
     template<
         MutableBufferSequence MB,
@@ -100,7 +83,28 @@ constexpr struct buffer_copy_mrdocs_workaround_t
         }
         return total;
     }
-} buffer_copy {};
+};
+} // detail
+
+/** Copy the contents of a buffer sequence into another buffer sequence.
+
+    This function copies bytes from the constant buffer sequence `src` into
+    the mutable buffer sequence `dest`, stopping when any limit is reached.
+
+    @par Constraints
+    @code
+    MutableBufferSequence<decltype(dest)> &&
+    ConstBufferSequence<decltype(src)>
+    @endcode
+
+    @return The number of bytes copied, equal to
+    `std::min(size(dest), size(src), at_most)`.
+
+    @param dest The destination buffer sequence.
+    @param src The source buffer sequence.
+    @param at_most The maximum bytes to copy. Default copies all available.
+*/
+constexpr detail::buffer_copy_fn buffer_copy {};
 
 } // capy
 } // boost

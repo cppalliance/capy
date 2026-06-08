@@ -198,12 +198,8 @@ concept MutableBufferSequence =
         std::ranges::bidirectional_range<T> &&
         std::is_convertible_v<std::ranges::range_value_t<T>, mutable_buffer>);
 
-/** Return an iterator to the first buffer in a sequence.
-
-    Handles single buffers and ranges uniformly. For a single buffer,
-    returns a pointer to it (forming a one-element range).
-*/
-constexpr struct begin_mrdocs_workaround_t
+namespace detail {
+struct begin_fn
 {
     template<std::convertible_to<const_buffer> ConvertibleToBuffer>
     auto operator()(ConvertibleToBuffer const& b) const noexcept -> ConvertibleToBuffer const*
@@ -224,14 +220,22 @@ constexpr struct begin_mrdocs_workaround_t
     {
         return std::ranges::begin(bs);
     }
-} begin {};
+};
+} // detail
 
-/** Return an iterator past the last buffer in a sequence.
+/** Return an iterator to the first buffer in a sequence.
 
     Handles single buffers and ranges uniformly. For a single buffer,
-    returns a pointer one past it.
+    returns a pointer to it (forming a one-element range).
+
+    @param bs The buffer sequence.
+
+    @return An iterator to the first buffer in the sequence.
 */
-constexpr struct end_mrdocs_workaround_t
+constexpr detail::begin_fn begin {};
+
+namespace detail {
+struct end_fn
 {
     template<std::convertible_to<const_buffer> ConvertibleToBuffer>
     auto operator()(ConvertibleToBuffer const& b) const noexcept -> ConvertibleToBuffer const*
@@ -252,20 +256,22 @@ constexpr struct end_mrdocs_workaround_t
     {
         return std::ranges::end(bs);
     }
-} end {};
+};
+} // detail
 
-/** Return the total byte count across all buffers in a sequence.
+/** Return an iterator past the last buffer in a sequence.
 
-    Sums the `size()` of each buffer in the sequence. This differs
-    from `buffer_length` which counts the number of buffer elements.
+    Handles single buffers and ranges uniformly. For a single buffer,
+    returns a pointer one past it.
 
-    @par Example
-    @code
-    std::array<mutable_buffer, 2> bufs = { ... };
-    std::size_t total = buffer_size( bufs );  // sum of both sizes
-    @endcode
+    @param bs The buffer sequence.
+
+    @return An iterator one past the last buffer in the sequence.
 */
-constexpr struct buffer_size_mrdocs_workaround_t
+constexpr detail::end_fn end {};
+
+namespace detail {
+struct buffer_size_fn
 {
     // GCC 13 falsely flags reads of arr_[i].n_ in detail::buffer_array
     // when iterating here. The class uses union storage with placement
@@ -290,14 +296,28 @@ constexpr struct buffer_size_mrdocs_workaround_t
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
-} buffer_size {};
+};
+} // detail
 
-/** Check if a buffer sequence contains no data.
+/** Return the total byte count across all buffers in a sequence.
 
-    @return `true` if all buffers have size zero or the sequence
-        is empty.
+    Sums the `size()` of each buffer in the sequence. This differs
+    from `buffer_length` which counts the number of buffer elements.
+
+    @param bs The buffer sequence.
+
+    @return The total number of bytes across all buffers in the sequence.
+
+    @par Example
+    @code
+    std::array<mutable_buffer, 2> bufs = { ... };
+    std::size_t total = buffer_size( bufs );  // sum of both sizes
+    @endcode
 */
-constexpr struct buffer_empty_mrdocs_workaround_t
+constexpr detail::buffer_size_fn buffer_size {};
+
+namespace detail {
+struct buffer_empty_fn
 {
     // See note on buffer_size above — same union-storage false positive.
 #if defined(__GNUC__) && !defined(__clang__)
@@ -321,7 +341,17 @@ constexpr struct buffer_empty_mrdocs_workaround_t
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
-} buffer_empty {};
+};
+} // detail
+
+/** Check if a buffer sequence contains no data.
+
+    @param bs The buffer sequence.
+
+    @return `true` if all buffers have size zero or the sequence
+        is empty.
+*/
+constexpr detail::buffer_empty_fn buffer_empty {};
 
 namespace detail {
 

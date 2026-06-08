@@ -16,9 +16,8 @@
 namespace boost {
 namespace capy {
 
-/** Return the first buffer in a sequence.
-*/
-constexpr struct front_mrdocs_workaround_t
+namespace detail {
+struct front_fn
 {
     /// Return the first mutable buffer, or an empty buffer.
     template<MutableBufferSequence MutableBufferSequence>
@@ -44,7 +43,20 @@ constexpr struct front_mrdocs_workaround_t
             return *it;
         return {};
     }
-} const front{};
+};
+} // detail
+
+/** Return the first buffer in a sequence.
+
+    For a `MutableBufferSequence` the result is a `mutable_buffer`;
+    otherwise it is a `const_buffer`.
+
+    @param bs The buffer sequence.
+
+    @return The first buffer in the sequence, or an empty buffer if the
+        sequence is empty.
+*/
+constexpr detail::front_fn const front{};
 
 } // capy
 } // boost

@@ -13,6 +13,11 @@ include-symbols:
 implementation-defined:
   - 'boost::capy::detail'
   - 'boost::capy::*::detail'
+exclude-symbols:
+  # Tuple-protocol accessor for structured bindings. Cannot be hidden with an
+  # in-source BOOST_CAPY_MRDOCS guard because detail::decomposes_to instantiates
+  # structured bindings on io_result during the docs parse and needs this member.
+  - 'boost::capy::io_result::get'
 inaccessible-members: never
 inaccessible-bases: never
 

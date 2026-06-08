@@ -58,7 +58,6 @@ struct [[nodiscard]] io_result
     {
     }
 
-    /// @cond
     template<std::size_t I>
     decltype(auto) get() & noexcept
     {
@@ -82,10 +81,9 @@ struct [[nodiscard]] io_result
         if constexpr (I == 0) return std::move(ec);
         else return std::get<I - 1>(std::move(values));
     }
-    /// @endcond
 };
 
-/// @cond
+#if !defined(BOOST_CAPY_MRDOCS)
 template<std::size_t I, class... Ts>
 decltype(auto) get(io_result<Ts...>& r) noexcept
 {
@@ -103,7 +101,7 @@ decltype(auto) get(io_result<Ts...>&& r) noexcept
 {
     return std::move(r).template get<I>();
 }
-/// @endcond
+#endif
 
 } // namespace capy
 } // namespace boost
