@@ -390,6 +390,96 @@ struct async_mutex_test
     }
 
     void
+    testUnlockSkipsClaimedWaiterStillQueued()
+    {
+        // unlock() runs while a stop-claimed waiter is still on the
+        // queue (its posted resume has not run yet). unlock() pops it,
+        // sees it already claimed, and loops to the next waiter. The
+        // claimed waiter's later await_resume() then also unlinks it;
+        // remove() must be idempotent so this second unlink is a no-op.
+        // The queuing executor makes the interleaving deterministic.
+        async_mutex cm;
+        std::queue<std::coroutine_handle<>> q;
+        queuing_executor ex(q);
+        std::stop_source ss1;
+
+        bool holder_done = false;
+        bool w1_done = false, w2_done = false;
+        std::error_code w1_ec, w2_ec;
+
+        auto holder = [](async_mutex& cm, bool& done) -> task<void> {
+            auto [ec] = co_await cm.lock();
+            done = true;
+            (void)ec;
+        }(cm, holder_done);
+
+        auto w1 = [](async_mutex& cm,
+            std::error_code& out_ec, bool& done) -> task<void> {
+            auto [ec] = co_await cm.lock();
+            out_ec = ec;
+            done = true;
+        }(cm, w1_ec, w1_done);
+
+        auto w2 = [](async_mutex& cm,
+            std::error_code& out_ec, bool& done) -> task<void> {
+            auto [ec] = co_await cm.lock();
+            out_ec = ec;
+            done = true;
+        }(cm, w2_ec, w2_done);
+
+        auto hh = holder.handle();
+        holder.release();
+        io_env env_h;
+        env_h.executor = executor_ref(ex);
+        hh.promise().set_environment(&env_h);
+
+        auto h1 = w1.handle();
+        w1.release();
+        io_env env1;
+        env1.executor = executor_ref(ex);
+        env1.stop_token = ss1.get_token();
+        h1.promise().set_environment(&env1);
+
+        auto h2 = w2.handle();
+        w2.release();
+        io_env env2;
+        env2.executor = executor_ref(ex);
+        h2.promise().set_environment(&env2);
+
+        hh.resume();
+        BOOST_TEST(holder_done);
+
+        h1.resume();  // w1 queues (front)
+        h2.resume();  // w2 queues
+
+        // Cancel w1: it is claimed and its resume posted, but it is
+        // still in the wait queue.
+        ss1.request_stop();
+
+        // unlock() pops the claimed w1, skips it, and hands the lock to
+        // w2.
+        cm.unlock();
+
+        while(!q.empty())
+        {
+            q.front().resume();
+            q.pop();
+        }
+
+        BOOST_TEST(w1_done);
+        BOOST_TEST(w1_ec == make_error_code(error::canceled));
+        BOOST_TEST(w2_done);
+        BOOST_TEST(!w2_ec);  // w2 acquired the lock
+        BOOST_TEST(cm.is_locked());
+
+        cm.unlock();
+
+        hh.destroy();
+        h1.destroy();
+        h2.destroy();
+    }
+
+    void
     testPreSignaledToken()
     {
         async_mutex cm;
@@ -928,6 +1018,7 @@ struct async_mutex_test
         testScopedLockCancellation();
         testDestroyWhileSuspended();
         testUnlockSkipsCanceled();
+        testUnlockSkipsClaimedWaiterStillQueued();
         testPreSignaledToken();
         testPreSignaledTokenUncontended();
         testScopedLockSuccess();
