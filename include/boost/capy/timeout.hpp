@@ -158,20 +158,11 @@ public:
     complete wins and cancels the other. If the awaitable finishes
     first, its result is returned as-is (success, error, or
     exception). If the timer fires first, an `io_result` with
-    `ec == error::timeout` is produced.
+    `ec == error::timeout` is produced. The timeout fires at or
+    after the specified duration.
 
     Unlike @ref when_any, exceptions from the inner awaitable
     are always propagated — they are never swallowed by the timer.
-
-    @par Return Type
-
-    Always returns `io_result<Ts...>` matching the inner
-    awaitable's result type. On timeout, `ec` is set to
-    `error::timeout` and payload values are default-initialized.
-
-    @par Precision
-
-    The timeout fires at or after the specified duration.
 
     @par Cancellation
 
@@ -192,9 +183,14 @@ public:
     @param a The awaitable to race against the deadline.
     @param dur The maximum duration to wait.
 
-    @return `task<awaitable_result_t<A>>`.
+    @return An `io_result<Ts...>` matching the inner awaitable's
+        result type. On normal completion the inner awaitable's
+        result is returned unchanged, whether it indicates success
+        or sets `ec` to an error. On timeout, `ec` is set to
+        `error::timeout` and the payload values are
+        default-initialized.
 
-    @throws Rethrows any exception from the inner awaitable,
+    @throws Rethrows Any exception from the inner awaitable,
         regardless of whether the timer has fired.
 
     @see delay, cond::timeout
