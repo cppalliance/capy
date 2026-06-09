@@ -167,9 +167,7 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE run_async_trampoline
         {
         }
 
-        void unhandled_exception() noexcept
-        {
-        }
+        void unhandled_exception() noexcept {} // LCOV_EXCL_LINE unsupported: throwing task with no error handler
     };
 
     std::coroutine_handle<promise_type> h_;

@@ -284,6 +284,32 @@ struct timeout_test
         BOOST_TEST_EQ(msg, "boom");
     }
 
+    // A caller stop token already requested when timeout launches makes
+    // timeout propagate the stop to its source. The stop-aware inner
+    // resumes immediately, so completion is deterministic: the long
+    // (5s) timer never participates.
+    void
+    testStopAlreadyRequested()
+    {
+        thread_pool pool(1);
+        std::latch done(1);
+        bool completed = false;
+        std::stop_source src;
+        src.request_stop();
+
+        run_async(pool.get_executor(), src.get_token(),
+            [&](io_result<int>) {
+                completed = true;
+                done.count_down();
+            },
+            [&](std::exception_ptr) {
+                done.count_down();
+            })(timeout(slow_io_int(42), 5s));
+
+        done.wait();
+        BOOST_TEST(completed);
+    }
+
     void
     run()
     {
@@ -296,6 +322,7 @@ struct timeout_test
         testZeroDuration();
         testCondEquivalence();
         testThrowPropagatesBeforeTimeout();
+        testStopAlreadyRequested();
     }
 };
 

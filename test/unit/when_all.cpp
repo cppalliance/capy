@@ -618,8 +618,55 @@ struct when_all_range_test
     }
 
     void
+    testStopAlreadyRequestedRange()
+    {
+        // A caller stop token already requested when the range
+        // when_all launches makes the launcher propagate the stop to
+        // its source. Pre-requested stop_source + inline executor keep
+        // this deterministic.
+        int dc = 0;
+        test_executor ex(dc);
+        std::stop_source src;
+        src.request_stop();
+        bool completed = false;
+
+        std::vector<io_task<size_t>> tasks;
+        tasks.push_back(io_success_size(1));
+        tasks.push_back(io_success_size(2));
+
+        run_async(ex, src.get_token(),
+            [&](io_result<std::vector<size_t>>) { completed = true; },
+            [](std::exception_ptr) {})(when_all(std::move(tasks)));
+
+        BOOST_TEST(completed);
+    }
+
+    void
+    testStopAlreadyRequestedTuple()
+    {
+        // Same, but for the variadic (tuple) when_all launcher.
+        int dc = 0;
+        test_executor ex(dc);
+        std::stop_source src;
+        src.request_stop();
+        bool completed = false;
+
+        auto outer = []() -> task<io_result<std::tuple<>, std::tuple<>>> {
+            co_return co_await when_all(io_void_ok(), io_void_ok());
+        };
+
+        run_async(ex, src.get_token(),
+            [&](auto&&...) { completed = true; },
+            [](std::exception_ptr) {})(outer());
+
+        BOOST_TEST(completed);
+    }
+
+    void
     run()
     {
+        testStopAlreadyRequestedRange();
+        testStopAlreadyRequestedTuple();
         testSingleElement();
         testMultipleElements();
         testEmptyRange();

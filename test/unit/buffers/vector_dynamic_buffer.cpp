@@ -34,6 +34,14 @@ struct vector_dynamic_buffer_test
             BOOST_TEST(v.empty());
         }
 
+        // max_size smaller than the vector's current size truncates it
+        {
+            std::vector<unsigned char> v0(10, 'x');
+            vector_dynamic_buffer b(&v0, 4);
+            BOOST_TEST_EQ(v0.size(), 4u);
+            BOOST_TEST_EQ(b.size(), 4u);
+        }
+
         // vector_dynamic_buffer( move constructor )
         {
             std::vector<unsigned char> v0;

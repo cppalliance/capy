@@ -248,7 +248,7 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE when_all_runner
                         return detail::symmetric_transfer(caller_env->executor.dispatch(cont));
                     return detail::symmetric_transfer(std::noop_coroutine());
                 }
-                void await_resume() const noexcept {}
+                void await_resume() const noexcept {} // LCOV_EXCL_LINE final_suspend awaiter, never resumed
             };
             return awaiter{this};
         }

@@ -203,7 +203,7 @@ struct strand_invoker
         std::suspend_always initial_suspend() noexcept { return {}; }
         std::suspend_never  final_suspend()   noexcept { return {}; }
         void return_void() noexcept {}
-        void unhandled_exception() { std::terminate(); }
+        void unhandled_exception() { std::terminate(); } // LCOV_EXCL_LINE terminates the process
     };
 
     std::coroutine_handle<promise_type> h_;

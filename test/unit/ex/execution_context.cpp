@@ -122,6 +122,32 @@ struct nested_service : execution_context::service
     void shutdown() override {}
 };
 
+// Reentrant registration: keyed_a's constructor creates keyed_b, which
+// shares keyed_a's key_type. The key is registered while keyed_a's
+// create() is still in flight, so the post-create re-check on the key
+// type detects the conflict and rolls back. keyed_a and keyed_b both
+// derive from shared_key_base (not from each other), so there is no
+// construction recursion.
+struct shared_key_base : execution_context::service
+{
+    void shutdown() override {}
+};
+
+struct keyed_b : shared_key_base
+{
+    using key_type = shared_key_base;
+    explicit keyed_b(execution_context&) {}
+};
+
+struct keyed_a : shared_key_base
+{
+    using key_type = shared_key_base;
+    explicit keyed_a(execution_context& ctx)
+    {
+        ctx.make_service<keyed_b>();
+    }
+};
+
 } // namespace
 
 struct execution_context_test
@@ -288,6 +314,23 @@ struct execution_context_test
     }
 
     void
+    testReentrantKeyConflict()
+    {
+        test_io_context ctx;
+
+        // keyed_a's constructor registers keyed_b under the shared key
+        // before keyed_a finishes creating; the post-create re-check on
+        // the key type then rolls keyed_a back.
+        BOOST_TEST_THROWS(
+            ctx.make_service<keyed_a>(),
+            std::invalid_argument);
+
+        // keyed_b was registered before the conflict was detected.
+        BOOST_TEST(ctx.has_service<keyed_b>());
+        BOOST_TEST(! ctx.has_service<keyed_a>());
+    }
+
+    void
     testConcurrentAccess()
     {
         test_io_context ctx;
@@ -337,6 +380,11 @@ struct execution_context_test
         struct other_context : execution_context {};
         BOOST_TEST_EQ(
             ctx.target<other_context>(),
+            nullptr);
+
+        // Wrong type through the const overload returns nullptr
+        BOOST_TEST_EQ(
+            cctx.target<other_context>(),
             nullptr);
     }
 
@@ -401,6 +449,7 @@ struct execution_context_test
         testShutdown();
         testMultipleServices();
         testNestedServiceCreation();
+        testReentrantKeyConflict();
         testConcurrentAccess();
         testTarget();
         testGetFrameAllocator();

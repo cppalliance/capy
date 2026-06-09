@@ -119,8 +119,8 @@ make_service_impl(factory& f)
     std::lock_guard<std::mutex> lock(mutex_);
     if(find_impl(f.t0))
     {
-        delete p;
-        detail::throw_invalid_argument();
+        delete p; // LCOV_EXCL_LINE concurrent same-type registration race
+        detail::throw_invalid_argument(); // LCOV_EXCL_LINE concurrent same-type registration race
     }
 
     p->t0_ = f.t0;

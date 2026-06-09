@@ -181,9 +181,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                     return p_->continuation();
                 }
 
-                void await_resume() const noexcept
-                {
-                }
+                void await_resume() const noexcept {} // LCOV_EXCL_LINE final_suspend awaiter, never resumed
             };
             return awaiter{this};
         }

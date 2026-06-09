@@ -96,11 +96,12 @@ struct buffer_array_test
             BOOST_TEST_EQ(test::make_string(ba2), pat);
         }
 
-        // copy assignment
+        // copy assignment over a non-empty target destroys its
+        // existing elements first
         {
             const_buffer b(pat.data(), pat.size());
             detail::const_buffer_array<4> ba1(b);
-            detail::const_buffer_array<4> ba2;
+            detail::const_buffer_array<4> ba2(b);
             ba2 = ba1;
             BOOST_TEST_EQ(ba2.to_span().size(), 1);
             BOOST_TEST_EQ(buffer_size(ba2), pat.size());

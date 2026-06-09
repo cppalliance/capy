@@ -257,7 +257,7 @@ public:
             {
                 executor_ref executor_;
                 bool await_ready() const noexcept { return true; }
-                void await_suspend(std::coroutine_handle<>) const noexcept { }
+                void await_suspend(std::coroutine_handle<>) const noexcept { } // LCOV_EXCL_LINE await_ready() always true, never suspends
                 executor_ref await_resume() const noexcept { return executor_; }
             };
             return awaiter{env_->executor};
@@ -269,7 +269,7 @@ public:
             {
                 std::stop_token token_;
                 bool await_ready() const noexcept { return true; }
-                void await_suspend(std::coroutine_handle<>) const noexcept { }
+                void await_suspend(std::coroutine_handle<>) const noexcept { } // LCOV_EXCL_LINE await_ready() always true, never suspends
                 std::stop_token await_resume() const noexcept { return token_; }
             };
             return awaiter{env_->stop_token};
@@ -281,7 +281,7 @@ public:
             {
                 std::pmr::memory_resource* frame_allocator_;
                 bool await_ready() const noexcept { return true; }
-                void await_suspend(std::coroutine_handle<>) const noexcept { }
+                void await_suspend(std::coroutine_handle<>) const noexcept { } // LCOV_EXCL_LINE await_ready() always true, never suspends
                 std::pmr::memory_resource* await_resume() const noexcept { return frame_allocator_; }
             };
             return awaiter{env_->frame_allocator};
