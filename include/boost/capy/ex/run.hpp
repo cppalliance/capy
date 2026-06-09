@@ -101,7 +101,7 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE boundary_trampoline
                         std::noop_coroutine());
                 }
 
-                void await_resume() const noexcept {}
+                void await_resume() const noexcept {} // LCOV_EXCL_LINE final_suspend awaiter, never resumed
             };
             return awaiter{this};
         }

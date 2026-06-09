@@ -364,7 +364,7 @@ struct any_read_source::vtable_for_impl
                 return static_cast<ReadAwaitable*>(p)->await_resume();
             },
             +[](void* p) noexcept {
-                static_cast<ReadAwaitable*>(p)->~ReadAwaitable();
+                static_cast<ReadAwaitable*>(p)->~ReadAwaitable(); // LCOV_EXCL_LINE runs via destroy tests; gcov miscounts fn-ptr thunk
             }
         };
         return &ops;

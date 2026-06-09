@@ -197,7 +197,7 @@ public:
         }
     };
 
-    slice_impl() noexcept = default;
+    slice_impl() noexcept = default; // LCOV_EXCL_LINE defaulted ctor, gcov counts a phantom line
 
     explicit slice_impl(BufferSequence const& bs) noexcept
         : first_(capy::begin(bs))

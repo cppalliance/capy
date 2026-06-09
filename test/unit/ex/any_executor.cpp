@@ -238,6 +238,11 @@ struct any_executor_test
         any_executor ex5;
         BOOST_TEST(ex4 == ex5);       // Both empty
         BOOST_TEST(!(ex1 == ex4));    // Non-empty vs empty
+
+        // Different wrapped types take the target_type mismatch path.
+        counting_context cctx;
+        any_executor ex6(counting_executor{cctx});
+        BOOST_TEST(!(ex1 == ex6));
     }
 
     void

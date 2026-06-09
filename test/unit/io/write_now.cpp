@@ -12,18 +12,39 @@
 
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/test/fuse.hpp>
+#include <boost/capy/test/run_blocking.hpp>
 #include <boost/capy/test/write_stream.hpp>
 
 #include "test/unit/test_helpers.hpp"
 
 #include <array>
+#include <coroutine>
 #include <string>
 #include <string_view>
 
 namespace boost {
 namespace capy {
 namespace {
+
+// A write stream whose write awaitable suspends, then resumes from
+// await_suspend. This drives write_now's await_transform wrapper
+// forwarding that the always-ready test stream never reaches.
+struct suspending_write_awaitable
+{
+    bool await_ready() const noexcept { return false; }
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> h, io_env const*) noexcept
+        { return h; }
+    io_result<std::size_t> await_resume() { return {{}, 5}; }
+};
+
+struct suspending_write_stream
+{
+    suspending_write_awaitable write_some(ConstBufferSequence auto)
+        { return {}; }
+};
 
 class write_now_test
 {
@@ -257,8 +278,49 @@ public:
     }
 
     void
+    testSuspendingWrite()
+    {
+        // Drive a write whose inner awaitable suspends, exercising the
+        // await_transform wrapper's await_suspend forwarding.
+        suspending_write_stream ws;
+        write_now wn(ws);
+
+        auto coro = [&]() -> task<std::size_t> {
+            char const data[] = "hello";
+            auto [ec, n] = co_await wn(const_buffer(data, 5));
+            if(ec)
+                co_return 0;
+            co_return n;
+        };
+
+        std::size_t result{};
+        test::run_blocking([&](std::size_t v) { result = v; })(coro());
+        BOOST_TEST_EQ(result, 5u);
+    }
+
+    void
+    testFrameRealloc()
+    {
+        // The internal coroutine stores its buffer sequence in the frame
+        // by value, so an operation with a much larger sequence than the
+        // cached one forces the frame cache to reallocate, freeing the
+        // smaller frame. Each op is scoped so its coroutine is destroyed
+        // before the next allocation reclaims the cached frame.
+        suspending_write_stream ws;
+        write_now wn(ws);
+
+        std::array<const_buffer, 1> small_bufs{};
+        std::array<const_buffer, 256> large_bufs{};
+        { auto op = wn(small_bufs); (void)op; }  // caches the smaller frame
+        { auto op = wn(large_bufs); (void)op; }  // larger frame: realloc + free
+        BOOST_TEST(true);
+    }
+
+    void
     run()
     {
+        testFrameRealloc();
+        testSuspendingWrite();
         testSingleBuffer();
         testEmptyBuffer();
         testBufferArray();

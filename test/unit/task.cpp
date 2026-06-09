@@ -1254,9 +1254,33 @@ struct task_test
         BOOST_TEST(state == 2);
     }
 
+    // An IoAwaitable whose await_suspend returns bool, to drive the
+    // non-handle branch of the task transform_awaiter.
+    struct bool_resume_awaitable
+    {
+        bool await_ready() const noexcept { return false; }
+        bool await_suspend(std::coroutine_handle<>, io_env const*) noexcept
+        {
+            return false;  // do not suspend
+        }
+        int await_resume() noexcept { return 7; }
+    };
+
+    void
+    testBoolSuspendAwaitable()
+    {
+        auto coro = []() -> task<int> {
+            co_return co_await bool_resume_awaitable{};
+        };
+        int result = 0;
+        test::run_blocking([&](int v) { result = v; })(coro());
+        BOOST_TEST_EQ(result, 7);
+    }
+
     void
     run()
     {
+        testBoolSuspendAwaitable();
         testReturnValue();
         testException();
         testTaskAwaitsTask();

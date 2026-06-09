@@ -956,8 +956,24 @@ struct strand_test
     }
 
     void
+    testShutdownReleasesLiveStrand()
+    {
+        // Destroy the pool while a strand still owns a registered impl,
+        // so strand_service::shutdown() walks the live impl list and
+        // detaches it. The returned strand is then in a detached state
+        // and is only destroyed (never used).
+        auto make = [] {
+            thread_pool pool(1);
+            return strand(pool.get_executor());
+        };
+        auto s = make();
+        (void)s;
+    }
+
+    void
     run()
     {
+        testShutdownReleasesLiveStrand();
         testConstruct();
         testCopy();
         testMove();

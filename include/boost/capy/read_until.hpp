@@ -47,7 +47,7 @@ linearize_buffers(ConstBufferSequence auto const& data)
             static_cast<char const*>(it->data()),
             it->size());
     return linear;
-}
+} // LCOV_EXCL_LINE gcov brace artifact (linearize_buffers is exercised)
 
 // Search buffer using a MatchCondition, with single-buffer optimization
 template<MatchCondition M>

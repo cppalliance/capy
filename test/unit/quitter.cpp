@@ -504,6 +504,74 @@ struct quitter_test
             test_exception);
     }
 
+    // An IoAwaitable whose await_suspend returns bool, to drive the
+    // non-handle branch of the quitter transform_awaiter.
+    struct bool_resume_awaitable
+    {
+        bool await_ready() const noexcept { return false; }
+        bool await_suspend(std::coroutine_handle<>, io_env const*) noexcept
+        {
+            return false;  // do not suspend
+        }
+        int await_resume() noexcept { return 7; }
+    };
+
+    static quitter<int>
+    co_awaits_bool_suspend()
+    {
+        co_return co_await bool_resume_awaitable{};
+    }
+
+    void
+    testBoolSuspendAwaitable()
+    {
+        int result = 0;
+        test::run_blocking([&](int v) { result = v; })(
+            co_awaits_bool_suspend());
+        BOOST_TEST_EQ(result, 7);
+    }
+
+    static quitter<>
+    plain_void_quitter()
+    {
+        co_return;
+    }
+
+    static quitter<int>
+    co_awaits_void_quitter()
+    {
+        co_await plain_void_quitter();
+        co_return 5;
+    }
+
+    void
+    testCoAwaitVoidQuitter()
+    {
+        // Co-await a normally-completing void quitter: exercises the
+        // void path of await_resume.
+        int result = 0;
+        test::run_blocking([&](int v) { result = v; })(
+            co_awaits_void_quitter());
+        BOOST_TEST_EQ(result, 5);
+    }
+
+    static quitter<int>
+    co_awaits_throwing_quitter()
+    {
+        co_await quitter_throws_int();
+        co_return 0;
+    }
+
+    void
+    testCoAwaitThrowingQuitter()
+    {
+        // Co-await a throwing quitter: exercises the rethrow path of
+        // await_resume.
+        BOOST_TEST_THROWS(
+            test::run_blocking()(co_awaits_throwing_quitter()),
+            test_exception);
+    }
+
     //----------------------------------------------------------
     // 7. Stop propagation with when_all
     //
@@ -804,6 +872,9 @@ struct quitter_test
         testMoveOperations();
         testReturnString();
         testExceptionInValueQuitter();
+        testBoolSuspendAwaitable();
+        testCoAwaitVoidQuitter();
+        testCoAwaitThrowingQuitter();
         testWhenAllWithStop();
         testWhenAnyWithStop();
         testTimerCancellation();

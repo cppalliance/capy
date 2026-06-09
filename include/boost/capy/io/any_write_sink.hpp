@@ -429,7 +429,7 @@ struct any_write_sink::vtable_for_impl
                 return static_cast<WriteAwaitable*>(p)->await_resume();
             },
             +[](void* p) noexcept {
-                static_cast<WriteAwaitable*>(p)->~WriteAwaitable();
+                static_cast<WriteAwaitable*>(p)->~WriteAwaitable(); // LCOV_EXCL_LINE runs via destroy tests; gcov miscounts fn-ptr thunk
             }
         };
         return &ops;
@@ -456,7 +456,7 @@ struct any_write_sink::vtable_for_impl
                 return static_cast<WriteEofBuffersAwaitable*>(p)->await_resume();
             },
             +[](void* p) noexcept {
-                static_cast<WriteEofBuffersAwaitable*>(p)->~WriteEofBuffersAwaitable();
+                static_cast<WriteEofBuffersAwaitable*>(p)->~WriteEofBuffersAwaitable(); // LCOV_EXCL_LINE runs via destroy tests; gcov miscounts fn-ptr thunk
             }
         };
         return &ops;

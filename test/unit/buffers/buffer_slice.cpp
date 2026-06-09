@@ -71,6 +71,13 @@ struct buffer_slice_test
             "mutable-input slice_impl must satisfy MutableSlice");
         static_assert(!MutableSlice<c_slice>,
             "const-input slice_impl must NOT satisfy MutableSlice");
+
+        // Default-constructed slice_impl is a valid empty slice.
+        {
+            c_slice s;
+            auto view = s.data();
+            BOOST_TEST(view.begin() == view.end());
+        }
     }
 
     void

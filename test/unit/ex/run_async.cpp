@@ -217,6 +217,25 @@ struct run_async_test
     }
 
     void
+    testValueAllocatorException()
+    {
+        // Value-allocator trampoline routing a task exception to the
+        // error handler.
+        int dispatch_count = 0;
+        sync_executor d(dispatch_count);
+        bool error_called = false;
+
+        run_async(d, std::allocator<std::byte>{},
+            [&](int) { },
+            [&](std::exception_ptr ep) {
+                error_called = true;
+                BOOST_TEST(ep != nullptr);
+            })(throws_exception());
+
+        BOOST_TEST(error_called);
+    }
+
+    void
     testVoidTaskResultHandler()
     {
         int dispatch_count = 0;
@@ -688,6 +707,7 @@ struct run_async_test
         // Basic Functionality
         testNoHandlers();
         testValueAllocator();
+        testValueAllocatorException();
         testResultHandler();
         testVoidTaskResultHandler();
         testDualHandlers();

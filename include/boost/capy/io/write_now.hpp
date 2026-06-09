@@ -129,13 +129,11 @@ class write_now
                     {
                         p_->done_ = true;
                         if(!p_->cont_)
-                            return std::noop_coroutine();
+                            return std::noop_coroutine(); // LCOV_EXCL_LINE cont_ always set on this (suspend_always) path
                         return p_->cont_;
                     }
 
-                    void await_resume() const noexcept
-                    {
-                    }
+                    void await_resume() const noexcept {} // LCOV_EXCL_LINE final_suspend awaiter, never resumed
                 };
                 return awaiter{this};
             }

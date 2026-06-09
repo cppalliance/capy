@@ -101,6 +101,39 @@ struct immediate_io_awaitable
     }
 };
 
+int g_throwing_move_count = 0;
+
+// A payload whose move constructor throws on the second and later moves.
+// The io_result constructor performs the first move; the extract and
+// emplace into when_any's result variant are the second/third moves,
+// inside when_any's try/catch — exercising the winner-exception path.
+struct throwing_move_payload
+{
+    int v;
+    explicit throwing_move_payload(int x) noexcept : v(x) {}
+    throwing_move_payload(throwing_move_payload&& o) : v(o.v)
+    {
+        if(++g_throwing_move_count >= 2)
+            throw std::runtime_error("payload move");
+    }
+    throwing_move_payload&
+    operator=(throwing_move_payload&&) noexcept = default;
+};
+
+struct throwing_payload_awaitable
+{
+    bool await_ready() const noexcept { return true; }
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<>, io_env const*)
+    {
+        return std::noop_coroutine();
+    }
+    io_result<throwing_move_payload> await_resume()
+    {
+        return io_result<throwing_move_payload>{{}, throwing_move_payload{7}};
+    }
+};
+
 io_task<>
 io_void_ok()
 {
@@ -112,6 +145,20 @@ io_void_error(std::error_code ec)
 {
     co_return io_result<>{ec};
 }
+
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4702) // unreachable code after throw
+#endif
+io_task<>
+io_throws_void(char const* msg)
+{
+    throw test_exception(msg);
+    co_return io_result<>{};
+}
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
 } // anonymous namespace
 
@@ -211,6 +258,36 @@ struct when_any_vector_test
             when_any(std::move(tasks)));
 
         BOOST_TEST(completed);
+    }
+
+    void
+    testVoidTasksAllThrow()
+    {
+        // Void tasks that throw exercise the void homogeneous state's
+        // record_exception. The inline executor makes ordering, and
+        // thus which exception is reported last, deterministic.
+        int dc = 0;
+        test_executor ex(dc);
+        bool completed = false;
+        bool caught = false;
+        std::string msg;
+
+        std::vector<io_task<>> tasks;
+        tasks.push_back(io_throws_void("first"));
+        tasks.push_back(io_throws_void("second"));
+
+        run_async(ex,
+            [&](std::variant<std::error_code, std::size_t>) {
+                completed = true;
+            },
+            [&](std::exception_ptr ep) {
+                try { std::rethrow_exception(ep); }
+                catch(test_exception const& e) { caught = true; msg = e.what(); }
+            })(when_any(std::move(tasks)));
+
+        BOOST_TEST(!completed);
+        BOOST_TEST(caught);
+        BOOST_TEST_EQ(msg, "second");
     }
 
     void
@@ -517,6 +594,7 @@ struct when_any_vector_test
         testMultipleTasksFirstSuccessWins();
         testEmptyVectorThrows();
         testVoidTasksSuccess();
+        testVoidTasksAllThrow();
 
         testErrorDoesNotWin();
         testAllFailReturnsError();
@@ -891,8 +969,57 @@ struct when_any_io_result_test
     }
 
     void
+    testStopAlreadyRequested()
+    {
+        // A caller stop token already requested when the (tuple)
+        // when_any launches makes the launcher propagate the stop to
+        // its own source. A pre-requested stop_source plus an inline
+        // executor keeps this deterministic: the pending children
+        // resume synchronously.
+        int dc = 0;
+        test_executor ex(dc);
+        std::stop_source src;
+        src.request_stop();
+        bool done = false;
+
+        run_async(ex, src.get_token(),
+            [&](std::variant<std::error_code, size_t, size_t>) {
+                done = true;
+            },
+            [](std::exception_ptr) {})(
+            when_any(io_pending_size(), io_pending_size()));
+
+        BOOST_TEST(done);
+    }
+
+    void
+    testWinnerPayloadMoveThrows()
+    {
+        // The winning task's payload throws while being moved into the
+        // result variant. when_any captures the exception and surfaces it
+        // to the awaiter instead of a value.
+        g_throwing_move_count = 0;
+        int dc = 0;
+        test_executor ex(dc);
+        bool completed = false;
+        bool threw = false;
+
+        run_async(ex,
+            [&](std::variant<std::error_code, throwing_move_payload> const&) {
+                completed = true;
+            },
+            [&](std::exception_ptr ep) { threw = (ep != nullptr); })(
+            when_any(throwing_payload_awaitable{}));
+
+        BOOST_TEST(!completed);
+        BOOST_TEST(threw);
+    }
+
+    void
     run()
     {
+        testWinnerPayloadMoveThrows();
+        testStopAlreadyRequested();
         testFirstSuccessWins();
         testSingleTaskSuccess();
         testErrorDoesNotWin();
