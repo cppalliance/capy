@@ -136,7 +136,9 @@ set_target_properties(boost_capy PROPERTIES
 
 include(GNUInstallDirs)
 
-add_subdirectory(extra/test_suite)
+if(NOT TARGET boost_capy_test_suite)
+    add_subdirectory(extra/test_suite)
+endif()
 
 if(BOOST_SUPERPROJECT_VERSION AND NOT CMAKE_VERSION VERSION_LESS 3.13)
     boost_install(
