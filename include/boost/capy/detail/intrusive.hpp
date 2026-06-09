@@ -41,6 +41,7 @@ public:
     private:
         T* next_;
         T* prev_;
+        bool linked_ = false;
     };
 
 private:
@@ -78,6 +79,7 @@ public:
         else
             head_ = w;
         tail_ = w;
+        w->linked_ = true;
     }
 
     void
@@ -111,12 +113,15 @@ public:
             head_->prev_ = nullptr;
         else
             tail_ = nullptr;
+        w->linked_ = false;
         return w;
     }
 
     void
     remove(T* w) noexcept
     {
+        if(!w->linked_)
+            return;
         if(w->prev_)
             w->prev_->next_ = w->next_;
         else
@@ -125,6 +130,7 @@ public:
             w->next_->prev_ = w->prev_;
         else
             tail_ = w->prev_;
+        w->linked_ = false;
     }
 };
 
