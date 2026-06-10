@@ -12,12 +12,12 @@ codecov:
     after_n_builds: 1
     wait_for_ci: yes
 
-# Make coverage checks informational (report but never fail CI)
 coverage:
   status:
     project:
       default:
-        informational: true
+        target: auto
+        threshold: 0%
     patch:
       default:
         informational: true
