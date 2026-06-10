@@ -345,10 +345,8 @@ any_read_stream::any_read_stream(S s)
         bool committed = false;
         ~guard() {
             if(!committed && self->storage_) {
-                // stream_ is null if the stream move-ctor threw before
-                // the placement-new assigned it.
                 if(self->stream_)
-                    self->vt_->destroy(self->stream_);
+                    self->vt_->destroy(self->stream_); // LCOV_EXCL_LINE OOM rollback: only when the cached-awaitable allocation throws
                 ::operator delete(self->storage_);
                 self->storage_ = nullptr;
                 self->stream_ = nullptr;
@@ -380,6 +378,8 @@ any_read_stream::read_some(MB buffers)
 {
     // VFALCO in theory, we could use if constexpr to detect a
     // span and then pass that through to read_some without the array
+    // LCOV_EXCL_START read_some awaitable: exercised by tests, but the
+    // coverage tooling reports its templated body uncovered per-instantiation
     struct awaitable
     {
         any_read_stream* self_;
@@ -419,6 +419,7 @@ any_read_stream::read_some(MB buffers)
                 self_->cached_awaitable_);
         }
     };
+    // LCOV_EXCL_STOP
     return awaitable{this,
         detail::mutable_buffer_array<detail::max_iovec_>(buffers)};
 }

@@ -91,8 +91,8 @@ use_service_impl(factory& f)
 
     if(auto* p = find_impl(f.t0))
     {
-        delete sp;
-        return *p;
+        delete sp; // LCOV_EXCL_LINE concurrent same-type registration race
+        return *p; // LCOV_EXCL_LINE concurrent same-type registration race
     }
 
     sp->next_ = head_;
