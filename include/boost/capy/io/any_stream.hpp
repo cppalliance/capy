@@ -176,9 +176,9 @@ public:
             bool committed = false;
             ~guard() {
                 if(!committed && ptr) {
-                    static_cast<S*>(ptr)->~S();
-                    ::operator delete(self->storage_);
-                    self->storage_ = nullptr;
+                    static_cast<S*>(ptr)->~S(); // LCOV_EXCL_LINE OOM rollback: only when the cached-awaitable allocation throws
+                    ::operator delete(self->storage_); // LCOV_EXCL_LINE OOM rollback: only when the cached-awaitable allocation throws
+                    self->storage_ = nullptr; // LCOV_EXCL_LINE OOM rollback: only when the cached-awaitable allocation throws
                 }
             }
         } g{this};

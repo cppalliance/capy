@@ -346,10 +346,8 @@ any_write_stream::any_write_stream(S s)
         bool committed = false;
         ~guard() {
             if(!committed && self->storage_) {
-                // stream_ is null if the stream move-ctor threw before
-                // the placement-new assigned it.
                 if(self->stream_)
-                    self->vt_->destroy(self->stream_);
+                    self->vt_->destroy(self->stream_); // LCOV_EXCL_LINE OOM rollback: only when the cached-awaitable allocation throws
                 ::operator delete(self->storage_);
                 self->storage_ = nullptr;
                 self->stream_ = nullptr;

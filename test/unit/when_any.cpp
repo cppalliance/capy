@@ -122,11 +122,13 @@ struct throwing_move_payload
 
 struct throwing_payload_awaitable
 {
-    bool await_ready() const noexcept { return true; }
+    // Suspend (then resume immediately) so the transform await_suspend
+    // thunk is exercised for this awaitable type.
+    bool await_ready() const noexcept { return false; }
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<>, io_env const*)
+    await_suspend(std::coroutine_handle<> h, io_env const*)
     {
-        return std::noop_coroutine();
+        return h;
     }
     io_result<throwing_move_payload> await_resume()
     {

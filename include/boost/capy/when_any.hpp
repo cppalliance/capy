@@ -399,9 +399,8 @@ public:
         }
 
         auto token = state_->core_.stop_source_.get_token();
-        [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-            (..., launch_one<Is>(caller_env->executor, token));
-        }(std::index_sequence_for<Awaitables...>{});
+        launch_all(std::index_sequence_for<Awaitables...>{},
+            caller_env->executor, token);
 
         return std::noop_coroutine();
     }
@@ -409,6 +408,13 @@ public:
     void await_resume() const noexcept {}
 
 private:
+    template<std::size_t... Is>
+    void launch_all(std::index_sequence<Is...>,
+        executor_ref ex, std::stop_token token)
+    {
+        (..., launch_one<Is>(ex, token));
+    }
+
     template<std::size_t I>
     void launch_one(executor_ref caller_ex, std::stop_token token)
     {
