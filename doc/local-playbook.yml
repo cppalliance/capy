@@ -29,6 +29,10 @@ antora:
         using-namespaces:
           - 'boost::'
     - require: '@cppalliance/antora-cpp-reference-extension'
+      # Pin MrDocs to the develop-release channel, which carries the upstream
+      # fix for the symlinked-workspace cwd bug (mrdocs 4f51471e) that broke
+      # the reference build. Without this the extension may select master-release.
+      version: develop
       dependencies:
         - name: 'boost'
           repo: 'https://github.com/boostorg/boost.git'
