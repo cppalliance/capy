@@ -22,5 +22,6 @@ int main()
 {
     capy::thread_pool pool;
     capy::run_async(pool.get_executor())(say_hello());
+    pool.join();
     return 0;
 }
