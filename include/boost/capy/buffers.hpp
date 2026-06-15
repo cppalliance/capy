@@ -200,17 +200,28 @@ concept MutableBufferSequence =
 
 /** Return an iterator to the first buffer in a sequence.
 
-    Handles single buffers and ranges uniformly. For a single buffer,
-    returns a pointer to it (forming a one-element range).
+    @functionobject
 */
-constexpr struct begin_mrdocs_workaround_t
+constexpr struct
 {
+    /** Return a pointer to a single buffer, forming a one-element range.
+
+        @param b A single buffer.
+
+        @return A pointer to `b`.
+    */
     template<std::convertible_to<const_buffer> ConvertibleToBuffer>
     auto operator()(ConvertibleToBuffer const& b) const noexcept -> ConvertibleToBuffer const*
     {
         return std::addressof(b);
     }
 
+    /** Return an iterator to the first buffer of a sequence.
+
+        @param bs The buffer sequence.
+
+        @return An iterator to the first buffer of `bs`.
+    */
     template<ConstBufferSequence BS>
         requires (!std::convertible_to<BS, const_buffer>)
     auto operator()(BS const& bs) const noexcept
@@ -218,6 +229,12 @@ constexpr struct begin_mrdocs_workaround_t
         return std::ranges::begin(bs);
     }
 
+    /** Return an iterator to the first buffer of a sequence.
+
+        @param bs The buffer sequence.
+
+        @return An iterator to the first buffer of `bs`.
+    */
     template<ConstBufferSequence BS>
         requires (!std::convertible_to<BS, const_buffer>)
     auto operator()(BS& bs) const noexcept
@@ -228,17 +245,28 @@ constexpr struct begin_mrdocs_workaround_t
 
 /** Return an iterator past the last buffer in a sequence.
 
-    Handles single buffers and ranges uniformly. For a single buffer,
-    returns a pointer one past it.
+    @functionobject
 */
-constexpr struct end_mrdocs_workaround_t
+constexpr struct
 {
+    /** Return a pointer one past a single buffer, forming a one-element range.
+
+        @param b A single buffer.
+
+        @return A pointer one past `b`.
+    */
     template<std::convertible_to<const_buffer> ConvertibleToBuffer>
     auto operator()(ConvertibleToBuffer const& b) const noexcept -> ConvertibleToBuffer const*
     {
         return std::addressof(b) + 1;
     }
 
+    /** Return an iterator past the last buffer of a sequence.
+
+        @param bs The buffer sequence.
+
+        @return An iterator one past the last buffer of `bs`.
+    */
     template<ConstBufferSequence BS>
         requires (!std::convertible_to<BS, const_buffer>)
     auto operator()(BS const& bs) const noexcept
@@ -246,6 +274,12 @@ constexpr struct end_mrdocs_workaround_t
         return std::ranges::end(bs);
     }
 
+    /** Return an iterator past the last buffer of a sequence.
+
+        @param bs The buffer sequence.
+
+        @return An iterator one past the last buffer of `bs`.
+    */
     template<ConstBufferSequence BS>
         requires (!std::convertible_to<BS, const_buffer>)
     auto operator()(BS& bs) const noexcept
@@ -256,16 +290,9 @@ constexpr struct end_mrdocs_workaround_t
 
 /** Return the total byte count across all buffers in a sequence.
 
-    Sums the `size()` of each buffer in the sequence. This differs
-    from `buffer_length` which counts the number of buffer elements.
-
-    @par Example
-    @code
-    std::array<mutable_buffer, 2> bufs = { ... };
-    std::size_t total = buffer_size( bufs );  // sum of both sizes
-    @endcode
+    @functionobject
 */
-constexpr struct buffer_size_mrdocs_workaround_t
+constexpr struct
 {
     // GCC 13 falsely flags reads of arr_[i].n_ in detail::buffer_array
     // when iterating here. The class uses union storage with placement
@@ -277,6 +304,21 @@ constexpr struct buffer_size_mrdocs_workaround_t
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
+    /** Return the total byte count across all buffers in a sequence.
+
+        Sums the `size()` of each buffer in the sequence. This differs
+        from `buffer_length` which counts the number of buffer elements.
+
+        @param bs The buffer sequence.
+
+        @return The sum of the sizes of all buffers in `bs`.
+
+        @par Example
+        @code
+        std::array<mutable_buffer, 2> bufs = { ... };
+        std::size_t total = buffer_size( bufs );  // sum of both sizes
+        @endcode
+    */
     template<ConstBufferSequence CB>
     constexpr std::size_t operator()(
         CB const& bs) const noexcept
@@ -294,16 +336,22 @@ constexpr struct buffer_size_mrdocs_workaround_t
 
 /** Check if a buffer sequence contains no data.
 
-    @return `true` if all buffers have size zero or the sequence
-        is empty.
+    @functionobject
 */
-constexpr struct buffer_empty_mrdocs_workaround_t
+constexpr struct
 {
     // See note on buffer_size above — same union-storage false positive.
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 #endif
+    /** Check if a buffer sequence contains no data.
+
+        @param bs The buffer sequence.
+
+        @return `true` if all buffers have size zero or the sequence
+            is empty.
+    */
     template<ConstBufferSequence CB>
     constexpr bool operator()(
         CB const& bs) const noexcept

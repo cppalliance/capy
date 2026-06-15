@@ -48,12 +48,13 @@ namespace capy {
     Iterators and buffer descriptors obtained through `data()`
     follow the same invalidation rules as those of `seq`.
 
-    @par Parameters
-    @li `seq` The underlying buffer sequence. Must outlive the
+    @param seq The underlying buffer sequence. Must outlive the
         returned slice and any `data()` view obtained from it.
-    @li `offset` Number of bytes to skip from the start of `seq`.
+
+    @param offset Number of bytes to skip from the start of `seq`.
         Clamped to `buffer_size(seq)`.
-    @li `length` Maximum number of bytes the slice will expose,
+
+    @param length Maximum number of bytes the slice will expose,
         starting at `offset`. Clamped to `buffer_size(seq) - offset`.
         Defaults to the maximum value of `std::size_t`, i.e. "to end".
 
@@ -108,6 +109,15 @@ buffer_slice(
     auto bufs = some_dynamic_buffer.data();   // named, lives in scope
     auto s = buffer_slice( bufs );            // OK
     @endcode
+
+    @param seq An rvalue buffer sequence (`const&&`). Binding the
+        slice to a temporary would dangle, so this overload is
+        deleted to reject such calls at compile time.
+
+    @param offset Number of bytes to skip from the start of `seq`.
+
+    @param length Maximum number of bytes the slice would expose,
+        starting at `offset`.
 */
 template<class BufferSequence>
     requires MutableBufferSequence<BufferSequence>

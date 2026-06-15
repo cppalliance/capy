@@ -17,10 +17,18 @@ namespace boost {
 namespace capy {
 
 /** Return the first buffer in a sequence.
+
+    @functionobject
 */
-constexpr struct front_mrdocs_workaround_t
+constexpr struct
 {
-    /// Return the first mutable buffer, or an empty buffer.
+    /** Return the first mutable buffer, or an empty buffer.
+
+        @param bs The buffer sequence to inspect.
+
+        @return The first buffer in `bs`, or an empty buffer if `bs`
+        contains no buffers.
+    */
     template<MutableBufferSequence MutableBufferSequence>
     mutable_buffer
     operator()(
@@ -32,7 +40,13 @@ constexpr struct front_mrdocs_workaround_t
         return {};
     }
 
-    /// Return the first const buffer, or an empty buffer.
+    /** Return the first const buffer, or an empty buffer.
+
+        @param bs The buffer sequence to inspect.
+
+        @return The first buffer in `bs`, or an empty buffer if `bs`
+        contains no buffers.
+    */
     template<ConstBufferSequence ConstBufferSequence>
         requires (!MutableBufferSequence<ConstBufferSequence>)
     const_buffer
