@@ -11,6 +11,7 @@
 #define BOOST_CAPY_DETAIL_RUN_CALLBACKS_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/detail/stop_requested_exception.hpp>
 
 #include <concepts>
 #include <exception>
@@ -34,8 +35,18 @@ struct default_handler
 
     void operator()(std::exception_ptr ep) const
     {
-        if(ep)
+        if(!ep)
+            return;
+        try
+        {
             std::rethrow_exception(ep);
+        }
+        catch(stop_requested_exception const&)
+        {
+            // Cancellation is a normal completion, not an error.
+        }
+        // A real unhandled exception propagates to the trampoline's
+        // unhandled_exception, which terminates.
     }
 };
 
@@ -92,7 +103,7 @@ struct handler_pair<H1, default_handler>
         if constexpr(std::invocable<H1, std::exception_ptr>)
             h1_(ep);
         else
-            std::rethrow_exception(ep);
+            default_handler{}(ep);
     }
 };
 

@@ -8,7 +8,7 @@ This document explains the naming conventions and call syntax of the two launche
 
 === `run_async` -- Fire-and-Forget Launch
 
-`run_async` launches any _IoRunnable_ from non-coroutine code: `main()`, callback handlers, event loops. `task<T>` is the most common conforming type, but any user-defined type satisfying the concept works. The function does not return a value to the caller. Handlers receive the task's result or exception after completion.
+`run_async` launches any _IoRunnable_ from non-coroutine code: `main()`, callback handlers, event loops. `task<T>` is the most common conforming type, but any user-defined type satisfying the concept works. The function does not return a value to the caller. Handlers receive the task's result or exception after completion, as data; they should not throw. An exception that no handler consumes (none was supplied, or a handler let one escape) calls `std::terminate`; it is never silently discarded. To catch an error instead, `co_await` the work inside a coroutine.
 
 [source,cpp]
 ----

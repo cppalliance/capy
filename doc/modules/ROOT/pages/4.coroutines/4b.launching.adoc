@@ -72,7 +72,7 @@ Always use the two-call pattern in a single expression.
 
 [source,cpp]
 ----
-// Result handler only (exceptions rethrown)
+// Result handler only (an unhandled exception calls std::terminate)
 run_async(ex, [](int result) {
     std::cout << "Got: " << result << "\n";
 })(compute());
@@ -89,7 +89,12 @@ run_async(ex,
 )(compute());
 ----
 
-When no handlers are provided, results are discarded and exceptions are rethrown (causing `std::terminate` if uncaught).
+When no result handler is provided, the result is discarded. An exception
+that goes unhandled (no error handler was supplied, or a handler let one
+escape) calls `std::terminate`. To react to an error, pass an error handler;
+it receives the `std::exception_ptr` and should handle it in place rather
+than rethrowing. To catch an error, `co_await` the work inside a coroutine
+and use `try`/`catch` rather than launching it fire-and-forget.
 
 == run: Executor Hopping Within Coroutines
 
