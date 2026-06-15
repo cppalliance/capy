@@ -771,6 +771,10 @@ template<IoAwaitableRange R>
     Only a child returning !ec can win. Errors and exceptions do
     not claim winner status.
 
+    @param as The awaitables to race. Each must satisfy @ref
+        IoAwaitable and is consumed (moved-from) when `when_any`
+        is awaited.
+
     @return A task yielding variant<error_code, R1, ..., Rn> where
         index 0 is the failure/no-winner case and index i+1
         identifies the winning child.
