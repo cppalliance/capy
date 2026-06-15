@@ -17,6 +17,7 @@
 #include "test/unit/test_helpers.hpp"
 
 #include <cstring>
+#include <span>
 #include <string_view>
 
 namespace boost {

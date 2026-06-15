@@ -13,6 +13,7 @@
 #include "test_buffers.hpp"
 
 #include <cstring>
+#include <span>
 #include <string>
 #include <vector>
 

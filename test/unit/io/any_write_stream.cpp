@@ -24,6 +24,7 @@
 
 #include <array>
 #include <coroutine>
+#include <span>
 #include <stop_token>
 #include <string_view>
 #include <vector>
