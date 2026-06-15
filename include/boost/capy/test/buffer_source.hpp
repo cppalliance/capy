@@ -20,6 +20,7 @@
 #include <boost/capy/test/fuse.hpp>
 
 #include <algorithm>
+#include <span>
 #include <string>
 #include <string_view>
 

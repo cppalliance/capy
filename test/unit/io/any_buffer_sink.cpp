@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <span>
 #include <string>
 #include <string_view>
 

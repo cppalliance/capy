@@ -124,242 +124,6 @@ make_buffer(
         size < max_size ? size : max_size);
 }
 
-/** Return a buffer from a C-style array.
-*/
-template<class T, std::size_t N>
-    requires std::is_trivially_copyable_v<T>
-[[nodiscard]]
-mutable_buffer
-make_buffer(
-    T (&data)[N]) noexcept
-{
-    return mutable_buffer(
-        data, N * sizeof(T));
-}
-
-/** Return a buffer from a C-style array with a maximum size.
-*/
-template<class T, std::size_t N>
-    requires std::is_trivially_copyable_v<T>
-[[nodiscard]]
-mutable_buffer
-make_buffer(
-    T (&data)[N],
-    std::size_t max_size) noexcept
-{
-    return mutable_buffer(
-        data,
-        N * sizeof(T) < max_size ? N * sizeof(T) : max_size);
-}
-
-/** Return a buffer from a const C-style array.
-*/
-template<class T, std::size_t N>
-    requires std::is_trivially_copyable_v<T>
-[[nodiscard]]
-const_buffer
-make_buffer(
-    T const (&data)[N]) noexcept
-{
-    return const_buffer(
-        data, N * sizeof(T));
-}
-
-/** Return a buffer from a const C-style array with a maximum size.
-*/
-template<class T, std::size_t N>
-    requires std::is_trivially_copyable_v<T>
-[[nodiscard]]
-const_buffer
-make_buffer(
-    T const (&data)[N],
-    std::size_t max_size) noexcept
-{
-    return const_buffer(
-        data,
-        N * sizeof(T) < max_size ? N * sizeof(T) : max_size);
-}
-
-// std::array
-
-/** Return a buffer from a std::array.
-*/
-template<class T, std::size_t N>
-    requires std::is_trivially_copyable_v<T>
-[[nodiscard]]
-mutable_buffer
-make_buffer(
-    std::array<T, N>& data) noexcept
-{
-    return mutable_buffer(
-        data.data(), data.size() * sizeof(T));
-}
-
-/** Return a buffer from a std::array with a maximum size.
-*/
-template<class T, std::size_t N>
-    requires std::is_trivially_copyable_v<T>
-[[nodiscard]]
-mutable_buffer
-make_buffer(
-    std::array<T, N>& data,
-    std::size_t max_size) noexcept
-{
-    return mutable_buffer(
-        data.data(),
-        data.size() * sizeof(T) < max_size
-            ? data.size() * sizeof(T) : max_size);
-}
-
-/** Return a buffer from a const std::array.
-*/
-template<class T, std::size_t N>
-    requires std::is_trivially_copyable_v<T>
-[[nodiscard]]
-const_buffer
-make_buffer(
-    std::array<T, N> const& data) noexcept
-{
-    return const_buffer(
-        data.data(), data.size() * sizeof(T));
-}
-
-/** Return a buffer from a const std::array with a maximum size.
-*/
-template<class T, std::size_t N>
-    requires std::is_trivially_copyable_v<T>
-[[nodiscard]]
-const_buffer
-make_buffer(
-    std::array<T, N> const& data,
-    std::size_t max_size) noexcept
-{
-    return const_buffer(
-        data.data(),
-        data.size() * sizeof(T) < max_size
-            ? data.size() * sizeof(T) : max_size);
-}
-
-// std::vector
-
-/** Return a buffer from a std::vector.
-*/
-template<class T, class Allocator>
-    requires std::is_trivially_copyable_v<T>
-[[nodiscard]]
-mutable_buffer
-make_buffer(
-    std::vector<T, Allocator>& data) noexcept
-{
-    return mutable_buffer(
-        data.size() ? data.data() : nullptr,
-        data.size() * sizeof(T));
-}
-
-/** Return a buffer from a std::vector with a maximum size.
-*/
-template<class T, class Allocator>
-    requires std::is_trivially_copyable_v<T>
-[[nodiscard]]
-mutable_buffer
-make_buffer(
-    std::vector<T, Allocator>& data,
-    std::size_t max_size) noexcept
-{
-    return mutable_buffer(
-        data.size() ? data.data() : nullptr,
-        data.size() * sizeof(T) < max_size
-            ? data.size() * sizeof(T) : max_size);
-}
-
-/** Return a buffer from a const std::vector.
-*/
-template<class T, class Allocator>
-    requires std::is_trivially_copyable_v<T>
-[[nodiscard]]
-const_buffer
-make_buffer(
-    std::vector<T, Allocator> const& data) noexcept
-{
-    return const_buffer(
-        data.size() ? data.data() : nullptr,
-        data.size() * sizeof(T));
-}
-
-/** Return a buffer from a const std::vector with a maximum size.
-*/
-template<class T, class Allocator>
-    requires std::is_trivially_copyable_v<T>
-[[nodiscard]]
-const_buffer
-make_buffer(
-    std::vector<T, Allocator> const& data,
-    std::size_t max_size) noexcept
-{
-    return const_buffer(
-        data.size() ? data.data() : nullptr,
-        data.size() * sizeof(T) < max_size
-            ? data.size() * sizeof(T) : max_size);
-}
-
-// std::basic_string
-
-/** Return a buffer from a std::basic_string.
-*/
-template<class CharT, class Traits, class Allocator>
-[[nodiscard]]
-mutable_buffer
-make_buffer(
-    std::basic_string<CharT, Traits, Allocator>& data) noexcept
-{
-    return mutable_buffer(
-        data.size() ? &data[0] : nullptr,
-        data.size() * sizeof(CharT));
-}
-
-/** Return a buffer from a std::basic_string with a maximum size.
-*/
-template<class CharT, class Traits, class Allocator>
-[[nodiscard]]
-mutable_buffer
-make_buffer(
-    std::basic_string<CharT, Traits, Allocator>& data,
-    std::size_t max_size) noexcept
-{
-    return mutable_buffer(
-        data.size() ? &data[0] : nullptr,
-        data.size() * sizeof(CharT) < max_size
-            ? data.size() * sizeof(CharT) : max_size);
-}
-
-/** Return a buffer from a const std::basic_string.
-*/
-template<class CharT, class Traits, class Allocator>
-[[nodiscard]]
-const_buffer
-make_buffer(
-    std::basic_string<CharT, Traits, Allocator> const& data) noexcept
-{
-    return const_buffer(
-        data.data(),
-        data.size() * sizeof(CharT));
-}
-
-/** Return a buffer from a const std::basic_string with a maximum size.
-*/
-template<class CharT, class Traits, class Allocator>
-[[nodiscard]]
-const_buffer
-make_buffer(
-    std::basic_string<CharT, Traits, Allocator> const& data,
-    std::size_t max_size) noexcept
-{
-    return const_buffer(
-        data.data(),
-        data.size() * sizeof(CharT) < max_size
-            ? data.size() * sizeof(CharT) : max_size);
-}
-
 // std::basic_string_view
 
 /** Return a buffer from a std::basic_string_view.
@@ -390,62 +154,6 @@ make_buffer(
             ? data.size() * sizeof(CharT) : max_size);
 }
 
-// std::span
-
-/** Return a buffer from a mutable std::span.
-*/
-template<class T, std::size_t Extent>
-    requires (!std::is_const_v<T> && sizeof(T) == 1)
-[[nodiscard]]
-mutable_buffer
-make_buffer(
-    std::span<T, Extent> data) noexcept
-{
-    return mutable_buffer(data.data(), data.size());
-}
-
-/** Return a buffer from a mutable std::span with a maximum size.
-*/
-template<class T, std::size_t Extent>
-    requires (!std::is_const_v<T> && sizeof(T) == 1)
-[[nodiscard]]
-mutable_buffer
-make_buffer(
-    std::span<T, Extent> data,
-    std::size_t max_size) noexcept
-{
-    return mutable_buffer(
-        data.data(),
-        data.size() < max_size ? data.size() : max_size);
-}
-
-/** Return a buffer from a const std::span.
-*/
-template<class T, std::size_t Extent>
-    requires (sizeof(T) == 1)
-[[nodiscard]]
-const_buffer
-make_buffer(
-    std::span<T const, Extent> data) noexcept
-{
-    return const_buffer(data.data(), data.size());
-}
-
-/** Return a buffer from a const std::span with a maximum size.
-*/
-template<class T, std::size_t Extent>
-    requires (sizeof(T) == 1)
-[[nodiscard]]
-const_buffer
-make_buffer(
-    std::span<T const, Extent> data,
-    std::size_t max_size) noexcept
-{
-    return const_buffer(
-        data.data(),
-        data.size() < max_size ? data.size() : max_size);
-}
-
 // Contiguous ranges
 
 namespace detail {
@@ -473,11 +181,17 @@ concept const_contiguous_range =
 } // detail
 
 /** Return a buffer from a mutable contiguous range.
+
+    Accepts any sized, contiguous range of trivially-copyable,
+    non-const elements, including `std::vector`, `std::array`,
+    `std::string`, `std::span`, `boost::span`, and built-in arrays,
+    whether passed as an lvalue or a temporary. The returned buffer
+    refers to the range's storage, which must outlive the buffer.
 */
 template<detail::mutable_contiguous_range T>
 [[nodiscard]]
 mutable_buffer
-make_buffer(T& data) noexcept
+make_buffer(T&& data) noexcept
 {
     return mutable_buffer(
         std::ranges::size(data) ? std::ranges::data(data) : nullptr,
@@ -490,7 +204,7 @@ template<detail::mutable_contiguous_range T>
 [[nodiscard]]
 mutable_buffer
 make_buffer(
-    T& data,
+    T&& data,
     std::size_t max_size) noexcept
 {
     auto const n = std::ranges::size(data) * sizeof(std::ranges::range_value_t<T>);
@@ -500,6 +214,12 @@ make_buffer(
 }
 
 /** Return a buffer from a const contiguous range.
+
+    Accepts any sized, contiguous range of trivially-copyable
+    elements with const access, including const `std::vector`,
+    `std::array`, `std::string`, `std::span`, `boost::span`, and
+    string literals. The returned buffer refers to the range's
+    storage, which must outlive the buffer.
 */
 template<detail::non_buffer_contiguous_range T>
 [[nodiscard]]

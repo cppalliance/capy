@@ -140,7 +140,15 @@ auto buf = make_buffer(str);
 // From std::string_view
 std::string_view sv = "hello";
 auto buf = make_buffer(sv);
+
+// From a span (std::span or boost::span)
+std::span<char> sp(arr);
+auto buf = make_buffer(sp);
 ----
+
+`make_buffer` accepts any sized, contiguous range of trivially-copyable
+elements—including `std::span` and `boost::span`—in addition to the
+sources shown above.
 
 The returned buffer type depends on constness:
 

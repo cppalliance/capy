@@ -15,6 +15,7 @@
 #include <system_error>
 
 #include <cstddef>
+#include <span>
 #include <utility>
 
 namespace boost {
