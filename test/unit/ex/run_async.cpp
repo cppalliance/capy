@@ -18,12 +18,18 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdio>
 #include <memory>
 #include <queue>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
+
+#if !defined(_WIN32)
+#include <unistd.h>
+#include <sys/wait.h>
+#endif
 
 /*
     Implementation Notes for run_async
@@ -305,10 +311,52 @@ struct run_async_test
         co_return;
     }
 
-    // Note: testDefaultRethrow removed - if no error handler is provided
-    // and the task throws, the exception goes to unhandled_exception which
-    // is undefined behavior. Users must provide an error handler if they
-    // want to handle exceptions.
+    // Note: a task that throws with no error handler calls std::terminate
+    // (the trampoline's unhandled_exception). That path is fatal and not
+    // unit-testable here; pass an error handler to observe exceptions.
+
+#if !defined(_WIN32)
+    // Death test: an exception escaping a handler must call std::terminate.
+    // Run each scenario in a forked child (the child aborts); the parent
+    // verifies the child did not exit normally. POSIX-only.
+    void
+    testTerminateOnUnhandled()
+    {
+        auto terminates = [](auto fn) {
+            ::pid_t pid = ::fork();
+            BOOST_TEST(pid >= 0);
+            if(pid == 0)
+            {
+                // Hush the abort message; the binding satisfies freopen's
+                // warn_unused_result.
+                [[maybe_unused]] auto* f =
+                    std::freopen("/dev/null", "w", stderr);
+                fn();
+                _exit(0); // reached only if no terminate happened
+            }
+            int status = 0;
+            ::waitpid(pid, &status, 0);
+            return !(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+        };
+
+        // No handler + throwing task: default handler rethrows -> terminate.
+        BOOST_TEST(terminates([] {
+            int dc = 0;
+            sync_executor d(dc);
+            run_async(d)(throws_exception());
+        }));
+
+        // Error handler rethrows -> escapes the handler -> terminate.
+        BOOST_TEST(terminates([] {
+            int dc = 0;
+            sync_executor d(dc);
+            run_async(d,
+                [](int) {},
+                [](std::exception_ptr ep) { std::rethrow_exception(ep); }
+            )(throws_exception());
+        }));
+    }
+#endif
 
     void
     testErrorHandlerReceivesException()
@@ -714,6 +762,9 @@ struct run_async_test
         testOverloadedHandler();
 
         // Exception Handling
+#if !defined(_WIN32)
+        testTerminateOnUnhandled();
+#endif
         testErrorHandlerReceivesException();
         testOverloadedHandlerException();
 

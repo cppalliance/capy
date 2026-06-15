@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <coroutine>
 #include <cstring>
+#include <exception>
 #include <memory_resource>
 #include <new>
 #include <stop_token>
@@ -167,7 +168,12 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE run_async_trampoline
         {
         }
 
-        void unhandled_exception() noexcept {} // LCOV_EXCL_LINE unsupported: throwing task with no error handler
+        // An exception reaches here only by escaping a handler: a handler
+        // that threw, or the default handler rethrowing an otherwise
+        // unhandled task exception. Cancellation is filtered out earlier
+        // by default_handler, so this is always a genuine error with no
+        // owner to receive it: fail fast.
+        void unhandled_exception() noexcept { std::terminate(); } // LCOV_EXCL_LINE
     };
 
     std::coroutine_handle<promise_type> h_;
@@ -261,9 +267,8 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE
         {
         }
 
-        void unhandled_exception() noexcept
-        {
-        }
+        // See primary template: an escaping handler exception is fatal.
+        void unhandled_exception() noexcept { std::terminate(); } // LCOV_EXCL_LINE
     };
 
     std::coroutine_handle<promise_type> h_;
@@ -427,7 +432,10 @@ public:
     storing the wrapper and calling it later violates LIFO ordering.
 
     Uses the default recycling frame allocator for coroutine frames.
-    With no handlers, the result is discarded and exceptions are rethrown.
+    With no handlers, the result is discarded. An unhandled exception
+    thrown by the task calls `std::terminate`; pass an error handler to
+    receive it as an `exception_ptr`, or `co_await` the work inside a
+    coroutine if you want to catch it.
 
     @par Thread Safety
     The wrapper and handlers may be called from any thread where the
@@ -461,7 +469,7 @@ run_async(Ex ex)
 
     The handler `h1` is called with the task's result on success. If `h1`
     is also invocable with `std::exception_ptr`, it handles exceptions too.
-    Otherwise, exceptions are rethrown.
+    Otherwise, an unhandled exception calls `std::terminate`.
 
     @par Thread Safety
     The handler may be called from any thread where the executor
@@ -549,8 +557,8 @@ run_async(Ex ex, H1 h1, H2 h2)
 /** Asynchronously launch a lazy task with stop token support.
 
     The stop token is propagated to the task, enabling cooperative
-    cancellation. With no handlers, the result is discarded and
-    exceptions are rethrown.
+    cancellation. With no handlers, the result is discarded and an
+    unhandled exception calls `std::terminate`.
 
     @par Thread Safety
     The wrapper may be called from any thread where the executor
