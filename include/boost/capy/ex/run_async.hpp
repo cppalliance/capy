@@ -167,7 +167,7 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE run_async_trampoline
         {
         }
 
-        void unhandled_exception() noexcept {} // LCOV_EXCL_LINE unsupported: throwing task with no error handler
+        void unhandled_exception() { throw; }
     };
 
     std::coroutine_handle<promise_type> h_;
@@ -261,9 +261,7 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE
         {
         }
 
-        void unhandled_exception() noexcept
-        {
-        }
+        void unhandled_exception() { throw; }
     };
 
     std::coroutine_handle<promise_type> h_;
@@ -414,7 +412,18 @@ public:
         // safe_resume is not needed here: TLS is already saved in the
         // constructor (saved_tls_) and restored in the destructor.
         p.task_cont_.h = task_h;
-        p.wg_.executor().dispatch(p.task_cont_).resume();
+        auto tr = tr_.h_;
+        try
+        {
+            p.wg_.executor().dispatch(p.task_cont_).resume();
+        }
+        catch(...)
+        {
+            // A propagating handler leaves the trampoline suspended at its
+            // final suspend point instead of self-destroying; reclaim it.
+            tr.destroy();
+            throw;
+        }
     }
 };
 
@@ -427,11 +436,19 @@ public:
     storing the wrapper and calling it later violates LIFO ordering.
 
     Uses the default recycling frame allocator for coroutine frames.
-    With no handlers, the result is discarded and exceptions are rethrown.
+    With no handlers, the result is discarded. An exception that escapes
+    a handler is not swallowed: it propagates out of the call that
+    resumes the task. Cooperative cancellation via the stop token is a
+    normal completion and is not propagated.
 
     @par Thread Safety
     The wrapper and handlers may be called from any thread where the
     executor schedules work.
+
+    @par Exception Safety
+    An exception escaping a handler (including a rethrowing error
+    handler or the default handler) propagates out of the call that
+    resumes the task rather than being swallowed.
 
     @par Example
     @code

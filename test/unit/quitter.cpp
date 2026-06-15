@@ -144,6 +144,27 @@ struct quitter_test
         BOOST_TEST_EQ(dtor_count, 0);
     }
 
+    void
+    testStopWithDefaultHandler()
+    {
+        // With no error handler, a stopped quitter must complete
+        // silently: cooperative cancellation is a normal outcome, so
+        // the default handler discards the stop sentinel rather than
+        // rethrowing it (which would escape run() and terminate).
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+        std::stop_source source;
+        source.request_stop();
+
+        int dtor_count = 0;
+        bool reached = false;
+
+        run_async(ex, source.get_token())(quitter_with_raii(dtor_count));
+
+        reached = true;
+        BOOST_TEST(reached);
+    }
+
     //----------------------------------------------------------
     // 5. Stop during I/O
     //----------------------------------------------------------
@@ -863,6 +884,7 @@ struct quitter_test
         testVoidCompletion();
         testExceptionPropagation();
         testStopBeforeFirstAwait();
+        testStopWithDefaultHandler();
         testStopDuringIO();
         testStopPropagationChain();
         testMixingQuitterAndTask();

@@ -236,6 +236,21 @@ struct run_async_test
     }
 
     void
+    testValueAllocatorPropagates()
+    {
+        // Value-allocator trampoline: with no error handler the default
+        // handler rethrows, exercising propagation through the primary
+        // template (the memory_resource* specialization is covered by
+        // testDefaultHandlerPropagates).
+        int dispatch_count = 0;
+        sync_executor d(dispatch_count);
+
+        BOOST_TEST_THROWS(
+            run_async(d, std::allocator<std::byte>{})(throws_exception()),
+            test_exception);
+    }
+
+    void
     testVoidTaskResultHandler()
     {
         int dispatch_count = 0;
@@ -305,10 +320,37 @@ struct run_async_test
         co_return;
     }
 
-    // Note: testDefaultRethrow removed - if no error handler is provided
-    // and the task throws, the exception goes to unhandled_exception which
-    // is undefined behavior. Users must provide an error handler if they
-    // want to handle exceptions.
+    void
+    testDefaultHandlerPropagates()
+    {
+        // No error handler: the default handler rethrows the task's
+        // exception, which propagates out of the resuming run() call
+        // (here the inline sync dispatch).
+        int dispatch_count = 0;
+        sync_executor d(dispatch_count);
+
+        BOOST_TEST_THROWS(
+            run_async(d)(throws_exception()), test_exception);
+    }
+
+    void
+    testRethrowingHandlerPropagates()
+    {
+        // An error handler that rethrows propagates out of the call
+        // that resumes the task instead of being swallowed.
+        int dispatch_count = 0;
+        sync_executor d(dispatch_count);
+
+        BOOST_TEST_THROWS(
+            run_async(d,
+                [](int) {},
+                [](std::exception_ptr ep) {
+                    if(ep)
+                        std::rethrow_exception(ep);
+                }
+            )(throws_exception()),
+            test_exception);
+    }
 
     void
     testErrorHandlerReceivesException()
@@ -708,12 +750,15 @@ struct run_async_test
         testNoHandlers();
         testValueAllocator();
         testValueAllocatorException();
+        testValueAllocatorPropagates();
         testResultHandler();
         testVoidTaskResultHandler();
         testDualHandlers();
         testOverloadedHandler();
 
         // Exception Handling
+        testDefaultHandlerPropagates();
+        testRethrowingHandlerPropagates();
         testErrorHandlerReceivesException();
         testOverloadedHandlerException();
 
