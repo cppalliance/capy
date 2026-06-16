@@ -180,6 +180,43 @@ struct circular_dynamic_buffer_factory
 
 } // namespace
 
+// Mock whose read_some reports a contingency in the SAME completion that
+// transfers bytes. The test read_stream cannot do this (it reports errors
+// and eof with zero bytes), so it is needed to exercise the
+// "buffer filled but ec set" boundary.
+struct contingent_read_stream
+{
+    std::error_code ec;
+    std::size_t deliver;
+
+    template<MutableBufferSequence MB>
+    auto
+    read_some(MB buffers)
+    {
+        struct awaitable
+        {
+            contingent_read_stream* self_;
+            MB buffers_;
+
+            bool await_ready() const noexcept { return true; }
+
+            void await_suspend(
+                std::coroutine_handle<>, io_env const*) const noexcept {}
+
+            io_result<std::size_t>
+            await_resume()
+            {
+                std::size_t const cap = buffer_size(buffers_);
+                std::size_t const n =
+                    self_->deliver < cap ? self_->deliver : cap;
+                self_->deliver -= n;
+                return {self_->ec, n};
+            }
+        };
+        return awaitable{this, buffers};
+    }
+};
+
 struct read_test
 {
     //----------------------------------------------------------
@@ -352,12 +389,55 @@ struct read_test
     }
 
     void
+    testFullTransferContingency()
+    {
+        // A contingency on the read that fills the buffer is a success
+        // (n == buffer_size); a contingency on a short transfer is
+        // reported.
+
+        // eof coincident with a full fill -> success
+        BOOST_TEST(test::fuse().inert([](test::fuse&) -> task<void>
+        {
+            contingent_read_stream rs{error::eof, 8};
+            single_buffer_factory bf(8);
+            auto [ec, n] = co_await read(rs, bf.buffer());
+            BOOST_TEST(! ec);
+            BOOST_TEST_EQ(n, 8u);
+        }));
+
+        // contingency with a short transfer -> reported
+        BOOST_TEST(test::fuse().inert([](test::fuse&) -> task<void>
+        {
+            contingent_read_stream rs{error::eof, 5};
+            single_buffer_factory bf(8);
+            auto [ec, n] = co_await read(rs, bf.buffer());
+            BOOST_TEST(ec == cond::eof);
+            BOOST_TEST_EQ(n, 5u);
+        }));
+
+        // the suppressed condition is deferred, not lost: the next read
+        // surfaces it (here the stream is at eof with no more data).
+        BOOST_TEST(test::fuse().inert([](test::fuse&) -> task<void>
+        {
+            contingent_read_stream rs{error::eof, 8};
+            single_buffer_factory bf(8);
+            auto [ec1, n1] = co_await read(rs, bf.buffer());
+            BOOST_TEST(! ec1);
+            BOOST_TEST_EQ(n1, 8u);
+            auto [ec2, n2] = co_await read(rs, bf.buffer());
+            BOOST_TEST(ec2 == cond::eof);
+            BOOST_TEST_EQ(n2, 0u);
+        }));
+    }
+
+    void
     testReadStream()
     {
         testReadSingleBuffer();
         testReadBufferArray();
         testReadBufferPair();
         testReadStoredAwaitableTemporarySequence();
+        testFullTransferContingency();
     }
 
     //----------------------------------------------------------
