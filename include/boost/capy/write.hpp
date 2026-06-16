@@ -48,8 +48,10 @@ namespace capy {
 
     Contingencies:
 
-    @li The first contingency reported from
-    awaiting @c stream.write_some .
+    @li The first contingency reported from awaiting @c stream.write_some
+    while not all bytes have been written. A contingency that accompanies
+    the write which transfers the last bytes is not reported: a completed
+    transfer is a success.
 
     Notable conditions:
 
@@ -59,7 +61,8 @@ namespace capy {
 
     @par Await-postcondition
 
-    `ec || n == buffer_size(buffers)`.
+    If `n == buffer_size(buffers)` the transfer completed and `ec` is
+    success; otherwise `ec` is set.
 
 
     @param stream The stream to write to. If the lifetime of `stream` ends
@@ -100,7 +103,9 @@ auto write(S& stream, CB buffers) -> io_task<std::size_t>
         auto [ec, n] = co_await stream.write_some(consuming.data());
         consuming.remove_prefix(n);
         total_written += n;
-        if(ec)
+        // A contingency that still completed the transfer is a success:
+        // report it only when not all bytes were written.
+        if(ec && total_written < total_size)
             co_return {ec, total_written};
     }
 

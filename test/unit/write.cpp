@@ -120,6 +120,42 @@ struct buffer_pair_factory
 
 } // namespace
 
+// Mock whose write_some reports a contingency in the SAME completion that
+// transfers bytes, to exercise the "all bytes written but ec set"
+// boundary. The test write_stream reports errors with zero bytes.
+struct contingent_write_stream
+{
+    std::error_code ec;
+    std::size_t accept;
+
+    template<ConstBufferSequence CB>
+    auto
+    write_some(CB buffers)
+    {
+        struct awaitable
+        {
+            contingent_write_stream* self_;
+            CB buffers_;
+
+            bool await_ready() const noexcept { return true; }
+
+            void await_suspend(
+                std::coroutine_handle<>, io_env const*) const noexcept {}
+
+            io_result<std::size_t>
+            await_resume()
+            {
+                std::size_t const cap = buffer_size(buffers_);
+                std::size_t const n =
+                    self_->accept < cap ? self_->accept : cap;
+                self_->accept -= n;
+                return {self_->ec, n};
+            }
+        };
+        return awaitable{this, buffers};
+    }
+};
+
 struct write_test
 {
     //----------------------------------------------------------
@@ -284,12 +320,40 @@ struct write_test
     }
 
     void
+    testFullTransferContingency()
+    {
+        // A contingency on the write that transfers all bytes is a
+        // success (n == buffer_size); a short transfer reports it.
+
+        // contingency coincident with a full write -> success
+        BOOST_TEST(test::fuse().inert([](test::fuse&) -> task<void>
+        {
+            contingent_write_stream ws{error::canceled, 8};
+            single_buffer_factory bf("12345678");
+            auto [ec, n] = co_await write(ws, bf.buffer());
+            BOOST_TEST(! ec);
+            BOOST_TEST_EQ(n, 8u);
+        }));
+
+        // contingency with a short write -> reported
+        BOOST_TEST(test::fuse().inert([](test::fuse&) -> task<void>
+        {
+            contingent_write_stream ws{error::canceled, 5};
+            single_buffer_factory bf("12345678");
+            auto [ec, n] = co_await write(ws, bf.buffer());
+            BOOST_TEST(!! ec);
+            BOOST_TEST_EQ(n, 5u);
+        }));
+    }
+
+    void
     testWriteStream()
     {
         testWriteSingleBuffer();
         testWriteBufferArray();
         testWriteBufferPair();
         testWriteStoredAwaitableTemporarySequence();
+        testFullTransferContingency();
     }
 
     //----------------------------------------------------------

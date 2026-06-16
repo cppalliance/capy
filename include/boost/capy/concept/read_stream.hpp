@@ -43,9 +43,16 @@ namespace capy {
 
     @li If `!ec`, then `n >= 1 && n <= buffer_size( buffers )`.
         `n` bytes were read into the buffer sequence.
-    @li If `ec`, then `n >= 0 && n <= buffer_size( buffers )`.
+    @li If `ec`, then `n >= 0 && n < buffer_size( buffers )`.
         `n` is the number of bytes read before the I/O
         condition arose.
+
+    Equivalently, `n == buffer_size( buffers )` implies `!ec`: a
+    completion that fills the buffer sequence is a success, even when
+    the underlying operation also signals a condition such as
+    end-of-stream. That condition is reported on a subsequent read.
+    This lets generic composition algorithms such as `when_all` and
+    `when_any` distinguish a completed transfer from a failure.
 
     If `buffer_empty( buffers )` is `true`, `n` is 0. The empty
     buffer is not itself a cause for error, but `ec` may reflect

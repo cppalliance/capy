@@ -46,7 +46,10 @@ namespace capy {
 
     Contingencies:
 
-    @li The first contingency reported from awaiting @c stream.read_some .
+    @li The first contingency reported from awaiting @c stream.read_some
+        while `buffers` is not yet filled. A contingency that accompanies
+        the read which fills `buffers` is not reported: a completed
+        transfer is a success.
 
     Notable conditions:
 
@@ -54,7 +57,8 @@ namespace capy {
     @li @c cond::eof — Stream reached end before `buffers` was filled.
 
     @par Await-postcondition
-    `ec || n == buffer_size(buffers)`.
+    If `n == buffer_size(buffers)` the transfer completed and `ec` is
+    success; otherwise `ec` is set.
 
     @param stream The stream to read from. If the lifetime of `stream` ends
     before the coroutine finishes, the behavior is undefined.
@@ -100,7 +104,9 @@ read(S& stream, MB buffers) ->
         auto [ec, n] = co_await stream.read_some(consuming.data());
         consuming.remove_prefix(n);
         total_read += n;
-        if(ec)
+        // A contingency that still completed the transfer is a success:
+        // report it only when the buffer was not filled.
+        if(ec && total_read < total_size)
             co_return {ec, total_read};
     }
 
