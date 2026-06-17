@@ -146,7 +146,6 @@
       "cxx": "clang++",
       "cc": "clang",
       "b2_toolset": "clang",
-      "cxxflags": "-fvisibility=hidden -fvisibility-inlines-hidden",
       "is_latest": true
     }
   ]
