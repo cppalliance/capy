@@ -193,6 +193,13 @@ struct read_until_awaitable
     }
 };
 
+template<ReadStream Stream, class B, MatchCondition M>
+using read_until_return_t = read_until_awaitable<
+    Stream,
+    std::remove_reference_t<B>,
+    M,
+    !std::is_lvalue_reference_v<B&&>>;
+
 } // namespace detail
 
 /** Match condition that searches for a delimiter string.
@@ -239,36 +246,52 @@ struct match_delim
 
 /** Asynchronously read until a match condition is satisfied.
 
-    Reads data from the stream into the dynamic buffer until the match
-    condition returns a valid position. Implemented using `read_some`.
-    If the match condition is already satisfied by existing buffer
-    data, returns immediately without I/O.
+    Reads data from `stream` and appends it to `dynbuf` via calling
+    `stream.read_some` zero or more times and using the prepare/commit
+    interface until:
 
-    @li The operation completes when:
-    @li The match condition returns a valid position
-    @li End-of-stream is reached (`cond::eof`)
-    @li The buffer's `max_size()` is reached (`cond::not_found`)
-    @li An error occurs
-    @li The operation is cancelled
+    @li either @c match returns a valid position,
+    @li or @c dynbuf.size() == @c dynbuf.max_size() ,
+    @li or a contingency on @c stream.read_some occurs.
 
-    @par Cancellation
-    Supports cancellation via `stop_token` propagated through the
-    IoAwaitable protocol. When cancelled, returns with `cond::canceled`.
+    If the match condition is satisfied by data in `dynbuf.data()` upon  entry,
+    no call to `stream.read_some` is performed.
+
+
+    @par Await-returns
+
+    An object of type `io_result<std::size_t>` destructuring as `[ec, n]`.
+
+    If `bool(ec)`, `n` is the position returned by the match condition
+        (bytes up to and including the matched delimiter).
+
+
+    Contingencies:
+
+    @li The first contingency, reported from awaiting @c stream.read_some .
+    @li @c cond::not_found -- when @c dynbuf.size() == @c dynbuf.max_size() 
+        and the match condition is not satisfied by data in  @c dynbuf.data() .
 
     @param stream The stream to read from. The caller retains ownership.
-    @param buffers The dynamic buffer to append data to. Must remain
+    @param dynbuf The dynamic buffer to append data to. Must remain
         valid until the operation completes.
     @param match The match condition callable. Copied into the awaitable.
     @param initial_amount Initial bytes to read per iteration (default
         2048). Grows by 1.5x when filled.
 
-    @return An awaitable that await-returns `(error_code, std::size_t)`.
-        On success, `n` is the position returned by the match condition
-        (bytes up to and including the matched delimiter). Compare error
-        codes to conditions:
-        @li `cond::eof` - EOF before match; `n` is buffer size
-        @li `cond::not_found` - `max_size()` reached before match
-        @li `cond::canceled` - Operation was cancelled
+     
+
+
+    @par Await-throws
+    
+    Whatever operations on @c dunbuf throw.
+
+    (Note: types modeling @c DynamicBufferParam provided by Capy throw 
+     @c std::bad_alloc from member function 
+     @c prepare .)
+
+    @par Remarks
+    Supports _IoAwaitable cancellation_.
 
     @par Example
 
@@ -284,7 +307,7 @@ struct match_delim
                 if( pos != std::string_view::npos )
                     return pos + 4;
                 if( hint )
-                    *hint = 3;  // partial "\r\n\r" possible
+                    (*hint) = 3;  // partial "\r\n\r" possible
                 return std::string_view::npos;
             } );
         if( ec )
@@ -297,10 +320,10 @@ struct match_delim
 */
 template<ReadStream Stream, class B, MatchCondition M>
     requires DynamicBufferParam<B&&>
-auto
+detail::read_until_return_t<Stream, B, M>
 read_until(
     Stream& stream,
-    B&& buffers,
+    B&& dynbuf,
     M match,
     std::size_t initial_amount = 2048)
 {
@@ -309,10 +332,10 @@ read_until(
 
     if constexpr(is_lvalue)
         return detail::read_until_awaitable<Stream, BareB, M, false>(
-            stream, std::addressof(buffers), std::move(match), initial_amount);
+            stream, std::addressof(dynbuf), std::move(match), initial_amount);
     else
         return detail::read_until_awaitable<Stream, BareB, M, true>(
-            stream, std::move(buffers), std::move(match), initial_amount);
+            stream, std::move(dynbuf), std::move(match), initial_amount);
 }
 
 /** Asynchronously read until a delimiter string is found.
@@ -368,7 +391,7 @@ read_until(
 */
 template<ReadStream Stream, class B>
     requires DynamicBufferParam<B&&>
-auto
+detail::read_until_return_t<Stream, B, match_delim>
 read_until(
     Stream& stream,
     B&& buffers,

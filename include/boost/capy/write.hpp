@@ -31,7 +31,7 @@ namespace capy {
     until:
 
     @li either the full content of @c buffers is processed,
-    @li or a contingency occurs.
+    @li or a contingency in `stream.write_some` occurs.
 
     If `buffer_size(buffers) == 0` then no awaiting `stream.write_some`
     is performed. This is not a contingency.

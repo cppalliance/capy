@@ -26,12 +26,15 @@ This model decouples production rate from consumption rate—the buffer absorbs 
 ----
 template<typename T>
 concept DynamicBuffer = requires(T& t, std::size_t n) {
+    typename T::const_buffers_type;
+    typename T::mutable_buffers_type;
+
     // Producer side
-    { t.prepare(n) } -> MutableBufferSequence;
+    { t.prepare(n) } -> std::same_as<typename T::mutable_buffers_type>;
     { t.commit(n) };
     
     // Consumer side
-    { t.data() } -> ConstBufferSequence;
+    { t.data() } -> std::same_as<typename T::const_buffers_type>;
     { t.consume(n) };
     
     // Capacity
@@ -41,22 +44,36 @@ concept DynamicBuffer = requires(T& t, std::size_t n) {
 };
 ----
 
+A dynamic buffer, within its capacity provides a potentially empty 
+_readable region_ and a potentially empty _writeable region_. 
+Sizes of these regions change as operations are invoked on the 
+dynamic buffer.
+
+
 == Producer Interface
 
-=== prepare(n)
+=== `prepare(n)`
 
-Returns mutable buffer space for writing up to `n` bytes:
+Returns a mutable buffer sequence `mb` for writing up to `n` bytes:
 
 [source,cpp]
 ----
-auto buffers = dynamic_buf.prepare(1024);  // Space for up to 1024 bytes
+capy::MutableBufferSequence auto buffers = dynamic_buf.prepare(1024);  // Space for up to 1024 bytes
 ----
 
-The returned space may be larger than requested. The data is not yet part of the readable sequence.
+_Effects:_ If `n > max_size() - size()` throws `std::length_error()`.
+Otherwise, ensures that a wirteable region of size at leats `n` exists
+and returns an object of type `mutable_buffers_type` representing this region.
 
-=== commit(n)
+_Throws:_ `std::bad_alloc` in case an allocation is performed and fails.
 
-Marks `n` bytes of prepared space as written and readable:
+_Postcondition:_ `buffer_size(buffers) >= n`.
+
+
+=== `commit(n)`
+
+Transfers `n` bytes of from the beginning of the writeable storage to
+the end of the readable storage: 
 
 [source,cpp]
 ----
@@ -64,6 +81,14 @@ Marks `n` bytes of prepared space as written and readable:
 dynamic_buf.commit(bytes_written);
 // Data is now visible via data()
 ----
+
+Let `n1` be the smaller number of `n` and the size of the writeable region.
+
+_Effects:_ Removes `n1` bytes from the front of the writeable region and 
+adds them at the back of the readable region.
+
+_Notes:_ `n` can be smaller than the writeable region size.
+
 
 === Typical Producer Pattern
 
@@ -83,17 +108,20 @@ task<> read_into_buffer(Stream& stream, DynamicBuffer auto& buffer)
 
 == Consumer Interface
 
-=== data()
+=== `data()`
 
-Returns the readable data as a const buffer sequence:
+Returns a const buffer sequence representing the readable region. 
 
 [source,cpp]
 ----
-auto readable = dynamic_buf.data();
+capy::ReadableBufferSequence auto readable = dynamic_buf.data();
 // Process readable bytes
 ----
 
-=== consume(n)
+_Postcondition:_ `capy::buffer_size(readable) == dynamic_buf.size()`.
+
+
+=== `consume(n)`
 
 Removes `n` bytes from the front of readable data:
 
@@ -102,6 +130,13 @@ Removes `n` bytes from the front of readable data:
 dynamic_buf.consume(processed_bytes);
 // Those bytes are no longer in data()
 ----
+
+Let `n1` be the smaller of `n` and `size()`.
+
+_Effects:_ Removes `n1` bytes from the front of the readable region.
+Sets the size of the writeable rgion to zero. Invalidates all buffer 
+sequences previously obtained via calls to `data()` or `prepare(). 
+
 
 === Typical Consumer Pattern
 
@@ -126,14 +161,28 @@ void process_buffer(DynamicBuffer auto& buffer)
 
 == Capacity Management
 
-`size()`::
-Current number of readable bytes (the length of `data()`).
+=== `size()`
 
-`max_size()`::
-Maximum allowed size. Attempts to grow beyond this throw or fail.
+_Returns:_ The size of the readable region.
 
-`capacity()`::
-Current allocated capacity. May be larger than `size()`.
+
+=== `max_size()`
+
+_Returns:_ The maximum possible sum o sizes of the readable region 
+and the writeable region.
+
+
+
+=== `capacity()`
+
+_Returns:_ Current allocated capacity. 
+
+
+=== Class invariant
+
+`size() +<=+ capacity()`.
+
+`capacity() +<=+ max_size()`.
 
 == DynamicBufferParam
 
