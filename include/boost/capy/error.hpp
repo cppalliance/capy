@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -72,6 +73,8 @@ struct BOOST_CAPY_SYMBOL_VISIBLE
         ) const noexcept override;
     BOOST_CAPY_DECL std::string message(
         int) const override;
+    BOOST_CAPY_DECL std::error_condition default_error_condition(
+        int) const noexcept override;
     constexpr error_cat_type() noexcept = default;
 };
 
