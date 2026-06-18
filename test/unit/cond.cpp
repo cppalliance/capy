@@ -91,6 +91,10 @@ public:
         // Equivalence: stream_truncated and timeout.
         BOOST_TEST(make_error_code(error::stream_truncated) ==
             cond::stream_truncated);
+        // A non-matching code exercises cond_cat::equivalent for
+        // stream_truncated, which the positive comparison above now
+        // resolves via error_cat::default_error_condition instead.
+        BOOST_TEST(!(make_error_code(error::eof) == cond::stream_truncated));
         BOOST_TEST(make_error_code(error::timeout) == cond::timeout);
 
         // Out-of-range condition is equivalent to nothing.

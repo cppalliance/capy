@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -8,6 +9,7 @@
 //
 
 #include <boost/capy/error.hpp>
+#include <boost/capy/cond.hpp>
 
 namespace boost {
 namespace capy {
@@ -35,6 +37,26 @@ message(int code) const
     case error::timeout: return "timeout";
     default:
         return "unknown";
+    }
+}
+
+// Map each capy error code to its canonical portable condition.
+// canceled and timeout have standard equivalents, so they map to the
+// generic conditions rather than capy's own cond enumerators; this is
+// what lets, e.g., error::canceled compare equal to
+// std::errc::operation_canceled.
+std::error_condition
+error_cat_type::
+default_error_condition(int code) const noexcept
+{
+    switch(static_cast<error>(code))
+    {
+    case error::eof:              return make_error_condition(cond::eof);
+    case error::canceled:         return std::make_error_condition(std::errc::operation_canceled);
+    case error::stream_truncated: return make_error_condition(cond::stream_truncated);
+    case error::not_found:        return make_error_condition(cond::not_found);
+    case error::timeout:          return std::make_error_condition(std::errc::timed_out);
+    default:                      return std::error_condition(code, *this);
     }
 }
 
