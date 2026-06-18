@@ -59,7 +59,7 @@ The Beast2 family of libraries includes:
 
 Currently, the C++ Standard does not deliver facilities optimized for networking I/O. We believe that Capy should become a standard library component to fill this gap. Our first paper based on Capy introduces the _IoAwaitable_ family of concepts:
 
-- Paper: https://github.com/cppalliance/wg21-papers/blob/master/source/d4003-io-awaitables.md
+- Paper: https://github.com/cppalliance/wg21-papers/blob/master/source/_reserve/d4003-io-awaitables.md
 
 ## The Beman Way
 
