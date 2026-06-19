@@ -266,34 +266,31 @@ grind_front(
     for(std::size_t n = 0; n <= pat0.size() + 1; ++n)
     {
         {
-            // remove_prefix: drop the first n bytes
+            // sans_prefix: drop the first n bytes (value-returning)
             auto pat = trimmed_front(pat0, n);
-            auto bs = buffer_slice(bs0);
-            bs.remove_prefix(n);
-            check_eq(bs.data(), pat);
-            check_iterators(bs.data(), pat, tmp);
+            auto bs = buffer_slice(bs0, n);
+            check_eq(bs, pat);
+            check_iterators(bs, pat, tmp);
 
             if(deep)
             {
-                // Take a copy, blank out the original, and redo the test
-                auto bsc = bs;
-                bs = decltype(bs){};
+                // Re-slice at increasing offsets: dropping n then m more
+                // is the same as dropping n + m from the original.
                 for(std::size_t m = 0; m <= pat.size() + 1; ++m)
                 {
-                    auto pat2 = trimmed_front(pat, m);
-                    auto bs2 = bsc;
-                    bs2.remove_prefix(m);
-                    check_eq(bs2.data(), pat2);
+                    auto pat2 = trimmed_front(pat0, n + m);
+                    auto bs2 = buffer_slice(bs0, n + m);
+                    check_eq(bs2, pat2);
                 }
             }
         }
         {
-            // keep_prefix: keep only the first n bytes
+            // prefix: keep only the first n bytes
             auto pat = kept_front(pat0, n);
             std::size_t const len = (n < total) ? n : total;
             auto bs = buffer_slice(bs0, 0, len);
-            check_eq(bs.data(), pat);
-            check_iterators(bs.data(), pat, tmp);
+            check_eq(bs, pat);
+            check_iterators(bs, pat, tmp);
         }
     }
 }
@@ -311,42 +308,33 @@ grind_back(
     for(std::size_t n = 0; n <= pat0.size() + 1; ++n)
     {
         {
-            // remove_suffix: drop the last n bytes
+            // sans_suffix: drop the last n bytes (keep first total - n)
             auto pat = trimmed_back(pat0, n);
             std::size_t const len = (n < total) ? total - n : 0;
             auto bs = buffer_slice(bs0, 0, len);
-            check_eq(bs.data(), pat);
-            check_iterators(bs.data(), pat, tmp);
+            check_eq(bs, pat);
+            check_iterators(bs, pat, tmp);
             if(deep)
             {
-                // Take a copy, blank out the original, and redo the test
-                auto bsc = bs;
-                bs = decltype(bs){};
+                // Dropping the last n then m more is the same as dropping
+                // the last n + m from the original.
                 for(std::size_t m = 0; m <= pat.size() + 1; ++m)
                 {
-                    auto pat2 = trimmed_back(pat, m);
-                    // Drop another m bytes from the back of bsc by
-                    // length-capping a fresh slice of the same data.
-                    std::size_t const len2 = buffer_size(bsc.data());
+                    auto pat2 = trimmed_back(pat0, n + m);
                     std::size_t const new_len =
-                        (m < len2) ? len2 - m : 0;
-                    auto bs2 = bsc;
-                    // Walk forward (current state) and use remove_prefix
-                    // to drop the front; for the back we need a fresh
-                    // slice over the inner-window. Easiest: construct
-                    // a new slice from the original at the right offset/length.
-                    bs2 = buffer_slice(bs0, 0, new_len);
-                    check_eq(bs2.data(), pat2);
+                        (n + m < total) ? total - (n + m) : 0;
+                    auto bs2 = buffer_slice(bs0, 0, new_len);
+                    check_eq(bs2, pat2);
                 }
             }
         }
         {
-            // keep_suffix: keep only the last n bytes
+            // suffix: keep only the last n bytes
             auto pat = kept_back(pat0, n);
             std::size_t const offset = (n < total) ? total - n : 0;
             auto bs = buffer_slice(bs0, offset);
-            check_eq(bs.data(), pat);
-            check_iterators(bs.data(), pat, tmp);
+            check_eq(bs, pat);
+            check_iterators(bs, pat, tmp);
         }
     }
 }
