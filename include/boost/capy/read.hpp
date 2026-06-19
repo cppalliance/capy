@@ -33,7 +33,7 @@ namespace capy {
     until:
 
     @li either the entire buffer sequence  @c buffers is filled,
-    @li or a contingency occurs.
+    @li or a contingency occurs on `stream.read_some`.
 
     If `buffer_size(buffers) == 0` then no awaiting `stream.read_some`
     is performed. This is not a contingency.
@@ -54,7 +54,7 @@ namespace capy {
     Notable conditions:
 
     @li @c cond::canceled — Operation was cancelled,
-    @li @c cond::eof — Stream reached end before `buffers` was filled.
+    @li @c cond::eof — Stream reached end before @c buffers was filled.
 
     @par Await-postcondition
     If `n == buffer_size(buffers)` the transfer completed and `ec` is
@@ -118,11 +118,18 @@ read(S& stream, MB buffers) ->
     @par Await-effects
 
     Reads data from `stream` via awaiting `stream.read_some` repeatedly
-    and appending the results to `dynbuf`,
-    until a contingency occurs.
+    and appending it to `dynbuf` using prepare/commit semantics
+    until:
+    
+        @li either @c dynbuf.size() == @c dynbuf.max_size() ,
+        @li or a contingency on @c stream.read_some occurs.
 
-    Data is appended using prepare/commit semantics.
-    The buffer grows with 1.5x factor when filled.
+    The last, potenitally partial, read is also appended.
+    
+    The value passed in the first call to `dynbuf.prepare` is the smallest of
+    `initial_amount` and `dynbuf.max_size() - dynbuf.size()`. Value passed 
+    to each subsequent call is 1.5 the value passed in the preceding call.
+
 
     @par Await-returns
 
@@ -135,8 +142,15 @@ read(S& stream, MB buffers) ->
 
     @li The first contingency, other than one matching to @c cond::eof, reported from awaiting @c stream.read_some .
 
+
     @par Await-throws
-    `std::bad_alloc` when append to `dynbuf` fails.
+    
+    Whatever operations on @c dunbuf throw.
+
+    (Note: types modeling @c DynamicBufferParam provided by Capy throw 
+     @c std::bad_alloc  from member function 
+     @c prepare .)
+
 
     @param stream The stream to read from. If the lifetime of `stream` ends
     before the coroutine finishes, the behavior is undefined.
@@ -144,7 +158,8 @@ read(S& stream, MB buffers) ->
     @param dynbuf The dynamic buffer to append data to. If the lifetime of the buffer
     sequence represented by `dynbuf` ends before the coroutine finishes, the behavior is undefined.
 
-    @param initial_amount Initial bytes to prepare (default 2048).
+    @param initial_amount Hint for the value to be passed in the initial call to `dynbuf.prepare()`
+    (default 2048).
 
     
     @par Remarks
@@ -197,11 +212,18 @@ read(
     @par Await-effects
 
     Reads data from `stream` by calling `source.read` repeatedly 
-    and appending it to `dynbuf` until a contingency occurs.
+    and appending it to `dynbuf` using prepare/commit semantics
+    until:
+    
+    @li either @c dynbuf.size() == @c dynbuf.max_size() ,
+    @li or a contingency on @c stream.read occurs.
+
     The last, potenitally partial, read is also appended.
     
-    Data is appended using prepare/commit semantics.
-    The buffer grows with 1.5x factor when filled.
+    The value passed in the first call to `dynbuf.prepare` is the smallest of
+    `initial_amount` and `dynbuf.max_size() - dynbuf.size()`. Value passed 
+    to each subsequent call is 1.5 the value passed in the preceding call.
+
 
     @par Await-returns
 
@@ -215,9 +237,15 @@ read(
 
     @li The first contingency, other than one matching to @c cond::eof, reported from awaiting @c stream.read_some .
 
-    @par Await-throws
 
-    `std::bad_alloc` when append to `dynbuf` fails.
+    @par Await-throws
+    
+    Whatever operations on @c dunbuf throw.
+
+    (Note: types modeling @c DynamicBufferParam provided by Capy throw 
+     @c std::bad_alloc from member function 
+     @c prepare .)
+     
 
     @param source The source to read from. If the lifetime of `source` ends
     before the coroutine finishes, the behavior is undefined.
@@ -226,7 +254,8 @@ read(
     buffer sequence represented by `dynbuf` ends before the coroutine finishes, 
     the behavior is undefined.
 
-    @param initial_amount Initial bytes to prepare (default 2048).
+    @param initial_amount Hint for the value to be passed in the initial call to `dynbuf.prepare()`
+    (default 2048).
 
     @par Remarks
     Supports _IoAwaitable cancellation_.
