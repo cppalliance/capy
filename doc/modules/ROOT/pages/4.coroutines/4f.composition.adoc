@@ -228,9 +228,31 @@ task<int> process_all(std::vector<item> const& items)
 }
 ----
 
+=== Asynchronous Sleep
+
+`delay` is the awaitable counterpart to `std::this_thread::sleep_for`. Instead of blocking the thread, it suspends the current coroutine until the duration elapses, leaving the thread free to run other coroutines in the meantime:
+
+[source,cpp]
+----
+#include <boost/capy/delay.hpp>
+
+task<> example()
+{
+    auto [ec] = co_await delay(100ms);
+    // 100ms have elapsed; other coroutines ran on this thread while we waited
+}
+----
+
+[NOTE]
+====
+A thread is *not* consumed per sleeping coroutine. All concurrently sleeping coroutines on the same execution context share a single timer thread, so a thousand simultaneous `delay()` calls cost one thread, not a thousand.
+====
+
+`delay` is cancellable. If the environment's stop token is activated before the deadline, the coroutine resumes early with `ec` set to `error::canceled` (compare with `cond::canceled`); otherwise `ec` is clear. A zero or negative duration completes synchronously without scheduling a timer.
+
 === Timeout
 
-The `timeout` combinator races an awaitable against a deadline:
+The `timeout` combinator races an awaitable against a deadline. It is built directly on `delay` — the inner awaitable is run against a `delay` of the given duration, and whichever completes first cancels the other:
 
 [source,cpp]
 ----
@@ -280,6 +302,12 @@ This design ensures proper context propagation to all children.
 
 | `<boost/capy/when_any.hpp>`
 | First-completion racing with when_any
+
+| `<boost/capy/delay.hpp>`
+| Asynchronous sleep that suspends instead of blocking the thread
+
+| `<boost/capy/timeout.hpp>`
+| Race an awaitable against a deadline
 
 | `<boost/capy/timeout.hpp>`
 | Race an awaitable against a deadline
