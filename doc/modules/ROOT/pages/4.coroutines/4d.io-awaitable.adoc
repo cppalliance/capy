@@ -215,6 +215,8 @@ stop_cb_.emplace(env->stop_token, h);  // h is a raw coroutine_handle
 
 See xref:4.coroutines/4e.cancellation.adoc#stoppable-awaitables[Implementing Stoppable Awaitables] for a complete example.
 
+For a production implementation of this exact pattern, read the source of `delay_awaitable` (xref:reference:boost/capy/delay_awaitable.adoc[`delay_awaitable`]): it schedules a timer, registers a stop callback that posts the resume through the executor, and arbitrates between the timer and cancellation with a single atomic claim.
+
 == Reference
 
 [cols="1,3"]
