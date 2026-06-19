@@ -175,7 +175,45 @@ task<> example()
 
 The result is a `variant` with `error_code` at index 0 (failure/no winner) and one alternative per input task at indices 1..N. Only tasks returning `!ec` can win; errors and exceptions do not count as winning. When a winner is found, stop is requested for all siblings. All tasks complete before `when_any` returns.
 
-For detailed coverage including error handling, cancellation, and the range overload, see Racing Tasks.
+=== Errors Do Not Win (wait_for_one_success)
+
+A child that returns a non-zero `ec` (or throws) does *not* win, and it does *not* cancel its siblings. `when_any` keeps waiting until some child succeeds or until every child has finished. Only when *all* children fail does the result settle at index 0, holding an `error_code`.
+
+If you need "complete on the first child to *finish*, success or error," that behavior is opt-in — wrap the child as shown below.
+
+=== Treating an Error as a Win
+
+To make a child win on an error, wrap it so the error becomes a success before `when_any` sees it.
+
+The first pattern translates a specific, benign error into success. Other errors propagate unchanged, so they still do not win:
+
+[source,cpp]
+----
+// canceled is benign here: translate it to success so when_any picks this child.
+io_task<> wrapped()
+{
+    auto [ec] = co_await inner();
+    if (ec == cond::canceled)
+        co_return io_result<>{};   // success: when_any sees a winner
+    co_return io_result<>{ec};     // propagate other errors unchanged
+}
+----
+
+The second pattern lifts the inner `ec` into the payload. The wrapper always succeeds, so it wins on its first completion, carrying the original error code to the caller:
+
+[source,cpp]
+----
+// Always succeeds; the winner's payload carries the original ec.
+io_task<std::error_code> wrapped()
+{
+    auto [ec] = co_await inner();
+    co_return io_result<std::error_code>{{}, ec};
+}
+
+// when_any(wrapped(), ...) -> variant<error_code, std::error_code, ...>
+//   index 0: every child failed
+//   index i: child i won; std::get<i>(result) is its original ec
+----
 
 == Practical Patterns
 

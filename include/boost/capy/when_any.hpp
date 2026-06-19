@@ -778,6 +778,12 @@ template<IoAwaitableRange R>
     @return A task yielding variant<error_code, R1, ..., Rn> where
         index 0 is the failure/no-winner case and index i+1
         identifies the winning child.
+
+    @note A failing child does not cancel its siblings; `when_any`
+        waits for a success or for every child to finish. To make a
+        benign error (e.g. @c cond::canceled) count as a win, wrap
+        the child to translate the error into success. See the
+        Concurrent Composition tutorial.
 */
 template<IoAwaitable... As>
     requires (sizeof...(As) > 0)
