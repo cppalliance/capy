@@ -13,7 +13,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/io_task.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/buffer_slice.hpp>
+#include <boost/capy/buffers/consuming_buffers.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <system_error>
 
@@ -94,14 +94,14 @@ namespace capy {
 template <WriteStream S, ConstBufferSequence CB>
 auto write(S& stream, CB buffers) -> io_task<std::size_t>
 {
-    auto consuming = buffer_slice(buffers);
+    consuming_buffers consuming(buffers);
     std::size_t const total_size = buffer_size(buffers);
     std::size_t total_written = 0;
 
     while(total_written < total_size)
     {
         auto [ec, n] = co_await stream.write_some(consuming.data());
-        consuming.remove_prefix(n);
+        consuming.consume(n);
         total_written += n;
         // A contingency that still completed the transfer is a success:
         // report it only when not all bytes were written.

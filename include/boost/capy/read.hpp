@@ -14,7 +14,7 @@
 #include <boost/capy/cond.hpp>
 #include <boost/capy/io_task.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/buffer_slice.hpp>
+#include <boost/capy/buffers/consuming_buffers.hpp>
 #include <boost/capy/concept/dynamic_buffer.hpp>
 #include <boost/capy/concept/read_source.hpp>
 #include <boost/capy/concept/read_stream.hpp>
@@ -95,14 +95,14 @@ auto
 read(S& stream, MB buffers) ->
         io_task<std::size_t>
 {
-    auto consuming = buffer_slice(buffers);
+    consuming_buffers consuming(buffers);
     std::size_t const total_size = buffer_size(buffers);
     std::size_t total_read = 0;
 
     while(total_read < total_size)
     {
         auto [ec, n] = co_await stream.read_some(consuming.data());
-        consuming.remove_prefix(n);
+        consuming.consume(n);
         total_read += n;
         // A contingency that still completed the transfer is a success:
         // report it only when the buffer was not filled.

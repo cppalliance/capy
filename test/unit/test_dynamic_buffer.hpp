@@ -50,24 +50,24 @@ grind_dynamic_buffer(F&& make_buffer_fn)
         while(bg)
         {
             auto [b1, b2] = co_await bg.next();
-            BOOST_TEST_EQ(buffer_to_string(b1.data(), b2.data()), data);
+            BOOST_TEST_EQ(buffer_to_string(b1, b2), data);
 
             auto db = make_buffer_fn();
 
             // Read b1 into dynamic buffer via read_stream
             read_stream rs(f);
-            rs.provide(buffer_to_string(b1.data()));
+            rs.provide(buffer_to_string(b1));
 
-            if(buffer_size(b1.data()) > 0)
+            if(buffer_size(b1) > 0)
             {
-                auto mb = db.prepare(buffer_size(b1.data()));
+                auto mb = db.prepare(buffer_size(b1));
                 auto [ec, n] = co_await rs.read_some(mb);
                 if(ec)
                     co_return;
                 db.commit(n);
             }
 
-            BOOST_TEST_EQ(db.size(), buffer_size(b1.data()));
+            BOOST_TEST_EQ(db.size(), buffer_size(b1));
 
             // Write from dynamic buffer to write_stream
             write_stream ws(f);
@@ -80,7 +80,7 @@ grind_dynamic_buffer(F&& make_buffer_fn)
             }
 
             // Verify round-trip
-            BOOST_TEST_EQ(ws.data(), buffer_to_string(b1.data()));
+            BOOST_TEST_EQ(ws.data(), buffer_to_string(b1));
 
             db.consume(db.size());
             BOOST_TEST_EQ(db.size(), 0u);

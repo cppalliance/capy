@@ -12,117 +12,96 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/detail/slice_impl.hpp>
+#include <boost/capy/detail/slice_of.hpp>
 
+#include <concepts>
 #include <cstddef>
 #include <limits>
+#include <type_traits>
 
 namespace boost {
 namespace capy {
 
-/** Return a byte-range slice of a buffer sequence.
+/** The type produced by `buffer_slice` for a sequence `BS`.
 
-    Constructs a view over a contiguous byte range of `seq`. The
-    slice exposes its current bytes via `data()` (a buffer sequence)
-    and supports incremental consumption via `remove_prefix(n)`.
+    A single buffer is closed under sub-ranging, so slicing it yields a
+    buffer of the same kind. Any other sequence yields the generic
+    `detail::slice_of<BS>` borrowed view. In both cases the result is itself
+    a buffer sequence — `slice_type<BS> ∈ { buffer, slice_of<BS> }`.
+*/
+template<class BS>
+using slice_type = std::conditional_t<
+    std::convertible_to<BS, const_buffer>,
+    buffer_type<BS>,
+    detail::slice_of<BS>>;
 
-    @par Return Value
-    An object of unspecified type satisfying the @ref Slice concept.
-    Bind with `auto` and operate through the concept's members. When
-    `seq` models @ref MutableBufferSequence, the returned object
-    additionally models @ref MutableSlice.
+/** Return a byte sub-range of a buffer sequence, as a value.
+
+    The result is itself a buffer sequence (`slice_type<BS>`): pass it
+    directly to any operation expecting a buffer sequence — there is no
+    `.data()` and no separate concept to bind. For a single buffer the
+    result is an adjusted buffer; for any other sequence it is a borrowed
+    `slice_of<BS>` view.
 
     @par Lifetime
-    The returned slice is associated with `seq` as its underlying
-    buffer sequence. `seq` — and the memory referenced by its buffer
-    descriptors — must remain valid for as long as the slice, or
-    any buffer sequence obtained from its `data()`, is in use.
-    Passing a temporary buffer sequence to `buffer_slice` produces
-    a dangling slice.
+    Except for the single-buffer case, the result borrows `seq`: it stores
+    iterators into the sequence, not a copy. `seq` must outlive the result.
+    The rvalue overload is deleted so a temporary cannot be sliced into a
+    dangling view.
 
-    The buffer sequence returned by `data()` is independent of the
-    slice object: subsequent operations on the slice (mutation,
-    copy, move, destruction) do not invalidate an already-obtained
-    `data()` view. It remains valid for as long as `seq` is valid.
+    @par Complexity
+    Single forward pass to the cut points; never sums the whole sequence.
 
-    Iterators and buffer descriptors obtained through `data()`
-    follow the same invalidation rules as those of `seq`.
+    @param seq The sequence to slice. Must outlive the result.
+    @param offset Bytes skipped from the front. Clamped to the total size.
+    @param length Bytes exposed, starting at `offset`. Defaults to the end.
 
-    @param seq The underlying buffer sequence. Must outlive the
-        returned slice and any `data()` view obtained from it.
-
-    @param offset Number of bytes to skip from the start of `seq`.
-        Clamped to `buffer_size(seq)`.
-
-    @param length Maximum number of bytes the slice will expose,
-        starting at `offset`. Clamped to `buffer_size(seq) - offset`.
-        Defaults to the maximum value of `std::size_t`, i.e. "to end".
+    @return A `slice_type<BS>` value modeling the same buffer-sequence
+        concept as `seq` (mutable if `seq` is mutable).
 
     @par Example
     @code
-    template< ReadStream Stream, MutableBufferSequence MB >
-    task< io_result< std::size_t > >
-    read_all( Stream& stream, MB buffers )
-    {
-        auto s = buffer_slice( buffers );
-        std::size_t const total_size = buffer_size( buffers );
-        std::size_t total = 0;
-        while( total < total_size )
-        {
-            auto [ec, n] = co_await stream.read_some( s.data() );
-            s.remove_prefix( n );
-            total += n;
-            if( ec )
-                co_return {ec, total};
-        }
-        co_return {{}, total};
-    }
+    co_await write(sock, buffer_slice(bufs, 0, 16384));  // first 16 KB
+    auto rest = buffer_slice(bufs, n);                   // drop first n
     @endcode
 
-    @see Slice, MutableSlice
+    @see slice_type, consuming_buffers
 */
 template<class BufferSequence>
     requires MutableBufferSequence<BufferSequence>
           || ConstBufferSequence<BufferSequence>
-auto
+slice_type<BufferSequence>
 buffer_slice(
     BufferSequence const& seq,
     std::size_t offset = 0,
     std::size_t length =
         (std::numeric_limits<std::size_t>::max)()) noexcept
 {
-    return detail::slice_impl<BufferSequence>(seq, offset, length);
+    if constexpr (std::convertible_to<BufferSequence, const_buffer>)
+    {
+        // A single buffer is its own slice: advance and (maybe) truncate.
+        buffer_type<BufferSequence> b = seq;
+        b += offset;  // operator+= clamps to size()
+        if (length < b.size())
+            b = buffer_type<BufferSequence>(b.data(), length);
+        return b;
+    }
+    else
+    {
+        return detail::slice_of<BufferSequence>(seq, offset, length);
+    }
 }
 
-/** Deleted overload that rejects rvalue arguments at compile time.
+/** Deleted rvalue overload.
 
-    Because the returned slice's validity depends on the underlying
-    buffer sequence remaining alive, calling `buffer_slice` with a
-    temporary buffer sequence would produce an immediately dangling
-    slice. This overload makes such calls ill-formed, surfacing the
-    lifetime error at compile time rather than as runtime UB.
-
-    To slice a buffer sequence produced as a temporary, hoist it
-    into a named variable first:
-
-    @code
-    auto bufs = some_dynamic_buffer.data();   // named, lives in scope
-    auto s = buffer_slice( bufs );            // OK
-    @endcode
-
-    @param seq An rvalue buffer sequence (`const&&`). Binding the
-        slice to a temporary would dangle, so this overload is
-        deleted to reject such calls at compile time.
-
-    @param offset Number of bytes to skip from the start of `seq`.
-
-    @param length Maximum number of bytes the slice would expose,
-        starting at `offset`.
+    Slicing a temporary would yield an immediately dangling view (the
+    result borrows the sequence). Hoist the sequence into a named variable
+    first.
 */
 template<class BufferSequence>
     requires MutableBufferSequence<BufferSequence>
           || ConstBufferSequence<BufferSequence>
-auto
+slice_type<BufferSequence>
 buffer_slice(
     BufferSequence const&& seq,
     std::size_t offset = 0,

@@ -11,7 +11,6 @@
 #include <boost/capy/test/bufgrind.hpp>
 
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/concept/slice.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/buffer_to_string.hpp>
 #include <boost/capy/test/fuse.hpp>
@@ -59,8 +58,8 @@ public:
             int count = 0;
             while(bg) {
                 auto [b1, b2] = co_await bg.next();
-                BOOST_TEST_EQ(buffer_size(b1.data()), 0u);
-                BOOST_TEST_EQ(buffer_size(b2.data()), 0u);
+                BOOST_TEST_EQ(buffer_size(b1), 0u);
+                BOOST_TEST_EQ(buffer_size(b2), 0u);
                 ++count;
             }
             BOOST_TEST_EQ(count, 1);
@@ -81,11 +80,11 @@ public:
             while(bg) {
                 auto [b1, b2] = co_await bg.next();
                 if(count == 0) {
-                    BOOST_TEST_EQ(buffer_size(b1.data()), 0u);
-                    BOOST_TEST_EQ(buffer_size(b2.data()), 1u);
+                    BOOST_TEST_EQ(buffer_size(b1), 0u);
+                    BOOST_TEST_EQ(buffer_size(b2), 1u);
                 } else if(count == 1) {
-                    BOOST_TEST_EQ(buffer_size(b1.data()), 1u);
-                    BOOST_TEST_EQ(buffer_size(b2.data()), 0u);
+                    BOOST_TEST_EQ(buffer_size(b1), 1u);
+                    BOOST_TEST_EQ(buffer_size(b2), 0u);
                 }
                 ++count;
             }
@@ -108,9 +107,9 @@ public:
             while(bg) {
                 auto [b1, b2] = co_await bg.next();
 
-                BOOST_TEST_EQ(buffer_to_string(b1.data(), b2.data()), data);
-                BOOST_TEST_EQ(buffer_size(b1.data()), static_cast<std::size_t>(count));
-                BOOST_TEST_EQ(buffer_size(b2.data()), data.size() - count);
+                BOOST_TEST_EQ(buffer_to_string(b1, b2), data);
+                BOOST_TEST_EQ(buffer_size(b1), static_cast<std::size_t>(count));
+                BOOST_TEST_EQ(buffer_size(b2), data.size() - count);
                 ++count;
             }
             BOOST_TEST_EQ(count, 6);
@@ -130,7 +129,7 @@ public:
             std::vector<std::size_t> positions;
             while(bg) {
                 auto [b1, b2] = co_await bg.next();
-                positions.push_back(buffer_size(b1.data()));
+                positions.push_back(buffer_size(b1));
             }
 
             // Expect: 0, 3, 6, 9, 10 (always includes final position)
@@ -157,7 +156,7 @@ public:
             std::vector<std::size_t> positions;
             while(bg) {
                 auto [b1, b2] = co_await bg.next();
-                positions.push_back(buffer_size(b1.data()));
+                positions.push_back(buffer_size(b1));
             }
 
             // Expect: 0, 2, 4, 6
@@ -201,7 +200,7 @@ public:
             std::vector<std::size_t> positions;
             while(bg) {
                 auto [b1, b2] = co_await bg.next();
-                positions.push_back(buffer_size(b1.data()));
+                positions.push_back(buffer_size(b1));
             }
 
             // Expect: 0, 3 (clamped to size, then final)
@@ -225,10 +224,10 @@ public:
             while(bg) {
                 auto [b1, b2] = co_await bg.next();
 
-                // Slices over a mutable input model MutableSlice
-                static_assert(MutableSlice<decltype(b1)>);
-                static_assert(MutableSlice<decltype(b2)>);
-                BOOST_TEST_EQ(buffer_size(b1.data()) + buffer_size(b2.data()), 5u);
+                // A slice of a mutable input models MutableBufferSequence
+                static_assert(MutableBufferSequence<decltype(b1)>);
+                static_assert(MutableBufferSequence<decltype(b2)>);
+                BOOST_TEST_EQ(buffer_size(b1) + buffer_size(b2), 5u);
             }
         });
         BOOST_TEST(r.success);
@@ -247,13 +246,13 @@ public:
             while(bg) {
                 auto [b1, b2] = co_await bg.next();
 
-                // Slices over a const-only input model Slice but not
-                // MutableSlice.
-                static_assert(Slice<decltype(b1)>);
-                static_assert(!MutableSlice<decltype(b1)>);
-                static_assert(Slice<decltype(b2)>);
-                static_assert(!MutableSlice<decltype(b2)>);
-                BOOST_TEST_EQ(buffer_size(b1.data()) + buffer_size(b2.data()), 5u);
+                // A slice of a const-only input models ConstBufferSequence
+                // but not MutableBufferSequence.
+                static_assert(ConstBufferSequence<decltype(b1)>);
+                static_assert(!MutableBufferSequence<decltype(b1)>);
+                static_assert(ConstBufferSequence<decltype(b2)>);
+                static_assert(!MutableBufferSequence<decltype(b2)>);
+                BOOST_TEST_EQ(buffer_size(b1) + buffer_size(b2), 5u);
             }
         });
         BOOST_TEST(r.success);
@@ -278,7 +277,7 @@ public:
                 auto [b1, b2] = co_await bg.next();
 
                 // Verify concatenation reconstructs original
-                BOOST_TEST_EQ(buffer_to_string(b1.data(), b2.data()), "abcdef");
+                BOOST_TEST_EQ(buffer_to_string(b1, b2), "abcdef");
                 ++count;
             }
             BOOST_TEST_EQ(count, 7);
@@ -301,15 +300,15 @@ public:
 
                 // Set up read_stream with data matching b1 size
                 read_stream rs(f);
-                rs.provide(buffer_to_string(b1.data()));
+                rs.provide(buffer_to_string(b1));
 
                 // Read into a destination buffer
-                if(buffer_size(b1.data()) > 0) {
+                if(buffer_size(b1) > 0) {
                     std::string dest;
-                    dest.resize(buffer_size(b1.data()));
+                    dest.resize(buffer_size(b1));
                     auto [ec, n] = co_await rs.read_some(make_buffer(dest));
                     BOOST_TEST(! ec);
-                    BOOST_TEST_EQ(n, buffer_size(b1.data()));
+                    BOOST_TEST_EQ(n, buffer_size(b1));
                 }
             }
         });
@@ -332,20 +331,20 @@ public:
                 // Write b1 then b2 to stream
                 write_stream ws(f);
 
-                if(buffer_size(b1.data()) > 0) {
-                    auto [ec1, n1] = co_await ws.write_some(b1.data());
+                if(buffer_size(b1) > 0) {
+                    auto [ec1, n1] = co_await ws.write_some(b1);
                     BOOST_TEST(! ec1);
-                    BOOST_TEST_EQ(n1, buffer_size(b1.data()));
+                    BOOST_TEST_EQ(n1, buffer_size(b1));
                 }
 
-                if(buffer_size(b2.data()) > 0) {
-                    auto [ec2, n2] = co_await ws.write_some(b2.data());
+                if(buffer_size(b2) > 0) {
+                    auto [ec2, n2] = co_await ws.write_some(b2);
                     BOOST_TEST(! ec2);
-                    BOOST_TEST_EQ(n2, buffer_size(b2.data()));
+                    BOOST_TEST_EQ(n2, buffer_size(b2));
                 }
 
                 // Verify total written equals original
-                BOOST_TEST_EQ(ws.data(), buffer_to_string(b1.data(), b2.data()));
+                BOOST_TEST_EQ(ws.data(), buffer_to_string(b1, b2));
             }
         });
         BOOST_TEST(r.success);
@@ -369,16 +368,16 @@ public:
 
                     // Write both parts through stream
                     write_stream ws(f);
-                    if(buffer_size(b1.data()) > 0) {
-                        auto [ec, n] = co_await ws.write_some(b1.data());
+                    if(buffer_size(b1) > 0) {
+                        auto [ec, n] = co_await ws.write_some(b1);
                         BOOST_TEST(! ec);
                     }
-                    if(buffer_size(b2.data()) > 0) {
-                        auto [ec, n] = co_await ws.write_some(b2.data());
+                    if(buffer_size(b2) > 0) {
+                        auto [ec, n] = co_await ws.write_some(b2);
                         BOOST_TEST(! ec);
                     }
 
-                    BOOST_TEST_EQ(ws.data(), buffer_to_string(b1.data(), b2.data()));
+                    BOOST_TEST_EQ(ws.data(), buffer_to_string(b1, b2));
                     BOOST_TEST_EQ(ws.data(), original);
                 }
             }
