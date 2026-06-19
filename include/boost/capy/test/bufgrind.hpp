@@ -96,12 +96,12 @@ class bufgrind
     std::size_t pos_ = 0;
 
 public:
-    /// The slice type produced for each half of a split.
+    /// The buffer-sequence type produced for each half of a split.
     using slice_type = std::decay_t<
         decltype(buffer_slice(std::declval<BS const&>()))>;
 
-    /// The type returned by @ref next. Each half is a Slice; use
-    /// `.data()` to obtain the buffer sequence view.
+    /// The type returned by @ref next. Each half is itself a buffer
+    /// sequence (the value returned by `buffer_slice`).
     using split_type = std::pair<slice_type, slice_type>;
 
     /** Construct a buffer grinder.
