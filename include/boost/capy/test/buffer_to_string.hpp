@@ -41,7 +41,7 @@ namespace test {
     bufgrind bg( cb );
     while( bg ) {
         auto [b1, b2] = co_await bg.next();
-        BOOST_TEST_EQ( buffer_to_string( b1, b2 ), "hello" );
+        BOOST_TEST_EQ( buffer_to_string( b1.data(), b2.data() ), "hello" );
     }
     @endcode
 

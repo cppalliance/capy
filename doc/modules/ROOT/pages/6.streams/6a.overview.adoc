@@ -85,18 +85,20 @@ The third pair inverts buffer ownership:
 [source,cpp]
 ----
 // BufferSource: callee provides read-only buffers
-const_buffer bufs[8];
-auto [ec, count] = co_await source.pull(bufs, 8);
-// bufs[0..count-1] now point to source's internal data
+const_buffer arr[8];
+auto [ec, bufs] = co_await source.pull(arr);
+// bufs is a span pointing into source's internal data;
+// ec == cond::eof with an empty span signals exhaustion
+source.consume(n);  // mark n bytes consumed before the next pull
 
 // BufferSink: callee provides writable buffers
-mutable_buffer bufs[8];
-std::size_t count = sink.prepare(bufs, 8);
-// Write into bufs[0..count-1], then commit
+mutable_buffer arr[8];
+auto bufs = sink.prepare(arr);  // returns a span of writable buffers
+// Write into bufs, then commit
 co_await sink.commit(bytes_written);
 ----
 
-This pattern enables zero-copy I/O—data never moves through intermediate buffers.
+This pattern enables zero-copy I/O: data never moves through intermediate buffers.
 
 == Type-Erasing Wrappers
 
@@ -166,7 +168,7 @@ task<> echo(any_stream& stream)
     char buf[1024];
     for (;;)
     {
-        auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
+        auto [ec, n] = co_await stream.read_some(make_buffer(buf));
 
         auto [wec, wn] = co_await write(stream, const_buffer(buf, n));
 
@@ -183,19 +185,19 @@ The caller decides the concrete implementation:
 
 [source,cpp]
 ----
-// Works with Corosio TCP sockets
+// Owns a moved-in TCP socket (the lvalue form takes ownership by value)
 any_stream s1{tcp_socket};
 echo(s1);
 
-// Works with TLS streams
-any_stream s2{tls_stream};
+// Wraps a TLS stream by pointer (reference semantics, must outlive s2)
+any_stream s2{&tls_stream};
 echo(s2);
 
-// Works with test mocks
+// Owns a temporary test mock
 any_stream s3{test::stream{}};
 echo(s3);
 ----
 
-Same code, different transports—compile once, link anywhere.
+Same code, different transports: compile once, link anywhere.
 
 Continue to xref:6.streams/6b.streams.adoc[Streams (Partial I/O)] to learn the `ReadStream` and `WriteStream` concepts in detail.

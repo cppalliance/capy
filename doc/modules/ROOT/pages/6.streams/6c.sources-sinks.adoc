@@ -147,7 +147,10 @@ task<> send_response(Sink& sink, response const& resp)
 #include <boost/capy/io/any_read_source.hpp>
 
 template<ReadSource S>
-any_read_source(S& source);
+any_read_source(S source);   // owning: takes ownership of a moved-in source
+
+template<ReadSource S>
+any_read_source(S* source);  // reference: wraps by pointer, source must outlive the wrapper
 ----
 
 === any_write_sink
@@ -157,7 +160,10 @@ any_read_source(S& source);
 #include <boost/capy/io/any_write_sink.hpp>
 
 template<WriteSink S>
-any_write_sink(S& sink);
+any_write_sink(S sink);   // owning: takes ownership of a moved-in sink
+
+template<WriteSink S>
+any_write_sink(S* sink);  // reference: wraps by pointer, sink must outlive the wrapper
 ----
 
 == Example: HTTP Body Handler
@@ -185,16 +191,16 @@ The caller decides the concrete implementation:
 ----
 // Content-length mode
 content_length_sink cl_sink(socket, data.size());
-any_write_sink body{cl_sink};
+any_write_sink body{&cl_sink};  // references cl_sink
 send_body(body, data);
 
 // Chunked mode
 chunked_sink ch_sink(socket);
-any_write_sink body{ch_sink};
+any_write_sink body{&ch_sink};  // references ch_sink
 send_body(body, data);
 ----
 
-Same `send_body` function, different transfer encodings—the library handles the difference.
+Same `send_body` function, different transfer encodings: the library handles the difference.
 
 == Streams vs Sources/Sinks
 

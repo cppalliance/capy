@@ -201,7 +201,7 @@ task<> parent()
 task<> child()
 {
     // Receives parent's stop token via IoAwaitable protocol
-    auto token = co_await get_stop_token();  // Access current token
+    auto token = co_await this_coro::stop_token;  // Access current token
 }
 ----
 
@@ -209,13 +209,13 @@ No manual threading—the protocol handles it.
 
 === Accessing the Stop Token
 
-Inside a task, use `get_stop_token()` to access the current stop token:
+Inside a task, use `co_await this_coro::stop_token` to access the current stop token:
 
 [source,cpp]
 ----
 task<> cancellable_work()
 {
-    auto token = co_await get_stop_token();
+    auto token = co_await this_coro::stop_token;
 
     while (!token.stop_requested())
     {
@@ -243,8 +243,8 @@ The rule:
 ----
 task<> process_items(std::vector<Item> const& items)
 {
-    auto token = co_await get_stop_token();
-    
+    auto token = co_await this_coro::stop_token;
+
     for (auto const& item : items)
     {
         if (token.stop_requested())
@@ -264,7 +264,7 @@ RAII ensures resources are released on early exit:
 task<> with_resource()
 {
     auto resource = acquire_resource();  // RAII wrapper
-    auto token = co_await get_stop_token();
+    auto token = co_await this_coro::stop_token;
     
     while (!token.stop_requested())
     {
@@ -274,22 +274,22 @@ task<> with_resource()
 }
 ----
 
-=== The operation_aborted Convention
+=== The canceled Convention
 
-When cancellation causes an operation to fail, the conventional error code is `error::operation_aborted`:
+When cancellation causes an operation to fail, the conventional error code is `error::canceled`, which compares equal to the portable condition `cond::canceled`:
 
 [source,cpp]
 ----
 task<std::string> fetch_with_cancel()
 {
-    auto token = co_await get_stop_token();
-    
+    auto token = co_await this_coro::stop_token;
+
     if (token.stop_requested())
     {
         throw std::system_error(
-            make_error_code(std::errc::operation_canceled));
+            make_error_code(error::canceled));
     }
-    
+
     co_return co_await do_fetch();
 }
 ----

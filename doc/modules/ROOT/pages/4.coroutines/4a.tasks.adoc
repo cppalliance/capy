@@ -115,7 +115,7 @@ task<> example()
     auto t = compute();   // Task created, but "Computing..." NOT printed yet
     std::cout << "Task created\n";
     
-    int result = co_await t;  // NOW "Computing..." is printed
+    int result = co_await std::move(t);  // NOW "Computing..." is printed
     std::cout << "Result: " << result << "\n";
 }
 ----
@@ -167,11 +167,11 @@ task<int> compute();
 task<> example()
 {
     auto t1 = compute();
-    auto t2 = std::move(t1);  // OK: ownership transferred
-    
+    auto t2 = std::move(t1);  // OK: ownership transferred, t1 is now empty
+
     // auto t3 = t2;  // Error: task is not copyable
-    
-    int result = co_await t2;  // t1 is now empty
+
+    int result = co_await std::move(t2);
 }
 ----
 

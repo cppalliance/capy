@@ -32,6 +32,7 @@ int main()
 {
     capy::thread_pool pool;
     capy::run_async(pool.get_executor())(say_hello());
+    pool.join();
     return 0;
 }
 ----
@@ -70,7 +71,7 @@ capy::thread_pool pool;
 
 `thread_pool` provides an execution context with worker threads. By default, it creates one thread per CPU core.
 
-The pool's destructor waits for all work to complete before returning. This ensures the program doesn't exit while tasks are running.
+Call `pool.join()` before the pool is destroyed to wait for all outstanding work to finish. The destructor does *not* wait for queued work: `~thread_pool` calls `stop()`, which abandons any work that has not yet started, then joins the worker threads. Without the explicit `pool.join()`, `main` could destroy the pool and exit before `say_hello` ever runs, so `"Hello from Capy!"` might never print.
 
 === Launching
 

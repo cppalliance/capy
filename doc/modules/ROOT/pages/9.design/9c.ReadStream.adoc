@@ -30,7 +30,9 @@ Attempts to read up to `buffer_size(buffers)` bytes from the stream into the buf
 If `buffer_size(buffers) > 0`:
 
 - If `!ec`, then `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were read into the buffer sequence.
-- If `ec`, then `n >= 0 && n \<= buffer_size(buffers)`. `n` is the number of bytes read before the I/O condition arose.
+- If `ec`, then `n >= 0 && n \< buffer_size(buffers)`. `n` is the number of bytes read before the I/O condition arose.
+
+Equivalently, `n == buffer_size(buffers)` implies `!ec`: a completion that fills the buffer sequence is a success, even when the underlying operation also signals a condition such as end-of-stream. That condition is reported on a subsequent read.
 
 If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
 
@@ -104,7 +106,7 @@ task<> read_header(Stream& stream)
 {
     char header[16];
     auto [ec, n] = co_await read(
-        stream, mutable_buffer(header));
+        stream, make_buffer(header));
     if(ec == cond::eof)
         co_return;  // clean shutdown
     if(ec)
@@ -172,7 +174,7 @@ task<> echo(Stream& stream, WriteStream auto& dest)
     for(;;)
     {
         auto [ec, n] = co_await stream.read_some(
-            mutable_buffer(buf));
+            make_buffer(buf));
 
         auto [wec, nw] = co_await dest.write_some(
             const_buffer(buf, n));
@@ -245,21 +247,23 @@ Because `ReadSource` refines `ReadStream`, this relay function also accepts `Rea
 | `WriteSink::write`
 |===
 
-== Design Foundations: Why Errors May Accompany Data
+== Design Foundations: Why a Full Buffer Is Always Success
 
-The `read_some` contract permits `n > 0` when `ec` is set. Data and errors are not mutually exclusive: the implementation reports exactly what happened. This is the most consequential design decision in the `ReadStream` concept, with implications for every consumer of `read_some` in the library. This section explains the design and its consequences.
+The `read_some` contract treats a completion that fills the buffer sequence as a success: `n == buffer_size(buffers)` implies `!ec`. An error is reported only when the transfer was incomplete, in which case `n \< buffer_size(buffers)`. A pending condition, such as end-of-stream, is never delivered alongside a full buffer; it is deferred to the next read. This is the most consequential design decision in the `ReadStream` concept, with implications for every consumer of `read_some` in the library. This section explains the design and its consequences.
 
 === The Return Type's Purpose
 
-POSIX `read(2)` returns a single `ssize_t` -- either a byte count or -1 with `errno`. It cannot report both a byte count and an error simultaneously. When a partial transfer occurs before an error, POSIX returns the byte count on the current call and defers the error to the next. The `(error_code, size_t)` return type was designed to transcend this limitation. It can carry both values at once, allowing implementations to report partial transfers alongside the condition that stopped the transfer, as a single result.
+The `(error_code, size_t)` return type carries both a byte count and a condition, but the contract assigns them disjoint roles. A nonzero `ec` describes only a transfer that fell short of the requested size; it never qualifies a complete transfer. This gives every consumer a single, unambiguous test: if `n == buffer_size(buffers)` the operation succeeded and the bytes are valid, full stop. There is no need to inspect `ec` to decide whether the data can be used.
 
-=== Departing from Asio
+=== Deferring Conditions to the Next Read
 
-Asio's `AsyncReadStream` concept requires `bytes_transferred == 0` on error. This was a reasonable design for an API built around POSIX-like streams, where the underlying system calls enforce binary outcomes per call. However, it imposes a burden on layered streams that do not share this limitation.
+A condition such as end-of-stream is a property of the stream, not of the bytes that were just delivered. If a read happens to fill the buffer exactly as the stream reaches its end, the bytes are still good and the read still succeeded. Reporting EOF on that same completion would force every caller to reconcile "I got all my bytes" with "but there was also an error," which is precisely the ambiguity the contract removes. Instead the condition surfaces on the next read, when `n` is necessarily less than the buffer size, and the caller observes it cleanly.
 
-A TLS stream might decrypt 100 bytes into user space, then receive a fatal alert on the next record. Under the strict rule it must either report `(!ec, 100)` now and `(ec, 0)` on the next call (requiring deferred-error bookkeeping), or report `(ec, 0)` and discard 100 valid bytes. Neither is clean. Under the relaxed rule, the TLS stream reports `(ec, 100)` honestly: here are the bytes that arrived, and here is the condition that stopped the transfer.
+This is what lets generic composition algorithms such as `when_all` and `when_any` distinguish a completed transfer from a failure by inspecting `n` alone. A short read signals a condition; a full read does not.
 
-The `ReadStream` concept permits both behaviors. Streams that naturally produce `(ec, 0)` on error (such as POSIX socket wrappers) conform. Streams that report `(ec, n)` with `n > 0` (such as TLS or compression layers) also conform. The concept imposes the weakest postcondition that all conforming types can satisfy.
+=== The Implementation Burden Is Internal
+
+Deferral is forced only at the boundary, when the final bytes exactly fill the buffer. Because `(ec, buffer_size(buffers))` is not a permitted result, a stream that fills the buffer and simultaneously reaches a stopping condition reports `(!ec, buffer_size(buffers))` now and surfaces the condition on the next call. When the buffer is not filled, no deferral is required: the stream may report the condition directly alongside the partial count. The bookkeeping for the rare exact-fill case lives inside the stream, where it already has the context, rather than being pushed onto every caller. The concept imposes the postcondition that makes consumers simplest, and conforming streams arrange their internal state to honor it.
 
 === The Empty-Buffer Rule
 
@@ -292,23 +296,17 @@ if(ec)
 
 The advance-then-check ordering is the only correct pattern. It is required for any operation that can report partial progress alongside an error -- `read` returning `(eof, 47)` being the canonical example. If the check precedes the advance, the 47 bytes are silently dropped.
 
-Under the strict rule (`n == 0` on error), the advance is a harmless no-op. Under the relaxed rule (`n >= 0` on error), the advance captures partial progress. The caller writes identical code either way. The perceived simplification of the strict rule exists only if the caller writes the check-then-advance anti-pattern, which is already incorrect for other reasons.
+Because an error can accompany partial data, the advance must run before the check so the bytes that did arrive are counted; on a clean completion the same code advances by the full amount. Writing the check first would silently drop those bytes, so advance-then-check is the only correct order.
 
 === Implementer Freedom
 
-Under the strict rule, every stream that might encounter an error after a partial transfer must choose between:
+When a stream produces some bytes and then observes a stopping condition before the buffer is full, it reports both at once: `(ec, k)` with `k \< buffer_size(buffers)`. There is no deferred state, no discarded data, and no internal replay buffer. A stream that decrypts or decompresses into the caller's buffer and then hits a terminal marker simply returns the bytes and the condition together.
 
-- **Deferred errors.** Report `(!ec, k)` now, remember the error, and report `(ec, 0)` on the next call. This requires per-stream state and makes the stream's behavior depend on call history.
-- **Data loss.** Report `(ec, 0)` and discard the `k` bytes that were transferred.
-- **Internal buffering.** Copy the `k` bytes into an internal buffer and replay them on the next call. This adds allocation and copying overhead.
-
-Under the relaxed rule, the implementation reports what happened: `(ec, k)`. No deferred state, no data loss, no internal buffering.
+The one case that requires deferral is the exact-fill boundary, where the final bytes leave no free space. Since `(ec, buffer_size(buffers))` is not permitted, the stream reports `(!ec, buffer_size(buffers))` and carries the condition to the next call. This case is rare, and its bookkeeping is local to the stream.
 
 === Consistency from Primitives Through Composed Operations
 
-The strict postcondition on `read_some` does not propagate to composed operations. The composed `read` returns `(ec, m)` where `m > 0` on failure, because it accumulates data across multiple internal `read_some` calls. The `(ec, n > 0)` case that the strict rule eliminates from `read_some` is immediately reintroduced one layer up.
-
-The relaxed postcondition avoids this inconsistency. Partial progress alongside an error code is the same pattern at every level -- from `read_some` through composed `read` -- rather than being forbidden at the primitive level and required at the composed level.
+`read_some` and the composed `read` report progress with the same shape: `(ec, n)`, where `n` counts the bytes transferred before the condition. The composed `read` returns `(eof, m)` with `m` short of the requested total when the stream ends early; the primitive `read_some` likewise returns `(ec, n)` with `n` short of the buffer size. Partial progress alongside an error code is the same pattern at every level. The single refinement at the primitive level, that an exactly full buffer is reported as success, keeps `n` a reliable proxy for completion at every layer.
 
 === Conforming Sources
 
@@ -335,4 +333,4 @@ No source is forced into an unnatural pattern. Sources that naturally separate d
 - Algorithms that need to process data as it arrives use `read_some` directly.
 - `ReadSource` refines `ReadStream` by adding `read` for complete-read semantics.
 
-The contract permits errors to accompany partial data. This uses the richer `(error_code, size_t)` return type to its full potential, avoids forcing non-POSIX streams into a deferred-error model, and produces a postcondition that is consistent from `read_some` through composed operations. The canonical advance-then-check loop handles both cases correctly with no additional call-site cost.
+The contract permits errors to accompany partial data, with one rule: a completely filled buffer is always reported as success, and any condition that coincides with it is deferred to the next call. This uses the `(error_code, size_t)` return type to its full potential, keeps a stream from deferring in the common partial case, and keeps `n` a reliable proxy for completion from `read_some` through composed operations. The canonical advance-then-check loop handles every case correctly with no additional call-site cost.

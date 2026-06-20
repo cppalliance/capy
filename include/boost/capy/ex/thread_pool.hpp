@@ -37,7 +37,8 @@ namespace capy {
     thread_pool pool(4);  // 4 worker threads
     auto ex = pool.get_executor();
     ex.post(some_coroutine);
-    // pool destructor waits for all work to complete
+    pool.join();  // wait for outstanding work to complete
+    // pool destructor stops the pool, discarding any pending work
     @endcode
 */
 class BOOST_CAPY_DECL

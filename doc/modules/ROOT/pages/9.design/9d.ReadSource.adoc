@@ -31,7 +31,9 @@ Attempts to read up to `buffer_size(buffers)` bytes from the source into the buf
 If `buffer_size(buffers) > 0`:
 
 - If `!ec`, then `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were read into the buffer sequence.
-- If `ec`, then `n >= 0 && n \<= buffer_size(buffers)`. `n` is the number of bytes read before the I/O condition arose.
+- If `ec`, then `n >= 0 && n \< buffer_size(buffers)`. `n` is the number of bytes read before the I/O condition arose.
+
+Equivalently, `n == buffer_size(buffers)` implies `!ec`: a completion that fills the buffer sequence is a success, even when the underlying operation also signals a condition such as end-of-stream. That condition is reported on a subsequent read.
 
 If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the source.
 
@@ -269,7 +271,7 @@ task<> relay_decompressed(Source& inflater, Sink& dest)
     {
         // read_some: decompress whatever is available
         auto [ec, n] = co_await inflater.read_some(
-            mutable_buffer(buf));
+            make_buffer(buf));
         if(ec == cond::eof)
         {
             auto [wec] = co_await dest.write_eof();
@@ -299,7 +301,7 @@ task<> relay(Src& src, Sink& dest)
     for(;;)
     {
         auto [ec, n] = co_await src.read_some(
-            mutable_buffer(buf));
+            make_buffer(buf));
 
         auto [wec, nw] = co_await dest.write(
             const_buffer(buf, n));
@@ -350,16 +352,16 @@ Examples of types that satisfy `ReadSource`:
 - **File source**: `read_some` is a single `read()` syscall. `read` loops until the buffer is filled or EOF.
 - **Memory source**: `read_some` returns available bytes. `read` fills the buffer from the memory region.
 
-== Errors May Accompany Data
+== A Full Buffer Is Always Success
 
-The `read_some` contract (inherited from `ReadStream`) permits `n > 0` when `ec` is set, including on EOF. The implementation reports exactly what happened: the bytes that arrived and the condition that stopped the transfer. See xref:9.design/9c.ReadStream.adoc#_design_foundations_why_errors_may_accompany_data[ReadStream: Why Errors May Accompany Data] for the full rationale. The key points:
+The `read_some` contract (inherited from `ReadStream`) treats a completion that fills the buffer sequence as a success: `n == buffer_size(buffers)` implies `!ec`. An error is reported only when the transfer was incomplete, in which case `n \< buffer_size(buffers)`. A pending condition such as end-of-stream is deferred to the next read. See xref:9.design/9c.ReadStream.adoc#_design_foundations_why_a_full_buffer_is_always_success[ReadStream: Why a Full Buffer Is Always Success] for the full rationale. The key points:
 
-- The `(error_code, size_t)` return type can carry both values simultaneously, transcending the POSIX limitation of reporting only one per call.
-- Layered streams (TLS, compression) may encounter an error after a partial transfer. Allowing `(ec, n)` with `n > 0` avoids forcing deferred-error bookkeeping or data loss.
-- The canonical advance-then-check loop handles both cases correctly with no additional call-site cost.
-- Concrete types that naturally produce `(ec, 0)` on error (POSIX socket wrappers) continue to do so.
+- A nonzero `ec` describes only a transfer that fell short of the requested size; it never qualifies a complete transfer.
+- A condition observed exactly as the buffer fills is held for the next call, where `n` is necessarily less than the buffer size, rather than delivered alongside good bytes.
+- Consumers test `n == buffer_size(buffers)` alone to know the read succeeded, and generic algorithms such as `when_all` and `when_any` distinguish a completed transfer from a failure on that basis.
+- A layered stream (TLS, compression) keeps the deferred-condition bookkeeping internal, where it has the context to manage it.
 
-This contract carries over to `ReadSource` unchanged. Both `read_some` and `read` allow `n > 0` on error or EOF, reporting the bytes that were transferred before the condition arose.
+The `read` operation is a different primitive and uses the complete-read semantics described above: it either fills the entire buffer with `!ec`, or returns `ec` (including `cond::eof`) with `n` indicating the bytes transferred before the condition arose.
 
 == Summary
 

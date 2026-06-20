@@ -49,7 +49,7 @@ void test_all_splits()
         while(bg)
         {
             auto [b1, b2] = co_await bg.next();
-            BOOST_TEST_EQ(buffer_to_string(b1, b2), data);
+            BOOST_TEST_EQ(buffer_to_string(b1.data(), b2.data()), data);
         }
     });
     BOOST_TEST(r.success);
@@ -97,11 +97,13 @@ two positions: 0 and size.
 
 === Mutability Preservation
 
-`bufgrind` is templated on a `ConstBufferSequence` but the split type it
-produces follows the mutability of the input. Passing a `mutable_buffer`
-yields `mutable_buffer` slices; passing a `const_buffer` yields
-`const_buffer` slices. This matters for tests that need to write into the
-produced buffers rather than only read from them.
+`bufgrind` is templated on a `ConstBufferSequence` but the slices it
+produces follow the mutability of the input. Each half is a buffer-slice
+view (`slice_type`); its `data()` member exposes the underlying buffer
+sequence. Passing a `mutable_buffer` yields halves whose `data()` models
+`MutableBufferSequence`; passing a `const_buffer` yields halves whose
+`data()` models `ConstBufferSequence`. This matters for tests that need
+to write into the produced buffers rather than only read from them.
 
 [source,cpp]
 ----
@@ -112,8 +114,9 @@ bufgrind bg(mb);
 while(bg)
 {
     auto [b1, b2] = co_await bg.next();
-    // b1 and b2 are mutable_buffer; callers may write into them
-    static_assert(std::is_same_v<decltype(b1), mutable_buffer>);
+    // b1 and b2 are buffer-slice views; data() exposes the underlying
+    // buffer sequence, here a MutableBufferSequence callers may write into
+    static_assert(MutableBufferSequence<decltype(b1.data())>);
 }
 ----
 
@@ -180,7 +183,7 @@ auto r = f.inert([&](fuse&) -> task<> {
     while(bg)
     {
         auto [b1, b2] = co_await bg.next();
-        BOOST_TEST_EQ(buffer_to_string(b1, b2), original);
+        BOOST_TEST_EQ(buffer_to_string(b1.data(), b2.data()), original);
     }
 });
 BOOST_TEST(r.success);
@@ -242,8 +245,8 @@ void test_parser_all_splits()
 
             // Feed the split as two discrete reads
             read_stream rs(f);
-            rs.provide(buffer_to_string(b1));
-            rs.provide(buffer_to_string(b2));
+            rs.provide(buffer_to_string(b1.data()));
+            rs.provide(buffer_to_string(b2.data()));
 
             std::string got = co_await read_all(rs);
             BOOST_TEST_EQ(got, input);

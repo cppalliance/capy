@@ -36,8 +36,7 @@ int main()
     run_async(pool.get_executor())(compute());
     // Task is now running on the thread pool
 
-    // pool destructor waits for work to complete
-    return 0;
+    pool.join();  // wait for outstanding work to complete
 }
 ----
 

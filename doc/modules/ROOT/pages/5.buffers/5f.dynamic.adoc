@@ -14,7 +14,7 @@ Dynamic buffers serve as intermediate storage between a *producer* (typically ne
 The flow:
 
 1. **Producer** writes data into the buffer
-2. **Buffer** grows as needed to accommodate data
+2. **Buffer** accommodates data within its capacity
 3. **Consumer** reads and processes data
 4. **Buffer** releases consumed data
 
@@ -25,22 +25,22 @@ This model decouples production rate from consumption rate—the buffer absorbs 
 [source,cpp]
 ----
 template<typename T>
-concept DynamicBuffer = requires(T& t, std::size_t n) {
+concept DynamicBuffer = requires(T& t, T const& ct, std::size_t n) {
     typename T::const_buffers_type;
     typename T::mutable_buffers_type;
 
     // Producer side
     { t.prepare(n) } -> std::same_as<typename T::mutable_buffers_type>;
     { t.commit(n) };
-    
+
     // Consumer side
-    { t.data() } -> std::same_as<typename T::const_buffers_type>;
+    { ct.data() } -> std::same_as<typename T::const_buffers_type>;
     { t.consume(n) };
-    
+
     // Capacity
-    { t.size() } -> std::same_as<std::size_t>;
-    { t.max_size() } -> std::same_as<std::size_t>;
-    { t.capacity() } -> std::same_as<std::size_t>;
+    { ct.size() } -> std::convertible_to<std::size_t>;
+    { ct.max_size() } -> std::convertible_to<std::size_t>;
+    { ct.capacity() } -> std::convertible_to<std::size_t>;
 };
 ----
 
@@ -61,11 +61,14 @@ Returns a mutable buffer sequence `mb` for writing up to `n` bytes:
 capy::MutableBufferSequence auto buffers = dynamic_buf.prepare(1024);  // Space for up to 1024 bytes
 ----
 
-_Effects:_ If `n > max_size() - size()` throws `std::length_error()`.
-Otherwise, ensures that a wirteable region of size at leats `n` exists
-and returns an object of type `mutable_buffers_type` representing this region.
+_Effects:_ If `n` exceeds the available capacity, throws. Otherwise,
+ensures that a writeable region of size at least `n` exists and returns
+an object of type `mutable_buffers_type` representing this region.
 
-_Throws:_ `std::bad_alloc` in case an allocation is performed and fails.
+_Throws:_ The concrete adapters throw `std::invalid_argument` when `n`
+exceeds the available capacity; `circular_dynamic_buffer` throws
+`std::length_error`. `std::bad_alloc` may also be thrown if an allocation
+is performed and fails.
 
 _Postcondition:_ `buffer_size(buffers) >= n`.
 
@@ -114,7 +117,7 @@ Returns a const buffer sequence representing the readable region.
 
 [source,cpp]
 ----
-capy::ReadableBufferSequence auto readable = dynamic_buf.data();
+capy::ConstBufferSequence auto readable = dynamic_buf.data();
 // Process readable bytes
 ----
 
@@ -203,14 +206,18 @@ This concept ensures proper handling of lvalues and rvalues, preventing dangling
 
 === flat_dynamic_buffer
 
-Linear storage with single-buffer sequences:
+A fixed-capacity adapter over caller-owned contiguous storage, with
+single-buffer sequences. It never reallocates: the capacity is fixed at
+construction, and a default-constructed buffer has zero capacity (so
+`prepare` would throw).
 
 [source,cpp]
 ----
 #include <boost/capy/buffers/flat_dynamic_buffer.hpp>
 
-flat_dynamic_buffer buffer;
-buffer.prepare(1024);
+char storage[1024];
+flat_dynamic_buffer buffer(storage, sizeof(storage));
+auto space = buffer.prepare(256);
 // ... write data ...
 buffer.commit(n);
 
@@ -224,7 +231,7 @@ Advantages:
 
 Disadvantages:
 
-* May require copying when buffer wraps or grows
+* Fixed capacity; `prepare` throws when more space is requested than remains
 
 === circular_dynamic_buffer
 
@@ -234,7 +241,8 @@ Ring buffer implementation:
 ----
 #include <boost/capy/buffers/circular_dynamic_buffer.hpp>
 
-circular_dynamic_buffer<1024> buffer;  // Fixed capacity
+char storage[1024];
+circular_dynamic_buffer buffer(storage, sizeof(storage));  // Fixed capacity
 ----
 
 Advantages:
@@ -249,17 +257,20 @@ Disadvantages:
 
 === vector_dynamic_buffer
 
-Backed by `std::vector<char>`:
+Backed by a caller-owned `std::vector` of byte-sized elements
+(`vector_dynamic_buffer` itself uses `unsigned char`). Use the
+`dynamic_buffer` factory, which deduces the element type:
 
 [source,cpp]
 ----
 #include <boost/capy/buffers/vector_dynamic_buffer.hpp>
 
-std::vector<char> storage;
-vector_dynamic_buffer buffer(storage);
+std::vector<unsigned char> storage;
+auto buffer = dynamic_buffer(storage);
 ----
 
-Adapts an existing vector for use as a dynamic buffer.
+Adapts an existing vector for use as a dynamic buffer. The vector must
+outlive the adapter.
 
 === string_dynamic_buffer
 
@@ -270,10 +281,13 @@ Backed by `std::string`:
 #include <boost/capy/buffers/string_dynamic_buffer.hpp>
 
 std::string storage;
-string_dynamic_buffer buffer(storage);
+auto buffer = dynamic_buffer(storage);
 ----
 
-Useful when you want the final data as a string.
+Useful when you want the final data as a string. The `dynamic_buffer`
+factory wraps the string (you may also construct
+`string_dynamic_buffer(&storage)` directly). The string must outlive the
+adapter.
 
 == Example: Line-Based Protocol
 
@@ -281,8 +295,9 @@ Useful when you want the final data as a string.
 ----
 task<std::string> read_line(Stream& stream)
 {
-    flat_dynamic_buffer buffer;
-    
+    char storage[4096];
+    flat_dynamic_buffer buffer(storage, sizeof(storage));
+
     while (true)
     {
         // Prepare space and read

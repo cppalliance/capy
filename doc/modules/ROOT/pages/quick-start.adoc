@@ -46,7 +46,9 @@ int main()
     // Launch the coroutine on the pool's executor
     capy::run_async(pool.get_executor())(greet());
 
-    // Pool destructor waits for all work to complete
+    // join() waits for outstanding work to complete; the pool
+    // destructor only stops the pool and discards pending work
+    pool.join();
 }
 ----
 
@@ -55,7 +57,7 @@ int main()
 [source,bash]
 ----
 # With GCC
-g++ -std=c++20 -o hello_coro hello_coro.cpp -lboost_system -pthread
+g++ -std=c++20 -o hello_coro hello_coro.cpp -lcapy -pthread
 
 # Run
 ./hello_coro
@@ -75,7 +77,7 @@ The answer is 42
 4. `greet()` runs until it hits `co_await answer()`
 5. `answer()` runs and returns 42
 6. `greet()` resumes with the result and prints it
-7. `greet()` completes, the pool destructor waits and returns
+7. `greet()` completes, `pool.join()` returns, and `main()` exits
 
 The key insight: both coroutines ran on the same executor because affinity
 propagated automatically through the `co_await`.

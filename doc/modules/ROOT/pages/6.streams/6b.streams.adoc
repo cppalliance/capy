@@ -33,7 +33,9 @@ Attempts to read up to `buffer_size(buffers)` bytes from the stream into the buf
 If `buffer_size(buffers) > 0`:
 
 * If `!ec`, then `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were read into the buffer sequence.
-* If `ec`, then `n >= 0 && n \<= buffer_size(buffers)`. `n` is the number of bytes read before the I/O condition arose.
+* If `ec`, then `n >= 0 && n < buffer_size(buffers)`. `n` is the number of bytes read before the I/O condition arose.
+
+Equivalently, `n == buffer_size(buffers)` implies `!ec`: a read that fills the buffer sequence is a success even when the underlying operation also signals a condition such as end-of-stream. That condition is reported on a subsequent read.
 
 If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
 
@@ -48,12 +50,12 @@ I/O conditions from the underlying system are reported via `ec`. Failures in the
 [source,cpp]
 ----
 char buf[1024];
-auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
+auto [ec, n] = co_await stream.read_some(make_buffer(buf));
 // n might be 1, might be 500, might be 1024
 // if !ec, then n >= 1
 ----
 
-This matches underlying OS behavior—reads return when *some* data is available.
+This matches underlying OS behavior: reads return when *some* data is available.
 
 === Example
 
@@ -66,7 +68,7 @@ task<> dump_stream(Stream& stream)
 
     for (;;)
     {
-        auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
+        auto [ec, n] = co_await stream.read_some(make_buffer(buf));
 
         std::cout.write(buf, n);
 
@@ -102,7 +104,9 @@ Attempts to write up to `buffer_size(buffers)` bytes from the buffer sequence to
 If `buffer_size(buffers) > 0`:
 
 * If `!ec`, then `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were written from the buffer sequence.
-* If `ec`, then `n >= 0 && n \<= buffer_size(buffers)`. `n` is the number of bytes written before the I/O condition arose.
+* If `ec`, then `n >= 0 && n < buffer_size(buffers)`. `n` is the number of bytes written before the I/O condition arose.
+
+Equivalently, `n == buffer_size(buffers)` implies `!ec`: a write that drains the entire buffer sequence is a success even when the underlying operation also signals a condition. That condition is reported on a subsequent write.
 
 If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
 
@@ -132,11 +136,16 @@ Wraps any `ReadStream` in a type-erased container:
 ----
 #include <boost/capy/io/any_read_stream.hpp>
 
+// Owning: takes ownership of a moved-in stream
 template<ReadStream S>
-any_read_stream(S& stream);
+any_read_stream(S stream);
+
+// Reference: wraps by pointer without ownership
+template<ReadStream S>
+any_read_stream(S* stream);
 ----
 
-The wrapped stream is referenced—the original must outlive the wrapper.
+Each wrapper has two construction modes. Passing an object by value takes ownership: the wrapper moves the stream into internally allocated storage. Passing a pointer wraps the pointed-to stream by reference, and that stream must outlive the wrapper.
 
 === any_write_stream
 
@@ -147,7 +156,10 @@ Wraps any `WriteStream`:
 #include <boost/capy/io/any_write_stream.hpp>
 
 template<WriteStream S>
-any_write_stream(S& stream);
+any_write_stream(S stream);   // owning
+
+template<WriteStream S>
+any_write_stream(S* stream);  // reference
 ----
 
 === any_stream
@@ -158,19 +170,23 @@ Wraps bidirectional streams (both `ReadStream` and `WriteStream`):
 ----
 #include <boost/capy/io/any_stream.hpp>
 
-template<ReadStream S>
-    requires WriteStream<S>
-any_stream(S& stream);
+template<class S>
+    requires ReadStream<S> && WriteStream<S>
+any_stream(S stream);   // owning
+
+template<class S>
+    requires ReadStream<S> && WriteStream<S>
+any_stream(S* stream);  // reference
 ----
 
 === Wrapper Characteristics
 
 All wrappers share these properties:
 
-* *Reference semantics* — Wrap existing objects without ownership
-* *Preallocated coroutine frame* — Zero steady-state allocation
-* *Move-only* — Non-copyable; moving transfers the cached frame
-* *Lifetime requirement* — Wrapped object must outlive wrapper
+* *Owning or reference*: By-value construction owns a moved-in object; pointer construction wraps by reference
+* *Preallocated coroutine frame*: Zero steady-state allocation
+* *Move-only*: Non-copyable; moving transfers the cached frame
+* *Lifetime requirement*: A pointer-wrapped object must outlive the wrapper
 
 Example usage:
 
@@ -181,7 +197,7 @@ void process_stream(any_stream& stream);
 tcp::socket socket;
 // ... connect socket ...
 
-any_stream wrapped{socket};  // Type erasure here
+any_stream wrapped{&socket};  // Type erasure, references the existing socket
 process_stream(wrapped);      // process_stream doesn't know about tcp::socket
 ----
 
@@ -199,7 +215,7 @@ task<> handle_connection(any_stream& stream)
     
     for (;;)
     {
-        auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
+        auto [ec, n] = co_await stream.read_some(make_buffer(buf));
 
         auto [wec, wn] = co_await write(stream, const_buffer(buf, n));
 

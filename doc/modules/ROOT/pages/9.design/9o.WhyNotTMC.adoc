@@ -187,7 +187,7 @@ The awaitable receives:
 * `env` — The execution environment containing:
 ** `env->executor` — The executor (where to resume)
 ** `env->stop_token` — A stop token (for cancellation)
-** `env->allocator` — An optional allocator for frame allocation
+** `env->frame_allocator` — An optional `std::pmr::memory_resource*` for coroutine frame allocation (null selects the default allocator)
 
 *TMC's approach:*
 
