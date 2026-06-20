@@ -88,14 +88,14 @@ Note the distinction:
 
 Copies data from one buffer sequence to another:
 
+`buffer_copy` is a function object with a single call operator whose
+`at_most` parameter defaults to copying everything available:
+
 [source,cpp]
 ----
 template<MutableBufferSequence Target, ConstBufferSequence Source>
-std::size_t buffer_copy(Target const& target, Source const& source);
-
-template<MutableBufferSequence Target, ConstBufferSequence Source>
-std::size_t buffer_copy(Target const& target, Source const& source, 
-                        std::size_t at_most);
+std::size_t buffer_copy(Target const& target, Source const& source,
+                        std::size_t at_most = std::size_t(-1));
 ----
 
 Returns the number of bytes copied.

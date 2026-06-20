@@ -267,7 +267,7 @@ Coroutine frame allocation is rarely the bottleneck. Profile your application be
 | `<boost/capy/ex/frame_allocator.hpp>`
 | Frame allocator concept and utilities
 
-| `<boost/capy/ex/frame_alloc_promise.hpp>`
+| `<boost/capy/ex/frame_alloc_mixin.hpp>`
 | Mixin base for promise types that use the TLS frame allocator
 
 | `<boost/capy/ex/recycling_memory_resource.hpp>`

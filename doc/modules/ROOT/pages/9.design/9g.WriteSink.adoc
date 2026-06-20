@@ -57,7 +57,9 @@ This is the low-level primitive inherited from `WriteStream`. It is appropriate 
 If `buffer_size(buffers) > 0`:
 
 - If `!ec`, then `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were written from the buffer sequence.
-- If `ec`, then `n >= 0 && n \<= buffer_size(buffers)`. `n` is the number of bytes written before the I/O condition arose.
+- If `ec`, then `n >= 0 && n \< buffer_size(buffers)`. `n` is the number of bytes written before the I/O condition arose.
+
+Equivalently, `n == buffer_size(buffers)` implies `!ec`: a completion that writes the entire buffer sequence is a success, even when the underlying operation also signals a condition. That condition is reported on a subsequent write.
 
 If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
 
@@ -179,7 +181,7 @@ task<> relay(Source& src, Sink& dest)
     for(;;)
     {
         auto [ec, n] = co_await src.read_some(
-            mutable_buffer(buf));
+            make_buffer(buf));
 
         // Forward whatever arrived before checking the error
         std::size_t written = 0;

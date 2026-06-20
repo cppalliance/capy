@@ -93,7 +93,7 @@ Type erasure decouples your code from specific transport implementations:
 task<> send_message(any_write_sink& sink, message const& msg)
 {
     co_await sink.write(make_buffer(msg.header));
-    co_await sink.write(make_buffer(msg.body), true);
+    co_await sink.write_eof(make_buffer(msg.body));
 }
 ----
 
@@ -103,26 +103,26 @@ Callers provide any conforming implementation:
 ----
 // TCP socket
 tcp::socket socket;
-any_write_sink sink{socket};
+any_write_sink sink{&socket};  // references socket
 send_message(sink, msg);
 
 // TLS stream
 tls::stream stream;
-any_write_sink sink{stream};
+any_write_sink sink{&stream};  // references stream
 send_message(sink, msg);
 
 // HTTP chunked encoding
 chunked_sink chunked{underlying};
-any_write_sink sink{chunked};
+any_write_sink sink{&chunked};  // references chunked
 send_message(sink, msg);
 
 // Test mock
 test::write_sink mock;
-any_write_sink sink{mock};
+any_write_sink sink{&mock};  // references mock
 send_message(sink, msg);
 ----
 
-Same `send_message` function, different transports—compile once, use everywhere.
+Same `send_message` function, different transports: compile once, use everywhere.
 
 == API Design Guidelines
 
@@ -143,8 +143,8 @@ task<> process(tcp::socket& socket);
 ----
 void caller(tcp::socket& socket)
 {
-    any_stream stream{socket};  // Wrap here
-    process(stream);            // Call with erased type
+    any_stream stream{&socket};  // Wrap by reference here
+    process(stream);             // Call with erased type
 }
 ----
 
@@ -159,7 +159,8 @@ tcp::socket create_socket();
 
 // Then caller wraps if needed
 auto socket = create_socket();
-any_stream stream{socket};
+any_stream stream{&socket};  // reference; socket must outlive stream
+// or: any_stream stream{std::move(socket)};  // wrapper takes ownership
 ----
 
 Returning type-erased values forces heap allocation. Return concrete types when the caller knows what they need.
@@ -200,7 +201,7 @@ Users don't need to know how HTTP is implemented:
 tcp::socket socket;
 // ... connect ...
 
-any_stream conn{socket};
+any_stream conn{&socket};  // references socket
 auto response = co_await send_request(conn, {
     .method = "GET",
     .url = "/api/data"

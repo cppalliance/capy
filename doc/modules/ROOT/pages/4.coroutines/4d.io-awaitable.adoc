@@ -53,36 +53,37 @@ This signature receives:
 ** `env->stop_token` — A stop token for cooperative cancellation
 ** `env->frame_allocator` — An optional frame allocator
 
-The return type enables symmetric transfer.
+Many IoAwaitables return `std::coroutine_handle<>` to enable symmetric transfer, but the concept does not require any particular return type.
 
 == IoAwaitable Concept
 
-An awaitable satisfies `IoAwaitable` if:
+An awaitable satisfies `IoAwaitable` if `a.await_suspend(h, env)` is a valid expression:
 
 [source,cpp]
 ----
-template<typename T>
-concept IoAwaitable = requires(T& t, std::coroutine_handle<> h, io_env const* env) {
-    { t.await_ready() } -> std::convertible_to<bool>;
-    { t.await_suspend(h, env) } -> std::same_as<std::coroutine_handle<>>;
-    t.await_resume();
-};
+template<typename A>
+concept IoAwaitable =
+    requires(A a, std::coroutine_handle<> h, io_env const* env) {
+        a.await_suspend(h, env);
+    };
 ----
 
-The key difference from standard awaitables is the two-argument `await_suspend` that receives the `io_env`.
+The concept constrains only the two-argument `await_suspend` that receives the `io_env`. It does not require `await_ready` or `await_resume`, nor does it constrain the return type of `await_suspend`. A complete awaitable still provides `await_ready` and `await_resume` so it can be `co_await`-ed; the concept simply does not test for them.
 
 == IoRunnable Concept
 
-For tasks that can be launched from non-coroutine contexts, the `IoRunnable` concept refines `IoAwaitable` with:
+For tasks that can be launched from non-coroutine contexts, the `IoRunnable` concept refines `IoAwaitable` and requires a `promise_type` plus the following:
 
-* `handle()` — Access the typed coroutine handle
-* `release()` — Transfer ownership of the frame
-* `exception()` — Check for captured exceptions
-* `result()` — Access the result value (non-void tasks)
+* `handle()`: Access the typed coroutine handle
+* `release()`: Transfer ownership of the frame
+* `exception()`: Check for captured exceptions (on the promise)
+* `result()`: Access the result value (on the promise, for non-void tasks)
+* `set_continuation()`: Set the continuation handle (on the promise)
+* `set_environment()`: Inject the `io_env` (on the promise)
 
 These methods exist because launch functions like `run_async` cannot `co_await` the task directly. The trampoline must be allocated before the task type is known, so it type-erases the task through function pointers and needs a common API to manage lifetime and extract results.
 
-Context injection methods (`set_environment`, `set_continuation`) are internal to the promise and not part of any concept. Launch functions access them through the typed handle provided by `handle()`.
+The context injection methods `set_continuation` and `set_environment` are part of the `IoRunnable` concept: it requires them on the `promise_type`. Launch functions access them through the typed handle provided by `handle()`.
 
 Capy's `task<T>` satisfies this concept.
 

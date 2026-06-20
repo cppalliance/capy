@@ -346,9 +346,6 @@ This design ensures proper context propagation to all children.
 
 | `<boost/capy/timeout.hpp>`
 | Race an awaitable against a deadline
-
-| `<boost/capy/timeout.hpp>`
-| Race an awaitable against a deadline
 |===
 
 You have now learned how to compose tasks concurrently with `when_all` and `when_any`. In the next section, you will learn about frame allocators for customizing coroutine memory allocation.

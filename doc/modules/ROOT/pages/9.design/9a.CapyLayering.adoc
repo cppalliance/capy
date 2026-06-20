@@ -41,7 +41,7 @@ task<> echo(any_stream& stream)
     for(;;)
     {
         auto [ec, n] = co_await stream.read_some(
-            mutable_buffer(buf));
+            make_buffer(buf));
         if(ec)
             co_return;
         co_await write(stream, const_buffer(buf, n));
@@ -84,7 +84,7 @@ The user chooses where the boundary falls. Not the library.
 
 Buffer sink and buffer source invert the traditional ownership model. Instead of the caller allocating a buffer, filling it with data, and handing it to the library, the library exposes its own internal storage and the caller fills it in place. Zero copies. The data goes directly where it needs to be.
 
-The `BufferSink` concept formalizes this with three operations. `prepare()` returns writable buffers from the sink's internal storage. The caller writes data into those buffers. `commit()` tells the sink how many bytes were written:
+The `BufferSink` concept formalizes this with three operations. `prepare()` returns writable buffers from the sink's internal storage. The caller writes data into those buffers. `commit()` tells the sink how many bytes were written, and `commit_eof()` commits the final bytes and signals end-of-stream:
 
 [source,cpp]
 ----
@@ -95,6 +95,7 @@ concept BufferSink =
         { sink.prepare(dest) }
             -> std::same_as<std::span<mutable_buffer>>;
         { sink.commit(n) } -> IoAwaitable;
+        { sink.commit_eof(n) } -> IoAwaitable;
     };
 ----
 

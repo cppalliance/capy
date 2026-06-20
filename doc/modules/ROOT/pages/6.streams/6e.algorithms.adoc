@@ -20,15 +20,14 @@ Fills a buffer completely by looping `read_some`:
 #include <boost/capy/read.hpp>
 
 template<ReadStream Stream, MutableBufferSequence Buffers>
-task<std::pair<error_code, std::size_t>>
-read(Stream& stream, Buffers const& buffers);
+io_task<std::size_t>
+read(Stream& stream, Buffers buffers);
 ----
 
-Keeps reading until:
+Await-returns `io_result<std::size_t>`, destructuring as `[ec, n]`. Keeps reading until:
 
 * Buffer is full (`n == buffer_size(buffers)`)
-* EOF is reached (returns `cond::eof` with partial count)
-* Error occurs (returns error with partial count)
+* The underlying `read_some` reports a condition before the buffer is full (the condition is propagated with the partial count)
 
 Example:
 
@@ -45,9 +44,9 @@ Reads until EOF into a growable buffer:
 
 [source,cpp]
 ----
-template<ReadStream Stream, DynamicBuffer Buffer>
-task<std::pair<error_code, std::size_t>>
-read(Stream& stream, Buffer&& buffer);
+template<ReadStream Stream, DynamicBufferParam Buffer>
+io_task<std::size_t>
+read(Stream& stream, Buffer&& buffer, std::size_t initial_amount = 2048);
 ----
 
 Example:
@@ -68,8 +67,8 @@ Writes all data by looping `write_some`:
 #include <boost/capy/write.hpp>
 
 template<WriteStream Stream, ConstBufferSequence Buffers>
-task<std::pair<error_code, std::size_t>>
-write(Stream& stream, Buffers const& buffers);
+io_task<std::size_t>
+write(Stream& stream, Buffers buffers);
 ----
 
 Keeps writing until:
@@ -98,16 +97,16 @@ Transfers data from a `BufferSource` to a destination:
 
 // To WriteSink (with EOF propagation)
 template<BufferSource Source, WriteSink Sink>
-task<std::pair<error_code, std::size_t>>
+io_task<std::size_t>
 push_to(Source& source, Sink& sink);
 
 // To WriteStream (streaming, no EOF)
 template<BufferSource Source, WriteStream Stream>
-task<std::pair<error_code, std::size_t>>
+io_task<std::size_t>
 push_to(Source& source, Stream& stream);
 ----
 
-The source provides buffers via `pull()`. Data is pushed to the destination. Buffer ownership stays with the source—no intermediate copying when possible.
+The source provides buffers via `pull()`. Data is pushed to the destination. Buffer ownership stays with the source: no intermediate copying when possible.
 
 Example:
 
@@ -128,12 +127,12 @@ Transfers data from a source to a `BufferSink`:
 
 // From ReadSource
 template<ReadSource Source, BufferSink Sink>
-task<std::pair<error_code, std::size_t>>
+io_task<std::size_t>
 pull_from(Source& source, Sink& sink);
 
 // From ReadStream (streaming)
 template<ReadStream Stream, BufferSink Sink>
-task<std::pair<error_code, std::size_t>>
+io_task<std::size_t>
 pull_from(Stream& stream, Sink& sink);
 ----
 
@@ -156,34 +155,38 @@ Instead, compose with an intermediate stage:
 
 [source,cpp]
 ----
-// Transform: BufferSource → processing → BufferSink
+// Transform: BufferSource -> processing -> BufferSink
 task<> process_pipeline(any_buffer_source& source, any_buffer_sink& sink)
 {
-    const_buffer src_bufs[8];
-    
+    const_buffer src_arr[8];
+
     while (true)
     {
-        auto [ec, count] = co_await source.pull(src_bufs, 8);
-        if (count == 0)
+        auto [ec, src_bufs] = co_await source.pull(src_arr);
+        if (ec == cond::eof)
             break;
-        
-        for (std::size_t i = 0; i < count; ++i)
+
+        std::size_t consumed = 0;
+        for (auto const& b : src_bufs)
         {
-            auto processed = transform(src_bufs[i]);
-            
+            auto processed = transform(b);
+
             // Write processed data to sink
-            mutable_buffer dst_bufs[8];
-            std::size_t dst_count = sink.prepare(dst_bufs, 8);
-            
+            mutable_buffer dst_arr[8];
+            auto dst_bufs = sink.prepare(dst_arr);
+
             std::size_t copied = buffer_copy(
-                std::span(dst_bufs, dst_count),
+                dst_bufs,
                 make_buffer(processed));
-            
+
             co_await sink.commit(copied);
+            consumed += b.size();
         }
+
+        source.consume(consumed);
     }
-    
-    co_await sink.commit_eof();
+
+    co_await sink.commit_eof(0);
 }
 ----
 

@@ -9,14 +9,25 @@ This section explains executors and execution contexts—the mechanisms that con
 
 == The Executor Concept
 
-An *executor* is an object that can schedule work for execution. In Capy, executors must provide three methods:
+An *executor* is an object that can schedule work for execution. An executor must be nothrow copy- and move-constructible and provide the following interface:
 
 [source,cpp]
 ----
-concept Executor = requires(E ex, continuation& c) {
-    { ex.dispatch(c) } -> std::same_as<std::coroutine_handle<>>;
-    { ex.post(c) } -> std::same_as<void>;
-    { ex.context() } -> std::convertible_to<execution_context&>;
+concept Executor = requires(E const& ce, E const& ce2, continuation& c) {
+    // Equality comparable
+    { ce == ce2 } noexcept -> std::convertible_to<bool>;
+
+    // Owning context, returned as an lvalue reference to a type
+    // derived from execution_context
+    { ce.context() } noexcept;
+
+    // Work tracking
+    { ce.on_work_started() } noexcept;
+    { ce.on_work_finished() } noexcept;
+
+    // Scheduling
+    { ce.dispatch(c) } -> std::same_as<std::coroutine_handle<>>;
+    { ce.post(c) };
 };
 ----
 
@@ -49,8 +60,9 @@ int main()
 {
     thread_pool pool;
     executor_ref ex = pool.get_executor();  // Type erasure
-    
-    schedule_work(ex, some_coroutine);
+
+    continuation c = /* ... */;
+    schedule_work(ex, c);
 }
 ----
 
@@ -74,8 +86,8 @@ int main()
     
     // Launch work on the pool
     run_async(ex)(my_task());
-    
-    // pool destructor waits for all work to complete
+
+    pool.join();  // wait for outstanding work to complete
 }
 ----
 

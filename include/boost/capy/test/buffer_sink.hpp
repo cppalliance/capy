@@ -47,18 +47,18 @@ namespace test {
 
     auto r = f.armed( [&]( fuse& ) -> task<void> {
         mutable_buffer arr[16];
-        std::size_t count = bs.prepare( arr, 16 );
-        if( count == 0 )
+        auto bufs = bs.prepare( arr );
+        if( bufs.empty() )
             co_return;
 
-        // Write data into arr[0]
-        std::memcpy( arr[0].data(), "Hello", 5 );
+        // Write data into the first prepared buffer
+        std::memcpy( bufs[0].data(), "Hello", 5 );
 
         auto [ec] = co_await bs.commit( 5 );
         if( ec )
             co_return;
 
-        auto [ec2] = co_await bs.commit_eof();
+        auto [ec2] = co_await bs.commit_eof( 0 );
         // bs.data() returns "Hello"
     } );
     @endcode

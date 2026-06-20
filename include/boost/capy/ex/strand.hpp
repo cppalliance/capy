@@ -57,7 +57,7 @@ namespace capy {
     @par Example
     @code
     thread_pool pool(4);
-    auto strand = make_strand(pool.get_executor());
+    strand strand(pool.get_executor());  // CTAD deduces the executor type
 
     // Continuations are linked intrusively into the strand's queue,
     // so each one must outlive its time there. Storage is typically
@@ -71,7 +71,7 @@ namespace capy {
     @tparam E The type of the underlying executor. Must
         satisfy the `Executor` concept.
 
-    @see make_strand, Executor
+    @see Executor
 */
 template<typename Ex>
 class strand

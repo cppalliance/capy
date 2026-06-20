@@ -126,9 +126,10 @@ read(S& stream, MB buffers) ->
 
     The last, potenitally partial, read is also appended.
     
-    The value passed in the first call to `dynbuf.prepare` is the smallest of
-    `initial_amount` and `dynbuf.max_size() - dynbuf.size()`. Value passed 
-    to each subsequent call is 1.5 the value passed in the preceding call.
+    The value passed in the first call to `dynbuf.prepare` is `initial_amount`.
+    The value is grown to 1.5 times the preceding value only after a read that
+    completely filled the prepared buffer; otherwise it is left unchanged for
+    the next call.
 
 
     @par Await-returns
@@ -220,9 +221,10 @@ read(
 
     The last, potenitally partial, read is also appended.
     
-    The value passed in the first call to `dynbuf.prepare` is the smallest of
-    `initial_amount` and `dynbuf.max_size() - dynbuf.size()`. Value passed 
-    to each subsequent call is 1.5 the value passed in the preceding call.
+    The value passed in the first call to `dynbuf.prepare` is `initial_amount`.
+    The value is grown to 1.5 times the preceding value only after a read that
+    completely filled the prepared buffer; otherwise it is left unchanged for
+    the next call.
 
 
     @par Await-returns

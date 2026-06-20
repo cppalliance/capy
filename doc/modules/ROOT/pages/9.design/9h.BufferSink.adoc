@@ -281,7 +281,7 @@ task<> transfer(Source& source, Sink& sink)
     for(;;)
     {
         auto [ec, n] = co_await source.read_some(
-            mutable_buffer(buf));
+            make_buffer(buf));
         if(ec == cond::eof)
         {
             auto [wec] = co_await sink.write_eof();

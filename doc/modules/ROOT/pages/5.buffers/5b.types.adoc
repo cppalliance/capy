@@ -150,10 +150,10 @@ auto buf = make_buffer(sp);
 elements—including `std::span` and `boost::span`—in addition to the
 sources shown above.
 
-The returned buffer type depends on constness:
+The returned buffer type depends on the element constness of the range:
 
-* Non-const containers → `mutable_buffer`
-* Const containers, `string_view` → `const_buffer`
+* Ranges of mutable elements → `mutable_buffer`
+* Ranges of const elements, `string_view`, string literals → `const_buffer`
 
 == Layout Compatibility
 

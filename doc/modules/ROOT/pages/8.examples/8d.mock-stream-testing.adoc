@@ -181,26 +181,26 @@ target_link_libraries(mock_stream_testing PRIVATE capy)
 [source,cpp]
 ----
 capy::test::fuse f;  // test::fuse
-capy::test::stream mock(f);  // test::stream
-mock.provide("hello\n");
+auto [a, b] = capy::test::make_stream_pair(f);  // connected test::stream pair
+b.provide("hello\n");  // supply read input on one end
 ----
 
 `test::stream` is a bidirectional mock that satisfies both `ReadStream` and `WriteStream`:
 
-* Constructor takes a `fuse&` for error injection
-* `provide(data)` — Supplies data for reads
-* `data()` — Returns data written to the mock
-* Second constructor parameter controls max bytes per operation
+* Streams are obtained in connected pairs from `make_stream_pair(f)`; the shared `fuse` enables error injection
+* `provide(data)` — Supplies data for the peer's reads
+* `data()` — Returns data written to this end
+* `set_max_read_size(n)` — Limits bytes returned per read, simulating chunked delivery
 
 === Type-Erased Streams
 
 [source,cpp]
 ----
-// Wrap mock in any_stream using pointer construction for reference semantics
-capy::any_stream stream{&mock};  // any_stream
+// Wrap one end in any_stream using pointer construction for reference semantics
+capy::any_stream stream{&a};  // any_stream
 ----
 
-Use pointer construction (`&mock`) so the `any_stream` wrapper references the mock without taking ownership. This allows inspecting `mock.data()` after operations.
+Use pointer construction (`&a`) so the `any_stream` wrapper references the stream end without taking ownership. This allows inspecting `b.data()` after operations.
 
 === Synchronous Testing
 
@@ -218,7 +218,7 @@ capy::test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream
 ----
 capy::test::fuse f;  // test::fuse
 auto r = f.armed([&](capy::test::fuse&) -> capy::task<> {
-    capy::test::stream mock(f);  // test::stream
+    auto [a, b] = capy::test::make_stream_pair(f);  // connected test::stream pair
     // ... run test ...
 });
 ----

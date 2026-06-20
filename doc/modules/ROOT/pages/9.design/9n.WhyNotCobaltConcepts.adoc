@@ -38,7 +38,7 @@ concept IoAwaitable =
     };
 ----
 
-`IoRunnable` refines `IoAwaitable` with operations needed to start a task from non-coroutine contexts: `handle()`, `release()`, `exception()`, and `result()`.
+`IoRunnable` refines `IoAwaitable` with operations needed to start a task from non-coroutine contexts: `handle()`, `release()`, `exception()`, `result()`, and the promise-level `set_continuation()` and `set_environment()`.
 
 [source,cpp]
 ----
@@ -46,18 +46,21 @@ template<typename T>
 concept IoRunnable =
     IoAwaitable<T> &&
     requires { typename T::promise_type; } &&
-    requires(T& t, T const& ct, typename T::promise_type const& cp)
+    requires(T& t, T const& ct, typename T::promise_type const& cp,
+             typename T::promise_type& p)
     {
         { ct.handle() } noexcept
             -> std::same_as<std::coroutine_handle<typename T::promise_type>>;
         { cp.exception() } noexcept -> std::same_as<std::exception_ptr>;
         { t.release() } noexcept;
+        { p.set_continuation(std::coroutine_handle<>{}) } noexcept;
+        { p.set_environment(static_cast<io_env const*>(nullptr)) } noexcept;
     } &&
     (std::is_void_v<decltype(std::declval<T&>().await_resume())> ||
      requires(typename T::promise_type& p) { p.result(); });
 ----
 
-Context injection (`set_environment`, `set_continuation`) is handled internally by the promise through `await_suspend` and is not part of any concept.
+Context injection (`set_environment`, `set_continuation`) consists of `noexcept` requirements that `IoRunnable` places on `T::promise_type`; launch functions invoke them through the typed handle returned by `handle()` before resuming the frame.
 
 Each concept has documented syntactic requirements, semantic requirements, conforming signatures, and examples. A user who wants to create a custom task type can read the concept definition and know exactly what to provide. The compiler enforces the syntactic requirements at constraint-check time.
 
@@ -305,9 +308,16 @@ Capy's `WriteStream` concept includes semantic requirements in the concept's doc
 //
 //   If !ec, then n >= 1 && n <= buffer_size( buffers ).
 //     n bytes were written from the buffer sequence.
-//   If ec, then n >= 0 && n <= buffer_size( buffers ).
+//   If ec, then n >= 0 && n < buffer_size( buffers ).
 //     n is the number of bytes written before the I/O
 //     condition arose.
+//
+// Equivalently, n == buffer_size( buffers ) implies !ec: a
+// completion that writes the entire buffer sequence is a success,
+// even when the underlying operation also signals a condition. That
+// condition is reported on a subsequent write. This lets generic
+// composition algorithms such as when_all and when_any distinguish
+// a completed transfer from a failure.
 //
 // If buffer_empty( buffers ) is true, n is 0. The empty
 // buffer is not itself a cause for error, but ec may reflect
@@ -341,7 +351,7 @@ The concept also includes a coroutine-specific warning about buffer lifetime:
 |
 
 | Error reporting semantics
-| Documented (`ec` + `n >= 0 && n \<= buffer_size`)
+| Documented (`ec` + `n >= 0 && n \< buffer_size`)
 |
 
 | Partial write guarantees

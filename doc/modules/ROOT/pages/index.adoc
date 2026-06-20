@@ -6,7 +6,7 @@ Capy abstracts away sockets, files, and asynchrony with type-erased streams and 
 
 * *Lazy coroutine tasks* — `task<T>` with forward-propagating stop tokens and automatic cancellation
 * *Buffer sequences* — taken straight from Asio and improved
-* *Stream concepts* — `ReadStream`, `WriteStream`, `ReadSource`, `WriteSink`, `BufferSource`, `BufferSink`
+* *Stream concepts* — seven coroutine stream concepts: `ReadStream`, `WriteStream`, `Stream`, `ReadSource`, `WriteSink`, `BufferSource`, `BufferSink`
 * *Type-erased streams* — `any_stream`, `any_read_stream`, `any_write_stream` for fast compilation
 * *Concurrency facilities* — executors, strands, thread pools, `when_all`, `when_any`
 * *Test utilities* — mock streams, mock sources/sinks, error injection
@@ -86,7 +86,7 @@ task<> echo(any_stream& stream)
     char buf[1024];
     for(;;)
     {
-        auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
+        auto [ec, n] = co_await stream.read_some(make_buffer(buf));
 
         auto [wec, wn] = co_await write(stream, const_buffer(buf, n));
 
@@ -100,10 +100,13 @@ task<> echo(any_stream& stream)
 
 int main()
 {
-    thread_pool pool;
-    // In a real application, you would obtain a stream from Corosio
-    // and call: run_async(pool.get_executor())(echo(stream));
-    return 0;
+    // In a real application, you would obtain a stream from Corosio,
+    // then launch the coroutine on its io_context and run it:
+    //
+    //   corosio::io_context ioc;
+    //   corosio::tcp_socket stream = /* from an acceptor or connect */;
+    //   run_async(ioc.get_executor())(echo(stream));
+    //   ioc.run();
 }
 ----
 
@@ -118,4 +121,4 @@ The `task<>` return type (equivalent to `task<void>`) creates a lazy coroutine t
 * xref:3.concurrency/3a.foundations.adoc[Concurrency Tutorial] — Understand threads, mutexes, and synchronization
 * xref:4.coroutines/4a.tasks.adoc[Coroutines in Capy] — Deep dive into `task<T>` and the IoAwaitable protocol
 * xref:5.buffers/5a.overview.adoc[Buffer Sequences] — Master the concept-driven buffer model
-* xref:6.streams/6a.overview.adoc[Stream Concepts] — Understand the six stream concepts
+* xref:6.streams/6a.overview.adoc[Stream Concepts] — Understand the seven stream concepts
