@@ -296,12 +296,9 @@ task<std::string> fetch_with_cancel()
 
 == Part 7: OS Integration
 
-Capy's I/O operations (provided by Corosio) respect stop tokens at the OS level:
+When Capy's I/O is provided by Corosio, requesting stop cancels work in progress rather than waiting for the operation to finish on its own. Corosio cancels the pending operation through whatever backend is active for the platform, and it resolves promptly with `std::errc::operation_canceled`.
 
-* *IOCP* (Windows) — Pending operations can be cancelled via `CancelIoEx`
-* *io_uring* (Linux) — Operations can be cancelled via `IORING_OP_ASYNC_CANCEL`
-
-When you request stop, pending I/O operations are cancelled at the OS level, providing immediate response rather than waiting for the operation to complete naturally.
+The mechanism depends on the backend: completion-based backends (Windows IOCP, and io_uring when enabled on Linux) cancel the operation in the kernel, while readiness-based backends (Linux epoll, kqueue on the BSDs and macOS, and the portable select fallback) remove it from the reactor before its system call runs. Either way the operation is reported as cancelled instead of blocking until the I/O would have completed.
 
 [[stoppable-awaitables]]
 == Part 8: Implementing Stoppable Awaitables
