@@ -5,7 +5,7 @@ This section explains how coroutine frames are allocated and how to customize al
 == Prerequisites
 
 * Completed xref:4.coroutines/4f.composition.adoc[Concurrent Composition]
-* Understanding of coroutine frame allocation from xref:../2.cpp20-coroutines/2d.advanced.adoc[{cpp}20 Coroutines Tutorial]
+* Understanding of coroutine frame allocation from xref:../1.cpp20-coroutines/1d.advanced.adoc[{cpp}20 Coroutines Tutorial]
 
 == The Timing Constraint
 

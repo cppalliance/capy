@@ -4,7 +4,7 @@ This section covers advanced synchronization primitives: atomics for lock-free o
 
 == Prerequisites
 
-* Completed xref:3.concurrency/3b.synchronization.adoc[Part II: Synchronization]
+* Completed xref:2.concurrency/2b.synchronization.adoc[Part II: Synchronization]
 * Understanding of mutexes, lock guards, and deadlocks
 
 == Atomics: Lock-Free Operations

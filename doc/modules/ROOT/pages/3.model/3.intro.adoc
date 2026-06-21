@@ -1,0 +1,26 @@
+//
+// Copyright (c) 2026 Andrzej Krzemieński (akrzemi1@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Capy's Programming Model
+
+Capy is a framework for dealing with I/O, that is any data that is communicated between
+a running program and the outside environment: network, file-system, system
+timers and other events.
+
+This data arrives or is consumed _asynchronously_: at points in time
+unpredictable to the program.
+
+The goal of the framework is to utilize system resources to be able to:
+
+ * process as many such asynchronous events as possible,
+ * process them as fast as possible,
+ * have the user code maximally simple and maintainable.
+
+In order to achieve this Capy employs _event-driven flows_ expressed as _coroutines_.
+This section will introduce you to these concepts.

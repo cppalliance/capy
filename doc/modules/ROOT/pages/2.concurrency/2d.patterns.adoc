@@ -4,7 +4,7 @@ This section covers communication mechanisms for getting results from threads an
 
 == Prerequisites
 
-* Completed xref:3.concurrency/3c.advanced.adoc[Part III: Advanced Primitives]
+* Completed xref:2.concurrency/2c.advanced.adoc[Part III: Advanced Primitives]
 * Understanding of atomics, condition variables, and shared locks
 
 == Futures and Promises: Getting Results Back

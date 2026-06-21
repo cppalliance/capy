@@ -4,7 +4,7 @@ This section introduces Capy's `task<T>` type—the fundamental coroutine type f
 
 == Prerequisites
 
-* Completed xref:../2.cpp20-coroutines/2d.advanced.adoc[{cpp}20 Coroutines Tutorial]
+* Completed xref:../1.cpp20-coroutines/1d.advanced.adoc[{cpp}20 Coroutines Tutorial]
 * Understanding of promise types, coroutine handles, and symmetric transfer
 
 == Overview

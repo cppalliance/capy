@@ -117,8 +117,8 @@ The `task<>` return type (equivalent to `task<void>`) creates a lazy coroutine t
 == Next Steps
 
 * xref:quick-start.adoc[Quick Start] — Set up your first Capy project
-* xref:2.cpp20-coroutines/2a.foundations.adoc[{cpp}20 Coroutines Tutorial] — Learn coroutines from the ground up
-* xref:3.concurrency/3a.foundations.adoc[Concurrency Tutorial] — Understand threads, mutexes, and synchronization
+* xref:1.cpp20-coroutines/1a.foundations.adoc[{cpp}20 Coroutines Tutorial] — Learn coroutines from the ground up
+* xref:3.model/3a.event-driven.adoc[Concurrency Tutorial] — Understand threads, mutexes, and synchronization
 * xref:4.coroutines/4a.tasks.adoc[Coroutines in Capy] — Deep dive into `task<T>` and the IoAwaitable protocol
 * xref:5.buffers/5a.overview.adoc[Buffer Sequences] — Master the concept-driven buffer model
 * xref:6.streams/6a.overview.adoc[Stream Concepts] — Understand the seven stream concepts

@@ -1,0 +1,39 @@
+= Event-Driven Flows
+
+The concept of an event-driven flow is probably best explained by an example
+a lot of C and C++ programmers are familiar with: signal handlers.
+
+[source,cpp]
+----
+signal(SIGINT, interrupt_handler);
+----
+
+`SIGINT` represents a signal called "interrupt". The program does not know if and when
+it will be risen. The program will not waste time waiting on the signal. Instead,
+it will define a callback (or a handler): a piece of code that needs to be run
+in the _event_ of rising this signal. It will then register an _association_
+between the event (signal "interrupt") and the callback. The callback is not called
+right now. in fact, it may never be called. But we are guaranteed by the system that,
+should the corresponding event occur, the associated callback will be called.
+After the successful registration, the program can proceed to doing other things.
+
+To achieve its performance goals, Capy employs a similar model. When a user-written
+server needs to obtain data from the network to process the request, the moment of this
+data arriving is an _asynchronous event:_ the program does not know if and when
+it will occur. Rather than actively waiting, the server will register a request
+in the framework. The request is more-less something like this:
+
+ * I provide the buffer where the data is expected to be filled.
+ * I provide a callback to be called on the filled buffer.
+ * I request that the framework awaits for the data and when it arrives,
+  that it fills the buffer and calls the provided callback on the buffer.
+
+Once the framework acknowledges the registration, the server never bothers with
+this anticipated read again: it moves on to doing
+other things. Any further data processing logic is encoded in the registered callback.
+This callback may interpret the data as a JSON request, call other servers,
+return response to the client, and likely do these things by registering other callbacks.
+
+This means that the code which registered the request will never learn if the
+requested read succeeded or not. Any errors can only be recognized and responded
+to in the registered callback.
