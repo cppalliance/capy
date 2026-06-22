@@ -600,8 +600,8 @@ struct boost_asio_init_promise_type
 
     struct completer 
     {
-      Handler handler;
-      Ex ex;
+      Handler &handler;
+      Ex &ex;
       args_type args;
 
 
@@ -630,7 +630,7 @@ struct boost_asio_init_promise_type
 
     completer yield_value(args_type value)
     {
-      return {std::move(handler), std::move(ex), std::move(value)};
+      return {handler, ex, std::move(value)};
     }
         
     struct wrapper

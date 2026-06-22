@@ -98,12 +98,12 @@ struct continuation_handle_promise_type
       {
         auto f = std::move(func);
         h.destroy();
-#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ <= 15)
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ <= 16)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Warray-bounds"
 #endif
         std::move(f)();
-#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ <= 15)
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ <= 16)
 #pragma GCC diagnostic pop
 #endif
         
