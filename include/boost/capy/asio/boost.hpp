@@ -607,7 +607,7 @@ struct boost_asio_init_promise_type
 
       bool await_ready() const {return false;}
 
-      auto await_suspend(
+      void await_suspend(
             std::coroutine_handle<boost_asio_init_promise_type> h) 
       {
         auto handler_ =         
