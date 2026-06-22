@@ -10,6 +10,9 @@
 import ac ;
 import testing ;
 
+lib ws2_32 ; # NT
+lib bcrypt ; # NT
+
 project
     : requirements
       $(c20-requires)
@@ -22,6 +25,11 @@ project
       <warnings>extra
       <warnings-as-errors>on
       <target-os>darwin,<undefined-sanitizer>norecover:<link>static
+      # Windows asio comp layer
+      <target-os>windows,<toolset>cw:<library>ws2_32
+      <target-os>windows,<toolset>gcc:<library>ws2_32
+      <target-os>windows,<toolset>clang:<library>ws2_32
+      <target-os>windows,<toolset>clang:<library>bcrypt
     ;
 
 for local f in [ glob-tree-ex . : *.cpp : file*.cpp ]
