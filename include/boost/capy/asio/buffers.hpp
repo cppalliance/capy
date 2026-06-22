@@ -11,6 +11,9 @@
 #define BOOST_CAPY_ASIO_BUFFERS_HPP
 
 #include <boost/capy/buffers.hpp>
+#include <boost/capy/concept/buffer_archetype.hpp>
+
+#include <array>
 #include <concepts>
 #include <utility>
 

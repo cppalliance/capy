@@ -202,7 +202,7 @@ struct boost_asio_test
         boost::asio::steady_timer t{wrapped_te};
         t.expires_after(std::chrono::milliseconds(1));
 
-        bool done = false;
+        std::atomic<bool> done = false;
         t.async_wait(
             [&](auto ec)
             {

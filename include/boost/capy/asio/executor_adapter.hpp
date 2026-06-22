@@ -313,7 +313,10 @@ struct asio_executor_adapter
   template<typename, typename, int>
   friend struct asio_executor_adapter;
   Executor executor_;
-  [[no_unique_address]] Allocator allocator_;
+#if __has_cpp_attribute(no_unique_address)
+  [[no_unique_address]] 
+#endif
+  Allocator allocator_;
 
 };
 
