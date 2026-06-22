@@ -10,7 +10,6 @@
 #if __has_include(<asio.hpp>)
 #include <boost/capy/asio/standalone.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/buffer_pair.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/asio/stream.hpp>
 
@@ -188,7 +187,7 @@ struct asio_standalone_test
 
         using cseq_t = decltype(cseq);
 
-        boost::capy::mutable_buffer_pair p;
+        std::array<boost::capy::mutable_buffer, 2u> p;
         auto seq2 = boost::capy::as_asio_buffer_sequence(p);
         using seq2_t = decltype(seq2);
 

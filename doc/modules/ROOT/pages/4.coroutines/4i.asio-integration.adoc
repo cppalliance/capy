@@ -424,7 +424,7 @@ auto seq1 = capy::as_asio_buffer_sequence(my_mutable_buffer);
 auto seq2 = capy::as_asio_buffer_sequence(my_const_buffer);
 
 // Capy buffer sequences -> wrapped with transforming range
-capy::mutable_buffer_pair buffers = /* ... */;
+std::array<capy::mutable_buffer, 2u> buffers = /* ... */;
 auto seq3 = capy::as_asio_buffer_sequence(buffers);
 
 // Use with Asio
@@ -466,7 +466,6 @@ Using buffer sequences enables efficient scatter/gather I/O:
 [source,cpp]
 ----
 #include <boost/capy/asio/boost.hpp>
-#include <boost/capy/buffers/buffer_pair.hpp>
 
 capy::io_task<std::size_t> read_message(
     boost::asio::ip::tcp::socket& socket)
@@ -475,7 +474,7 @@ capy::io_task<std::size_t> read_message(
     std::array<char, 4> header;
     std::array<char, 256> body;
 
-    capy::mutable_buffer_pair buffers(
+    std::array<capy::mutable_buffer, 2u> buffers(
         capy::mutable_buffer(header.data(), header.size()),
         capy::mutable_buffer(body.data(), body.size()));
 

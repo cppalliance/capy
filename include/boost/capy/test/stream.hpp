@@ -237,7 +237,7 @@ public:
             }
 
             io_result<std::size_t>
-            await_resume() noexcept
+            await_resume() 
             {
                 if(buffer_empty(buffers_))
                     return {{}, 0};

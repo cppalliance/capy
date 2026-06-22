@@ -35,7 +35,6 @@
 #include <boost/asio/use_future.hpp>
 
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/buffer_pair.hpp>
 
 #include <boost/capy/when_all.hpp>
 
@@ -50,6 +49,37 @@
 
 namespace boost {
 namespace capy {
+
+template<typename Aw>
+struct make_awaitable_noexcept : Aw
+{
+  make_awaitable_noexcept(Aw&& aw) : Aw(std::move(aw)) {}
+  auto await_resume() noexcept 
+  {
+    return Aw::await_resume();
+  }
+};
+
+template<typename Stream>
+struct noexcept_test_stream  : Stream
+{
+    noexcept_test_stream() = default;
+    
+    template<ConstBufferSequence CB>
+    auto
+    write_some(CB buffers)
+    {
+        return make_awaitable_noexcept(Stream::write_some(buffers));
+    }
+    
+    template<MutableBufferSequence CB>
+    auto
+    read_some(CB buffers)
+    {
+        return make_awaitable_noexcept(Stream::read_some(buffers));
+    }
+};
+
 
 struct boost_asio_test
 {
@@ -198,13 +228,13 @@ struct boost_asio_test
 
         using cseq_t = decltype(cseq);
 
-        boost::capy::mutable_buffer_pair p;
+        std::array<boost::capy::mutable_buffer, 2u> p;
         auto seq2 = boost::capy::as_asio_buffer_sequence(p);
         using seq2_t = decltype(seq2);
 
-        auto s = seq;
-        auto cs = cseq;
-        auto s2 = seq2;
+        [[maybe_unused]] auto s = seq;
+        [[maybe_unused]] auto cs = cseq;
+        [[maybe_unused]] auto s2 = seq2;
 
         wp.write_some(seq2);
 
@@ -224,7 +254,7 @@ struct boost_asio_test
     {
         thread_pool tp;
         
-        async_write_stream ws{test::write_stream(), tp.get_executor()};
+        async_write_stream ws{noexcept_test_stream<test::write_stream>(), tp.get_executor()};
 
         std::atomic<int> done{0};
 
@@ -240,7 +270,7 @@ struct boost_asio_test
 
         BOOST_TEST_EQ(ws.next_layer().data(), "Test");   
 
-        async_read_stream rs{test::read_stream(), tp.get_executor()};
+        async_read_stream rs{noexcept_test_stream<test::read_stream>(), tp.get_executor()};
         rs.next_layer().provide("foobar");
         
 
@@ -256,7 +286,7 @@ struct boost_asio_test
                 done ++;
             });
             
-        while (done.load() < 2u);
+        while (done.load() < 2);
 
         tp.join();
     }

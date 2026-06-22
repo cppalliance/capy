@@ -160,7 +160,7 @@ public:
             }
 
             io_result<std::size_t>
-            await_resume() noexcept
+            await_resume()
             {
                 // Empty buffer is a no-op regardless of
                 // stream state or fuse.
