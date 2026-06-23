@@ -43,9 +43,12 @@ linearize_buffers(ConstBufferSequence auto const& data)
     linear.reserve(buffer_size(data));
     auto const end_ = end(data);
     for(auto it = begin(data); it != end_; ++it)
+    {
+        const_buffer b = *it;
         linear.append(
-            static_cast<char const*>(it->data()),
-            it->size());
+            static_cast<char const*>(b.data()),
+            b.size());
+    }
     return linear;
 } // LCOV_EXCL_LINE gcov brace artifact (linearize_buffers is exercised)
 
