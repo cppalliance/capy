@@ -180,7 +180,7 @@ struct read_until_awaitable
     await_suspend(std::coroutine_handle<> h, io_env const* env)
     {
         inner_.emplace(read_until_match_impl(
-            *stream_, buffers(), match_, initial_amount_));
+            *stream_, buffers(), std::move(match_), initial_amount_));
         return inner_->await_suspend(h, env);
     }
 
