@@ -12,11 +12,13 @@
 
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/concept/write_sink.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/task.hpp>
 
 #include "test/unit/test_helpers.hpp"
 
 #include <array>
+#include <stop_token>
 #include <string_view>
 
 namespace boost {
@@ -521,6 +523,87 @@ public:
     }
 
     void
+    testWriteCanceled()
+    {
+        // Each write op awaited with an already-requested stop token
+        // returns error::canceled and has no effect.
+        std::stop_source ss;
+        ss.request_stop();
+        bool ran = false;
+        run_blocking(ss.get_token())(
+            [&]() -> task<>
+            {
+                write_sink ws;
+                auto [ec, n] = co_await ws.write(
+                    const_buffer("hello", 5));
+                ran = true;
+                BOOST_TEST(ec == cond::canceled);
+                BOOST_TEST_EQ(n, 0u);
+                BOOST_TEST_EQ(ws.size(), 0u);
+            }());
+        BOOST_TEST(ran);
+    }
+
+    void
+    testWriteSomeCanceled()
+    {
+        std::stop_source ss;
+        ss.request_stop();
+        bool ran = false;
+        run_blocking(ss.get_token())(
+            [&]() -> task<>
+            {
+                write_sink ws;
+                auto [ec, n] = co_await ws.write_some(
+                    const_buffer("hello", 5));
+                ran = true;
+                BOOST_TEST(ec == cond::canceled);
+                BOOST_TEST_EQ(n, 0u);
+                BOOST_TEST_EQ(ws.size(), 0u);
+            }());
+        BOOST_TEST(ran);
+    }
+
+    void
+    testWriteEofWithBuffersCanceled()
+    {
+        std::stop_source ss;
+        ss.request_stop();
+        bool ran = false;
+        run_blocking(ss.get_token())(
+            [&]() -> task<>
+            {
+                write_sink ws;
+                auto [ec, n] = co_await ws.write_eof(
+                    const_buffer("hello", 5));
+                ran = true;
+                BOOST_TEST(ec == cond::canceled);
+                BOOST_TEST_EQ(n, 0u);
+                BOOST_TEST_EQ(ws.size(), 0u);
+                BOOST_TEST(! ws.eof_called());
+            }());
+        BOOST_TEST(ran);
+    }
+
+    void
+    testWriteEofCanceled()
+    {
+        std::stop_source ss;
+        ss.request_stop();
+        bool ran = false;
+        run_blocking(ss.get_token())(
+            [&]() -> task<>
+            {
+                write_sink ws;
+                auto [ec] = co_await ws.write_eof();
+                ran = true;
+                BOOST_TEST(ec == cond::canceled);
+                BOOST_TEST(! ws.eof_called());
+            }());
+        BOOST_TEST(ran);
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -549,6 +632,11 @@ public:
         testWriteSomeBufferSequence();
         testWriteSomeMaxWriteSize();
         testWriteSomeFuseErrorInjection();
+
+        testWriteCanceled();
+        testWriteSomeCanceled();
+        testWriteEofWithBuffersCanceled();
+        testWriteEofCanceled();
     }
 };
 

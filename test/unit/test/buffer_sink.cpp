@@ -12,12 +12,14 @@
 
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/concept/buffer_sink.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/task.hpp>
 
 #include "test/unit/test_helpers.hpp"
 
 #include <cstring>
 #include <span>
+#include <stop_token>
 #include <string_view>
 
 namespace boost {
@@ -281,6 +283,53 @@ public:
     }
 
     void
+    testCommitCanceled()
+    {
+        // commit awaited with an already-requested stop token returns
+        // error::canceled and commits nothing.
+        std::stop_source ss;
+        ss.request_stop();
+        bool ran = false;
+        run_blocking(ss.get_token())(
+            [&]() -> task<>
+            {
+                buffer_sink bs;
+                mutable_buffer arr[4];
+                auto bufs = bs.prepare(arr);
+                std::memcpy(bufs[0].data(), "hello", 5);
+
+                auto [ec] = co_await bs.commit(5);
+                ran = true;
+                BOOST_TEST(ec == cond::canceled);
+                BOOST_TEST_EQ(bs.size(), 0u);
+            }());
+        BOOST_TEST(ran);
+    }
+
+    void
+    testCommitEofCanceled()
+    {
+        std::stop_source ss;
+        ss.request_stop();
+        bool ran = false;
+        run_blocking(ss.get_token())(
+            [&]() -> task<>
+            {
+                buffer_sink bs;
+                mutable_buffer arr[4];
+                auto bufs = bs.prepare(arr);
+                std::memcpy(bufs[0].data(), "hello", 5);
+
+                auto [ec] = co_await bs.commit_eof(5);
+                ran = true;
+                BOOST_TEST(ec == cond::canceled);
+                BOOST_TEST_EQ(bs.size(), 0u);
+                BOOST_TEST(! bs.eof_called());
+            }());
+        BOOST_TEST(ran);
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -294,6 +343,8 @@ public:
         testClear();
         testFuseErrorInjectionCommit();
         testFuseErrorInjectionCommitEof();
+        testCommitCanceled();
+        testCommitEofCanceled();
     }
 };
 

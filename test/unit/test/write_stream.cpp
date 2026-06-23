@@ -13,11 +13,13 @@
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/concept/write_sink.hpp>
 #include <boost/capy/concept/write_stream.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/task.hpp>
 
 #include "test/unit/test_helpers.hpp"
 
 #include <array>
+#include <stop_token>
 #include <string_view>
 
 namespace boost {
@@ -321,6 +323,28 @@ public:
     }
 
     void
+    testWriteSomeCanceled()
+    {
+        // write_some awaited with an already-requested stop token
+        // returns error::canceled and writes nothing.
+        std::stop_source ss;
+        ss.request_stop();
+        bool ran = false;
+        run_blocking(ss.get_token())(
+            [&]() -> task<>
+            {
+                write_stream ws;
+                auto [ec, n] = co_await ws.write_some(
+                    const_buffer("hello", 5));
+                ran = true;
+                BOOST_TEST(ec == cond::canceled);
+                BOOST_TEST_EQ(n, 0u);
+                BOOST_TEST_EQ(ws.size(), 0u);
+            }());
+        BOOST_TEST(ran);
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -337,6 +361,7 @@ public:
         testExpectExcessData();
         testMaxWriteSize();
         testMaxWriteSizeMultiple();
+        testWriteSomeCanceled();
     }
 };
 

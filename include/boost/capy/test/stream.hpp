@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -24,7 +25,9 @@
 #include <boost/capy/test/fuse.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 
+#include <atomic>
 #include <memory>
+#include <new>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -89,6 +92,10 @@ class stream
         std::size_t max_read_size = std::size_t(-1);
         continuation pending_cont_;
         executor_ref pending_ex;
+        // Points at the suspended reader's claim flag (owned by the
+        // read awaitable). Lets a peer wake coordinate with a stop
+        // callback so the parked read is resumed exactly once.
+        std::atomic<bool>* pending_claimed = nullptr;
         bool eof = false;
     };
 
@@ -103,20 +110,31 @@ class stream
         {
         }
 
+        // Resume a suspended reader on this side, if any. Claims the
+        // reader's atomic so it is never double-resumed by a racing
+        // stop callback; the loser of the race skips the post.
+        static void wake(half& side)
+        {
+            if(! side.pending_cont_.h)
+                return;
+            if(! side.pending_claimed ||
+                ! side.pending_claimed->exchange(
+                    true, std::memory_order_acq_rel))
+            {
+                side.pending_ex.post(side.pending_cont_);
+            }
+            side.pending_cont_.h = {};
+            side.pending_ex = {};
+            side.pending_claimed = nullptr;
+        }
+
         // Set closed and resume any suspended readers
         // with eof on both sides.
         void close()
         {
             closed = true;
             for(auto& side : sides)
-            {
-                if(side.pending_cont_.h)
-                {
-                    side.pending_ex.post(side.pending_cont_);
-                    side.pending_cont_.h = {};
-                    side.pending_ex = {};
-                }
-            }
+                wake(side);
         }
     };
 
@@ -166,12 +184,7 @@ public:
         int peer = 1 - index_;
         auto& side = state_->sides[peer];
         side.eof = true;
-        if(side.pending_cont_.h)
-        {
-            side.pending_ex.post(side.pending_cont_);
-            side.pending_cont_.h = {};
-            side.pending_ex = {};
-        }
+        state::wake(side);
     }
 
     /** Set the maximum bytes returned per read.
@@ -204,16 +217,105 @@ public:
 
         @return An awaitable that await-returns `(error_code,std::size_t)`.
 
+        @par Cancellation
+        Cancellation applies only to a read that would otherwise suspend:
+        if no data is available and the environment's stop token is
+        requested (before or during the wait), the read resumes with
+        `error::canceled`. A read that can complete immediately from
+        buffered data is unaffected by the stop token.
+
         @see fuse, close
     */
     template<MutableBufferSequence MB>
     auto
     read_some(MB buffers)
     {
+        // The read suspends when no data is available, parking its
+        // continuation on the side until the peer writes/closes. To
+        // support cancellation it follows the same pattern as
+        // delay_awaitable: a stop callback claims the resume (racing
+        // the peer wake via an atomic) and posts the continuation
+        // through the executor. Because it owns a std::atomic and a
+        // std::stop_callback, the awaitable needs explicit move and
+        // destruction (the task promise moves it into its
+        // transform_awaiter before awaiting).
         struct awaitable
         {
             stream* self_;
             MB buffers_;
+
+            // Declared before stop_cb_buf_: the stop callback reads
+            // these, so they must outlive a blocking stop_cb_ destructor.
+            continuation cont_;
+            executor_ref ex_;
+            half* side_ = nullptr;
+            std::atomic<bool> claimed_{false};
+            bool canceled_ = false;
+            bool stop_cb_active_ = false;
+
+            struct cancel_fn
+            {
+                awaitable* self_;
+
+                void operator()() const noexcept
+                {
+                    if(! self_->claimed_.exchange(
+                        true, std::memory_order_acq_rel))
+                    {
+                        self_->canceled_ = true;
+                        self_->ex_.post(self_->cont_);
+                    }
+                }
+            };
+
+            using stop_cb_t = std::stop_callback<cancel_fn>;
+
+            // Declared last: its destructor may block while the callback
+            // accesses the members above. A union gives correct alignment
+            // for stop_cb_t without an alignas specifier, which avoids
+            // MSVC's C4324 padding warning on this function-local class
+            // (the member-level pragma used by delay_awaitable does not
+            // suppress it here). Lifetime is managed manually: placement
+            // new in await_suspend, explicit destruction once done.
+            union { stop_cb_t stop_cb_; };
+
+            awaitable(stream* self, MB buffers) noexcept
+                : self_(self)
+                , buffers_(buffers)
+            {
+            }
+
+            /// @pre Not yet awaited (no active stop callback).
+            awaitable(awaitable&& o) noexcept
+                : self_(o.self_)
+                , buffers_(o.buffers_)
+                , cont_(o.cont_)
+                , ex_(o.ex_)
+                , side_(o.side_)
+                , claimed_(o.claimed_.load(std::memory_order_relaxed))
+                , canceled_(o.canceled_)
+                , stop_cb_active_(std::exchange(o.stop_cb_active_, false))
+            {
+            }
+
+            ~awaitable()
+            {
+                if(stop_cb_active_)
+                    stop_cb_.~stop_cb_t();
+                // Unlink from the side if still parked (e.g. the
+                // coroutine was destroyed while suspended), so a later
+                // peer wake does not dereference a freed claim flag.
+                if(side_ && side_->pending_claimed == &claimed_)
+                {
+                    side_->pending_cont_.h = {};
+                    side_->pending_ex = {};
+                    side_->pending_claimed = nullptr;
+                }
+            }
+
+            awaitable(awaitable const&) = delete;
+            awaitable& operator=(awaitable const&) = delete;
+            awaitable& operator=(awaitable&&) = delete;
 
             bool await_ready() const noexcept
             {
@@ -229,18 +331,53 @@ public:
                 std::coroutine_handle<> h,
                 io_env const* env) noexcept
             {
+                // Park the continuation, then register the stop callback.
+                // If stop is already requested, the callback fires inline
+                // during construction: it claims the resume and posts the
+                // continuation through the executor (never a symmetric
+                // self-transfer, which would leak this frame under
+                // run_async). The parked read is then resumed with
+                // error::canceled by the run loop.
                 auto& side = self_->state_->sides[
                     self_->index_];
+                cont_.h = h;
+                ex_ = env->executor;
+                side_ = &side;
                 side.pending_cont_.h = h;
                 side.pending_ex = env->executor;
+                side.pending_claimed = &claimed_;
+
+                ::new(static_cast<void*>(&stop_cb_)) stop_cb_t(
+                    env->stop_token, cancel_fn{this});
+                stop_cb_active_ = true;
+
                 return std::noop_coroutine();
             }
 
             io_result<std::size_t>
             await_resume()
             {
+                if(stop_cb_active_)
+                {
+                    stop_cb_.~stop_cb_t();
+                    stop_cb_active_ = false;
+                }
+
                 if(buffer_empty(buffers_))
                     return {{}, 0};
+
+                if(canceled_)
+                {
+                    // The stop callback posted us but left the side
+                    // untouched; unlink if a peer wake has not already.
+                    if(side_ && side_->pending_claimed == &claimed_)
+                    {
+                        side_->pending_cont_.h = {};
+                        side_->pending_ex = {};
+                        side_->pending_claimed = nullptr;
+                    }
+                    return {error::canceled, 0};
+                }
 
                 auto* st = self_->state_.get();
                 auto& side = st->sides[
@@ -287,6 +424,12 @@ public:
 
         @return An awaitable that await-returns `(error_code,std::size_t)`.
 
+        @par Cancellation
+        If the environment's stop token has been requested, the write
+        completes immediately with `error::canceled` and transfers no
+        data. An empty buffer sequence is a no-op that completes
+        successfully regardless of the stop token.
+
         @see fuse, close
     */
     template<ConstBufferSequence CB>
@@ -297,13 +440,20 @@ public:
         {
             stream* self_;
             CB buffers_;
+            bool canceled_ = false;
 
-            bool await_ready() const noexcept { return true; }
+            bool await_ready() const noexcept { return false; }
 
-            void await_suspend(
+            // The write completes synchronously; await_suspend is only
+            // used to observe the environment's stop token. Returning
+            // false means the coroutine does not actually suspend.
+            bool
+            await_suspend(
                 std::coroutine_handle<>,
-                io_env const*) const noexcept
+                io_env const* env) noexcept
             {
+                canceled_ = env->stop_token.stop_requested();
+                return false;
             }
 
             io_result<std::size_t>
@@ -312,6 +462,9 @@ public:
                 std::size_t n = buffer_size(buffers_);
                 if(n == 0)
                     return {{}, 0};
+
+                if(canceled_)
+                    return {error::canceled, 0};
 
                 auto* st = self_->state_.get();
 
@@ -333,12 +486,7 @@ public:
                     side.buf.data() + old_size, n),
                     buffers_, n);
 
-                if(side.pending_cont_.h)
-                {
-                    side.pending_ex.post(side.pending_cont_);
-                    side.pending_cont_.h = {};
-                    side.pending_ex = {};
-                }
+                state::wake(side);
 
                 return {{}, n};
             }
@@ -363,12 +511,7 @@ public:
         int peer = 1 - index_;
         auto& side = state_->sides[peer];
         side.buf.append(sv);
-        if(side.pending_cont_.h)
-        {
-            side.pending_ex.post(side.pending_cont_);
-            side.pending_cont_.h = {};
-            side.pending_ex = {};
-        }
+        state::wake(side);
     }
 
     /** Read from this stream and verify the content.

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -142,6 +143,10 @@ public:
 
         @return An awaitable that await-returns `(error_code,std::span<const_buffer>)`.
 
+        @par Cancellation
+        If the environment's stop token has been requested, the pull
+        completes immediately with `error::canceled` and an empty span.
+
         @see consume, fuse
     */
     auto
@@ -151,29 +156,31 @@ public:
         {
             buffer_source* self_;
             std::span<const_buffer> dest_;
+            bool canceled_ = false;
 
-            bool await_ready() const noexcept { return true; }
+            bool await_ready() const noexcept { return false; }
 
-            // This method is required to satisfy Capy's IoAwaitable concept,
-            // but is never called because await_ready() returns true.
-            //
-            // Capy uses a two-layer awaitable system: the promise's
-            // await_transform wraps awaitables in a transform_awaiter whose
-            // standard await_suspend(coroutine_handle) calls this custom
-            // 2-argument overload, passing the io_env from the coroutine's
-            // context. For synchronous test awaitables like this one, the
-            // coroutine never suspends, so this is not invoked. The signature
-            // exists to allow the same awaitable type to work with both
-            // synchronous (test) and asynchronous (real I/O) code.
-            void await_suspend(
+            // The operation completes synchronously, but await_suspend is
+            // the only place io_env is delivered (the promise's
+            // transform_awaiter forwards it here). Returning false means
+            // the coroutine does not actually suspend; it resumes
+            // immediately, having observed the stop token. See io_env,
+            // IoAwaitable.
+            bool
+            await_suspend(
                 std::coroutine_handle<>,
-                io_env const*) const noexcept
+                io_env const* env) noexcept
             {
+                canceled_ = env->stop_token.stop_requested();
+                return false;
             }
 
             io_result<std::span<const_buffer>>
             await_resume()
             {
+                if(canceled_)
+                    return {error::canceled, {}};
+
                 auto ec = self_->f_.maybe_fail();
                 if(ec)
                     return {ec, {}};

@@ -120,6 +120,36 @@ context such as a thread pool.
   `on_error(ep)` on failure.
 |===
 
+=== Exercising Cancellation
+
+The stop token supplied to `run_blocking` propagates through the execution
+environment to every `capy::test` awaitable. When the token is requested, the
+next awaited test operation resolves to `error::canceled` instead of
+performing its work, so code under test can be driven down its cancellation
+paths without real I/O.
+
+[source,cpp]
+----
+std::stop_source src;
+src.request_stop();
+
+run_blocking(src.get_token())([&]() -> task<>
+{
+    read_stream rs;
+    rs.provide("ignored");
+
+    char buf[32];
+    auto [ec, n] = co_await rs.read_some(make_buffer(buf));
+    assert(ec == cond::canceled);   // honored the stop token
+}());
+----
+
+The mock sources, sinks, and buffer adapters complete synchronously, so they
+check the token up front: an outstanding stop request yields `error::canceled`
+on the next operation. A connected `stream` whose `read_some` is *blocked*
+waiting for its peer is resumed with `error::canceled` when the token fires; a
+read that can satisfy from already-buffered data is unaffected.
+
 == fuse
 
 `fuse` tests every error-handling path in a coroutine by injecting failures

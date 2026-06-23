@@ -18,6 +18,7 @@
 #include "test/unit/test_helpers.hpp"
 
 #include <array>
+#include <stop_token>
 #include <string_view>
 
 namespace boost {
@@ -497,6 +498,50 @@ public:
     }
 
     void
+    testReadCanceled()
+    {
+        // read awaited with an already-requested stop token returns
+        // error::canceled instead of data.
+        std::stop_source ss;
+        ss.request_stop();
+        bool ran = false;
+        run_blocking(ss.get_token())(
+            [&]() -> task<>
+            {
+                read_source rs;
+                rs.provide("hello world");
+
+                char buf[32] = {};
+                auto [ec, n] = co_await rs.read(make_buffer(buf));
+                ran = true;
+                BOOST_TEST(ec == cond::canceled);
+                BOOST_TEST_EQ(n, 0u);
+            }());
+        BOOST_TEST(ran);
+    }
+
+    void
+    testReadSomeCanceled()
+    {
+        std::stop_source ss;
+        ss.request_stop();
+        bool ran = false;
+        run_blocking(ss.get_token())(
+            [&]() -> task<>
+            {
+                read_source rs;
+                rs.provide("hello world");
+
+                char buf[32] = {};
+                auto [ec, n] = co_await rs.read_some(make_buffer(buf));
+                ran = true;
+                BOOST_TEST(ec == cond::canceled);
+                BOOST_TEST_EQ(n, 0u);
+            }());
+        BOOST_TEST(ran);
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -523,6 +568,9 @@ public:
         testReadSomeMaxReadSize();
         testReadSomeBufferSequence();
         testReadSomeFuseErrorInjection();
+
+        testReadCanceled();
+        testReadSomeCanceled();
     }
 };
 

@@ -19,6 +19,7 @@
 #include "test/unit/test_helpers.hpp"
 
 #include <span>
+#include <stop_token>
 #include <string_view>
 
 namespace boost {
@@ -296,6 +297,29 @@ public:
     }
 
     void
+    testPullCanceled()
+    {
+        // pull awaited with an already-requested stop token returns
+        // error::canceled and an empty buffer span.
+        std::stop_source ss;
+        ss.request_stop();
+        bool ran = false;
+        run_blocking(ss.get_token())(
+            [&]() -> task<>
+            {
+                buffer_source bs;
+                bs.provide("hello world");
+
+                const_buffer arr[4];
+                auto [ec, bufs] = co_await bs.pull(arr);
+                ran = true;
+                BOOST_TEST(ec == cond::canceled);
+                BOOST_TEST(bufs.empty());
+            }());
+        BOOST_TEST(ran);
+    }
+
+    void
     run()
     {
         testConstruct();
@@ -310,6 +334,7 @@ public:
         testMaxPullSizeMultiple();
         testFuseErrorInjection();
         testClearAndReuse();
+        testPullCanceled();
     }
 };
 

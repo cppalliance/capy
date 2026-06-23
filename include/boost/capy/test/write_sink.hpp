@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -21,7 +22,6 @@
 #include <boost/capy/test/fuse.hpp>
 
 #include <algorithm>
-#include <stop_token>
 #include <string>
 #include <string_view>
 
@@ -157,6 +157,12 @@ public:
 
         @return An awaitable that await-returns `(error_code,std::size_t)`.
 
+        @par Cancellation
+        If the environment's stop token has been requested, the write
+        completes immediately with `error::canceled` and transfers no
+        data. An empty buffer sequence is a no-op that completes
+        successfully regardless of the stop token.
+
         @see fuse
     */
     template<ConstBufferSequence CB>
@@ -167,13 +173,23 @@ public:
         {
             write_sink* self_;
             CB buffers_;
+            bool canceled_ = false;
 
-            bool await_ready() const noexcept { return true; }
+            bool await_ready() const noexcept { return false; }
 
-            void await_suspend(
+            // The operation completes synchronously, but await_suspend is
+            // the only place io_env is delivered (the promise's
+            // transform_awaiter forwards it here). Returning false means
+            // the coroutine does not actually suspend; it resumes
+            // immediately, having observed the stop token. See io_env,
+            // IoAwaitable.
+            bool
+            await_suspend(
                 std::coroutine_handle<>,
-                io_env const*) const noexcept
+                io_env const* env) noexcept
             {
+                canceled_ = env->stop_token.stop_requested();
+                return false;
             }
 
             io_result<std::size_t>
@@ -181,6 +197,9 @@ public:
             {
                 if(buffer_empty(buffers_))
                     return {{}, 0};
+
+                if(canceled_)
+                    return {error::canceled, 0};
 
                 auto ec = self_->f_.maybe_fail();
                 if(ec)
@@ -218,6 +237,11 @@ public:
 
         @return An awaitable that await-returns `(error_code,std::size_t)`.
 
+        @par Cancellation
+        If the environment's stop token has been requested, the write
+        completes immediately with `error::canceled` and transfers no
+        data.
+
         @see fuse
     */
     template<ConstBufferSequence CB>
@@ -228,18 +252,27 @@ public:
         {
             write_sink* self_;
             CB buffers_;
+            bool canceled_ = false;
 
-            bool await_ready() const noexcept { return true; }
+            bool await_ready() const noexcept { return false; }
 
-            void await_suspend(
+            // Reads the stop token without suspending; see the comment
+            // on write_some() for details.
+            bool
+            await_suspend(
                 std::coroutine_handle<>,
-                io_env const*) const noexcept
+                io_env const* env) noexcept
             {
+                canceled_ = env->stop_token.stop_requested();
+                return false;
             }
 
             io_result<std::size_t>
             await_resume()
             {
+                if(canceled_)
+                    return {error::canceled, 0};
+
                 auto ec = self_->f_.maybe_fail();
                 if(ec)
                     return {ec, 0};
@@ -279,6 +312,11 @@ public:
         @par Exception Safety
         No-throw guarantee.
 
+        @par Cancellation
+        If the environment's stop token has been requested, the operation
+        completes immediately with `error::canceled`, transfers no data,
+        and does not signal end-of-stream.
+
         @param buffers The const buffer sequence containing data to write.
 
         @return An awaitable that await-returns `(error_code,std::size_t)`.
@@ -293,18 +331,27 @@ public:
         {
             write_sink* self_;
             CB buffers_;
+            bool canceled_ = false;
 
-            bool await_ready() const noexcept { return true; }
+            bool await_ready() const noexcept { return false; }
 
-            void await_suspend(
+            // Reads the stop token without suspending; see the comment
+            // on write_some() for details.
+            bool
+            await_suspend(
                 std::coroutine_handle<>,
-                io_env const*) const noexcept
+                io_env const* env) noexcept
             {
+                canceled_ = env->stop_token.stop_requested();
+                return false;
             }
 
             io_result<std::size_t>
             await_resume()
             {
+                if(canceled_)
+                    return {error::canceled, 0};
+
                 auto ec = self_->f_.maybe_fail();
                 if(ec)
                     return {ec, 0};
@@ -343,6 +390,11 @@ public:
         @par Exception Safety
         No-throw guarantee.
 
+        @par Cancellation
+        If the environment's stop token has been requested, the operation
+        completes immediately with `error::canceled` and does not signal
+        end-of-stream.
+
         @return An awaitable that await-returns `(error_code)`.
 
         @see fuse
@@ -353,21 +405,27 @@ public:
         struct awaitable
         {
             write_sink* self_;
+            bool canceled_ = false;
 
-            bool await_ready() const noexcept { return true; }
+            bool await_ready() const noexcept { return false; }
 
-            // This method is required to satisfy Capy's IoAwaitable concept,
-            // but is never called because await_ready() returns true.
-            // See the comment on write(CB buffers) for a detailed explanation.
-            void await_suspend(
+            // Reads the stop token without suspending; see the comment
+            // on write_some() for details.
+            bool
+            await_suspend(
                 std::coroutine_handle<>,
-                io_env const*) const noexcept
+                io_env const* env) noexcept
             {
+                canceled_ = env->stop_token.stop_requested();
+                return false;
             }
 
             io_result<>
             await_resume()
             {
+                if(canceled_)
+                    return {error::canceled};
+
                 auto ec = self_->f_.maybe_fail();
                 if(ec)
                     return {ec};
