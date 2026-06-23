@@ -15,6 +15,11 @@
 #include <boost/capy/concept/stream.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/cond.hpp>
+#include <boost/capy/error.hpp>
+#include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/run_async.hpp>
+#include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/io_task.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/run_blocking.hpp>
@@ -23,7 +28,11 @@
 #include "test/unit/test_helpers.hpp"
 
 #include <array>
+#include <latch>
+#include <queue>
+#include <stop_token>
 #include <string_view>
+#include <thread>
 
 namespace boost {
 namespace capy {
@@ -658,6 +667,205 @@ public:
         BOOST_TEST(write_success_count > 0);
     }
 
+    //--------------------------------------------
+    //
+    // Cancellation
+    //
+    //--------------------------------------------
+
+    void
+    testReadSomeCancellationWhileSuspended()
+    {
+        // A read that suspends waiting for the peer is resumed with
+        // error::canceled when the environment's stop token fires.
+        // Driven manually on a queuing executor for deterministic,
+        // non-blocking control (mirrors async_mutex's cancellation test).
+        auto [a, b] = make_stream_pair();
+        std::queue<std::coroutine_handle<>> q;
+        queuing_executor ex(q);
+        std::stop_source ss;
+
+        std::error_code reader_ec;
+        bool reader_done = false;
+
+        auto reader = [](stream& s,
+            std::error_code& out_ec, bool& done) -> task<>
+        {
+            char buf[32] = {};
+            auto [ec, n] = co_await s.read_some(make_buffer(buf));
+            out_ec = ec;
+            (void)n;
+            done = true;
+        }(b, reader_ec, reader_done);
+
+        auto h = reader.handle();
+        reader.release();
+        io_env env;
+        env.executor = executor_ref(ex);
+        env.stop_token = ss.get_token();
+        h.promise().set_environment(&env);
+
+        // No data available: the read suspends.
+        h.resume();
+        BOOST_TEST(! reader_done);
+
+        // Requesting stop posts the continuation through the executor.
+        ss.request_stop();
+        BOOST_TEST(! q.empty());
+
+        q.front().resume();
+        q.pop();
+
+        BOOST_TEST(reader_done);
+        BOOST_TEST(reader_ec == make_error_code(error::canceled));
+
+        h.destroy();
+    }
+
+    void
+    testReadSomeStopRequestedBeforeSuspend()
+    {
+        // A read that would block (no data) but whose stop token is
+        // already requested resolves to error::canceled without parking.
+        std::stop_source ss;
+        ss.request_stop();
+        bool ran = false;
+        run_blocking(ss.get_token())(
+            [&]() -> task<>
+            {
+                auto [a, b] = make_stream_pair();
+                // No data provided: the read would otherwise suspend.
+                char buf[32] = {};
+                auto [ec, n] = co_await b.read_some(make_buffer(buf));
+                ran = true;
+                BOOST_TEST(ec == cond::canceled);
+                BOOST_TEST_EQ(n, 0u);
+            }());
+        BOOST_TEST(ran);
+    }
+
+    void
+    testReadSomeDestroyWhileSuspended()
+    {
+        // Destroying a coroutine while its read is parked must tear down
+        // the stop callback and unlink the pending slot, so a later peer
+        // operation does not touch a freed claim flag.
+        auto [a, b] = make_stream_pair();
+        std::queue<std::coroutine_handle<>> q;
+        queuing_executor ex(q);
+        std::stop_source ss;
+
+        auto reader = [](stream& s) -> task<>
+        {
+            char buf[32] = {};
+            auto [ec, n] = co_await s.read_some(make_buffer(buf));
+            (void)ec;
+            (void)n;
+        }(b);
+
+        auto h = reader.handle();
+        reader.release();
+        io_env env;
+        env.executor = executor_ref(ex);
+        env.stop_token = ss.get_token();
+        h.promise().set_environment(&env);
+
+        h.resume();
+        BOOST_TEST(q.empty());
+
+        // Destroy the suspended reader; the awaitable destructor runs.
+        h.destroy();
+
+        // The pending slot is unlinked: a subsequent peer write finds no
+        // parked reader and does not dereference the freed claim flag.
+        a.provide("late");
+        BOOST_TEST(true);
+    }
+
+    void
+    testReadSomeCancellationCrossThread()
+    {
+        // A read suspended on one thread is cancelled by a stop request
+        // issued from another, exercising the stop-callback path under
+        // real concurrency (validated by TSan). Only the stop callback
+        // crosses threads; the stream itself is touched solely by the
+        // pool thread, honoring its single-threaded contract.
+        thread_pool pool(1);
+        std::latch done(1);
+        std::latch suspended(1);
+        std::stop_source ss;
+
+        auto [a, b] = make_stream_pair();
+        std::error_code reader_ec;
+
+        auto reader = [&]() -> task<>
+        {
+            char buf[32] = {};
+            suspended.count_down();
+            auto [ec, n] = co_await b.read_some(make_buffer(buf));
+            reader_ec = ec;
+            (void)n;
+        };
+
+        run_async(pool.get_executor(), ss.get_token(),
+            [&]() { done.count_down(); },
+            [&](std::exception_ptr) { done.count_down(); })(reader());
+
+        suspended.wait();
+        // Give await_suspend time to register the stop callback.
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        ss.request_stop();
+
+        done.wait();
+        BOOST_TEST(reader_ec == make_error_code(error::canceled));
+    }
+
+    void
+    testReadSomeStopWithDataAvailable()
+    {
+        // When data is already buffered, a read completes normally even
+        // if the stop token is set: cancellation only applies to a read
+        // that would otherwise block.
+        std::stop_source ss;
+        ss.request_stop();
+        bool ran = false;
+        run_blocking(ss.get_token())(
+            [&]() -> task<>
+            {
+                auto [a, b] = make_stream_pair();
+                a.provide("hello");
+
+                char buf[32] = {};
+                auto [ec, n] = co_await b.read_some(make_buffer(buf));
+                ran = true;
+                BOOST_TEST(! ec);
+                BOOST_TEST_EQ(n, 5u);
+                BOOST_TEST_EQ(std::string_view(buf, n), "hello");
+            }());
+        BOOST_TEST(ran);
+    }
+
+    void
+    testWriteSomeCancellation()
+    {
+        // write_some never blocks, so it honors the stop token up front:
+        // an already-requested stop yields error::canceled.
+        std::stop_source ss;
+        ss.request_stop();
+        bool ran = false;
+        run_blocking(ss.get_token())(
+            [&]() -> task<>
+            {
+                auto [a, b] = make_stream_pair();
+                auto [ec, n] = co_await a.write_some(
+                    const_buffer("hi", 2));
+                ran = true;
+                BOOST_TEST(ec == cond::canceled);
+                BOOST_TEST_EQ(n, 0u);
+            }());
+        BOOST_TEST(ran);
+    }
+
     void
     run()
     {
@@ -689,6 +897,14 @@ public:
         testLoopback();
         testFuseReadErrorInjection();
         testFuseWriteErrorInjection();
+
+        // Cancellation
+        testReadSomeCancellationWhileSuspended();
+        testReadSomeStopRequestedBeforeSuspend();
+        testReadSomeDestroyWhileSuspended();
+        testReadSomeCancellationCrossThread();
+        testReadSomeStopWithDataAvailable();
+        testWriteSomeCancellation();
     }
 };
 
