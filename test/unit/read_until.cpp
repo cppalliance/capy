@@ -19,9 +19,11 @@
 #include "test_suite.hpp"
 
 #include <cstring>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 namespace boost {
 namespace capy {
@@ -451,6 +453,52 @@ struct read_until_test
         }));
     }
 
+    void
+    testMoveOnlyMatcher()
+    {
+        struct move_only_matcher
+        {
+            std::unique_ptr<std::string> delim;
+
+            explicit move_only_matcher(std::string d)
+                : delim(std::make_unique<std::string>(std::move(d)))
+            {
+            }
+
+            std::size_t
+            operator()(
+                std::string_view data,
+                std::size_t* hint) const
+            {
+                auto pos = data.find(*delim);
+                if(pos != std::string_view::npos)
+                    return pos + delim->size();
+                if(hint)
+                    *hint = delim->size() > 1 ? delim->size() - 1 : 0;
+                return std::string_view::npos;
+            }
+        };
+
+        static_assert(MatchCondition<move_only_matcher>);
+        static_assert(! std::is_copy_constructible_v<move_only_matcher>);
+
+        // Chunked reads route the matcher through await_suspend, which
+        // moves rather than copies it.
+        BOOST_TEST(test::fuse().armed([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f, 4);
+            rs.provide("hello\r\nworld");
+
+            std::string data;
+            auto [ec, n] = co_await read_until(
+                rs, dynamic_buffer(data), move_only_matcher("\r\n"));
+            if(ec)
+                co_return;
+
+            BOOST_TEST_EQ(n, 7u);  // "hello\r\n"
+        }));
+    }
+
     //----------------------------------------------------------
 
     void
@@ -486,6 +534,7 @@ struct read_until_test
         testErrorConditions();
         testPrefilledBuffer();
         testMatchCondition();
+        testMoveOnlyMatcher();
         testMatchHelpers();
     }
 };
