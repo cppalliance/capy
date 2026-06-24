@@ -97,6 +97,18 @@ public:
         BOOST_TEST(!(make_error_code(error::eof) == cond::stream_truncated));
         BOOST_TEST(make_error_code(error::timeout) == cond::timeout);
 
+        // Equivalence: std::errc::timed_out == cond::timeout
+        {
+            auto ec = make_error_code(std::errc::timed_out);
+            BOOST_TEST(ec == cond::timeout);
+            BOOST_TEST(!(ec == cond::eof));
+        }
+        {
+            std::error_code ec = std::make_error_code(std::errc::timed_out);
+            BOOST_TEST(ec == cond::timeout);
+            BOOST_TEST(!(ec == cond::canceled));
+        }
+
         // Out-of-range condition is equivalent to nothing.
         {
             auto ec = make_error_code(error::eof);
