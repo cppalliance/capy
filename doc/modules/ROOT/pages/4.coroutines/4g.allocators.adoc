@@ -55,19 +55,16 @@ capy::safe_resume(h);   // saves and restores TLS around h.resume()
 
 `safe_resume` saves the current thread-local allocator, calls `h.resume()`, then restores the saved value. This makes TLS behave like a stack: nested resumes cannot spoil the outer value. All of Capy's built-in executors (`thread_pool`, strands, `blocking_context`) use `safe_resume` internally. Custom executor event loops must do the same -- see xref:8.examples/8n.custom-executor.adoc[Custom Executor] for an example.
 
-== The FrameAllocator Concept
+== Custom Allocator Requirements
 
-Custom allocators must satisfy the `FrameAllocator` concept, which is compatible with {cpp} allocator requirements:
+Custom allocators must meet the usual {cpp} allocator requirements, or be a `std::pmr::memory_resource*`. The library does not expose a separate public concept for them; a value-type allocator works as a frame allocator when it provides, illustratively:
 
 [source,cpp]
 ----
-template<typename A>
-concept FrameAllocator = requires {
-    typename A::value_type;
-} && requires(A& a, std::size_t n) {
-    { a.allocate(n) } -> std::same_as<typename A::value_type*>;
-    { a.deallocate(std::declval<typename A::value_type*>(), n) };
-};
+// Illustrative requirements — not a named public concept:
+typename A::value_type;
+a.allocate(n)        // -> A::value_type*
+a.deallocate(p, n);
 ----
 
 In practice, any standard allocator works.
@@ -107,6 +104,31 @@ Capy provides `recycling_memory_resource`, a memory resource optimized for corou
 * Falls back to upstream allocator for new sizes
 
 This allocator is used by default for `thread_pool` and other execution contexts.
+
+NOTE: `recycling_memory_resource` honors only the default new alignment (`__STDCPP_DEFAULT_NEW_ALIGNMENT__`, typically `alignof(std::max_align_t)`). The alignment argument passed to `do_allocate`/`do_deallocate` is ignored, so over-aligned requests are not satisfied. This is sufficient for coroutine frames but means the resource is not a drop-in replacement where over-aligned allocations are required.
+
+== Frame Allocator Mixin
+
+Most users never need to allocate coroutine frames manually -- `task<T>` and the built-in awaitable types already participate in TLS frame allocation. When you write your own coroutine promise type and want it to use the same fast path, inherit from `frame_alloc_mixin`:
+
+[source,cpp]
+----
+struct my_coroutine
+{
+    struct promise_type : capy::frame_alloc_mixin
+    {
+        // get_return_object, initial_suspend, ...
+    };
+};
+----
+
+`frame_alloc_mixin` (in `<boost/capy/ex/frame_alloc_mixin.hpp>`) supplies `operator new` and `operator delete` that:
+
+* Read the thread-local frame allocator set by `run_async` (falling back to `std::pmr::get_default_resource()` when none is set).
+* Bypass virtual dispatch when that allocator is the default recycling memory resource.
+* Store the resolved allocator pointer at the tail of each frame, so deallocation uses the correct resource even if the thread-local allocator has since changed.
+
+This is the same strategy used internally by `io_awaitable_promise_base`. Use the mixin directly when your promise type does not need the full environment and continuation support that `io_awaitable_promise_base` provides. The allocation fast path uses thread-local storage and needs no synchronization; the global pool fallback is mutex-protected.
 
 == HALO Optimization
 

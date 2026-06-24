@@ -95,7 +95,7 @@ This single signature accepts:
 * A single `const_buffer`
 * A `span<const_buffer>`
 * A `vector<const_buffer>`
-* A `string_view` (converts to single buffer)
+* A `string_view` wrapped with `make_buffer` (which yields a single `const_buffer`)
 * A custom composite type
 * *Any composition of the above—without allocation*
 

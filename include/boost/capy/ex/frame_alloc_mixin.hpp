@@ -71,6 +71,14 @@ struct frame_alloc_mixin
         correct deallocation even when TLS changes. Uses memcpy
         to avoid alignment requirements on the trailing pointer.
         Bypasses virtual dispatch for the recycling allocator.
+
+        @param size The size, in bytes, of the coroutine frame.
+
+        @return A pointer to storage for the frame.
+
+        @throws Propagates any exception thrown by the underlying
+        memory resource's `allocate` (for example `std::bad_alloc`
+        from `::operator new`).
     */
     static void* operator new(std::size_t size)
     {

@@ -346,7 +346,22 @@ class [[nodiscard]] run_async_wrapper
     std::pmr::memory_resource* saved_tls_;
 
 public:
-    /// Construct wrapper with executor, stop token, handlers, and allocator.
+    /** Construct the wrapper and install the frame allocator.
+
+        Builds the trampoline, saves the current thread-local frame
+        allocator, and installs the trampoline's resource as the new
+        thread-local allocator so that the task frame (evaluated as the
+        argument to @ref operator()) is allocated from it.
+
+        @param ex The executor on which the task runs.
+        @param st The stop token for cooperative cancellation.
+        @param h The completion handlers.
+        @param a The allocator for frame allocation.
+
+        @note When `Alloc` is not `std::pmr::memory_resource*` it must be
+        nothrow move constructible (enforced by a `static_assert`), which
+        is what allows this constructor to be `noexcept`.
+    */
     run_async_wrapper(
         Ex ex,
         std::stop_token st,
@@ -367,10 +382,14 @@ public:
         set_current_frame_allocator(tr_.h_.promise().get_resource());
     }
 
+    /** Restore the previously installed frame allocator.
+
+        Resets the thread-local frame allocator to the value saved at
+        construction, so a stale pointer to the trampoline's resource does
+        not outlive the execution context that owns it.
+    */
     ~run_async_wrapper()
     {
-        // Restore TLS so stale pointer doesn't outlive
-        // the execution context that owns the resource.
         set_current_frame_allocator(saved_tls_);
     }
 

@@ -111,7 +111,7 @@ pull_from(Src& source, Sink& sink)
     data incrementally as it arrives. It loops until EOF is encountered
     or an error occurs.
 
-    @tparam Src The source type, must satisfy @ref ReadStream.
+    @tparam Src The stream type, must satisfy @ref ReadStream.
     @tparam Sink The sink type, must satisfy @ref BufferSink.
 
     @param source The stream to read data from.

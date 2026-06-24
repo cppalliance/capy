@@ -436,23 +436,3 @@ Output (52 bytes):
 == Next Steps
 
 * xref:8.examples/8k.strand-serialization.adoc[Strand Serialization] -- Lock-free shared state with strands
-
-== Summary
-
-This example catalog demonstrated:
-
-* Basic task creation and launching
-* Coroutine synchronization with events
-* Buffer composition for scatter/gather I/O
-* Unit testing with mock streams
-* Compilation firewalls with type erasure
-* Cooperative cancellation with stop tokens
-* Concurrent execution with `when_all`
-* Custom buffer implementations
-* Real network I/O with Corosio
-* Data transformation pipelines
-* Strand-based serialization and async mutexes
-* Parallel task distribution across thread pools
-* Custom executor implementations
-
-These patterns form the foundation for building robust, efficient I/O applications with Capy.

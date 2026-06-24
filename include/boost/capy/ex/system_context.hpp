@@ -16,15 +16,17 @@
 namespace boost {
 namespace capy {
 
-/** Return the process-wide system execution context.
+/** Return the process-wide system thread pool.
 
-    This singleton context serves as a container for services
-    but does not provide an executor or handle work. 
+    This singleton is the default execution context used when no
+    explicit context is supplied (for example, by timers and
+    services). It provides an executor via `get_executor()` and
+    runs scheduled work on its worker threads.
 
     @par Thread Safety
     Safe to call from any thread.
 
-    @return Reference to the system execution context singleton.
+    @return Reference to the system thread pool singleton.
 */
 BOOST_CAPY_DECL auto
 get_system_context() -> thread_pool&;

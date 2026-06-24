@@ -80,7 +80,7 @@ namespace capy {
     ctx.find_service<posix_file_service>(); // also works
     @endcode
 
-    @see service, is_execution_context
+    @see service, ExecutionContext
 */
 class BOOST_CAPY_DECL
     execution_context
@@ -97,6 +97,19 @@ class BOOST_CAPY_DECL
         using type = typename T::key_type;
     };
 protected:
+    /** Construct from the most-derived context type.
+
+        Records the dynamic type of the context so that
+        @ref target can later downcast `this` to the
+        requested derived type. Derived classes must pass
+        `this` typed as the most-derived type (i.e. invoke
+        this constructor from the most-derived class with
+        `this` of that type). Passing a pointer typed as a
+        base class records the wrong type and causes
+        `target<Derived>()` to return `nullptr`.
+
+        @tparam Derived The most-derived context type.
+    */
     template< typename Derived >
     explicit execution_context( Derived* ) noexcept;
 

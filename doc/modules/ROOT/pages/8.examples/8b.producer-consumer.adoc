@@ -93,7 +93,7 @@ A `strand` is an executor adaptor that serializes execution. All coroutines disp
 capy::async_event data_ready;
 ----
 
-`async_event` is a one-shot signaling mechanism. One task can `set()` it; other tasks can `wait()` for it. When set, all waiting tasks resume.
+`async_event` is a manual-reset signaling mechanism. One task can `set()` it; other tasks can `wait()` for it. When set, all current waiters resume, and the event stays set (later `wait()` calls return immediately) until `clear()` is called.
 
 === Producer
 

@@ -37,7 +37,7 @@ namespace capy {
     task<> echo(S& stream)
     {
         char buf[1024];
-        auto [ec, n] = co_await stream.read_some(mutable_buffer(buf));
+        auto [ec, n] = co_await stream.read_some(make_buffer(buf));
         if(ec)
             co_return;
         co_await stream.write_some(const_buffer(buf, n));

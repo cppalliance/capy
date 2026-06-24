@@ -33,6 +33,15 @@ namespace capy {
     This is the default allocator used by run_async when no allocator
     is specified.
 
+    @note This resource honors only the default new alignment
+    (`__STDCPP_DEFAULT_NEW_ALIGNMENT__`, typically
+    `alignof(std::max_align_t)`). The alignment argument passed to
+    `do_allocate`/`do_deallocate` (and to `allocate_fast`/`deallocate_fast`)
+    is ignored; backing storage comes from `::operator new`. Over-aligned
+    requests are therefore not satisfied. This is sufficient for coroutine
+    frame allocation but means the resource cannot be used where
+    over-aligned memory is required.
+
     @par Thread Safety
     Thread-safe. The thread-local pool requires no synchronization.
     The global pool uses a mutex for cross-thread access.
@@ -126,6 +135,13 @@ class BOOST_CAPY_DECL recycling_memory_resource : public std::pmr::memory_resour
     void deallocate_slow(void* p, std::size_t idx);
 
 public:
+    /** Destructor.
+
+        Releases any blocks still held in this resource's thread-local
+        pool for the calling thread. Blocks held in the process-wide
+        global pool, and in other threads' thread-local pools, are
+        released when those pools are destroyed.
+    */
     ~recycling_memory_resource();
 
     /** Allocate without virtual dispatch.
@@ -133,9 +149,16 @@ public:
         Handles the fast path inline (thread-local bucket pop)
         and falls through to the slow path for global pool or
         heap allocation.
+
+        @param bytes The number of bytes to allocate.
+
+        @return A pointer to the allocated storage.
+
+        @note The second (alignment) argument is ignored; only the
+        default new alignment is honored. See the class-level note.
     */
     void*
-    allocate_fast(std::size_t bytes, std::size_t)
+    allocate_fast(std::size_t bytes, std::size_t /*alignment*/)
     {
         std::size_t rounded = round_up_pow2(bytes);
         std::size_t idx = get_class_index(rounded);
@@ -152,9 +175,17 @@ public:
         Handles the fast path inline (thread-local bucket push)
         and falls through to the slow path for global pool or
         heap deallocation.
+
+        @param p Pointer previously returned by `allocate_fast`
+        (or `do_allocate`) on a resource that compares equal to this one.
+
+        @param bytes The size, in bytes, originally requested for `p`.
+
+        @note The third (alignment) argument is ignored; only the
+        default new alignment is honored. See the class-level note.
     */
     void
-    deallocate_fast(void* p, std::size_t bytes, std::size_t)
+    deallocate_fast(void* p, std::size_t bytes, std::size_t /*alignment*/)
     {
         std::size_t rounded = round_up_pow2(bytes);
         std::size_t idx = get_class_index(rounded);
@@ -170,11 +201,29 @@ public:
     }
 
 protected:
-    void*
-    do_allocate(std::size_t bytes, std::size_t) override;
+    /** Allocate storage (`std::pmr::memory_resource` interface).
 
+        Forwards to `allocate_fast`. The alignment argument is ignored;
+        see the class-level note.
+
+        @param bytes The number of bytes to allocate.
+
+        @return A pointer to the allocated storage.
+    */
+    void*
+    do_allocate(std::size_t bytes, std::size_t /*alignment*/) override;
+
+    /** Deallocate storage (`std::pmr::memory_resource` interface).
+
+        Forwards to `deallocate_fast`. The alignment argument is ignored;
+        see the class-level note.
+
+        @param p Pointer previously returned by `do_allocate`.
+
+        @param bytes The size, in bytes, originally requested for `p`.
+    */
     void
-    do_deallocate(void* p, std::size_t bytes, std::size_t) override;
+    do_deallocate(void* p, std::size_t bytes, std::size_t /*alignment*/) override;
 
     bool
     do_is_equal(const memory_resource& other) const noexcept override

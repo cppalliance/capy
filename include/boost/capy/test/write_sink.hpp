@@ -233,6 +233,12 @@ public:
         `max_write_size` and writes all available data, matching the
         @ref WriteSink semantic contract.
 
+        @par Exception Safety
+        Injected I/O conditions are reported via the `error_code`
+        component of the result. Throws `std::system_error` only when
+        the attached @ref fuse is in exception mode and reaches its
+        failure point; no-throw otherwise.
+
         @param buffers The const buffer sequence containing data to write.
 
         @return An awaitable that await-returns `(error_code,std::size_t)`.
@@ -241,6 +247,9 @@ public:
         If the environment's stop token has been requested, the write
         completes immediately with `error::canceled` and transfers no
         data.
+
+        @throws std::system_error When the attached @ref fuse is in
+        exception mode and reaches its failure point.
 
         @see fuse
     */
@@ -310,7 +319,10 @@ public:
         unchanged.
 
         @par Exception Safety
-        No-throw guarantee.
+        Injected I/O conditions are reported via the `error_code`
+        component of the result. Throws `std::system_error` only when
+        the attached @ref fuse is in exception mode and reaches its
+        failure point; no-throw otherwise.
 
         @par Cancellation
         If the environment's stop token has been requested, the operation
@@ -320,6 +332,9 @@ public:
         @param buffers The const buffer sequence containing data to write.
 
         @return An awaitable that await-returns `(error_code,std::size_t)`.
+
+        @throws std::system_error When the attached @ref fuse is in
+        exception mode and reaches its failure point.
 
         @see fuse
     */
@@ -388,7 +403,10 @@ public:
         If an error is injected by the fuse, the state remains unchanged.
 
         @par Exception Safety
-        No-throw guarantee.
+        Injected I/O conditions are reported via the `error_code`
+        component of the result. Throws `std::system_error` only when
+        the attached @ref fuse is in exception mode and reaches its
+        failure point; no-throw otherwise.
 
         @par Cancellation
         If the environment's stop token has been requested, the operation
@@ -396,6 +414,9 @@ public:
         end-of-stream.
 
         @return An awaitable that await-returns `(error_code)`.
+
+        @throws std::system_error When the attached @ref fuse is in
+        exception mode and reaches its failure point.
 
         @see fuse
     */

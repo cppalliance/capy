@@ -86,6 +86,23 @@ template<typename T = void>
 struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     quitter
 {
+    /** The coroutine promise type for `quitter<T>`.
+
+        This is the promise object the compiler associates with a
+        `quitter<T>` coroutine. It satisfies the coroutine promise
+        requirements and participates in the I/O awaitable protocol via
+        @ref io_awaitable_promise_base. Unlike @ref task::promise_type,
+        its `transform_awaitable` checks the stop token before each
+        awaited result reaches the body, throwing an internal sentinel
+        exception that unwinds to a "stopped" completion. It is part of
+        the coroutine machinery and is not intended to be used directly
+        by callers.
+
+        Result storage and `return_value`/`return_void` are provided by
+        `detail::quitter_return_base<T>`.
+
+        @see io_awaitable_promise_base, IoRunnable
+    */
     struct promise_type
         : io_awaitable_promise_base<promise_type>
         , detail::quitter_return_base<T>
@@ -99,11 +116,13 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         completion state_;
 
     public:
+        /// Construct the promise in the running state.
         promise_type() noexcept
             : state_(completion::running)
         {
         }
 
+        /// Destroy the promise, releasing any stored exception.
         ~promise_type()
         {
             if(state_ == completion::exception ||
@@ -130,12 +149,30 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             return state_ == completion::stopped;
         }
 
+        /** Return the owning `quitter` for this coroutine.
+
+            Called by the compiler to produce the object returned to the
+            caller when the coroutine is created.
+
+            @return A `quitter` owning the coroutine frame.
+        */
         quitter get_return_object()
         {
             return quitter{
                 std::coroutine_handle<promise_type>::from_promise(*this)};
         }
 
+        /** Return the initial-suspend awaiter.
+
+            The coroutine always suspends at the initial suspend point,
+            so the body does not start until the quitter is awaited. When
+            the body is resumed, the awaiter restores the thread-local
+            frame allocator and, if stop has already been requested,
+            throws the internal sentinel exception so the body never
+            runs and the coroutine completes as stopped.
+
+            @return An awaiter that suspends unconditionally.
+        */
         auto initial_suspend() noexcept
         {
             struct awaiter
@@ -164,6 +201,15 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             return awaiter{this};
         }
 
+        /** Return the final-suspend awaiter.
+
+            The coroutine always suspends at the final suspend point. The
+            awaiter's `await_suspend` performs symmetric transfer to the
+            stored continuation, resuming the awaiting coroutine.
+
+            @return An awaiter that suspends and transfers to the
+            continuation.
+        */
         auto final_suspend() noexcept
         {
             struct awaiter
@@ -186,6 +232,14 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             return awaiter{this};
         }
 
+        /** Capture the in-flight exception from the coroutine body.
+
+            Called by the compiler when the coroutine body exits via an
+            unhandled exception. The internal stop sentinel is recorded as
+            a stopped completion; any other exception is recorded as an
+            exception completion. The stored exception is surfaced (or
+            routed to the error handler) when the quitter is awaited or run.
+        */
         void unhandled_exception()
         {
             try
@@ -213,6 +267,17 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         // transform_awaitable — the key difference from task<T>
         //------------------------------------------------------
 
+        /** Awaiter wrapping a nested `co_await` of an @ref IoAwaitable.
+
+            Forwards the environment to the inner awaitable's
+            environment-taking `await_suspend` and restores the
+            thread-local frame allocator before the body resumes. Unlike
+            `task`'s, it also checks the stop token on resumption, throwing
+            the internal sentinel so a stop request unwinds the body before
+            it observes the I/O result.
+
+            @tparam Awaitable The awaitable being transformed.
+        */
         template<class Awaitable>
         struct transform_awaiter
         {
@@ -251,6 +316,17 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             }
         };
 
+        /** Transform a nested awaitable before `co_await`.
+
+            Wraps an @ref IoAwaitable in a @ref transform_awaiter so the
+            coroutine's environment is propagated into it and the stop
+            token is checked on resumption. A diagnostic is emitted if the
+            awaitable does not satisfy @ref IoAwaitable.
+
+            @param a The awaitable expression from `co_await a`.
+
+            @return A @ref transform_awaiter wrapping `a`.
+        */
         template<class Awaitable>
         auto transform_awaitable(Awaitable&& a)
         {
@@ -268,6 +344,12 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         }
     };
 
+    /** Handle to the owned coroutine frame.
+
+        Null when the quitter is empty (for example after a move or after
+        @ref release). Prefer @ref handle to read this; the member is
+        public for use by the coroutine machinery.
+    */
     std::coroutine_handle<promise_type> h_;
 
     /// Destroy the quitter and its coroutine frame if owned.

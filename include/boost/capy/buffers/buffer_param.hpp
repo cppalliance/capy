@@ -63,9 +63,10 @@ namespace capy {
 
     When iterating through large buffer sequences, it is often
     more efficient to process buffers in batches rather than
-    one at a time. This class maintains a window of up to
-    @ref max_size buffer descriptors, automatically refilling
-    from the underlying sequence as buffers are consumed.
+    one at a time. This class maintains a window of up to a
+    fixed, implementation-defined number of buffer descriptors
+    (currently 16), automatically refilling from the underlying
+    sequence as buffers are consumed.
 
     @par Example
 
@@ -180,7 +181,8 @@ public:
 
         Returns a span of buffer descriptors representing the
         currently available portion of the buffer sequence.
-        The span contains at most @ref max_size buffers.
+        The span contains at most a fixed, implementation-defined
+        number of buffers (currently 16).
 
         When the current window is exhausted, this function
         automatically refills from the underlying sequence.

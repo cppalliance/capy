@@ -29,7 +29,7 @@ namespace boost {
 namespace capy {
 namespace test {
 
-/** A mock buffer source for testing push operations.
+/** A mock buffer source for testing pull (BufferSource) operations.
 
     Use this to verify code that transfers data from a buffer source to
     a sink without needing real I/O. Call @ref provide to supply data,

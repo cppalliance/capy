@@ -26,7 +26,7 @@ namespace capy {
     @code
     task<void> example()
     {
-        auto const& env = co_await this_coro::environment;
+        auto* env = co_await this_coro::environment;
         auto ex = co_await this_coro::executor;
         auto token = co_await this_coro::stop_token;
         auto* alloc = co_await this_coro::frame_allocator;
@@ -92,15 +92,21 @@ struct frame_allocator_tag {};
     @code
     task<void> example()
     {
-        auto const& env = co_await this_coro::environment;
-        // env.executor - the executor this coroutine is bound to
-        // env.stop_token - the stop token for cancellation
-        // env.frame_allocator - the frame allocator
+        auto* env = co_await this_coro::environment;
+        // env->executor - the executor this coroutine is bound to
+        // env->stop_token - the stop token for cancellation
+        // env->frame_allocator - the frame allocator
     }
     @endcode
 
+    @par Preconditions
+    An `io_env` must have been installed for this coroutine before the tag
+    is awaited. Launching the coroutine via @ref run or `run_async` installs
+    one; awaiting the tag without an installed environment is undefined
+    behavior (an assertion fires in debug builds).
+
     @par Behavior
-    @li Returns a const reference to the stored `io_env`
+    @li Returns a pointer to the stored `io_env`
     @li This operation never suspends; `await_ready()` always returns `true`
 
     @see environment_tag
@@ -124,9 +130,16 @@ inline constexpr environment_tag environment{};
     }
     @endcode
 
+    @par Preconditions
+    An `io_env` must have been installed for this coroutine before the tag
+    is awaited (see @ref environment). Awaiting it without an installed
+    environment is undefined behavior (an assertion fires in debug builds).
+
     @par Behavior
-    @li If no executor was set, returns a default-constructed
-        `executor_ref` (where `operator bool()` returns `false`).
+    @li Returns the installed environment's `executor` field. If the launched
+        chain installed an `io_env` whose `executor` was left default, the
+        result is a default-constructed `executor_ref` (where `operator bool()`
+        returns `false`).
     @li This operation never suspends; `await_ready()` always returns `true`.
 
     @see executor_tag
@@ -151,9 +164,16 @@ inline constexpr executor_tag executor{};
     }
     @endcode
 
+    @par Preconditions
+    An `io_env` must have been installed for this coroutine before the tag
+    is awaited (see @ref environment). Awaiting it without an installed
+    environment is undefined behavior (an assertion fires in debug builds).
+
     @par Behavior
-    @li If no stop token was propagated, returns a default-constructed
-        `std::stop_token` (where `stop_possible()` returns `false`).
+    @li Returns the installed environment's `stop_token` field. If the launched
+        chain installed an `io_env` whose `stop_token` was left default, the
+        result is a default-constructed `std::stop_token` (where
+        `stop_possible()` returns `false`).
     @li The returned token remains valid for the coroutine's lifetime.
     @li This operation never suspends; `await_ready()` always returns `true`.
 
@@ -178,8 +198,14 @@ inline constexpr stop_token_tag stop_token{};
     }
     @endcode
 
+    @par Preconditions
+    An `io_env` must have been installed for this coroutine before the tag
+    is awaited (see @ref environment). Awaiting it without an installed
+    environment is undefined behavior (an assertion fires in debug builds).
+
     @par Behavior
-    @li Returns `nullptr` when the default allocator is in use.
+    @li Returns the installed environment's `frame_allocator` field, which is
+        `nullptr` when the default allocator is in use.
     @li This operation never suspends; `await_ready()` always returns `true`.
 
     @see frame_allocator_tag

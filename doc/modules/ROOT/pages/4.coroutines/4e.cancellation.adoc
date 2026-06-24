@@ -366,23 +366,27 @@ NOTE: Capy's built-in I/O awaitables (via Corosio) already use the post-back pat
 
 === Timeout Pattern
 
-Combine a timer with stop token to implement timeouts:
+Capy ships a first-class `timeout()` combinator (`<boost/capy/timeout.hpp>`) that races an `io_result`-returning awaitable against a deadline. The first to complete wins and cancels the other; if the timer fires first, the result carries `cond::timeout`:
 
 [source,cpp]
 ----
-task<> with_timeout(task<> operation, std::chrono::seconds timeout)
+#include <boost/capy/timeout.hpp>
+
+using namespace std::chrono_literals;
+
+task<void> read_with_timeout(socket& sock, mutable_buffer buf)
 {
-    std::stop_source source;
-    
-    // Timer that requests stop after timeout
-    auto timer = co_await start_timer(timeout, [&source] {
-        source.request_stop();
-    });
-    
-    // Run operation with our stop token
-    co_await run_with_token(source.get_token(), std::move(operation));
+    auto [ec, n] = co_await capy::timeout(sock.read_some(buf), 50ms);
+    if (ec == cond::timeout)
+    {
+        // deadline elapsed before the read completed
+        co_return;
+    }
+    // ... use the n bytes read
 }
 ----
+
+The deadline itself is built on `delay()` (`<boost/capy/delay.hpp>`), an awaitable that suspends for a duration and resumes with `cond::canceled` if its stop token is activated. Reach for `timeout()` rather than wiring a timer to a `std::stop_source` by hand.
 
 === User Cancellation
 

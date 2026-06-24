@@ -47,8 +47,9 @@
    when_any launches N io_result-returning tasks concurrently. A task
    wins by returning !ec; errors and exceptions do not win. Once a
    winner is found, stop is requested for siblings and the winner's
-   payload is returned. If no winner exists (all fail), the first
-   error_code is returned or the last exception is rethrown.
+   payload is returned. If no winner exists (all fail), one of the
+   failures is surfaced (an error_code at variant index 0, or a child's
+   exception rethrown); which one is unspecified.
 
    ARCHITECTURE:
    -------------
@@ -107,8 +108,10 @@
    --------------------
    Exceptions do NOT claim winner status. If a child throws, the exception
    is recorded but the combinator keeps waiting for a success. Only when
-   all children complete without a winner does the combinator check: if
-   any exception was recorded, it is rethrown (exception beats error_code).
+   all children complete without a winner is a failure surfaced. There is
+   no priority between errors and exceptions, and no guarantee about which
+   child's failure is reported: the result either returns an error_code at
+   variant index 0 or rethrows a child's exception.
 */
 
 namespace boost {
@@ -190,8 +193,9 @@ struct when_any_io_state
     std::optional<variant_type> result_;
     std::array<continuation, task_count> runner_handles_{};
 
-    // Last failure (error or exception) for the all-fail case.
-    // Last writer wins — no priority between errors and exceptions.
+    // A failure (error or exception) for the all-fail case. record_error
+    // and record_exception overwrite each other, so which one survives is
+    // unspecified (no priority between errors and exceptions).
     std::mutex failure_mu_;
     std::error_code last_error_;
     std::exception_ptr last_exception_;
@@ -614,9 +618,9 @@ public:
 /** Race a range of io_result-returning awaitables (non-void payloads).
 
     Only a child returning !ec can win. Errors and exceptions do not
-    claim winner status. If all children fail, the last failure
-    is reported — either the last error_code at variant index 0,
-    or the last exception rethrown.
+    claim winner status. If all children fail, an unspecified one of
+    the failures is reported — either an error_code at variant index 0,
+    or a child's exception rethrown.
 
     @param awaitables Range of io_result-returning awaitables (must
         not be empty).
@@ -626,8 +630,11 @@ public:
         index and payload.
 
     @throws std::invalid_argument if range is empty.
-    @throws Rethrows last exception when no winner and the last
-        failure was an exception.
+    @throws Rethrows the winner's exception if extracting or
+        move-constructing the winning payload throws (a winner was
+        found but its result could not be produced).
+    @throws Rethrows a child's exception when all children fail and the
+        reported failure is an exception (which child is unspecified).
 
     @par Example
     @code
@@ -687,7 +694,7 @@ template<IoAwaitableRange R>
             std::pair{state.core_.winner_index_, std::move(*state.result_)}};
     }
 
-    // No winner — report last failure
+    // No winner — report the recorded failure
     if(state.last_exception_)
         std::rethrow_exception(state.last_exception_);
     co_return result_type{std::in_place_index<0>, state.last_error_};
@@ -705,8 +712,8 @@ template<IoAwaitableRange R>
         is failure and index 1 carries the winner's index.
 
     @throws std::invalid_argument if range is empty.
-    @throws Rethrows first exception when no winner and at least one
-        child threw.
+    @throws Rethrows a child's exception when all children fail and the
+        reported failure is an exception (which child is unspecified).
 
     @par Example
     @code
@@ -759,7 +766,7 @@ template<IoAwaitableRange R>
             state.core_.winner_index_};
     }
 
-    // No winner — report last failure
+    // No winner — report the recorded failure
     if(state.last_exception_)
         std::rethrow_exception(state.last_exception_);
     co_return result_type{std::in_place_index<0>, state.last_error_};
@@ -777,7 +784,15 @@ template<IoAwaitableRange R>
 
     @return A task yielding variant<error_code, R1, ..., Rn> where
         index 0 is the failure/no-winner case and index i+1
-        identifies the winning child.
+        identifies the winning child. On all-fail, index 0 holds
+        an error_code from one of the failed children (unspecified
+        which; no priority between errors and exceptions).
+
+    @throws Rethrows the winner's exception if extracting or
+        constructing the winning payload throws (a winner was found
+        but its result could not be produced).
+    @throws Rethrows a child's exception when all children fail and the
+        reported failure is an exception (which child is unspecified).
 
     @note A failing child does not cancel its siblings; `when_any`
         waits for a success or for every child to finish. To make a
@@ -812,7 +827,7 @@ template<IoAwaitable... As>
     if(state.core_.winner_exception_)
         std::rethrow_exception(state.core_.winner_exception_);
 
-    // No winner — report last failure
+    // No winner — report the recorded failure
     if(state.last_exception_)
         std::rethrow_exception(state.last_exception_);
     co_return result_type{std::in_place_index<0>, state.last_error_};

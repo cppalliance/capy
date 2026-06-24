@@ -19,8 +19,9 @@ namespace capy {
 /** Archetype for ConstBufferSequence concept checking.
 
     This type satisfies @ref ConstBufferSequence but cannot be
-    instantiated. Use it in concept definitions to verify that
-    a function template accepts any ConstBufferSequence.
+    default-constructed; it is intended only as an unevaluated
+    parameter type in `requires`-clauses, to verify that a function
+    template accepts any ConstBufferSequence.
 
     @par Example
     @code
@@ -54,8 +55,9 @@ using const_buffer_archetype = const_buffer_archetype_;
 /** Archetype for MutableBufferSequence concept checking.
 
     This type satisfies @ref MutableBufferSequence but cannot be
-    instantiated. Use it in concept definitions to verify that
-    a function template accepts any MutableBufferSequence.
+    default-constructed; it is intended only as an unevaluated
+    parameter type in `requires`-clauses, to verify that a function
+    template accepts any MutableBufferSequence.
 
     @par Example
     @code

@@ -33,8 +33,8 @@ namespace capy {
 
     @li `T` must satisfy @ref IoAwaitable
     @li `T::promise_type` must be a valid type
-    @li `t.handle()` returns `std::coroutine_handle<T::promise_type>`,
-        must be `noexcept`
+    @li `ct.handle()` (callable on a `const` task) returns
+        `std::coroutine_handle<T::promise_type>`, must be `noexcept`
     @li `t.release()` releases ownership, must be `noexcept`
     @li `p.exception()` returns `std::exception_ptr`, must be `noexcept`
     @li `p.result()` returns the task result (required for non-void tasks)
