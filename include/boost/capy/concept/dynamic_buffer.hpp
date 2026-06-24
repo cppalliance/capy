@@ -21,14 +21,18 @@
 
     There are two kinds of dynamic buffer types:
 
-    1. VALUE TYPES (e.g., flat_dynamic_buffer)
-       - Store bookkeeping (size, capacity) internally
+    1. VALUE TYPES (a user-defined buffer that owns its storage,
+       e.g. one holding a std::array member)
+       - Store the bytes and bookkeeping inside the object itself
        - MUST be passed by lvalue reference to preserve state
-       - Passing as rvalue loses bookkeeping on coroutine suspend
+       - Passing as rvalue loses the data on coroutine suspend
 
-    2. WRAPPER ADAPTERS (e.g., string_dynamic_buffer)
-       - Reference external storage (std::string, std::vector)
-       - Safe to pass as rvalues; external object retains data
+    2. WRAPPER ADAPTERS (all of Capy's provided types:
+       flat_dynamic_buffer, circular_dynamic_buffer,
+       vector_dynamic_buffer, string_dynamic_buffer)
+       - Reference external storage (a caller-owned array,
+         std::string, or std::vector)
+       - Safe to pass as rvalues; the external object retains data
        - Define `using is_dynamic_buffer_adapter = void;`
 
     When writing functions:
@@ -64,11 +68,16 @@ namespace capy {
     @par Value Types vs Wrapper Adapters
     Dynamic buffer types fall into two categories:
 
-    - **Value types** (e.g., `flat_dynamic_buffer`) store bookkeeping
-      internally. Passing as rvalue to a coroutine loses state on suspend.
+    - **Value types** store the bytes and bookkeeping inside the object.
+      Passing one as an rvalue to a coroutine loses state on suspend. Capy
+      ships no value types; this category is for user-defined buffers that
+      own their storage internally.
 
-    - **Wrapper adapters** (e.g., `string_dynamic_buffer`) reference external
-      storage and are safe as rvalues since the external object persists.
+    - **Wrapper adapters** reference external storage and are safe as rvalues
+      since the external object persists. All of Capy's provided dynamic
+      buffers are adapters: `flat_dynamic_buffer` and `circular_dynamic_buffer`
+      (over a caller-owned array), `vector_dynamic_buffer`, and
+      `string_dynamic_buffer`. Each defines `using is_dynamic_buffer_adapter = void;`.
 
     @par Conforming Signatures
     For **non-coroutine** functions, use `DynamicBuffer auto&`:
@@ -123,9 +132,10 @@ concept DynamicBuffer =
     - **Lvalues** of any DynamicBuffer (caller manages lifetime)
     - **Rvalues** only for types with `is_dynamic_buffer_adapter` tag
 
-    The distinction exists because some buffer types (like `flat_dynamic_buffer`)
-    store bookkeeping internally that would be lost if passed by rvalue,
-    while adapters (like `string_dynamic_buffer`) update external storage directly.
+    The distinction exists because a value type stores its bytes and
+    bookkeeping internally, which would be lost if passed by rvalue, while
+    adapters (such as Capy's `flat_dynamic_buffer` or `string_dynamic_buffer`)
+    update external storage directly.
 
     @par Conforming Signatures
     For coroutine functions, use a forwarding reference:
@@ -138,21 +148,25 @@ concept DynamicBuffer =
     the value category to enforce the lvalue/rvalue rules. Using the
     wrong reference type causes incorrect behavior:
     @code
+    // owning_buffer is a user-defined value type: it owns its storage and
+    // has no is_dynamic_buffer_adapter tag. ob is an lvalue of it.
+    owning_buffer ob;
+
     // WRONG: lvalue ref rejects valid rvalue adapters
     void bad1( DynamicBufferParam auto& buffers );
-    bad1( fb );                    // OK
+    bad1( ob );                            // OK
     bad1( string_dynamic_buffer( &s ) );   // compile error, but should work
 
     // WRONG: const ref deduces non-reference, rejects non-adapters
     void bad2( DynamicBufferParam auto const& buffers );
-    bad2( fb );                    // compile error, but should work
+    bad2( ob );                            // compile error, but should work
     bad2( string_dynamic_buffer( &s ) );   // OK (adapter only)
 
     // CORRECT: forwarding ref enables proper checking
     void good( DynamicBufferParam auto&& buffers );
-    good( fb );                    // OK: lvalue
+    good( ob );                            // OK: lvalue value type
     good( string_dynamic_buffer( &s ) );   // OK: adapter rvalue
-    good( flat_dynamic_buffer( storage ) );  // compile error: non-adapter rvalue
+    good( owning_buffer{} );               // compile error: non-adapter rvalue
     @endcode
 
     @par Adapter Types
@@ -167,16 +181,21 @@ concept DynamicBuffer =
 
     @par Example
     @code
-    // OK: lvalue reference
-    flat_dynamic_buffer fb( storage );
+    // OK: lvalue reference (any DynamicBuffer)
+    char storage[1024];
+    flat_dynamic_buffer fb( storage, sizeof( storage ) );
     co_await read( stream, fb );
 
-    // OK: adapter as rvalue, string retains data
+    // OK: adapter as rvalue — flat references the caller's array,
+    // which persists across the suspend
+    co_await read( stream, flat_dynamic_buffer( storage, sizeof( storage ) ) );
+
+    // OK: adapter as rvalue — the string retains the data
     std::string s;
     co_await read( stream, string_dynamic_buffer( &s ) );
 
-    // ERROR: non-adapter rvalue
-    co_await read( stream, flat_dynamic_buffer( storage ) );  // compile error
+    // ERROR: a user-defined value type as rvalue loses state on suspend
+    co_await read( stream, owning_buffer{} );  // compile error: non-adapter rvalue
     @endcode
 
     @see DynamicBuffer

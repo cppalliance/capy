@@ -699,6 +699,9 @@ template<IoAwaitableRange R>
 
     @return A task yielding io_result<R1, R2, ..., Rn> where each Ri
         follows the payload flattening rules.
+
+    @throws Rethrows the first child exception after all children
+        complete (exception beats error_code).
 */
 template<IoAwaitable... As>
     requires (sizeof...(As) > 0)

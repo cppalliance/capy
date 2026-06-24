@@ -20,6 +20,8 @@ concept ReadStream =
     };
 ----
 
+The `requires` clause names a single representative buffer (`mutable_buffer_archetype`) because a {cpp} concept cannot say "works with every buffer sequence." The real contract is that `read_some` accepts *any* `MutableBufferSequence`—one buffer or a range; the archetype only samples that requirement.
+
 === read_some Semantics
 
 [source,cpp]
@@ -90,6 +92,8 @@ concept WriteStream =
         { stream.write_some(buffers) } -> IoAwaitable;
     };
 ----
+
+As with `ReadStream`, the `const_buffer_archetype` is only a representative: the real contract is that `write_some` accepts *any* `ConstBufferSequence`, which a {cpp} concept cannot fully express.
 
 === write_some Semantics
 

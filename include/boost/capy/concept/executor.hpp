@@ -91,7 +91,7 @@ class execution_context;
     std::coroutine_handle<> dispatch(
         continuation& c ) const
     {
-        if( ctx_.is_running_on_this_thread() )
+        if( ctx_.running_in_this_thread() )
             return c.h;            // symmetric transfer
         post( c );
         return std::noop_coroutine();

@@ -265,10 +265,16 @@ public:
     */
     struct result
     {
+        /// Source location of the failing point, set only on failure.
         std::source_location loc = {};
+
+        /// Exception captured by @ref fail, or null if none.
         std::exception_ptr ep = nullptr;
+
+        /// True if the test completed without a failure.
         bool success = true;
 
+        /// Return @ref success.
         constexpr explicit operator bool() const noexcept
         {
             return success;

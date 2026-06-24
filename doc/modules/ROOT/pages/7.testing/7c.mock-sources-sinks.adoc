@@ -110,8 +110,8 @@ own.
 calls `write()` and `write_eof()` while the test inspects what was written
 via `data()` and checks whether EOF was signaled via `eof_called()`.
 Test code may also call `expect()` to register the data it anticipates;
-any mismatch between written bytes and that prefix causes `write_some()`
-to return `error::test_failure`. Because `fuse` copies share state (see
+any mismatch between written bytes and that prefix causes the next write
+(`write`, `write_some`, or `write_eof(buffers)`) to return `error::test_failure`. Because `fuse` copies share state (see
 xref:7.testing/7a.drivers.adoc#_shared_state_across_copies[Shared State Across Copies]),
 constructing `write_sink ws(f)` by value still ties `ws` to the same
 fail-point machinery as `f`.
@@ -190,10 +190,12 @@ injection.
 | `write_eof(ConstBufferSequence buffers)`
 | Atomically write remaining bytes and signal end-of-stream. Sets
   `eof_called()` to `true` on success. Consults the fuse before the call.
+  Await-returns `(error_code, n)`.
 
 | `write_eof()`
 | Signal end-of-stream without writing data. Sets `eof_called()` to
   `true` on success. Consults the fuse before the call.
+  Await-returns `(error_code)`.
 
 | `data() -> std::string_view`
 | Return bytes written but not yet matched by `expect()`.

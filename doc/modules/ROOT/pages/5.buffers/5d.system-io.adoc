@@ -67,7 +67,11 @@ Internally, Capy:
 
 == Stack-Based Conversion
 
-For common cases (small numbers of buffers), conversion happens on the stack:
+Conversion always happens on the stack—the implementation never
+allocates. A fixed-size, on-frame window of buffer descriptors (16
+entries) is filled from the sequence and passed to the OS call. If the
+sequence has more buffers than fit in the window, the window is refilled
+and the OS call is repeated for the remaining buffers:
 
 [source,cpp]
 ----
@@ -75,24 +79,22 @@ For common cases (small numbers of buffers), conversion happens on the stack:
 template<ConstBufferSequence Buffers>
 auto platform_write(Buffers const& buffers)
 {
-    std::size_t count = buffer_length(buffers);
-    
-    if (count <= 8)  // Small buffer optimization
+    iovec iovecs[16];  // fixed on-frame window, never heap-allocated
+
+    auto it = begin(buffers);
+    auto last = end(buffers);
+    while (it != last)
     {
-        iovec iovecs[8];
-        fill_iovecs(iovecs, buffers, count);
-        return writev(fd, iovecs, count);
-    }
-    else  // Heap fallback
-    {
-        std::vector<iovec> iovecs(count);
-        fill_iovecs(iovecs.data(), buffers, count);
-        return writev(fd, iovecs.data(), count);
+        std::size_t count = fill_iovecs(iovecs, it, last, 16);  // up to 16
+        auto result = writev(fd, iovecs, count);
+        // ... advance the window past the buffers just written
     }
 }
 ----
 
-Most real-world code uses fewer than 8 buffers, so heap allocation is rarely needed.
+The window size (16) is fixed and implementation-defined. Sequences with
+more buffers than the window are handled by refilling it across
+successive OS calls; there is no heap fallback.
 
 == Scatter/Gather Benefits
 

@@ -35,6 +35,8 @@ Await-returns `(error_code, std::size_t)`:
 * On EOF: `ec == cond::eof`, and `n` is bytes read before EOF (partial read)
 * On error: `ec`, and `n` is bytes read before error
 
+If `buffer_empty(buffers)` is true, the operation completes immediately with `!ec` and `n` equal to 0.
+
 The key difference from `ReadStream`: a successful read fills the buffer completely.
 
 === Use Cases

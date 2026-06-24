@@ -15,6 +15,8 @@ A *buffer sequence* is any type that can produce an iteration of buffers. Formal
 * A range of buffers (like `vector<const_buffer>`) is a multi-element sequence
 * Any bidirectional range with buffer-convertible values qualifies
 
+Treating a single buffer as a one-element sequence is a deliberate convenience, not an accident of the definition. It lets one concept-constrained signature serve both the common single-buffer call and scatter/gather composition, with no overload and no explicit wrap at the call site. Capy favors this convenience as a primary design goal and applies it consistently—`make_buffer`, for instance, accepts any contiguous range of bytes—so that buffer-passing reads the same whether you hand over one region or many.
+
 == The Concepts
 
 === ConstBufferSequence

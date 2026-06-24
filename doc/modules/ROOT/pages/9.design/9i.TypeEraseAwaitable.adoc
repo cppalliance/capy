@@ -4,7 +4,7 @@
 
 The `any_*` wrappers type-erase stream and source concepts so that algorithms can operate on heterogeneous concrete types through a uniform interface. Each wrapper preallocates storage for the type-erased awaitable at construction time, achieving zero steady-state allocation.
 
-Two vtable layouts are used depending on how many operations the wrapper exposes.
+The vtable layout depends on how many async operations the wrapper exposes and whether those operations share an await-return type.
 
 == Single-Operation: Flat Vtable
 
@@ -35,18 +35,18 @@ When there is no outer short-circuit, constructing in `await_ready` lets immedia
 [source,cpp]
 ----
 bool await_ready() {
-    vt_->construct_awaitable(stream_, storage_, buffers);
+    vt_->construct_awaitable(stream_, cached_awaitable_, buffers);
     awaitable_active_ = true;
-    return vt_->await_ready(storage_);   // true → no suspend
+    return vt_->await_ready(cached_awaitable_);   // true → no suspend
 }
 
 std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env) {
-    return vt_->await_suspend(storage_, h, env);
+    return vt_->await_suspend(cached_awaitable_, h, env);
 }
 
 io_result<size_t> await_resume() {
-    auto r = vt_->await_resume(storage_);
-    vt_->destroy_awaitable(storage_);
+    auto r = vt_->await_resume(cached_awaitable_);
+    vt_->destroy_awaitable(cached_awaitable_);
     awaitable_active_ = false;
     return r;
 }
@@ -63,18 +63,18 @@ bool await_ready() const noexcept {
 }
 
 std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env) {
-    vt_->construct_awaitable(stream_, storage_, buffers);
+    vt_->construct_awaitable(stream_, cached_awaitable_, buffers);
     awaitable_active_ = true;
-    if(vt_->await_ready(storage_))
+    if(vt_->await_ready(cached_awaitable_))
         return h;                        // immediate → resume caller
-    return vt_->await_suspend(storage_, h, env);
+    return vt_->await_suspend(cached_awaitable_, h, env);
 }
 
 io_result<size_t> await_resume() {
     if(!awaitable_active_)
         return {{}, 0};                  // short-circuited
-    auto r = vt_->await_resume(storage_);
-    vt_->destroy_awaitable(storage_);
+    auto r = vt_->await_resume(cached_awaitable_);
+    vt_->destroy_awaitable(cached_awaitable_);
     awaitable_active_ = false;
     return r;
 }
@@ -82,13 +82,18 @@ io_result<size_t> await_resume() {
 
 Both variants touch the same two cache lines on the hot path.
 
-== Multi-Operation: Split Vtable with awaitable_ops
+== Multi-Operation: Per-Construct awaitable_ops
 
-When a wrapper exposes multiple operations that produce different awaitable types (e.g. `any_read_source` with `read_some` and `read`, or `any_write_sink` with `write_some`, `write`, `write_eof(buffers)`, and `write_eof()`), a split layout is required. Each `construct` call returns a pointer to a `static constexpr awaitable_ops` matching the awaitable it created.
+When a wrapper exposes more than one async operation, it cannot embed a single set of per-awaitable function pointers in its vtable, because each operation produces a distinct concrete awaitable type. Instead the vtable holds one `construct_*_awaitable` pointer per operation, and each `construct` call returns a pointer to a `static constexpr` ops struct describing the awaitable it just created.
+
+Two sub-cases arise, distinguished by whether the operations share an await-return type:
+
+* *Same await-return type* (`any_read_source`: `read_some` and `read` both await-return `io_result<std::size_t>`). One ops struct (`awaitable_ops`) serves both operations; both `construct_*_awaitable` pointers return the same layout.
+* *Different await-return types* (`any_buffer_source`: `pull` await-returns `io_result<std::span<const_buffer>>` while its synthesized `read_some`/`read` await-return `io_result<std::size_t>`; `any_buffer_sink` and `any_write_sink` similarly mix `io_result<>`, `io_result<std::size_t>`). These need more than one ops struct (e.g. `awaitable_ops` plus `read_awaitable_ops`/`write_awaitable_ops`/`eof_awaitable_ops`), and each `construct` returns the ops matching its result type.
 
 [source,cpp]
 ----
-// Per-awaitable dispatch -- 32 bytes
+// Per-awaitable dispatch -- one struct per await-return type
 struct awaitable_ops
 {
     bool (*await_ready)(void*);
@@ -97,10 +102,11 @@ struct awaitable_ops
     void (*destroy)(void*);
 };
 
-// Vtable -- 32 bytes
+// Vtable -- one construct_* pointer per operation
 struct vtable
 {
-    awaitable_ops const* (*construct_awaitable)(...);
+    awaitable_ops const* (*construct_read_some_awaitable)(...);
+    awaitable_ops const* (*construct_read_awaitable)(...);
     size_t awaitable_size;
     size_t awaitable_align;
     void (*destroy)(void*);
@@ -116,17 +122,17 @@ bool await_ready() const noexcept {
 }
 
 std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env) {
-    active_ops_ = vt_->construct_awaitable(stream_, storage_, buffers_);
-    if(active_ops_->await_ready(storage_))
+    active_ops_ = vt_->construct_read_some_awaitable(source_, cached_awaitable_, buffers_);
+    if(active_ops_->await_ready(cached_awaitable_))
         return h;                        // immediate → resume caller
-    return active_ops_->await_suspend(storage_, h, env);
+    return active_ops_->await_suspend(cached_awaitable_, h, env);
 }
 
 io_result<size_t> await_resume() {
     if(!active_ops_)
         return {{}, 0};                  // short-circuited
-    auto r = active_ops_->await_resume(storage_);
-    active_ops_->destroy(storage_);
+    auto r = active_ops_->await_resume(cached_awaitable_);
+    active_ops_->destroy(cached_awaitable_);
     active_ops_ = nullptr;
     return r;
 }
@@ -142,31 +148,35 @@ Flat (any_read_stream, any_write_stream): 2 cache lines
   LINE 2  vtable        construct → await_ready → await_resume → destroy
                          (contiguous, sequential access, prefetch-friendly)
 
-Split (any_read_source, any_write_sink):  3 cache lines
+Per-construct ops (any_read_source, any_buffer_source,
+                   any_buffer_sink, any_write_sink):  3 cache lines
   LINE 1  object        source_, vt_, cached_awaitable_, active_ops_, ...
-  LINE 2  vtable        construct_awaitable
+  LINE 2  vtable        construct_*_awaitable pointers
   LINE 3  awaitable_ops await_ready → await_suspend → await_resume → destroy
                          (separate .rodata address, defeats spatial prefetch)
 ----
 
-The flat layout keeps all per-awaitable function pointers adjacent to `construct_awaitable` in a single 64-byte structure. The split layout places `vtable` and `awaitable_ops` at unrelated addresses in `.rodata`, adding one cache miss on the hot path.
+The flat layout keeps all per-awaitable function pointers adjacent to `construct_awaitable` in a single 64-byte structure. The per-construct layout places `vtable` and the returned `awaitable_ops` at unrelated addresses in `.rodata`, adding one cache miss on the hot path.
 
 == When to Use Which
 
-[cols="1,1"]
+[cols="1,2"]
 |===
-| Flat vtable | Split vtable
+| Layout | Wrappers
 
-| Wrapper has exactly one async operation
-| Wrapper has multiple async operations
+| Flat vtable (one operation, ops embedded in vtable)
+| `any_read_stream` (`read_some`) +
+  `any_write_stream` (`write_some`)
 
-| `any_read_stream` (`read_some`)
-| `any_read_source` (`read_some`, `read`)
+| Per-construct ops, single ops struct (multiple operations, all sharing one await-return type)
+| `any_read_source` (`read_some`, `read` -- both `io_result<size_t>`)
 
-| `any_write_stream` (`write_some`)
-| `any_write_sink` (`write_some`, `write`, `write_eof(bufs)`, `write_eof()`)
+| Per-construct ops, multiple ops structs (operations differ in await-return type)
+| `any_buffer_source` (`pull` → `io_result<span>`; synthesized `read_some`/`read` → `io_result<size_t>`) +
+  `any_buffer_sink` (`commit`/`commit_eof` → `io_result<>`; `write_some`/`write` → `io_result<size_t>`) +
+  `any_write_sink` (`write_some`/`write` → `io_result<size_t>`; `write_eof()` → `io_result<>`)
 |===
 
 == Why the Flat Layout Cannot Scale
 
-With multiple operations, each `construct` call produces a different concrete awaitable type. The per-awaitable function pointers (`await_ready`, `await_suspend`, `await_resume`, `destroy`) must match the type that was constructed. The split layout solves this by returning the correct `awaitable_ops const*` from each `construct` call. The flat layout would require duplicating all four function pointers in the vtable for every operation -- workable for two operations, unwieldy for four.
+With multiple operations, each `construct` call produces a different concrete awaitable type. The per-awaitable function pointers (`await_ready`, `await_suspend`, `await_resume`, `destroy`) must match the type that was constructed. Returning the correct ops pointer from each `construct` call solves this. Embedding the four function pointers directly in the vtable, as the flat layout does, would require one full set per operation -- workable for one operation, unwieldy for four. When the operations share an await-return type (`any_read_source`) a single ops struct suffices; when they differ (`any_buffer_source`, `any_buffer_sink`, `any_write_sink`) the wrapper carries one ops struct per result type.

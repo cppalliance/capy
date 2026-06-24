@@ -59,7 +59,8 @@ void schedule_work(executor_ref ex, continuation& c)
 int main()
 {
     thread_pool pool;
-    executor_ref ex = pool.get_executor();  // Type erasure
+    auto pool_ex = pool.get_executor();
+    executor_ref ex = pool_ex;  // Type erasure; pool_ex must outlive ex
 
     continuation c = /* ... */;
     schedule_work(ex, c);

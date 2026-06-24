@@ -95,7 +95,7 @@ I/O errors are reported through the `ec` field of the `io_result`. When any chil
 
 1. Stop is requested for sibling tasks
 2. All tasks complete (or respond to stop)
-3. The first `ec` is propagated in the outer `io_result`
+3. The first `ec` (in completion order, not input order) is propagated in the outer `io_result`
 
 [source,cpp]
 ----
@@ -174,6 +174,8 @@ task<> example()
 ----
 
 The result is a `variant` with `error_code` at index 0 (failure/no winner) and one alternative per input task at indices 1..N. Only tasks returning `!ec` can win; errors and exceptions do not count as winning. When a winner is found, stop is requested for all siblings. All tasks complete before `when_any` returns.
+
+When every task fails, `when_any` reports a failure, but *which* one is unspecified: the result either carries an `error_code` at index 0 or rethrows one of the children's exceptions. Unlike `when_all`, there is no priority between error codes and exceptions, and no guarantee about which task's failure surfaces (including no guarantee that it is the first or last to complete). Do not rely on receiving the failure from any particular task.
 
 === Errors Do Not Win (wait_for_one_success)
 

@@ -277,15 +277,25 @@ The `run_async_wrapper` constructor sets the thread-local allocator:
 
 [source,cpp]
 ----
-run_async_wrapper(Ex ex, std::stop_token st, Handlers h, Alloc a)
+run_async_wrapper(Ex ex, std::stop_token st, Handlers h, Alloc a) noexcept
     : tr_(detail::make_trampoline<Ex, Handlers, Alloc>(
         std::move(ex), std::move(h), std::move(a)))
     , st_(std::move(st))
+    , saved_tls_(get_current_frame_allocator())   // remember prior TLS
 {
     // Set TLS before task argument is evaluated
     set_current_frame_allocator(tr_.h_.promise().get_resource());
 }
+
+~run_async_wrapper()
+{
+    // Restore the prior TLS so a stale pointer does not outlive
+    // the execution context that owns the trampoline's resource.
+    set_current_frame_allocator(saved_tls_);
+}
 ----
+
+The constructor saves the current thread-local allocator and the destructor restores it. This save/restore is the load-bearing correctness guarantee: once the wrapper (and the trampoline it owns) is gone, the TLS no longer points at a resource that may have been destroyed.
 
 The task's `operator new` reads it:
 

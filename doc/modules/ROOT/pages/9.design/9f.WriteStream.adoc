@@ -19,6 +19,8 @@ concept WriteStream =
     };
 ----
 
+The `requires` clause checks `write_some` against a single representative buffer, `const_buffer_archetype`, because a {cpp} concept cannot quantify over "every buffer sequence." The contract is stronger than what the compiler verifies: a `WriteStream` must accept *any* `ConstBufferSequence`—a single buffer or a range of them—and the archetype stands in for that universally-quantified requirement. Read this as a textual requirement that the concept can only sample, not a claim that conformance is limited to the archetype type.
+
 A `WriteStream` provides a single operation:
 
 === `write_some(buffers)` -- Partial Write
@@ -80,7 +82,7 @@ Two composed algorithms build complete-write behavior on top of `write_some`:
 [source,cpp]
 ----
 auto write(WriteStream auto& stream,
-           ConstBufferSequence auto const& buffers)
+           ConstBufferSequence auto buffers)
     -> io_task<std::size_t>;
 ----
 

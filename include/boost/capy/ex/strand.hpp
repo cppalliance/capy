@@ -47,7 +47,7 @@ namespace capy {
     This class satisfies the `Executor` concept, providing:
     - `context()` - Returns the underlying execution context
     - `on_work_started()` / `on_work_finished()` - Work tracking
-    - `dispatch(continuation&)` - May run immediately if strand is idle
+    - `dispatch(continuation&)` - May run immediately if already executing in this strand
     - `post(continuation&)` - Always queues for later execution
 
     @par Thread Safety
@@ -68,7 +68,7 @@ namespace capy {
     strand.post(c3);
     @endcode
 
-    @tparam E The type of the underlying executor. Must
+    @tparam Ex The type of the underlying executor. Must
         satisfy the `Executor` concept.
 
     @see Executor

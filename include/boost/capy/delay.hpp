@@ -110,6 +110,8 @@ class delay_awaitable
     }
 
 public:
+    /// Construct an awaitable that waits for `dur` nanoseconds.
+    /// Prefer the @ref delay factory over constructing directly.
     explicit delay_awaitable(std::chrono::nanoseconds dur) noexcept
         : dur_(dur)
     {
@@ -128,6 +130,8 @@ public:
     {
     }
 
+    /// Tear down any registered stop callback and cancel the
+    /// pending timer if one is still scheduled.
     ~delay_awaitable()
     {
         if(stop_cb_active_)
@@ -140,11 +144,16 @@ public:
     delay_awaitable& operator=(delay_awaitable const&) = delete;
     delay_awaitable& operator=(delay_awaitable&&) = delete;
 
+    /// Return true for zero or negative durations, completing
+    /// synchronously without scheduling a timer.
     bool await_ready() const noexcept
     {
         return dur_.count() <= 0;
     }
 
+    /// Suspend the coroutine, scheduling the timer and a stop
+    /// callback on the environment's executor and stop token.
+    /// Resumes `h` immediately if stop was already requested.
     std::coroutine_handle<>
     await_suspend(
         std::coroutine_handle<> h,
@@ -180,6 +189,9 @@ public:
         return std::noop_coroutine();
     }
 
+    /// Clean up the stop callback and timer, then return
+    /// `io_result<>{error::canceled}` if cancellation claimed
+    /// the resume, or an empty `io_result<>` otherwise.
     io_result<> await_resume() noexcept
     {
         if(stop_cb_active_)

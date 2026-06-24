@@ -124,7 +124,10 @@ public:
         remains unchanged.
 
         @par Exception Safety
-        No-throw guarantee.
+        Injected I/O conditions are reported via the `error_code`
+        component of the result. Throws `std::system_error` only when
+        the attached @ref fuse is in exception mode and reaches its
+        failure point; no-throw otherwise.
 
         @par Cancellation
         If the environment's stop token has been requested, the read
@@ -136,6 +139,9 @@ public:
         @param buffers The mutable buffer sequence to receive data.
 
         @return An awaitable that await-returns `(error_code,std::size_t)`.
+
+        @throws std::system_error When the attached @ref fuse is in
+        exception mode and reaches its failure point.
 
         @see fuse
     */

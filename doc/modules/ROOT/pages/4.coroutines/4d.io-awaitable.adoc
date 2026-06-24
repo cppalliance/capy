@@ -126,7 +126,7 @@ To create a custom IoAwaitable:
 struct my_awaitable
 {
     io_env const* env_ = nullptr;
-    std::coroutine_handle<> continuation_;
+    continuation cont_;
     result_type result_;
 
     bool await_ready() const noexcept
@@ -138,8 +138,10 @@ struct my_awaitable
     {
         // Store pointer to environment, never copy
         env_ = env;
-        continuation_ = h;
-        
+        // Wrap the caller's handle in a continuation we own, so it stays
+        // at a stable address until the executor resumes it.
+        cont_.h = h;
+
         // Start async operation...
         start_operation();
         
@@ -155,8 +157,10 @@ struct my_awaitable
 private:
     void on_completion()
     {
-        // Resume on caller's executor
-        env_->executor.dispatch(continuation_);
+        // Resume the caller on its executor. post() takes the
+        // continuation by reference and queues it; never resume inline
+        // from a completion callback (it may run on the wrong thread).
+        env_->executor.post(cont_);
     }
 };
 ----
@@ -164,7 +168,7 @@ private:
 The key points:
 
 1. Store the `io_env` as a pointer (`io_env const*`), never a copy. Launch functions guarantee the `io_env` outlives the awaitable's operation.
-2. Use the executor to dispatch completion
+2. To resume the caller, wrap its handle in a `continuation` and pass that to the executor's `post` (or `dispatch`) — these take a `continuation&`, not a raw `coroutine_handle`. Store the `continuation` in the awaitable so it keeps a stable address until the executor dequeues and resumes it; the executor links continuations intrusively, so a temporary would dangle.
 3. Respect the stop token for cancellation
 
 === Stop Callbacks Must Post, Not Resume

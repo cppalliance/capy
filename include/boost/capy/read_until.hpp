@@ -265,8 +265,12 @@ struct match_delim
 
     An object of type `io_result<std::size_t>` destructuring as `[ec, n]`.
 
-    If `bool(ec)`, `n` is the position returned by the match condition
-        (bytes up to and including the matched delimiter).
+    If `!ec`, the match succeeded and `n` is the position returned by the
+        match condition (the number of bytes through the end of the
+        match, i.e. the position one past the matched delimiter).
+
+    If `bool(ec)`, the match was not found and `n` is the number of bytes
+        accumulated in `dynbuf` before the contingency arose.
 
 
     Contingencies:
@@ -367,7 +371,8 @@ read_until(
         2048). Grows by 1.5x when filled.
 
     @return An awaitable that await-returns `(error_code, std::size_t)`.
-        On success, `n` is bytes up to and including the delimiter.
+        On success, `n` is the number of bytes through the end of the
+        delimiter (i.e. the position one past the delimiter).
         Compare error codes to conditions:
         @li `cond::eof` - EOF before delimiter; `n` is buffer size
         @li `cond::not_found` - `max_size()` reached before delimiter

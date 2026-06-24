@@ -101,7 +101,7 @@ inline constexpr executor_vtable vtable_for = {
             ex.post(my_continuation);
     }
 
-    io_context ctx;
+    thread_pool ctx;
     store_executor(ctx.get_executor());
     @endcode
 

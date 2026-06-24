@@ -190,7 +190,7 @@ public:
         `error::timeout` and the payload values are
         default-initialized.
 
-    @throws Rethrows Any exception from the inner awaitable,
+    @throws Rethrows any exception thrown by the inner awaitable,
         regardless of whether the timer has fired.
 
     @see delay, cond::timeout
