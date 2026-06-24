@@ -35,9 +35,13 @@
     thread is named with a configurable prefix plus index for debugger
     visibility.
 
-    Work tracking: on_work_started/on_work_finished maintain an atomic
-    outstanding_work_ counter. join() blocks until this counter reaches
-    zero, then signals workers to stop and joins threads.
+    Work tracking: on_work_started/on_work_finished maintain the atomic
+    outstanding_work_ counter. on_work_started is lock-free; the worker
+    that drives the count to zero takes mutex_ and re-reads the count
+    before deciding to stop, so the count and the stop decision stay
+    consistent even if work is started in between. join() blocks until
+    this counter reaches zero, then signals workers to stop and joins
+    threads.
 
     Two shutdown paths:
     - join(): waits for outstanding work to drain, then stops workers.
@@ -160,11 +164,17 @@ public:
         if(outstanding_work_.fetch_sub(
             1, std::memory_order_acq_rel) == 1)
         {
+            // fetch_sub's result can be stale: a concurrent
+            // on_work_started() may raise the count before we take the
+            // lock, so re-read it here rather than trust the decrement.
             std::lock_guard<std::mutex> lock(mutex_);
-            if(joined_ && !stop_)
+            if(outstanding_work_.load(
+                std::memory_order_acquire) == 0 && joined_ && !stop_)
+            {
                 stop_ = true;
-            done_cv_.notify_all();
-            work_cv_.notify_all();
+                done_cv_.notify_all();
+                work_cv_.notify_all();
+            }
         }
     }
 

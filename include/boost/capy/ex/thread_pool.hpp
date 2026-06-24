@@ -36,10 +36,15 @@ namespace capy {
     @code
     thread_pool pool(4);  // 4 worker threads
     auto ex = pool.get_executor();
-    ex.post(some_coroutine);
+    run_async(ex)(some_task());  // launch work; tracked so join() waits for it
     pool.join();  // wait for outstanding work to complete
     // pool destructor stops the pool, discarding any pending work
     @endcode
+
+    @note `join()` waits only for work that holds outstanding-work
+    counting, which `run_async` (and `make_work_guard`) provide. A bare
+    `executor_type::post()` does not register outstanding work, so
+    `join()` will not wait for it.
 */
 class BOOST_CAPY_DECL
     thread_pool
