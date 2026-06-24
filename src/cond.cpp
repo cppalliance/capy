@@ -64,7 +64,11 @@ equivalent(
         return ec == capy::error::not_found;
 
     case cond::timeout:
-        return ec == capy::error::timeout;
+        if(ec == capy::error::timeout)
+            return true;
+        if(ec == std::errc::timed_out)
+            return true;
+        return false;
 
     default:
         return false;
