@@ -11,6 +11,7 @@
 #include <boost/capy/read.hpp>
 
 #include <boost/capy/buffers/circular_dynamic_buffer.hpp>
+#include <boost/capy/buffers/flat_dynamic_buffer.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/buffers/string_dynamic_buffer.hpp>
 #include <boost/capy/cond.hpp>
@@ -23,7 +24,9 @@
 
 #include <array>
 #include <cstring>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace boost {
 namespace capy {
@@ -755,6 +758,143 @@ struct read_test
     }
 
     //----------------------------------------------------------
+    // Bounded dynamic buffer: reaching max_size completes the
+    // transfer successfully and never throws (issue #318). Before
+    // the fix, prepare() threw std::invalid_argument (string) or
+    // std::length_error (circular) when the requested amount
+    // exceeded the remaining capacity.
+    //----------------------------------------------------------
+
+    void
+    testDynBufMaxSize()
+    {
+        // These cases verify the deterministic max_size behavior, so they
+        // use inert() (a single fault-free run) rather than armed().
+
+        // ReadStream, string buffer: default initial_amount (2048)
+        // far exceeds max_size; data exceeds max_size. Fills to
+        // max_size and stops; no throw.
+        BOOST_TEST(test::fuse().inert([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+            rs.provide("abcdef");
+
+            std::string s;
+            string_dynamic_buffer db(&s, 4);
+            auto [ec, n] = co_await read(rs, db);
+            BOOST_TEST(! ec);
+            BOOST_TEST_EQ(n, 4u);
+            BOOST_TEST_EQ(s, "abcd");
+        }));
+
+        // ReadStream, string buffer: explicit initial_amount > max_size.
+        BOOST_TEST(test::fuse().inert([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+            rs.provide("hello world");
+
+            std::string s;
+            string_dynamic_buffer db(&s, 4);
+            auto [ec, n] = co_await read(rs, db, 100);
+            BOOST_TEST(! ec);
+            BOOST_TEST_EQ(n, 4u);
+            BOOST_TEST_EQ(s, "hell");
+        }));
+
+        // ReadStream, string buffer: EOF before max_size is reached.
+        // eof remains a success (n is the bytes read so far).
+        BOOST_TEST(test::fuse().inert([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+            rs.provide("ab\n");
+
+            std::string s;
+            string_dynamic_buffer db(&s, 4);
+            auto [ec, n] = co_await read(rs, db, 1);
+            BOOST_TEST(! ec);
+            BOOST_TEST_EQ(n, 3u);
+            BOOST_TEST_EQ(s, "ab\n");
+        }));
+
+        // ReadStream, circular buffer: data exceeds max_size. Exercises
+        // the std::length_error path that used to throw.
+        BOOST_TEST(test::fuse().inert([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+            rs.provide("abcdef");
+
+            char storage[4];
+            circular_dynamic_buffer db(storage, sizeof(storage));
+            auto [ec, n] = co_await read(rs, db);
+            BOOST_TEST(! ec);
+            BOOST_TEST_EQ(n, 4u);
+            std::string out;
+            for(auto const& b : db.data())
+                out.append(
+                    static_cast<char const*>(b.data()), b.size());
+            BOOST_TEST_EQ(out, "abcd");
+        }));
+
+        // ReadStream, flat buffer (fresh, no consumed prefix): fills to
+        // max_size and stops; no throw.
+        BOOST_TEST(test::fuse().inert([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+            rs.provide("abcdef");
+
+            char storage[4];
+            flat_dynamic_buffer db(storage, sizeof(storage));
+            auto [ec, n] = co_await read(rs, db);
+            BOOST_TEST(! ec);
+            BOOST_TEST_EQ(n, 4u);
+            BOOST_TEST_EQ(std::string_view(storage, 4), "abcd");
+        }));
+
+        // ReadStream, flat buffer reused after a partial consume: it does not
+        // compact, so capacity() (0) < max_size()-size() (4) and prepare
+        // throws. This documents the no-compaction limitation (issue #318):
+        // such a buffer must be passed without a previously consumed prefix.
+        BOOST_TEST(test::fuse().inert([](test::fuse& f) -> task<void>
+        {
+            test::read_stream rs(f);
+            rs.provide("xyz");
+
+            char storage[8] = {};
+            // 8 bytes readable, then consume 4: in_pos_=4, size()=4,
+            // capacity()=0, max_size()=8.
+            flat_dynamic_buffer db(
+                storage, sizeof(storage), sizeof(storage));
+            db.consume(4);
+
+            bool threw = false;
+            try
+            {
+                auto r = co_await read(rs, db);
+                (void)r;
+            }
+            catch(std::invalid_argument const&)
+            {
+                threw = true;
+            }
+            BOOST_TEST(threw);
+        }));
+
+        // ReadSource overload: same clamping applies.
+        BOOST_TEST(test::fuse().inert([](test::fuse& f) -> task<void>
+        {
+            test::read_source rs(f);
+            rs.provide("abcdef");
+
+            std::string s;
+            string_dynamic_buffer db(&s, 4);
+            auto [ec, n] = co_await read(rs, db);
+            BOOST_TEST(! ec);
+            BOOST_TEST_EQ(n, 4u);
+            BOOST_TEST_EQ(s, "abcd");
+        }));
+    }
+
+    //----------------------------------------------------------
 
     void
     run()
@@ -762,6 +902,7 @@ struct read_test
         testReadStream();
         testReadSource();
         testStreamDynBuf();
+        testDynBufMaxSize();
     }
 };
 
