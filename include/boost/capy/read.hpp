@@ -20,6 +20,7 @@
 #include <boost/capy/concept/read_stream.hpp>
 #include <system_error>
 
+#include <algorithm>
 #include <cstddef>
 
 namespace boost {
@@ -113,6 +114,26 @@ read(S& stream, MB buffers) ->
     co_return {{}, total_read};
 }
 
+namespace detail {
+
+// Clamp a prepare request for the dynamic-buffer read loops.
+//
+// `available` is `max_size() - size()`. The request is clamped to it so that
+// `size() + request` never exceeds `max_size()`. A degenerate `initial_amount`
+// of 0 would otherwise make `prepare(0)` return an empty buffer and spin
+// forever with no progress, so the result is floored to 1.
+inline
+std::size_t
+read_prepare_amount(
+    std::size_t amount,
+    std::size_t available) noexcept
+{
+    std::size_t const n = (std::min)(amount, available);
+    return n != 0 ? n : 1;
+}
+
+} // namespace detail
+
 /** Read all data from a stream into a dynamic buffer.
 
     @par Await-effects
@@ -145,12 +166,19 @@ read(S& stream, MB buffers) ->
 
 
     @par Await-throws
-    
-    Whatever operations on @c dunbuf throw.
 
-    (Note: types modeling @c DynamicBufferParam provided by Capy throw 
-     @c std::bad_alloc  from member function 
-     @c prepare .)
+    Whatever operations on @c dynbuf throw.
+
+    This algorithm relies on @c dynbuf.prepare(n) accepting any @c n for which
+    `dynbuf.size() + n <= dynbuf.max_size()`. The growable buffers
+    (@ref string_dynamic_buffer , @ref vector_dynamic_buffer ) honor this by
+    reallocating, and @ref circular_dynamic_buffer by wrapping. A fixed-capacity
+    buffer is permitted, but not required, to compact; one that does not can
+    have `capacity() < max_size() - size()` after a partial @c consume (e.g. a
+    reused @ref flat_dynamic_buffer ). Preparing into that gap throws
+    (@c std::invalid_argument or @c std::length_error ), so such a buffer must be
+    passed without a previously consumed prefix. Allocation failure in a growable
+    buffer surfaces as @c std::bad_alloc .
 
 
     @param stream The stream to read from. If the lifetime of `stream` ends
@@ -159,8 +187,12 @@ read(S& stream, MB buffers) ->
     @param dynbuf The dynamic buffer to append data to. If the lifetime of the buffer
     sequence represented by `dynbuf` ends before the coroutine finishes, the behavior is undefined.
 
-    @param initial_amount Hint for the value to be passed in the initial call to `dynbuf.prepare()`
-    (default 2048).
+    @param initial_amount Hint for the value passed to `dynbuf.prepare()`
+    (default 2048; a value of 0 is treated as 1). There is no precondition
+    relating `initial_amount` to `dynbuf.max_size()`: the requested amount is
+    clamped so that `dynbuf.size()` plus the request never exceeds
+    `dynbuf.max_size()`. Reaching `max_size()` completes the operation
+    successfully.
 
     
     @par Remarks
@@ -194,7 +226,12 @@ read(
     std::size_t total_read = 0;
     for(;;)
     {
-        auto mb = dynbuf.prepare(amount);
+        if(dynbuf.size() >= dynbuf.max_size())
+            co_return {{}, total_read};
+
+        std::size_t const available = dynbuf.max_size() - dynbuf.size();
+        auto mb = dynbuf.prepare(
+            detail::read_prepare_amount(amount, available));
         auto const mb_size = buffer_size(mb);
         auto [ec, n] = co_await stream.read_some(mb);
         dynbuf.commit(n);
@@ -241,13 +278,20 @@ read(
 
 
     @par Await-throws
-    
-    Whatever operations on @c dunbuf throw.
 
-    (Note: types modeling @c DynamicBufferParam provided by Capy throw 
-     @c std::bad_alloc from member function 
-     @c prepare .)
-     
+    Whatever operations on @c dynbuf throw.
+
+    This algorithm relies on @c dynbuf.prepare(n) accepting any @c n for which
+    `dynbuf.size() + n <= dynbuf.max_size()`. The growable buffers
+    (@ref string_dynamic_buffer , @ref vector_dynamic_buffer ) honor this by
+    reallocating, and @ref circular_dynamic_buffer by wrapping. A fixed-capacity
+    buffer is permitted, but not required, to compact; one that does not can
+    have `capacity() < max_size() - size()` after a partial @c consume (e.g. a
+    reused @ref flat_dynamic_buffer ). Preparing into that gap throws
+    (@c std::invalid_argument or @c std::length_error ), so such a buffer must be
+    passed without a previously consumed prefix. Allocation failure in a growable
+    buffer surfaces as @c std::bad_alloc .
+
 
     @param source The source to read from. If the lifetime of `source` ends
     before the coroutine finishes, the behavior is undefined.
@@ -256,8 +300,12 @@ read(
     buffer sequence represented by `dynbuf` ends before the coroutine finishes, 
     the behavior is undefined.
 
-    @param initial_amount Hint for the value to be passed in the initial call to `dynbuf.prepare()`
-    (default 2048).
+    @param initial_amount Hint for the value passed to `dynbuf.prepare()`
+    (default 2048; a value of 0 is treated as 1). There is no precondition
+    relating `initial_amount` to `dynbuf.max_size()`: the requested amount is
+    clamped so that `dynbuf.size()` plus the request never exceeds
+    `dynbuf.max_size()`. Reaching `max_size()` completes the operation
+    successfully.
 
     @par Remarks
     Supports _IoAwaitable cancellation_.
@@ -290,7 +338,12 @@ read(
     std::size_t total_read = 0;
     for(;;)
     {
-        auto mb = dynbuf.prepare(amount);
+        if(dynbuf.size() >= dynbuf.max_size())
+            co_return {{}, total_read};
+
+        std::size_t const available = dynbuf.max_size() - dynbuf.size();
+        auto mb = dynbuf.prepare(
+            detail::read_prepare_amount(amount, available));
         auto const mb_size = buffer_size(mb);
         auto [ec, n] = co_await source.read(mb);
         dynbuf.commit(n);
