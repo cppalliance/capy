@@ -32,10 +32,6 @@ Using stop tokens to implement operation timeouts.
 
 Running multiple operations concurrently with `when_all`.
 
-### custom-dynamic-buffer/
-
-Implementing the DynamicBuffer concept for a custom allocation strategy.
-
 ### echo-server-corosio/
 
 A complete echo server using Corosio for real network I/O. Requires Corosio.

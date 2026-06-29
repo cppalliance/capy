@@ -64,19 +64,12 @@ enum class cond
     */
     stream_truncated = 3,
 
-    /** Item not found condition.
-
-        An `error_code` compares equal to `not_found` when a
-        lookup operation failed to find the requested item.
-    */
-    not_found = 4,
-
     /** Operation timed out condition.
 
         An `error_code` compares equal to `timeout` when an
         operation exceeded its allowed duration.
     */
-    timeout = 5
+    timeout = 4
 };
 
 } // capy

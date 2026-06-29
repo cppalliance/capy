@@ -405,9 +405,7 @@ Cobalt uses Asio's `cancellation_signal` and `cancellation_slot`. Propagation is
 
 Capy adopts Asio's buffer sequence model — `ConstBufferSequence`, `MutableBufferSequence` — because it works. Capy's buffer types are fully compatible with Asio's. You can pass Capy buffers to Asio operations and vice versa, seamlessly. Then Capy extends the model with additional types and algorithms, while still achieving the Dimovian Ideal — none of this requires exposing Asio headers to consumers.
 
-Cobalt does not provide buffer sequence types or dynamic buffer support. Users who need these features use Asio's types directly, inheriting the `DynamicBuffer_v1`/`DynamicBuffer_v2` split.
-
-Capy has one `DynamicBuffer` concept. The v1/v2 split in Asio exists because of a fundamental ownership problem: when an async operation takes a buffer by value and completes via callback, who owns the buffer? The original design had flaws, and the fix created two incompatible versions. By going coroutines-only, Capy avoids this entirely. The coroutine frame owns the buffer. Parameters have their lifetimes extended by the suspended frame, and the awaitable lives in the frame alongside them. There is no decay-copy, no ownership transfer, no ambiguity. One concept is sufficient.
+Cobalt does not provide buffer sequence types. Users who need these features use Asio's types directly.
 
 [cols="1,1,1"]
 |===
@@ -420,18 +418,6 @@ Capy has one `DynamicBuffer` concept. The v1/v2 split in Asio exists because of 
 | `MutableBufferSequence`
 | Yes
 | Via Asio
-
-| `DynamicBuffer`
-| Unified
-| None (use Asio directly)
-
-| `flat_dynamic_buffer`
-| Yes
-|
-
-| `circular_dynamic_buffer`
-| Yes
-|
 
 | `front`
 | Yes
@@ -670,7 +656,7 @@ Every `co_await ws.write(...)` call creates a coroutine frame, suspends, resumes
 | `cancellation_signal`, automatic, OS-level
 
 | Buffer sequences
-| Extended, unified `DynamicBuffer`
+| Extended (`buffer_slice`, `front`)
 | None (use Asio directly)
 
 | Allocator control

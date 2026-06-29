@@ -38,42 +38,6 @@ auto [ec, n] = co_await read(stream, make_buffer(buf));
 // n == 1024, or ec indicates why not
 ----
 
-=== read with DynamicBuffer
-
-Reads into a growable dynamic buffer, stopping at end-of-stream, when the buffer reaches `max_size()`, or on a non-EOF error:
-
-[source,cpp]
-----
-template<ReadStream Stream, DynamicBufferParam Buffer>
-io_task<std::size_t>
-read(Stream& stream, Buffer&& buffer, std::size_t initial_amount = 2048);
-----
-
-Example:
-
-[source,cpp]
-----
-std::string storage;
-auto buffer = dynamic_buffer(storage);
-auto [ec, n] = co_await read(stream, buffer);
-// storage holds all data read up to EOF or max_size(); n is the byte count
-----
-
-=== read from a ReadSource with DynamicBuffer
-
-A third overload accepts a `ReadSource` and a dynamic buffer. It drives the
-source's complete-read `read` (rather than `read_some`), appending until EOF
-or until the buffer reaches `max_size()`:
-
-[source,cpp]
-----
-template<ReadSource Source, DynamicBufferParam Buffer>
-io_task<std::size_t>
-read(Source& source, Buffer&& buffer, std::size_t initial_amount = 2048);
-----
-
-`n` is the total number of bytes read, inclusive of the final partial read.
-
 === write
 
 Writes all data by looping `write_some`:
@@ -97,55 +61,6 @@ Example:
 [source,cpp]
 ----
 co_await write(stream, make_buffer("Hello, World!"));
-----
-
-=== read_until
-
-Reads from a stream into a dynamic buffer until a match condition is
-satisfied. Useful for delimiter-based protocols (e.g. reading a line or an
-HTTP header block):
-
-[source,cpp]
-----
-#include <boost/capy/read_until.hpp>
-
-// Match-condition overload
-template<ReadStream Stream, class Buffer, MatchCondition Match>
-io_task<std::size_t>
-read_until(Stream& stream, Buffer&& buffer, Match match,
-    std::size_t initial_amount = 2048);
-
-// Delimiter-string convenience overload
-template<ReadStream Stream, class Buffer>
-io_task<std::size_t>
-read_until(Stream& stream, Buffer&& buffer, std::string_view delim,
-    std::size_t initial_amount = 2048);
-----
-
-If `!ec`, the match succeeded and `n` is the number of bytes through the end
-of the match (the position one past the matched delimiter). Notable
-conditions:
-
-* `cond::eof` — end-of-stream reached before a match; `n` is the buffer size
-* `cond::not_found` — `max_size()` reached before a match
-
-A `MatchCondition` is a callable `(std::string_view data, std::size_t* hint)`
-returning the position past the match, or `std::string_view::npos` on no
-match. When `hint` is non-null it may receive an overlap hint so a delimiter
-spanning two reads is not missed. The `match_delim` struct adapts a
-`std::string_view` delimiter to this interface and underlies the convenience
-overload.
-
-[source,cpp]
-----
-std::string line;
-auto [ec, n] = co_await read_until(
-    stream, string_dynamic_buffer(&line), "\r\n");
-if (ec == cond::eof)
-    co_return line;        // partial line at EOF
-if (ec)
-    throw std::system_error(ec);
-line.resize(n - 2);        // n includes the "\r\n"; strip it
 ----
 
 === write_now
@@ -337,9 +252,6 @@ else if (ec)
 
 | `<boost/capy/write.hpp>`
 | Composed write operations
-
-| `<boost/capy/read_until.hpp>`
-| Read until a match condition or delimiter
 
 | `<boost/capy/io/write_now.hpp>`
 | Eager write with frame caching

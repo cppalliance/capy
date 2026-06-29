@@ -40,8 +40,6 @@ public:
         BOOST_TEST(
             cat.message(static_cast<int>(error::stream_truncated)) ==
             "stream truncated");
-        BOOST_TEST(
-            cat.message(static_cast<int>(error::not_found)) == "not found");
         BOOST_TEST(cat.message(static_cast<int>(error::timeout)) == "timeout");
 
         // Out-of-range value hits the default branch.

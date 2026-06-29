@@ -32,7 +32,6 @@ message(int code) const
     case cond::eof: return "end of file";
     case cond::canceled: return "operation canceled";
     case cond::stream_truncated: return "stream truncated";
-    case cond::not_found: return "not found";
     case cond::timeout: return "operation timed out";
     default:
         return "unknown";
@@ -59,9 +58,6 @@ equivalent(
 
     case cond::stream_truncated:
         return ec == capy::error::stream_truncated;
-
-    case cond::not_found:
-        return ec == capy::error::not_found;
 
     case cond::timeout:
         if(ec == capy::error::timeout)

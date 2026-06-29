@@ -313,12 +313,6 @@ Even `std::byte` imposes a semantic opinion. POSIX uses `void*` for semantic neu
     - Scatter/gather operations (multiple buffers in one syscall)
     - Custom allocators and memory-mapped buffers
     - Integration with any user-defined buffer type
-- **Dynamic Buffers** (`buffers/dynamic.adoc`)
-  - The producer/consumer model
-  - The `DynamicBuffer` concept: `prepare(n)`, `commit(n)`, `data()`, `consume(n)`
-  - Capacity management: `size()`, `max_size()`, `capacity()`
-  - `DynamicBufferParam` for safe coroutine parameter passing
-  - Implementations: `flat_dynamic_buffer`, `circular_dynamic_buffer`, `vector_dynamic_buffer`, `string_dynamic_buffer`
 
 **Reference headers**:
 
@@ -326,8 +320,6 @@ Even `std::byte` imposes a semantic opinion. POSIX uses `void*` for semantic neu
 - `<capy/buffers/const_buffer.hpp>`, `<capy/buffers/mutable_buffer.hpp>`
 - `<capy/buffers/make_buffer.hpp>`
 - `<capy/buffers/buffer_copy.hpp>`, `<capy/buffers/consuming_buffers.hpp>`
-- `<capy/concept/dynamic_buffer.hpp>`
-- `<capy/flat_dynamic_buffer.hpp>`, `<capy/circular_dynamic_buffer.hpp>`
 
 ### 6. Stream Concepts (Sixth Section)
 
@@ -361,7 +353,6 @@ Generate content based on public API and agent-guide.md. **Key structure**: For 
   - **Example**: Compression pipeline — source provides compressed data, sink receives decompressed
 - **Transfer Algorithms** (`streams/algorithms.adoc`)
   - `read(stream, buffers)` — loops `read_some` until full or error
-  - `read(source, dynamic_buffer)` — loops until EOF
   - `write(stream, buffers)` — loops `write_some` until all written
   - `push_to(BufferSource, WriteSink/WriteStream)` — caller-owns-buffers transfer
   - `pull_from(ReadSource/ReadStream, BufferSink)` — callee-owns-buffers transfer
@@ -428,9 +419,6 @@ Generate examples that showcase Capy features. Examples should progress from sim
   - Multiple operations in parallel with `when_all`
   - First-wins pattern with `when_any`
   - Shows: `when_all`, `when_any`, concurrent composition
-- **Custom Dynamic Buffer** (`examples/custom-dynamic-buffer.adoc`)
-  - Implementing `DynamicBuffer` for a custom allocation strategy
-  - Shows: concept modeling, `prepare`/`commit`/`consume` pattern
 - **Echo Server with Corosio** (`examples/echo-server-corosio.adoc`)
   - Complete echo server using Corosio sockets
   - Demonstrates Capy + Corosio integration

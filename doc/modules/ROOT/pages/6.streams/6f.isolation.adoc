@@ -208,8 +208,9 @@ auto response = co_await send_request(conn, {
 });
 
 // Read body through type-erased source
-flat_dynamic_buffer buf;
-co_await read(response.body, buf);
+char storage[4096];
+mutable_buffer buf(storage, sizeof(storage));
+auto [ec, n] = co_await response.body.read(buf);
 ----
 
 The HTTP library is isolated from transport details. It compiles once. Users bring their own transport.

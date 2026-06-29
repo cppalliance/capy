@@ -10,7 +10,6 @@
 
 add_subdirectory(async-mutex)
 add_subdirectory(buffer-composition)
-add_subdirectory(custom-dynamic-buffer)
 add_subdirectory(custom-executor)
 add_subdirectory(hello-task)
 add_subdirectory(mock-stream-testing)

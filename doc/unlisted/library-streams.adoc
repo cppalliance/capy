@@ -465,9 +465,6 @@ Free functions build complete operations from partial ones:
 
 // Read into fixed buffers (loops read_some until full)
 auto [ec, n] = co_await read(stream, buffers);
-
-// Read into dynamic buffer (loops until EOF)
-auto [ec, n] = co_await read(source, dynamic_buffer);
 ----
 
 [source,cpp]
@@ -830,4 +827,4 @@ task<> handle_client(tcp_socket& sock)
 == Navigation
 
 [.text-center]
-xref:../buffers/dynamic.adoc[<- Dynamic Buffers] | xref:when-all.adoc[Next: Concurrent Composition ->]
+xref:../buffers/algorithms.adoc[<- Buffer Algorithms] | xref:when-all.adoc[Next: Concurrent Composition ->]
