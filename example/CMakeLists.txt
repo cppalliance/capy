@@ -30,6 +30,7 @@ endif()
 
 if(BOOST_CAPY_BUILD_CUDA_EXAMPLES)
     add_subdirectory(cuda/datamovement)
+    add_subdirectory(cuda/notification-strategies)
 endif()
 
 if(BOOST_CAPY_BUILD_NVEXEC_EXAMPLES)
