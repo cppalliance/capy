@@ -88,7 +88,7 @@ WriteSink     { write_some, write, write_eof(buffers), write_eof() }
 
 == Composed Algorithms
 
-Three composed algorithms build on `read_some`:
+A composed algorithm builds on `read_some`:
 
 === `read(stream, buffers)` -- Fill a Buffer Sequence
 
@@ -114,50 +114,6 @@ task<> read_header(Stream& stream)
     if(ec)
         co_return;
     // header contains exactly 16 bytes
-}
-----
-
-=== `read(stream, dynamic_buffer)` -- Read Until EOF
-
-[source,cpp]
-----
-auto read(ReadStream auto& stream,
-          DynamicBufferParam auto&& buffers,
-          std::size_t initial_amount = 2048)
-    -> io_task<std::size_t>;
-----
-
-Reads from the stream into a dynamic buffer until EOF is reached. The buffer grows with a 1.5x factor when filled. On success (EOF), `ec` is clear and `n` is the total bytes read.
-
-[source,cpp]
-----
-template<ReadStream Stream>
-task<std::string> slurp(Stream& stream)
-{
-    std::string body;
-    auto [ec, n] = co_await read(
-        stream, string_dynamic_buffer(&body));
-    if(ec)
-        co_return {};
-    co_return body;
-}
-----
-
-=== `read_until(stream, dynamic_buffer, match)` -- Delimited Read
-
-Reads from the stream into a dynamic buffer until a delimiter or match condition is found. Used for line-oriented protocols and message framing.
-
-[source,cpp]
-----
-template<ReadStream Stream>
-task<> read_line(Stream& stream)
-{
-    std::string line;
-    auto [ec, n] = co_await read_until(
-        stream, string_dynamic_buffer(&line), "\r\n");
-    if(ec)
-        co_return;
-    // line contains data up to and including "\r\n"
 }
 ----
 
@@ -190,46 +146,6 @@ task<> echo(Stream& stream, WriteStream auto& dest)
 }
 ----
 
-=== Relaying from ReadStream to WriteStream
-
-When relaying data from a reader to a writer, `read_some` feeds `write_some` directly. This is the fundamental streaming pattern.
-
-[source,cpp]
-----
-template<ReadStream Src, WriteStream Dest>
-task<> relay(Src& src, Dest& dest)
-{
-    char storage[65536];
-    circular_dynamic_buffer cb(storage, sizeof(storage));
-
-    for(;;)
-    {
-        // Read into free space
-        auto mb = cb.prepare(cb.capacity());
-        auto [rec, nr] = co_await src.read_some(mb);
-        cb.commit(nr);
-
-        if(rec && rec != cond::eof)
-            co_return;
-
-        // Drain to destination
-        while(cb.size() > 0)
-        {
-            auto [wec, nw] = co_await dest.write_some(
-                cb.data());
-            if(wec)
-                co_return;
-            cb.consume(nw);
-        }
-
-        if(rec == cond::eof)
-            co_return;
-    }
-}
-----
-
-Because `ReadSource` refines `ReadStream`, this relay function also accepts `ReadSource` types. An HTTP body source or a decompressor can be relayed to a `WriteStream` using the same function.
-
 == Relationship to the Write Side
 
 [cols="1,1"]
@@ -241,9 +157,6 @@ Because `ReadSource` refines `ReadStream`, this relay function also accepts `Rea
 
 | `read` free function (composed)
 | `write_now` (composed, eager)
-
-| `read_until` (composed, delimited)
-| No write-side equivalent
 
 | `ReadSource::read`
 | `WriteSink::write`
@@ -331,7 +244,6 @@ No source is forced into an unnatural pattern. Sources that naturally separate d
 `ReadStream` provides `read_some` as the single partial-read primitive. This is deliberately minimal:
 
 - Algorithms that need to fill a buffer completely use the `read` composed algorithm.
-- Algorithms that need delimited reads use `read_until`.
 - Algorithms that need to process data as it arrives use `read_some` directly.
 - `ReadSource` refines `ReadStream` by adding `read` for complete-read semantics.
 

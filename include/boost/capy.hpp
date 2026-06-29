@@ -28,7 +28,6 @@
 // Algorithms
 #include <boost/capy/delay.hpp>
 #include <boost/capy/read.hpp>
-#include <boost/capy/read_until.hpp>
 #include <boost/capy/timeout.hpp>
 #include <boost/capy/when_all.hpp>
 #include <boost/capy/when_any.hpp>
@@ -39,13 +38,9 @@
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/buffer_param.hpp>
 #include <boost/capy/buffers/buffer_slice.hpp>
-#include <boost/capy/buffers/circular_dynamic_buffer.hpp>
 #include <boost/capy/buffers/consuming_buffers.hpp>
-#include <boost/capy/buffers/flat_dynamic_buffer.hpp>
 #include <boost/capy/buffers/front.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/buffers/string_dynamic_buffer.hpp>
-#include <boost/capy/buffers/vector_dynamic_buffer.hpp>
 
 // Concepts
 #include <boost/capy/concept/buffer_archetype.hpp>
@@ -53,12 +48,10 @@
 #include <boost/capy/concept/buffer_source.hpp>
 #include <boost/capy/concept/const_buffer_sequence.hpp>
 #include <boost/capy/concept/decomposes_to.hpp>
-#include <boost/capy/concept/dynamic_buffer.hpp>
 #include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/io_runnable.hpp>
-#include <boost/capy/concept/match_condition.hpp>
 #include <boost/capy/concept/mutable_buffer_sequence.hpp>
 #include <boost/capy/concept/read_source.hpp>
 #include <boost/capy/concept/read_stream.hpp>

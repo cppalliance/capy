@@ -170,22 +170,6 @@ For a decompressor backed by a slow network connection, `read_some` lets you dec
 | Natural for fixed-size records and structured data
 |===
 
-== Composed Algorithms
-
-=== `read(source, dynamic_buffer)` -- Read Until EOF
-
-[source,cpp]
-----
-auto read(ReadSource auto& source,
-          DynamicBufferParam auto&& buffers,
-          std::size_t initial_amount = 2048)
-    -> io_task<std::size_t>;
-----
-
-Reads from the source into a dynamic buffer until EOF. The buffer grows with a 1.5x factor when filled. On success (EOF), `ec` is clear and `n` is total bytes read.
-
-This is the `ReadSource` equivalent of the `ReadStream` overload. Both use the same `read` free function name, distinguished by concept constraints.
-
 == Use Cases
 
 === Reading an HTTP Body
@@ -205,24 +189,6 @@ task<std::string> read_body(Source& body, std::size_t content_length)
         result.resize(n);
         co_return result;
     }
-    co_return result;
-}
-----
-
-=== Reading into a Dynamic Buffer
-
-When the body size is unknown (e.g., chunked encoding), read until EOF using the dynamic buffer overload.
-
-[source,cpp]
-----
-template<ReadSource Source>
-task<std::string> read_chunked_body(Source& body)
-{
-    std::string result;
-    auto [ec, n] = co_await read(
-        body, string_dynamic_buffer(&result));
-    if(ec)
-        co_return {};
     co_return result;
 }
 ----
@@ -326,22 +292,6 @@ Because `ReadSource` refines `ReadStream`, this relay accepts `ReadSource` types
 
 The `any_read_source` wrapper type-erases a `ReadSource` behind a virtual interface. This is useful when the concrete source type is not known at compile time.
 
-[source,cpp]
-----
-task<> handle_request(any_read_source& body)
-{
-    // Works for content-length, chunked,
-    // compressed, or any other source type
-    std::string data;
-    auto [ec, n] = co_await read(
-        body, string_dynamic_buffer(&data));
-    if(ec)
-        co_return;
-
-    process_request(data);
-}
-----
-
 == Conforming Types
 
 Examples of types that satisfy `ReadSource`:
@@ -386,8 +336,4 @@ The `read` operation is a different primitive and uses the complete-read semanti
 | `read` composed (on `ReadStream`)
 | Loops `read_some` until the buffer is filled.
 | Fixed-size headers, known-length messages over raw streams.
-
-| `read` composed (on `ReadSource`)
-| Loops `read` into a dynamic buffer until EOF.
-| Slurping an entire body of unknown size.
 |===

@@ -69,7 +69,7 @@ Write `any_stream&` and accept any stream. Your function compiles once. It links
 * `any_read_stream`, `any_write_stream`, `any_stream` — type-erased partial I/O
 * `any_read_source`, `any_write_sink` — type-erased complete I/O
 * `any_buffer_source`, `any_buffer_sink` — type-erased zero-copy
-* `read`, `write`, `read_until`, `push_to`, `pull_from` — algorithms that work with erased or concrete streams
+* `read`, `write`, `push_to`, `pull_from` — algorithms that work with erased or concrete streams
 
 === Comparison
 
@@ -104,9 +104,6 @@ Write `any_stream&` and accept any stream. Your function compiles once. It links
 | `write`
 | `async_write`*
 
-| `read_until`
-| `async_read_until`*
-
 | `push_to`
 ^| -
 
@@ -122,18 +119,13 @@ Asio got buffer sequences right. The concept-driven approach—`ConstBufferSeque
 
 Capy doesn't reinvent this. We adopt Asio's buffer sequence model because it works.
 
-But we improve on it. Asio provides the basics; Capy extends them. Need to trim bytes from the front of a buffer sequence? Asio makes you work for it. Capy provides `buffer_slice` and `front`—byte-range slicing primitives for efficient byte-level manipulation. Need a circular buffer for protocol parsing? Capy has `circular_dynamic_buffer`. Need to compose two buffers without copying? Use `std::array<const_buffer, 2>` (or any range of buffers) directly — Capy's buffer-sequence concepts accept arbitrary ranges.
-
-And then there's the `DynamicBuffer` mess. If you've used Asio, you've encountered the confusing split between `DynamicBuffer_v1` and `DynamicBuffer_v2`. This exists because of a fundamental problem: when an async operation takes a buffer by value and completes via callback, who owns the buffer? The original design had flaws. The "fix" created two incompatible versions. (See https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p1100r0.html[P1100R0] for the full story.)
-
-Coroutines eliminate this problem entirely. The coroutine frame owns the buffer. There's no decay-copy. There's no ownership transfer. The buffer lives in the frame until the coroutine completes. Capy has one `DynamicBuffer` concept. It works.
+But we improve on it. Asio provides the basics; Capy extends them. Need to trim bytes from the front of a buffer sequence? Asio makes you work for it. Capy provides `buffer_slice` and `front`—byte-range slicing primitives for efficient byte-level manipulation. Need to compose two buffers without copying? Use `std::array<const_buffer, 2>` (or any range of buffers) directly — Capy's buffer-sequence concepts accept arbitrary ranges.
 
 One more thing: `std::ranges` cannot help here. `ranges::size` returns the number of buffers, not the total bytes. Range views can drop entire elements, but buffer sequences need byte-level trimming. The abstractions don't match. Buffer sequences need their own concepts.
 
 === What Capy Offers
 
-* `ConstBufferSequence`, `MutableBufferSequence`, `DynamicBuffer` — core concepts (Asio-compatible)
-* `flat_dynamic_buffer`, `circular_dynamic_buffer` — additional concrete buffer types
+* `ConstBufferSequence`, `MutableBufferSequence` — core concepts (Asio-compatible)
 * `buffer_slice`, `front` — byte-level manipulation utilities
 
 === Comparison
@@ -148,26 +140,11 @@ One more thing: `std::ranges` cannot help here. `ranges::size` returns the numbe
 | `MutableBufferSequence`
 | `MutableBufferSequence`
 
-| `DynamicBuffer`
-| `DynamicBuffer_v1`/`v2`*
-
 | `const_buffer`
 | `const_buffer`
 
 | `mutable_buffer`
 | `mutable_buffer`
-
-| `flat_dynamic_buffer`
-^| -
-
-| `circular_dynamic_buffer`
-^| -
-
-| `vector_dynamic_buffer`
-| `dynamic_vector_buffer`
-
-| `string_dynamic_buffer`
-| `dynamic_string_buffer`
 
 | `buffer_slice`
 ^| -
@@ -187,8 +164,6 @@ One more thing: `std::ranges` cannot help here. `ranges::size` returns the numbe
 | Byte-level trimming
 ^| -
 |===
-
-*Asio has confusing v1/v2 split due to callback composition problems
 
 == Coroutine Execution Model
 

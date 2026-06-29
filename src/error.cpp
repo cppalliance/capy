@@ -33,7 +33,6 @@ message(int code) const
     case error::canceled: return "operation canceled";
     case error::test_failure: return "test failure";
     case error::stream_truncated: return "stream truncated";
-    case error::not_found: return "not found";
     case error::timeout: return "timeout";
     default:
         return "unknown";
@@ -54,7 +53,6 @@ default_error_condition(int code) const noexcept
     case error::eof:              return make_error_condition(cond::eof);
     case error::canceled:         return std::make_error_condition(std::errc::operation_canceled);
     case error::stream_truncated: return make_error_condition(cond::stream_truncated);
-    case error::not_found:        return make_error_condition(cond::not_found);
     case error::timeout:          return std::make_error_condition(std::errc::timed_out);
     default:                      return std::error_condition(code, *this);
     }

@@ -64,9 +64,6 @@ task<void> echo(ReadStream auto& in, WriteStream auto& out)
 
 | xref:../buffers/algorithms.adoc[Buffer Algorithms]
 | `buffer_copy`, `buffer_size`, `buffer_empty`
-
-| xref:../buffers/dynamic.adoc[Dynamic Buffers]
-| Growable buffers with producer/consumer model
 |===
 
 == Key Types
@@ -80,18 +77,6 @@ task<void> echo(ReadStream auto& in, WriteStream auto& out)
 
 | `mutable_buffer`
 | Writable view of contiguous bytes
-
-| `flat_dynamic_buffer`
-| Growable contiguous buffer
-
-| `circular_dynamic_buffer`
-| Ring buffer for streaming
-
-| `string_dynamic_buffer`
-| Adapter for `std::string`
-
-| `vector_dynamic_buffer`
-| Adapter for `std::vector<unsigned char>`
 |===
 
 == Key Concepts
@@ -105,12 +90,6 @@ task<void> echo(ReadStream auto& in, WriteStream auto& out)
 
 | `MutableBufferSequence`
 | Range of writable buffers
-
-| `DynamicBuffer`
-| Resizable buffer with prepare/commit semantics
-
-| `DynamicBufferParam`
-| Safe parameter passing for coroutines
 |===
 
 == Headers
@@ -130,18 +109,6 @@ task<void> echo(ReadStream auto& in, WriteStream auto& out)
 
 | `<boost/capy/buffers/buffer_slice.hpp>`
 | Byte sub-range slicing algorithm
-
-| `<boost/capy/buffers/flat_dynamic_buffer.hpp>`
-| Contiguous dynamic buffer
-
-| `<boost/capy/buffers/circular_dynamic_buffer.hpp>`
-| Ring buffer implementation
-
-| `<boost/capy/buffers/string_dynamic_buffer.hpp>`
-| String adapter
-
-| `<boost/capy/buffers/vector_dynamic_buffer.hpp>`
-| Vector adapter
 |===
 
 == Navigation

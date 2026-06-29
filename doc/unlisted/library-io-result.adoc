@@ -241,16 +241,16 @@ auto [n] = throw_on_error(co_await stream.read_some(buffer));
 
 [source,cpp]
 ----
-task<void> read_all(stream& s, dynamic_buffer& buf)
+task<void> read_all(stream& s, mutable_buffer buf)
 {
-    while (true)
+    while (buf.size() > 0)
     {
-        auto [ec, n] = co_await s.read_some(buf.prepare(1024));
+        auto [ec, n] = co_await s.read_some(buf);
         if (ec == error::end_of_stream)
             co_return;  // Normal completion
         if (ec)
             throw system_error(ec);
-        buf.commit(n);
+        buf += n;  // advance past the bytes just read
     }
 }
 ----

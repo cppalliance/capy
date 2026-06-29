@@ -140,60 +140,6 @@ Step 4:   [== 16KB ==]             write_some --> 16KB  (write_now, small payloa
 
 Every time `write_now` partially drains a buffer, the remainder is a small payload that wastes a syscall. With top-up, the caller refills the ring buffer between calls, keeping each syscall near capacity.
 
-=== Code: `write_some` with Buffer Top-Up
-
-This example reads from a `ReadSource` and writes to a `WriteStream` using a `circular_dynamic_buffer`. After each partial write frees space in the ring buffer, the caller reads more data from the source to refill it before calling `write_some` again.
-
-[source,cpp]
-----
-template<ReadSource Source, WriteStream Stream>
-task<> relay_with_topup(Source& src, Stream& dest)
-{
-    char storage[65536];
-    circular_dynamic_buffer cb(storage, sizeof(storage));
-
-    for(;;)
-    {
-        // Fill: read from source into free space
-        auto mb = cb.prepare(cb.capacity());
-        auto [rec, nr] = co_await src.read(mb);
-        cb.commit(nr);
-        if(rec && rec != cond::eof && nr == 0)
-            co_return;
-
-        // Drain: write_some from the ring buffer
-        while(cb.size() > 0)
-        {
-            auto [wec, nw] = co_await dest.write_some(
-                cb.data());
-            if(wec)
-                co_return;
-
-            // consume only what was written
-            cb.consume(nw);
-
-            // Top-up: refill freed space before next
-            // write_some, so the next call presents
-            // the largest possible payload
-            if(cb.capacity() > 0 && rec != cond::eof)
-            {
-                auto mb2 = cb.prepare(cb.capacity());
-                auto [rec2, nr2] = co_await src.read(mb2);
-                cb.commit(nr2);
-                rec = rec2;
-            }
-            // write_some now sees a full (or nearly full)
-            // ring buffer, maximizing the syscall payload
-        }
-
-        if(rec == cond::eof)
-            co_return;
-    }
-}
-----
-
-After `write_some` accepts 40KB of a 64KB buffer, `consume(40KB)` frees 40KB. The caller immediately reads more data from the source into that freed space. The next `write_some` again presents a full 64KB payload.
-
 === Code: `write_now` Without Top-Up
 
 This example reads from a `ReadSource` and writes to a `WriteStream` using `write_now`. Each chunk is drained to completion before the caller can read more from the source.
@@ -260,7 +206,6 @@ After the kernel accepts 40KB of a 64KB chunk, `write_now` must send the remaini
 
 === Rule of Thumb
 
-- If the caller reads from a source and relays to a raw byte stream (TCP socket), use `write_some` with a `circular_dynamic_buffer` for buffer top-up.
 - If the caller has a discrete, bounded payload and wants zero-fuss complete-write semantics, use `write_now`.
 - If the destination is a `WriteSink`, use `write` directly.
 

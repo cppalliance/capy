@@ -43,9 +43,6 @@ enum class error
     /// Compare with `cond::stream_truncated`.
     stream_truncated,
 
-    /// Requested item was not found. Compare with `cond::not_found`.
-    not_found,
-
     /// Operation timed out. Compare with `cond::timeout`.
     timeout
 };

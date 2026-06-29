@@ -4,8 +4,7 @@ This section introduces Capy's stream concepts—the abstractions that enable da
 
 == Prerequisites
 
-* Completed xref:../5.buffers/5f.dynamic.adoc[Buffer Sequences]
-* Understanding of buffer sequences and the DynamicBuffer concept
+* Understanding of buffer sequences
 
 == Six Concepts for Data Flow
 
