@@ -19,9 +19,9 @@ namespace capy {
 
 /** Executor-facing schedulable unit.
 
-    Wraps a `std::coroutine_handle<>` with an intrusive list
-    pointer so executors can queue continuations without
-    per-post heap allocation.
+    Wraps a `std::coroutine_handle<>` with a single
+    pointer-sized scratch slot so executors can queue
+    continuations without per-post heap allocation.
 
     @par Fields
 
@@ -30,10 +30,15 @@ namespace capy {
         an I/O awaitable or combinator). Read by the executor
         when it dequeues the continuation.
 
-    @li `next` — intrusive linked-list pointer, owned and
-        managed exclusively by executor implementations. Users
-        must not read or write `next` while the continuation
-        is enqueued.
+    @li `reserved` — a pointer-sized scratch slot. Ordinary
+        users must not touch it. Authors of awaitable algorithms
+        (e.g. `async_mutex`, `async_semaphore`) may commandeer
+        it for their own node-based data structure, but **only
+        before** the continuation is submitted to an executor.
+        On submission the executor **clobbers** `reserved` to
+        link the continuation into its internal queue; the value
+        carries **no meaning** afterward. Once submitted, the
+        caller must not read or modify the continuation at all.
 
     @par Ownership and Lifetime
 
@@ -46,14 +51,20 @@ namespace capy {
     linked into an executor's queue. It must not be moved,
     destroyed, or enqueued in more than one queue concurrently.
 
+    An author who needs a doubly-linked (or otherwise richer)
+    structure should hold a `continuation` as a member — or
+    derive from it, since it is an aggregate — and manage their
+    own links: `reserved` is only a single pre-submission scratch
+    slot, and it is no longer available once the continuation is
+    submitted.
+
     @par Copy and Move
 
     Trivially copyable and movable (aggregate of a handle and
     a pointer). However, copying or moving a queued
-    continuation produces a second object whose `next` is
-    stale — the executor still points to the original. Copy
-    and move are safe only when the continuation is not
-    enqueued.
+    continuation produces a second object whose `reserved` slot
+    is stale — the executor still links the original. Copy and
+    move are safe only when the continuation is not enqueued.
 
     @par Thread Safety
 
@@ -69,7 +80,7 @@ namespace capy {
 struct continuation
 {
     std::coroutine_handle<> h;
-    continuation* next = nullptr;
+    void* reserved = nullptr;
 };
 
 } // namespace capy

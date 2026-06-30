@@ -62,16 +62,17 @@ class thread_pool::impl
     // resume) and post.
     static inline detail::thread_local_ptr<impl const> current_;
 
-    // Intrusive queue of continuations via continuation::next.
-    // No per-post allocation: the continuation is owned by the caller.
+    // Intrusive queue of continuations: the next link is stored in
+    // continuation::reserved (typed continuation* round-tripped through
+    // void*). No per-post allocation: the continuation is owned by the caller.
     continuation* head_ = nullptr;
     continuation* tail_ = nullptr;
 
     void push(continuation* c) noexcept
     {
-        c->next = nullptr;
+        c->reserved = nullptr;
         if(tail_)
-            tail_->next = c;
+            tail_->reserved = c;
         else
             head_ = c;
         tail_ = c;
@@ -82,7 +83,7 @@ class thread_pool::impl
         if(!head_)
             return nullptr;
         continuation* c = head_;
-        head_ = head_->next;
+        head_ = static_cast<continuation*>(head_->reserved);
         if(!head_)
             tail_ = nullptr;
         return c;
