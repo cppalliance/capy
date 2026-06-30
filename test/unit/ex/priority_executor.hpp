@@ -69,8 +69,8 @@ drain_list(continuation* head) noexcept
     while(head)
     {
         continuation* c = head;
-        head = c->next;
-        c->next = nullptr;
+        head = static_cast<continuation*>(c->reserved);
+        c->reserved = nullptr;
         ::boost::capy::safe_resume(c->h);
     }
 }
@@ -129,16 +129,16 @@ class priority_executor
     void
     enqueue_under_lock(continuation& c, priority p) const noexcept
     {
-        c.next = nullptr;
+        c.reserved = nullptr;
         if(p == priority::high)
         {
-            if(state_->high_tail) state_->high_tail->next = &c;
+            if(state_->high_tail) state_->high_tail->reserved = &c;
             else state_->high_head = &c;
             state_->high_tail = &c;
         }
         else
         {
-            if(state_->low_tail) state_->low_tail->next = &c;
+            if(state_->low_tail) state_->low_tail->reserved = &c;
             else state_->low_head = &c;
             state_->low_tail = &c;
         }
@@ -164,7 +164,7 @@ class priority_executor
         auto inv = detail::make_priority_invoker(state_);
         auto& self = inv.h_.promise().self;
         self.h = inv.h_;
-        self.next = nullptr;
+        self.reserved = nullptr;
         inner_ex_.post(self);
     }
 

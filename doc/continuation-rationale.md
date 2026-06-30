@@ -23,7 +23,7 @@ The executor concept adopts `continuation&` as the parameter type for
 struct continuation
 {
     std::coroutine_handle<> h;
-    continuation* next = nullptr;
+    void* reserved = nullptr;
 };
 
 concept Executor = requires(E& e, continuation c) {
@@ -115,11 +115,11 @@ void post(continuation c) const;
 **Arguments against:**
 
 1. Breaks zero-allocation queuing. The executor links the
-   continuation into an intrusive queue via `next`. If `c` is a
-   stack-local copy, the copy is destroyed when `post` returns and
-   the queue has a dangling pointer. The whole point of the intrusive
-   `next` is that the executor queues the *original object*, not a
-   copy.
+   continuation into an intrusive queue via the `reserved` slot. If
+   `c` is a stack-local copy, the copy is destroyed when `post`
+   returns and the queue has a dangling pointer. The whole point of
+   the intrusive `reserved` link is that the executor queues the
+   *original object*, not a copy.
 2. For `dispatch`, the inline case (return `c.h` for symmetric
    transfer) works, but the fallback to `post` has the same problem.
 
@@ -193,12 +193,13 @@ executor's queue. Two locations were considered:
    must reach into the caller's promise to get the continuation. Both
    are protocol changes.
 2. Burdens task authors. Every promise type that inherits from
-   `io_awaitable_promise_base` grows by a pointer (the `next`
+   `io_awaitable_promise_base` grows by a pointer (the `reserved`
    field) even though most suspension points never queue the
    continuation (they use symmetric transfer inline).
 3. Conflates two concerns. The promise stores "who resumes me when
    I'm done" — a parent-child relationship. The `continuation` with
-   `next` means "I'm a queueable unit of work." These are different
+   its `reserved` queue link means "I'm a queueable unit of work."
+   These are different
    concepts. The parent's continuation is only queued when the child
    finishes and the parent must be posted to a different executor.
    In the common case (same executor, symmetric transfer), it is
@@ -228,7 +229,7 @@ wraps it in the embedded `continuation`, and passes that to
 **Arguments against:**
 
 1. A new `continuation` is initialized at every `co_await`. Not an
-   allocation (it is embedded), but `next` and `h` are set each
+   allocation (it is embedded), but `reserved` and `h` are set each
    time.
 2. Combinator and trampoline patterns (parent dispatch, child
    launch) do not have an I/O awaitable in scope. These sites need
@@ -241,7 +242,7 @@ wraps it in the embedded `continuation`, and passes that to
 |---|---|---|
 | Changes `IoAwaitable` concept? | Yes | No |
 | Continuations per coroutine | One, reused | One per `co_await` |
-| Init cost per suspension | None (already set) | Set `h` and `next` |
+| Init cost per suspension | None (already set) | Set `h` and `reserved` |
 | Alignment with corosio `scheduler_op` | Separate patterns | Same pattern |
 | Burden on task authors | Yes — inherits extra pointer | None |
 | Combinator / trampoline sites | Free (in promise) | Need explicit storage |
@@ -304,7 +305,7 @@ mechanism that operates on handles, not continuations.
 
 A `continuation` must not move or be destroyed while it is linked
 into an executor's queue. When `post(c)` is called, the executor
-stores `&c` in an intrusive list via `c.next_`. If `c` moves or is
+stores `&c` in an intrusive list via `c.reserved`. If `c` moves or is
 destroyed before the executor dequeues it, the list has a dangling
 pointer.
 
@@ -355,7 +356,7 @@ recycling. Two options exist for how the strand interacts with
 
 ### Option S1: Strand Queues Continuations Directly
 
-Replace `strand_op` with direct `continuation` queueing via `next`.
+Replace `strand_op` with direct `continuation` queueing via the `reserved` link.
 
 **Arguments for:**
 
@@ -418,10 +419,10 @@ authors see no change.
 
 **Arguments against:**
 
-1. Every coroutine frame grows by 8 bytes (the `next` pointer),
+1. Every coroutine frame grows by 8 bytes (the `reserved` pointer),
    even though the parent's continuation is rarely queued. The common
    case (same executor, symmetric transfer) returns `c.h` inline —
-   `next` is dead weight.
+   `reserved` is dead weight.
 2. Conflates "who resumes me" with "I'm a queueable unit."
 
 ### Option B2: Keep Promise Base Unchanged (chosen)
@@ -470,10 +471,10 @@ The `continuation` change requires updates in corosio:
 
 3. **`scheduler::post(coroutine_handle<>)`** — Currently
    heap-allocates a `post_handler`. With `continuation`, the scheduler
-   can queue the continuation directly via `next`, eliminating the
-   allocation. Whether `continuation::next_` and `scheduler_op`'s
-   intrusive queue unify or coexist is a corosio-internal design
-   question.
+   can queue the continuation directly via its `reserved` link,
+   eliminating the allocation. Whether `continuation`'s `reserved`
+   link and `scheduler_op`'s intrusive queue unify or coexist is a
+   corosio-internal design question.
 
 4. **I/O operation types** (`reactor_op`, `overlapped_op`,
    `waiter_node`) — These store `coroutine_handle<>` and

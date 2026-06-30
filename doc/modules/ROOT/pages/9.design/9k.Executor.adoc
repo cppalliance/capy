@@ -41,9 +41,9 @@ If the executor determines it is safe (e.g., the current thread is already assoc
 
 === `post(c)` -- Always Queue
 
-Queues the continuation for later execution without ever executing it inline. Never blocks. The continuation is linked into the executor's internal queue via its intrusive `next` pointer -- no per-post heap allocation.
+Queues the continuation for later execution without ever executing it inline. Never blocks. The continuation is linked into the executor's internal queue via its `reserved` slot -- no per-post heap allocation.
 
-Both operations accept `continuation&` rather than `std::coroutine_handle<>`. A `continuation` wraps a coroutine handle with an intrusive list pointer, enabling zero-allocation queuing.
+Both operations accept `continuation&` rather than `std::coroutine_handle<>`. A `continuation` wraps a coroutine handle with a pointer-sized `reserved` slot, which the executor commandeers as its queue link, enabling zero-allocation queuing.
 
 The remaining operations support context access, lifecycle management, and identity:
 
@@ -159,20 +159,20 @@ Corosio confirms this in practice: its entire I/O layer -- sockets, acceptors, t
 
 == Why `continuation`, Not Raw `coroutine_handle<>`
 
-The executor accepts `continuation&` rather than `std::coroutine_handle<>`. A `continuation` wraps the handle with an intrusive `next` pointer for zero-allocation queuing:
+The executor accepts `continuation&` rather than `std::coroutine_handle<>`. A `continuation` wraps the handle with a pointer-sized `reserved` slot that the executor commandeers as its queue link, enabling zero-allocation queuing:
 
 [source,cpp]
 ----
 struct continuation
 {
     std::coroutine_handle<> h;
-    continuation* next = nullptr;
+    void* reserved = nullptr;
 };
 ----
 
 This design has three consequences:
 
-- **Zero-allocation posting.** The thread pool links the `continuation` directly into its work queue via `next`. No `new work(h)` per post. The queue node is embedded in the thing being queued -- the awaitable, combinator state, or trampoline promise that owns the continuation.
+- **Zero-allocation posting.** The thread pool links the `continuation` directly into its work queue via `reserved`. No `new work(h)` per post. The queue node is embedded in the thing being queued -- the awaitable, combinator state, or trampoline promise that owns the continuation.
 
 - **Type erasure remains possible.** `executor_ref` wraps any executor behind a uniform vtable. The vtable function pointers accept `continuation&`, which is a concrete type. No templates on promise type are needed.
 
@@ -320,7 +320,7 @@ When the I/O completes (from the reactor thread for epoll, the completion port f
 ex_.post(cont_);
 ----
 
-`post` links the continuation into the executor's work queue via `cont_.next`. No heap allocation occurs -- the continuation is embedded in the awaitable, which is alive for the duration of the suspension. A worker thread dequeues the continuation and calls `cont_.h.resume()`.
+`post` links the continuation into the executor's work queue via `cont_.reserved`. No heap allocation occurs -- the continuation is embedded in the awaitable, which is alive for the duration of the suspension. A worker thread dequeues the continuation and calls `cont_.h.resume()`.
 
 === Platform Independence
 

@@ -21,7 +21,8 @@ namespace detail {
 
 /** Single-threaded intrusive FIFO of pending continuations.
 
-    Links continuations directly through `continuation::next`, so
+    Links continuations directly through `continuation::reserved` (a
+    typed `continuation*` round-tripped through the `void*` slot), so
     push() carries no per-item allocation.
 
     @par Thread Safety
@@ -54,9 +55,9 @@ public:
     void
     push(continuation& c) noexcept
     {
-        c.next = nullptr;
+        c.reserved = nullptr;
         if(tail_)
-            tail_->next = &c;
+            tail_->reserved = &c;
         else
             head_ = &c;
         tail_ = &c;
@@ -102,7 +103,7 @@ public:
         while(batch.head)
         {
             continuation* c = batch.head;
-            batch.head = c->next;
+            batch.head = static_cast<continuation*>(c->reserved);
             safe_resume(c->h);
         }
         batch.tail = nullptr;
