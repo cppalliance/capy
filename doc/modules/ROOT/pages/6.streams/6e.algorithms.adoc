@@ -38,6 +38,41 @@ auto [ec, n] = co_await read(stream, make_buffer(buf));
 // n == 1024, or ec indicates why not
 ----
 
+=== read_at_least
+
+A straightforward extension of `read`: instead of filling `buffers`
+completely, it stops as soon as at least `n` bytes have been read:
+
+[source,cpp]
+----
+#include <boost/capy/read_at_least.hpp>
+
+template<ReadStream Stream, MutableBufferSequence Buffers>
+io_task<std::size_t>
+read_at_least(Stream& stream, Buffers buffers, std::size_t n);
+----
+
+The required amount `n` must be met or exceeded; the remaining capacity of
+`buffers` is optional, so a single `read_some` that delivers more than `n`
+bytes keeps the extra without looping again. Keeps reading until:
+
+* At least `n` bytes have been read (`n \<= return value \<= buffer_size(buffers)`)
+* The underlying `read_some` reports a condition before `n` bytes are read (the condition is propagated with the partial count)
+
+If `n` exceeds `buffer_size(buffers)` the request is impossible to satisfy and
+the operation fails immediately with `std::errc::invalid_argument` and a count
+of `0`, without reading.
+
+Example:
+
+[source,cpp]
+----
+char buf[4096];
+// Require 16 bytes; opportunistically take whatever else is ready.
+auto [ec, n] = co_await read_at_least(stream, make_buffer(buf), 16);
+// n >= 16 on success, possibly up to 4096
+----
+
 === write
 
 Writes all data by looping `write_some`:
@@ -62,6 +97,28 @@ Example:
 ----
 co_await write(stream, make_buffer("Hello, World!"));
 ----
+
+=== write_at_least
+
+The mirror of `read_at_least`, provided for symmetry: it stops as soon as at
+least `n` bytes have been written, rather than draining `buffers` entirely:
+
+[source,cpp]
+----
+#include <boost/capy/write_at_least.hpp>
+
+template<WriteStream Stream, ConstBufferSequence Buffers>
+io_task<std::size_t>
+write_at_least(Stream& stream, Buffers buffers, std::size_t n);
+----
+
+Keeps writing until:
+
+* At least `n` bytes have been written (`n \<= return value \<= buffer_size(buffers)`)
+* The underlying `write_some` reports a condition before `n` bytes are written (the condition is propagated with the partial count)
+
+If `n` exceeds `buffer_size(buffers)` the operation fails immediately with
+`std::errc::invalid_argument` and a count of `0`, without writing.
 
 === write_now
 
@@ -250,8 +307,14 @@ else if (ec)
 | `<boost/capy/read.hpp>`
 | Composed read operations
 
+| `<boost/capy/read_at_least.hpp>`
+| Read at least a minimum number of bytes
+
 | `<boost/capy/write.hpp>`
 | Composed write operations
+
+| `<boost/capy/write_at_least.hpp>`
+| Write at least a minimum number of bytes
 
 | `<boost/capy/io/write_now.hpp>`
 | Eager write with frame caching

@@ -28,10 +28,12 @@
 // Algorithms
 #include <boost/capy/delay.hpp>
 #include <boost/capy/read.hpp>
+#include <boost/capy/read_at_least.hpp>
 #include <boost/capy/timeout.hpp>
 #include <boost/capy/when_all.hpp>
 #include <boost/capy/when_any.hpp>
 #include <boost/capy/write.hpp>
+#include <boost/capy/write_at_least.hpp>
 
 // Buffers
 #include <boost/capy/buffers.hpp>
