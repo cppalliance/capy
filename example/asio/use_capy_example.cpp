@@ -15,6 +15,7 @@
 #include <boost/asio/write.hpp>
 
 #include <coroutine>
+#include <boost/capy/io_task.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/when_all.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -24,8 +25,9 @@
 
 constexpr std::size_t total_bytes = 1024;
 
-// Writer coroutine using use_capy with raw Asio socket
-capy::task<>
+// Writer coroutine using use_capy with raw Asio socket.
+// Returns io_task<> so it can be composed with when_all.
+capy::io_task<>
 writer(
     net::ip::tcp::socket& socket,
     std::size_t total)
@@ -45,16 +47,18 @@ writer(
         if (ec)
         {
             std::printf("writer error: %s\n", ec.message().c_str());
-            co_return;
+            co_return capy::io_result<>{ec};
         }
         written += n;
         std::printf("writer: wrote %zu bytes (total %zu)\n", n, written);
     }
     std::printf("writer: done, wrote %zu bytes\n", written);
+    co_return capy::io_result<>{};
 }
 
-// Reader coroutine using use_capy with raw Asio socket
-capy::task<>
+// Reader coroutine using use_capy with raw Asio socket.
+// Returns io_task<> so it can be composed with when_all.
+capy::io_task<>
 reader(
     net::ip::tcp::socket& socket,
     std::size_t total)
@@ -71,12 +75,13 @@ reader(
         if (ec)
         {
             std::printf("reader error: %s\n", ec.message().c_str());
-            co_return;
+            co_return capy::io_result<>{ec};
         }
         read_total += n;
         std::printf("reader: read %zu bytes (total %zu)\n", n, read_total);
     }
     std::printf("reader: done, read %zu bytes\n", read_total);
+    co_return capy::io_result<>{};
 }
 
 capy::task<>
@@ -84,11 +89,14 @@ run_example(
     net::ip::tcp::socket& client,
     net::ip::tcp::socket& server)
 {
-    co_await capy::when_all(
+    auto r = co_await capy::when_all(
         writer(client, total_bytes),
         reader(server, total_bytes));
 
-    std::printf("example complete!\n");
+    if (r.ec)
+        std::printf("example error: %s\n", r.ec.message().c_str());
+    else
+        std::printf("example complete!\n");
 }
 
 int main()

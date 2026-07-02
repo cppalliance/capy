@@ -260,4 +260,4 @@ public:
 | Copy algorithm
 |===
 
-You have now learned how to measure and copy buffer sequences. Continue to xref:5.buffers/5f.dynamic.adoc[Dynamic Buffers] to learn about growable buffer storage.
+You have now learned how to measure and copy buffer sequences. Continue to xref:6.streams/6.intro.adoc[Stream Concepts] to learn how coroutines transfer data through streams.

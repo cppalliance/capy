@@ -342,7 +342,7 @@ Capy supports multi-threaded execution. `thread_pool` distributes work across th
 
 Cobalt stores executor context in thread-local variables. Coroutines access it via `this_coro::executor`. This works on a single thread with a single executor. This design is scoped to single-threaded, single-executor configurations.
 
-Capy introduces the https://github.com/cppalliance/wg21-papers/blob/master/source/d4003-io-awaitables.md[IoAwaitable protocol] and uses it for context propagation. When you `co_await`, the caller passes its execution environment to the child structurally:
+Capy introduces the https://wg21.link/P4003[IoAwaitable protocol] and uses it for context propagation. When you `co_await`, the caller passes its execution environment to the child structurally:
 
 [source,cpp]
 ----

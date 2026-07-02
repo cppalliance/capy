@@ -117,6 +117,12 @@ Forward propagation offers several advantages:
 
 This design enables Capy's type-erased wrappers (`any_stream`, etc.) to work without knowing the concrete executor type.
 
+== A Vocabulary for Coroutine Interop
+
+Because the protocol is just a two-argument `await_suspend`, `IoAwaitable` is more than an internal mechanism—it is a _vocabulary type_ for interoperation. Any coroutine library that speaks the protocol can propagate execution environment across a `co_await` boundary without knowing the other side's concrete task type.
+
+This is the interop problem framed on the xref:index.adoc[home page]: a shared protocol replaces the set of pairwise adapters that separate coroutine libraries would otherwise need to talk to one another. Capy is the reference implementation of that protocol.
+
 == Implementing Custom IoAwaitables
 
 To create a custom IoAwaitable:
@@ -221,6 +227,69 @@ stop_cb_.emplace(env->stop_token, h);  // h is a raw coroutine_handle
 See xref:4.coroutines/4e.cancellation.adoc#stoppable-awaitables[Implementing Stoppable Awaitables] for a complete example.
 
 For a production implementation of this exact pattern, read the source of `delay_awaitable` (xref:reference:boost/capy/delay_awaitable.adoc[`delay_awaitable`]): it schedules a timer, registers a stop callback that posts the resume through the executor, and arbitrates between the timer and cancellation with a single atomic claim.
+
+[#bridging-a-foreign-awaitable]
+== Bridging a Foreign Awaitable
+
+What happens when you `co_await` an awaitable that does _not_ implement the protocol—a "plain" awaitable from another library, with the standard one-argument `await_suspend`?
+
+Capy rejects it at compile time:
+
+[source,cpp]
+----
+// In task.hpp, when the awaited type is not an IoAwaitable:
+static_assert(sizeof(A) == 0, "requires IoAwaitable");
+----
+
+This is intentional. A plain awaitable receives only the coroutine handle; it can resume the coroutine on any thread by calling `handle.resume()` directly. That silently breaks the xref:4.coroutines/4c.executors.adoc#the-same-executor-invariant[same-executor invariant]—the coroutine could wake on a foreign completion thread, leaving shared state you believed was strand-protected exposed to races. Rejecting such an awaitable at compile time prevents that. The constraint does not lock you in; it requires environment propagation to be explicit rather than silently dropped.
+
+The escape hatch is to wrap the foreign awaitable (or callback, or future) in a small `IoAwaitable` that captures the executor and re-posts the resumption through it:
+
+[source,cpp]
+----
+// Bridge a foreign async operation into a Capy coroutine.
+struct foreign_bridge
+{
+    io_env const* env_ = nullptr;
+    continuation cont_;
+    result_type result_;
+
+    bool await_ready() const noexcept { return false; }
+
+    std::coroutine_handle<> await_suspend(
+        std::coroutine_handle<> h, io_env const* env)
+    {
+        env_ = env;
+        cont_.h = h;   // stable address; the executor links continuations intrusively
+
+        // Start the foreign operation. Its completion callback may run on
+        // ANY thread, so it must not resume h directly. Instead it posts
+        // the continuation back through the caller's executor, restoring
+        // the same-executor invariant.
+        start_foreign_op([this]() noexcept {
+            store_result();
+            env_->executor.post(cont_);
+        });
+
+        return std::noop_coroutine();
+    }
+
+    result_type await_resume() { return std::move(result_); }
+};
+----
+
+The single rule that makes any bridge correct: *on completion, post through `env->executor` instead of resuming the handle inline.*
+
+=== There Is No Universal Bridge
+
+Capy does not provide a generic `co_await foreign_awaitable(x)` that adapts _arbitrary_ awaitables automatically. Such an adapter cannot work in the general case: it has no way to know how a foreign runtime schedules its completions, so it cannot guarantee the invariant. A shared protocol addresses this where a hidden adapter cannot. A small, explicit bridge per foreign runtime keeps the guarantee intact and the cost visible.
+
+=== Worked Bridges
+
+Two complete, buildable bridges live in the examples:
+
+* xref:8.examples/8o.sender-bridge.adoc[Bridging a P2300 Sender] — `await_sender` adapts a `std::execution` sender, mapping its completion channels onto `io_result` and posting the resumption through the executor.
+* xref:8.examples/8p.asio-use-capy.adoc[Calling Asio from a Capy Coroutine] — the `use_capy` completion token turns any Asio async operation into an `IoAwaitable`.
 
 == Reference
 

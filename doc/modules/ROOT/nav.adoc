@@ -53,6 +53,8 @@
 ** xref:8.examples/8l.async-mutex.adoc[Async Mutex]
 ** xref:8.examples/8m.parallel-tasks.adoc[Parallel Tasks]
 ** xref:8.examples/8n.custom-executor.adoc[Custom Executor]
+** xref:8.examples/8o.sender-bridge.adoc[Bridging a P2300 Sender]
+** xref:8.examples/8p.asio-use-capy.adoc[Calling Asio from a Capy Coroutine]
 * xref:9.design/9.intro.adoc[Design]
 ** xref:9.design/9a.CapyLayering.adoc[Layered Abstractions]
 ** xref:9.design/9b.Separation.adoc[Why Capy Is Separate]

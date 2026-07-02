@@ -255,7 +255,3 @@ Caught error: B failed!
 1. Add timing to see the parallel speedup vs sequential execution
 2. Implement a "fan-out/fan-in" pattern that processes a list of items in parallel
 3. Add cancellation support so remaining tasks can exit early on error
-
-== Next Steps
-
-* xref:8.examples/8h.custom-dynamic-buffer.adoc[Custom Dynamic Buffer] — Implementing your own buffer

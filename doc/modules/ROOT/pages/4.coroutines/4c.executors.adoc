@@ -7,6 +7,38 @@ This section explains executors and execution contexts—the mechanisms that con
 * Completed xref:4.coroutines/4b.launching.adoc[Launching Coroutines]
 * Understanding of `run_async` and `run`
 
+[#the-same-executor-invariant]
+== The Same-Executor Invariant
+
+Capy enforces one rule above all others:
+
+*A coroutine always resumes on the executor it was launched with.*
+
+This rule is what keeps shared state safe by default. Consider a connection handler launched on a strand:
+
+[source,cpp]
+----
+task<void> handle_client(connection& conn)
+{
+    auto req = co_await conn.read();
+    auto resp = process(req);
+    co_await conn.write(resp);
+    conn.stats.requests++;
+}
+----
+
+Launch this on a strand, and every resumption—after `conn.read()` and after `conn.write()`—happens on that strand. The update to `conn.stats.requests` is therefore free of data races without any mutex.
+
+Without the invariant, the coroutine could resume after `co_await conn.read()` on an `io_uring` completion thread, a pool thread, or wherever the I/O subsystem completed the operation. Correct code would then need either a mutex around every access to shared state or an explicit _resume-on-this-strand_ step after every `co_await`. A mutex defeats the purpose of the strand, and a single forgotten resume step reintroduces the data race.
+
+Because the invariant holds, the safe behavior is automatic and the unsafe behavior does not compile: awaiting a _plain_ awaitable—one that could resume the coroutine on any thread—is rejected. See xref:4.coroutines/4d.io-awaitable.adoc#bridging-a-foreign-awaitable[Bridging a Foreign Awaitable] for why, and for the explicit escape hatch.
+
+=== How the Invariant Is Maintained
+
+Affinity propagates forward. Launching a task with `run_async(ex)` binds it to `ex`; a child `co_await`-ed from that task inherits the same executor automatically, and so on down the chain. When a child completes, control returns to its caller _through the caller's executor_. When both share the same executor—the common case—that return is a direct symmetric transfer with no queuing; only a deliberate executor change requires a dispatch.
+
+That deliberate change is what `run` provides: it runs a subtree on a different executor and restores the caller's executor when the subtree completes (see xref:4.coroutines/4b.launching.adoc[Launching Coroutines]). This is also why I/O objects with executor-bound invariants—a socket tied to one `io_context`, a Windows IOCP handle, executor-specific timer state—remain safe: a coroutine holding them never resumes on the wrong executor mid-body.
+
 == The Executor Concept
 
 An *executor* is an object that can schedule work for execution. An executor must be nothrow copy- and move-constructible and provide the following interface:
