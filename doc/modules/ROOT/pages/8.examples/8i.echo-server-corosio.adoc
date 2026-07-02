@@ -10,7 +10,6 @@ A complete echo server using Corosio for real network I/O.
 
 == Prerequisites
 
-* Completed xref:8.examples/8h.custom-dynamic-buffer.adoc[Custom Dynamic Buffer]
 * Corosio library installed
 * Understanding of TCP networking basics
 

@@ -16,6 +16,7 @@
 #include <boost/asio/deferred.hpp>
 
 #include <coroutine>
+#include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
@@ -110,6 +111,7 @@ class capy_awaitable
     DeferredOp op_;
     result_type result_;
     std::shared_ptr<cancel_bridge> cancel_;
+    capy::continuation cont_;
 
 public:
     explicit capy_awaitable(DeferredOp op)
@@ -128,10 +130,17 @@ public:
     {
         cancel_ = std::make_shared<cancel_bridge>(env->stop_token);
 
-        auto handler = [this, h, ex = env->executor](Args... args) mutable
+        // Resume the caller on its executor when the Asio operation
+        // completes. The completion handler may run on any thread, so we
+        // post the continuation through the executor rather than resuming
+        // inline; this restores the same-executor invariant. cont_ is a
+        // member, giving the continuation a stable address until the
+        // executor dequeues and resumes it.
+        cont_.h = h;
+        auto handler = [this, ex = env->executor](Args... args) mutable
         {
             store_result(std::move(args)...);
-            ex.post(h);
+            ex.post(cont_);
         };
 
         std::move(op_)(

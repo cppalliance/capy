@@ -232,7 +232,7 @@ Coroutine frame allocation happens _before_ the coroutine body executes. When th
 
 Any mechanism that injects the allocator _after_ the call -- receiver queries, `await_transform`, explicit method calls -- arrives too late. The frame is already allocated.
 
-This is the fundamental tension identified in D4003 section 3.3:
+This is the fundamental tension identified in P4003 section 3.3:
 
 [quote]
 ____

@@ -238,14 +238,14 @@ public:
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
-    std::coroutine_handle<> dispatch(continuation& c) const
+    std::coroutine_handle<> dispatch(capy::continuation& c) const
     {
         auto h = c.h;
         net::post(ex_, [h]{ h.resume(); });
         return std::noop_coroutine();
     }
 
-    void post(continuation& c) const
+    void post(capy::continuation& c) const
     {
         auto h = c.h;
         net::post(ex_, [h]{ h.resume(); });

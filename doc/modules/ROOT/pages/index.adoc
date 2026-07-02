@@ -2,6 +2,28 @@
 
 Capy abstracts away sockets, files, and asynchrony with type-erased streams and buffer sequences—code compiles fast because the implementation is hidden. It provides the framework for concurrent algorithms that transact in buffers of memory: networking, serial ports, console, timers, and any platform I/O. This is only possible because Capy is coroutine-only, enabling optimizations and ergonomics that hybrid approaches must sacrifice.
 
+== What Capy Is
+
+Capy is two things at once:
+
+* *A protocol.* `IoAwaitable` is a protocol for propagating a coroutine's _execution environment_—its executor, stop token, and allocator—forward through `co_await` chains. This is the vocabulary that lets awaitable-based coroutine libraries interoperate.
+* *A reference implementation.* A concrete library—thread pool, task types, byte streams, buffer sequences, synchronization primitives—that proves the protocol works in practice.
+
+The protocol is the smaller, more general library living inside Capy. Without a shared protocol, _N_ coroutine libraries need _N_×(_N_−1) adapters to interoperate; with one shared protocol for environment propagation, a single bridge covers everyone. This is the role `IoAwaitable` plays.
+
+[IMPORTANT]
+====
+*The core invariant: a coroutine always resumes on the executor it was launched with.*
+
+Launch a coroutine on a strand, and every resumption—after every `co_await`—happens on that strand. Shared state touched between suspension points is free of data races without a mutex. A _plain_ awaitable can resume a coroutine on any thread and would break this guarantee, so Capy rejects it at compile time and provides an explicit way to bridge such awaitables when you need one.
+
+See xref:4.coroutines/4c.executors.adoc#the-same-executor-invariant[the same-executor invariant] for the rationale and xref:4.coroutines/4d.io-awaitable.adoc#bridging-a-foreign-awaitable[bridging a foreign awaitable] for the escape hatch.
+====
+
+== What Capy Is Not
+
+Capy is _not_ an all-purpose coroutine framework, and it is _not_ an implementation detail of Corosio. It is the execution model and byte-stream layer—usable standalone for logic that operates on streams without any platform I/O (HTTP parsing, protocol state machines, serialization), and usable as the foundation for Corosio's networking layer. CERN's traccc project uses Capy without Corosio for GPU reconstruction pipelines; the Boost.HTTP parser is built entirely on Capy's byte streams.
+
 == What This Library Does
 
 * *Lazy coroutine tasks* — `task<T>` with forward-propagating stop tokens and automatic cancellation
