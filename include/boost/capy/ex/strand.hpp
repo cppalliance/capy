@@ -50,6 +50,19 @@ namespace capy {
     - `dispatch(continuation&)` - May run immediately if already executing in this strand
     - `post(continuation&)` - Always queues for later execution
 
+    @par Preconditions
+    A strand holds only a non-owning reference to its inner executor's
+    execution context (for example a `thread_pool`). That context must
+    outlive every post() and dispatch() call; posting or dispatching
+    concurrently with, or after, the context's destruction is undefined
+    behavior. To guarantee this, submit work through @ref run_async or
+    @ref run — whose operations are work-tracked, so the context's
+    `join()` waits for them — and call `join()` on the context before
+    destroying it, rather than posting to a strand from an external
+    thread the context does not track. Destroying the strand handle
+    itself is always safe, including after the context has been
+    destroyed.
+
     @par Thread Safety
     Distinct objects: Safe.
     Shared objects: Safe.
@@ -218,6 +231,11 @@ public:
         @param c The continuation to post. The caller retains
             ownership; the continuation must remain valid until
             it is dequeued and resumed.
+
+        @par Preconditions
+        The strand's execution context must outlive this call. Posting
+        concurrently with, or after, that context's destruction is
+        undefined behavior.
     */
     void
     post(continuation& c) const
@@ -241,6 +259,11 @@ public:
             it is dequeued and resumed.
 
         @return A handle for symmetric transfer or `std::noop_coroutine()`.
+
+        @par Preconditions
+        The strand's execution context must outlive this call.
+        Dispatching concurrently with, or after, that context's
+        destruction is undefined behavior.
     */
     std::coroutine_handle<>
     dispatch(continuation& c) const
