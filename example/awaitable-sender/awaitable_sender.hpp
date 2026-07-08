@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -291,7 +292,14 @@ struct awaitable_sender
             auto h = std::coroutine_handle<>::from_address(
                 static_cast<void*>(&cb_));
 
-            detail::call_await_suspend(&aw_, h, &env_);
+            // Not a real coroutine caller, so symmetric transfer
+            // must be driven by hand: any non-noop handle (our own
+            // frame on immediate completion, or a wrapped task's
+            // handle that still needs to run) has to be resumed
+            // explicitly or nothing ever completes.
+            auto resumed = detail::call_await_suspend(&aw_, h, &env_);
+            if(resumed != std::noop_coroutine())
+                resumed.resume();
         }
     };
 
@@ -329,8 +337,7 @@ struct awaitable_sender
 
     @par Example
     @code
-    auto sndr = as_sender(capy::delay(
-        std::chrono::milliseconds(100)));
+    auto sndr = as_sender(waker.wait());
     @endcode
 
     @param aw The IoAwaitable to wrap.

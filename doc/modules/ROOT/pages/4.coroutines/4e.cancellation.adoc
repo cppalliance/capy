@@ -364,29 +364,54 @@ NOTE: Capy's built-in I/O awaitables (via Corosio) already use the post-back pat
 
 == Part 9: Patterns
 
-=== Timeout Pattern
+=== Racing a Deadline
 
-Capy ships a first-class `timeout()` combinator (`<boost/capy/timeout.hpp>`) that races an `io_result`-returning awaitable against a deadline. The first to complete wins and cancels the other; if the timer fires first, the result carries `cond::timeout`:
+A timeout is expressed as a race: the operation you care about against
+a deadline. `async_waker` provides the suspension point for both sides
+of that race; a user thread supplies the clock:
 
 [source,cpp]
 ----
-#include <boost/capy/timeout.hpp>
-
-using namespace std::chrono_literals;
-
-task<void> read_with_timeout(socket& sock, mutable_buffer buf)
+struct fetch_channel
 {
-    auto [ec, n] = co_await capy::timeout(sock.read_some(buf), 50ms);
-    if (ec == cond::timeout)
+    capy::async_waker fetch_ready;
+    std::atomic<bool> cancelled{false};
+    std::string result;
+};
+
+// One side of the race: completes when the fetch worker thread
+// wakes fetch_ready. If the deadline wins first, when_any's stop
+// request cancels the wait; flag the worker so it stops early.
+capy::io_task<std::string> await_fetch(fetch_channel& ch)
+{
+    auto [ec] = co_await ch.fetch_ready.wait();
+    if (ec)
     {
-        // deadline elapsed before the read completed
-        co_return;
+        ch.cancelled.store(true);
+        co_return capy::io_result<std::string>{ec, {}};
     }
-    // ... use the n bytes read
+    co_return capy::io_result<std::string>{{}, std::move(ch.result)};
+}
+
+// The other side of the race: completes once whatever plays the
+// clock wakes the waker.
+capy::io_task<> deadline(capy::async_waker& waker)
+{
+    auto [ec] = co_await waker.wait();
+    co_return capy::io_result<>{ec};
 }
 ----
 
-The deadline itself is built on `delay()` (`<boost/capy/delay.hpp>`), an awaitable that suspends for a duration and resumes with `cond::canceled` if its stop token is activated. Reach for `timeout()` rather than wiring a timer to a `std::stop_source` by hand.
+`when_any(await_fetch(ch), deadline(waker))` returns as soon as either side
+wakes; the loser's wait resolves with `cond::canceled`. See
+xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation]
+for the full runnable demo, including the two `std::thread` objects that
+play fetch worker and clock.
+
+When the work you are racing is Corosio I/O rather than coroutine-internal
+work, Corosio's own timed operations take the place of the deadline
+thread, scheduling against the platform event loop instead of a
+`std::this_thread::sleep_for`.
 
 === User Cancellation
 

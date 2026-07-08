@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Michael Vandeberg
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -12,9 +13,12 @@
    Demonstrates quitter<T> for responsive application shutdown.
 
    Four workers simulate a batch file-processing pipeline: each
-   "downloads" data (delay), "transforms" it, and "writes" the
-   result (delay).  Workers are quitter<> coroutines — their
-   bodies contain zero cancellation-handling code.
+   "downloads" data, "transforms" it, and "writes" the result.
+   A single "ticker" thread plays the role of the clock: it wakes
+   each worker's async_waker on an interval, and the worker's
+   co_await waker.wait() is the suspension point.  Workers are
+   quitter<> coroutines:
+   their bodies contain zero cancellation-handling code.
 
    Press Ctrl+C to request shutdown.  Every in-flight worker
    exits at its next co_await, RAII cleanup runs (each worker
@@ -23,7 +27,7 @@
 
    Contrast with task<>:
      With task<>, every co_await that touches I/O needs:
-       auto [ec] = co_await delay(dur);
+       auto [ec] = co_await waker.wait();
        if(ec) co_return;            // <-- cancellation boilerplate
      This is repeated at every suspension point.
 
@@ -33,6 +37,7 @@
 
 #include <boost/capy.hpp>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -40,6 +45,8 @@
 #include <latch>
 #include <sstream>
 #include <stop_token>
+#include <thread>
+#include <vector>
 
 namespace capy = boost::capy;
 using namespace std::chrono_literals;
@@ -90,6 +97,7 @@ struct resource_guard
 // No cancellation code.  quitter handles it.
 capy::quitter<> worker(
     int id,
+    capy::async_waker& waker,
     std::atomic<int>& items_processed,
     std::atomic<int>& cleanup_count)
 {
@@ -97,9 +105,8 @@ capy::quitter<> worker(
 
     for(int item = 0; ; ++item)
     {
-        // Simulate download (200-400ms depending on worker)
-        auto download_time = 200ms + 50ms * id;
-        (void) co_await capy::delay(download_time);
+        // Simulate download: suspend until the ticker wakes us.
+        (void) co_await waker.wait();
 
         // Simulate transform (CPU work — no co_await needed)
         {
@@ -109,8 +116,8 @@ capy::quitter<> worker(
             std::cout << oss.str();
         }
 
-        // Simulate write (100ms)
-        (void) co_await capy::delay(100ms);
+        // Simulate write: suspend for another wakeup.
+        (void) co_await waker.wait();
 
         ++items_processed;
     }
@@ -133,20 +140,47 @@ int main()
     std::atomic<int> items_processed{0};
     std::atomic<int> cleanup_count{0};
 
+    // One waker per worker (single-waiter precondition); each
+    // runs on its own strand so the pool's num_workers OS threads
+    // still keep every waker's resumption single-threaded.
+    std::array<capy::async_waker, num_workers> wakers;
+    std::vector<capy::strand<capy::thread_pool::executor_type>> strands;
+    strands.reserve(num_workers);
+    for(int i = 0; i < num_workers; ++i)
+        strands.emplace_back(pool.get_executor());
+
+    // Ticker thread paces the workers: it periodically wakes
+    // every worker's waker.
+    std::atomic<bool> ticker_stop{false};
+    std::thread ticker([&] {
+        while(!ticker_stop.load(std::memory_order_relaxed))
+        {
+            std::this_thread::sleep_for(50ms);
+            for(auto& waker : wakers)
+                waker.wake();
+        }
+    });
+
     std::cout << "Starting " << num_workers
               << " workers.  Press Ctrl+C to quit.\n\n";
 
     for(int i = 0; i < num_workers; ++i)
     {
         capy::run_async(
-            pool.get_executor(),
+            strands[i],
             g_stop.get_token(),
             [&]() { done.count_down(); },
             [&](std::exception_ptr) { done.count_down(); })(
-                worker(i, items_processed, cleanup_count));
+                worker(i, wakers[i], items_processed, cleanup_count));
     }
 
     done.wait();
+
+    // Stop and join the ticker now that the pool has drained, so
+    // it cannot wake a waker (or post to a strand) after the
+    // pool starts tearing down.
+    ticker_stop.store(true, std::memory_order_relaxed);
+    ticker.join();
 
     auto stop_at = g_stop_time.load(std::memory_order_relaxed);
     auto now = std::chrono::steady_clock::now();

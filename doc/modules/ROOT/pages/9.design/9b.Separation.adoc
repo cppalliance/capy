@@ -20,7 +20,7 @@ This document applies well-established physical design principles to show why th
 
 **Capy** provides the foundational abstractions for coroutine-based I/O. Tasks. Buffers. Stream concepts. Executors. The IoAwaitable protocol. Type-erased streams. Composition primitives like `when_all` and `when_any`. It is pure {cpp}20. It does not include a single line of platform-specific code. No sockets. No file descriptors. No `#ifdef _WIN32`.
 
-**Corosio** provides platform networking. TCP sockets. TLS streams. DNS resolution. Timers. Signal handling. It implements four platform-specific event loop backends: IOCP on Windows, epoll on Linux, kqueue on macOS/BSD, and POSIX select as a fallback. Corosio depends on Capy. Capy does not depend on Corosio.
+**Corosio** provides platform networking. TCP sockets. TLS streams. DNS resolution. Delays and timeouts. Signal handling. It implements four platform-specific event loop backends: IOCP on Windows, epoll on Linux, kqueue on macOS/BSD, and POSIX select as a fallback. Corosio depends on Capy. Capy does not depend on Corosio.
 
 The dependency arrow points in one direction. That is not an accident.
 

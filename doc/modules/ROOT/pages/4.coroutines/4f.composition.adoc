@@ -268,47 +268,43 @@ task<int> process_all(std::vector<item> const& items)
 }
 ----
 
-=== Asynchronous Sleep
+=== Racing a Deadline
 
-`delay` is the awaitable counterpart to `std::this_thread::sleep_for`. Instead of blocking the thread, it suspends the current coroutine until the duration elapses, leaving the thread free to run other coroutines in the meantime:
-
-[source,cpp]
-----
-#include <boost/capy/delay.hpp>
-
-task<> example()
-{
-    auto [ec] = co_await delay(100ms);
-    // 100ms have elapsed; other coroutines ran on this thread while we waited
-}
-----
-
-[NOTE]
-====
-A thread is *not* consumed per sleeping coroutine. All concurrently sleeping coroutines on the same execution context share a single timer thread, so a thousand simultaneous `delay()` calls cost one thread, not a thousand.
-====
-
-`delay` is cancellable. If the environment's stop token is activated before the deadline, the coroutine resumes early with `ec` set to `error::canceled` (compare with `cond::canceled`); otherwise `ec` is clear. A zero or negative duration completes synchronously without scheduling a timer.
-
-=== Timeout
-
-The `timeout` combinator races an awaitable against a deadline. It is built directly on `delay` — the inner awaitable is run against a `delay` of the given duration, and whichever completes first cancels the other:
+`when_any` is the tool for expressing a deadline race directly. Two waker waits, one completed by the operation itself, the other by whatever plays the clock, race as ordinary `when_any` children:
 
 [source,cpp]
 ----
-#include <boost/capy/timeout.hpp>
-
-task<> example()
+capy::io_task<std::string> await_fetch(fetch_channel& ch)
 {
-    auto [ec, n] = co_await timeout(sock.read_some(buf), 50ms);
-    if (ec == cond::timeout)
+    auto [ec] = co_await ch.fetch_ready.wait();
+    if (ec)
     {
-        // deadline expired before read completed
+        ch.cancelled.store(true);
+        co_return capy::io_result<std::string>{ec, {}};
     }
+    co_return capy::io_result<std::string>{{}, std::move(ch.result)};
 }
+
+capy::io_task<> deadline(capy::async_waker& waker)
+{
+    auto [ec] = co_await waker.wait();
+    co_return capy::io_result<>{ec};
+}
+
+auto race = [&]() -> capy::task<>
+{
+    auto result = co_await capy::when_any(
+        await_fetch(fetch_ch),
+        deadline(deadline_waker));
+    winner = result.index();
+    if (result.index() == 1)
+        fetch_result = std::get<1>(std::move(result));
+};
 ----
 
-`timeout` returns the same `io_result` type as the inner awaitable. On timeout, `ec` is set to `error::timeout` and payload values are default-initialized. Unlike `when_any`, exceptions from the inner awaitable are always propagated and never swallowed by the timer.
+`deadline_waker.wake()` can come from any thread, a `std::thread` that sleeps for the deadline, hardware, or a completion callback from another library. See xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation] for the full example, including the `fetch_channel` type and both `std::thread` objects that play fetch worker and clock.
+
+For timed I/O against a socket, prefer Corosio's own timed operations: they schedule the deadline on the platform event loop instead of a dedicated thread.
 
 == Implementation Notes
 
@@ -343,11 +339,8 @@ This design ensures proper context propagation to all children.
 | `<boost/capy/when_any.hpp>`
 | First-completion racing with when_any
 
-| `<boost/capy/delay.hpp>`
-| Asynchronous sleep that suspends instead of blocking the thread
-
-| `<boost/capy/timeout.hpp>`
-| Race an awaitable against a deadline
+| `<boost/capy/ex/async_waker.hpp>`
+| Single-waiter notification point for deadlines and other external events
 |===
 
 You have now learned how to compose tasks concurrently with `when_all` and `when_any`. In the next section, you will learn about frame allocators for customizing coroutine memory allocation.

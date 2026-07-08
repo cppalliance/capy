@@ -233,8 +233,8 @@ public:
         // The read suspends when no data is available, parking its
         // continuation on the side until the peer writes/closes. To
         // support cancellation it follows the same pattern as
-        // delay_awaitable: a stop callback claims the resume (racing
-        // the peer wake via an atomic) and posts the continuation
+        // async_waker::wait_awaiter: a stop callback claims the resume
+        // (racing the peer wake via an atomic) and posts the continuation
         // through the executor. Because it owns a std::atomic and a
         // std::stop_callback, the awaitable needs explicit move and
         // destruction (the task promise moves it into its
@@ -274,9 +274,9 @@ public:
             // accesses the members above. A union gives correct alignment
             // for stop_cb_t without an alignas specifier, which avoids
             // MSVC's C4324 padding warning on this function-local class
-            // (the member-level pragma used by delay_awaitable does not
-            // suppress it here). Lifetime is managed manually: placement
-            // new in await_suspend, explicit destruction once done.
+            // (the member-level pragma used by async_waker::wait_awaiter
+            // does not suppress it here). Lifetime is managed manually:
+            // placement new in await_suspend, explicit destruction once done.
             union { stop_cb_t stop_cb_; };
 
             awaitable(stream* self, MB buffers) noexcept

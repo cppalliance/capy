@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -75,41 +76,60 @@ int main()
         << "main thread: "
         << std::this_thread::get_id() << "\n";
 
-    // Capy execution context (provides timer service, etc.)
-    capy::thread_pool pool;
+    // Capy execution context. Single-threaded: async_waker's
+    // wait() requires resumption on a single thread.
+    capy::thread_pool pool(1);
+
+    // Named so io_sender_env's executor_ref (which stores a
+    // pointer to whatever it is given) points at a stable object
+    // instead of a temporary that dies at the end of the
+    // full-expression that constructs each demo_receiver.
+    auto pool_ex = pool.get_executor();
+
+    // Escape-hatch timing: a helper thread plays the clock and
+    // wakes waker_1 and waker_3 after a short delay.
+    // waker_2 is deliberately never woken, so its demo below
+    // completes only via stop-token cancellation, not a wakeup.
+    capy::async_waker waker_1, waker_2, waker_3;
+    std::thread waker_thread([&] {
+        std::this_thread::sleep_for(50ms);
+        waker_1.wake();
+        std::this_thread::sleep_for(50ms);
+        waker_3.wake();
+    });
 
     std::latch done(1);
 
     // Build a sender from a Capy IoAwaitable
-    auto sndr = capy::as_sender(capy::delay(500ms));
+    auto sndr = capy::as_sender(waker_1.wait());
 
     // Connect with a receiver whose environment carries
     // the Capy thread_pool executor
     auto op = ex::connect(
         std::move(sndr),
         demo_receiver{
-            {pool.get_executor(), std::stop_token{}},
+            {pool_ex, std::stop_token{}},
             &done});
 
-    std::cout << "  starting delay...\n";
+    std::cout << "  starting wait...\n";
     ex::start(op);
 
     done.wait();
-    std::cout << "  delay completed\n";
+    std::cout << "  wait completed\n";
 
     // Test cancellation via stop token
     std::cout << "\n--- cancellation test ---\n";
     std::stop_source ss;
     std::latch done2(1);
 
-    auto sndr2 = capy::as_sender(capy::delay(5s));
+    auto sndr2 = capy::as_sender(waker_2.wait());
     auto op2 = ex::connect(
         std::move(sndr2),
         demo_receiver{
-            {pool.get_executor(), ss.get_token()},
+            {pool_ex, ss.get_token()},
             &done2});
 
-    std::cout << "  starting 5s delay...\n";
+    std::cout << "  starting wait (never woken)...\n";
     ex::start(op2);
 
     std::this_thread::sleep_for(100ms);
@@ -124,11 +144,11 @@ int main()
     std::latch done3(1);
 
     auto sndr3 = capy::split_ec(
-        capy::as_sender(capy::delay(100ms)));
+        capy::as_sender(waker_3.wait()));
     auto op3 = ex::connect(
         std::move(sndr3),
         demo_receiver{
-            {pool.get_executor(), std::stop_token{}},
+            {pool_ex, std::stop_token{}},
             &done3});
 
     ex::start(op3);
@@ -153,10 +173,13 @@ int main()
     auto op4 = ex::connect(
         std::move(sndr4),
         demo_receiver{
-            {pool.get_executor(), std::stop_token{}},
+            {pool_ex, std::stop_token{}},
             &done4});
 
     ex::start(op4);
     done4.wait();
     std::cout << "  split_ec error test done\n";
+
+    // All demos have drained; safe to join the waker thread now.
+    waker_thread.join();
 }

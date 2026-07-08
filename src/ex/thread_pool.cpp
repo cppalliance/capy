@@ -116,9 +116,9 @@ public:
 
     // Destroy abandoned coroutine frames. Must be called
     // before execution_context::shutdown()/destroy() so
-    // that suspended-frame destructors (e.g. delay_awaitable
-    // calling timer_service::cancel()) run while services
-    // are still valid.
+    // that suspended-frame destructors touching services
+    // (e.g. cancelling registrations) run while those
+    // services are still valid.
     void
     drain_abandoned() noexcept
     {

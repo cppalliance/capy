@@ -26,10 +26,8 @@
 #include <boost/capy/task.hpp>
 
 // Algorithms
-#include <boost/capy/delay.hpp>
 #include <boost/capy/read.hpp>
 #include <boost/capy/read_at_least.hpp>
-#include <boost/capy/timeout.hpp>
 #include <boost/capy/when_all.hpp>
 #include <boost/capy/when_any.hpp>
 #include <boost/capy/write.hpp>
@@ -65,6 +63,7 @@
 #include <boost/capy/ex/any_executor.hpp>
 #include <boost/capy/ex/async_event.hpp>
 #include <boost/capy/ex/async_mutex.hpp>
+#include <boost/capy/ex/async_waker.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/work_guard.hpp>
