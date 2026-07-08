@@ -147,8 +147,9 @@ produce - at zero allocation cost.
 namespace capy = boost::capy;
 namespace ex = beman::execution;
 
-// A Capy IoAwaitable - a 500ms timer
-auto sndr = capy::as_sender(capy::delay(500ms));
+// A Capy IoAwaitable - a single-slot waker wait
+capy::async_waker waker;
+auto sndr = capy::as_sender(waker.wait());
 
 // Connect a receiver whose environment carries a Capy executor
 auto op = ex::connect(
@@ -159,12 +160,15 @@ auto op = ex::connect(
 
 // Start the operation - no coroutine frame allocated
 ex::start(op);
+
+// A user thread wakes the waiter
+waker.wake();
 ```
 
 The receiver's environment provides the executor and stop token. The
-bridge threads them into the `io_env` that the awaitable expects. The
-timer fires, the executor resumes the handle, the receiver gets
-`set_value()`. Twenty-four bytes of `frame_cb` on the operation state.
-That is the entire cost.
+bridge threads them into the `io_env` that the awaitable expects. When
+`waker.wake()` runs, the executor resumes the handle, the receiver
+gets `set_value()`. Twenty-four bytes of `frame_cb` on the operation
+state. That is the entire cost.
 
 Welcome to the awaitable universe. The door is open.

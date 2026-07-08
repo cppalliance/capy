@@ -290,4 +290,4 @@ You have seen the dangers—race conditions, deadlocks—and the tools to avoid 
 
 Concurrency is challenging. Bugs hide until the worst moment. Testing is hard because timing varies. But the rewards are substantial: responsive applications, full hardware utilization, and elegant solutions to naturally parallel problems.
 
-This foundation prepares you for understanding Capy's concurrency facilities: `thread_pool`, `strand`, `when_all`, and `async_event`. These build on standard primitives to provide coroutine-friendly concurrent programming.
+This foundation prepares you for understanding Capy's concurrency facilities: `thread_pool`, `strand`, `when_all`, `async_event`, `async_mutex`, and `async_waker`. These build on standard primitives to provide coroutine-friendly concurrent programming.

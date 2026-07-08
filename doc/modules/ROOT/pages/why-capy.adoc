@@ -200,7 +200,7 @@ Neither Asio nor `std::execution` offers this combination of forward-flow alloca
 * `IoAwaitable`, `IoRunnable` — taxonomy of awaitable concepts
 * `task<T>` — concrete task type implementing the protocol (user-defined tasks also supported)
 * `run`, `run_async` — launch functions with forward-flow allocator control
-* `strand`, `thread_pool`, `async_mutex`, `async_event` — concurrency primitives
+* `strand`, `thread_pool`, `async_mutex`, `async_event`, `async_waker`: concurrency primitives
 * `frame_allocator`, `recycling_memory_resource` — coroutine-optimized allocation
 
 === Comparison
@@ -262,6 +262,10 @@ Neither Asio nor `std::execution` offers this combination of forward-flow alloca
 ^| -
 
 | `async_event`
+^| -
+^| -
+
+| `async_waker`
 ^| -
 ^| -
 

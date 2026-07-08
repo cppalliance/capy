@@ -11,8 +11,8 @@
 #include <boost/capy/quitter.hpp>
 
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/delay.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/capy/ex/async_waker.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/this_coro.hpp>
@@ -721,24 +721,26 @@ struct quitter_test
     }
 
     //----------------------------------------------------------
-    // 14. Timer cancellation
+    // 14. Waker cancellation
     //----------------------------------------------------------
 
     void
-    testTimerCancellation()
+    testWakerCancellation()
     {
-        using namespace std::chrono_literals;
-
         thread_pool pool(1);
         std::latch done(1);
         std::latch suspended(1);
         std::stop_source source;
         bool reached_end = false;
 
+        // Never woken: an external wait that only cancellation
+        // can complete.
+        async_waker waker;
+
         auto q = [&]() -> quitter<>
         {
             suspended.count_down();
-            auto [ec] = co_await delay(10s);
+            auto [ec] = co_await waker.wait();
             (void)ec;
             reached_end = true;
         };
@@ -756,8 +758,8 @@ struct quitter_test
 
         done.wait();
         auto elapsed = std::chrono::steady_clock::now() - start;
-        // Should complete promptly, well under 10s
-        BOOST_TEST(elapsed < 1s);
+        // Should complete promptly
+        BOOST_TEST(elapsed < std::chrono::seconds(1));
         // Quitter intercepted the stop — body did not continue
         BOOST_TEST(!reached_end);
     }
@@ -877,7 +879,7 @@ struct quitter_test
         testCoAwaitThrowingQuitter();
         testWhenAllWithStop();
         testWhenAnyWithStop();
-        testTimerCancellation();
+        testWakerCancellation();
         testEchoWithShutdown();
     }
 };
