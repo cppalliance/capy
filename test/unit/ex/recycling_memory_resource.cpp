@@ -11,6 +11,7 @@
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 
 #include <cstddef>
+#include <thread>
 #include <vector>
 
 #include "test_suite.hpp"
@@ -70,10 +71,49 @@ public:
     }
 
     void
+    testThreadExitTeardown()
+    {
+        // Each worker fills its thread-local pool with cached blocks and
+        // then exits, running the pool's thread-exit drain. This is the
+        // path that must survive the pool teardown being reached once
+        // per exiting thread (and, on MinGW, potentially reached twice).
+        // Repeat across many short-lived threads so a teardown fault
+        // has ample opportunity to surface.
+        constexpr int threads = 32;
+        constexpr int rounds = 8;
+        constexpr std::size_t bytes = 128; // size class 1
+        constexpr std::size_t align = 8;
+
+        for(int r = 0; r < rounds; ++r)
+        {
+            std::vector<std::thread> ts;
+            ts.reserve(threads);
+            for(int t = 0; t < threads; ++t)
+            {
+                ts.emplace_back([] {
+                    recycling_memory_resource mr;
+                    std::vector<void*> ptrs;
+                    for(int i = 0; i < 40; ++i)
+                        ptrs.push_back(mr.allocate_fast(bytes, align));
+                    // Return them so the thread-local pool caches blocks
+                    // that its exit-time drain must release.
+                    for(void* p : ptrs)
+                        mr.deallocate_fast(p, bytes, align);
+                });
+            }
+            for(auto& t : ts)
+                t.join();
+        }
+
+        BOOST_TEST_PASS();
+    }
+
+    void
     run()
     {
         testIsEqual();
         testSlowPaths();
+        testThreadExitTeardown();
     }
 };
 
