@@ -9,6 +9,8 @@
 //
 
 #include "awaitable_sender.hpp"
+#include "awaitable_sender_base.hpp"
+#include "read_op.hpp"
 
 #include <boost/capy.hpp>
 
@@ -179,6 +181,28 @@ int main()
     ex::start(op4);
     done4.wait();
     std::cout << "  split_ec error test done\n";
+
+    // A native awaitable-sender: read_op derives
+    // awaitable_sender_base, no as_sender() wrapping.
+    std::cout << "\n--- native awaitable-sender test ---\n";
+    std::latch done5(1);
+
+    auto rop = capy::read_op::result({}, 42);
+    auto op5 = ex::connect(
+        ex::then(
+            std::move(rop),
+            [](std::size_t n)
+            {
+                std::cout
+                    << "  read " << n << " bytes\n";
+            }),
+        demo_receiver{
+            {pool_ex, std::stop_token{}},
+            &done5});
+
+    ex::start(op5);
+    done5.wait();
+    std::cout << "  native awaitable-sender test done\n";
 
     // All demos have drained; safe to join the waker thread now.
     waker_thread.join();
