@@ -51,6 +51,17 @@ Capy is _not_ an all-purpose coroutine framework, and it is _not_ an implementat
 
 All of these are built on Capy. Understanding its concepts—tasks, buffer sequences, streams, executors—unlocks the full power of the stack.
 
+== The Library Family
+
+Capy is the foundation of a family of coroutine libraries. Each builds on Capy's execution model and byte streams to add a layer of the networking stack. The sibling libraries are in active development; their repositories may be incomplete or not yet released.
+
+* *Capy* — execution model, buffer sequences, and byte streams (this library)
+* https://github.com/cppalliance/corosio[Corosio] — portable coroutine networking _(in development)_
+* https://github.com/cppalliance/http[Http] — sans-I/O HTTP/1.1 clients and servers _(in development)_
+* https://github.com/cppalliance/websocket[Websocket] — sans-I/O WebSocket _(in development)_
+* https://github.com/cppalliance/beast2[Beast2] — high-level HTTP/WebSocket servers _(in development)_
+* https://github.com/cppalliance/burl[Burl] — high-level HTTP client _(in development)_
+
 == Design Philosophy
 
 * *Use case first.* Buffer sequences, stream concepts, executor affinity—these exist because I/O code needs them, not because they're theoretically elegant.
