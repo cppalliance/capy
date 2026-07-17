@@ -62,7 +62,7 @@ struct buffer_slice_test
     void
     testConstInput()
     {
-        char a[10];
+        char a[10] = {};
         std::array<const_buffer, 1> cb = { const_buffer(a, sizeof(a)) };
         auto s = buffer_slice(cb);
         static_assert(ConstBufferSequence<decltype(s)>,
