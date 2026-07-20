@@ -28,7 +28,7 @@ Capy is _not_ an all-purpose coroutine framework, and it is _not_ an implementat
 
 * *Lazy coroutine tasks* — `task<T>` with forward-propagating stop tokens and automatic cancellation
 * *Buffer sequences* — taken straight from Asio and improved
-* *Stream concepts* — seven coroutine stream concepts: `ReadStream`, `WriteStream`, `Stream`, `ReadSource`, `WriteSink`, `BufferSource`, `BufferSink`
+* *Stream concepts* — three coroutine stream concepts: `ReadStream`, `WriteStream`, `Stream`
 * *Type-erased streams* — `any_stream`, `any_read_stream`, `any_write_stream` for fast compilation
 * *Concurrency facilities* — executors, strands, thread pools, `when_all`, `when_any`
 * *Test utilities* — mock streams, mock sources/sinks, error injection

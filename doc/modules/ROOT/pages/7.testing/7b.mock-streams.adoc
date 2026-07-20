@@ -425,4 +425,4 @@ void test_read_line()
 | Connected bidirectional pair for client/server tests.
 |===
 
-Continue to xref:7.testing/7c.mock-sources-sinks.adoc[Mock Sources and Sinks].
+Continue to xref:7.testing/7e.buffer-inspection.adoc[Buffer Inspection].

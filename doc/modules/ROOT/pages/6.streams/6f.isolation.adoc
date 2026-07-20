@@ -4,7 +4,7 @@ This section explains how type-erased wrappers enable compilation firewalls and 
 
 == Prerequisites
 
-* Completed xref:6.streams/6e.algorithms.adoc[Transfer Algorithms]
+* Completed xref:6.streams/6b.streams.adoc[Streams (Partial I/O)]
 * Understanding of type-erased wrappers
 
 == The Compilation Firewall Pattern
@@ -90,10 +90,10 @@ Type erasure decouples your code from specific transport implementations:
 [source,cpp]
 ----
 // Your library code
-task<> send_message(any_write_sink& sink, message const& msg)
+task<> send_message(any_write_stream& stream, message const& msg)
 {
-    co_await sink.write(make_buffer(msg.header));
-    co_await sink.write_eof(make_buffer(msg.body));
+    co_await write(stream, make_buffer(msg.header));
+    co_await write(stream, make_buffer(msg.body));
 }
 ----
 
@@ -103,23 +103,18 @@ Callers provide any conforming implementation:
 ----
 // TCP socket
 tcp::socket socket;
-any_write_sink sink{&socket};  // references socket
-send_message(sink, msg);
+any_write_stream stream{&socket};  // references socket
+send_message(stream, msg);
 
 // TLS stream
-tls::stream stream;
-any_write_sink sink{&stream};  // references stream
-send_message(sink, msg);
-
-// HTTP chunked encoding
-chunked_sink chunked{underlying};
-any_write_sink sink{&chunked};  // references chunked
-send_message(sink, msg);
+tls::stream tls;
+any_write_stream stream{&tls};  // references tls
+send_message(stream, msg);
 
 // Test mock
-test::write_sink mock;
-any_write_sink sink{&mock};  // references mock
-send_message(sink, msg);
+test::write_stream mock;
+any_write_stream stream{&mock};  // references mock
+send_message(stream, msg);
 ----
 
 Same `send_message` function, different transports: compile once, use everywhere.
@@ -171,8 +166,7 @@ Returning type-erased values forces heap allocation. Return concrete types when 
 ----
 // http_client.hpp
 #pragma once
-#include <boost/capy/io/any_read_source.hpp>
-#include <boost/capy/io/any_write_sink.hpp>
+#include <boost/capy/io/any_read_stream.hpp>
 
 struct http_request
 {
@@ -185,7 +179,7 @@ struct http_response
 {
     int status_code;
     std::map<std::string, std::string> headers;
-    any_read_source body;  // Body is a source, not a buffer
+    any_read_stream body;  // Body is read as a stream
 };
 
 // Send request, receive response
@@ -210,7 +204,7 @@ auto response = co_await send_request(conn, {
 // Read body through type-erased source
 char storage[4096];
 mutable_buffer buf(storage, sizeof(storage));
-auto [ec, n] = co_await response.body.read(buf);
+auto [ec, n] = co_await response.body.read_some(buf);
 ----
 
 The HTTP library is isolated from transport details. It compiles once. Users bring their own transport.
@@ -236,7 +230,5 @@ Type-erased wrappers are in `<boost/capy/io/>`:
 
 * `any_stream`
 * `any_read_stream`, `any_write_stream`
-* `any_read_source`, `any_write_sink`
-* `any_buffer_source`, `any_buffer_sink`
 
-You have now completed the Stream Concepts section. These abstractions—streams, sources, sinks, and their type-erased wrappers—form the foundation for Capy's I/O model. Continue to xref:../8.examples/8a.hello-task.adoc[Example Programs] to see complete working examples.
+You have now completed the Stream Concepts section. These abstractions—streams and their type-erased wrappers—form the foundation for Capy's I/O model. Continue to xref:../8.examples/8a.hello-task.adoc[Example Programs] to see complete working examples.

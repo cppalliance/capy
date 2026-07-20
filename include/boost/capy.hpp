@@ -44,8 +44,6 @@
 
 // Concepts
 #include <boost/capy/concept/buffer_archetype.hpp>
-#include <boost/capy/concept/buffer_sink.hpp>
-#include <boost/capy/concept/buffer_source.hpp>
 #include <boost/capy/concept/const_buffer_sequence.hpp>
 #include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/execution_context.hpp>
@@ -53,10 +51,8 @@
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/io_runnable.hpp>
 #include <boost/capy/concept/mutable_buffer_sequence.hpp>
-#include <boost/capy/concept/read_source.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/concept/stream.hpp>
-#include <boost/capy/concept/write_sink.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 
 // Execution
@@ -79,14 +75,8 @@
 #include <boost/capy/ex/thread_pool.hpp>
 
 // Type-erased I/O
-#include <boost/capy/io/any_buffer_sink.hpp>
-#include <boost/capy/io/any_buffer_source.hpp>
-#include <boost/capy/io/any_read_source.hpp>
 #include <boost/capy/io/any_read_stream.hpp>
 #include <boost/capy/io/any_stream.hpp>
-#include <boost/capy/io/any_write_sink.hpp>
 #include <boost/capy/io/any_write_stream.hpp>
-#include <boost/capy/io/pull_from.hpp>
-#include <boost/capy/io/push_to.hpp>
 
 #endif

@@ -6,9 +6,9 @@ This section introduces Capy's stream concepts—the abstractions that enable da
 
 * Understanding of buffer sequences
 
-== Six Concepts for Data Flow
+== Three Concepts for Data Flow
 
-Capy defines six concepts for I/O operations, organized in three pairs:
+Capy defines three concepts for I/O operations:
 
 [cols="1,1,2"]
 |===
@@ -22,26 +22,12 @@ Capy defines six concepts for I/O operations, organized in three pairs:
 | Write
 | Partial writes—writes as much as possible
 
-| `ReadSource`
-| Read
-| Complete reads—fills buffer or signals EOF
-
-| `WriteSink`
-| Write
-| Complete writes with explicit EOF signaling
-
-| `BufferSource`
-| Read
-| Callee-owns-buffers read pattern
-
-| `BufferSink`
-| Write
-| Callee-owns-buffers write pattern
+| `Stream`
+| Read + Write
+| A connected pair—satisfies both `ReadStream` and `WriteStream`
 |===
 
-== Streams vs Sources/Sinks
-
-=== Streams: Partial I/O
+== Streams: Partial I/O
 
 Stream operations transfer *some* data and return. They do not guarantee a specific amount:
 
@@ -57,47 +43,6 @@ auto [ec, n] = co_await stream.write_some(buffers);
 ----
 
 This matches raw OS behavior—syscalls return when data is available, not when buffers are full.
-
-=== Sources/Sinks: Complete I/O
-
-Source/sink operations complete fully or signal completion:
-
-[source,cpp]
-----
-// ReadSource: fills buffer completely, or returns EOF/error with partial
-auto [ec, n] = co_await source.read(buffer);
-// n == buffer_size(buffer), or ec indicates why not
-
-// WriteSink: writes all data, with explicit EOF
-co_await sink.write_eof(buffers);  // atomic write + EOF signal
-----
-
-These are higher-level abstractions built on streams.
-
-== Buffer Sources/Sinks: Callee-Owns-Buffers
-
-The third pair inverts buffer ownership:
-
-* With streams/sources/sinks, the caller provides buffers
-* With buffer sources/sinks, the callee provides buffers
-
-[source,cpp]
-----
-// BufferSource: callee provides read-only buffers
-const_buffer arr[8];
-auto [ec, bufs] = co_await source.pull(arr);
-// bufs is a span pointing into source's internal data;
-// ec == cond::eof with an empty span signals exhaustion
-source.consume(n);  // mark n bytes consumed before the next pull
-
-// BufferSink: callee provides writable buffers
-mutable_buffer arr[8];
-auto bufs = sink.prepare(arr);  // returns a span of writable buffers
-// Write into bufs, then commit
-co_await sink.commit(bytes_written);
-----
-
-This pattern enables zero-copy I/O: data never moves through intermediate buffers.
 
 == Type-Erasing Wrappers
 
@@ -115,18 +60,6 @@ Each concept has a corresponding type-erasing wrapper:
 
 | (Both)
 | `any_stream`
-
-| `ReadSource`
-| `any_read_source`
-
-| `WriteSink`
-| `any_write_sink`
-
-| `BufferSource`
-| `any_buffer_source`
-
-| `BufferSink`
-| `any_buffer_sink`
 |===
 
 These wrappers enable:
@@ -142,18 +75,6 @@ These wrappers enable:
 * You need raw, unbuffered I/O
 * You're implementing a protocol that processes data incrementally
 * Performance is critical and you want minimal abstraction
-
-=== Use Sources/Sinks When:
-
-* You need complete data units (messages, records, frames)
-* EOF signaling is part of your protocol
-* You're composing transformations (compression, encryption)
-
-=== Use Buffer Sources/Sinks When:
-
-* Zero-copy is essential
-* The source/sink owns the memory (memory-mapped files, hardware buffers)
-* You're implementing a processing pipeline
 
 == The Value Proposition
 

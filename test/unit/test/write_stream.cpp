@@ -11,7 +11,6 @@
 #include <boost/capy/test/write_stream.hpp>
 
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/concept/write_sink.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/task.hpp>
@@ -27,7 +26,6 @@ namespace capy {
 namespace test {
 
 static_assert(WriteStream<write_stream>);
-static_assert(!WriteSink<write_stream>);
 
 class write_stream_test
 {

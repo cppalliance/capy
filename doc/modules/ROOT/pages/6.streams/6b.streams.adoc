@@ -256,4 +256,4 @@ The implementation doesn't know the concrete stream type. It compiles once and w
 | Type-erased bidirectional stream wrapper
 |===
 
-You have now learned the stream concepts for partial I/O. Continue to xref:6.streams/6c.sources-sinks.adoc[Sources and Sinks] to learn about complete I/O with EOF signaling.
+You have now learned the stream concepts for partial I/O. Continue to xref:6.streams/6f.isolation.adoc[Physical Isolation].

@@ -20,13 +20,13 @@ One abstraction level cannot serve all of these needs simultaneously. The insigh
 
 Capy offers three layers. They coexist. They interoperate. Users pick the one that matches their constraints.
 
-The first layer is concepts. These are the template-based interfaces: `ReadStream`, `WriteStream`, `BufferSink`, `BufferSource`. Algorithms written against concepts get full optimization. The compiler sees through everything. There is no indirection, no vtable, no allocation overhead. This is what you use for hot inner loops, for protocol parsing, for any path where performance dominates:
+The first layer is concepts. These are the template-based interfaces: `ReadStream`, `WriteStream`, `Stream`. Algorithms written against concepts get full optimization. The compiler sees through everything. There is no indirection, no vtable, no allocation overhead. This is what you use for hot inner loops, for protocol parsing, for any path where performance dominates:
 
 [source,cpp]
 ----
-template<BufferSource Src, WriteSink Sink>
+template<WriteStream S, ConstBufferSequence CB>
 io_task<std::size_t>
-push_to(Src& source, Sink& sink);
+write(S& stream, CB buffers);
 ----
 
 The cost is that templates propagate. Every caller sees the full implementation. Compile times grow. You cannot hide this behind a `.cpp` file.
@@ -80,30 +80,6 @@ This has a direct implication for how you structure code. Use concepts for tight
 The user chooses where the boundary falls. Not the library.
 
 
-== Zero-Copy as a First-Class Concern
-
-Buffer sink and buffer source invert the traditional ownership model. Instead of the caller allocating a buffer, filling it with data, and handing it to the library, the library exposes its own internal storage and the caller fills it in place. Zero copies. The data goes directly where it needs to be.
-
-The `BufferSink` concept formalizes this with three operations. `prepare()` returns writable buffers from the sink's internal storage. The caller writes data into those buffers. `commit()` tells the sink how many bytes were written, and `commit_eof()` commits the final bytes and signals end-of-stream:
-
-[source,cpp]
-----
-concept BufferSink =
-    requires(T& sink, std::span<mutable_buffer> dest,
-             std::size_t n)
-    {
-        { sink.prepare(dest) }
-            -> std::same_as<std::span<mutable_buffer>>;
-        { sink.commit(n) } -> IoAwaitable;
-        { sink.commit_eof(n) } -> IoAwaitable;
-    };
-----
-
-This matters at the protocol level. The HTTP parser's internal buffer is the buffer you write into. The serializer's internal buffer is the buffer you read from. There is no intermediate copy between the network and the parser, and no intermediate copy between the serializer and the network.
-
-The key detail is that `commit()` returns an `IoAwaitable`. When the sink is backed by a socket, `commit()` suspends and performs the actual write. When the sink is an in-memory buffer - a string, a parser, a test fixture - `commit()` completes synchronously without creating a coroutine frame. Same code, same API, no overhead for the synchronous case. This is what makes the buffer abstractions practical for both production I/O and testing.
-
-
 == Symmetric Transfer and the Pump
 
 Symmetric transfer is the mechanism that allows Corosio to match or beat ASIO callback throughput. When one coroutine completes and its continuation is ready to run, symmetric transfer reuses the same coroutine frame without allocation and bypasses the global work queue entirely. ASIO callbacks always go through the queue. Symmetric transfer skips that step.
@@ -142,12 +118,12 @@ A database library built this way can express protocol parsing with zero-copy bu
 
 The question that matters is: can a library author look at their problem and immediately see which layer to use? If the answer is yes, the design is working. If they have to think about it, something is wrong.
 
-**Protocol parsing:** use `BufferSink` and `BufferSource` concepts as template parameters. Zero copy, zero overhead. Call member functions whose awaitables do all the work, with no coroutine frame allocation. The compiler optimizes everything.
+**Protocol parsing:** use the `ReadStream` and `WriteStream` concepts as template parameters. Zero overhead. Call member functions whose awaitables do all the work, with no coroutine frame allocation. The compiler optimizes everything.
 
 **Connection management:** use concrete types like `tcp_socket`. These give you `connect()` and `shutdown()` - the operations that are transport-specific. But the concrete type is derived from `io_stream`, a class that models `capy::Stream`, so you can pass `io_stream&` to a non-template function for the business logic that sits on top of the connection.
 
 **Full transport abstraction across a library boundary:** use `any_stream`. Complete type erasure, but you lose connection management - there is no `connect()` on an `any_stream`. This means you have to carefully arrange your code so it genuinely requires a physical separation in the Lakos sense. The protocol logic and the connection logic live in separate components, and the type-erased boundary sits between them.
 
-The layers compose. An algorithm written against a `BufferSource` concept can be called from inside a coroutine that is type-erased behind a `task<>`, which is dispatched through a virtual function on a base class that holds an `any_stream&`. Each layer handles its part. Nothing leaks through the boundaries unless you want it to.
+The layers compose. An algorithm written against a `ReadStream` concept can be called from inside a coroutine that is type-erased behind a `task<>`, which is dispatched through a virtual function on a base class that holds an `any_stream&`. Each layer handles its part. Nothing leaks through the boundaries unless you want it to.
 
 This is what it means when we say the user chooses. Capy provides the tools. The user decides where the boundaries go based on what they know about their performance requirements, their compilation budget, and their architecture. The library does not impose a single answer because there is not one.
