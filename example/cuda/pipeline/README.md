@@ -25,9 +25,9 @@ built but not run (P4251R0):
    peer to resume.
 
 3. **Scene 3 (P4251R0), built but not run.** `handle_request` shows the
-   inference-handler shape: a type-erased `any_read_source` read, GPU
+   inference-handler shape: a type-erased `any_read_stream` read, GPU
    dispatch via `await_sender` over a real nvexec kernel, and a type-erased
-   `any_write_sink` write. It is compiled but not executed (`main` does not
+   `any_write_stream` write. It is compiled but not executed (`main` does not
    call it). The paper's listing runs a host `run_model()` under a
    device-side `then()`, which does not compile on nvexec (host call from
    device); this mirrors Scene 1's pattern instead, dispatching a real

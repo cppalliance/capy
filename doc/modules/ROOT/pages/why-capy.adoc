@@ -19,8 +19,6 @@ Asio's stream concepts are hybrid by design. Capy's are coroutine-only, which is
 === What Capy Offers
 
 * `ReadStream`, `WriteStream`, `Stream` — partial I/O (returns what's available)
-* `ReadSource`, `WriteSink` — complete I/O with EOF signaling
-* `BufferSource`, `BufferSink` — zero-copy callee-owns-buffers pattern
 
 === Comparison
 
@@ -37,17 +35,6 @@ Asio's stream concepts are hybrid by design. Capy's are coroutine-only, which is
 | `Stream`
 ^| -
 
-| `ReadSource`
-^| -
-
-| `WriteSink`
-^| -
-
-| `BufferSource`
-^| -
-
-| `BufferSink`
-^| -
 |===
 
 *Asio's concepts are hybrid (callbacks/futures/coroutines), not coroutine-only
@@ -67,9 +54,7 @@ Write `any_stream&` and accept any stream. Your function compiles once. It links
 === What Capy Offers
 
 * `any_read_stream`, `any_write_stream`, `any_stream` — type-erased partial I/O
-* `any_read_source`, `any_write_sink` — type-erased complete I/O
-* `any_buffer_source`, `any_buffer_sink` — type-erased zero-copy
-* `read`, `write`, `push_to`, `pull_from` — algorithms that work with erased or concrete streams
+* `read`, `write` — algorithms that work with erased or concrete streams
 
 === Comparison
 
@@ -86,29 +71,12 @@ Write `any_stream&` and accept any stream. Your function compiles once. It links
 | `any_stream`
 ^| -
 
-| `any_read_source`
-^| -
-
-| `any_write_sink`
-^| -
-
-| `any_buffer_source`
-^| -
-
-| `any_buffer_sink`
-^| -
-
 | `read`
 | `async_read`*
 
 | `write`
 | `async_write`*
 
-| `push_to`
-^| -
-
-| `pull_from`
-^| -
 |===
 
 *Asio's algorithms only support `AsyncReadStream` and `AsyncWriteStream`

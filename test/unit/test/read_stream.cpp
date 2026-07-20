@@ -11,7 +11,6 @@
 #include <boost/capy/test/read_stream.hpp>
 
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/concept/read_source.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/task.hpp>
@@ -27,7 +26,6 @@ namespace capy {
 namespace test {
 
 static_assert(ReadStream<read_stream>);
-static_assert(!ReadSource<read_stream>);
 
 class read_stream_test
 {

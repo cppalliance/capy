@@ -47,7 +47,7 @@ namespace capy {
     }
     @endcode
 
-    @par Satisfying WriteSink with sync operations
+    @par Building synchronous I/O operations
     @code
     struct my_sync_sink
     {

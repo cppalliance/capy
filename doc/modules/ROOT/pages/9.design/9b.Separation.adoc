@@ -95,7 +95,7 @@ The best modules are those that provide powerful functionality,
 but have a simple interface.
 ____
 
-Capy is a deep module. Its public surface is narrow: a handful of concepts (`ReadStream`, `WriteStream`, `BufferSource`, `BufferSink`), a task type, an executor model, and buffer utilities. Behind that surface lives a substantial implementation: coroutine frame allocation, forward propagation of executors and stop tokens, type-erased stream machinery, and composition primitives.
+Capy is a deep module. Its public surface is narrow: a handful of concepts (`ReadStream`, `WriteStream`, `Stream`), a task type, an executor model, and buffer utilities. Behind that surface lives a substantial implementation: coroutine frame allocation, forward propagation of executors and stop tokens, type-erased stream machinery, and composition primitives.
 
 Corosio is also a deep module, but a different one. It hides platform-specific event loop complexity (IOCP, epoll, kqueue, select) behind a uniform socket and timer interface.
 

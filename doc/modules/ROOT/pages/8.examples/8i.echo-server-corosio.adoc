@@ -187,4 +187,4 @@ Connection from 127.0.0.1:54321
 
 == Next Steps
 
-* xref:8.examples/8j.stream-pipeline.adoc[Stream Pipeline] -- Data transformation chains
+* xref:8.examples/8e.type-erased-echo.adoc[Type-Erased Echo] -- Erased streams behind a uniform interface

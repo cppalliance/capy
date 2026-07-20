@@ -35,19 +35,6 @@ type of the stream or source you pass in.
   protocol logic that calls `read_some` and `write_some` without touching a
   socket.
 
-* xref:7.testing/7c.mock-sources-sinks.adoc[Mock Sources and Sinks] --
-  `read_source` and `write_sink` implement the complete-I/O concepts from
-  xref:6.streams/6c.sources-sinks.adoc[Sources and Sinks]. Unlike the
-  stream mocks, they loop internally until the buffer is fully filled or
-  drained, and `write_sink` accepts an explicit EOF signal.
-
-* xref:7.testing/7d.mock-buffer-concepts.adoc[Mock Buffer Sources and Sinks]
-  -- `buffer_source` and `buffer_sink` implement the buffer concepts from
-  xref:6.streams/6d.buffer-concepts.adoc[Buffer Sources and Sinks].
-  `buffer_source` exposes staged bytes via a pull interface;
-  `buffer_sink` provides callee-owned storage that the algorithm writes
-  into directly.
-
 * xref:7.testing/7e.buffer-inspection.adoc[Buffer Inspection] -- `bufgrind`
   iterates every split point of a buffer sequence, exercising every
   chunk-boundary condition; `buffer_to_string` concatenates buffer sequences

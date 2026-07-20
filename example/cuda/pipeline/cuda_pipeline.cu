@@ -23,8 +23,8 @@
 #include "sender_awaitable.hpp"
 
 #include <boost/capy.hpp>
-#include <boost/capy/io/any_read_source.hpp>
-#include <boost/capy/io/any_write_sink.hpp>
+#include <boost/capy/io/any_read_stream.hpp>
+#include <boost/capy/io/any_write_stream.hpp>
 #include <boost/capy/test/stream.hpp>
 
 #include <stdexec/execution.hpp>
@@ -130,15 +130,15 @@ scene1(nvexec::stream_scheduler gpu,
 }
 
 // Scene 3 (P4251R0): the inference-handler shape. Network I/O uses
-// type-erased coroutine streams (any_read_source / any_write_sink); GPU
+// type-erased coroutine streams (any_read_stream / any_write_stream); GPU
 // dispatch uses a sender bridged with await_sender. The paper's
 // listing runs a host run_model() under a device-side then(), which does
 // not compile on nvexec; this mirrors Scene 1 instead, dispatching a real
 // kernel and hopping continues_on(cpu) before the host-only bridge.
 [[maybe_unused]] capy::task<>
 handle_request(
-    capy::any_read_source& client,
-    capy::any_write_sink& response,
+    capy::any_read_stream& client,
+    capy::any_write_stream& response,
     nvexec::stream_context& gpu_ctx,
     exec::static_thread_pool::scheduler cpu)
 {
