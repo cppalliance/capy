@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -15,6 +16,7 @@
 #include <boost/capy/error.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 #include <system_error>
+#include <concepts>
 #include <cstddef>
 #include <exception>
 #include <limits>
@@ -503,6 +505,93 @@ public:
         p_->stopped = true;
     }
 
+private:
+    /*  Drive the two-phase armed loop, invoking `do_iter` once per round.
+
+        Phase 1 delivers injected failures as error codes; phase 2 as
+        exceptions. Shared by the two coroutine `armed` overloads: each
+        supplies a nullary `do_iter` that runs one iteration — via
+        @ref run_blocking, or via a caller-supplied runner — so the round
+        sequence and failure handling stay identical across them.
+    */
+    template<class DoIter>
+    result
+    run_phases(DoIter&& do_iter)
+    {
+        result r;
+
+        // Phase 1: error code mode
+        p_->throws = false;
+        p_->inert = false;
+        p_->n = (std::numeric_limits<std::size_t>::max)();
+        while(*this)
+        {
+            try
+            {
+                do_iter();
+            }
+            catch(...)
+            {
+                r.success = false;
+                r.loc = p_->loc;
+                r.ep = p_->ep;
+                p_->inert = true;
+                return r;
+            }
+            if(p_->stopped)
+            {
+                r.success = false;
+                r.loc = p_->loc;
+                r.ep = p_->ep;
+                p_->inert = true;
+                return r;
+            }
+        }
+
+        // Phase 2: exception mode
+        p_->throws = true;
+        p_->n = (std::numeric_limits<std::size_t>::max)();
+        p_->i = 0;
+        p_->triggered = false;
+        while(*this)
+        {
+            try
+            {
+                do_iter();
+            }
+            catch(std::system_error const& ex)
+            {
+                if(ex.code() != p_->ec)
+                {
+                    r.success = false;
+                    r.loc = p_->loc;
+                    r.ep = p_->ep;
+                    p_->inert = true;
+                    return r;
+                }
+            }
+            catch(...)
+            {
+                r.success = false;
+                r.loc = p_->loc;
+                r.ep = p_->ep;
+                p_->inert = true;
+                return r;
+            }
+            if(p_->stopped)
+            {
+                r.success = false;
+                r.loc = p_->loc;
+                r.ep = p_->ep;
+                p_->inert = true;
+                return r;
+            }
+        }
+        p_->inert = true;
+        return r;
+    }
+
+public:
     /** Run a test function with systematic failure injection.
 
         Repeatedly invokes the provided function, failing at
@@ -663,77 +752,72 @@ public:
     result
     armed(F&& fn)
     {
-        result r;
+        return run_phases([&]{ run_blocking()(fn(*this)); });
+    }
 
-        // Phase 1: error code mode
-        p_->throws = false;
-        p_->inert = false;
-        p_->n = (std::numeric_limits<std::size_t>::max)();
-        while(*this)
-        {
-            try
-            {
-                run_blocking()(fn(*this));
-            }
-            catch(...)
-            {
-                r.success = false;
-                r.loc = p_->loc;
-                r.ep = p_->ep;
-                p_->inert = true;
-                return r;
-            }
-            if(p_->stopped)
-            {
-                r.success = false;
-                r.loc = p_->loc;
-                r.ep = p_->ep;
-                p_->inert = true;
-                return r;
-            }
-        }
+    /** Run a coroutine test function on a caller-supplied runner.
 
-        // Phase 2: exception mode
-        p_->throws = true;
-        p_->n = (std::numeric_limits<std::size_t>::max)();
-        p_->i = 0;
-        p_->triggered = false;
-        while(*this)
+        Behaves like the @ref IoRunnable overload of @ref armed, but
+        instead of driving each iteration through @ref run_blocking, it
+        hands the coroutine to `run_one`. This lets a caller run each
+        iteration on any execution context it chooses — in particular an
+        `io_context`, which operations built on `corosio::timeout` or
+        `corosio::delay` require, since those abort on a
+        non-`io_context` executor. `fuse` never learns about the context;
+        the caller owns the drive loop.
+
+        @par Runner contract
+        `run_one` is invoked once per round with the @ref IoRunnable
+        produced by `fn`. It must run that task to completion
+        synchronously and *return* any exception the task raised as a
+        `std::exception_ptr` (null on success). It must not rethrow:
+        `armed` rethrows the returned pointer from its own synchronous
+        code so the exception phase observes injected failures, whereas
+        an exception escaping a `run_async` completion handler would call
+        `std::terminate`. Capture the exception in the error handler and
+        return it once the run loop is done.
+
+        @par Example
+        @code
+        // Drive each iteration on a fresh io_context.
+        auto io_runner = [](capy::task<> t) -> std::exception_ptr
         {
-            try
+            corosio::io_context ioc;
+            std::exception_ptr ep;
+            capy::run_async(ioc.get_executor(),
+                [](auto&&...){},
+                [&ep](std::exception_ptr e){ ep = e; }
+            )(std::move(t));
+            ioc.run();
+            return ep;
+        };
+        auto r = f.armed(io_runner,
+            [&](capy::test::fuse&) -> capy::task<>
             {
-                run_blocking()(fn(*this));
-            }
-            catch(std::system_error const& ex)
-            {
-                if(ex.code() != p_->ec)
-                {
-                    r.success = false;
-                    r.loc = p_->loc;
-                    r.ep = p_->ep;
-                    p_->inert = true;
-                    return r;
-                }
-            }
-            catch(...)
-            {
-                r.success = false;
-                r.loc = p_->loc;
-                r.ep = p_->ep;
-                p_->inert = true;
-                return r;
-            }
-            if(p_->stopped)
-            {
-                r.success = false;
-                r.loc = p_->loc;
-                r.ep = p_->ep;
-                p_->inert = true;
-                return r;
-            }
-        }
-        p_->inert = true;
-        return r;
+                co_await corosio::timeout(some_op(), 5s);
+            });
+        @endcode
+
+        @param run_one A callable invoked with each iteration's task; it
+        runs the task to completion and returns any escaped exception
+        (null on success) without rethrowing.
+
+        @param fn The coroutine test function to invoke.
+
+        @return A @ref result indicating success or failure.
+    */
+    template<class Runner, class F>
+        requires IoRunnable<std::invoke_result_t<F, fuse&>>
+            && std::same_as<
+                std::invoke_result_t<Runner&, std::invoke_result_t<F, fuse&>>,
+                std::exception_ptr>
+    result
+    armed(Runner&& run_one, F&& fn)
+    {
+        return run_phases([&]{
+            if(auto ep = run_one(fn(*this)))
+                std::rethrow_exception(ep);
+        });
     }
 
     /** Alias for @ref armed.
