@@ -352,6 +352,14 @@ BOOST_TEST(r.success);
   at successive `maybe_fail()` sites. Accepts plain lambdas and coroutine
   lambdas returning `IoRunnable`.
 
+| `armed(run_one, fn) -> result`
+| Like `armed(fn)` for coroutine lambdas, but drives each iteration
+  through the caller-supplied `run_one` instead of `run_blocking`, so the
+  task runs on any execution context the caller chooses (for example an
+  `io_context`, required by operations built on `corosio::timeout`).
+  `run_one` runs the task to completion and returns any escaped exception
+  as a `std::exception_ptr` (null on success); `armed` rethrows it.
+
 | `inert(fn) -> result`
 | Run `fn` once with no injection. `maybe_fail()` always returns `{}`.
   Accepts plain lambdas and coroutine lambdas returning `IoRunnable`.
@@ -459,6 +467,39 @@ void test_add()
     BOOST_TEST(r.success);
 }
 ----
+
+When the operation under test needs a specific execution context -- for
+example an `io_context`, which operations built on `corosio::timeout` or
+`corosio::delay` require and which `run_blocking` does not provide -- use the
+`armed(run_one, fn)` overload. The caller supplies `run_one`, which drives
+each iteration's task on a context it owns and returns any exception the task
+raised as a `std::exception_ptr` (null on success); `armed` rethrows it.
+`fuse` never learns about the context -- the caller owns the drive loop:
+
+[source,cpp]
+----
+fuse f;
+auto io_runner = [](task<void> t) -> std::exception_ptr {
+    corosio::io_context ioc;
+    std::exception_ptr ep;
+    run_async(ioc.get_executor(),
+        [](auto&&...){}, [&ep](std::exception_ptr e){ ep = e; })(std::move(t));
+    ioc.run();
+    return ep;
+};
+auto r = f.armed(
+    io_runner,
+    [&](fuse&) -> task<void> {
+        co_await corosio::timeout(some_op(), 5s);
+    });
+BOOST_TEST(r.success);
+----
+
+`run_one` must *return* the exception rather than rethrow it: an exception
+escaping a `run_async` completion handler calls `std::terminate`, so the
+handler captures it and the runner hands it back once the run loop is done.
+A fresh `io_context` per iteration (as above) needs no `restart()`; reuse one
+across iterations only if you call `restart()` between rounds.
 
 === Shared State Across Copies
 
