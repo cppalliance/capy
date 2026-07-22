@@ -15,30 +15,7 @@ A `std::promise` is a write-once container: a thread can set its value. A `std::
 
 [source,cpp]
 ----
-#include <iostream>
-#include <thread>
-#include <future>
-
-void compute(std::promise<int> result_promise)
-{
-    int answer = 6 * 7;  // expensive computation
-    result_promise.set_value(answer);
-}
-
-int main()
-{
-    std::promise<int> promise;
-    std::future<int> future = promise.get_future();
-    
-    std::thread t(compute, std::move(promise));
-    
-    std::cout << "Waiting for result...\n";
-    int result = future.get();  // blocks until value is set
-    std::cout << "The answer is: " << result << "\n";
-    
-    t.join();
-    return 0;
-}
+include::example$programs/3d_patterns_promise_future.cpp[tag=full]
 ----
 
 The worker thread calls `set_value()`. The main thread calls `get()`, which blocks until the value is available.
@@ -56,24 +33,7 @@ Creating threads manually, managing promises, joining at the end—it is mechani
 
 [source,cpp]
 ----
-#include <iostream>
-#include <future>
-
-int compute()
-{
-    return 6 * 7;
-}
-
-int main()
-{
-    std::future<int> future = std::async(compute);
-    
-    std::cout << "Computing...\n";
-    int result = future.get();
-    std::cout << "Result: " << result << "\n";
-    
-    return 0;
-}
+include::example$programs/3d_patterns_async.cpp[tag=full]
 ----
 
 `std::async` launches the function (potentially in a new thread), returning a future. No explicit thread creation, no promise management, no join call.
@@ -84,14 +44,7 @@ By default, the system decides whether to run the function in a new thread or de
 
 [source,cpp]
 ----
-// Force a new thread
-auto future = std::async(std::launch::async, compute);
-
-// Defer execution until get()
-auto future = std::async(std::launch::deferred, compute);
-
-// Let the system decide (default)
-auto future = std::async(std::launch::async | std::launch::deferred, compute);
+include::example$snippets/3d_patterns.cpp[tag=launch_policies,indent=0]
 ----
 
 For quick parallel tasks, `std::async` is often the cleanest choice.
@@ -104,34 +57,7 @@ Declare it `thread_local`:
 
 [source,cpp]
 ----
-#include <iostream>
-#include <thread>
-
-thread_local int counter = 0;
-
-void increment_and_print(char const* name)
-{
-    ++counter;
-    std::cout << name << " counter: " << counter << "\n";
-}
-
-int main()
-{
-    std::thread t1([]{
-        increment_and_print("T1");
-        increment_and_print("T1");
-    });
-    
-    std::thread t2([]{
-        increment_and_print("T2");
-        increment_and_print("T2");
-    });
-    
-    t1.join();
-    t2.join();
-    
-    return 0;
-}
+include::example$programs/3d_patterns_thread_local.cpp[tag=full]
 ----
 
 Each thread sees its own `counter`. T1 prints 1, then 2. T2 independently prints 1, then 2. No synchronization needed because the data is not shared.
@@ -146,74 +72,14 @@ One or more threads produce work items; one or more threads consume them. A queu
 
 [source,cpp]
 ----
-#include <iostream>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
-#include <queue>
-
-template<typename T>
-class ThreadSafeQueue
-{
-    std::queue<T> queue_;
-    std::mutex mutex_;
-    std::condition_variable cv_;
-    
-public:
-    void push(T value)
-    {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            queue_.push(std::move(value));
-        }
-        cv_.notify_one();
-    }
-    
-    T pop()
-    {
-        std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this]{ return !queue_.empty(); });
-        T value = std::move(queue_.front());
-        queue_.pop();
-        return value;
-    }
-};
+include::example$snippets/3d_patterns.cpp[tag=thread_safe_queue,indent=0]
 ----
 
 The producer pushes items; the consumer waits for items and processes them. The condition variable ensures the consumer sleeps efficiently when the queue is empty.
 
 [source,cpp]
 ----
-ThreadSafeQueue<int> work_queue;
-
-void producer()
-{
-    for (int i = 0; i < 10; ++i)
-    {
-        work_queue.push(i);
-        std::cout << "Produced: " << i << "\n";
-    }
-}
-
-void consumer()
-{
-    for (int i = 0; i < 10; ++i)
-    {
-        int item = work_queue.pop();
-        std::cout << "Consumed: " << item << "\n";
-    }
-}
-
-int main()
-{
-    std::thread prod(producer);
-    std::thread cons(consumer);
-    
-    prod.join();
-    cons.join();
-    
-    return 0;
-}
+include::example$programs/3d_patterns_producer_consumer.cpp[tag=full]
 ----
 
 === Parallel For
@@ -222,44 +88,7 @@ Split a loop across multiple threads:
 
 [source,cpp]
 ----
-#include <iostream>
-#include <thread>
-#include <vector>
-#include <functional>
-
-void parallel_for(int start, int end, int num_threads,
-                  std::function<void(int)> func)
-{
-    std::vector<std::thread> threads;
-    int chunk_size = (end - start) / num_threads;
-    
-    for (int t = 0; t < num_threads; ++t)
-    {
-        int chunk_start = start + t * chunk_size;
-        int chunk_end = (t == num_threads - 1) ? end : chunk_start + chunk_size;
-        
-        threads.emplace_back([=]{
-            for (int i = chunk_start; i < chunk_end; ++i)
-                func(i);
-        });
-    }
-    
-    for (auto& thread : threads)
-        thread.join();
-}
-
-int main()
-{
-    std::mutex print_mutex;
-    
-    parallel_for(0, 20, 4, [&](int i){
-        std::lock_guard<std::mutex> lock(print_mutex);
-        std::cout << "Processing " << i << " on thread "
-                  << std::this_thread::get_id() << "\n";
-    });
-    
-    return 0;
-}
+include::example$programs/3d_patterns_parallel_for.cpp[tag=full]
 ----
 
 The work is divided into chunks, each handled by its own thread. For CPU-bound work on large datasets, this can dramatically reduce execution time.

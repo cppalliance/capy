@@ -8,6 +8,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
+// tag::full[]
 #include <boost/capy.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 #include <boost/capy/test/stream.hpp>
@@ -23,18 +24,22 @@ namespace capy = boost::capy;
 // A slow operation that respects cancellation
 capy::task<std::string> slow_fetch(int steps)
 {
+    // tag::get_stop_token[]
     auto token = co_await capy::this_coro::stop_token;  // std::stop_token
+    // end::get_stop_token[]
     std::string result;
 
     for (int i = 0; i < steps; ++i)
     {
         // Check cancellation before each step
+        // tag::check_stop[]
         if (token.stop_requested())
         {
             std::cout << "  Cancelled at step " << i << std::endl;
             throw std::system_error(
                 make_error_code(std::errc::operation_canceled));
         }
+        // end::check_stop[]
 
         result += "step" + std::to_string(i) + " ";
 
@@ -52,16 +57,19 @@ capy::task<std::string> slow_fetch(int steps)
 
 // Shared between the fetch worker thread and the coroutine side of
 // the race in demo_timeout below.
+// tag::fetch_channel[]
 struct fetch_channel
 {
     capy::async_waker fetch_ready;
     std::atomic<bool> cancelled{false};
     std::string result;
 };
+// end::fetch_channel[]
 
 // One side of the race: completes when the fetch worker thread
 // wakes fetch_ready. If the deadline wins first, when_any's stop
 // request cancels the wait; flag the worker so it stops early.
+// tag::race_await_fetch[]
 capy::io_task<std::string> await_fetch(fetch_channel& ch)
 {
     auto [ec] = co_await ch.fetch_ready.wait();
@@ -72,15 +80,18 @@ capy::io_task<std::string> await_fetch(fetch_channel& ch)
     }
     co_return capy::io_result<std::string>{{}, std::move(ch.result)};
 }
+// end::race_await_fetch[]
 
 // The other side of the race: completes once a user thread wakes
 // the waker. This is the escape hatch: the user supplies the
 // thread and the clock.
+// tag::race_deadline[]
 capy::io_task<> deadline(capy::async_waker& waker)
 {
     auto [ec] = co_await waker.wait();
     co_return capy::io_result<>{ec};
 }
+// end::race_deadline[]
 
 // Wraps slow_fetch, translating a cancellation exception into
 // std::nullopt for the manual stop_token demo below.
@@ -143,15 +154,19 @@ void demo_timeout()
     std::size_t winner = 0;
     std::string fetch_result;
 
+    // tag::race_lambda[]
     auto race = [&]() -> capy::task<>
     {
+        // tag::race[]
         auto result = co_await capy::when_any(
             await_fetch(fetch_ch),
             deadline(deadline_waker));
+        // end::race[]
         winner = result.index();
         if (result.index() == 1)
             fetch_result = std::get<1>(std::move(result));
     };
+    // end::race_lambda[]
 
     capy::run_async(pool.get_executor(),
         [&done]() { done.count_down(); },
@@ -213,11 +228,13 @@ capy::task<int> process_items(std::vector<int> const& items)
 
     for (auto item : items)  // int
     {
+        // tag::partial_result[]
         if (token.stop_requested())
         {
             std::cout << "Processing cancelled, partial sum: " << sum << "\n";
             co_return sum;  // Return partial result
         }
+        // end::partial_result[]
 
         sum += item;
     }
@@ -232,3 +249,4 @@ int main()
 
     return 0;
 }
+// end::full[]

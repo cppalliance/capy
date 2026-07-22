@@ -15,29 +15,7 @@ An atomic operation completes entirely before any other thread can observe its e
 
 [source,cpp]
 ----
-#include <iostream>
-#include <thread>
-#include <atomic>
-
-std::atomic<int> counter{0};
-
-void increment_many_times()
-{
-    for (int i = 0; i < 100000; ++i)
-        ++counter;  // atomic increment
-}
-
-int main()
-{
-    std::thread t1(increment_many_times);
-    std::thread t2(increment_many_times);
-    
-    t1.join();
-    t2.join();
-    
-    std::cout << "Counter: " << counter << "\n";
-    return 0;
-}
+include::example$programs/3c_advanced_atomics.cpp[tag=full]
 ----
 
 No mutex, no lock guard, yet the result is always 200,000. The `std::atomic<int>` ensures that increments are indivisible.
@@ -59,19 +37,7 @@ Any trivially copyable type can be made atomic.
 
 [source,cpp]
 ----
-std::atomic<int> value{0};
-
-value.store(42);              // atomic write
-int x = value.load();         // atomic read
-int old = value.exchange(10); // atomic read-modify-write
-value.fetch_add(5);           // atomic addition, returns old value
-value.fetch_sub(3);           // atomic subtraction, returns old value
-
-// Compare-and-swap (CAS)
-int expected = 10;
-bool success = value.compare_exchange_strong(expected, 20);
-// If value == expected, sets value = 20 and returns true
-// Otherwise, sets expected = value and returns false
+include::example$snippets/3c_advanced.cpp[tag=atomic_ops,indent=0]
 ----
 
 == Condition Variables: Efficient Waiting
@@ -80,11 +46,7 @@ Sometimes a thread must wait for a specific condition before proceeding. You cou
 
 [source,cpp]
 ----
-// Inefficient busy-wait
-while (!ready)
-{
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-}
+include::example$snippets/3c_advanced.cpp[tag=busy_wait,indent=0]
 ----
 
 This works but wastes CPU cycles and introduces latency. *Condition variables* provide efficient waiting.
@@ -93,41 +55,7 @@ A condition variable allows one thread to signal others that something has chang
 
 [source,cpp]
 ----
-#include <iostream>
-#include <thread>
-#include <mutex>
-#include <condition_variable>
-
-std::mutex mtx;
-std::condition_variable cv;
-bool ready = false;
-
-void worker()
-{
-    std::unique_lock<std::mutex> lock(mtx);
-    cv.wait(lock, []{ return ready; });  // wait until ready is true
-    std::cout << "Worker proceeding!\n";
-}
-
-void signal_ready()
-{
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        ready = true;
-    }
-    cv.notify_one();  // wake one waiting thread
-}
-
-int main()
-{
-    std::thread t(worker);
-    
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-    signal_ready();
-    
-    t.join();
-    return 0;
-}
+include::example$programs/3c_advanced_condition_variable.cpp[tag=full]
 ----
 
 The worker thread calls `cv.wait()`, which atomically releases the mutex and suspends the thread. When `signal_ready()` calls `notify_one()`, the worker wakes up, reacquires the mutex, checks the condition, and proceeds.
@@ -147,15 +75,7 @@ Use `notify_one()` when only one thread needs to proceed (e.g., producer-consume
 
 [source,cpp]
 ----
-// Wait indefinitely
-cv.wait(lock, predicate);
-
-// Wait with timeout
-auto status = cv.wait_for(lock, std::chrono::seconds(5), predicate);
-// Returns true if predicate is true, false on timeout
-
-// Wait until specific time point
-auto status = cv.wait_until(lock, deadline, predicate);
+include::example$snippets/3c_advanced.cpp[tag=wait_variants,indent=0]
 ----
 
 == Shared Locks: Readers and Writers
@@ -166,26 +86,7 @@ Consider a data structure that is read frequently but written rarely. A regular 
 
 [source,cpp]
 ----
-#include <iostream>
-#include <thread>
-#include <shared_mutex>
-#include <vector>
-
-std::shared_mutex rw_mutex;
-std::vector<int> data;
-
-void reader(int id)
-{
-    std::shared_lock<std::shared_mutex> lock(rw_mutex);  // shared access
-    std::cout << "Reader " << id << " sees " << data.size() << " elements\n";
-}
-
-void writer(int value)
-{
-    std::unique_lock<std::shared_mutex> lock(rw_mutex);  // exclusive access
-    data.push_back(value);
-    std::cout << "Writer added " << value << "\n";
-}
+include::example$snippets/3c_advanced.cpp[tag=shared_mutex,indent=0]
 ----
 
 === Lock Types
@@ -208,32 +109,7 @@ This pattern maximizes concurrency for read-heavy workloads. Use `std::shared_mu
 
 [source,cpp]
 ----
-#include <shared_mutex>
-#include <unordered_map>
-#include <string>
-#include <optional>
-
-class ThreadSafeCache
-{
-    std::unordered_map<std::string, std::string> cache_;
-    mutable std::shared_mutex mutex_;
-    
-public:
-    std::optional<std::string> get(std::string const& key) const
-    {
-        std::shared_lock lock(mutex_);  // readers can proceed in parallel
-        auto it = cache_.find(key);
-        if (it != cache_.end())
-            return it->second;
-        return std::nullopt;
-    }
-    
-    void put(std::string const& key, std::string const& value)
-    {
-        std::unique_lock lock(mutex_);  // exclusive access for writing
-        cache_[key] = value;
-    }
-};
+include::example$snippets/3c_advanced.cpp[tag=thread_safe_cache,indent=0]
 ----
 
 Multiple threads can call `get()` simultaneously without blocking each other. Only `put()` requires exclusive access.

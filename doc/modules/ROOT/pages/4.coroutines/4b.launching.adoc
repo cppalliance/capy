@@ -22,22 +22,7 @@ When a task is awaited, the awaiting coroutine provides context: an executor for
 
 [source,cpp]
 ----
-#include <boost/capy.hpp>
-using namespace boost::capy;
-
-task<int> compute()
-{
-    co_return 42;
-}
-
-int main()
-{
-    thread_pool pool;
-    run_async(pool.get_executor())(compute());
-    // Task is now running on the thread pool
-
-    pool.join();  // wait for outstanding work to complete
-}
+include::example$programs/4b_launching_run_async.cpp[tag=full]
 ----
 
 === Two-Call Syntax
@@ -54,12 +39,13 @@ This ordering matters because the task's coroutine frame is allocated during ste
 
 [WARNING]
 ====
-Do not store the result of `run_async(executor)` and call it later:
+Do not store the result of `run_async(executor)` and call it later. The
+wrapper's call operator is rvalue-qualified, so this fails to compile:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 auto wrapper = run_async(pool.get_executor());  // Don't do this
-wrapper(compute());  // TLS state no longer valid
+wrapper(compute());  // Error: operator() requires an rvalue
 ----
 
 Always use the two-call pattern in a single expression.
@@ -71,21 +57,7 @@ Always use the two-call pattern in a single expression.
 
 [source,cpp]
 ----
-// Result handler only (an unhandled exception calls std::terminate)
-run_async(ex, [](int result) {
-    std::cout << "Got: " << result << "\n";
-})(compute());
-
-// Separate handlers for result and exception
-run_async(ex,
-    [](int result) { std::cout << "Result: " << result << "\n"; },
-    [](std::exception_ptr ep) {
-        try { std::rethrow_exception(ep); }
-        catch (std::exception const& e) {
-            std::cout << "Error: " << e.what() << "\n";
-        }
-    }
-)(compute());
+include::example$snippets/4b_launching.cpp[tag=handlers,indent=0]
 ----
 
 When no result handler is provided, the result is discarded. An exception
@@ -101,16 +73,7 @@ Inside a coroutine, use `run` to execute a child task on a different executor:
 
 [source,cpp]
 ----
-task<int> compute_on_pool(thread_pool& pool)
-{
-    // This task runs on whatever executor we're already on
-
-    // But this child task runs on the pool's executor:
-    int result = co_await run(pool.get_executor())(expensive_computation());
-
-    // After co_await, we're back on our original executor
-    co_return result;
-}
+include::example$snippets/4b_launching.cpp[tag=run_hop]
 ----
 
 === Executor Affinity
@@ -135,11 +98,7 @@ Since `run_async` is called from non-coroutine code, there is no caller token to
 
 [source,cpp]
 ----
-std::stop_source source;
-run_async(ex, source.get_token())(cancellable_task());
-
-// Later, to request cancellation:
-source.request_stop();
+include::example$snippets/4b_launching.cpp[tag=inject_token,indent=0]
 ----
 
 === Inheritance with run
@@ -148,23 +107,14 @@ source.request_stop();
 
 [source,cpp]
 ----
-task<void> parent()
-{
-    // Child automatically receives our stop token
-    co_await run(pool.get_executor())(child_task());
-}
+include::example$snippets/4b_launching.cpp[tag=inherit_token,indent=0]
 ----
 
 To override with a different token, pass it explicitly:
 
 [source,cpp]
 ----
-task<void> parent()
-{
-    std::stop_source local;
-    // Child gets local's token, not our caller's
-    co_await run(pool.get_executor(), local.get_token())(child_task());
-}
+include::example$snippets/4b_launching.cpp[tag=override_token,indent=0]
 ----
 
 == Handler Threading
@@ -173,11 +123,7 @@ Handlers passed to `run_async` are invoked on whatever thread the executor sched
 
 [source,cpp]
 ----
-// If pool has 4 threads, the handler runs on one of those threads
-run_async(pool.get_executor(), [](int result) {
-    // This runs on a pool thread, NOT the main thread
-    update_shared_state(result);
-})(compute());
+include::example$snippets/4b_launching.cpp[tag=handler_thread,indent=0]
 ----
 
 If you need results on a specific thread, use appropriate synchronization or dispatch mechanisms.

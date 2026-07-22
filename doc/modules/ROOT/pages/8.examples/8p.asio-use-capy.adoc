@@ -20,28 +20,11 @@ This example is built when a `Boost::asio` target is available. The full source 
 
 == The Completion Token
 
-Asio async operations accept a _completion token_ that decides what the call returns. `use_capy` is a token whose `async_result` returns an `IoAwaitable`. When co-awaited, its `await_suspend` starts the Asio operation and arranges the completion handler to post the resumption through the caller's executor—so the coroutine resumes on the executor it was launched with, never on whatever thread Asio completed on:
+Asio async operations accept a _completion token_ that decides what the call returns. `use_capy` is a token whose `async_result` returns an `IoAwaitable`. When co-awaited, its `await_suspend` starts the Asio operation and arranges the completion handler to post the resumption through the caller's executor—so the coroutine resumes on the executor it was launched with, never on whatever thread Asio completed on. From `example/asio/api/use_capy.hpp`:
 
 [source,cpp]
 ----
-// From example/asio/api/use_capy.hpp (abridged):
-std::coroutine_handle<> await_suspend(
-    std::coroutine_handle<> h, capy::io_env const* env)
-{
-    cancel_ = std::make_shared<cancel_bridge>(env->stop_token);
-
-    cont_.h = h;   // stable address; posted through the executor on completion
-    auto handler = [this, ex = env->executor](Args... args) mutable
-    {
-        store_result(std::move(args)...);
-        ex.post(cont_);
-    };
-
-    std::move(op_)(net::bind_cancellation_slot(
-        cancel_->signal.slot(), std::move(handler)));
-
-    return std::noop_coroutine();
-}
+include::example$asio/api/use_capy.hpp[tag=await_suspend,indent=0]
 ----
 
 == Using the Token
@@ -50,26 +33,7 @@ Pass `use_capy` where an Asio operation expects a completion token. The `co_awai
 
 [source,cpp]
 ----
-capy::io_task<>
-writer(net::ip::tcp::socket& socket, std::size_t total)
-{
-    char buf[128];
-    std::memset(buf, 'X', sizeof(buf));
-
-    std::size_t written = 0;
-    while (written < total)
-    {
-        std::size_t chunk = (std::min)(sizeof(buf), total - written);
-
-        auto [ec, n] = co_await socket.async_write_some(
-            net::buffer(buf, chunk), use_capy);
-
-        if (ec)
-            co_return capy::io_result<>{ec};
-        written += n;
-    }
-    co_return capy::io_result<>{};
-}
+include::example$asio/use_capy_example.cpp[tag=writer]
 ----
 
 The reader is symmetric, using `async_read_some`. `run_example` drives both concurrently over a connected socket pair with `when_all`, then reports completion.

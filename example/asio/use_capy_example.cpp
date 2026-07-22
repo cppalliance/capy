@@ -27,6 +27,7 @@ constexpr std::size_t total_bytes = 1024;
 
 // Writer coroutine using use_capy with raw Asio socket.
 // Returns io_task<> so it can be composed with when_all.
+// tag::writer[]
 capy::io_task<>
 writer(
     net::ip::tcp::socket& socket,
@@ -55,6 +56,7 @@ writer(
     std::printf("writer: done, wrote %zu bytes\n", written);
     co_return capy::io_result<>{};
 }
+// end::writer[]
 
 // Reader coroutine using use_capy with raw Asio socket.
 // Returns io_task<> so it can be composed with when_all.

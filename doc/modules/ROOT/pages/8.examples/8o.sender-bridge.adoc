@@ -20,17 +20,11 @@ This example is built only when `BOOST_CAPY_BUILD_P2300_EXAMPLES=ON` (it require
 
 == The Bridge
 
-A P2300 sender is a foreign awaitable: it has no two-argument `await_suspend`, so a Capy `task` cannot `co_await` it directly. `await_sender` wraps it in an `IoAwaitable`. The key move is in the bridge's _receiver_: when the sender completes—on whatever thread its scheduler chose—it does not resume the coroutine inline. It stores the result and posts the continuation back through the caller's executor.
+A P2300 sender is a foreign awaitable: it has no two-argument `await_suspend`, so a Capy `task` cannot `co_await` it directly. `await_sender` wraps it in an `IoAwaitable`. The key move is in the bridge's _receiver_: when the sender completes—on whatever thread its scheduler chose—it does not resume the coroutine inline. It stores the result and posts the continuation back through the caller's executor. From `example/sender-bridge/sender_awaitable.hpp`:
 
 [source,cpp]
 ----
-// From example/sender-bridge/sender_awaitable.hpp (abridged):
-template<class... Args>
-void set_value(Args&&... args) && noexcept
-{
-    result_->template emplace<1>(std::forward<Args>(args)...);
-    env_->executor.post(cont_);   // resume on the caller's executor
-}
+include::example$sender-bridge/sender_awaitable.hpp[tag=set_value,indent=0]
 ----
 
 `await_sender` inspects the sender's completion signatures. If the sender can complete with `set_error(std::error_code)`, the bridge yields `io_result<T>` so the error stays a value rather than an exception; otherwise it yields the value directly.
@@ -39,55 +33,7 @@ void set_value(Args&&... args) && noexcept
 
 [source,cpp]
 ----
-#include "sender_awaitable.hpp"
-
-#include <boost/capy.hpp>
-#include <beman/execution/execution.hpp>
-
-#include <iostream>
-#include <latch>
-#include <thread>
-
-namespace capy = boost::capy;
-namespace ex = beman::execution;
-
-capy::task<int> compute(auto sched)
-{
-    int result = co_await capy::await_sender(
-        ex::schedule(sched)
-            | ex::then([] {
-                std::cout << "  sender running on thread "
-                          << std::this_thread::get_id() << "\n";
-                return 42 * 42;
-            }));
-
-    std::cout << "  coroutine resumed on thread "
-              << std::this_thread::get_id() << "\n";
-
-    co_return result;
-}
-
-int main()
-{
-    std::cout << "main thread: " << std::this_thread::get_id() << "\n";
-
-    capy::thread_pool pool;                  // Capy execution context
-
-    ex::run_loop loop;                       // Beman context on its own thread
-    std::jthread loop_thread([&loop] { loop.run(); });
-    auto sched = loop.get_scheduler();
-
-    std::latch done(1);
-    int answer = 0;
-    auto on_complete = [&](int v) { answer = v; done.count_down(); };
-    auto on_error = [&](std::exception_ptr) { done.count_down(); };
-
-    capy::run_async(pool.get_executor(), on_complete, on_error)(compute(sched));
-
-    done.wait();
-    loop.finish();
-    std::cout << "result: " << answer << "\n";
-}
+include::example$sender-bridge/sender_bridge.cpp[tag=full]
 ----
 
 == Output

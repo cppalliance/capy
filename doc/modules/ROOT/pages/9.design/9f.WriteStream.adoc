@@ -8,15 +8,7 @@ This document describes the design of the `WriteStream` concept: the fundamental
 
 [source,cpp]
 ----
-template<typename T>
-concept WriteStream =
-    requires(T& stream, const_buffer_archetype buffers)
-    {
-        { stream.write_some(buffers) } -> IoAwaitable;
-        requires awaitable_decomposes_to<
-            decltype(stream.write_some(buffers)),
-            std::error_code, std::size_t>;
-    };
+include::example$snippets/9f_write_stream.cpp[tag=write_stream_concept]
 ----
 
 The `requires` clause checks `write_some` against a single representative buffer, `const_buffer_archetype`, because a {cpp} concept cannot quantify over "every buffer sequence." The contract is stronger than what the compiler verifies: a `WriteStream` must accept *any* `ConstBufferSequence`—a single buffer or a range of them—and the archetype stands in for that universally-quantified requirement. Read this as a textual requirement that the concept can only sample, not a claim that conformance is limited to the archetype type.
@@ -54,8 +46,7 @@ The caller must ensure that the memory referenced by `buffers` remains valid unt
 
 [source,cpp]
 ----
-template<ConstBufferSequence Buffers>
-IoAwaitable auto write_some(Buffers buffers);
+include::example$snippets/9f_write_stream.cpp[tag=write_some_signature,indent=0]
 ----
 
 Buffer sequences should be accepted by value when the member function is a coroutine, to ensure the sequence lives in the coroutine frame across suspension points.
@@ -81,9 +72,7 @@ Two composed algorithms build complete-write behavior on top of `write_some`:
 
 [source,cpp]
 ----
-auto write(WriteStream auto& stream,
-           ConstBufferSequence auto buffers)
-    -> io_task<std::size_t>;
+include::example$snippets/9f_write_stream.cpp[tag=write_signature]
 ----
 
 Loops `write_some` until the entire buffer sequence is consumed. Always suspends (returns `task`). No frame caching.
@@ -92,14 +81,7 @@ Loops `write_some` until the entire buffer sequence is consumed. Always suspends
 
 [source,cpp]
 ----
-template<WriteStream Stream>
-class write_now
-{
-public:
-    explicit write_now(Stream& s) noexcept;
-
-    IoAwaitable auto operator()(ConstBufferSequence auto buffers);
-};
+include::example$snippets/9f_write_stream.cpp[tag=write_now_sketch]
 ----
 
 Loops `write_some` until the entire buffer sequence is consumed, with two advantages over the free function:
@@ -115,7 +97,7 @@ A composed algorithm like `write_now` cannot do this. It receives a fixed buffer
 
 === Diagram: Relaying 100KB from a ReadSource through a TCP Socket
 
-Consider relaying 100KB from a `ReadSource` to a TCP socket. The kernel's send buffer accepts at most 40KB per call. Compare two approaches:
+Consider relaying 100KB from a `ReadStream` to a TCP socket. The kernel's send buffer accepts at most 40KB per call. Compare two approaches:
 
 ==== Approach A: `write_some` with Top-Up (3 syscalls)
 
@@ -146,35 +128,7 @@ This example reads from a `ReadSource` and writes to a `WriteStream` using `writ
 
 [source,cpp]
 ----
-template<ReadSource Source, WriteStream Stream>
-task<> relay_with_write_now(Source& src, Stream& dest)
-{
-    char buf[65536];
-    write_now wn(dest);
-
-    for(;;)
-    {
-        // Read a chunk from the source
-        auto [rec, nr] = co_await src.read(
-            mutable_buffer(buf, sizeof(buf)));
-        if(rec == cond::eof && nr == 0)
-            co_return;
-
-        // write_now drains the chunk to completion.
-        // If the kernel accepts 40KB of 64KB, write_now
-        // internally calls write_some(24KB) for the
-        // remainder -- a small write that wastes a
-        // syscall. The caller cannot top up between
-        // write_now's internal iterations.
-        auto [wec, nw] = co_await wn(
-            const_buffer(buf, nr));
-        if(wec)
-            co_return;
-
-        if(rec == cond::eof)
-            co_return;
-    }
-}
+include::example$snippets/9f_write_stream.cpp[tag=relay_with_write_now]
 ----
 
 After the kernel accepts 40KB of a 64KB chunk, `write_now` must send the remaining 24KB in a second `write_some`. The caller cannot intervene to refill the buffer because `write_now` owns the loop. That 24KB write wastes an opportunity to send a full 64KB payload.

@@ -7,6 +7,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
+// tag::full[]
 #include <boost/capy.hpp>
 #include <iostream>
 #include <string>
@@ -25,8 +26,10 @@ void demonstrate_single_buffers()
     std::vector<char> vec = {'V', 'e', 'c', 't', 'o', 'r'};
     
     // make_buffer creates buffer views (no copies)
+    // tag::make_buffer[]
     auto str_buf = capy::make_buffer(str);  // mutable_buffer
     auto arr_buf = capy::make_buffer(arr, sizeof(arr) - 1);  // mutable_buffer - Exclude null terminator
+    // end::make_buffer[]
     auto vec_buf = capy::make_buffer(vec);  // mutable_buffer
     
     std::cout << "String buffer: " << str_buf.size() << " bytes\n";
@@ -42,10 +45,12 @@ void demonstrate_two_buffer_scatter()
     std::string header = "Content-Type: text/plain\r\n\r\n";
     std::string body = "Hello, World!";
 
+    // tag::two_buffer[]
     std::array<capy::const_buffer, 2> message = {{
         capy::make_buffer(header),
         capy::make_buffer(body)
     }};
+    // end::two_buffer[]
     
     // Calculate total size
     std::size_t total = capy::buffer_size(message);
@@ -73,6 +78,7 @@ void demonstrate_buffer_array()
     std::string empty_line = "\r\n";
     std::string body = R"({"status":"ok"})";
     
+    // tag::multi_buffer[]
     std::array<capy::const_buffer, 5> http_response = {{
         capy::make_buffer(status),
         capy::make_buffer(content_type),
@@ -80,6 +86,7 @@ void demonstrate_buffer_array()
         capy::make_buffer(empty_line),
         capy::make_buffer(body)
     }};
+    // end::multi_buffer[]
     
     std::size_t total = capy::buffer_size(http_response);
     std::cout << "HTTP response size: " << total << " bytes\n";
@@ -117,6 +124,7 @@ int main()
     demonstrate_two_buffer_scatter();
     demonstrate_buffer_array();
     demonstrate_mutable_buffers();
-    
+
     return 0;
 }
+// end::full[]

@@ -8,15 +8,7 @@ This document describes the design of the `ReadStream` concept: the fundamental 
 
 [source,cpp]
 ----
-template<typename T>
-concept ReadStream =
-    requires(T& stream, mutable_buffer_archetype buffers)
-    {
-        { stream.read_some(buffers) } -> IoAwaitable;
-        requires awaitable_decomposes_to<
-            decltype(stream.read_some(buffers)),
-            std::error_code, std::size_t>;
-    };
+include::example$snippets/9c_read_stream.cpp[tag=concept_definition,indent=0]
 ----
 
 The `requires` clause checks `read_some` against a single representative buffer, `mutable_buffer_archetype`, because a {cpp} concept cannot quantify over "every buffer sequence." The contract is stronger than what the compiler verifies: a `ReadStream` must accept *any* `MutableBufferSequence`—a single buffer or a range of them—and the archetype stands in for that universally-quantified requirement. Read this as a textual requirement that the concept can only sample, not a claim that conformance is limited to the archetype type.
@@ -58,8 +50,7 @@ The caller must ensure that the memory referenced by `buffers` remains valid unt
 
 [source,cpp]
 ----
-template<MutableBufferSequence Buffers>
-IoAwaitable auto read_some(Buffers buffers);
+include::example$snippets/9c_read_stream.cpp[tag=read_some_signature,indent=0]
 ----
 
 Buffer sequences should be accepted by value when the member function is a coroutine, to ensure the sequence lives in the coroutine frame across suspension points.
@@ -94,27 +85,14 @@ A composed algorithm builds on `read_some`:
 
 [source,cpp]
 ----
-auto read(ReadStream auto& stream,
-          MutableBufferSequence auto const& buffers)
-    -> io_task<std::size_t>;
+include::example$snippets/9c_read_stream.cpp[tag=read_signature,indent=0]
 ----
 
 Loops `read_some` until the entire buffer sequence is filled or an error (including EOF) occurs. On success, `n == buffer_size(buffers)`.
 
 [source,cpp]
 ----
-template<ReadStream Stream>
-task<> read_header(Stream& stream)
-{
-    char header[16];
-    auto [ec, n] = co_await read(
-        stream, make_buffer(header));
-    if(ec == cond::eof)
-        co_return;  // clean shutdown
-    if(ec)
-        co_return;
-    // header contains exactly 16 bytes
-}
+include::example$snippets/9c_read_stream.cpp[tag=read_header,indent=0]
 ----
 
 == Use Cases
@@ -125,25 +103,7 @@ When processing data as it arrives without waiting for a full buffer, `read_some
 
 [source,cpp]
 ----
-template<ReadStream Stream>
-task<> echo(Stream& stream, WriteStream auto& dest)
-{
-    char buf[4096];
-    for(;;)
-    {
-        auto [ec, n] = co_await stream.read_some(
-            make_buffer(buf));
-
-        auto [wec, nw] = co_await dest.write_some(
-            const_buffer(buf, n));
-
-        if(ec)
-            co_return;
-
-        if(wec)
-            co_return;
-    }
-}
+include::example$snippets/9c_read_stream.cpp[tag=echo,indent=0]
 ----
 
 == Relationship to the Write Side
@@ -202,11 +162,7 @@ Every composed read algorithm that accumulates progress follows the same pattern
 
 [source,cpp]
 ----
-auto [ec, n] = co_await s.read_some(
-    mutable_buffer(buf + total, size - total));
-total += n;
-if(ec)
-    co_return;
+include::example$snippets/9c_read_stream.cpp[tag=canonical_loop,indent=0]
 ----
 
 The advance-then-check ordering is the only correct pattern. It is required for any operation that can report partial progress alongside an error -- `read` returning `(eof, 47)` being the canonical example. If the check precedes the advance, the 47 bytes are silently dropped.

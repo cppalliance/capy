@@ -17,78 +17,7 @@ Fair FIFO coroutine locking with `async_mutex`.
 
 [source,cpp]
 ----
-#include <boost/capy.hpp>
-#include <iostream>
-#include <latch>
-#include <vector>
-
-namespace capy = boost::capy;
-
-int main()
-{
-    capy::thread_pool pool;
-    capy::strand s{pool.get_executor()};
-    std::latch done(1);
-
-    auto on_complete = [&done](auto&&...) { done.count_down(); };
-    auto on_error = [&done](std::exception_ptr ep) {
-        try { std::rethrow_exception(ep); }
-        catch (std::exception const& e) {
-            std::cerr << "Error: " << e.what() << "\n";
-        }
-        catch (...) {
-            std::cerr << "Error: unknown exception\n";
-        }
-        done.count_down();
-    };
-
-    capy::async_mutex mtx;
-    int acquisition_order = 0;
-    std::vector<int> order_log;
-
-    auto worker = [&](int id) -> capy::io_task<> {
-        std::cout << "Worker " << id << " waiting for lock\n";
-        auto [ec, guard] = co_await mtx.scoped_lock();
-        if (ec)
-        {
-            std::cout << "Worker " << id
-                      << " canceled: " << ec.message() << "\n";
-            co_return capy::io_result<>{ec};
-        }
-
-        int seq = acquisition_order++;
-        order_log.push_back(id);
-        std::cout << "Worker " << id
-                  << " acquired lock (sequence " << seq << ")\n";
-
-        std::cout << "Worker " << id << " releasing lock\n";
-        co_return capy::io_result<>{};
-    };
-
-    auto run_all = [&]() -> capy::task<> {
-        auto r = co_await capy::when_all(
-            worker(0), worker(1), worker(2),
-            worker(3), worker(4), worker(5));
-        if(r.ec)
-            std::cerr << "when_all error: "
-                      << r.ec.message() << "\n";
-    };
-
-    // Run on a strand so async_mutex operations are single-threaded
-    capy::run_async(s, on_complete, on_error)(run_all());
-    done.wait();
-
-    std::cout << "\nAcquisition order: ";
-    for (std::size_t i = 0; i < order_log.size(); ++i)
-    {
-        if (i > 0)
-            std::cout << " -> ";
-        std::cout << "W" << order_log[i];
-    }
-    std::cout << "\n";
-
-    return 0;
-}
+include::example$async-mutex/async_mutex.cpp[tag=full]
 ----
 
 == Build
@@ -105,7 +34,7 @@ target_link_libraries(async_mutex PRIVATE Boost::capy)
 
 [source,cpp]
 ----
-capy::async_mutex mtx;
+include::example$async-mutex/async_mutex.cpp[tag=mutex,indent=0]
 ----
 
 `async_mutex` is a coroutine-aware mutex. Unlike `std::mutex`, it suspends the calling coroutine instead of blocking the thread, allowing other coroutines to run while waiting for the lock.
@@ -114,12 +43,7 @@ capy::async_mutex mtx;
 
 [source,cpp]
 ----
-auto [ec, guard] = co_await mtx.scoped_lock();
-if (ec)
-{
-    // Lock was canceled
-    co_return capy::io_result<>{ec};
-}
+include::example$async-mutex/async_mutex.cpp[tag=scoped_lock,indent=0]
 ----
 
 `scoped_lock()` returns an `io_result` with an error code and an RAII guard. The guard automatically releases the lock when it goes out of scope. If the operation is canceled (e.g., via a stop token), `ec` will be set.

@@ -13,11 +13,7 @@ Standard {cpp}20 coroutines define awaiters with this `await_suspend` signature:
 
 [source,cpp]
 ----
-void await_suspend(std::coroutine_handle<> h);
-// or
-bool await_suspend(std::coroutine_handle<> h);
-// or
-std::coroutine_handle<> await_suspend(std::coroutine_handle<> h);
+include::example$snippets/4d_io_awaitable.cpp[tag=std_await_suspend,indent=0]
 ----
 
 The awaiter receives only a handle to the suspended coroutine. But real I/O code needs more:
@@ -42,7 +38,7 @@ The IoAwaitable protocol extends `await_suspend` to receive context:
 
 [source,cpp]
 ----
-std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env);
+include::example$snippets/4d_io_awaitable.cpp[tag=two_arg_await_suspend,indent=0]
 ----
 
 This signature receives:
@@ -61,11 +57,7 @@ An awaitable satisfies `IoAwaitable` if `a.await_suspend(h, env)` is a valid exp
 
 [source,cpp]
 ----
-template<typename A>
-concept IoAwaitable =
-    requires(A a, std::coroutine_handle<> h, io_env const* env) {
-        a.await_suspend(h, env);
-    };
+include::example$snippets/4d_io_awaitable.cpp[tag=io_awaitable_concept]
 ----
 
 The concept constrains only the two-argument `await_suspend` that receives the `io_env`. It does not require `await_ready` or `await_resume`, nor does it constrain the return type of `await_suspend`. A complete awaitable still provides `await_ready` and `await_resume` so it can be `co_await`-ed; the concept simply does not test for them.
@@ -97,12 +89,7 @@ When you write `co_await child_task()` inside a `task<T>`:
 
 [source,cpp]
 ----
-template<class Awaitable>
-auto await_suspend(std::coroutine_handle<Promise> h)
-{
-    // Forward caller's context to child
-    return awaitable_.await_suspend(h, promise_.environment());
-}
+include::example$snippets/4d_io_awaitable.cpp[tag=context_flow,indent=0]
 ----
 
 The child receives the parent's executor and stop token automatically.
@@ -129,46 +116,7 @@ To create a custom IoAwaitable:
 
 [source,cpp]
 ----
-struct my_awaitable
-{
-    io_env const* env_ = nullptr;
-    continuation cont_;
-    result_type result_;
-
-    bool await_ready() const noexcept
-    {
-        return false;  // Or true if result is immediately available
-    }
-    
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env)
-    {
-        // Store pointer to environment, never copy
-        env_ = env;
-        // Wrap the caller's handle in a continuation we own, so it stays
-        // at a stable address until the executor resumes it.
-        cont_.h = h;
-
-        // Start async operation...
-        start_operation();
-        
-        // Return noop to suspend
-        return std::noop_coroutine();
-    }
-    
-    result_type await_resume()
-    {
-        return result_;
-    }
-    
-private:
-    void on_completion()
-    {
-        // Resume the caller on its executor. post() takes the
-        // continuation by reference and queues it; never resume inline
-        // from a completion callback (it may run on the wrong thread).
-        env_->executor.post(cont_);
-    }
-};
+include::example$snippets/4d_io_awaitable.cpp[tag=my_awaitable]
 ----
 
 The key points:
@@ -190,38 +138,14 @@ Post the resume through the executor instead of resuming inline:
 
 [source,cpp]
 ----
-struct stoppable_awaitable
-{
-    mutable continuation cont_;
-
-    bool await_ready() { return false; }
-
-    std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> h, io_env const* env)
-    {
-        if (env->stop_token.stop_requested())
-            return h;  // Already cancelled, resume immediately
-
-        // Post through executor when stop is requested
-        cont_.h = h;
-        auto ex = env->executor;
-        stop_cb_.emplace(env->stop_token,
-            [this, ex]() mutable noexcept { ex.post(cont_); });
-
-        start_async_operation();
-        return std::noop_coroutine();
-    }
-
-    void await_resume() { /* ... */ }
-};
+include::example$snippets/4d_io_awaitable.cpp[tag=stoppable_awaitable]
 ----
 
 The incorrect pattern—which compiles and appears to work but causes memory corruption—looks like this:
 
 [source,cpp]
 ----
-// WRONG: resumes coroutine on the calling thread
-stop_cb_.emplace(env->stop_token, h);  // h is a raw coroutine_handle
+include::example$snippets/4d_io_awaitable.cpp[tag=wrong_stop_callback,indent=0]
 ----
 
 See xref:4.coroutines/4e.cancellation.adoc#stoppable-awaitables[Implementing Stoppable Awaitables] for a complete example.
@@ -237,8 +161,7 @@ Capy rejects it at compile time:
 
 [source,cpp]
 ----
-// In task.hpp, when the awaited type is not an IoAwaitable:
-static_assert(sizeof(A) == 0, "requires IoAwaitable");
+include::example$snippets/4d_io_awaitable.cpp[tag=reject_plain,indent=0]
 ----
 
 This is intentional. A plain awaitable receives only the coroutine handle; it can resume the coroutine on any thread by calling `handle.resume()` directly. That silently breaks the xref:4.coroutines/4c.executors.adoc#the-same-executor-invariant[same-executor invariant]—the coroutine could wake on a foreign completion thread, leaving shared state you believed was strand-protected exposed to races. Rejecting such an awaitable at compile time prevents that. The constraint does not lock you in; it requires environment propagation to be explicit rather than silently dropped.
@@ -247,35 +170,7 @@ The escape hatch is to wrap the foreign awaitable (or callback, or future) in a 
 
 [source,cpp]
 ----
-// Bridge a foreign async operation into a Capy coroutine.
-struct foreign_bridge
-{
-    io_env const* env_ = nullptr;
-    continuation cont_;
-    result_type result_;
-
-    bool await_ready() const noexcept { return false; }
-
-    std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> h, io_env const* env)
-    {
-        env_ = env;
-        cont_.h = h;   // stable address; the executor links continuations intrusively
-
-        // Start the foreign operation. Its completion callback may run on
-        // ANY thread, so it must not resume h directly. Instead it posts
-        // the continuation back through the caller's executor, restoring
-        // the same-executor invariant.
-        start_foreign_op([this]() noexcept {
-            store_result();
-            env_->executor.post(cont_);
-        });
-
-        return std::noop_coroutine();
-    }
-
-    result_type await_resume() { return std::move(result_); }
-};
+include::example$snippets/4d_io_awaitable.cpp[tag=foreign_bridge]
 ----
 
 The single rule that makes any bridge correct: *on completion, post through `env->executor` instead of resuming the handle inline.*

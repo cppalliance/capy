@@ -19,99 +19,21 @@ Echo server demonstrating the compilation firewall pattern.
 
 [source,cpp]
 ----
-#ifndef ECHO_HPP
-#define ECHO_HPP
-
-#include <boost/capy/io/any_stream.hpp>
-#include <boost/capy/task.hpp>
-
-namespace myapp {
-
-// Type-erased interface: no template dependencies
-boost::capy::task<> echo_session(boost::capy::any_stream& stream);
-
-} // namespace myapp
-
-#endif
+include::example$type-erased-echo/echo.hpp[tag=full]
 ----
 
 === echo.cpp
 
 [source,cpp]
 ----
-#include "echo.hpp"
-#include <boost/capy/read.hpp>
-#include <boost/capy/write.hpp>
-#include <boost/capy/cond.hpp>
-#include <boost/capy/buffers/make_buffer.hpp>
-
-namespace myapp {
-
-namespace capy = boost::capy;
-
-capy::task<> echo_session(capy::any_stream& stream)
-{
-    char buffer[1024];
-
-    for (;;)
-    {
-        auto [ec, n] = co_await stream.read_some(capy::make_buffer(buffer));
-
-        auto [wec, wn] = co_await capy::write(stream, capy::const_buffer(buffer, n));
-
-        if (ec)
-            co_return;
-
-        if (wec)
-            co_return;
-    }
-}
-
-} // namespace myapp
+include::example$type-erased-echo/echo.cpp[tag=full]
 ----
 
 === main.cpp
 
 [source,cpp]
 ----
-#include "echo.hpp"
-#include <boost/capy.hpp>
-#include <boost/capy/test/stream.hpp>
-#include <boost/capy/test/fuse.hpp>
-#include <boost/capy/test/run_blocking.hpp>
-#include <iostream>
-
-namespace capy = boost::capy;
-
-void test_with_mock()
-{
-    auto [a, b] = capy::test::make_stream_pair();
-    b.provide("Hello, ");
-    b.provide("World!\n");
-    b.close();
-    
-    // Using pointer construction (&a) for reference semantics - the
-    // wrapper does not take ownership, so a must outlive stream.
-    capy::any_stream stream{&a};  // any_stream
-    capy::test::run_blocking()(myapp::echo_session(stream));
-    
-    std::cout << "Echo output: " << b.data() << "\n";
-}
-
-// With real sockets (using Corosio), you would write:
-//
-// task<> handle_client(corosio::tcp::socket socket)
-// {
-//     // Value construction moves socket into wrapper (transfers ownership)
-//     any_stream stream{std::move(socket)};
-//     co_await myapp::echo_session(stream);
-// }
-
-int main()
-{
-    test_with_mock();
-    return 0;
-}
+include::example$type-erased-echo/main.cpp[tag=full]
 ----
 
 == Build
@@ -131,8 +53,7 @@ target_link_libraries(echo_demo PRIVATE echo_lib)
 
 [source,cpp]
 ----
-// echo.hpp
-boost::capy::task<> echo_session(boost::capy::any_stream& stream);
+include::example$type-erased-echo/echo.hpp[tag=session_decl]
 ----
 
 The header declares only the signature. It includes `any_stream` and `task`, but no concrete transport types.
@@ -147,11 +68,7 @@ Clients of this header:
 
 [source,cpp]
 ----
-// echo.cpp
-capy::task<> echo_session(capy::any_stream& stream)
-{
-    // Full implementation here
-}
+include::example$type-erased-echo/echo.cpp[tag=session_impl]
 ----
 
 The implementation:

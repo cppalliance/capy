@@ -18,32 +18,7 @@ Capy achieves the Dimovian Ideal. The proof is in `example/asio/`.
 
 [source,cpp]
 ----
-#include <boost/capy/ex/execution_context.hpp>
-#include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/io/any_stream.hpp>
-
-#include <utility>
-
-namespace boost { namespace asio { class io_context; } }
-
-class asio_context : public capy::execution_context
-{
-    struct impl;
-    impl* impl_;
-
-public:
-    using executor_type = capy::executor_ref;
-
-    asio_context();
-    ~asio_context();
-
-    net::io_context& context() noexcept;
-    executor_type get_executor() noexcept;
-    void run();
-};
-
-std::pair<capy::any_stream, capy::any_stream>
-make_stream_pair(asio_context& ctx);
+include::example$asio/api/capy_streams.hpp[tag=header]
 ----
 
 Asio appears only as a forward declaration. The context uses pimpl. The factory returns `capy::any_stream` — a type-erased stream that hides the concrete socket type entirely.
@@ -58,39 +33,7 @@ Asio appears only as a forward declaration. The context uses pimpl. The factory 
 
 [source,cpp]
 ----
-capy::task<>
-writer(capy::any_stream& stream, std::size_t total)
-{
-    char buf[128];
-    std::memset(buf, 'X', sizeof(buf));
-
-    std::size_t written = 0;
-    while(written < total)
-    {
-        std::size_t chunk = (std::min)(sizeof(buf), total - written);
-        auto [ec, n] = co_await stream.write_some(
-            capy::make_buffer(buf, chunk));
-        if(ec)
-            co_return;
-        written += n;
-    }
-}
-
-capy::task<>
-reader(capy::any_stream& stream, std::size_t total)
-{
-    char buf[128];
-
-    std::size_t read_total = 0;
-    while(read_total < total)
-    {
-        auto [ec, n] = co_await stream.read_some(
-            capy::make_buffer(buf));
-        if(ec)
-            co_return;
-        read_total += n;
-    }
-}
+include::example$asio/any_stream.cpp[tag=writer_reader]
 ----
 
 `writer()` and `reader()` operate on `capy::any_stream&`. They don't know what I/O backend produced the stream. They never need to know.
@@ -346,7 +289,7 @@ Capy introduces the https://wg21.link/P4003[IoAwaitable protocol] and uses it fo
 
 [source,cpp]
 ----
-auto await_suspend(std::coroutine_handle<> h, io_env const* env);
+include::example$snippets/9m_why_not_cobalt.cpp[tag=await_suspend_env,indent=0]
 ----
 
 No thread-local state. No ambient context. The executor and stop token flow forward through the call chain via the `io_env` parameter.
@@ -436,7 +379,7 @@ Cobalt does not provide buffer sequence types. Users who need these features use
 
 Cobalt sets up a thread-local PMR resource via `main` or `thread`. All coroutines on that thread share it. Every awaitable embeds a fixed SBO buffer:
 
-[source,cpp]
+[source,cpp,role=external]
 ----
 // cobalt/op.hpp
 struct awaitable : awaitable_base
@@ -539,7 +482,7 @@ Capy's coroutine-driven serializer runs at 1.69x the baseline. Cobalt's `promise
 
 The Capy implementation:
 
-[source,cpp]
+[source,cpp,role=external]
 ----
 namespace {
 

@@ -7,6 +7,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
+// tag::full[]
 #include <boost/capy.hpp>
 #include <iostream>
 #include <latch>
@@ -59,10 +60,12 @@ capy::task<> fetch_user_dashboard(std::string username)
             {}, co_await std::move(inner)};
     };
 
+    // tag::when_all_dashboard[]
     auto [ec, name, orders, balance] = co_await capy::when_all(
         wrap(fetch_user_name(user_id)),
         wrap(fetch_order_count(user_id)),
         wrap(fetch_account_balance(user_id)));
+    // end::when_all_dashboard[]
 
     std::cout << "\nDashboard results:\n";
     std::cout << "  Name: " << name << "\n";
@@ -87,11 +90,13 @@ capy::task<std::string> fetch_with_side_effects()
 {
     std::cout << "\n=== Fetch with side effects ===\n";
 
+    // tag::when_all_void[]
     auto r = co_await capy::when_all(
         log_access("api/data"),
         update_metrics("api_calls"));
     if (r.ec)
         co_return "error";
+    // end::when_all_void[]
 
     auto data = co_await fetch_user_name(42);
 
@@ -117,6 +122,7 @@ capy::task<> demonstrate_error_handling()
 {
     std::cout << "\n=== Error handling ===\n";
     
+    // tag::when_all_errors[]
     try
     {
         auto [ec2, a, b, c] = co_await capy::when_all(
@@ -132,6 +138,7 @@ capy::task<> demonstrate_error_handling()
         // Note: when_all waits for all tasks to complete (or respond to stop)
         // before propagating the first exception
     }
+    // end::when_all_errors[]
 }
 
 int main()
@@ -151,3 +158,4 @@ int main()
     done.wait();  // Block until all tasks complete
     return 0;
 }
+// end::full[]

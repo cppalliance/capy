@@ -7,6 +7,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
+// tag::full[]
 #include <boost/capy.hpp>
 #include <boost/capy/test/stream.hpp>
 #include <boost/capy/test/fuse.hpp>
@@ -71,11 +72,16 @@ void test_happy_path()
     auto [a, b] = capy::test::make_stream_pair();
     b.provide("hello\n");
 
+    // tag::any_stream[]
+    // Wrap one end in any_stream using pointer construction for reference semantics
     capy::any_stream stream{&a};  // any_stream
+    // end::any_stream[]
 
+    // tag::run_blocking[]
     bool result = false;  // bool
     capy::test::run_blocking([&](bool r) { result = r; })(echo_line_uppercase(stream));
-    
+    // end::run_blocking[]
+
     assert(result == true);
     assert(b.data() == "HELLO\n");
     
@@ -153,3 +159,4 @@ int main()
     std::cout << "\nAll tests passed!\n";
     return 0;
 }
+// end::full[]

@@ -124,6 +124,7 @@ public:
         return false;
     }
 
+    // tag::await_suspend[]
     std::coroutine_handle<> await_suspend(
         std::coroutine_handle<> h,
         capy::io_env const* env)
@@ -150,6 +151,7 @@ public:
 
         return std::noop_coroutine();
     }
+    // end::await_suspend[]
 
     result_type await_resume()
     {

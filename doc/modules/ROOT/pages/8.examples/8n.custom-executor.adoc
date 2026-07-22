@@ -16,148 +16,7 @@ Implementing the Executor concept with a single-threaded run loop.
 
 [source,cpp]
 ----
-#include <boost/capy.hpp>
-#include <boost/capy/ex/frame_allocator.hpp>
-#include <iostream>
-#include <queue>
-#include <thread>
-
-namespace capy = boost::capy;
-
-// A minimal single-threaded execution context.
-// Demonstrates how to satisfy the Executor concept
-// for any custom scheduling system.
-class run_loop : public capy::execution_context
-{
-    std::queue<std::coroutine_handle<>> queue_;
-    std::thread::id owner_;
-
-public:
-    class executor_type;
-
-    run_loop()
-        : execution_context(this)
-    {
-    }
-
-    ~run_loop()
-    {
-        shutdown();
-        destroy();
-    }
-
-    run_loop(run_loop const&) = delete;
-    run_loop& operator=(run_loop const&) = delete;
-
-    // Drain the queue until empty
-    void run()
-    {
-        owner_ = std::this_thread::get_id();
-        while (!queue_.empty())
-        {
-            auto h = queue_.front();
-            queue_.pop();
-            capy::safe_resume(h);
-        }
-    }
-
-    void enqueue(std::coroutine_handle<> h)
-    {
-        queue_.push(h);
-    }
-
-    bool is_running_on_this_thread() const noexcept
-    {
-        return std::this_thread::get_id() == owner_;
-    }
-
-    executor_type get_executor() noexcept;
-};
-
-class run_loop::executor_type
-{
-    friend class run_loop;
-    run_loop* loop_ = nullptr;
-
-    explicit executor_type(run_loop& loop) noexcept
-        : loop_(&loop)
-    {
-    }
-
-public:
-    executor_type() = default;
-
-    capy::execution_context& context() const noexcept
-    {
-        return *loop_;
-    }
-
-    void on_work_started() const noexcept {}
-    void on_work_finished() const noexcept {}
-
-    std::coroutine_handle<> dispatch(
-        capy::continuation& c) const
-    {
-        if (loop_->is_running_on_this_thread())
-            return c.h;
-        loop_->enqueue(c.h);
-        return std::noop_coroutine();
-    }
-
-    void post(capy::continuation& c) const
-    {
-        loop_->enqueue(c.h);
-    }
-
-    bool operator==(executor_type const& other) const noexcept
-    {
-        return loop_ == other.loop_;
-    }
-};
-
-inline
-run_loop::executor_type
-run_loop::get_executor() noexcept
-{
-    return executor_type{*this};
-}
-
-// Verify the concept is satisfied
-static_assert(capy::Executor<run_loop::executor_type>);
-
-capy::io_task<int> compute(int x)
-{
-    std::cout << "  computing " << x << " * " << x << "\n";
-    co_return capy::io_result<int>{{}, x * x};
-}
-
-capy::task<> run_tasks()
-{
-    std::cout << "Launching 3 tasks with when_all...\n";
-
-    auto [ec, r1, r2, r3] = co_await capy::when_all(
-        compute(3), compute(7), compute(11));
-
-    std::cout << "\nResults: " << r1 << ", " << r2
-              << ", " << r3 << "\n";
-    std::cout << "Sum of squares: "
-              << r1 + r2 + r3 << "\n";
-}
-
-int main()
-{
-    run_loop loop;
-
-    // Launch using run_async, just like with thread_pool
-    capy::run_async(loop.get_executor())(run_tasks());
-
-    // Drive the loop — all coroutines execute here
-    std::cout << "Running event loop on main thread...\n";
-    loop.run();
-
-    std::cout << "Event loop finished.\n";
-    return 0;
-}
+include::example$custom-executor/custom_executor.cpp[tag=full]
 ----
 
 == Build
@@ -174,14 +33,7 @@ target_link_libraries(custom_executor PRIVATE Boost::capy)
 
 [source,cpp]
 ----
-class run_loop : public capy::execution_context
-{
-    // ...
-    run_loop()
-        : execution_context(this)
-    {
-    }
-};
+include::example$custom-executor/custom_executor.cpp[tag=inherit]
 ----
 
 Custom execution contexts inherit from `execution_context` and pass `this` to the base constructor. The destructor must call `shutdown()` then `destroy()` to clean up coroutine state.
@@ -198,7 +50,7 @@ The nested `executor_type` must provide:
 
 [source,cpp]
 ----
-static_assert(capy::Executor<run_loop::executor_type>);
+include::example$custom-executor/custom_executor.cpp[tag=concept_check]
 ----
 
 The `static_assert` verifies at compile time that all concept requirements are met.
@@ -207,14 +59,7 @@ The `static_assert` verifies at compile time that all concept requirements are m
 
 [source,cpp]
 ----
-std::coroutine_handle<> dispatch(
-    capy::continuation& c) const
-{
-    if (loop_->is_running_on_this_thread())
-        return c.h;        // resume inline
-    loop_->enqueue(c.h);
-    return std::noop_coroutine();  // defer
-}
+include::example$custom-executor/custom_executor.cpp[tag=dispatch,indent=0]
 ----
 
 `dispatch` takes a `continuation&` and checks whether the caller is already running on the loop's thread. If so, it returns `c.h` directly for inline resumption via symmetric transfer. Otherwise it enqueues `c.h` and returns `noop_coroutine` so the caller continues without blocking.
@@ -225,8 +70,7 @@ std::coroutine_handle<> dispatch(
 
 [source,cpp]
 ----
-capy::run_async(loop.get_executor())(run_tasks());
-loop.run();
+include::example$custom-executor/custom_executor.cpp[tag=drive,indent=0]
 ----
 
 `run_async` enqueues the initial coroutine. `loop.run()` drains the queue, resuming coroutines one by one until all work completes. This is analogous to a GUI event loop or game tick loop.

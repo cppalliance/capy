@@ -1,0 +1,7 @@
+# Apple's libc++ stream internals carry no TSan annotations, so
+# concurrent std::cout writes from several threads are reported as a
+# data race even though the standard requires them to be race-free
+# ([iostream.objects.overview]). Linux/libstdc++ synchronizes through
+# paths TSan understands, so these entries match nothing there.
+race:__pad_and_output
+race:__put_character_sequence

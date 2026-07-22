@@ -24,11 +24,7 @@ Consider this function:
 
 [source,cpp]
 ----
-int compute(int x, int y)
-{
-    int result = x * y + 42;
-    return result;
-}
+include::example$snippets/2a_foundations.cpp[tag=compute,indent=0]
 ----
 
 When `compute` is called:
@@ -57,7 +53,7 @@ When a coroutine resumes:
 
 This capability is implemented through a *coroutine frame*—a heap-allocated block of memory that stores the coroutine's state. Unlike stack frames, coroutine frames persist across suspension points because they live on the heap rather than the stack.
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 // Conceptual illustration (not real syntax)
 task<int> fetch_and_process()
@@ -80,14 +76,7 @@ In traditional synchronous code:
 
 [source,cpp]
 ----
-void handle_request(connection& conn)
-{
-    std::string request = conn.read();      // blocks until data arrives
-    auto parsed = parse_request(request);
-    auto data = database.query(parsed.id);  // blocks until database responds
-    auto response = compute_response(data);
-    conn.write(response);                   // blocks until write completes
-}
+include::example$snippets/2a_foundations.cpp[tag=sync_request,indent=0]
 ----
 
 This code reads naturally from top to bottom. But while waiting for the network or database, this function blocks the entire thread. If you have thousands of concurrent connections, you would need thousands of threads, each consuming memory and requiring operating system scheduling.
@@ -98,18 +87,7 @@ The traditional solution uses callbacks:
 
 [source,cpp]
 ----
-void handle_request(connection& conn)
-{
-    conn.async_read([&conn](std::string request) {
-        auto parsed = parse_request(request);
-        database.async_query(parsed.id, [&conn](auto data) {
-            auto response = compute_response(data);
-            conn.async_write(response, [&conn]() {
-                // request complete
-            });
-        });
-    });
-}
+include::example$snippets/2a_foundations.cpp[tag=callback_request,indent=0]
 ----
 
 This code does not block. Each operation starts, registers a callback, and returns immediately. When the operation completes, the callback runs.
@@ -122,14 +100,7 @@ Coroutines restore linear code structure while maintaining asynchronous behavior
 
 [source,cpp]
 ----
-task<void> handle_request(connection& conn)
-{
-    std::string request = co_await conn.async_read();
-    auto parsed = parse_request(request);
-    auto data = co_await database.async_query(parsed.id);
-    auto response = compute_response(data);
-    co_await conn.async_write(response);
-}
+include::example$snippets/2a_foundations.cpp[tag=coroutine_request,indent=0]
 ----
 
 This code reads like the original blocking version. Local variables like `request`, `parsed`, and `data` exist naturally in their scope. Yet the function suspends at each `co_await` point, allowing other work to proceed while waiting.

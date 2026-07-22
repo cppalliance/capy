@@ -7,6 +7,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
+// tag::full[]
 #include "sender_awaitable.hpp"
 
 #include <boost/capy.hpp>
@@ -80,3 +81,4 @@ int main()
 
     std::cout << "result: " << answer << "\n";
 }
+// end::full[]

@@ -15,30 +15,34 @@
 // tied to thread_pool and can integrate with any scheduling system.
 //
 
+// tag::full[]
 #include <boost/capy.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <iostream>
 #include <queue>
 #include <thread>
-#include <vector>
 
 namespace capy = boost::capy;
 
 // A minimal single-threaded execution context.
 // Demonstrates how to satisfy the Executor concept
 // for any custom scheduling system.
+// tag::inherit[]
 class run_loop : public capy::execution_context
 {
+// end::inherit[]
     std::queue<std::coroutine_handle<>> queue_;
     std::thread::id owner_;
 
 public:
     class executor_type;
 
+    // tag::inherit[]
     run_loop()
         : execution_context(this)
     {
     }
+    // end::inherit[]
 
     ~run_loop()
     {
@@ -72,7 +76,9 @@ public:
     }
 
     executor_type get_executor() noexcept;
+// tag::inherit[]
 };
+// end::inherit[]
 
 class run_loop::executor_type
 {
@@ -95,14 +101,16 @@ public:
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
+    // tag::dispatch[]
     std::coroutine_handle<> dispatch(
         capy::continuation& c) const
     {
         if (loop_->is_running_on_this_thread())
-            return c.h;
+            return c.h;        // resume inline
         loop_->enqueue(c.h);
-        return std::noop_coroutine();
+        return std::noop_coroutine();  // defer
     }
+    // end::dispatch[]
 
     void post(capy::continuation& c) const
     {
@@ -123,7 +131,9 @@ run_loop::get_executor() noexcept
 }
 
 // Verify the concept is satisfied
+// tag::concept_check[]
 static_assert(capy::Executor<run_loop::executor_type>);
+// end::concept_check[]
 
 capy::io_task<int> compute(int x)
 {
@@ -149,12 +159,17 @@ int main()
     run_loop loop;
 
     // Launch using run_async, just like with thread_pool
+    // tag::drive[]
     capy::run_async(loop.get_executor())(run_tasks());
+    // end::drive[]
 
     // Drive the loop — all coroutines execute here
     std::cout << "Running event loop on main thread...\n";
+    // tag::drive[]
     loop.run();
+    // end::drive[]
 
     std::cout << "Event loop finished.\n";
     return 0;
 }
+// end::full[]

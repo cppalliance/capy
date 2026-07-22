@@ -18,13 +18,7 @@ This rule is what keeps shared state safe by default. Consider a connection hand
 
 [source,cpp]
 ----
-task<void> handle_client(connection& conn)
-{
-    auto req = co_await conn.read();
-    auto resp = process(req);
-    co_await conn.write(resp);
-    conn.stats.requests++;
-}
+include::example$snippets/4c_executors.cpp[tag=handle_client]
 ----
 
 Launch this on a strand, and every resumption—after `conn.read()` and after `conn.write()`—happens on that strand. The update to `conn.stats.requests` is therefore free of data races without any mutex.
@@ -45,22 +39,7 @@ An *executor* is an object that can schedule work for execution. An executor mus
 
 [source,cpp]
 ----
-concept Executor = requires(E const& ce, E const& ce2, continuation& c) {
-    // Equality comparable
-    { ce == ce2 } noexcept -> std::convertible_to<bool>;
-
-    // Owning context, returned as an lvalue reference to a type
-    // derived from execution_context
-    { ce.context() } noexcept;
-
-    // Work tracking
-    { ce.on_work_started() } noexcept;
-    { ce.on_work_finished() } noexcept;
-
-    // Scheduling
-    { ce.dispatch(c) } -> std::same_as<std::coroutine_handle<>>;
-    { ce.post(c) };
-};
+include::example$snippets/4c_executors.cpp[tag=executor_concept]
 ----
 
 === dispatch() vs post()
@@ -83,21 +62,10 @@ Returns a reference to the execution context that owns this executor. The contex
 
 [source,cpp]
 ----
-void schedule_work(executor_ref ex, continuation& c)
-{
-    ex.post(c);  // Works with any executor
-}
-
-int main()
-{
-    thread_pool pool;
-    auto pool_ex = pool.get_executor();
-    executor_ref ex = pool_ex;  // Type erasure; pool_ex must outlive ex
-
-    continuation c = /* ... */;
-    schedule_work(ex, c);
-}
+include::example$programs/4c_executors_executor_ref.cpp[tag=full]
 ----
+
+Here `make_suspended_work` launches a coroutine on the pool and returns the `continuation` it parked; posting that continuation through the type-erased `ex` resumes it.
 
 `executor_ref` stores a reference to the underlying executor—the original executor must outlive the `executor_ref`.
 
@@ -107,31 +75,14 @@ int main()
 
 [source,cpp]
 ----
-#include <boost/capy/ex/thread_pool.hpp>
-
-int main()
-{
-    // Create pool with 4 threads
-    thread_pool pool(4);
-    
-    // Get an executor for this pool
-    auto ex = pool.get_executor();
-    
-    // Launch work on the pool
-    run_async(ex)(my_task());
-
-    pool.join();  // wait for outstanding work to complete
-}
+include::example$programs/4c_executors_thread_pool.cpp[tag=full]
 ----
 
 === Constructor Parameters
 
 [source,cpp]
 ----
-thread_pool(
-    std::size_t num_threads = 0,
-    std::string_view thread_name_prefix = "capy-pool-"
-);
+include::example$snippets/4c_executors.cpp[tag=thread_pool_ctor,indent=0]
 ----
 
 * `num_threads` — Number of worker threads. If 0, uses hardware concurrency.
@@ -152,13 +103,7 @@ Custom execution contexts inherit from `execution_context`:
 
 [source,cpp]
 ----
-class my_context : public execution_context
-{
-public:
-    // ... custom implementation
-    
-    my_executor get_executor();
-};
+include::example$snippets/4c_executors.cpp[tag=my_context]
 ----
 
 == strand: Serialization Without Mutexes
@@ -167,33 +112,7 @@ A `strand` ensures that handlers are executed in order, with no two handlers exe
 
 [source,cpp]
 ----
-#include <boost/capy/ex/strand.hpp>
-
-class shared_resource
-{
-    strand<thread_pool::executor_type> strand_;
-    int counter_ = 0;
-    
-public:
-    explicit shared_resource(thread_pool& pool)
-        : strand_(pool.get_executor())
-    {
-    }
-    
-    task<int> increment()
-    {
-        // All increments are serialized through the strand
-        co_return co_await run(strand_)(do_increment());
-    }
-    
-private:
-    task<int> do_increment()
-    {
-        // No mutex needed—strand ensures exclusive access
-        ++counter_;
-        co_return counter_;
-    }
-};
+include::example$snippets/4c_executors.cpp[tag=shared_resource]
 ----
 
 === How Strands Work
@@ -220,9 +139,7 @@ For single-threaded applications, use a context with one thread:
 
 [source,cpp]
 ----
-thread_pool single_thread(1);
-auto ex = single_thread.get_executor();
-// All work runs on the single thread
+include::example$snippets/4c_executors.cpp[tag=single_thread,indent=0]
 ----
 
 === Multi-Threaded with Shared Data
@@ -231,11 +148,7 @@ For multi-threaded applications with shared data, use strands:
 
 [source,cpp]
 ----
-thread_pool pool(4);
-strand<thread_pool::executor_type> data_strand(pool.get_executor());
-
-// Use data_strand for all access to shared data
-// Use pool.get_executor() for independent work
+include::example$snippets/4c_executors.cpp[tag=data_strand,indent=0]
 ----
 
 === Multi-Threaded with Independent Work
@@ -244,13 +157,7 @@ For embarrassingly parallel work with no shared state:
 
 [source,cpp]
 ----
-thread_pool pool(4);
-auto ex = pool.get_executor();
-
-// Launch independent tasks directly on the pool
-std::vector<task<int>> tasks;
-for (int i = 0; i < 100; ++i)
-    run_async(ex)(independent_task(i));
+include::example$snippets/4c_executors.cpp[tag=independent_tasks,indent=0]
 ----
 
 == Reference

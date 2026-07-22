@@ -15,6 +15,7 @@
 // multi-threaded thread_pool; the strand guarantees serialized access.
 //
 
+// tag::full[]
 #include <boost/capy.hpp>
 #include <iostream>
 #include <latch>
@@ -28,7 +29,9 @@ int main()
     constexpr int increments_per_coro = 1000;
 
     capy::thread_pool pool(4);
+    // tag::strand[]
     capy::strand s{pool.get_executor()};
+    // end::strand[]
     std::latch done(1);
 
     auto on_complete = [&done](auto&&...) { done.count_down(); };
@@ -43,6 +46,7 @@ int main()
         done.count_down();
     };
 
+    // tag::counter[]
     int counter = 0;
 
     // Each coroutine increments the shared counter without locks.
@@ -54,6 +58,7 @@ int main()
                   << " finished, counter = " << counter << "\n";
         co_return capy::io_result<>{};
     };
+    // end::counter[]
 
     auto run_all = [&]() -> capy::task<> {
         std::vector<capy::io_task<>> tasks;
@@ -62,7 +67,9 @@ int main()
         (void) co_await capy::when_all(std::move(tasks));
     };
 
+    // tag::run_on_strand[]
     capy::run_async(s, on_complete, on_error)(run_all());
+    // end::run_on_strand[]
     done.wait();
 
     int expected = num_coroutines * increments_per_coro;
@@ -71,3 +78,4 @@ int main()
 
     return 0;
 }
+// end::full[]

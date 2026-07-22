@@ -7,6 +7,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
+// tag::full[]
 #ifndef ECHO_HPP
 #define ECHO_HPP
 
@@ -16,8 +17,11 @@
 namespace myapp {
 
 // Type-erased interface: no template dependencies
+// tag::session_decl[]
 boost::capy::task<> echo_session(boost::capy::any_stream& stream);
+// end::session_decl[]
 
 } // namespace myapp
 
 #endif
+// end::full[]

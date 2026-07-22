@@ -17,11 +17,7 @@ The `co_await` keyword suspends the coroutine and waits for some operation to co
 
 [source,cpp]
 ----
-task<std::string> fetch_page(std::string url)
-{
-    auto response = co_await http_get(url);  // suspends until HTTP completes
-    return response.body;                     // continues after resumption
-}
+include::example$snippets/2b_syntax.cpp[tag=co_await_example,indent=0]
 ----
 
 === co_yield
@@ -30,13 +26,7 @@ The `co_yield` keyword produces a value and suspends the coroutine. This pattern
 
 [source,cpp]
 ----
-generator<int> count_to(int n)
-{
-    for (int i = 1; i <= n; ++i)
-    {
-        co_yield i;  // produce value, suspend, resume when next value requested
-    }
-}
+include::example$snippets/2b_syntax.cpp[tag=co_yield_example,indent=0]
 ----
 
 === co_return
@@ -45,11 +35,7 @@ The `co_return` keyword completes the coroutine and optionally provides a final 
 
 [source,cpp]
 ----
-task<int> compute()
-{
-    int result = 42;
-    co_return result;  // completes the coroutine with value 42
-}
+include::example$snippets/2b_syntax.cpp[tag=co_return_example,indent=0]
 ----
 
 For coroutines that do not return a value, use `co_return;` without an argument.
@@ -65,24 +51,7 @@ Here is the minimal structure needed to create a coroutine:
 
 [source,cpp]
 ----
-#include <coroutine>
-
-struct SimpleCoroutine
-{
-    struct promise_type
-    {
-        SimpleCoroutine get_return_object() { return {}; }
-        std::suspend_never initial_suspend() { return {}; }
-        std::suspend_never final_suspend() noexcept { return {}; }
-        void return_void() {}
-        void unhandled_exception() {}
-    };
-};
-
-SimpleCoroutine my_first_coroutine()
-{
-    co_return;  // This makes it a coroutine
-}
+include::example$snippets/2b_syntax.cpp[tag=simple_coroutine,indent=0]
 ----
 
 The `promise_type` nested structure provides the minimum scaffolding the compiler needs. You will learn what each method does in xref:2.cpp20-coroutines/2c.machinery.adoc[Part III: Coroutine Machinery].
@@ -101,59 +70,7 @@ When you write `co_await expr`, the expression `expr` must be an *awaitable*—s
 
 [source,cpp]
 ----
-#include <coroutine>
-#include <iostream>
-
-struct ReturnObject
-{
-    struct promise_type
-    {
-        ReturnObject get_return_object() { return {}; }
-        std::suspend_never initial_suspend() { return {}; }
-        std::suspend_never final_suspend() noexcept { return {}; }
-        void return_void() {}
-        void unhandled_exception() {}
-    };
-};
-
-struct Awaiter
-{
-    std::coroutine_handle<>* handle_out;
-    
-    bool await_ready() { return false; }  // always suspend
-    
-    void await_suspend(std::coroutine_handle<> h)
-    {
-        *handle_out = h;  // store handle for later resumption
-    }
-    
-    void await_resume() {}  // nothing to return
-};
-
-ReturnObject counter(std::coroutine_handle<>* handle)
-{
-    Awaiter awaiter{handle};
-    
-    for (unsigned i = 0; ; ++i)
-    {
-        std::cout << "counter: " << i << std::endl;
-        co_await awaiter;
-    }
-}
-
-int main()
-{
-    std::coroutine_handle<> h;
-    counter(&h);
-    
-    for (int i = 0; i < 3; ++i)
-    {
-        std::cout << "main: resuming" << std::endl;
-        h();
-    }
-    
-    h.destroy();
-}
+include::example$programs/2b_syntax_counter.cpp[tag=full]
 ----
 
 *Output:*
@@ -192,11 +109,7 @@ These are useful building blocks for promise types and custom awaitables.
 
 [source,cpp]
 ----
-// suspend_always causes suspension at this point
-co_await std::suspend_always{};
-
-// suspend_never continues immediately without suspending
-co_await std::suspend_never{};
+include::example$snippets/2b_syntax.cpp[tag=standard_awaiters,indent=0]
 ----
 
 You have now learned the three coroutine keywords and how awaitables work. In the next section, you will learn about the promise type and coroutine handle—the machinery that makes coroutines function.

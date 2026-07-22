@@ -23,6 +23,7 @@
 
 constexpr std::size_t total_bytes = 1024;
 
+// tag::writer_reader[]
 capy::io_task<>
 writer(
     capy::any_stream& stream,
@@ -70,6 +71,7 @@ reader(
     std::printf("reader: done, read %zu bytes\n", read_total);
     co_return capy::io_result<>{};
 }
+// end::writer_reader[]
 
 capy::task<>
 run_example(

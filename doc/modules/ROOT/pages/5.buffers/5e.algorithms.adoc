@@ -15,19 +15,14 @@ Returns the total number of bytes across all buffers in a sequence:
 
 [source,cpp]
 ----
-template<ConstBufferSequence CB>
-std::size_t buffer_size(CB const& buffers);
+include::example$snippets/5e_algorithms.cpp[tag=buffer_size_signature]
 ----
 
 Example:
 
 [source,cpp]
 ----
-auto buf1 = make_buffer("hello");  // 5 bytes
-auto buf2 = make_buffer("world");  // 5 bytes
-auto combined = std::array{buf1, buf2};
-
-std::size_t total = buffer_size(combined);  // 10
+include::example$snippets/5e_algorithms.cpp[tag=buffer_size_example,indent=0]
 ----
 
 Note: `buffer_size` returns the sum of bytes, not the count of buffers.
@@ -38,8 +33,7 @@ Checks if a buffer sequence contains no data:
 
 [source,cpp]
 ----
-template<ConstBufferSequence CB>
-bool buffer_empty(CB const& buffers);
+include::example$snippets/5e_algorithms.cpp[tag=buffer_empty_signature]
 ----
 
 A buffer sequence is empty if:
@@ -49,11 +43,7 @@ A buffer sequence is empty if:
 
 [source,cpp]
 ----
-const_buffer empty_buf;
-buffer_empty(empty_buf);  // true
-
-const_buffer non_empty("data", 4);
-buffer_empty(non_empty);  // false
+include::example$snippets/5e_algorithms.cpp[tag=buffer_empty_example,indent=0]
 ----
 
 === buffer_length
@@ -62,19 +52,14 @@ Returns the number of buffers in a sequence:
 
 [source,cpp]
 ----
-template<ConstBufferSequence CB>
-std::size_t buffer_length(CB const& buffers);
+include::example$snippets/5e_algorithms.cpp[tag=buffer_length_signature]
 ----
 
 Example:
 
 [source,cpp]
 ----
-auto single = make_buffer("hello");
-buffer_length(single);  // 1
-
-auto arr = std::array{buf1, buf2, buf3};
-buffer_length(arr);  // 3
+include::example$snippets/5e_algorithms.cpp[tag=buffer_length_example,indent=0]
 ----
 
 Note the distinction:
@@ -93,9 +78,7 @@ Copies data from one buffer sequence to another:
 
 [source,cpp]
 ----
-template<MutableBufferSequence Target, ConstBufferSequence Source>
-std::size_t buffer_copy(Target const& target, Source const& source,
-                        std::size_t at_most = std::size_t(-1));
+include::example$snippets/5e_algorithms.cpp[tag=buffer_copy_signature]
 ----
 
 Returns the number of bytes copied.
@@ -104,13 +87,7 @@ Example:
 
 [source,cpp]
 ----
-char source_data[] = "hello world";
-char dest_data[20];
-
-const_buffer src(source_data, 11);
-mutable_buffer dst(dest_data, 20);
-
-std::size_t copied = buffer_copy(dst, src);  // 11
+include::example$snippets/5e_algorithms.cpp[tag=buffer_copy_example,indent=0]
 ----
 
 === Partial Copy with at_most
@@ -119,7 +96,7 @@ Limit the number of bytes copied:
 
 [source,cpp]
 ----
-std::size_t copied = buffer_copy(dst, src, 5);  // Copy at most 5 bytes
+include::example$snippets/5e_algorithms.cpp[tag=buffer_copy_at_most,indent=0]
 ----
 
 This is useful for implementing protocols with size limits.
@@ -130,66 +107,29 @@ This is useful for implementing protocols with size limits.
 
 [source,cpp]
 ----
-// Source: 3 buffers
-std::array<const_buffer, 3> src = {buf1, buf2, buf3};
-
-// Target: 2 buffers with different sizes
-std::array<mutable_buffer, 2> dst = {large_buf, small_buf};
-
-// Copies across buffer boundaries as needed
-std::size_t copied = buffer_copy(dst, src);
+include::example$snippets/5e_algorithms.cpp[tag=buffer_copy_cross,indent=0]
 ----
 
 The algorithm fills target buffers sequentially, reading from source buffers as needed, handling cases where a single source buffer spans multiple target buffers or vice versa.
 
 == Real I/O Patterns
 
+Partial-transfer loops use a `consuming_buffers` cursor: `data()`
+presents the not-yet-transferred remainder, and `consume(n)` advances
+past the bytes the stream reported.
+
 === Read Loop
 
 [source,cpp]
 ----
-template<ReadStream Stream, MutableBufferSequence Buffers>
-task<std::size_t> read_full(Stream& stream, Buffers buffers)
-{
-    auto remaining = buffer_slice(buffers);
-    std::size_t const total_size = buffer_size(buffers);
-    std::size_t total = 0;
-
-    while (total < total_size)
-    {
-        auto [ec, n] = co_await stream.read_some(remaining.data());
-        remaining.remove_prefix(n);
-        total += n;
-        if (ec)
-            co_return total;
-    }
-
-    co_return total;
-}
+include::example$snippets/5e_algorithms.cpp[tag=read_loop]
 ----
 
 === Write Loop
 
 [source,cpp]
 ----
-template<WriteStream Stream, ConstBufferSequence Buffers>
-task<std::size_t> write_full(Stream& stream, Buffers buffers)
-{
-    auto remaining = buffer_slice(buffers);
-    std::size_t const total_size = buffer_size(buffers);
-    std::size_t total = 0;
-
-    while (total < total_size)
-    {
-        auto [ec, n] = co_await stream.write_some(remaining.data());
-        remaining.remove_prefix(n);
-        total += n;
-        if (ec)
-            co_return total;
-    }
-
-    co_return total;
-}
+include::example$snippets/5e_algorithms.cpp[tag=write_loop]
 ----
 
 == Practical Benefits of Concept-Based Design
@@ -200,12 +140,7 @@ Data never moves unnecessarily. The buffer sequence points to existing data, and
 
 [source,cpp]
 ----
-std::string header = build_header();
-std::vector<char> body = load_body();
-
-// No copying—header and body are written directly
-std::array buffers = {make_buffer(header), make_buffer(body)};
-co_await write(stream, buffers);
+include::example$snippets/5e_algorithms.cpp[tag=zero_copy,indent=0]
 ----
 
 === Scatter/Gather Operations
@@ -214,8 +149,7 @@ Multiple buffers transfer in a single operation:
 
 [source,cpp]
 ----
-std::array buffers = {header_buf, separator_buf, body_buf, footer_buf};
-co_await write(stream, buffers);  // Single system call
+include::example$snippets/5e_algorithms.cpp[tag=scatter_gather,indent=0]
 ----
 
 === Custom Allocators and Memory-Mapped Buffers
@@ -224,10 +158,7 @@ Any memory region can be a buffer:
 
 [source,cpp]
 ----
-// Memory-mapped file
-void* mapped = mmap(...);
-const_buffer file_buf(mapped, file_size);
-co_await write(socket, file_buf);  // Zero-copy network transmission
+include::example$snippets/5e_algorithms.cpp[tag=mmap_buffer,indent=0]
 ----
 
 === User-Defined Buffer Types
@@ -236,16 +167,11 @@ Create custom types that satisfy the concepts:
 
 [source,cpp]
 ----
-class chunked_buffer_sequence
-{
-    std::vector<std::vector<char>> chunks_;
-    
-public:
-    auto begin() const { /* return iterator over chunks as buffers */ }
-    auto end() const { /* return end iterator */ }
-};
-// Satisfies ConstBufferSequence—works with all algorithms
+include::example$snippets/5e_algorithms.cpp[tag=custom_sequence]
 ----
+
+Here `chunk_iterator` is a small bidirectional iterator whose
+`operator*` returns each chunk as a `const_buffer`.
 
 == Reference
 
@@ -258,6 +184,9 @@ public:
 
 | `<boost/capy/buffers/buffer_copy.hpp>`
 | Copy algorithm
+
+| `<boost/capy/buffers/consuming_buffers.hpp>`
+| Consumption cursor for partial-transfer loops
 |===
 
 You have now learned how to measure and copy buffer sequences. Continue to xref:6.streams/6.intro.adoc[Stream Concepts] to learn how coroutines transfer data through streams.

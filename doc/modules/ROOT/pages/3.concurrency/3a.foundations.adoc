@@ -36,21 +36,7 @@ The `<thread>` header provides `std::thread`, the standard way to create threads
 
 [source,cpp]
 ----
-#include <iostream>
-#include <thread>
-
-void say_hello()
-{
-    std::cout << "Hello from a new thread!\n";
-}
-
-int main()
-{
-    std::thread t(say_hello);
-    t.join();
-    std::cout << "Back in the main thread.\n";
-    return 0;
-}
+include::example$programs/3a_foundations_hello.cpp[tag=full]
 ----
 
 The `std::thread` constructor takes a function (or any *callable*) and immediately starts a new thread running that function. Two bookmarks now move through your code simultaneously.
@@ -61,25 +47,7 @@ The `join()` call makes the main thread wait until thread `t` finishes. Without 
 
 [source,cpp]
 ----
-#include <iostream>
-#include <thread>
-
-void count_up(char const* name)
-{
-    for (int i = 1; i <= 5; ++i)
-        std::cout << name << ": " << i << "\n";
-}
-
-int main()
-{
-    std::thread alice(count_up, "Alice");
-    std::thread bob(count_up, "Bob");
-    
-    alice.join();
-    bob.join();
-    
-    return 0;
-}
+include::example$programs/3a_foundations_parallel.cpp[tag=full]
 ----
 
 Run this and you might see output like:
@@ -114,20 +82,7 @@ Lambda expressions are often the clearest choice:
 
 [source,cpp]
 ----
-#include <iostream>
-#include <thread>
-
-int main()
-{
-    int x = 42;
-    
-    std::thread t([x]() {
-        std::cout << "The value is: " << x << "\n";
-    });
-    
-    t.join();
-    return 0;
-}
+include::example$programs/3a_foundations_lambda.cpp[tag=full]
 ----
 
 The lambda captures `x` by value—it copies `x` into the lambda. By default, `std::thread` copies all arguments passed to it. Even if your function declares a reference parameter, the thread receives a copy.
@@ -136,24 +91,7 @@ To pass by reference, use `std::ref()`:
 
 [source,cpp]
 ----
-#include <iostream>
-#include <thread>
-
-void increment(int& value)
-{
-    ++value;
-}
-
-int main()
-{
-    int counter = 0;
-    
-    std::thread t(increment, std::ref(counter));
-    t.join();
-    
-    std::cout << "Counter is now: " << counter << "\n";
-    return 0;
-}
+include::example$programs/3a_foundations_ref.cpp[tag=full]
 ----
 
 Without `std::ref()`, the thread would modify a copy, leaving `counter` unchanged.
@@ -164,26 +102,7 @@ For member functions, pass a pointer to the function and an instance:
 
 [source,cpp]
 ----
-#include <iostream>
-#include <thread>
-#include <string>
-
-class Greeter
-{
-public:
-    void greet(std::string const& name)
-    {
-        std::cout << "Hello, " << name << "!\n";
-    }
-};
-
-int main()
-{
-    Greeter g;
-    std::thread t(&Greeter::greet, &g, "World");
-    t.join();
-    return 0;
-}
+include::example$programs/3a_foundations_member.cpp[tag=full]
 ----
 
 The `&Greeter::greet` syntax names the member function; `&g` provides the instance to call it on.
@@ -198,9 +117,7 @@ Every thread must be either *joined* or *detached* before its `std::thread` obje
 
 [source,cpp]
 ----
-std::thread t(do_work);
-// ... do other things ...
-t.join();  // wait for do_work to finish
+include::example$snippets/3a_foundations.cpp[tag=join,indent=0]
 ----
 
 === detach()
@@ -209,9 +126,7 @@ Sometimes you want a thread to run independently, continuing even after the `std
 
 [source,cpp]
 ----
-std::thread t(background_task);
-t.detach();  // thread runs independently
-// t is now "empty"—no longer associated with a thread
+include::example$snippets/3a_foundations.cpp[tag=detach,indent=0]
 ----
 
 A detached thread becomes a *daemon thread*. It runs until it finishes or the program exits. You lose all ability to wait for it or check its status. Use detachment sparingly—usually for fire-and-forget background work.
@@ -222,12 +137,7 @@ Before joining or detaching, you can check if a thread is *joinable*:
 
 [source,cpp]
 ----
-std::thread t(some_function);
-
-if (t.joinable())
-{
-    t.join();
-}
+include::example$snippets/3a_foundations.cpp[tag=joinable,indent=0]
 ----
 
 A thread is joinable if it represents an actual thread of execution. After joining or detaching, or after default construction, a `std::thread` is not joinable.
