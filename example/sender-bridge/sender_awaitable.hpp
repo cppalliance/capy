@@ -122,13 +122,16 @@ struct bridge_receiver
         return {env_->stop_token};
     }
 
+    // tag::set_value[]
     template<class... Args>
     void set_value(Args&&... args) && noexcept
     {
         result_->template emplace<1>(
             std::forward<Args>(args)...);
+        // resume on the caller's executor
         env_->executor.post(cont_);
     }
+    // end::set_value[]
 
     template<class E>
     void set_error(E&& e) && noexcept

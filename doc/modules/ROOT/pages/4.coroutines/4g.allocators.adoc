@@ -25,10 +25,7 @@ This is why `run_async` uses two-call syntax:
 
 [source,cpp]
 ----
-run_async(executor)(my_task());
-//        ↑         ↑
-//        1. Sets    2. Task allocated
-//        TLS        using TLS allocator
+include::example$snippets/4g_allocators.cpp[tag=two_call,indent=0]
 ----
 
 == The Window
@@ -49,8 +46,7 @@ To prevent this, any code that calls `.resume()` on a coroutine handle must use 
 
 [source,cpp]
 ----
-// In your event loop or dispatch path:
-capy::safe_resume(h);   // saves and restores TLS around h.resume()
+include::example$snippets/4g_allocators.cpp[tag=safe_resume,indent=0]
 ----
 
 `safe_resume` saves the current thread-local allocator, calls `h.resume()`, then restores the saved value. This makes TLS behave like a stack: nested resumes cannot spoil the outer value. All of Capy's built-in executors (`thread_pool`, strands, `blocking_context`) use `safe_resume` internally. Custom executor event loops must do the same -- see xref:8.examples/8n.custom-executor.adoc[Custom Executor] for an example.
@@ -59,7 +55,7 @@ capy::safe_resume(h);   // saves and restores TLS around h.resume()
 
 Custom allocators must meet the usual {cpp} allocator requirements, or be a `std::pmr::memory_resource*`. The library does not expose a separate public concept for them; a value-type allocator works as a frame allocator when it provides, illustratively:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 // Illustrative requirements — not a named public concept:
 typename A::value_type;
@@ -77,18 +73,14 @@ Pass an allocator to `run_async`:
 
 [source,cpp]
 ----
-std::pmr::monotonic_buffer_resource resource;
-std::pmr::polymorphic_allocator<std::byte> alloc(&resource);
-
-run_async(executor, alloc)(my_task());
+include::example$snippets/4g_allocators.cpp[tag=run_async_pmr_alloc,indent=0]
 ----
 
 Or pass a `memory_resource*` directly:
 
 [source,cpp]
 ----
-std::pmr::monotonic_buffer_resource resource;
-run_async(executor, &resource)(my_task());
+include::example$snippets/4g_allocators.cpp[tag=run_async_memory_resource,indent=0]
 ----
 
 === Default Allocator
@@ -113,13 +105,7 @@ Most users never need to allocate coroutine frames manually -- `task<T>` and the
 
 [source,cpp]
 ----
-struct my_coroutine
-{
-    struct promise_type : capy::frame_alloc_mixin
-    {
-        // get_return_object, initial_suspend, ...
-    };
-};
+include::example$snippets/4g_allocators.cpp[tag=frame_alloc_mixin]
 ----
 
 `frame_alloc_mixin` (in `<boost/capy/ex/frame_alloc_mixin.hpp>`) supplies `operator new` and `operator delete` that:
@@ -142,12 +128,7 @@ Capy's `task<T>` uses the `[[clang::coro_await_elidable]]` attribute (when avail
 
 [source,cpp]
 ----
-template<typename T = void>
-struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
-    task
-{
-    // ...
-};
+include::example$snippets/4g_allocators.cpp[tag=task_elidable]
 ----
 
 === When HALO Applies
@@ -156,12 +137,7 @@ HALO is most effective for immediately-awaited tasks:
 
 [source,cpp]
 ----
-// HALO can apply: task is awaited immediately
-int result = co_await compute();
-
-// HALO cannot apply: task escapes to storage
-auto t = compute();
-tasks.push_back(std::move(t));
+include::example$snippets/4g_allocators.cpp[tag=halo_patterns,indent=0]
 ----
 
 === Measuring HALO Effectiveness
@@ -184,18 +160,7 @@ When launching many short-lived tasks together, a monotonic buffer resource can 
 
 [source,cpp]
 ----
-void process_batch(std::vector<item> const& items)
-{
-    std::array<std::byte, 64 * 1024> buffer;
-    std::pmr::monotonic_buffer_resource resource(
-        buffer.data(), buffer.size());
-    
-    for (auto const& item : items)
-    {
-        run_async(executor, &resource)(process(item));
-    }
-    // All frames deallocated when resource goes out of scope
-}
+include::example$snippets/4g_allocators.cpp[tag=batch_allocator]
 ----
 
 === Scope Variables to Reduce Frame Size
@@ -206,59 +171,18 @@ Wrapping buffer usage in explicit braces can dramatically reduce frame size:
 
 [source,cpp]
 ----
-// BAD: buf lives in frame across all subsequent co_awaits
-task<> process(stream& s)
-{
-    char buf[4096];
-    auto [ec, n] = co_await s.read_some(buf);
-    co_await do_work(buf, n);
-    co_await s.write_some(reply);   // buf wastes 4K in frame
-}
+include::example$snippets/4g_allocators.cpp[tag=frame_scope_bad]
 
-// GOOD: braces end buf's lifetime before next suspend
-task<> process(stream& s)
-{
-    std::size_t n;
-    {
-        char buf[4096];
-        auto [ec, n_] = co_await s.read_some(buf);
-        n = n_;
-        co_await do_work(buf, n);
-    }
-    co_await s.write_some(reply);  // 4K saved
-}
+include::example$snippets/4g_allocators.cpp[tag=frame_scope_good]
 ----
 
 This technique also enables the compiler to *overlap* variables in the frame. When two variables have completely non-overlapping lifetimes (in separate scoped blocks), the compiler can reuse the same frame memory for both — even on Clang:
 
 [source,cpp]
 ----
-// BAD: both arrays in frame simultaneously (8K)
-task<> pipeline(stream& in, stream& out)
-{
-    char read_buf[4096];
-    auto [ec1, n] = co_await in.read_some(read_buf);
+include::example$snippets/4g_allocators.cpp[tag=pipeline_overlap_bad]
 
-    char write_buf[4096];
-    prepare(write_buf, read_buf, n);
-    co_await out.write_some(write_buf);
-}
-
-// GOOD: non-overlapping scopes allow frame reuse (4K)
-task<> pipeline(stream& in, stream& out)
-{
-    std::size_t n;
-    {
-        char read_buf[4096];
-        auto [ec, n_] = co_await in.read_some(read_buf);
-        n = n_;
-    }
-    {
-        char write_buf[4096];
-        prepare(write_buf, n);
-        co_await out.write_some(write_buf);
-    }
-}
+include::example$snippets/4g_allocators.cpp[tag=pipeline_overlap_good]
 ----
 
 In the second version, `read_buf` and `write_buf` never coexist, so the compiler can place them at the same frame offset — halving the frame's buffer footprint. This optimization applies to any variables with non-overlapping lifetimes, not just arrays.

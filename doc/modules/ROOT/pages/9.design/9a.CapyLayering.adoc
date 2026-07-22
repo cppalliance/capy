@@ -24,9 +24,7 @@ The first layer is concepts. These are the template-based interfaces: `ReadStrea
 
 [source,cpp]
 ----
-template<WriteStream S, ConstBufferSequence CB>
-io_task<std::size_t>
-write(S& stream, CB buffers);
+include::example$snippets/9a_capy_layering.cpp[tag=write_signature,indent=0]
 ----
 
 The cost is that templates propagate. Every caller sees the full implementation. Compile times grow. You cannot hide this behind a `.cpp` file.
@@ -35,18 +33,7 @@ The second layer is type-erased wrappers. `any_stream`, `any_read_stream`, `any_
 
 [source,cpp]
 ----
-task<> echo(any_stream& stream)
-{
-    char buf[1024];
-    for(;;)
-    {
-        auto [ec, n] = co_await stream.read_some(
-            make_buffer(buf));
-        if(ec)
-            co_return;
-        co_await write(stream, const_buffer(buf, n));
-    }
-}
+include::example$snippets/9a_capy_layering.cpp[tag=any_stream_echo,indent=0]
 ----
 
 The cost is a virtual call per I/O operation. For operations dominated by syscalls and network latency, this cost is invisible. For tight loops over in-memory buffers, it matters.
@@ -55,13 +42,7 @@ The third layer is coroutine type erasure via `task<>`. This is the most powerfu
 
 [source,cpp]
 ----
-class connection_base {
-public:
-    task<> run();
-protected:
-    virtual task<> do_handshake() = 0;
-    virtual task<> do_shutdown() = 0;
-};
+include::example$snippets/9a_capy_layering.cpp[tag=connection_base,indent=0]
 ----
 
 The SSL derived class performs a TLS handshake inside `do_handshake()`. The TCP derived class just connects. The base class implements all the shared business logic against an `any_stream&` and never knows what is underneath.
@@ -97,7 +78,7 @@ The derived class pattern is the practical application of everything described a
 
 Each derived class lives in its own translation unit. The linker only pulls in what is used. Users who need only TCP link only TCP code. Users who need SSL link the SSL translation unit. No variant that pulls in all transport code. No enum and switch that ties everything together. The type system enforces the separation:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 // User who needs only plain TCP
 tcp_connection conn(ctx);

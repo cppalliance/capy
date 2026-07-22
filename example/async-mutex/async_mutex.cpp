@@ -15,6 +15,7 @@
 // the mutex ensures mutual exclusion and FIFO acquisition order.
 //
 
+// tag::full[]
 #include <boost/capy.hpp>
 #include <iostream>
 #include <latch>
@@ -40,12 +41,15 @@ int main()
         done.count_down();
     };
 
+    // tag::mutex[]
     capy::async_mutex mtx;
+    // end::mutex[]
     int acquisition_order = 0;
     std::vector<int> order_log;
 
     auto worker = [&](int id) -> capy::io_task<> {
         std::cout << "Worker " << id << " waiting for lock\n";
+        // tag::scoped_lock[]
         auto [ec, guard] = co_await mtx.scoped_lock();
         if (ec)
         {
@@ -53,6 +57,7 @@ int main()
                       << " canceled: " << ec.message() << "\n";
             co_return capy::io_result<>{ec};
         }
+        // end::scoped_lock[]
 
         int seq = acquisition_order++;
         order_log.push_back(id);
@@ -87,3 +92,4 @@ int main()
 
     return 0;
 }
+// end::full[]

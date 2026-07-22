@@ -22,15 +22,7 @@ The obvious solution seems to be a boolean flag:
 
 [source,cpp]
 ----
-std::atomic<bool> should_cancel{false};
-
-void worker()
-{
-    while (!should_cancel)
-    {
-        do_work();
-    }
-}
+include::example$snippets/4e_cancellation.cpp[tag=naive_flag,indent=0]
 ----
 
 This approach has problems:
@@ -67,25 +59,7 @@ The *Observer Registration*. An RAII object that registers a callback to run whe
 
 [source,cpp]
 ----
-#include <stop_token>
-#include <iostream>
-
-void example()
-{
-    std::stop_source source;
-    
-    // Create tokens (distribute notification capability)
-    std::stop_token token1 = source.get_token();
-    std::stop_token token2 = source.get_token();  // Same underlying state
-    
-    // Register callbacks (observers)
-    std::stop_callback cb1(token1, []{ std::cout << "Observer 1 notified\n"; });
-    std::stop_callback cb2(token2, []{ std::cout << "Observer 2 notified\n"; });
-    
-    std::cout << "Before signal\n";
-    source.request_stop();  // Triggers all callbacks
-    std::cout << "After signal\n";
-}
+include::example$snippets/4e_cancellation.cpp[tag=observer_pattern,indent=0]
 ----
 
 *Output:*
@@ -103,13 +77,7 @@ If a callback is registered after `request_stop()` was already called, the callb
 
 [source,cpp]
 ----
-std::stop_source source;
-source.request_stop();  // Already signaled
-
-// Callback runs in constructor, not later
-std::stop_callback cb(source.get_token(), []{ 
-    std::cout << "Runs immediately!\n"; 
-});
+include::example$snippets/4e_cancellation.cpp[tag=immediate_invocation,indent=0]
 ----
 
 This ensures observers never miss the signal, regardless of registration timing.
@@ -148,19 +116,7 @@ To "reset," create an entirely new `stop_source`:
 
 [source,cpp]
 ----
-std::stop_source source;
-auto token = source.get_token();
-
-// ... distribute token to workers ...
-
-source.request_stop();  // Triggered, now permanently signaled
-
-// To "reset": create new source
-source = std::stop_source{};  // New shared state
-// Old tokens are now orphaned (stop_possible() returns false)
-
-// Must redistribute new tokens to ALL holders of the old token
-auto new_token = source.get_token();
+include::example$snippets/4e_cancellation.cpp[tag=reset_workaround,indent=0]
 ----
 
 This is manual and error-prone. Any code still holding the old token will not receive new signals.
@@ -192,17 +148,7 @@ Capy propagates stop tokens downward through `co_await`. When you await a task, 
 
 [source,cpp]
 ----
-task<> parent()
-{
-    // Our stop token is automatically passed to child
-    co_await child();
-}
-
-task<> child()
-{
-    // Receives parent's stop token via IoAwaitable protocol
-    auto token = co_await this_coro::stop_token;  // Access current token
-}
+include::example$snippets/4e_cancellation.cpp[tag=token_propagation,indent=0]
 ----
 
 No manual threading—the protocol handles it.
@@ -213,15 +159,7 @@ Inside a task, use `co_await this_coro::stop_token` to access the current stop t
 
 [source,cpp]
 ----
-task<> cancellable_work()
-{
-    auto token = co_await this_coro::stop_token;
-
-    while (!token.stop_requested())
-    {
-        co_await do_chunk_of_work();
-    }
-}
+include::example$snippets/4e_cancellation.cpp[tag=access_stop_token,indent=0]
 ----
 
 === Why Not `coroutine_handle::destroy()`?
@@ -241,18 +179,7 @@ The rule:
 
 [source,cpp]
 ----
-task<> process_items(std::vector<Item> const& items)
-{
-    auto token = co_await this_coro::stop_token;
-
-    for (auto const& item : items)
-    {
-        if (token.stop_requested())
-            co_return;  // Exit early
-        
-        co_await process(item);
-    }
-}
+include::example$snippets/4e_cancellation.cpp[tag=check_token,indent=0]
 ----
 
 === Cleanup with RAII
@@ -261,17 +188,7 @@ RAII ensures resources are released on early exit:
 
 [source,cpp]
 ----
-task<> with_resource()
-{
-    auto resource = acquire_resource();  // RAII wrapper
-    auto token = co_await this_coro::stop_token;
-    
-    while (!token.stop_requested())
-    {
-        co_await use_resource(resource);
-    }
-    // resource destructor runs regardless of how we exit
-}
+include::example$snippets/4e_cancellation.cpp[tag=raii_cleanup,indent=0]
 ----
 
 === The canceled Convention
@@ -280,18 +197,7 @@ When cancellation causes an operation to fail, the conventional error code is `e
 
 [source,cpp]
 ----
-task<std::string> fetch_with_cancel()
-{
-    auto token = co_await this_coro::stop_token;
-
-    if (token.stop_requested())
-    {
-        throw std::system_error(
-            make_error_code(error::canceled));
-    }
-
-    co_return co_await do_fetch();
-}
+include::example$snippets/4e_cancellation.cpp[tag=canceled_convention,indent=0]
 ----
 
 == Part 7: OS Integration
@@ -311,15 +217,7 @@ A `std::stop_callback` fires synchronously on whatever thread calls `request_sto
 
 [source,cpp]
 ----
-// WRONG — causes use-after-free
-std::optional<std::stop_callback<std::coroutine_handle<>>> stop_cb;
-
-std::coroutine_handle<> await_suspend(
-    std::coroutine_handle<> h, io_env const* env)
-{
-    stop_cb.emplace(env->stop_token, h);  // Resumes inline!
-    return std::noop_coroutine();
-}
+include::example$snippets/4e_cancellation.cpp[tag=inline_resume_wrong,indent=0]
 ----
 
 When an external thread calls `request_stop()`, `h.resume()` executes the coroutine on that thread. The coroutine machinery sets the thread-local frame allocator to the executor's allocator—poisoning the calling thread's TLS. When the executor's pool destructs, the TLS pointer becomes dangling. The next coroutine allocation on that thread dereferences freed memory.
@@ -332,30 +230,7 @@ Post the coroutine handle through the executor instead of resuming it inline. Th
 
 [source,cpp]
 ----
-struct my_stoppable_awaitable
-{
-    mutable continuation cont_;
-    // ... other members for the async operation ...
-
-    bool await_ready() { return false; }
-
-    std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> h, io_env const* env)
-    {
-        if (env->stop_token.stop_requested())
-            return h;  // Already cancelled
-
-        cont_.h = h;
-        auto ex = env->executor;
-        stop_cb_.emplace(env->stop_token,
-            [this, ex]() mutable noexcept { ex.post(cont_); });
-
-        start_async_operation(h, env);
-        return std::noop_coroutine();
-    }
-
-    void await_resume() { /* check result or throw */ }
-};
+include::example$snippets/4e_cancellation.cpp[tag=stoppable_awaitable,indent=0]
 ----
 
 When `request_stop()` fires the callback, the coroutine handle is posted to the executor's queue instead of resumed inline. The executor's worker thread picks it up and resumes it in the correct execution context.
@@ -372,34 +247,7 @@ of that race; a user thread supplies the clock:
 
 [source,cpp]
 ----
-struct fetch_channel
-{
-    capy::async_waker fetch_ready;
-    std::atomic<bool> cancelled{false};
-    std::string result;
-};
-
-// One side of the race: completes when the fetch worker thread
-// wakes fetch_ready. If the deadline wins first, when_any's stop
-// request cancels the wait; flag the worker so it stops early.
-capy::io_task<std::string> await_fetch(fetch_channel& ch)
-{
-    auto [ec] = co_await ch.fetch_ready.wait();
-    if (ec)
-    {
-        ch.cancelled.store(true);
-        co_return capy::io_result<std::string>{ec, {}};
-    }
-    co_return capy::io_result<std::string>{{}, std::move(ch.result)};
-}
-
-// The other side of the race: completes once whatever plays the
-// clock wakes the waker.
-capy::io_task<> deadline(capy::async_waker& waker)
-{
-    auto [ec] = co_await waker.wait();
-    co_return capy::io_result<>{ec};
-}
+include::example$snippets/4e_cancellation.cpp[tag=racing_deadline,indent=0]
 ----
 
 `when_any(await_fetch(ch), deadline(waker))` returns as soon as either side
@@ -419,32 +267,7 @@ Connect UI cancellation to stop tokens. Pass the token through `run_async` so it
 
 [source,cpp]
 ----
-class download_manager
-{
-    executor_ref executor_;
-    std::stop_source stop_source_;
-
-public:
-    void start_download(std::string url)
-    {
-        // Token propagated via io_env, not as a function argument
-        run_async(executor_, stop_source_.get_token())(download(url));
-    }
-
-    void cancel()
-    {
-        stop_source_.request_stop();
-    }
-};
-
-task<void> download(std::string url)
-{
-    auto token = co_await this_coro::stop_token;  // From run_async's io_env
-    while (!token.stop_requested())
-    {
-        co_await fetch_next_chunk(url);
-    }
-}
+include::example$snippets/4e_cancellation.cpp[tag=user_cancellation,indent=0]
 ----
 
 === Graceful Shutdown
@@ -453,30 +276,7 @@ Cancel all pending work during shutdown:
 
 [source,cpp]
 ----
-class server
-{
-    std::stop_source shutdown_source_;
-    
-public:
-    void shutdown()
-    {
-        shutdown_source_.request_stop();
-        // All pending operations receive stop request
-    }
-    
-    task<> handle_connection(connection conn)
-    {
-        auto token = shutdown_source_.get_token();
-        
-        while (!token.stop_requested())
-        {
-            co_await process_request(conn);
-        }
-        
-        // Graceful cleanup
-        co_await send_goodbye(conn);
-    }
-};
+include::example$snippets/4e_cancellation.cpp[tag=graceful_shutdown,indent=0]
 ----
 
 === when_any Cancellation
@@ -489,7 +289,7 @@ The stop token mechanism is part of the {cpp} standard library:
 
 [source,cpp]
 ----
-#include <stop_token>
+include::example$snippets/4e_cancellation.cpp[tag=include_stop_token,indent=0]
 ----
 
 Key types:

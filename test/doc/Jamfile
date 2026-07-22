@@ -1,0 +1,43 @@
+#
+# Copyright (c) 2026 Steve Gerbino
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/capy
+#
+
+import testing ;
+
+project
+    : requirements
+      $(c20-requires)
+      <library>/boost/capy//boost_capy
+      <include>../..
+      <warnings>extra
+      <warnings-as-errors>on
+    ;
+
+run [ glob snippets/*.cpp ]
+    ../../extra/test_suite/test_main.cpp
+    ../../extra/test_suite/test_suite.cpp
+    : : : <include>../../extra/test_suite
+    : boost_capy_doc_tests ;
+
+# Bug-demo programs (races, deadlocks) are compiled but never run.
+local compile-only = 3b_synchronization_race ;
+
+# Concurrent std::cout in teaching programs is race-free per the
+# standard but unannotated in Apple's libc++; test/tsan.supp carries
+# the corresponding TSan suppressions.
+for local f in [ glob programs/*.cpp ]
+{
+    if $(f:B) in $(compile-only)
+    {
+        compile $(f) : : doc_$(f:B) ;
+    }
+    else
+    {
+        run $(f) : target-name doc_$(f:B) ;
+    }
+}

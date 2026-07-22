@@ -15,36 +15,12 @@ Type-erased wrappers break this dependency:
 
 [source,cpp]
 ----
-// protocol.hpp - No template dependencies
-#pragma once
-#include <boost/capy/io/any_stream.hpp>
-#include <boost/capy/task.hpp>
-
-// Declaration only - no implementation details
-task<> handle_protocol(any_stream& stream);
+include::example$snippets/protocol.hpp[tag=protocol_header,indent=0]
 ----
 
 [source,cpp]
 ----
-// protocol.cpp - Implementation isolated here
-#include "protocol.hpp"
-#include <boost/capy/read.hpp>
-#include <boost/capy/write.hpp>
-
-task<> handle_protocol(any_stream& stream)
-{
-    char buf[1024];
-    
-    for (;;)
-    {
-        auto [ec, n] = co_await stream.read_some(make_buffer(buf));
-        if (ec)
-            co_return;
-        
-        // Process and respond...
-        co_await write(stream, make_buffer(response));
-    }
-}
+include::example$snippets/6f_isolation.cpp[tag=protocol_impl,indent=0]
 ----
 
 Changes to `protocol.cpp` only recompile that file. The header is stable.
@@ -55,23 +31,14 @@ Changes to `protocol.cpp` only recompile that file. The header is stable.
 
 [source,cpp]
 ----
-// Old approach: template propagates everywhere
-template<typename Stream>
-task<> handle_protocol(Stream& stream);
-
-// Every caller instantiates for their stream type
-// Changes force recompilation of all callers
+include::example$snippets/6f_isolation.cpp[tag=templates_before,indent=0]
 ----
 
 === After (Type Erasure at Boundary)
 
 [source,cpp]
 ----
-// New approach: concrete signature
-task<> handle_protocol(any_stream& stream);
-
-// Implementation compiles once
-// Callers only depend on the signature
+include::example$snippets/6f_isolation.cpp[tag=type_erasure_after,indent=0]
 ----
 
 === Measured Impact
@@ -89,32 +56,14 @@ Type erasure decouples your code from specific transport implementations:
 
 [source,cpp]
 ----
-// Your library code
-task<> send_message(any_write_stream& stream, message const& msg)
-{
-    co_await write(stream, make_buffer(msg.header));
-    co_await write(stream, make_buffer(msg.body));
-}
+include::example$snippets/6f_isolation.cpp[tag=send_message,indent=0]
 ----
 
 Callers provide any conforming implementation:
 
 [source,cpp]
 ----
-// TCP socket
-tcp::socket socket;
-any_write_stream stream{&socket};  // references socket
-send_message(stream, msg);
-
-// TLS stream
-tls::stream tls;
-any_write_stream stream{&tls};  // references tls
-send_message(stream, msg);
-
-// Test mock
-test::write_stream mock;
-any_write_stream stream{&mock};  // references mock
-send_message(stream, msg);
+include::example$snippets/6f_isolation.cpp[tag=callers,indent=0]
 ----
 
 Same `send_message` function, different transports: compile once, use everywhere.
@@ -125,22 +74,14 @@ Same `send_message` function, different transports: compile once, use everywhere
 
 [source,cpp]
 ----
-// Good: accepts any stream
-task<> process(any_stream& stream);
-
-// Avoid: forces specific type
-task<> process(tcp::socket& socket);
+include::example$snippets/6f_isolation.cpp[tag=accept_type_erased,indent=0]
 ----
 
 === Wrap at Call Site
 
 [source,cpp]
 ----
-void caller(tcp::socket& socket)
-{
-    any_stream stream{&socket};  // Wrap by reference here
-    process(stream);             // Call with erased type
-}
+include::example$snippets/6f_isolation.cpp[tag=wrap_call_site,indent=0]
 ----
 
 The wrapper creation is explicit and localized.
@@ -149,13 +90,9 @@ The wrapper creation is explicit and localized.
 
 [source,cpp]
 ----
-// OK: factory returns concrete type
-tcp::socket create_socket();
+include::example$snippets/6f_isolation.cpp[tag=return_concrete_decl,indent=0]
 
-// Then caller wraps if needed
-auto socket = create_socket();
-any_stream stream{&socket};  // reference; socket must outlive stream
-// or: any_stream stream{std::move(socket)};  // wrapper takes ownership
+include::example$snippets/6f_isolation.cpp[tag=return_concrete_use,indent=0]
 ----
 
 Returning type-erased values forces heap allocation. Return concrete types when the caller knows what they need.
@@ -164,47 +101,14 @@ Returning type-erased values forces heap allocation. Return concrete types when 
 
 [source,cpp]
 ----
-// http_client.hpp
-#pragma once
-#include <boost/capy/io/any_read_stream.hpp>
-
-struct http_request
-{
-    std::string method;
-    std::string url;
-    std::map<std::string, std::string> headers;
-};
-
-struct http_response
-{
-    int status_code;
-    std::map<std::string, std::string> headers;
-    any_read_stream body;  // Body is read as a stream
-};
-
-// Send request, receive response
-// Works with any transport that provides any_stream
-task<http_response> send_request(any_stream& conn, http_request const& req);
+include::example$snippets/http_client.hpp[tag=http_client_header,indent=0]
 ----
 
 Users don't need to know how HTTP is implemented:
 
 [source,cpp]
 ----
-// User code
-tcp::socket socket;
-// ... connect ...
-
-any_stream conn{&socket};  // references socket
-auto response = co_await send_request(conn, {
-    .method = "GET",
-    .url = "/api/data"
-});
-
-// Read body through type-erased source
-char storage[4096];
-mutable_buffer buf(storage, sizeof(storage));
-auto [ec, n] = co_await response.body.read_some(buf);
+include::example$snippets/6f_isolation.cpp[tag=user_code,indent=0]
 ----
 
 The HTTP library is isolated from transport details. It compiles once. Users bring their own transport.
@@ -230,5 +134,6 @@ Type-erased wrappers are in `<boost/capy/io/>`:
 
 * `any_stream`
 * `any_read_stream`, `any_write_stream`
+* `any_buffer_source`, `any_buffer_sink`
 
 You have now completed the Stream Concepts section. These abstractions—streams and their type-erased wrappers—form the foundation for Capy's I/O model. Continue to xref:../8.examples/8a.hello-task.adoc[Example Programs] to see complete working examples.

@@ -14,6 +14,7 @@
 // Demonstrates Capy coroutines driving actual TCP connections.
 //
 
+// tag::full[]
 #include <boost/capy.hpp>
 #include <boost/corosio.hpp>
 #include <iostream>
@@ -27,11 +28,13 @@ capy::task<> echo_session(corosio::tcp_socket sock)
 
     for (;;)
     {
+        // tag::session_io[]
         auto [ec, n] = co_await sock.read_some(
             capy::mutable_buffer(buf, sizeof(buf)));
 
         auto [wec, wn] = co_await capy::write(
             sock, capy::const_buffer(buf, n));
+        // end::session_io[]
 
         if (ec)
             break;
@@ -50,10 +53,12 @@ capy::task<> accept_loop(
     auto ep = acc.local_endpoint();
     std::cout << "Listening on port " << ep.port() << "\n";
 
+    // tag::accept[]
     for (;;)
     {
         corosio::tcp_socket peer(ioc);
         auto [ec] = co_await acc.accept(peer);
+        // end::accept[]
 
         if (ec)
         {
@@ -69,9 +74,13 @@ capy::task<> accept_loop(
             std::cout << remote.v6_address();
         std::cout << ":" << remote.port() << "\n";
 
+        // tag::spawn_session[]
         capy::run_async(ioc.get_executor())(
             echo_session(std::move(peer)));
+        // end::spawn_session[]
+        // tag::accept[]
     }
+    // end::accept[]
 }
 
 int main(int argc, char* argv[])
@@ -80,8 +89,10 @@ int main(int argc, char* argv[])
     if (argc > 1)
         port = static_cast<unsigned short>(std::atoi(argv[1]));
 
+    // tag::acceptor[]
     corosio::io_context ioc;
     corosio::tcp_acceptor acc(ioc, corosio::endpoint(port));
+    // end::acceptor[]
 
     capy::run_async(ioc.get_executor())(
         accept_loop(acc, ioc));
@@ -90,3 +101,4 @@ int main(int argc, char* argv[])
 
     return 0;
 }
+// end::full[]

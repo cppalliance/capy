@@ -10,7 +10,7 @@ The vtable layout depends on how many async operations the wrapper exposes and w
 
 When a wrapper exposes exactly one async operation (e.g. `any_read_stream` with `read_some`, or `any_write_stream` with `write_some`), all function pointers live in a single flat vtable:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 // Flat vtable -- 64 bytes, one cache line
 struct vtable
@@ -32,7 +32,7 @@ The inner awaitable can be constructed in either `await_ready` or `await_suspend
 
 When there is no outer short-circuit, constructing in `await_ready` lets immediate completions skip `await_suspend` entirely:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 bool await_ready() {
     vt_->construct_awaitable(stream_, cached_awaitable_, buffers);
@@ -56,7 +56,7 @@ io_result<size_t> await_resume() {
 
 When the outer awaitable has a short-circuit (empty buffers), construction is deferred to `await_suspend` so the inner awaitable is never created on the fast path:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 bool await_ready() const noexcept {
     return buffers_.empty();             // short-circuit, no construct
@@ -91,7 +91,7 @@ Two sub-cases arise, distinguished by whether the operations share an await-retu
 * *Same await-return type* (`any_read_source`: `read_some` and `read` both await-return `io_result<std::size_t>`). One ops struct (`awaitable_ops`) serves both operations; both `construct_*_awaitable` pointers return the same layout.
 * *Different await-return types* (`any_buffer_source`: `pull` await-returns `io_result<std::span<const_buffer>>` while its synthesized `read_some`/`read` await-return `io_result<std::size_t>`; `any_buffer_sink` and `any_write_sink` similarly mix `io_result<>`, `io_result<std::size_t>`). These need more than one ops struct (e.g. `awaitable_ops` plus `read_awaitable_ops`/`write_awaitable_ops`/`eof_awaitable_ops`), and each `construct` returns the ops matching its result type.
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 // Per-awaitable dispatch -- one struct per await-return type
 struct awaitable_ops
@@ -115,7 +115,7 @@ struct vtable
 
 The inner awaitable is constructed in `await_suspend`. Outer `await_ready` handles short-circuits (e.g. empty buffers) before the inner type is ever created:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 bool await_ready() const noexcept {
     return buffers_.empty();             // short-circuit

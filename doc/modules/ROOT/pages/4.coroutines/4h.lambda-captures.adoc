@@ -13,18 +13,7 @@ Consider this innocent-looking code:
 
 [source,cpp]
 ----
-namespace capy = boost::capy;
-
-void process(socket& sock)
-{
-    auto task = [&sock]() -> capy::task<>
-    {
-        char buf[1024];
-        auto [ec, n] = co_await sock.read_some(make_buffer(buf));
-    }();
-
-    run_async(executor)(std::move(task));
-}
+include::example$snippets/4h_lambda_captures.cpp[tag=dangling_capture]
 ----
 
 **This code has undefined behavior.** It may crash, corrupt memory, or appear to work until it doesn't.
@@ -51,18 +40,7 @@ The solution is to pass values as **function parameters** instead of **lambda ca
 
 [source,cpp]
 ----
-namespace capy = boost::capy;
-
-void process(socket& sock)
-{
-    auto task = [](socket* s) -> capy::task<>
-    {
-        char buf[1024];
-        auto [ec, n] = co_await s->read_some(make_buffer(buf));
-    }(&sock);
-
-    run_async(executor)(std::move(task));
-}
+include::example$snippets/4h_lambda_captures.cpp[tag=iife_parameter]
 ----
 
 This is an **Immediately Invoked Function Expression (IIFE)**. The parameter `s` is copied to the coroutine frame before the first suspension, so it remains valid for the coroutine's lifetime.
@@ -73,44 +51,14 @@ This is an **Immediately Invoked Function Expression (IIFE)**. The parameter `s`
 
 [source,cpp]
 ----
-class connection_handler
-{
-    socket sock_;
-    std::string name_;
-
-public:
-    capy::task<> run()
-    {
-        // BROKEN: 'this' captured in lambda, lambda destroyed after invoke
-        return [this]() -> capy::task<>
-        {
-            log("Connection from", name_);  // UB: 'this' is dangling
-            co_await handle_request();
-        }();
-    }
-};
+include::example$snippets/4h_lambda_captures.cpp[tag=capture_this_broken]
 ----
 
 === Correct: Using Parameters
 
 [source,cpp]
 ----
-class connection_handler
-{
-    socket sock_;
-    std::string name_;
-
-public:
-    capy::task<> run()
-    {
-        // CORRECT: 'self' is a parameter, copied to coroutine frame
-        return [](connection_handler* self) -> capy::task<>
-        {
-            log("Connection from", self->name_);
-            co_await self->handle_request();
-        }(this);
-    }
-};
+include::example$snippets/4h_lambda_captures.cpp[tag=parameter_self_correct]
 ----
 
 == When Are Captures Safe?
@@ -119,15 +67,7 @@ Captures are only safe when the lambda object **outlives the coroutine**:
 
 [source,cpp]
 ----
-// SAFE: lambda stored in 'handler', outlives coroutine
-auto handler = [&sock]() -> capy::task<>
-{
-    co_await sock.read_some(...);
-};
-
-// Lambda 'handler' still exists here
-capy::test::run_blocking()(handler());  // Blocks until coroutine completes
-// Lambda destroyed after coroutine finishes
+include::example$snippets/4h_lambda_captures.cpp[tag=stored_lambda_safe,indent=0]
 ----
 
 This pattern is rare. Most async code immediately invokes the lambda and discards it, making captures unsafe.
@@ -146,22 +86,7 @@ If the IIFE syntax feels awkward, use a named function instead:
 
 [source,cpp]
 ----
-class connection_handler
-{
-    socket sock_;
-
-    capy::task<> do_handle()
-    {
-        // 'this' is an implicit parameter, handled correctly
-        co_await sock_.read_some(...);
-    }
-
-public:
-    capy::task<> run()
-    {
-        return do_handle();
-    }
-};
+include::example$snippets/4h_lambda_captures.cpp[tag=named_member_coroutine]
 ----
 
 Member function coroutines work correctly because `this` is an implicit parameter, not a capture. The compiler copies it to the coroutine frame.

@@ -17,82 +17,7 @@ A complete echo server using Corosio for real network I/O.
 
 [source,cpp]
 ----
-#include <boost/capy.hpp>
-#include <boost/corosio.hpp>
-#include <iostream>
-
-namespace corosio = boost::corosio;
-namespace capy = boost::capy;
-
-capy::task<> echo_session(corosio::tcp_socket sock)
-{
-    char buf[1024];
-
-    for (;;)
-    {
-        auto [ec, n] = co_await sock.read_some(
-            capy::mutable_buffer(buf, sizeof(buf)));
-
-        auto [wec, wn] = co_await capy::write(
-            sock, capy::const_buffer(buf, n));
-
-        if (ec)
-            break;
-
-        if (wec)
-            break;
-    }
-
-    sock.close();
-}
-
-capy::task<> accept_loop(
-    corosio::tcp_acceptor& acc,
-    corosio::io_context& ioc)
-{
-    auto ep = acc.local_endpoint();
-    std::cout << "Listening on port " << ep.port() << "\n";
-
-    for (;;)
-    {
-        corosio::tcp_socket peer(ioc);
-        auto [ec] = co_await acc.accept(peer);
-
-        if (ec)
-        {
-            std::cout << "Accept error: " << ec.message() << "\n";
-            continue;
-        }
-
-        auto remote = peer.remote_endpoint();
-        std::cout << "Connection from ";
-        if (remote.is_v4())
-            std::cout << remote.v4_address();
-        else
-            std::cout << remote.v6_address();
-        std::cout << ":" << remote.port() << "\n";
-
-        capy::run_async(ioc.get_executor())(
-            echo_session(std::move(peer)));
-    }
-}
-
-int main(int argc, char* argv[])
-{
-    unsigned short port = 8080;
-    if (argc > 1)
-        port = static_cast<unsigned short>(std::atoi(argv[1]));
-
-    corosio::io_context ioc;
-    corosio::tcp_acceptor acc(ioc, corosio::endpoint(port));
-
-    capy::run_async(ioc.get_executor())(
-        accept_loop(acc, ioc));
-
-    ioc.run();
-
-    return 0;
-}
+include::example$echo-server-corosio/echo_server.cpp[tag=full]
 ----
 
 == Build
@@ -109,8 +34,7 @@ target_link_libraries(echo_server PRIVATE Boost::capy Boost::corosio)
 
 [source,cpp]
 ----
-corosio::io_context ioc;
-corosio::tcp_acceptor acc(ioc, corosio::endpoint(port));
+include::example$echo-server-corosio/echo_server.cpp[tag=acceptor,indent=0]
 ----
 
 The `io_context` drives all asynchronous I/O. The `tcp_acceptor` listens on the specified port. Corosio uses a flat namespace -- types like `tcp_socket`, `tcp_acceptor`, and `endpoint` live directly in `boost::corosio`.
@@ -119,12 +43,7 @@ The `io_context` drives all asynchronous I/O. The `tcp_acceptor` listens on the 
 
 [source,cpp]
 ----
-for (;;)
-{
-    corosio::tcp_socket peer(ioc);
-    auto [ec] = co_await acc.accept(peer);
-    // ... handle connection ...
-}
+include::example$echo-server-corosio/echo_server.cpp[tag=accept,indent=0]
 ----
 
 The accept loop runs forever, creating a new `tcp_socket` for each connection. `acc.accept(peer)` suspends the coroutine until a client connects.
@@ -133,11 +52,7 @@ The accept loop runs forever, creating a new `tcp_socket` for each connection. `
 
 [source,cpp]
 ----
-auto [ec, n] = co_await sock.read_some(
-    capy::mutable_buffer(buf, sizeof(buf)));
-// ...
-auto [wec, wn] = co_await capy::write(
-    sock, capy::const_buffer(buf, n));
+include::example$echo-server-corosio/echo_server.cpp[tag=session_io,indent=0]
 ----
 
 Each session reads data with `read_some` and writes it back with `write`. When the client disconnects, `read_some` returns an error and the loop exits.
@@ -146,8 +61,7 @@ Each session reads data with `read_some` and writes it back with `write`. When t
 
 [source,cpp]
 ----
-capy::run_async(ioc.get_executor())(
-    echo_session(std::move(peer)));
+include::example$echo-server-corosio/echo_server.cpp[tag=spawn_session,indent=0]
 ----
 
 Each accepted connection moves the socket into a new task via `run_async`. The coroutine owns the socket for the lifetime of the session. Multiple clients are handled concurrently on the same `io_context`.

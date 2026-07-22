@@ -19,9 +19,7 @@ Consider a chain of coroutines where each awaits the next:
 
 [source,cpp]
 ----
-task<> a() { co_await b(); }
-task<> b() { co_await c(); }
-task<> c() { co_return; }
+include::example$snippets/2d_advanced.cpp[tag=task_chain,indent=0]
 ----
 
 Without symmetric transfer, when `a` awaits `b`:
@@ -40,19 +38,12 @@ Each suspension adds a stack frame. With thousands of nested coroutines, the sta
 
 [source,cpp]
 ----
-std::coroutine_handle<> await_suspend(std::coroutine_handle<> h)
-{
-    // store continuation for later
-    continuation_ = h;
-    
-    // return handle to resume (instead of calling resume())
-    return next_coroutine_;
-}
+include::example$snippets/2d_advanced.cpp[tag=symmetric_await_suspend,indent=0]
 ----
 
 When `await_suspend` returns a handle, the compiler generates code equivalent to:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 auto next = awaiter.await_suspend(current);
 if (next != std::noop_coroutine())
@@ -80,24 +71,7 @@ A production generator uses symmetric transfer at `final_suspend` to return to w
 
 [source,cpp]
 ----
-auto final_suspend() noexcept
-{
-    struct awaiter
-    {
-        promise_type* p_;
-        
-        bool await_ready() const noexcept { return false; }
-        
-        std::coroutine_handle<> await_suspend(std::coroutine_handle<>) noexcept
-        {
-            // Return to the consumer that called resume()
-            return p_->consumer_handle_;
-        }
-        
-        void await_resume() const noexcept {}
-    };
-    return awaiter{this};
-}
+include::example$snippets/2d_advanced.cpp[tag=generator_final_suspend,indent=0]
 ----
 
 == Coroutine Allocation
@@ -130,12 +104,7 @@ HALO is most effective when:
 
 [source,cpp]
 ----
-// HALO might apply here because the task is awaited immediately
-co_await compute_something();
-
-// HALO cannot apply here because the task escapes
-auto task = compute_something();
-store_for_later(std::move(task));
+include::example$snippets/2d_advanced.cpp[tag=halo,indent=0]
 ----
 
 === Custom Allocators
@@ -144,21 +113,7 @@ Promise types can customize allocation by providing `operator new` and `operator
 
 [source,cpp]
 ----
-struct promise_type
-{
-    // Custom allocation
-    static void* operator new(std::size_t size)
-    {
-        return my_allocator.allocate(size);
-    }
-    
-    static void operator delete(void* ptr, std::size_t size)
-    {
-        my_allocator.deallocate(ptr, size);
-    }
-    
-    // ... rest of promise type
-};
+include::example$snippets/2d_advanced.cpp[tag=custom_operator_new,indent=0]
 ----
 
 The promise's `operator new` receives only the frame size. To access allocator arguments passed to the coroutine, use the leading allocator convention with `std::allocator_arg_t` as the first parameter.
@@ -182,40 +137,28 @@ When an exception is thrown inside a coroutine and not caught:
 
 [source,cpp]
 ----
-void unhandled_exception()
-{
-    std::terminate();
-}
+include::example$snippets/2d_advanced.cpp[tag=unhandled_terminate,indent=0]
 ----
 
 *Store for later retrieval:*
 
 [source,cpp]
 ----
-void unhandled_exception()
-{
-    exception_ = std::current_exception();
-}
+include::example$snippets/2d_advanced.cpp[tag=unhandled_store,indent=0]
 ----
 
 *Rethrow immediately:*
 
 [source,cpp]
 ----
-void unhandled_exception()
-{
-    throw;  // propagates to whoever resumed the coroutine
-}
+include::example$snippets/2d_advanced.cpp[tag=unhandled_rethrow,indent=0]
 ----
 
 *Swallow the exception:*
 
 [source,cpp]
 ----
-void unhandled_exception()
-{
-    // silently ignored - almost always a mistake
-}
+include::example$snippets/2d_advanced.cpp[tag=unhandled_swallow,indent=0]
 ----
 
 === The Store-and-Rethrow Pattern
@@ -224,91 +167,14 @@ For tasks and generators where callers expect results, store the exception and r
 
 [source,cpp]
 ----
-struct promise_type
-{
-    std::exception_ptr exception_;
-    
-    void unhandled_exception()
-    {
-        exception_ = std::current_exception();
-    }
-};
-
-// In the return object's result accessor:
-T get_result()
-{
-    if (handle_.promise().exception_)
-        std::rethrow_exception(handle_.promise().exception_);
-    return std::move(handle_.promise().result_);
-}
+include::example$snippets/2d_advanced.cpp[tag=store_and_rethrow,indent=0]
 ----
 
 === Exception Example
 
 [source,cpp]
 ----
-#include <coroutine>
-#include <exception>
-#include <iostream>
-#include <stdexcept>
-
-struct Task
-{
-    struct promise_type
-    {
-        std::exception_ptr exception;
-        
-        Task get_return_object()
-        {
-            return Task{std::coroutine_handle<promise_type>::from_promise(*this)};
-        }
-        
-        std::suspend_always initial_suspend() { return {}; }
-        std::suspend_always final_suspend() noexcept { return {}; }
-        void return_void() {}
-        
-        void unhandled_exception()
-        {
-            exception = std::current_exception();
-        }
-    };
-    
-    std::coroutine_handle<promise_type> handle;
-    
-    Task(std::coroutine_handle<promise_type> h) : handle(h) {}
-    ~Task() { if (handle) handle.destroy(); }
-    
-    void run() { handle.resume(); }
-    
-    void check_exception()
-    {
-        if (handle.promise().exception)
-            std::rethrow_exception(handle.promise().exception);
-    }
-};
-
-Task risky_operation()
-{
-    std::cout << "Starting risky operation" << std::endl;
-    throw std::runtime_error("Something went wrong");
-    co_return;  // never reached
-}
-
-int main()
-{
-    Task task = risky_operation();
-    
-    try
-    {
-        task.run();
-        task.check_exception();
-        std::cout << "Operation completed successfully" << std::endl;
-    }
-    catch (std::exception const& e)
-    {
-        std::cout << "Operation failed: " << e.what() << std::endl;
-    }
-}
+include::example$programs/2d_advanced_exception.cpp[tag=full]
 ----
 
 *Output:*
@@ -328,120 +194,7 @@ With all these concepts, here is a production-quality generic generator:
 
 [source,cpp]
 ----
-#include <coroutine>
-#include <exception>
-#include <utility>
-
-template<typename T>
-class Generator
-{
-public:
-    struct promise_type
-    {
-        T value_;
-        std::exception_ptr exception_;
-        
-        Generator get_return_object()
-        {
-            return Generator{Handle::from_promise(*this)};
-        }
-        
-        std::suspend_always initial_suspend() noexcept { return {}; }
-        std::suspend_always final_suspend() noexcept { return {}; }
-        
-        std::suspend_always yield_value(T v)
-        {
-            value_ = std::move(v);
-            return {};
-        }
-        
-        void return_void() noexcept {}
-        
-        void unhandled_exception()
-        {
-            exception_ = std::current_exception();
-        }
-        
-        // Prevent co_await inside generators
-        template<typename U>
-        std::suspend_never await_transform(U&&) = delete;
-    };
-    
-    using Handle = std::coroutine_handle<promise_type>;
-    
-    class iterator
-    {
-        Handle handle_;
-        
-    public:
-        using iterator_category = std::input_iterator_tag;
-        using value_type = T;
-        using difference_type = std::ptrdiff_t;
-        
-        iterator() : handle_(nullptr) {}
-        explicit iterator(Handle h) : handle_(h) {}
-        
-        iterator& operator++()
-        {
-            handle_.resume();
-            if (handle_.done())
-            {
-                auto& promise = handle_.promise();
-                handle_ = nullptr;
-                if (promise.exception_)
-                    std::rethrow_exception(promise.exception_);
-            }
-            return *this;
-        }
-        
-        T& operator*() const { return handle_.promise().value_; }
-        bool operator==(iterator const& other) const
-        {
-            return handle_ == other.handle_;
-        }
-    };
-    
-    iterator begin()
-    {
-        if (handle_)
-        {
-            handle_.resume();
-            if (handle_.done())
-            {
-                auto& promise = handle_.promise();
-                if (promise.exception_)
-                    std::rethrow_exception(promise.exception_);
-                return iterator{};
-            }
-        }
-        return iterator{handle_};
-    }
-    
-    iterator end() { return iterator{}; }
-    
-    ~Generator() { if (handle_) handle_.destroy(); }
-    
-    Generator(Generator const&) = delete;
-    Generator& operator=(Generator const&) = delete;
-    
-    Generator(Generator&& other) noexcept
-        : handle_(std::exchange(other.handle_, nullptr)) {}
-    
-    Generator& operator=(Generator&& other) noexcept
-    {
-        if (this != &other)
-        {
-            if (handle_) handle_.destroy();
-            handle_ = std::exchange(other.handle_, nullptr);
-        }
-        return *this;
-    }
-
-private:
-    Handle handle_;
-    
-    explicit Generator(Handle h) : handle_(h) {}
-};
+include::example$snippets/2d_advanced.cpp[tag=production_generator]
 ----
 
 This generator:

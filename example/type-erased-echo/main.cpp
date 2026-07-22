@@ -7,6 +7,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
+// tag::full[]
 #include "echo.hpp"
 #include <boost/capy.hpp>
 #include <boost/capy/test/stream.hpp>
@@ -45,3 +46,4 @@ int main()
     test_with_mock();
     return 0;
 }
+// end::full[]

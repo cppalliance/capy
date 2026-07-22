@@ -19,8 +19,7 @@ The instinctive {cpp} answer to "how should I represent a buffer?" is `std::span
 
 [source,cpp]
 ----
-void write_data(std::span<std::byte const> data);
-void read_data(std::span<std::byte> buffer);
+include::example$snippets/5a_overview.cpp[tag=span_signatures,indent=0]
 ----
 
 This works for single contiguous buffers. But I/O often involves multiple buffers—a technique called *scatter/gather I/O*.
@@ -44,7 +43,7 @@ Extending the span reflex: `std::span<std::span<std::byte>>`:
 
 [source,cpp]
 ----
-void write_data(std::span<std::span<std::byte const> const> buffers);
+include::example$snippets/5a_overview.cpp[tag=span_of_spans,indent=0]
 ----
 
 This works, but introduces a composition problem.
@@ -55,23 +54,14 @@ Suppose you have:
 
 [source,cpp]
 ----
-using HeaderBuffers = std::array<std::span<std::byte const>, 2>;  // 2 buffers
-using BodyBuffers = std::array<std::span<std::byte const>, 3>;    // 3 buffers
+include::example$snippets/5a_overview.cpp[tag=span_aliases,indent=0]
 ----
 
 To send headers followed by body, you need 5 buffers total. With `span<span<byte>>`:
 
 [source,cpp]
 ----
-HeaderBuffers headers = /* ... */;
-BodyBuffers body = /* ... */;
-
-// To combine, you MUST allocate a new array:
-std::array<std::span<std::byte const>, 5> combined;
-std::copy(headers.begin(), headers.end(), combined.begin());
-std::copy(body.begin(), body.end(), combined.begin() + 2);
-
-write_data(combined);
+include::example$snippets/5a_overview.cpp[tag=span_combine,indent=0]
 ----
 
 Every composition allocates. This leads to:
@@ -86,8 +76,7 @@ Instead of concrete types, use concepts. Define `ConstBufferSequence` as "any ty
 
 [source,cpp]
 ----
-template<ConstBufferSequence Buffers>
-void write_data(Buffers const& buffers);
+include::example$snippets/5a_overview.cpp[tag=concept_signature,indent=0]
 ----
 
 This single signature accepts:

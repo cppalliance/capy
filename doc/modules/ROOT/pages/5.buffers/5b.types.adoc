@@ -37,41 +37,21 @@ Capy provides `const_buffer` and `mutable_buffer` as semantically neutral buffer
 
 [source,cpp]
 ----
-class const_buffer
-{
-public:
-    const_buffer() = default;
-    const_buffer(void const* data, std::size_t size) noexcept;
-    const_buffer(mutable_buffer const& b) noexcept;  // Implicit conversion
-    
-    void const* data() const noexcept;
-    std::size_t size() const noexcept;
-    
-    const_buffer& operator+=(std::size_t n) noexcept;  // Remove prefix
-};
+include::example$snippets/5b_types.cpp[tag=const_buffer_interface,indent=0]
 ----
 
 === Construction
 
 [source,cpp]
 ----
-// From pointer and size
-char data[] = "hello";
-const_buffer buf(data, 5);
-
-// From mutable_buffer (implicit)
-mutable_buffer mbuf(data, 5);
-const_buffer cbuf = mbuf;  // OK: mutable -> const
+include::example$snippets/5b_types.cpp[tag=const_buffer_construct,indent=0]
 ----
 
 === Accessors
 
 [source,cpp]
 ----
-const_buffer buf(data, 5);
-
-void const* ptr = buf.data();  // Pointer to first byte
-std::size_t len = buf.size();  // Number of bytes
+include::example$snippets/5b_types.cpp[tag=const_buffer_accessors,indent=0]
 ----
 
 === Prefix Removal
@@ -80,11 +60,7 @@ The `+=` operator removes bytes from the front of the buffer:
 
 [source,cpp]
 ----
-const_buffer buf(data, 10);
-
-buf += 3;  // Remove first 3 bytes
-// buf.data() now points 3 bytes later
-// buf.size() is now 7
+include::example$snippets/5b_types.cpp[tag=const_buffer_prefix,indent=0]
 ----
 
 This is useful when processing a buffer incrementally.
@@ -95,17 +71,7 @@ This is useful when processing a buffer incrementally.
 
 [source,cpp]
 ----
-class mutable_buffer
-{
-public:
-    mutable_buffer() = default;
-    mutable_buffer(void* data, std::size_t size) noexcept;
-    
-    void* data() const noexcept;
-    std::size_t size() const noexcept;
-    
-    mutable_buffer& operator+=(std::size_t n) noexcept;
-};
+include::example$snippets/5b_types.cpp[tag=mutable_buffer_interface,indent=0]
 ----
 
 The interface mirrors `const_buffer`, but `data()` returns non-const `void*`.
@@ -116,10 +82,7 @@ The interface mirrors `const_buffer`, but `data()` returns non-const `void*`.
 
 [source,cpp]
 ----
-void process(const_buffer buf);
-
-mutable_buffer mbuf(data, size);
-process(mbuf);  // OK: implicit conversion
+include::example$snippets/5b_types.cpp[tag=mutable_to_const,indent=0]
 ----
 
 The reverse is not allowed—you cannot implicitly convert `const_buffer` to `mutable_buffer`.
@@ -130,34 +93,9 @@ The `make_buffer` function creates buffers from various sources:
 
 [source,cpp]
 ----
-#include <boost/capy/buffers/make_buffer.hpp>
+include::example$snippets/5b_types.cpp[tag=make_buffer_include]
 
-// From pointer and size
-auto buf = make_buffer(ptr, size);
-
-// From C array
-char arr[10];
-auto buf = make_buffer(arr);
-
-// From std::array
-std::array<char, 10> arr;
-auto buf = make_buffer(arr);
-
-// From std::vector
-std::vector<char> vec(100);
-auto buf = make_buffer(vec);
-
-// From std::string
-std::string str = "hello";
-auto buf = make_buffer(str);
-
-// From std::string_view
-std::string_view sv = "hello";
-auto buf = make_buffer(sv);
-
-// From a span (std::span or boost::span)
-std::span<char> sp(arr);
-auto buf = make_buffer(sp);
+include::example$snippets/5b_types.cpp[tag=make_buffer_sources,indent=0]
 ----
 
 `make_buffer` accepts any sized, contiguous range of trivially-copyable
@@ -186,26 +124,16 @@ A single buffer is a degenerate sequence—a sequence with one element. The `Con
 
 [source,cpp]
 ----
-template<ConstBufferSequence Buffers>
-void write_data(Buffers const& buffers);
+include::example$snippets/5b_types.cpp[tag=write_data_signature,indent=0]
 
-// All of these work:
-write_data(make_buffer("hello"));         // Single buffer
-write_data(std::array{buf1, buf2, buf3}); // Multiple buffers
-write_data(my_composite);                  // Custom sequence
+include::example$snippets/5b_types.cpp[tag=write_data_calls,indent=0]
 ----
 
 The library provides `begin()` and `end()` functions that work uniformly:
 
 [source,cpp]
 ----
-const_buffer single;
-auto it = begin(single);  // Returns pointer to single
-auto e = end(single);     // Returns pointer past single
-
-std::array<const_buffer, 3> multi;
-auto it = begin(multi);   // Returns multi.begin()
-auto e = end(multi);      // Returns multi.end()
+include::example$snippets/5b_types.cpp[tag=begin_end_uniform,indent=0]
 ----
 
 == Reference

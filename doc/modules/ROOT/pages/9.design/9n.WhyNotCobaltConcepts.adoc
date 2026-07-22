@@ -4,9 +4,11 @@ Both Capy and Cobalt allow you to write a non-template coroutine algorithm that 
 
 [source,cpp]
 ----
-// Capy
-capy::task<> my_algo(capy::any_write_stream& stream);
+include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=capy_signature]
+----
 
+[source,cpp,role=external]
+----
 // Cobalt
 cobalt::task<> my_algo(cobalt::io::write_stream& stream);
 ----
@@ -30,34 +32,14 @@ IoRunnable
 
 [source,cpp]
 ----
-template<typename A>
-concept IoAwaitable =
-    requires(A a, std::coroutine_handle<> h, io_env const* env)
-    {
-        a.await_suspend(h, env);
-    };
+include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=io_awaitable_concept]
 ----
 
 `IoRunnable` refines `IoAwaitable` with operations needed to start a task from non-coroutine contexts: `handle()`, `release()`, `exception()`, `result()`, and the promise-level `set_continuation()` and `set_environment()`.
 
 [source,cpp]
 ----
-template<typename T>
-concept IoRunnable =
-    IoAwaitable<T> &&
-    requires { typename T::promise_type; } &&
-    requires(T& t, T const& ct, typename T::promise_type const& cp,
-             typename T::promise_type& p)
-    {
-        { ct.handle() } noexcept
-            -> std::same_as<std::coroutine_handle<typename T::promise_type>>;
-        { cp.exception() } noexcept -> std::same_as<std::exception_ptr>;
-        { t.release() } noexcept;
-        { p.set_continuation(std::coroutine_handle<>{}) } noexcept;
-        { p.set_environment(static_cast<io_env const*>(nullptr)) } noexcept;
-    } &&
-    (std::is_void_v<decltype(std::declval<T&>().await_resume())> ||
-     requires(typename T::promise_type& p) { p.result(); });
+include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=io_runnable_concept]
 ----
 
 Context injection (`set_environment`, `set_continuation`) consists of `noexcept` requirements that `IoRunnable` places on `T::promise_type`; launch functions invoke them through the typed handle returned by `handle()` before resuming the frame.
@@ -82,7 +64,7 @@ That way custom coroutines can support cancellation, executors and allocators.
 In a custom awaitable you can obtain them like this:
 ____
 
-[source,cpp]
+[source,cpp,role=external]
 ----
 struct my_awaitable
 {
@@ -137,14 +119,14 @@ Capy's `IoAwaitable` protocol passes the execution environment as an explicit pa
 
 [source,cpp]
 ----
-auto await_suspend(std::coroutine_handle<> h, io_env const* env);
+include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=await_suspend_env,indent=0]
 ----
 
 The executor and stop token flow forward structurally through the call chain via `io_env`. If a task's machinery does not provide them, the code does not compile. There is no fallback.
 
 Cobalt's approach probes the calling promise. The relevant code from `cobalt/detail/task.hpp`:
 
-[source,cpp]
+[source,cpp,role=external]
 ----
 template<typename Promise>
 std::coroutine_handle<void> await_suspend(std::coroutine_handle<Promise> h)
@@ -197,7 +179,7 @@ In Capy, the equivalent of "no cancellation" is passing `std::stop_token{}` (a n
 
 Cobalt's `write_stream` accepts buffers through a concrete type:
 
-[source,cpp]
+[source,cpp,role=external]
 ----
 struct write_stream
 {
@@ -208,7 +190,7 @@ struct write_stream
 
 `const_buffer_sequence` is a fixed type that accepts either a single `asio::const_buffer` or a `std::span<const asio::const_buffer>`:
 
-[source,cpp]
+[source,cpp,role=external]
 ----
 struct const_buffer_sequence
 {
@@ -231,22 +213,14 @@ Capy's `WriteStream` concept requires `write_some` to accept any `ConstBufferSeq
 
 [source,cpp]
 ----
-template<typename T>
-concept WriteStream =
-    requires(T& stream, const_buffer_archetype buffers)
-    {
-        { stream.write_some(buffers) } -> IoAwaitable;
-        // ...
-    };
+include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=write_stream_concept_short]
 ----
 
 The type-erased wrapper `any_write_stream` also models the `WriteStream` concept. Its `write_some` is a template that accepts any `ConstBufferSequence`:
 
 [source,cpp]
 ----
-template<ConstBufferSequence CB>
-auto
-any_write_stream::write_some(CB buffers);
+include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=any_write_some_template]
 ----
 
 Both the concept and the wrapper accept full buffer sequences. Type erasure does not narrow the interface.
@@ -282,7 +256,7 @@ ____
 
 Followed by the struct definition:
 
-[source,cpp]
+[source,cpp,role=external]
 ----
 struct write_stream
 {
@@ -297,49 +271,14 @@ Capy's `WriteStream` concept includes semantic requirements in the concept's doc
 
 [source,cpp]
 ----
-// From capy/concept/write_stream.hpp
-
-// Semantic Requirements:
-//
-// Attempts to write up to buffer_size( buffers ) bytes from
-// the buffer sequence to the stream.
-//
-// If buffer_size( buffers ) > 0:
-//
-//   If !ec, then n >= 1 && n <= buffer_size( buffers ).
-//     n bytes were written from the buffer sequence.
-//   If ec, then n >= 0 && n < buffer_size( buffers ).
-//     n is the number of bytes written before the I/O
-//     condition arose.
-//
-// Equivalently, n == buffer_size( buffers ) implies !ec: a
-// completion that writes the entire buffer sequence is a success,
-// even when the underlying operation also signals a condition. That
-// condition is reported on a subsequent write. This lets generic
-// composition algorithms such as when_all and when_any distinguish
-// a completed transfer from a failure.
-//
-// If buffer_empty( buffers ) is true, n is 0. The empty
-// buffer is not itself a cause for error, but ec may reflect
-// the state of the stream.
-//
-// Buffers in the sequence are consumed in order.
-//
-// Buffer Lifetime:
-//
-// The caller must ensure that the memory referenced by buffers
-// remains valid until the co_await expression returns.
+include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=semantics_quote]
 ----
 
 The concept also includes a coroutine-specific warning about buffer lifetime:
 
 [source,cpp]
 ----
-// Warning: When implementing coroutine member functions, prefer
-// accepting buffer sequences by value rather than by reference.
-// Buffer sequences passed by reference may become dangling if
-// the caller's stack frame is destroyed before the coroutine
-// completes.
+include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=lifetime_warning]
 ----
 
 [cols="1,1,1"]
@@ -375,7 +314,7 @@ The concept also includes a coroutine-specific warning about buffer lifetime:
 
 Cobalt's `write_stream::write_some` returns `write_op`, a concrete operation type. The `write_op` struct from `cobalt/io/ops.hpp`:
 
-[source,cpp]
+[source,cpp,role=external]
 ----
 struct write_op final : op<system::error_code, std::size_t>
 {
@@ -442,7 +381,7 @@ Every `co_await` on a `write_op` in Cobalt allocates a fixed-size buffer in the 
 3. `op<>::operator co_await()` returns `op<>::awaitable`
 4. `op<>::awaitable` contains a 4096-byte SBO buffer:
 
-[source,cpp]
+[source,cpp,role=external]
 ----
 // cobalt/op.hpp
 struct awaitable : awaitable_base
@@ -461,20 +400,7 @@ Capy's `any_write_stream` takes a different approach. The constructor preallocat
 
 [source,cpp]
 ----
-// capy/io/any_write_stream.hpp
-template<WriteStream S>
-    requires (!std::same_as<std::decay_t<S>, any_write_stream>)
-any_write_stream::any_write_stream(S s)
-    : vt_(&vtable_for_impl<S>::value)
-{
-    // ...
-    storage_ = ::operator new(sizeof(S));
-    stream_ = ::new(storage_) S(std::move(s));
-
-    // Preallocate the awaitable storage
-    cached_awaitable_ = ::operator new(vt_->awaitable_size);
-    // ...
-}
+include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=ctor_prealloc]
 ----
 
 After construction, each `co_await stream.write_some(buf)` reuses this preallocated storage. There is no per-operation allocation and no fixed-size buffer in the coroutine frame.
@@ -512,15 +438,7 @@ Capy separates the abstraction from the wrapper. `WriteStream` is a {cpp}20 conc
 
 [source,cpp]
 ----
-template<typename T>
-concept WriteStream =
-    requires(T& stream, const_buffer_archetype buffers)
-    {
-        { stream.write_some(buffers) } -> IoAwaitable;
-        requires awaitable_decomposes_to<
-            decltype(stream.write_some(buffers)),
-            std::error_code, std::size_t>;
-    };
+include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=write_stream_concept]
 ----
 
 `any_write_stream` is a type-erased wrapper that satisfies this concept. It is one possible reification, not the only one. Users can:

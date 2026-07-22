@@ -33,13 +33,9 @@ Stream operations transfer *some* data and return. They do not guarantee a speci
 
 [source,cpp]
 ----
-// ReadStream: may return fewer bytes than buffer can hold
-auto [ec, n] = co_await stream.read_some(buffer);
-// n might be 1, might be 1000, might be buffer_size(buffer)
+include::example$snippets/6a_overview.cpp[tag=read_stream_partial,indent=0]
 
-// WriteStream: may write fewer bytes than provided
-auto [ec, n] = co_await stream.write_some(buffers);
-// n might be less than buffer_size(buffers)
+include::example$snippets/6a_overview.cpp[tag=write_stream_partial,indent=0]
 ----
 
 This matches raw OS behavior—syscalls return when data is available, not when buffers are full.
@@ -82,42 +78,16 @@ Type-erased wrappers let you write transport-agnostic code:
 
 [source,cpp]
 ----
-// This function works with any stream implementation
-task<> echo(any_stream& stream)
-{
-    char buf[1024];
-    for (;;)
-    {
-        auto [ec, n] = co_await stream.read_some(make_buffer(buf));
-
-        auto [wec, wn] = co_await write(stream, const_buffer(buf, n));
-
-        if (ec)
-            co_return;
-
-        if (wec)
-            co_return;
-    }
-}
+include::example$snippets/6a_overview.cpp[tag=any_stream_echo]
 ----
 
 The caller decides the concrete implementation:
 
 [source,cpp]
 ----
-// Owns a moved-in TCP socket (the lvalue form takes ownership by value)
-any_stream s1{tcp_socket};
-echo(s1);
-
-// Wraps a TLS stream by pointer (reference semantics, must outlive s2)
-any_stream s2{&tls_stream};
-echo(s2);
-
-// Owns a temporary test mock
-any_stream s3{test::stream{}};
-echo(s3);
+include::example$snippets/6a_overview.cpp[tag=caller_decides,indent=0]
 ----
 
-Same code, different transports: compile once, link anywhere.
+Same code, different transports: the in-memory test stream shown here, a TCP socket, or a TLS stream. Compile once, link anywhere.
 
 Continue to xref:6.streams/6b.streams.adoc[Streams (Partial I/O)] to learn the `ReadStream` and `WriteStream` concepts in detail.

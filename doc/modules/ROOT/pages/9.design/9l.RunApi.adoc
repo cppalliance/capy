@@ -12,29 +12,7 @@ This document explains the naming conventions and call syntax of the two launche
 
 [source,cpp]
 ----
-// Executor only (uses default recycling allocator)
-run_async(ex)(my_task());
-
-// With a stop token for cooperative cancellation
-std::stop_source source;
-run_async(ex, source.get_token())(cancellable_task());
-
-// With a custom memory resource
-run_async(ex, my_pool)(my_task());
-
-// With a result handler
-run_async(ex, [](int result) {
-    std::cout << "Got: " << result << "\n";
-})(compute_value());
-
-// With separate success and error handlers
-run_async(ex,
-    [](int result) { std::cout << "Got: " << result << "\n"; },
-    [](std::exception_ptr ep) { /* handle error */ }
-)(compute_value());
-
-// Full: executor, stop_token, allocator, success handler, error handler
-run_async(ex, st, alloc, h1, h2)(my_task());
+include::example$snippets/9l_run_api.cpp[tag=run_async_usage,indent=0]
 ----
 
 === `run` -- Awaitable Launch Within a Coroutine
@@ -43,31 +21,7 @@ run_async(ex, st, alloc, h1, h2)(my_task());
 
 [source,cpp]
 ----
-// Switch to a different executor for CPU-bound work
-task<void> parent()
-{
-    int result = co_await run(worker_ex)(compute_on_worker());
-    // Completion returns to parent's executor
-}
-
-// Customize stop token, inherit caller's executor
-task<void> with_timeout()
-{
-    std::stop_source source;
-    co_await run(source.get_token())(subtask());
-}
-
-// Customize allocator, inherit caller's executor
-task<void> with_custom_alloc()
-{
-    co_await run(my_alloc)(subtask());
-}
-
-// Switch executor AND customize allocator
-task<void> full_control()
-{
-    co_await run(worker_ex, my_alloc)(cpu_bound_task());
-}
+include::example$snippets/9l_run_api.cpp[tag=run_usage]
 ----
 
 === `run_async` on a Strand
@@ -76,11 +30,7 @@ A common pattern for launching per-connection coroutines on a strand, ensuring s
 
 [source,cpp]
 ----
-void on_accept(tcp::socket sock)
-{
-    strand my_strand(ioc.get_executor());
-    run_async(my_strand)(handle_connection(std::move(sock)));
-}
+include::example$snippets/9l_run_api.cpp[tag=run_async_strand]
 ----
 
 == Alternatives Considered
@@ -111,7 +61,7 @@ Several alternative naming and syntax proposals were evaluated and discarded. Th
 
 What this looks like in practice:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 // Rejected: builder pattern
 capy::on(ex).spawn(my_task());
@@ -128,7 +78,7 @@ The builder pattern reads well as English, but it creates problems in {cpp} prac
 
 === Single-Call with Named Method
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 // Rejected: single-call
 run_async(ex, my_task());
@@ -138,7 +88,7 @@ This fails the allocator timing constraint entirely. The task argument `my_task(
 
 === Named Method on Wrapper
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 // Rejected: named method instead of operator()
 run_async(ex).spawn(my_task());
@@ -168,7 +118,7 @@ The `run` prefix was chosen for several reasons:
 
 An alternative proposal suggested replacing the two-call syntax with a builder-style API:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 // Rejected builder pattern
 capy::on(ex).spawn(my_task());
@@ -182,7 +132,7 @@ While the English readability of `on(ex).spawn(t)` is genuinely appealing, the a
 
 - **Namespace pollution.** `on` and `with` are among the most common English words in programming. In a Boost library used alongside dozens of other namespaces, these names invite collisions. Consider what happens with `using namespace capy;`:
 +
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 int on = 42;                  // local variable
 on(ex).spawn(my_task());      // ambiguous: variable or function?
@@ -195,7 +145,7 @@ void handle(auto with) {      // parameter name
 
 - **Semantic ambiguity.** `with(st)` versus `with(alloc)` -- with _what_, exactly? The current API uses `run(st)` and `run(alloc)` where overload resolution disambiguates naturally because the verb `run` provides context. A bare preposition provides none.
 +
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 // What does "with" mean here? Stop token or allocator?
 co_await capy::with(x).call(subtask());
@@ -206,7 +156,7 @@ co_await run(x)(subtask());
 
 - **Builder illusion.** Dot-chaining suggests composability that does not exist. Users will naturally try:
 +
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 // These look reasonable but don't work
 capy::on(ex).with(alloc).call(my_task());
@@ -262,11 +212,7 @@ In the expression `run_async(ex)(my_task())`:
 
 [source,cpp]
 ----
-// Step 1: wrapper constructor sets TLS allocator
-//         v~~~~~~~~~~~~~~v
-   run_async(ex, alloc)    (my_task());
-//                          ^~~~~~~~~^
-// Step 2: task frame allocated using TLS allocator
+include::example$snippets/9l_run_api.cpp[tag=postfix_order,indent=0]
 ----
 
 This sequencing is not an implementation detail -- it is the _only correct way_ to inject an allocator into a coroutine's frame allocation when the allocator is not known at compile time.
@@ -277,22 +223,7 @@ The `run_async_wrapper` constructor sets the thread-local allocator:
 
 [source,cpp]
 ----
-run_async_wrapper(Ex ex, std::stop_token st, Handlers h, Alloc a) noexcept
-    : tr_(detail::make_trampoline<Ex, Handlers, Alloc>(
-        std::move(ex), std::move(h), std::move(a)))
-    , st_(std::move(st))
-    , saved_tls_(get_current_frame_allocator())   // remember prior TLS
-{
-    // Set TLS before task argument is evaluated
-    set_current_frame_allocator(tr_.h_.promise().get_resource());
-}
-
-~run_async_wrapper()
-{
-    // Restore the prior TLS so a stale pointer does not outlive
-    // the execution context that owns the trampoline's resource.
-    set_current_frame_allocator(saved_tls_);
-}
+include::example$snippets/9l_run_api.cpp[tag=wrapper_tls,indent=0]
 ----
 
 The constructor saves the current thread-local allocator and the destructor restores it. This save/restore is the load-bearing correctness guarantee: once the wrapper (and the trampoline it owns) is gone, the TLS no longer points at a resource that may have been destroyed.
@@ -301,18 +232,12 @@ The task's `operator new` reads it:
 
 [source,cpp]
 ----
-static void* operator new(std::size_t size)
-{
-    auto* mr = get_current_frame_allocator();
-    if(!mr)
-        mr = std::pmr::get_default_resource();
-    return mr->allocate(size, alignof(std::max_align_t));
-}
+include::example$snippets/9l_run_api.cpp[tag=operator_new,indent=0]
 ----
 
 The wrapper is `[[nodiscard]]` and its `operator()` is rvalue-ref-qualified, preventing misuse:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 // Correct: wrapper is a temporary, used immediately
 run_async(ex)(my_task());

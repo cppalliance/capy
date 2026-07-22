@@ -15,28 +15,7 @@ Consider this code:
 
 [source,cpp]
 ----
-#include <iostream>
-#include <thread>
-
-int counter = 0;
-
-void increment_many_times()
-{
-    for (int i = 0; i < 100000; ++i)
-        ++counter;
-}
-
-int main()
-{
-    std::thread t1(increment_many_times);
-    std::thread t2(increment_many_times);
-    
-    t1.join();
-    t2.join();
-    
-    std::cout << "Counter: " << counter << "\n";
-    return 0;
-}
+include::example$programs/3b_synchronization_race.cpp[tag=full]
 ----
 
 Two threads, each incrementing 100,000 times. You would expect 200,000. But run this repeatedly and you will see different results—180,000, 195,327, maybe occasionally 200,000. Something is wrong.
@@ -59,34 +38,7 @@ A *mutex* (mutual exclusion object) is a lockable resource. Before accessing sha
 
 [source,cpp]
 ----
-#include <iostream>
-#include <thread>
-#include <mutex>
-
-int counter = 0;
-std::mutex counter_mutex;
-
-void increment_many_times()
-{
-    for (int i = 0; i < 100000; ++i)
-    {
-        counter_mutex.lock();
-        ++counter;
-        counter_mutex.unlock();
-    }
-}
-
-int main()
-{
-    std::thread t1(increment_many_times);
-    std::thread t2(increment_many_times);
-    
-    t1.join();
-    t2.join();
-    
-    std::cout << "Counter: " << counter << "\n";
-    return 0;
-}
+include::example$programs/3b_synchronization_mutex.cpp[tag=full]
 ----
 
 Now the output is always 200,000. The mutex ensures that between `lock()` and `unlock()`, only one thread executes. The increment is now effectively atomic.
@@ -101,22 +53,7 @@ Lock guards apply RAII to mutexes:
 
 [source,cpp]
 ----
-#include <iostream>
-#include <thread>
-#include <mutex>
-
-int counter = 0;
-std::mutex counter_mutex;
-
-void increment_many_times()
-{
-    for (int i = 0; i < 100000; ++i)
-    {
-        std::lock_guard<std::mutex> lock(counter_mutex);
-        ++counter;
-        // lock is automatically released when it goes out of scope
-    }
-}
+include::example$snippets/3b_synchronization.cpp[tag=lock_guard]
 ----
 
 The `std::lock_guard` locks the mutex on construction and unlocks it on destruction. Even if an exception is thrown, the destructor runs and the mutex is released. This is the correct way to use mutexes.
@@ -127,7 +64,7 @@ Since {cpp}17, `std::scoped_lock` is preferred. It works like `lock_guard` but c
 
 [source,cpp]
 ----
-std::scoped_lock lock(counter_mutex);  // C++17
+include::example$snippets/3b_synchronization.cpp[tag=scoped_lock,indent=0]
 ----
 
 === std::unique_lock
@@ -136,14 +73,7 @@ For more control, use `std::unique_lock`. It can be unlocked before destruction,
 
 [source,cpp]
 ----
-std::unique_lock<std::mutex> lock(some_mutex, std::defer_lock);
-// mutex not yet locked
-
-lock.lock();  // lock when ready
-// ... do work ...
-lock.unlock();  // unlock early if needed
-// ... do other work ...
-// destructor unlocks again if still locked
+include::example$snippets/3b_synchronization.cpp[tag=unique_lock,indent=0]
 ----
 
 `std::unique_lock` is more flexible but slightly more expensive than `std::lock_guard`. Use the simplest tool that does the job.
@@ -156,21 +86,7 @@ Imagine two threads and two mutexes. Thread A locks mutex 1, then tries to lock 
 
 [source,cpp]
 ----
-std::mutex mutex1, mutex2;
-
-void thread_a()
-{
-    std::lock_guard<std::mutex> lock1(mutex1);
-    std::lock_guard<std::mutex> lock2(mutex2);  // blocks, waiting for B
-    // ...
-}
-
-void thread_b()
-{
-    std::lock_guard<std::mutex> lock2(mutex2);
-    std::lock_guard<std::mutex> lock1(mutex1);  // blocks, waiting for A
-    // ...
-}
+include::example$snippets/3b_synchronization.cpp[tag=deadlock]
 ----
 
 If both threads run and each acquires its first mutex before the other acquires the second, deadlock occurs.
@@ -183,11 +99,7 @@ When you need to lock multiple mutexes and cannot guarantee order, use `std::sco
 
 [source,cpp]
 ----
-void safe_function()
-{
-    std::scoped_lock lock(mutex1, mutex2);  // locks both atomically
-    // ...
-}
+include::example$snippets/3b_synchronization.cpp[tag=scoped_lock_multi]
 ----
 
 `std::scoped_lock` uses a deadlock-avoidance algorithm internally, acquiring both mutexes without risk of circular waiting.

@@ -13,11 +13,7 @@ A type satisfies `ReadStream` if it provides partial read operations via `read_s
 
 [source,cpp]
 ----
-template<typename T>
-concept ReadStream =
-    requires(T& stream, mutable_buffer_archetype buffers) {
-        { stream.read_some(buffers) } -> IoAwaitable;
-    };
+include::example$snippets/6b_streams.cpp[tag=read_stream_concept]
 ----
 
 The `requires` clause names a single representative buffer (`mutable_buffer_archetype`) because a {cpp} concept cannot say "works with every buffer sequence." The real contract is that `read_some` accepts *any* `MutableBufferSequence`—one buffer or a range; the archetype only samples that requirement.
@@ -26,8 +22,7 @@ The `requires` clause names a single representative buffer (`mutable_buffer_arch
 
 [source,cpp]
 ----
-template<MutableBufferSequence Buffers>
-IoAwaitable auto read_some(Buffers buffers);
+include::example$snippets/6b_streams.cpp[tag=read_some_signature,indent=0]
 ----
 
 Attempts to read up to `buffer_size(buffers)` bytes from the stream into the buffer sequence. Await-returns `(error_code, std::size_t)`:
@@ -51,10 +46,7 @@ I/O conditions from the underlying system are reported via `ec`. Failures in the
 
 [source,cpp]
 ----
-char buf[1024];
-auto [ec, n] = co_await stream.read_some(make_buffer(buf));
-// n might be 1, might be 500, might be 1024
-// if !ec, then n >= 1
+include::example$snippets/6b_streams.cpp[tag=read_partial,indent=0]
 ----
 
 This matches underlying OS behavior: reads return when *some* data is available.
@@ -63,21 +55,7 @@ This matches underlying OS behavior: reads return when *some* data is available.
 
 [source,cpp]
 ----
-template<ReadStream Stream>
-task<> dump_stream(Stream& stream)
-{
-    char buf[256];
-
-    for (;;)
-    {
-        auto [ec, n] = co_await stream.read_some(make_buffer(buf));
-
-        std::cout.write(buf, n);
-
-        if (ec)
-            break;
-    }
-}
+include::example$snippets/6b_streams.cpp[tag=dump_stream]
 ----
 
 == WriteStream
@@ -86,11 +64,7 @@ A type satisfies `WriteStream` if it provides partial write operations via `writ
 
 [source,cpp]
 ----
-template<typename T>
-concept WriteStream =
-    requires(T& stream, const_buffer_archetype buffers) {
-        { stream.write_some(buffers) } -> IoAwaitable;
-    };
+include::example$snippets/6b_streams.cpp[tag=write_stream_concept]
 ----
 
 As with `ReadStream`, the `const_buffer_archetype` is only a representative: the real contract is that `write_some` accepts *any* `ConstBufferSequence`, which a {cpp} concept cannot fully express.
@@ -99,8 +73,7 @@ As with `ReadStream`, the `const_buffer_archetype` is only a representative: the
 
 [source,cpp]
 ----
-template<ConstBufferSequence Buffers>
-IoAwaitable auto write_some(Buffers buffers);
+include::example$snippets/6b_streams.cpp[tag=write_some_signature,indent=0]
 ----
 
 Attempts to write up to `buffer_size(buffers)` bytes from the buffer sequence to the stream. Await-returns `(error_code, std::size_t)`:
@@ -124,8 +97,7 @@ I/O conditions from the underlying system are reported via `ec`. Failures in the
 
 [source,cpp]
 ----
-auto [ec, n] = co_await stream.write_some(make_buffer(large_data));
-// n might be less than large_data.size()
+include::example$snippets/6b_streams.cpp[tag=write_partial,indent=0]
 ----
 
 To write all data, loop until complete (or use the `write()` composed operation).
@@ -138,15 +110,9 @@ Wraps any `ReadStream` in a type-erased container:
 
 [source,cpp]
 ----
-#include <boost/capy/io/any_read_stream.hpp>
+include::example$snippets/6b_streams.cpp[tag=any_read_stream_include]
 
-// Owning: takes ownership of a moved-in stream
-template<ReadStream S>
-any_read_stream(S stream);
-
-// Reference: wraps by pointer without ownership
-template<ReadStream S>
-any_read_stream(S* stream);
+include::example$snippets/6b_streams.cpp[tag=any_read_stream_ctors,indent=0]
 ----
 
 Each wrapper has two construction modes. Passing an object by value takes ownership: the wrapper moves the stream into internally allocated storage. Passing a pointer wraps the pointed-to stream by reference, and that stream must outlive the wrapper.
@@ -157,13 +123,9 @@ Wraps any `WriteStream`:
 
 [source,cpp]
 ----
-#include <boost/capy/io/any_write_stream.hpp>
+include::example$snippets/6b_streams.cpp[tag=any_write_stream_include]
 
-template<WriteStream S>
-any_write_stream(S stream);   // owning
-
-template<WriteStream S>
-any_write_stream(S* stream);  // reference
+include::example$snippets/6b_streams.cpp[tag=any_write_stream_ctors,indent=0]
 ----
 
 === any_stream
@@ -172,15 +134,9 @@ Wraps bidirectional streams (both `ReadStream` and `WriteStream`):
 
 [source,cpp]
 ----
-#include <boost/capy/io/any_stream.hpp>
+include::example$snippets/6b_streams.cpp[tag=any_stream_include]
 
-template<class S>
-    requires ReadStream<S> && WriteStream<S>
-any_stream(S stream);   // owning
-
-template<class S>
-    requires ReadStream<S> && WriteStream<S>
-any_stream(S* stream);  // reference
+include::example$snippets/6b_streams.cpp[tag=any_stream_ctors,indent=0]
 ----
 
 === Wrapper Characteristics
@@ -196,40 +152,14 @@ Example usage:
 
 [source,cpp]
 ----
-void process_stream(any_stream& stream);
-
-tcp::socket socket;
-// ... connect socket ...
-
-any_stream wrapped{&socket};  // Type erasure, references the existing socket
-process_stream(wrapped);      // process_stream doesn't know about tcp::socket
+include::example$snippets/6b_streams.cpp[tag=wrapper_usage,indent=0]
 ----
 
 == Example: Echo Server with any_stream
 
 [source,cpp]
 ----
-// echo.hpp - Header only declares the signature
-task<> handle_connection(any_stream& stream);
-
-// echo.cpp - Implementation in separate translation unit
-task<> handle_connection(any_stream& stream)
-{
-    char buf[1024];
-    
-    for (;;)
-    {
-        auto [ec, n] = co_await stream.read_some(make_buffer(buf));
-
-        auto [wec, wn] = co_await write(stream, const_buffer(buf, n));
-
-        if (ec)
-            break;
-
-        if (wec)
-            break;
-    }
-}
+include::example$snippets/6b_streams.cpp[tag=echo_server]
 ----
 
 The implementation doesn't know the concrete stream type. It compiles once and works with any transport.

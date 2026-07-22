@@ -53,8 +53,7 @@ When you call an I/O function with a buffer sequence:
 
 [source,cpp]
 ----
-template<ConstBufferSequence Buffers>
-io_result<std::size_t> write_some(Buffers const& buffers);
+include::example$snippets/5d_system_io.cpp[tag=write_some_signature]
 ----
 
 Internally, Capy:
@@ -73,7 +72,7 @@ entries) is filled from the sequence and passed to the OS call. If the
 sequence has more buffers than fit in the window, the window is refilled
 and the OS call is repeated for the remaining buffers:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 // Pseudocode of internal implementation
 template<ConstBufferSequence Buffers>
@@ -106,16 +105,14 @@ Without scatter/gather:
 
 [source,cpp]
 ----
-write(fd, header, header_len);  // syscall 1
-write(fd, body, body_len);      // syscall 2
+include::example$snippets/5d_system_io.cpp[tag=two_syscalls,indent=0]
 ----
 
 With scatter/gather:
 
 [source,cpp]
 ----
-iovec iov[2] = {{header, header_len}, {body, body_len}};
-writev(fd, iov, 2);  // single syscall
+include::example$snippets/5d_system_io.cpp[tag=gather_syscall,indent=0]
 ----
 
 === Zero-Copy Transmission
@@ -136,11 +133,7 @@ Buffers can be pre-registered with the kernel, eliminating per-operation address
 
 [source,cpp]
 ----
-// Registration (done once)
-io_uring_register_buffers(ring, buffers, count);
-
-// Use (fast path - no translation)
-io_uring_prep_write_fixed(sqe, fd, buf, len, offset, buf_index);
+include::example$snippets/5d_system_io.cpp[tag=io_uring_fixed,indent=0]
 ----
 
 === IOCP (Windows)
@@ -157,13 +150,7 @@ Fewer buffers means less translation overhead:
 
 [source,cpp]
 ----
-// Prefer: single buffer when possible
-auto buf = assemble_message();  // Build in one buffer
-write(stream, buf);
-
-// Avoid: many tiny buffers
-std::array<const_buffer, 100> tiny_bufs;
-write(stream, tiny_bufs);  // 100-element translation
+include::example$snippets/5d_system_io.cpp[tag=minimize_buffer_count,indent=0]
 ----
 
 === Reuse Buffer Structures
@@ -172,15 +159,7 @@ For repeated I/O with the same structure, consider caching the platform buffer a
 
 [source,cpp]
 ----
-// Build once, use many times
-struct message_buffers
-{
-    std::array<iovec, 3> iovecs;
-    
-    void set_header(void const* p, std::size_t n);
-    void set_body(void const* p, std::size_t n);
-    void set_footer(void const* p, std::size_t n);
-};
+include::example$snippets/5d_system_io.cpp[tag=cached_iovecs]
 ----
 
 === Profile Before Optimizing
@@ -199,7 +178,7 @@ The buffer sequence concepts and translation utilities are in:
 
 [source,cpp]
 ----
-#include <boost/capy/buffers.hpp>
+include::example$snippets/5d_system_io.cpp[tag=include_buffers]
 ----
 
 OS-specific I/O is handled by Corosio, which builds on Capy's buffer model.

@@ -25,23 +25,7 @@ Any function that returns `task<T>` and contains coroutine keywords (`co_await`,
 
 [source,cpp]
 ----
-#include <boost/capy.hpp>
-using namespace boost::capy;
-
-task<int> compute_value()
-{
-    co_return 42;
-}
-
-task<std::string> fetch_greeting()
-{
-    co_return "Hello, Capy!";
-}
-
-task<> do_nothing()  // task<void>
-{
-    co_return;
-}
+include::example$snippets/4a_tasks.cpp[tag=declaring]
 ----
 
 The syntax `task<>` is equivalent to `task<void>` and represents a coroutine that completes without producing a value.
@@ -52,17 +36,7 @@ Use `co_return` to complete the coroutine and provide its result:
 
 [source,cpp]
 ----
-task<int> add(int a, int b)
-{
-    int result = a + b;
-    co_return result;  // Completes with value
-}
-
-task<> log_message(std::string msg)
-{
-    std::cout << msg << "\n";
-    co_return;  // Completes without value
-}
+include::example$snippets/4a_tasks.cpp[tag=returning]
 ----
 
 For `task<void>`, you can either use `co_return;` explicitly or let execution fall off the end of the function body.
@@ -73,22 +47,7 @@ Tasks can await other tasks using `co_await`. This is the primary mechanism for 
 
 [source,cpp]
 ----
-task<int> step_one()
-{
-    co_return 10;
-}
-
-task<int> step_two(int x)
-{
-    co_return x * 2;
-}
-
-task<int> full_operation()
-{
-    int a = co_await step_one();  // Suspends until step_one completes
-    int b = co_await step_two(a); // Suspends until step_two completes
-    co_return b + 5;              // Final result: 25
-}
+include::example$snippets/4a_tasks.cpp[tag=awaiting]
 ----
 
 When you `co_await` a task:
@@ -104,20 +63,7 @@ A critical property of `task<T>` is *lazy execution*: creating a task does not s
 
 [source,cpp]
 ----
-task<int> compute()
-{
-    std::cout << "Computing...\n";  // Not printed until awaited
-    co_return 42;
-}
-
-task<> example()
-{
-    auto t = compute();   // Task created, but "Computing..." NOT printed yet
-    std::cout << "Task created\n";
-    
-    int result = co_await std::move(t);  // NOW "Computing..." is printed
-    std::cout << "Result: " << result << "\n";
-}
+include::example$snippets/4a_tasks.cpp[tag=lazy]
 ----
 
 *Output:*
@@ -138,9 +84,7 @@ Consider:
 
 [source,cpp]
 ----
-task<> a() { co_await b(); }
-task<> b() { co_await c(); }
-task<> c() { co_return; }
+include::example$snippets/4a_tasks.cpp[tag=chain]
 ----
 
 Without symmetric transfer, each `co_await` would add a stack frame, potentially causing stack overflow with deep nesting. With symmetric transfer, `c` returning to `b` returning to `a` uses constant stack space regardless of depth.
@@ -149,11 +93,7 @@ This is implemented through the `await_suspend` returning a coroutine handle rat
 
 [source,cpp]
 ----
-// Inside task's final_suspend awaiter
-std::coroutine_handle<> await_suspend(std::coroutine_handle<>) const noexcept
-{
-    return continuation_;  // Transfer directly to continuation
-}
+include::example$snippets/4a_tasks.cpp[tag=final_suspend,indent=0]
 ----
 
 == Move Semantics
@@ -162,17 +102,7 @@ Tasks are move-only. Copying a task would create aliasing problems where multipl
 
 [source,cpp]
 ----
-task<int> compute();
-
-task<> example()
-{
-    auto t1 = compute();
-    auto t2 = std::move(t1);  // OK: ownership transferred, t1 is now empty
-
-    // auto t3 = t2;  // Error: task is not copyable
-
-    int result = co_await std::move(t2);
-}
+include::example$snippets/4a_tasks.cpp[tag=move_only]
 ----
 
 After moving, the source task becomes empty and must not be awaited.
@@ -183,24 +113,7 @@ Exceptions thrown inside a task are captured and rethrown when the task is await
 
 [source,cpp]
 ----
-task<int> might_fail(bool should_fail)
-{
-    if (should_fail)
-        throw std::runtime_error("Operation failed");
-    co_return 42;
-}
-
-task<> example()
-{
-    try
-    {
-        int result = co_await might_fail(true);
-    }
-    catch (std::runtime_error const& e)
-    {
-        std::cout << "Caught: " << e.what() << "\n";
-    }
-}
+include::example$snippets/4a_tasks.cpp[tag=exceptions]
 ----
 
 The exception is stored in the promise when it occurs and rethrown in `await_resume` when the calling coroutine resumes.
@@ -211,14 +124,14 @@ The `task<T>` type is defined in:
 
 [source,cpp]
 ----
-#include <boost/capy/task.hpp>
+include::example$snippets/4a_tasks.cpp[tag=include_task]
 ----
 
 Or included via the umbrella header:
 
 [source,cpp]
 ----
-#include <boost/capy.hpp>
+include::example$snippets/4a_tasks.cpp[tag=include_umbrella]
 ----
 
 You have now learned how to declare, return values from, and await `task<T>` coroutines. In the next section, you will learn how to launch tasks for execution using `run_async` and `run`.

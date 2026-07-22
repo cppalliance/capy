@@ -29,23 +29,7 @@ No real executor or thread pool is involved.
 
 [source,cpp]
 ----
-#include <boost/capy/task.hpp>
-#include <boost/capy/test/run_blocking.hpp>
-
-using namespace boost::capy;
-using namespace boost::capy::test;
-
-task<int> compute(int x)
-{
-    co_return x * 2;
-}
-
-void test_compute()
-{
-    int result = 0;
-    run_blocking([&](int v) { result = v; })(compute(21));
-    BOOST_TEST(result == 42);
-}
+include::example$snippets/7a_drivers.cpp[tag=run_blocking_basic]
 ----
 
 === Result Capture
@@ -56,32 +40,7 @@ handle the success and error cases independently:
 
 [source,cpp]
 ----
-// Discard result; rethrow on exception
-run_blocking()(my_task());
-
-// Capture result; rethrow on exception
-int out = 0;
-run_blocking([&](int v) { out = v; })(compute(21));
-
-// Capture result; handle exception separately
-run_blocking(
-    [&](int v) { out = v; },
-    [](std::exception_ptr ep) { std::rethrow_exception(ep); }
-)(compute(21));
-
-// With a stop token (discards result)
-std::stop_source src;
-run_blocking(src.get_token())(my_task());
-
-// With a stop token and a result handler
-run_blocking(src.get_token(), [&](int v) { out = v; })(compute(21));
-
-// With a stop token and separate handlers
-run_blocking(
-    src.get_token(),
-    [&](int v) { out = v; },
-    [](std::exception_ptr ep) { std::rethrow_exception(ep); }
-)(compute(21));
+include::example$snippets/7a_drivers.cpp[tag=run_blocking_overloads,indent=0]
 ----
 
 === How It Works
@@ -130,18 +89,7 @@ paths without real I/O.
 
 [source,cpp]
 ----
-std::stop_source src;
-src.request_stop();
-
-run_blocking(src.get_token())([&]() -> task<>
-{
-    read_stream rs;
-    rs.provide("ignored");
-
-    char buf[32];
-    auto [ec, n] = co_await rs.read_some(make_buffer(buf));
-    assert(ec == cond::canceled);   // honored the stop token
-}());
+include::example$snippets/7a_drivers.cpp[tag=run_blocking_cancellation,indent=0]
 ----
 
 The mock sources, sinks, and buffer adapters complete synchronously, so they
@@ -159,25 +107,7 @@ location of the failing call.
 
 [source,cpp]
 ----
-#include <boost/capy/test/fuse.hpp>
-
-using namespace boost::capy;
-using namespace boost::capy::test;
-
-void test_with_fuse()
-{
-    fuse f;
-    auto r = f.armed([](fuse& f) {
-        auto ec = f.maybe_fail();
-        if(ec)
-            return;  // injected error: exit gracefully
-
-        ec = f.maybe_fail();
-        if(ec)
-            return;
-    });
-    BOOST_TEST(r.success);
-}
+include::example$snippets/7a_drivers.cpp[tag=fuse_basic]
 ----
 
 === armed() vs. inert()
@@ -196,32 +126,7 @@ confirms it handles every error site:
 
 [source,cpp]
 ----
-fuse f;
-
-// Smoke test: happy path
-auto r1 = f.inert([&](fuse&) -> task<void> {
-    read_stream rs(f);
-    rs.provide("hello");
-
-    char buf[8];
-    auto [ec, n] = co_await rs.read_some(make_buffer(buf));
-    BOOST_TEST(!ec);
-    BOOST_TEST(std::string_view(buf, n) == "hello");
-});
-BOOST_TEST(r1.success);
-
-// Fault coverage: every error site
-auto r2 = f.armed([&](fuse&) -> task<void> {
-    read_stream rs(f);
-    rs.provide("hello");
-
-    char buf[8];
-    auto [ec, n] = co_await rs.read_some(make_buffer(buf));
-    if(ec)
-        co_return;  // fuse injected an error; exit gracefully
-    BOOST_TEST(std::string_view(buf, n) == "hello");
-});
-BOOST_TEST(r2.success);
+include::example$snippets/7a_drivers.cpp[tag=inert_vs_armed,indent=0]
 ----
 
 The only difference is the `if(ec) co_return;` guard. In `inert()`,
@@ -233,15 +138,7 @@ The only way to signal a test failure under `inert()` is to call
 
 [source,cpp]
 ----
-fuse f;
-auto r = f.inert([](fuse& f) {
-    auto ec = f.maybe_fail();  // always returns {}
-    assert(!ec);
-
-    if(some_condition_failed)
-        f.fail();  // the only way to signal failure in inert mode
-});
-BOOST_TEST(r.success);
+include::example$snippets/7a_drivers.cpp[tag=inert_fail,indent=0]
 ----
 
 === The Early-Return Pattern
@@ -253,14 +150,7 @@ internally, so this pattern applies to all I/O calls inside an armed test.
 
 [source,cpp]
 ----
-// Correct: early return on injected error
-auto [ec, n] = co_await rs.read_some(buf);
-if(ec)
-    co_return;  // fuse injected an error -- exit gracefully
-
-// Wrong: asserting success unconditionally
-auto [ec, n] = co_await rs.read_some(buf);
-BOOST_TEST(!ec);  // fails when fuse injects an error
+include::example$snippets/7a_drivers.cpp[tag=early_return,indent=0]
 ----
 
 === Coroutine Support
@@ -271,17 +161,7 @@ You do not need to call `run_blocking` yourself:
 
 [source,cpp]
 ----
-fuse f;
-auto r = f.armed([&](fuse&) -> task<void> {
-    auto ec = f.maybe_fail();
-    if(ec)
-        co_return;
-
-    auto [ec2, n] = co_await rs.read_some(buf);
-    if(ec2)
-        co_return;
-});
-BOOST_TEST(r.success);
+include::example$snippets/7a_drivers.cpp[tag=armed_coroutine,indent=0]
 ----
 
 === Custom Fail Points
@@ -294,28 +174,7 @@ fault injection alongside every other site.
 
 [source,cpp]
 ----
-class widget
-{
-    fuse& f_;
-public:
-    explicit widget(fuse& f) : f_(f) {}
-
-    std::error_code process()
-    {
-        auto ec = f_.maybe_fail();
-        if(ec)
-            return ec;
-        // ... actual work ...
-        return {};
-    }
-};
-
-fuse f;
-widget w(f);
-w.process();                                    // maybe_fail() returns {}
-
-auto r = f.armed([&](fuse&) { w.process(); });  // both branches exercised
-BOOST_TEST(r.success);
+include::example$snippets/7a_drivers.cpp[tag=custom_fail_points,indent=0]
 ----
 
 === Custom Error Code
@@ -325,16 +184,7 @@ The default injected code is `error::test_failure`. Pass any
 
 [source,cpp]
 ----
-fuse f(std::make_error_code(std::errc::operation_canceled));
-auto r = f.armed([](fuse& f) {
-    auto ec = f.maybe_fail();
-    if(ec)
-    {
-        assert(ec == std::errc::operation_canceled);
-        return;
-    }
-});
-BOOST_TEST(r.success);
+include::example$snippets/7a_drivers.cpp[tag=custom_error_code,indent=0]
 ----
 
 [cols="1,2"]
@@ -409,20 +259,7 @@ Platform limits on the name length:
 
 [source,cpp]
 ----
-#include <boost/capy/ex/run_async.hpp>
-#include <boost/capy/ex/thread_pool.hpp>
-#include <boost/capy/task.hpp>
-#include <boost/capy/test/thread_name.hpp>
-
-using namespace boost::capy;
-
-thread_pool pool(4);
-run_async(pool.get_executor())([]() -> task<void> {
-    set_current_thread_name("test-worker-0");
-    // ... test work runs here; name appears in gdb thread list
-    co_return;
-}());
-pool.join();
+include::example$snippets/7a_drivers.cpp[tag=thread_name,indent=0]
 ----
 
 Note that `set_current_thread_name` lives in namespace `boost::capy`, not
@@ -446,26 +283,7 @@ internally, so the test body uses `co_await` directly:
 
 [source,cpp]
 ----
-#include <boost/capy/task.hpp>
-#include <boost/capy/test/fuse.hpp>
-
-using namespace boost::capy;
-using namespace boost::capy::test;
-
-task<int> add(int a, int b)
-{
-    co_return a + b;
-}
-
-void test_add()
-{
-    fuse f;
-    auto r = f.armed([&](fuse&) -> task<void> {
-        auto sum = co_await add(3, 4);
-        BOOST_TEST(sum == 7);
-    });
-    BOOST_TEST(r.success);
-}
+include::example$snippets/7a_drivers.cpp[tag=canonical_skeleton]
 ----
 
 When the operation under test needs a specific execution context -- for
@@ -476,7 +294,7 @@ each iteration's task on a context it owns and returns any exception the task
 raised as a `std::exception_ptr` (null on success); `armed` rethrows it.
 `fuse` never learns about the context -- the caller owns the drive loop:
 
-[source,cpp]
+[source,cpp,role=external]
 ----
 fuse f;
 auto io_runner = [](task<void> t) -> std::exception_ptr {

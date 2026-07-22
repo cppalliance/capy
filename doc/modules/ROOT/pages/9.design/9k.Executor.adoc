@@ -10,27 +10,7 @@ The `Executor` concept exists to answer one question: when a coroutine is ready 
 
 [source,cpp]
 ----
-template<class E>
-concept Executor =
-    std::is_nothrow_copy_constructible_v<E> &&
-    std::is_nothrow_move_constructible_v<E> &&
-    requires(E& e, E const& ce, E const& ce2,
-             continuation c)
-    {
-        { ce == ce2 } noexcept -> std::convertible_to<bool>;
-        { ce.context() } noexcept;
-        requires std::is_lvalue_reference_v<
-            decltype(ce.context())> &&
-            std::derived_from<
-                std::remove_reference_t<
-                    decltype(ce.context())>,
-                execution_context>;
-        { ce.on_work_started() } noexcept;
-        { ce.on_work_finished() } noexcept;
-
-        { ce.dispatch(c) } -> std::same_as<std::coroutine_handle<>>;
-        { ce.post(c) };
-    };
+include::example$snippets/9k_executor.cpp[tag=executor_concept]
 ----
 
 An `Executor` provides exactly two scheduling operations:
@@ -93,13 +73,7 @@ A conforming implementation:
 
 [source,cpp]
 ----
-std::coroutine_handle<> dispatch(continuation& c) const
-{
-    if(ctx_.running_in_this_thread())
-        return c.h;            // symmetric transfer
-    post(c);
-    return std::noop_coroutine();
-}
+include::example$snippets/9k_executor.cpp[tag=dispatch_impl,indent=0]
 ----
 
 This design enables the common fast path -- same-executor dispatch at `final_suspend` -- to avoid queuing entirely, transferring control directly via symmetric transfer.
@@ -163,11 +137,7 @@ The executor accepts `continuation&` rather than `std::coroutine_handle<>`. A `c
 
 [source,cpp]
 ----
-struct continuation
-{
-    std::coroutine_handle<> h;
-    void* reserved = nullptr;
-};
+include::example$snippets/9k_executor.cpp[tag=continuation_struct]
 ----
 
 This design has three consequences:
@@ -200,12 +170,7 @@ In Corosio, `on_work_finished` triggers `stop()` when the atomic work count reac
 
 [source,cpp]
 ----
-void on_work_finished() noexcept
-{
-    if(outstanding_work_.fetch_sub(
-        1, std::memory_order_acq_rel) == 1)
-        stop();
-}
+include::example$snippets/9k_executor.cpp[tag=on_work_finished,indent=0]
 ----
 
 Every `run_async` call increments the count. When the launched task completes, the count decrements. When no tasks remain, `run()` returns. Without work tracking in the executor, the event loop would need a separate signaling mechanism or would spin indefinitely.
@@ -237,12 +202,7 @@ Corosio demonstrates this pattern throughout its public API. I/O objects accept 
 
 [source,cpp]
 ----
-template<class Ex>
-    requires capy::Executor<Ex>
-explicit tcp_socket(Ex const& ex)
-    : tcp_socket(ex.context())
-{
-}
+include::example$snippets/9k_executor.cpp[tag=socket_ctor,indent=0]
 ----
 
 The socket constructor receives `execution_context&` and looks up the socket service. The concrete context type -- `epoll_context`, `iocp_context`, `select_context` -- is irrelevant to the socket.
@@ -257,11 +217,7 @@ The entire object is two pointers:
 
 [source,cpp]
 ----
-class executor_ref
-{
-    void const* ex_;                       // pointer to the executor
-    detail::executor_vtable const* vt_;    // pointer to the vtable
-};
+include::example$snippets/9k_executor.cpp[tag=executor_ref_layout]
 ----
 
 Two pointers fit in two registers. `executor_ref` can be passed by value as cheaply as passing a pointer. No heap allocation, no small-buffer optimization, no reference counting.
@@ -298,16 +254,7 @@ When a coroutine `co_await`s an I/O awaitable, the awaitable's `await_suspend` r
 
 [source,cpp]
 ----
-std::coroutine_handle<>
-await_suspend(
-    std::coroutine_handle<> h,
-    io_env const* env) noexcept
-{
-    cont_.h = h;
-    ex_ = env->executor;
-    // ... initiate I/O operation ...
-    return std::noop_coroutine();
-}
+include::example$snippets/9k_executor.cpp[tag=capture_at_initiation,indent=0]
 ----
 
 === Dispatch at Completion
@@ -316,8 +263,7 @@ When the I/O completes (from the reactor thread for epoll, the completion port f
 
 [source,cpp]
 ----
-// Timer fires or I/O completes:
-ex_.post(cont_);
+include::example$snippets/9k_executor.cpp[tag=dispatch_at_completion,indent=0]
 ----
 
 `post` links the continuation into the executor's work queue via `cont_.reserved`. No heap allocation occurs -- the continuation is embedded in the awaitable, which is alive for the duration of the suspension. A worker thread dequeues the continuation and calls `cont_.h.resume()`.
@@ -338,13 +284,7 @@ The fix is to save and restore TLS around every `.resume()` call:
 
 [source,cpp]
 ----
-inline void
-safe_resume(std::coroutine_handle<> h) noexcept
-{
-    auto* saved = get_current_frame_allocator();
-    h.resume();
-    set_current_frame_allocator(saved);
-}
+include::example$snippets/9k_executor.cpp[tag=safe_resume]
 ----
 
 This makes TLS behave like a stack. Each nested resume pushes its own allocator; when the coroutine suspends and `.resume()` returns, the previous value is restored. The cost is two TLS accesses (one read, one write) per `.resume()` call -- negligible compared to the cost of resuming a coroutine.
@@ -382,19 +322,7 @@ A minimal executor implementation:
 
 [source,cpp]
 ----
-class my_executor
-{
-public:
-    execution_context& context() const noexcept;
-
-    void on_work_started() const noexcept;
-    void on_work_finished() const noexcept;
-
-    std::coroutine_handle<> dispatch(continuation& c) const;
-    void post(continuation& c) const;
-
-    bool operator==(my_executor const&) const noexcept;
-};
+include::example$snippets/9k_executor.cpp[tag=minimal_executor]
 ----
 
 == Summary

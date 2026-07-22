@@ -17,62 +17,7 @@ Protecting shared state with a strand instead of a mutex.
 
 [source,cpp]
 ----
-#include <boost/capy.hpp>
-#include <iostream>
-#include <latch>
-#include <vector>
-
-namespace capy = boost::capy;
-
-int main()
-{
-    constexpr int num_coroutines = 10;
-    constexpr int increments_per_coro = 1000;
-
-    capy::thread_pool pool(4);
-    capy::strand s{pool.get_executor()};
-    std::latch done(1);
-
-    auto on_complete = [&done](auto&&...) { done.count_down(); };
-    auto on_error = [&done](std::exception_ptr ep) {
-        try { std::rethrow_exception(ep); }
-        catch (std::exception const& e) {
-            std::cerr << "Error: " << e.what() << "\n";
-        }
-        catch (...) {
-            std::cerr << "Error: unknown exception\n";
-        }
-        done.count_down();
-    };
-
-    int counter = 0;
-
-    // Each coroutine increments the shared counter without locks.
-    // The strand ensures only one coroutine runs at a time.
-    auto increment = [&](int id) -> capy::io_task<> {
-        for (int i = 0; i < increments_per_coro; ++i)
-            ++counter;
-        std::cout << "Coroutine " << id
-                  << " finished, counter = " << counter << "\n";
-        co_return capy::io_result<>{};
-    };
-
-    auto run_all = [&]() -> capy::task<> {
-        std::vector<capy::io_task<>> tasks;
-        for (int i = 0; i < num_coroutines; ++i)
-            tasks.push_back(increment(i));
-        (void) co_await capy::when_all(std::move(tasks));
-    };
-
-    capy::run_async(s, on_complete, on_error)(run_all());
-    done.wait();
-
-    int expected = num_coroutines * increments_per_coro;
-    std::cout << "\nFinal counter: " << counter
-              << " (expected " << expected << ")\n";
-
-    return 0;
-}
+include::example$strand-serialization/strand_serialization.cpp[tag=full]
 ----
 
 == Build
@@ -89,7 +34,7 @@ target_link_libraries(strand_serialization PRIVATE Boost::capy)
 
 [source,cpp]
 ----
-capy::strand s{pool.get_executor()};
+include::example$strand-serialization/strand_serialization.cpp[tag=strand,indent=0]
 ----
 
 A `strand` wraps an executor and guarantees that handlers dispatched through it never run concurrently. This replaces the need for a mutex when protecting shared state accessed by coroutines.
@@ -98,13 +43,7 @@ A `strand` wraps an executor and guarantees that handlers dispatched through it 
 
 [source,cpp]
 ----
-int counter = 0;
-
-auto increment = [&](int id) -> capy::io_task<> {
-    for (int i = 0; i < increments_per_coro; ++i)
-        ++counter;
-    // ...
-};
+include::example$strand-serialization/strand_serialization.cpp[tag=counter,indent=0]
 ----
 
 Multiple coroutines increment the same `counter` without any locks. The strand serializes execution so only one coroutine runs at a time, preventing data races.
@@ -113,7 +52,7 @@ Multiple coroutines increment the same `counter` without any locks. The strand s
 
 [source,cpp]
 ----
-capy::run_async(s, on_complete, on_error)(run_all());
+include::example$strand-serialization/strand_serialization.cpp[tag=run_on_strand,indent=0]
 ----
 
 Passing the strand `s` to `run_async` ensures the entire coroutine tree executes through the strand. Even though the underlying `thread_pool` has 4 threads, the strand constrains execution to one coroutine at a time.

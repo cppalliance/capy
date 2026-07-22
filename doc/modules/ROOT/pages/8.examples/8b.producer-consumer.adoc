@@ -18,53 +18,7 @@ Two tasks communicating via an async event, with strand serialization.
 
 [source,cpp]
 ----
-#include <boost/capy.hpp>
-#include <boost/capy/ex/strand.hpp>
-#include <iostream>
-#include <latch>
-
-namespace capy = boost::capy;
-
-int main()
-{
-    capy::thread_pool pool;
-    capy::strand s{pool.get_executor()};
-    std::latch done(1);
-
-    auto on_complete = [&done](auto&&...) { done.count_down(); };
-    auto on_error = [&done](std::exception_ptr) { done.count_down(); };
-
-    capy::async_event data_ready;
-    int shared_value = 0;
-
-    auto producer = [&]() -> capy::io_task<> {
-        std::cout << "Producer: preparing data...\n";
-        shared_value = 42;
-        std::cout << "Producer: data ready, signaling\n";
-        data_ready.set();
-        co_return capy::io_result<>{};
-    };
-
-    auto consumer = [&]() -> capy::io_task<> {
-        std::cout << "Consumer: waiting for data...\n";
-        auto [ec] = co_await data_ready.wait();
-        (void)ec;
-        std::cout << "Consumer: received value " << shared_value << "\n";
-        co_return capy::io_result<>{};
-    };
-
-    // Run both tasks concurrently using when_all, through a strand.
-    // The strand serializes execution, ensuring thread-safe access
-    // to the shared async_event and shared_value.
-    auto run_both = [&]() -> capy::task<> {
-        (void) co_await capy::when_all(producer(), consumer());
-    };
-
-    capy::run_async(s, on_complete, on_error)(run_both());
-
-    done.wait();  // Block until tasks complete
-    return 0;
-}
+include::example$producer-consumer/producer_consumer.cpp[tag=full]
 ----
 
 == Build
@@ -81,7 +35,7 @@ target_link_libraries(producer_consumer PRIVATE capy)
 
 [source,cpp]
 ----
-capy::strand s{pool.get_executor()};
+include::example$producer-consumer/producer_consumer.cpp[tag=strand,indent=0]
 ----
 
 A `strand` is an executor adaptor that serializes execution. All coroutines dispatched through a strand are guaranteed not to run concurrently, making it safe to access shared state without explicit locking. Note that `async_event` is not thread-safe, so using a strand ensures safe access.
@@ -90,7 +44,7 @@ A `strand` is an executor adaptor that serializes execution. All coroutines disp
 
 [source,cpp]
 ----
-capy::async_event data_ready;
+include::example$producer-consumer/producer_consumer.cpp[tag=event,indent=0]
 ----
 
 `async_event` is a manual-reset signaling mechanism. One task can `set()` it; other tasks can `wait()` for it. When set, all current waiters resume, and the event stays set (later `wait()` calls return immediately) until `clear()` is called.
@@ -99,13 +53,7 @@ capy::async_event data_ready;
 
 [source,cpp]
 ----
-auto producer = [&]() -> capy::io_task<> {
-    std::cout << "Producer: preparing data...\n";
-    shared_value = 42;
-    std::cout << "Producer: data ready, signaling\n";
-    data_ready.set();
-    co_return capy::io_result<>{};
-};
+include::example$producer-consumer/producer_consumer.cpp[tag=producer,indent=0]
 ----
 
 The producer prepares data and signals completion by calling `set()`.
@@ -114,13 +62,7 @@ The producer prepares data and signals completion by calling `set()`.
 
 [source,cpp]
 ----
-auto consumer = [&]() -> capy::io_task<> {
-    std::cout << "Consumer: waiting for data...\n";
-    auto [ec] = co_await data_ready.wait();
-    (void)ec;
-    std::cout << "Consumer: received value " << shared_value << "\n";
-    co_return capy::io_result<>{};
-};
+include::example$producer-consumer/producer_consumer.cpp[tag=consumer,indent=0]
 ----
 
 The consumer waits until the event is set. The `co_await data_ready.wait()` suspends until `set()` is called.
@@ -129,14 +71,7 @@ The consumer waits until the event is set. The `co_await data_ready.wait()` susp
 
 [source,cpp]
 ----
-// Run both tasks concurrently using when_all, through a strand.
-// The strand serializes execution, ensuring thread-safe access
-// to the shared async_event and shared_value.
-auto run_both = [&]() -> capy::task<> {
-    (void) co_await capy::when_all(producer(), consumer());
-};
-
-capy::run_async(s, on_complete, on_error)(run_both());
+include::example$producer-consumer/producer_consumer.cpp[tag=run_both,indent=0]
 ----
 
 `when_all` runs both tasks concurrently within the same parent coroutine context, but the strand ensures they don't run at the same time on different threads. The producer signals `data_ready` when the value is set, and the consumer waits for the signal before reading.
@@ -145,11 +80,9 @@ capy::run_async(s, on_complete, on_error)(run_both());
 
 [source,cpp]
 ----
-std::latch done(1);  // std::latch - wait for completion
-auto on_complete = [&done](auto&&...) { done.count_down(); };
-auto on_error = [&done](std::exception_ptr) { done.count_down(); };
+include::example$producer-consumer/producer_consumer.cpp[tag=completion,indent=0]
 // ...
-done.wait();  // Block until tasks complete
+include::example$producer-consumer/producer_consumer.cpp[tag=wait,indent=0]
 ----
 
 The `std::latch` ensures `main()` waits for the tasks to complete before returning.

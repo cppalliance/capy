@@ -7,6 +7,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
+// tag::full[]
 #include "echo.hpp"
 #include <boost/capy/read.hpp>
 #include <boost/capy/write.hpp>
@@ -17,6 +18,7 @@ namespace myapp {
 
 namespace capy = boost::capy;
 
+// tag::session_impl[]
 capy::task<> echo_session(capy::any_stream& stream)
 {
     char buffer[1024];
@@ -36,5 +38,7 @@ capy::task<> echo_session(capy::any_stream& stream)
             co_return;
     }
 }
+// end::session_impl[]
 
 } // namespace myapp
+// end::full[]

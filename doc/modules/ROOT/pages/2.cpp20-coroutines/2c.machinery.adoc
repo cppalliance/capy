@@ -39,7 +39,7 @@ The compiler transforms your coroutine body into something resembling this pseud
 
 NOTE: The `co_await` keywords below are intentional. This mirrors the {cpp} standard's own description ({cpp}20 [dcl.fct.def.coroutine]/5), which uses `co_await` to express the logical suspension points. The compiler expands each `co_await` into the full awaiter protocol (`await_ready`, `await_suspend`, `await_resume`) as described in xref:2.cpp20-coroutines/2b.syntax.adoc#_awaitables_and_awaiters[Awaitables and Awaiters].
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 {
     promise_type promise;
@@ -70,65 +70,7 @@ Important observations:
 
 [source,cpp]
 ----
-#include <coroutine>
-#include <iostream>
-
-struct TracePromise
-{
-    struct promise_type
-    {
-        promise_type()
-        {
-            std::cout << "promise constructed" << std::endl;
-        }
-        
-        ~promise_type()
-        {
-            std::cout << "promise destroyed" << std::endl;
-        }
-        
-        TracePromise get_return_object()
-        {
-            std::cout << "get_return_object called" << std::endl;
-            return {};
-        }
-        
-        std::suspend_never initial_suspend()
-        {
-            std::cout << "initial_suspend called" << std::endl;
-            return {};
-        }
-        
-        std::suspend_always final_suspend() noexcept
-        {
-            std::cout << "final_suspend called" << std::endl;
-            return {};
-        }
-        
-        void return_void()
-        {
-            std::cout << "return_void called" << std::endl;
-        }
-        
-        void unhandled_exception()
-        {
-            std::cout << "unhandled_exception called" << std::endl;
-        }
-    };
-};
-
-TracePromise trace_coroutine()
-{
-    std::cout << "coroutine body begins" << std::endl;
-    co_return;
-}
-
-int main()
-{
-    std::cout << "calling coroutine" << std::endl;
-    auto result = trace_coroutine();
-    std::cout << "coroutine returned" << std::endl;
-}
+include::example$programs/2c_machinery_trace.cpp[tag=full]
 ----
 
 *Output:*
@@ -142,6 +84,8 @@ coroutine body begins
 return_void called
 final_suspend called
 coroutine returned
+destroying coroutine handle
+promise destroyed
 ----
 
 Notice that the promise is constructed first, then `get_return_object()` creates the return value, then `initial_suspend()` runs. Since `initial_suspend()` returns `suspend_never`, the coroutine body executes immediately. After `co_return`, `return_void()` is called, followed by `final_suspend()`. Since `final_suspend()` returns `suspend_always`, the coroutine suspends one last time, and the promise is not destroyed until the coroutine handle is explicitly destroyed.
@@ -176,7 +120,7 @@ Inside `get_return_object()`, you can obtain the coroutine handle using:
 
 [source,cpp]
 ----
-std::coroutine_handle<promise_type>::from_promise(*this)
+include::example$snippets/2c_machinery.cpp[tag=from_promise,indent=0]
 ----
 
 Since `get_return_object()` is called on the promise object (as `this`), this method returns a handle to the coroutine containing that promise.
@@ -189,7 +133,7 @@ A *generator* is a function that produces a sequence of values on demand. Instea
 
 The expression `co_yield value` is transformed by the compiler into:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
 co_await promise.yield_value(value)
 ----
@@ -200,99 +144,7 @@ The `yield_value` method receives the yielded value, stores it somewhere accessi
 
 [source,cpp]
 ----
-#include <coroutine>
-#include <iostream>
-
-struct Generator
-{
-    struct promise_type
-    {
-        int current_value;
-        
-        Generator get_return_object()
-        {
-            return Generator{
-                std::coroutine_handle<promise_type>::from_promise(*this)
-            };
-        }
-        
-        std::suspend_always initial_suspend() { return {}; }
-        std::suspend_always final_suspend() noexcept { return {}; }
-        
-        std::suspend_always yield_value(int value)
-        {
-            current_value = value;
-            return {};
-        }
-        
-        void return_void() {}
-        void unhandled_exception() { std::terminate(); }
-    };
-    
-    std::coroutine_handle<promise_type> handle;
-    
-    Generator(std::coroutine_handle<promise_type> h) : handle(h) {}
-    
-    ~Generator()
-    {
-        if (handle)
-            handle.destroy();
-    }
-    
-    // Disable copying
-    Generator(Generator const&) = delete;
-    Generator& operator=(Generator const&) = delete;
-    
-    // Enable moving
-    Generator(Generator&& other) noexcept
-        : handle(other.handle)
-    {
-        other.handle = nullptr;
-    }
-    
-    Generator& operator=(Generator&& other) noexcept
-    {
-        if (this != &other)
-        {
-            if (handle)
-                handle.destroy();
-            handle = other.handle;
-            other.handle = nullptr;
-        }
-        return *this;
-    }
-    
-    bool next()
-    {
-        if (!handle || handle.done())
-            return false;
-        handle.resume();
-        return !handle.done();
-    }
-    
-    int value() const
-    {
-        return handle.promise().current_value;
-    }
-};
-
-Generator count_to(int n)
-{
-    for (int i = 1; i <= n; ++i)
-    {
-        co_yield i;
-    }
-}
-
-int main()
-{
-    auto gen = count_to(5);
-    
-    while (gen.next())
-    {
-        std::cout << gen.value() << std::endl;
-    }
-}
+include::example$programs/2c_machinery_generator.cpp[tag=full]
 ----
 
 *Output:*
@@ -325,28 +177,7 @@ Here is a more interesting generator that produces the Fibonacci sequence:
 
 [source,cpp]
 ----
-Generator fibonacci()
-{
-    int a = 0, b = 1;
-    while (true)
-    {
-        co_yield a;
-        int next = a + b;
-        a = b;
-        b = next;
-    }
-}
-
-int main()
-{
-    auto fib = fibonacci();
-    
-    for (int i = 0; i < 10 && fib.next(); ++i)
-    {
-        std::cout << fib.value() << " ";
-    }
-    std::cout << std::endl;
-}
+include::example$programs/2c_machinery_fibonacci.cpp[tag=full]
 ----
 
 *Output:*

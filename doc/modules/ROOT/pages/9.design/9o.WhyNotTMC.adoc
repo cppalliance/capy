@@ -48,7 +48,7 @@ Both libraries propagate executor context. They differ in mechanism and mobility
 
 TMC allows a coroutine to switch executors mid-body:
 
-[source,cpp]
+[source,cpp,role=external]
 ----
 tmc::task<void> example() {
     // Running on executor A
@@ -144,9 +144,7 @@ HALO (Heap Allocation Lowering Optimization) lets compilers eliminate coroutine 
 
 [source,cpp]
 ----
-std::pmr::monotonic_buffer_resource arena;
-run_async(ex, &arena)(handle_connection(socket));
-// On disconnect: entire arena reclaimed instantly
+include::example$snippets/9o_why_not_tmc.cpp[tag=arena,indent=0]
 ----
 
 *TMC provides:*
@@ -165,11 +163,7 @@ When you write `co_await something`, what happens?
 
 [source,cpp]
 ----
-void await_suspend(std::coroutine_handle<> h);
-// or
-bool await_suspend(std::coroutine_handle<> h);
-// or
-std::coroutine_handle<> await_suspend(std::coroutine_handle<> h);
+include::example$snippets/9o_why_not_tmc.cpp[tags=std_suspend_void;std_suspend_bool;std_suspend_handle,indent=0]
 ----
 
 The awaitable receives a handle to resume. That's all. No information about where to resume, no cancellation mechanism.
@@ -178,7 +172,7 @@ The awaitable receives a handle to resume. That's all. No information about wher
 
 [source,cpp]
 ----
-auto await_suspend(std::coroutine_handle<> h, io_env const* env);
+include::example$snippets/9o_why_not_tmc.cpp[tag=await_suspend_env,indent=0]
 ----
 
 The awaitable receives:
@@ -193,7 +187,7 @@ The awaitable receives:
 
 Standard signature, plus traits-based context injection:
 
-[source,cpp]
+[source,cpp,role=external]
 ----
 // TMC propagates context via awaitable_traits<T>
 awaitable_traits<T>::set_continuation(awaitable, continuation);
@@ -212,16 +206,12 @@ What happens when you `co_await` an awaitable that doesn't implement the extende
 
 [source,cpp]
 ----
-// From task.hpp transform_awaitable()
-else
-{
-    static_assert(sizeof(A) == 0, "requires IoAwaitable");
-}
+include::example$snippets/9o_why_not_tmc.cpp[tag=strict_static_assert,indent=0]
 ----
 
 *TMC:* Wrap in a trampoline that captures current context.
 
-[source,cpp]
+[source,cpp,role=external]
 ----
 // From task.hpp await_transform()
 return tmc::detail::safe_wrap(std::forward<Awaitable>(awaitable));

@@ -29,31 +29,7 @@ visit every split position, and there are no async failure sites to inject.
 
 [source,cpp]
 ----
-#include <boost/capy/test/bufgrind.hpp>
-#include <boost/capy/test/buffer_to_string.hpp>
-#include <boost/capy/test/fuse.hpp>
-#include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/task.hpp>
-
-using namespace boost::capy;
-using namespace boost::capy::test;
-
-void test_all_splits()
-{
-    std::string data = "hello";
-    auto cb = make_buffer(data);
-
-    fuse f;
-    auto r = f.inert([&](fuse&) -> task<> {
-        bufgrind bg(cb);
-        while(bg)
-        {
-            auto [b1, b2] = co_await bg.next();
-            BOOST_TEST_EQ(buffer_to_string(b1.data(), b2.data()), data);
-        }
-    });
-    BOOST_TEST(r.success);
-}
+include::example$snippets/7e_buffer_inspection.cpp[tag=all_splits,indent=0]
 ----
 
 === Iteration Pattern
@@ -80,16 +56,7 @@ size) is always visited regardless of step alignment.
 
 [source,cpp]
 ----
-std::string data = "0123456789";  // 10 bytes
-auto cb = make_buffer(data);
-
-bufgrind bg(cb, 3);
-// Visits positions: 0, 3, 6, 9, 10
-while(bg)
-{
-    auto [b1, b2] = co_await bg.next();
-    // exercise parser at each split point
-}
+include::example$snippets/7e_buffer_inspection.cpp[tag=step_size,indent=0]
 ----
 
 A step of 0 is treated as 1. A step larger than the total size reduces to
@@ -98,26 +65,15 @@ two positions: 0 and size.
 === Mutability Preservation
 
 `bufgrind` is templated on a `ConstBufferSequence` but the slices it
-produces follow the mutability of the input. Each half is a buffer-slice
-view (`slice_type`); its `data()` member exposes the underlying buffer
-sequence. Passing a `mutable_buffer` yields halves whose `data()` models
-`MutableBufferSequence`; passing a `const_buffer` yields halves whose
-`data()` models `ConstBufferSequence`. This matters for tests that need
-to write into the produced buffers rather than only read from them.
+produces follow the mutability of the input. Each half is itself a
+buffer sequence (`slice_type`). Passing a `mutable_buffer` yields halves
+that model `MutableBufferSequence`; passing a `const_buffer` yields
+halves that model `ConstBufferSequence`. This matters for tests that
+need to write into the produced buffers rather than only read from them.
 
 [source,cpp]
 ----
-char data[] = "hello";
-mutable_buffer mb(data, 5);
-
-bufgrind bg(mb);
-while(bg)
-{
-    auto [b1, b2] = co_await bg.next();
-    // b1 and b2 are buffer-slice views; data() exposes the underlying
-    // buffer sequence, here a MutableBufferSequence callers may write into
-    static_assert(MutableBufferSequence<decltype(b1.data())>);
-}
+include::example$snippets/7e_buffer_inspection.cpp[tag=mutability,indent=0]
 ----
 
 [cols="1,2"]
@@ -147,23 +103,7 @@ use is asserting the combined content of a `bufgrind` split.
 
 [source,cpp]
 ----
-#include <boost/capy/test/buffer_to_string.hpp>
-#include <boost/capy/buffers/make_buffer.hpp>
-
-using namespace boost::capy;
-using namespace boost::capy::test;
-
-void test_buffer_to_string()
-{
-    // Single buffer sequence
-    const_buffer cb(make_buffer(std::string_view("hello")));
-    BOOST_TEST_EQ(buffer_to_string(cb), "hello");
-
-    // Multiple buffer sequences concatenated in order
-    const_buffer b1(make_buffer(std::string_view("hello")));
-    const_buffer b2(make_buffer(std::string_view(" world")));
-    BOOST_TEST_EQ(buffer_to_string(b1, b2), "hello world");
-}
+include::example$snippets/7e_buffer_inspection.cpp[tag=buffer_to_string,indent=0]
 ----
 
 === Use With bufgrind
@@ -174,19 +114,7 @@ input:
 
 [source,cpp]
 ----
-std::string original = "hello world";
-auto cb = make_buffer(original);
-
-fuse f;
-auto r = f.inert([&](fuse&) -> task<> {
-    bufgrind bg(cb);
-    while(bg)
-    {
-        auto [b1, b2] = co_await bg.next();
-        BOOST_TEST_EQ(buffer_to_string(b1.data(), b2.data()), original);
-    }
-});
-BOOST_TEST(r.success);
+include::example$snippets/7e_buffer_inspection.cpp[tag=reconstruct,indent=0]
 ----
 
 [cols="1,2"]
@@ -207,53 +135,7 @@ the output at each split:
 
 [source,cpp]
 ----
-#include <boost/capy/test/bufgrind.hpp>
-#include <boost/capy/test/buffer_to_string.hpp>
-#include <boost/capy/test/fuse.hpp>
-#include <boost/capy/test/read_stream.hpp>
-#include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/task.hpp>
-
-using namespace boost::capy;
-using namespace boost::capy::test;
-
-// Hypothetical parser: reads all bytes from a ReadStream
-task<std::string> read_all(read_stream& rs)
-{
-    std::string out;
-    std::array<char, 64> buf;
-    for(;;)
-    {
-        auto [ec, n] = co_await rs.read_some(make_buffer(buf));
-        if(ec)
-            co_return out;
-        out.append(buf.data(), n);
-    }
-}
-
-void test_parser_all_splits()
-{
-    std::string input = "GET / HTTP/1.1\r\n";
-    auto cb = make_buffer(input);
-
-    fuse f;
-    auto r = f.inert([&](fuse&) -> task<> {
-        bufgrind bg(cb);
-        while(bg)
-        {
-            auto [b1, b2] = co_await bg.next();
-
-            // Feed the split as two discrete reads
-            read_stream rs(f);
-            rs.provide(buffer_to_string(b1.data()));
-            rs.provide(buffer_to_string(b2.data()));
-
-            std::string got = co_await read_all(rs);
-            BOOST_TEST_EQ(got, input);
-        }
-    });
-    BOOST_TEST(r.success);
-}
+include::example$snippets/7e_buffer_inspection.cpp[tag=parser_all_splits,indent=0]
 ----
 
 == Reference

@@ -99,8 +99,7 @@ Unless otherwise specified, all code examples in this documentation assume the f
 
 [source,cpp]
 ----
-#include <boost/capy.hpp>
-using namespace boost::capy;
+include::example$snippets/index_page.cpp[tag=convention]
 ----
 ====
 
@@ -110,37 +109,7 @@ This example demonstrates a minimal coroutine that reads from a stream and echoe
 
 [source,cpp]
 ----
-#include <boost/capy.hpp>
-
-using namespace boost::capy;
-
-task<> echo(any_stream& stream)
-{
-    char buf[1024];
-    for(;;)
-    {
-        auto [ec, n] = co_await stream.read_some(make_buffer(buf));
-
-        auto [wec, wn] = co_await write(stream, const_buffer(buf, n));
-
-        if(ec)
-            co_return;
-
-        if(wec)
-            co_return;
-    }
-}
-
-int main()
-{
-    // In a real application, you would obtain a stream from Corosio,
-    // then launch the coroutine on its io_context and run it:
-    //
-    //   corosio::io_context ioc;
-    //   corosio::tcp_socket stream = /* from an acceptor or connect */;
-    //   run_async(ioc.get_executor())(echo(stream));
-    //   ioc.run();
-}
+include::example$programs/index_page_echo.cpp[tag=full]
 ----
 
 The `echo` function accepts an `any_stream&`—a type-erased wrapper that works with any concrete stream implementation. The function reads data into a buffer, then writes it back. Both operations use `co_await` to suspend until the I/O completes.
