@@ -303,6 +303,27 @@ public:
     }
 
     void
+    testWriteMutableSequence()
+    {
+        test::fuse f;
+        auto r = f.armed([&](test::fuse&) -> task<> {
+            test::write_sink ws(f);
+
+            any_write_sink aws(&ws);
+
+            std::string body = "hello world";
+            auto [ec, n] = co_await aws.write(make_buffer(body));
+            if(ec)
+                co_return;
+
+            BOOST_TEST_EQ(n, 11u);
+            BOOST_TEST_EQ(ws.data(), "hello world");
+            BOOST_TEST(!ws.eof_called());
+        });
+        BOOST_TEST(r.success);
+    }
+
+    void
     testWriteMultiple()
     {
         test::fuse f;
@@ -775,6 +796,7 @@ public:
         testWriteSomeEmptyBuffer();
         testWriteEmptyBuffer();
         testWrite();
+        testWriteMutableSequence();
         testWriteMultiple();
         testWriteBufferSequence();
         testWriteSingleBuffer();
