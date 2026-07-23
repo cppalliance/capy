@@ -854,7 +854,7 @@ template<ConstBufferSequence CB>
 io_task<std::size_t>
 any_write_sink::write(CB buffers)
 {
-    buffer_param<CB> bp(buffers);
+    const_buffer_param<CB> bp(buffers);
     std::size_t total = 0;
 
     for(;;)
