@@ -149,8 +149,10 @@ public:
         {
             std::lock_guard<std::mutex> lock(mutex_);
             push(&c);
+            // Under the lock so the pool cannot drain, join, and
+            // destroy the condition variable mid-signal.
+            work_cv_.notify_one();
         }
-        work_cv_.notify_one();
     }
 
     void
