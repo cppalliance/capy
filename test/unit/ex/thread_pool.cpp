@@ -13,6 +13,7 @@
 
 #include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
+#include <boost/capy/ex/run.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/work_guard.hpp>
 
@@ -697,6 +698,36 @@ struct thread_pool_test
         BOOST_TEST_EQ(result.load(), 42);
     }
 
+    static task<void>
+    hop_and_count(
+        thread_pool::executor_type worker_ex, std::atomic<int>& count)
+    {
+        count += co_await boost::capy::run(worker_ex)(returns_int(1));
+    }
+
+    void
+    testForeignPostAfterJoin()
+    {
+        // The worker pool's thread posts the continuation back into a
+        // pool that joins and dies immediately after the work drains,
+        // exercising the window where the poster is still inside
+        // post() during destruction.
+        thread_pool worker(1);
+        auto worker_ex = worker.get_executor();
+        std::atomic<int> count{0};
+
+        for(int i = 0; i < 50; ++i)
+        {
+            thread_pool pool(1);
+            run_async(pool.get_executor())(
+                hop_and_count(worker_ex, count));
+            pool.join();
+        }
+
+        BOOST_TEST_EQ(count.load(), 50);
+        worker.join();
+    }
+
     void
     run()
     {
@@ -726,6 +757,7 @@ struct thread_pool_test
         testStopCallbackRepeated();
         testWorkGuardKeepsPoolAlive();
         testJoinWithRunAsync();
+        testForeignPostAfterJoin();
     }
 };
 
