@@ -19,6 +19,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdio>
+#include <memory_resource>
 #include <memory>
 #include <queue>
 #include <stdexcept>
@@ -507,6 +508,33 @@ struct run_async_test
         BOOST_TEST(result);
     }
 
+    static task<void>
+    set_flag(bool& flag)
+    {
+        flag = true;
+        co_return;
+    }
+
+    void
+    testDerivedResourcePointer()
+    {
+        int dispatch_count = 0;
+        sync_executor d(dispatch_count);
+        std::pmr::monotonic_buffer_resource arena;
+        bool ran = false;
+
+        run_async(d, &arena)(set_flag(ran));
+        BOOST_TEST(ran);
+
+        ran = false;
+        run_async(d, std::stop_token{}, &arena)(set_flag(ran));
+        BOOST_TEST(ran);
+
+        ran = false;
+        run_async(d, &arena, [&] { ran = true; })(returns_void());
+        BOOST_TEST(ran);
+    }
+
     //----------------------------------------------------------
     // Sync Dispatcher
     //----------------------------------------------------------
@@ -775,6 +803,7 @@ struct run_async_test
 
         // Allocator Propagation
         testAllocatorPropagation();
+        testDerivedResourcePointer();
 
         // Sync Dispatcher
         testSyncDispatcherBasic();
