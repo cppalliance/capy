@@ -34,6 +34,19 @@ namespace boost {
 namespace capy {
 namespace detail {
 
+/** Match types usable as `run_async` completion handlers.
+
+    Excludes the types meaningful to the other `run_async` parameters,
+    so a stop token, memory resource pointer, or allocator argument
+    selects its dedicated overload by conversion instead of deducing
+    as an exact-match handler.
+*/
+template<class H>
+concept RunAsyncHandler =
+    !std::is_convertible_v<H, std::pmr::memory_resource*> &&
+    !std::is_convertible_v<H, std::stop_token> &&
+    !Allocator<H>;
+
 /// Function pointer type for type-erased frame deallocation.
 using dealloc_fn = void(*)(void*, std::size_t);
 
@@ -517,6 +530,7 @@ run_async(Ex ex)
     @see executor
 */
 template<Executor Ex, class H1>
+    requires detail::RunAsyncHandler<H1>
 [[nodiscard]] auto
 run_async(Ex ex, H1 h1)
 {
@@ -560,6 +574,7 @@ run_async(Ex ex, H1 h1)
     @see executor
 */
 template<Executor Ex, class H1, class H2>
+    requires (detail::RunAsyncHandler<H1> && detail::RunAsyncHandler<H2>)
 [[nodiscard]] auto
 run_async(Ex ex, H1 h1, H2 h2)
 {
@@ -626,6 +641,7 @@ run_async(Ex ex, std::stop_token st)
     @see executor
 */
 template<Executor Ex, class H1>
+    requires detail::RunAsyncHandler<H1>
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st, H1 h1)
 {
@@ -653,6 +669,7 @@ run_async(Ex ex, std::stop_token st, H1 h1)
     @see executor
 */
 template<Executor Ex, class H1, class H2>
+    requires (detail::RunAsyncHandler<H1> && detail::RunAsyncHandler<H2>)
 [[nodiscard]] auto
 run_async(Ex ex, std::stop_token st, H1 h1, H2 h2)
 {
