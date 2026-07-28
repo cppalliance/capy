@@ -14,9 +14,10 @@
 
 #include <boost/capy.hpp>
 
-#include <beman/execution/execution.hpp>
+#include <stdexec/execution.hpp>
 
 #include <chrono>
+#include <cstddef>
 #include <iostream>
 #include <latch>
 #include <stop_token>
@@ -24,7 +25,7 @@
 #include <thread>
 
 namespace capy = boost::capy;
-namespace ex = beman::execution;
+namespace ex = stdexec;
 
 // A receiver whose environment carries a Capy executor.
 // Completion signals a latch so main() can wait.
@@ -187,14 +188,13 @@ int main()
     std::cout << "\n--- native awaitable-sender test ---\n";
     std::latch done5(1);
 
-    auto rop = capy::read_op::result({}, 42);
+    auto rop = capy::read_op::result({});
     auto op5 = ex::connect(
         ex::then(
             std::move(rop),
-            [](std::size_t n)
+            []
             {
-                std::cout
-                    << "  read " << n << " bytes\n";
+                std::cout << "  read completed\n";
             }),
         demo_receiver{
             {pool_ex, std::stop_token{}},
@@ -203,6 +203,29 @@ int main()
     ex::start(op5);
     done5.wait();
     std::cout << "  native awaitable-sender test done\n";
+
+    // A byte-producing op: the count lives in caller-owned state
+    // (like the buffer it would describe) and is already valid
+    // when the continuation runs; the completion signal carries
+    // only the disposition.
+    std::cout << "\n--- counted read test ---\n";
+    std::latch done6(1);
+
+    std::size_t n = 0;
+    auto op6 = ex::connect(
+        ex::then(
+            capy::counted_read_op::result({}, 42, &n),
+            [&n]
+            {
+                std::cout << "  read " << n << " bytes\n";
+            }),
+        demo_receiver{
+            {pool_ex, std::stop_token{}},
+            &done6});
+
+    ex::start(op6);
+    done6.wait();
+    std::cout << "  counted read test done\n";
 
     // All demos have drained; safe to join the waker thread now.
     waker_thread.join();

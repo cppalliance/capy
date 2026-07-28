@@ -16,7 +16,7 @@
 
 #include <boost/capy/concept/io_awaitable.hpp>
 
-#include <beman/execution/execution.hpp>
+#include <stdexec/execution.hpp>
 
 #include <type_traits>
 #include <utility>
@@ -51,14 +51,6 @@ struct awaitable_sender
         return decltype(detail::make_sigs<IoAw>()){};
     }
 
-    /// beman-compat form: DROP AT GRADUATION (pre-P3164 protocol).
-    template<class Env>
-    constexpr auto get_completion_signatures(
-        Env const&) const noexcept
-    {
-        return decltype(detail::make_sigs<IoAw>()){};
-    }
-
     /// Connect this sender with a receiver to form an operation state.
     template<class Receiver>
     auto connect(Receiver rcvr) &&
@@ -87,15 +79,18 @@ struct awaitable_sender
     - `error_code` or an empty `io_result` - calls
       `set_value()` when the code is zero, `set_error(ec)`
       otherwise.
-    - `io_result<Ts...>` with payload elements - calls
-      `set_value(ts...)` when `ec` is zero, `set_error(ec)`
-      otherwise. Any partial payload accompanying a truthy
-      `ec` is dropped, since sender completion channels are
-      exclusive.
     - Any other single value `T` - calls `set_value(T)`,
       including generic tuple-likes that happen to lead with
       an `error_code`: only `io_result` declares the
       element-0-is-outcome intent, so only it is split.
+
+    An `io_result` with payload elements is rejected at compile
+    time. Completion channels are exclusive, so a partial
+    success (an `error_code` arriving alongside bytes already
+    transferred) cannot be delivered on any single channel
+    without dropping data. Wrap such an operation in a
+    `task<error_code>` that inspects the full result, moves the
+    payload out through a side channel, and returns the code.
 
     For the `error_code`-carrying result types the channel is
     chosen by the operation's own disposition: an `ec` that
@@ -118,6 +113,15 @@ struct awaitable_sender
 template<class IoAw>
 auto as_sender(IoAw&& aw)
 {
+    using R = awaitable_result_t<std::decay_t<IoAw>>;
+    static_assert(
+        !detail::is_compound_ec_result_v<R>,
+        "as_sender does not accept awaitables whose result is an "
+        "io_result with payload elements: completion channels "
+        "are exclusive, so a partial success (error_code plus "
+        "payload) would be silently dropped. Wrap the operation "
+        "in a task<error_code> that inspects the full result "
+        "and returns the error code.");
     return awaitable_sender<std::decay_t<IoAw>>{
         std::forward<IoAw>(aw)};
 }
@@ -163,17 +167,9 @@ struct split_ec_sender
 
     Sender sndr_;
 
-    // C++26 static-template form plus the beman-compat instance
-    // form (DROP the latter at graduation; pre-P3164 protocol).
+    // C++26 static-template form ([exec.getcomplsigs]).
     template<class Sndr, class... Env>
     static consteval auto get_completion_signatures() noexcept
-    {
-        return sigs_type{};
-    }
-
-    template<class Env>
-    constexpr auto get_completion_signatures(
-        Env const&) const noexcept
     {
         return sigs_type{};
     }
