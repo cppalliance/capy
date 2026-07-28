@@ -10,12 +10,14 @@
 include(FetchContent)
 
 FetchContent_Declare(
-    execution
-    GIT_REPOSITORY https://github.com/bemanproject/execution.git
-    GIT_TAG main
+    stdexec
+    GIT_REPOSITORY https://github.com/NVIDIA/stdexec
+    GIT_TAG 307b83c5689ea7c2e5b31561cdc428697705333e
     SYSTEM
+    FIND_PACKAGE_ARGS
+        NAMES stdexec
 )
-FetchContent_MakeAvailable(execution)
+FetchContent_MakeAvailable(stdexec)
 
 add_executable(capy_example_awaitable_sender
     awaitable_sender.cpp
@@ -36,7 +38,7 @@ foreach(tgt capy_example_awaitable_sender capy_example_awaitable_sender_test)
     target_compile_features(${tgt} PRIVATE cxx_std_23)
     target_link_libraries(${tgt}
         Boost::capy
-        beman::execution_headers)
+        STDEXEC::stdexec)
 endforeach()
 
 add_test(NAME capy_example_awaitable_sender_test

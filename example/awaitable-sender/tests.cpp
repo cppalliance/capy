@@ -13,7 +13,7 @@
 
 #include <boost/capy.hpp>
 
-#include <beman/execution/execution.hpp>
+#include <stdexec/execution.hpp>
 
 #include <chrono>
 #include <coroutine>
@@ -31,7 +31,7 @@
 #include <utility>
 
 namespace capy = boost::capy;
-namespace ex = beman::execution;
+namespace ex = stdexec;
 
 static int failures = 0;
 
@@ -228,6 +228,20 @@ struct compound_op
     }
 };
 
+// The sanctioned path for compound results: a task<error_code>
+// wrapper inspects the full result, moves the payload out
+// through a side channel, and returns only the code — the
+// wrapper, not the bridge, decides the payload's fate.
+capy::task<std::error_code> read_some(
+    compound_op op, std::size_t* n_out)
+{
+    auto [ec, n] = co_await std::move(op);
+    *n_out = n;
+    co_return ec;
+}
+
+static_assert(capy::AwaitableSender<capy::counted_read_op>);
+
 // Mock IoAwaitable that completes with no payload at all
 // (the `void` row of make_sigs, distinct from io_result<>'s
 // 1-tuple-ec row exercised by async_waker).
@@ -298,38 +312,67 @@ struct throwing_op
     }
 };
 
-void test_compound_success()
+void test_compound_workaround_success()
 {
-    auto out = run(capy::as_sender(
-        compound_op{.ec_ = {}, .n_ = 42}));
+    std::size_t n = 0;
+    auto out = run(capy::as_sender(read_some(
+        compound_op{.ec_ = {}, .n_ = 42}, &n)));
+    CHECK(out.ch == channel::value);
+    CHECK(n == 42);
+}
+
+void test_compound_workaround_partial()
+{
+    // Partial success: the error reaches the error channel and
+    // the byte count still reaches the caller.
+    auto expected = std::make_error_code(
+        std::errc::connection_reset);
+    std::size_t n = 0;
+    auto out = run(capy::as_sender(read_some(
+        compound_op{.ec_ = expected, .n_ = 3}, &n)));
+    CHECK(out.ch == channel::error);
+    CHECK(out.ec == expected);
+    CHECK(n == 3);
+}
+
+void test_counted_read_success()
+{
+    // The count is already in caller-owned state when the
+    // continuation runs, so the pipeline can consume it there.
+    std::size_t n = 0;
+    auto out = run(ex::then(
+        capy::counted_read_op::result({}, 42, &n),
+        [&] { return n; }));
     CHECK(out.ch == channel::value);
     CHECK(out.n == 42);
 }
 
-void test_compound_error()
+void test_counted_read_partial()
 {
+    // Partial success through the base: the disposition routes to
+    // the error channel while the count survives out-of-band.
     auto expected = std::make_error_code(
         std::errc::connection_reset);
-    auto out = run(capy::as_sender(
-        compound_op{.ec_ = expected, .n_ = 3}));
+    std::size_t n = 0;
+    auto out = run(capy::counted_read_op::result(expected, 3, &n));
     CHECK(out.ch == channel::error);
     CHECK(out.ec == expected);
+    CHECK(n == 3);
 }
 
 void test_canceled_ec_routes_stopped()
 {
     // A canceled disposition surfaces on the stopped channel even
     // though the environment's token was never triggered.
-    auto out = run(capy::as_sender(compound_op{
-        .ec_ = std::make_error_code(
-            std::errc::operation_canceled),
-        .n_ = 0}));
+    auto out = run(capy::as_sender(ec_op{
+        std::make_error_code(
+            std::errc::operation_canceled)}));
     CHECK(out.ch == channel::stopped);
 }
 
 void test_value_survives_racing_stop()
 {
-    // The op ignores tokens and completes with a value; a stop
+    // The op ignores tokens and reports success in-band; a stop
     // request that merely landed by completion time must not
     // discard the result.
     capy::thread_pool pool(1);
@@ -339,13 +382,12 @@ void test_value_survives_racing_stop()
     std::latch done(1);
     test_outcome out;
     auto op = ex::connect(
-        capy::as_sender(compound_op{.ec_ = {}, .n_ = 7}),
+        capy::as_sender(ec_op{}),
         test_receiver<ex::inplace_stop_token>{
             {pool_ex, ss.get_token()}, &out, &done});
     ex::start(op);
     done.wait();
     CHECK(out.ch == channel::value);
-    CHECK(out.n == 7);
 }
 
 void test_empty_io_result_success()
@@ -449,33 +491,31 @@ void test_cancel_inplace_token()
 void test_then_pipeline()
 {
     auto out = run(ex::then(
-        capy::as_sender(compound_op{.ec_ = {}, .n_ = 41}),
-        [](std::size_t n) { return n + 1; }));
+        capy::as_sender(value_op{}),
+        [](int i) { return i + 25; }));
     CHECK(out.ch == channel::value);
-    CHECK(out.n == 42);
+    CHECK(out.i == 42);
 }
 
 void test_read_op_native_success()
 {
-    auto out = run(capy::read_op::result({}, 7));
+    auto out = run(capy::read_op::result({}));
     CHECK(out.ch == channel::value);
-    CHECK(out.n == 7);
 }
 
 void test_read_op_native_error()
 {
     auto expected = std::make_error_code(
         std::errc::broken_pipe);
-    auto out = run(capy::read_op::result(expected, 0));
+    auto out = run(capy::read_op::result(expected));
     CHECK(out.ch == channel::error);
     CHECK(out.ec == expected);
 }
 
 void test_read_op_immediate()
 {
-    auto out = run(capy::read_op::immediate({}, 9));
+    auto out = run(capy::read_op::immediate({}));
     CHECK(out.ch == channel::value);
-    CHECK(out.n == 9);
 }
 
 void test_read_op_stopped()
@@ -517,9 +557,8 @@ void test_read_op_stopped_before_start()
 
 void test_read_op_through_adaptor()
 {
-    auto out = run(capy::as_sender(capy::read_op::result({}, 5)));
+    auto out = run(capy::as_sender(capy::read_op::result({})));
     CHECK(out.ch == channel::value);
-    CHECK(out.n == 5);
 }
 
 // Symmetric with test_cancel_std_token, but for the native
@@ -545,18 +584,17 @@ void test_read_op_cancel_std_token()
 void test_adaptor_immediate()
 {
     auto out = run(capy::as_sender(
-        capy::read_op::immediate({}, 3)));
+        capy::read_op::immediate({})));
     CHECK(out.ch == channel::value);
-    CHECK(out.n == 3);
 }
 
 void test_read_op_then_pipeline()
 {
     auto out = run(ex::then(
-        capy::read_op::result({}, 41),
-        [](std::size_t n) { return n + 1; }));
+        capy::read_op::result({}),
+        [] { return 42; }));
     CHECK(out.ch == channel::value);
-    CHECK(out.n == 42);
+    CHECK(out.i == 42);
 }
 
 // sync_wait's environment provides get_scheduler but neither
@@ -564,16 +602,15 @@ void test_read_op_then_pipeline()
 // bridge end-to-end on the run_loop.
 void test_sync_wait_value()
 {
-    auto r = ex::sync_wait(capy::read_op::result({}, 7));
+    auto r = ex::sync_wait(capy::read_op::result({}));
     CHECK(r.has_value());
-    CHECK(std::get<0>(*r) == 7);
 }
 
 void test_sync_wait_pipeline()
 {
     auto r = ex::sync_wait(ex::then(
-        capy::read_op::result({}, 41),
-        [](std::size_t n) { return n + 1; }));
+        capy::read_op::result({}),
+        [] { return 42; }));
     CHECK(r.has_value());
     CHECK(std::get<0>(*r) == 42);
 }
@@ -584,7 +621,7 @@ void test_sync_wait_error_throws()
     try
     {
         (void)ex::sync_wait(capy::read_op::result(
-            std::make_error_code(std::errc::broken_pipe), 0));
+            std::make_error_code(std::errc::broken_pipe)));
     }
     catch(...)
     {
@@ -681,9 +718,8 @@ capy::task<void> record_outcome(
     test_outcome* out,
     std::latch* done)
 {
-    auto [ec, n] = co_await std::move(op);
+    auto [ec] = co_await std::move(op);
     out->ec = ec;
-    out->n = n;
     out->ch = !ec ? channel::value
         : ec == std::errc::operation_canceled
             ? channel::stopped
@@ -693,33 +729,32 @@ capy::task<void> record_outcome(
 
 void test_coawait_matches_sender_success()
 {
-    auto sender_out = run(capy::read_op::result({}, 7));
+    auto sender_out = run(capy::read_op::result({}));
 
     capy::thread_pool pool(1);
     auto pool_ex = pool.get_executor();
     test_outcome coawait_out;
     std::latch done(1);
     capy::run_async(pool_ex)(record_outcome(
-        capy::read_op::result({}, 7), &coawait_out, &done));
+        capy::read_op::result({}), &coawait_out, &done));
     WAIT_OR_DIE(done);
 
     CHECK(coawait_out.ch == channel::value);
     CHECK(sender_out.ch == coawait_out.ch);
-    CHECK(sender_out.n == coawait_out.n);
 }
 
 void test_coawait_matches_sender_error()
 {
     auto expected = std::make_error_code(
         std::errc::broken_pipe);
-    auto sender_out = run(capy::read_op::result(expected, 0));
+    auto sender_out = run(capy::read_op::result(expected));
 
     capy::thread_pool pool(1);
     auto pool_ex = pool.get_executor();
     test_outcome coawait_out;
     std::latch done(1);
     capy::run_async(pool_ex)(record_outcome(
-        capy::read_op::result(expected, 0),
+        capy::read_op::result(expected),
         &coawait_out, &done));
     WAIT_OR_DIE(done);
 
@@ -796,60 +831,45 @@ static_assert(
 // awaitable-only ops.
 static_assert(std::is_same_v<
     decltype(capy::ensure_sender(
-        capy::read_op::result({}, 0))),
+        capy::read_op::result({}))),
     capy::read_op>);
 static_assert(std::is_same_v<
-    decltype(capy::ensure_sender(compound_op{})),
-    capy::awaitable_sender<compound_op>>);
+    decltype(capy::ensure_sender(ec_op{})),
+    capy::awaitable_sender<ec_op>>);
 
 void test_ensure_sender_passthrough()
 {
     auto out = run(capy::ensure_sender(
-        capy::read_op::result({}, 7)));
+        capy::read_op::result({})));
     CHECK(out.ch == channel::value);
-    CHECK(out.n == 7);
 }
 
 void test_ensure_sender_lifts()
 {
-    auto out = run(capy::ensure_sender(
-        compound_op{.ec_ = {}, .n_ = 5}));
+    auto out = run(capy::ensure_sender(ec_op{}));
     CHECK(out.ch == channel::value);
-    CHECK(out.n == 5);
 }
 
-// beman never calls the C++26 static-template signature query, so
-// nothing else instantiates its body; pin it here so it stays
-// callable in constant evaluation and agrees with the beman-compat
-// instance form.
+// stdexec dispatches the C++26 static-template signature query;
+// pin read_op's deduced signatures so drift in make_sigs is
+// caught at compile time.
 static_assert(std::is_same_v<
     decltype(capy::read_op::
         get_completion_signatures<capy::read_op>()),
-    decltype(std::declval<capy::read_op const&>()
-        .get_completion_signatures(0))>);
+    ex::completion_signatures<
+        ex::set_value_t(),
+        ex::set_error_t(std::error_code),
+        ex::set_stopped_t()>>);
 
-// Compile-fail probe: uncomment to verify the non-aggregate
-// static_assert in awaitable_sender_base fires. (Completion
-// signatures are deduced from await_resume(), so a signature
-// mismatch is no longer expressible; the aggregate requirement
-// is the remaining connect-time check.)
-// Expected diagnostic: "Derived must declare a constructor".
+// Compile-fail probe: uncomment to verify the compound-result
+// rejection fires on both paths. Expected diagnostics: "cannot
+// be senders" (make_sigs, CRTP path) and "as_sender does not
+// accept" (as_sender path).
 //
-// struct aggregate_op
-//     : capy::awaitable_sender_base<aggregate_op>
+// void probe()
 // {
-//     bool await_ready() const noexcept { return false; }
-//     auto await_suspend(
-//         std::coroutine_handle<>, capy::io_env const*)
-//     {
-//         return std::noop_coroutine();
-//     }
-//     capy::io_result<std::size_t> await_resume() noexcept
-//     {
-//         return {};
-//     }
-// };
-// void probe() { (void)run(aggregate_op{}); }
+//     (void)capy::as_sender(compound_op{});
+// }
 
 int main()
 {
@@ -859,8 +879,10 @@ int main()
     test_throwing_op_error();
     test_ec_success();
     test_ec_error();
-    test_compound_success();
-    test_compound_error();
+    test_compound_workaround_success();
+    test_compound_workaround_partial();
+    test_counted_read_success();
+    test_counted_read_partial();
     test_canceled_ec_routes_stopped();
     test_value_survives_racing_stop();
     test_cancel_std_token();

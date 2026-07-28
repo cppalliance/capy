@@ -17,7 +17,7 @@
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 
-#include <beman/execution/execution.hpp>
+#include <stdexec/execution.hpp>
 
 #include <concepts>
 #include <coroutine>
@@ -32,7 +32,7 @@ namespace boost::capy {
 
 // On graduation this alias flips to std::execution, gated on
 // __cpp_lib_senders.
-namespace ex = beman::execution;
+namespace ex = stdexec;
 
 // -------------------------------------------------------
 // CPO: query a receiver environment for a Capy executor
@@ -85,9 +85,12 @@ namespace detail {
 // declares "element 0 is an error_code" as intent. A generic
 // tuple-like that merely happens to lead with an error_code is a
 // value, not an outcome to split — shape alone cannot tell a
-// result protocol from a payload. The arity trait avoids naming
-// std::tuple_size on foreign types, which would hard-error for
-// non-tuples (&& does not short-circuit instantiation).
+// result protocol from a payload. An io_result with payload
+// elements is rejected in make_sigs: exclusive completion
+// channels cannot carry a partial success without dropping data.
+// The arity trait avoids naming std::tuple_size on foreign
+// types, which would hard-error for non-tuples (&& does not
+// short-circuit instantiation).
 template<class T>
 struct io_result_arity
     : std::integral_constant<std::size_t, 0> {};
@@ -128,18 +131,22 @@ auto concat_sigs(
     ex::completion_signatures<B...>)
     -> ex::completion_signatures<A..., B...>;
 
-template<class R, std::size_t... I>
-auto compound_value_sig(std::index_sequence<I...>)
-    -> ex::completion_signatures<
-        ex::set_value_t(std::tuple_element_t<I + 1, R>...),
-        ex::set_error_t(std::error_code)>;
-
 // Deduce completion signatures from an awaitable's result type.
 template<class Aw>
 auto make_sigs()
 {
     using A = std::decay_t<Aw>;
     using R = awaitable_result_t<A>;
+
+    static_assert(
+        !is_compound_ec_result_v<R>,
+        "IoAwaitables whose result is an io_result with payload "
+        "elements cannot be senders: completion channels are "
+        "exclusive, so a partial success (error_code plus "
+        "payload) would be silently dropped. Wrap the operation "
+        "in a task<error_code> that inspects the full result "
+        "and returns the error code.");
+
     constexpr bool nothrow_resume =
         noexcept(std::declval<A&>().await_resume());
 
@@ -151,10 +158,6 @@ auto make_sigs()
             return ex::completion_signatures<
                 ex::set_value_t(),
                 ex::set_error_t(std::error_code)>{};
-        else if constexpr (is_compound_ec_result_v<R>)
-            return decltype(compound_value_sig<R>(
-                std::make_index_sequence<
-                    std::tuple_size_v<R> - 1>{})){};
         else
             return ex::completion_signatures<
                 ex::set_value_t(R)>{};
@@ -173,7 +176,7 @@ auto make_sigs()
     return decltype(concat_sigs(base, tail)){};
 }
 
-// beman's get_stop_token CPO requires the C++26 stoppable_token
+// stdexec's get_stop_token CPO requires the C++26 stoppable_token
 // concept, which today's std::stop_token fails (no callback_type);
 // query the environment directly so std::stop_token environments
 // keep cancellation until stdlibs catch up.
@@ -480,30 +483,6 @@ struct awaitable_op_state
             else
                 ex::set_error(
                     std::move(rcvr_), ec);
-        }
-        else if constexpr (is_compound_ec_result_v<result_type>)
-        {
-            auto result = aw_.await_resume();
-            auto ec = get<0>(result);
-            if(ec)
-            {
-                if(ec == std::errc::operation_canceled)
-                    ex::set_stopped(
-                        std::move(rcvr_));
-                else
-                    ex::set_error(
-                        std::move(rcvr_), ec);
-            }
-            else
-            {
-                [&]<std::size_t... I>(std::index_sequence<I...>)
-                {
-                    ex::set_value(
-                        std::move(rcvr_),
-                        get<I + 1>(std::move(result))...);
-                }(std::make_index_sequence<
-                    std::tuple_size_v<result_type> - 1>{});
-            }
         }
         else
         {

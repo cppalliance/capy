@@ -32,18 +32,17 @@ namespace boost::capy {
     @ref awaitable_sender_base. Its stop-wait mode composes
     `async_waker` rather than hand-rolling stop-callback arming:
     the waker's arbiter already resolves the races between
-    arming, stop requests, and completion.
+    arming, stop requests, and completion. Completes with a bare
+    `io_result<>`: a result carrying payload alongside the
+    `error_code` cannot be a sender (see @ref as_sender).
 */
 class read_op : public awaitable_sender_base<read_op>
 {
     // Data members are private so the op is invisible to
     // std::execution sender decomposition: tag_of_t claims any
     // type whose members admit a structured binding, and
-    // inaccessible members make that binding ill-formed (it also
-    // keeps the type a non-aggregate, which is the condition
-    // today's implementations actually probe).
+    // inaccessible members make that binding ill-formed.
     std::error_code ec_{};
-    std::size_t n_ = 0;
     bool immediate_ = false;
 
     io_env const* env_ = nullptr;
@@ -62,29 +61,21 @@ class read_op : public awaitable_sender_base<read_op>
     }
 
 public:
-    /// Construct an op that completes successfully with zero bytes.
+    /// Construct an op that completes successfully.
     read_op() = default;
 
-    // Scripted construction goes through factories, not multi-arg
-    // constructors — a scaffolding accommodation, unnecessary at
-    // graduation: the bundled pre-standard implementation probes
-    // decomposable senders by brace-initializing with 2..6
-    // placeholder arguments, and any constructor of that arity
-    // matches the probe and re-enters its decomposition machinery.
-
-    /// Create an op with a scripted `(ec, n)` completion.
-    static read_op result(std::error_code ec, std::size_t n)
+    /// Create an op with a scripted `error_code` completion.
+    static read_op result(std::error_code ec)
     {
         read_op op;
         op.ec_ = ec;
-        op.n_ = n;
         return op;
     }
 
     /// Create an op that completes inline via `await_ready`.
-    static read_op immediate(std::error_code ec, std::size_t n)
+    static read_op immediate(std::error_code ec)
     {
-        read_op op = result(ec, n);
+        read_op op = result(ec);
         op.immediate_ = true;
         return op;
     }
@@ -115,7 +106,7 @@ public:
         return std::noop_coroutine();
     }
 
-    io_result<std::size_t> await_resume() noexcept
+    io_result<> await_resume() noexcept
     {
         // The op reports its own disposition in-band: a stop-wait
         // ends with the waker's error::canceled, which the sender
@@ -124,9 +115,66 @@ public:
         if(stop_task_)
         {
             auto [ec] = stop_task_->await_resume();
-            return {ec ? ec : ec_, n_};
+            return {ec ? ec : ec_};
         }
-        return {ec_, n_};
+        return {ec_};
+    }
+};
+
+/** Mock byte-producing op: payload via caller-owned state.
+
+    Demonstrates how a base-derived op delivers a count now that
+    compound results cannot be senders: `await_resume()` reports
+    only the disposition, and the byte count goes to a
+    caller-owned location, the same ownership model as the buffer
+    it would describe. The base has no wrapper seam to intercept,
+    so the side channel is baked in at op-design time.
+*/
+class counted_read_op
+    : public awaitable_sender_base<counted_read_op>
+{
+    std::error_code ec_{};
+    std::size_t n_ = 0;
+    std::size_t* n_out_ = nullptr;
+
+    io_env const* env_ = nullptr;
+    continuation cont_{};
+
+public:
+    /// Create an op with a scripted `(ec, n)` completion that
+    /// reports `n` through `*n_out`.
+    static counted_read_op result(
+        std::error_code ec, std::size_t n, std::size_t* n_out)
+    {
+        counted_read_op op;
+        op.ec_ = ec;
+        op.n_ = n;
+        op.n_out_ = n_out;
+        return op;
+    }
+
+    bool await_ready() const noexcept
+    {
+        return false;
+    }
+
+    std::coroutine_handle<> await_suspend(
+        std::coroutine_handle<> h,
+        io_env const* env)
+    {
+        env_ = env;
+        cont_ = continuation{h};
+        env_->executor.post(cont_);
+        return std::noop_coroutine();
+    }
+
+    io_result<> await_resume() noexcept
+    {
+        // Written before either protocol observes completion, so
+        // the count is valid on every channel, including
+        // set_stopped(), which cannot carry data itself.
+        *n_out_ = n_;
+        return {ec_};
     }
 };
 

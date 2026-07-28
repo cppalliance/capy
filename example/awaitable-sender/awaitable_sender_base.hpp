@@ -12,7 +12,6 @@
 
 #include "awaitable_sender_detail.hpp"
 
-#include <type_traits>
 #include <utility>
 
 namespace boost::capy {
@@ -44,28 +43,6 @@ concept AwaitableSender =
     IoAwaitable<S> &&
     ex::sender<S>;
 
-namespace detail {
-
-// Shared by both connect() overloads so const& connect gets the
-// same check as the rvalue overload. Scaffolding-era check, DROP
-// AT GRADUATION with the beman-compat query forms: the bundled
-// implementation probes decomposable senders by aggregate
-// brace-init and hard-errors on arity mismatches. Under the
-// adopted wording the durable opt-out is private data members
-// (see the class note); aggregates merely take a guarded
-// fallback path there.
-template<class Derived>
-constexpr void check_awaitable_sender()
-{
-    static_assert(
-        !std::is_aggregate_v<Derived>,
-        "Derived must not be an aggregate; keep its data "
-        "members private (or declare a constructor) so "
-        "sender decomposition cannot claim it");
-}
-
-} // namespace detail
-
 /** CRTP mixin that makes an IoAwaitable a sender.
 
     Deriving from this base adds the C++26 sender interface to
@@ -94,10 +71,7 @@ constexpr void check_awaitable_sender()
         first member as a sender tag; private members make the
         binding ill-formed, so the op is categorically
         non-decomposable and independent of the dispatch
-        machinery's guarded fallbacks. (`connect` additionally
-        rejects aggregates; that check accommodates the bundled
-        pre-standard implementation and is dropped at
-        graduation.)
+        machinery's guarded fallbacks.
 
     @par Example
     @code
@@ -129,27 +103,11 @@ struct awaitable_sender_base
         return decltype(detail::make_sigs<Derived>()){};
     }
 
-    /** Return the completion signatures deduced from `Derived`.
-
-        beman-compat form: DROP AT GRADUATION. beman::execution
-        still implements the pre-P3164 protocol and probes for an
-        instance member called with the environment as a function
-        argument; the adopted C++26 wording recognizes only the
-        static template form above.
-    */
-    template<class Env>
-    constexpr auto get_completion_signatures(
-        Env const&) const noexcept
-    {
-        return decltype(detail::make_sigs<Derived>()){};
-    }
-
     /// Connect the op to a receiver, consuming it.
     template<class Receiver>
     auto connect(Receiver rcvr) &&
         -> detail::awaitable_op_state<Derived, Receiver>
     {
-        detail::check_awaitable_sender<Derived>();
         return detail::awaitable_op_state<Derived, Receiver>(
             static_cast<Derived&&>(*this), std::move(rcvr));
     }
@@ -159,7 +117,6 @@ struct awaitable_sender_base
     auto connect(Receiver rcvr) const&
         -> detail::awaitable_op_state<Derived, Receiver>
     {
-        detail::check_awaitable_sender<Derived>();
         return detail::awaitable_op_state<Derived, Receiver>(
             static_cast<Derived const&>(*this),
             std::move(rcvr));
