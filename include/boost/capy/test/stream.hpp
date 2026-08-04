@@ -355,7 +355,7 @@ public:
             }
 
             io_result<std::size_t>
-            await_resume()
+            await_resume() 
             {
                 if(stop_cb_active_)
                 {

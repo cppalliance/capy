@@ -1,0 +1,910 @@
+//
+// Copyright (c) 2026 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+#ifndef BOOST_CAPY_ASIO_BOOST_HPP
+#define BOOST_CAPY_ASIO_BOOST_HPP
+
+/** @file boost.hpp
+ *  @brief Boost.Asio integration for capy coroutines.
+ *
+ *  This header provides complete integration between capy's coroutine framework
+ *  and Boost.Asio. Include this header when using capy with Boost.Asio.
+ *
+ *  @par Features
+ *  - Property query/require support for `asio_executor_adapter`
+ *  - `asio_boost_standard_executor` wrapper for Boost.Asio executors
+ *  - `async_result` specialization for `as_io_awaitable_t`
+ *  - Three-argument `asio_spawn` overloads with completion tokens
+ *
+ *  @par Example
+ *  @code
+ *  #include <boost/capy/asio/boost.hpp>
+ *  #include <boost/asio.hpp>
+ *
+ *  capy::io_task<void> my_coro(boost::asio::ip::tcp::socket& sock) {
+ *      char buf[1024];
+ *      auto [n] = co_await sock.async_read_some(
+ *          boost::asio::buffer(buf), capy::as_io_awaitable);
+ *      // ...
+ *  }
+ *
+ *  int main() {
+ *      boost::asio::io_context io;
+ *      auto exec = capy::wrap_asio_executor(io.get_executor());
+ *      capy::asio_spawn(exec, my_coro(socket))(boost::asio::detached);
+ *      io.run();
+ *  }
+ *  @endcode
+ *
+ *  @see standalone.hpp For standalone Asio support
+ *  @ingroup asio
+ */
+
+#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/decomposes_to.hpp>
+
+#include <boost/capy/asio/as_io_awaitable.hpp>
+#include <boost/capy/asio/buffers.hpp>
+#include <boost/capy/asio/detail/completion_handler.hpp>
+#include <boost/capy/asio/executor_adapter.hpp>
+#include <boost/capy/asio/spawn.hpp>
+#include <boost/capy/asio/executor_from_asio.hpp>
+
+
+#include <boost/asio/append.hpp>
+#include <boost/asio/associated_allocator.hpp>
+#include <boost/asio/associated_cancellation_slot.hpp>
+#include <boost/asio/associated_immediate_executor.hpp>
+#include <boost/asio/buffer.hpp>
+#include <boost/asio/dispatch.hpp>
+#include <boost/asio/cancellation_signal.hpp>
+#include <boost/asio/cancellation_type.hpp>
+#include <boost/asio/execution_context.hpp>
+#include <boost/asio/execution/allocator.hpp>
+#include <boost/asio/execution/blocking.hpp>
+#include <boost/asio/execution/context.hpp>
+#include <boost/asio/execution/outstanding_work.hpp>
+#include <boost/asio/execution/relationship.hpp>
+#include <tuple>
+#include <type_traits>
+
+namespace boost::capy
+{
+
+/** @addtogroup asio
+ *  @{
+ */
+
+/// @name Execution Property Queries for asio_executor_adapter
+/// @{
+
+/** @brief Queries the execution context from an asio_executor_adapter.
+ *
+ *  Returns the Boost.Asio execution context associated with the adapter.
+ *  The context is provided via an adapter service that bridges capy's
+ *  execution_context with Asio's.
+ *
+ *  @param exec The executor adapter to query
+ *  @return Reference to the associated `boost::asio::execution_context`
+ */
+template<typename Executor, typename Allocator, int Bits>
+boost::asio::execution_context&
+    query(const asio_executor_adapter<Executor, Allocator, Bits> & exec,
+          boost::asio::execution::context_t) noexcept
+{
+  using service = detail::asio_adapter_context_service<
+                                        boost::asio::execution_context>;
+  return exec.context().
+        template use_service<service>();
+}
+
+/** @brief Queries the blocking property from an asio_executor_adapter.
+ *  @param exec The executor adapter to query
+ *  @return The current blocking property value
+ */
+template<typename Executor, typename Allocator, int Bits>
+constexpr boost::asio::execution::blocking_t
+    query(const asio_executor_adapter<Executor, Allocator, Bits> &,
+          boost::asio::execution::blocking_t) noexcept
+{
+  using ex = asio_executor_adapter<Executor, Allocator, Bits>;
+
+  switch (Bits & ex::blocking_mask)
+  {
+    case ex::blocking_never:
+        return boost::asio::execution::blocking.never;
+    case ex::blocking_always:
+        return boost::asio::execution::blocking.always;
+    case ex::blocking_possibly:
+        return boost::asio::execution::blocking.possibly;
+    default: return {};
+  }
+}
+
+/// @}
+
+/// @name Execution Property Requirements for asio_executor_adapter
+/// @{
+
+/** @brief Requires blocking.possibly property.
+ *  @return New adapter with blocking.possibly set
+ */
+template<typename Executor, typename Allocator, int Bits>
+constexpr auto
+    require(const asio_executor_adapter<Executor, Allocator, Bits> & exec,
+            boost::asio::execution::blocking_t::possibly_t)
+{
+  using ex = asio_executor_adapter<Executor, Allocator, Bits>;
+  constexpr int new_bits = (Bits & ~ex::blocking_mask) | ex::blocking_possibly;
+  return asio_executor_adapter<Executor, Allocator, new_bits>(exec);
+}
+
+/** @brief Requires blocking.never property.
+ *  @return New adapter that never blocks
+ */
+template<typename Executor, typename Allocator, int Bits>
+constexpr auto
+    require(const asio_executor_adapter<Executor, Allocator, Bits> & exec,
+            boost::asio::execution::blocking_t::never_t)
+{
+  using ex = asio_executor_adapter<Executor, Allocator, Bits>;
+  constexpr int new_bits = (Bits & ~ex::blocking_mask) | ex::blocking_never;
+  return asio_executor_adapter<Executor, Allocator, new_bits>(exec);
+}
+
+/** @brief Requires blocking.always property.
+ *  @return New adapter that always blocks until execution completes
+ */
+template<typename Executor, typename Allocator, int Bits>
+constexpr auto
+    require(const asio_executor_adapter<Executor, Allocator, Bits> & exec,
+            boost::asio::execution::blocking_t::always_t)
+{
+    using ex = asio_executor_adapter<Executor, Allocator, Bits>;
+constexpr int new_bits = (Bits & ~ex::blocking_mask) | ex::blocking_always;
+  return asio_executor_adapter<Executor, Allocator, new_bits>(exec);
+}
+
+/** @brief Queries the outstanding_work property.
+ *  @param exec The executor adapter to query
+ *  @return The current work tracking setting
+ */
+template<typename Executor, typename Allocator, int Bits>
+static constexpr boost::asio::execution::outstanding_work_t query(
+    const asio_executor_adapter<Executor, Allocator, Bits> &,
+    boost::asio::execution::outstanding_work_t) noexcept
+{
+  using ex = asio_executor_adapter<Executor, Allocator, Bits>;
+  switch (Bits & ex::work_mask)
+  {
+    case ex::work_tracked:
+      return boost::asio::execution::outstanding_work.tracked;
+    case ex::work_untracked:
+      return boost::asio::execution::outstanding_work.untracked;
+    default: return {};
+  }
+}
+
+/** @brief Requires outstanding_work.tracked property.
+ *  @return New adapter that tracks outstanding work
+ */
+template<typename Executor, typename Allocator, int Bits>
+constexpr auto
+    require(const asio_executor_adapter<Executor, Allocator, Bits> & exec,
+            boost::asio::execution::outstanding_work_t::tracked_t)
+{
+  using ex = asio_executor_adapter<Executor, Allocator, Bits>;
+  constexpr int new_bits = (Bits & ~ex::work_mask) | ex::work_tracked;
+  return asio_executor_adapter<Executor, Allocator, new_bits>(exec);
+}
+
+/** @brief Requires outstanding_work.untracked property.
+ *  @return New adapter that does not track outstanding work
+ */
+template<typename Executor, typename Allocator, int Bits>
+constexpr auto
+    require(const asio_executor_adapter<Executor, Allocator, Bits> & exec,
+            boost::asio::execution::outstanding_work_t::untracked_t)
+{
+  using ex = asio_executor_adapter<Executor, Allocator, Bits>;
+  constexpr int new_bits = (Bits & ~ex::work_mask) | ex::work_untracked;
+  return asio_executor_adapter<Executor, Allocator, new_bits>(exec);
+}
+
+/** @brief Queries the allocator property.
+ *  @return The adapter's current allocator
+ */
+template <typename Executor, typename Allocator, int Bits, typename OtherAllocator>
+constexpr Allocator query(
+    const asio_executor_adapter<Executor, Allocator, Bits> & exec,
+    boost::asio::execution::allocator_t<OtherAllocator>) noexcept
+{
+  return exec.get_allocator();
+}
+
+/** @brief Requires a specific allocator.
+ *  @param a The allocator property containing the new allocator
+ *  @return New adapter using the specified allocator
+ */
+template <typename Executor, typename Allocator, int Bits, typename OtherAllocator>
+constexpr auto
+    require(const asio_executor_adapter<Executor, Allocator, Bits> & exec,
+            boost::asio::execution::allocator_t<OtherAllocator> a)
+{
+  return asio_executor_adapter<Executor, OtherAllocator, Bits>(
+      exec, a.value()
+    );
+}
+
+/** @brief Requires the default allocator (uses frame allocator).
+ *  @return New adapter using the frame allocator from the context
+ */
+template <typename Executor, typename Allocator, int Bits>
+constexpr auto
+    require(const asio_executor_adapter<Executor, Allocator, Bits> & exec,
+            boost::asio::execution::allocator_t<void>)
+              noexcept(std::is_nothrow_move_constructible_v<Executor>)
+{
+  return asio_executor_adapter<
+        Executor,
+        std::pmr::polymorphic_allocator<void>,
+        Bits>
+          (
+            exec,
+            exec.context().get_frame_allocator()
+          );
+}
+
+/// @}
+
+namespace detail
+{
+
+template<typename Executor>
+struct asio_work_tracker_service : boost::asio::execution_context::service
+{
+  static boost::asio::execution_context::id id;
+
+  asio_work_tracker_service(boost::asio::execution_context & ctx)
+        : boost::asio::execution_context::service(ctx) {}
+
+  using tracked_executor =
+    typename boost::asio::prefer_result<
+      Executor,
+      boost::asio::execution::outstanding_work_t::tracked_t
+      >::type;
+
+  alignas(tracked_executor) char buffer[sizeof(tracked_executor) ];
+
+
+  std::mutex mutex;
+  std::size_t work = 0u;
+
+  void shutdown()
+  {
+    std::lock_guard _(mutex);
+    if (std::exchange(work, 0) > 0u)
+      reinterpret_cast<tracked_executor*>(buffer)->~tracked_executor();
+  }
+
+
+  void work_started(const Executor & exec)
+  {
+    std::lock_guard _(mutex);
+    if (work ++ == 0u)
+      new (buffer) tracked_executor(
+        boost::asio::prefer(exec, 
+        boost::asio::execution::outstanding_work.tracked));
+  }
+
+  void work_finished() 
+  {
+      std::lock_guard _(mutex);
+      if (--work == 0u)
+        reinterpret_cast<tracked_executor*>(buffer)->~tracked_executor();
+  }
+
+};
+
+
+template<typename Executor>
+boost::asio::execution_context::id asio_work_tracker_service<Executor>::id;
+
+
+}
+
+/** @brief Wraps a Boost.Asio standard executor for use with capy.
+ *
+ *  This class adapts Boost.Asio executors that follow the P0443/P2300
+ *  standard executor model to be usable as capy executors. It provides
+ *  work tracking through an `asio_work_tracker_service` and integrates
+ *  with capy's execution context system.
+ *
+ *  @tparam Executor A Boost.Asio executor satisfying `AsioBoostStandardExecutor`
+ *
+ *  @par Example
+ *  @code
+ *  boost::asio::io_context io;
+ *  auto wrapped = asio_boost_standard_executor(io.get_executor());
+ *
+ *  // Use with capy coroutines
+ *  capy::run(wrapped, my_io_task());
+ *  @endcode
+ *
+ *  @see wrap_asio_executor For automatic executor type detection
+ *  @see asio_net_ts_executor For legacy Networking TS executors
+ */
+template<detail::AsioBoostStandardExecutor Executor>
+struct asio_boost_standard_executor
+{
+  /** @brief Constructs from a Boost.Asio executor.
+   *  @param executor The Boost.Asio executor to wrap
+   */
+  asio_boost_standard_executor(Executor executor)
+      noexcept(std::is_nothrow_move_constructible_v<Executor>)
+      : executor_(std::move(executor))
+  {
+  }
+
+  /** @brief Move constructor. */
+  asio_boost_standard_executor(asio_boost_standard_executor && rhs)
+      noexcept(std::is_nothrow_move_constructible_v<Executor>)
+      : executor_(std::move(rhs.executor_))
+  {
+  }
+
+  /** @brief Copy constructor. */
+  asio_boost_standard_executor(const asio_boost_standard_executor & rhs)
+      noexcept(std::is_nothrow_copy_constructible_v<Executor>)
+      : executor_(rhs.executor_)
+  {
+  }
+
+  /** @brief Returns the associated capy execution context.
+   *  @return Reference to the capy execution_context
+   */
+  execution_context& context() const noexcept
+  {
+    auto & ec = boost::asio::query(executor_, boost::asio::execution::context);
+    return boost::asio::use_service<
+              detail::asio_context_service<boost::asio::execution_context>
+            >(ec);
+  }
+
+  /** @brief Notifies that work has started.
+   *
+   *  Delegates to the work tracker service to maintain a tracked executor
+   *  while work is outstanding.
+   */
+  void on_work_started() const noexcept
+  {
+    auto & ec = boost::asio::query(executor_, boost::asio::execution::context);
+    boost::asio::use_service<
+        detail::asio_work_tracker_service<Executor>
+      >(ec).work_started(executor_);
+  }
+
+  /** @brief Notifies that work has finished.
+   *
+   *  Decrements the work counter in the tracker service.
+   */
+  void on_work_finished() const noexcept
+  {
+    auto & ec = boost::asio::query(executor_, boost::asio::execution::context);
+    boost::asio::use_service<
+        detail::asio_work_tracker_service<Executor>
+      >(ec).work_finished();
+  }
+
+  /** @brief Dispatches a continuation for execution.
+   *
+   *  May execute inline if the executor allows, otherwise posts.
+   *  Uses the context's frame allocator for handler allocation.
+   *
+   *  @param c The continuation to dispatch
+   *  @return A noop coroutine handle
+   */
+  std::coroutine_handle<> dispatch(continuation & c) const
+  {
+    boost::asio::prefer(
+        executor_,
+        boost::asio::execution::allocator(
+          std::pmr::polymorphic_allocator<void>(
+            context().get_frame_allocator()
+            )
+          )
+        ).execute(detail::asio_coroutine_unique_handle(c.h));
+    return std::noop_coroutine();
+  }
+
+  /** @brief Posts a continuation for deferred execution.
+   *
+   *  The continuation will never be executed inline. Uses blocking.never
+   *  and relationship.fork properties for proper async behavior.
+   *
+   *  @param c The continuation to post
+   */
+  void post(continuation & c) const
+  {
+    boost::asio::prefer(
+      boost::asio::require(executor_, boost::asio::execution::blocking.never),
+      boost::asio::execution::relationship.fork,
+      boost::asio::execution::allocator(
+        std::pmr::polymorphic_allocator<void>(
+          context().get_frame_allocator()
+          )
+        )
+      ).execute(detail::asio_coroutine_unique_handle(c.h));
+  }
+
+  /** @brief Equality comparison. */
+  bool operator==(const asio_boost_standard_executor & rhs) const noexcept
+  {
+    return executor_  == rhs.executor_;
+  }
+
+  /** @brief Inequality comparison. */
+  bool operator!=(const asio_boost_standard_executor & rhs) const noexcept
+  {
+    return executor_  != rhs.executor_;
+  }
+
+ private:
+  Executor executor_;
+};
+
+
+/** @brief Spawns a capy coroutine with a Boost.Asio completion token (executor overload).
+ *
+ *  Convenience overload that combines the two-step spawn process into one call.
+ *  Equivalent to `asio_spawn(exec, awaitable)(token)`.
+ *
+ *  @tparam ExecutorType The executor type
+ *  @tparam Awaitable The coroutine type
+ *  @tparam Token A Boost.Asio completion token
+ *  @param exec The executor to run on
+ *  @param awaitable The coroutine to spawn
+ *  @param token The completion token
+ *  @return Depends on the token type
+ */
+template<Executor ExecutorType,
+         IoAwaitable Awaitable,
+         boost::asio::completion_token_for<
+          detail::completion_signature_for_io_awaitable<Awaitable>
+         > Token>
+auto asio_spawn(ExecutorType exec, Awaitable && awaitable, Token token)
+{
+  return asio_spawn(exec, std::forward<Awaitable>(awaitable))(std::move(token));
+}
+
+/** @brief Spawns a capy coroutine with a Boost.Asio completion token (context overload).
+ *
+ *  Convenience overload that extracts the executor from a context.
+ *
+ *  @tparam Context The execution context type
+ *  @tparam Awaitable The coroutine type
+ *  @tparam Token A Boost.Asio completion token
+ *  @param ctx The execution context
+ *  @param awaitable The coroutine to spawn
+ *  @param token The completion token
+ *  @return Depends on the token type
+ */
+template<ExecutionContext Context,
+         IoAwaitable Awaitable,
+         boost::asio::completion_token_for<
+          detail::completion_signature_for_io_awaitable<Awaitable>
+         > Token>
+auto asio_spawn(Context & ctx, Awaitable && awaitable, Token token)
+{
+  return asio_spawn(ctx.get_executor(), std::forward<Awaitable>(awaitable))(std::move(token));
+}
+
+/** @} */ // end of asio group
+
+}
+
+template<typename ... Ts>
+struct boost::asio::async_result<boost::capy::as_io_awaitable_t, void(Ts...)>
+  : boost::capy::detail::async_result_impl<
+      boost::asio::cancellation_signal,
+      boost::asio::cancellation_type,
+      Ts...>
+{
+};
+
+
+namespace boost::capy::detail
+{
+
+
+struct boost_asio_init;
+
+
+template<typename Allocator>
+struct boost_asio_promise_type_allocator_base
+{
+  template<typename Handler, Executor Ex, IoAwaitable Awaitable>
+  void * operator new   (std::size_t n, boost_asio_init &,
+                         Handler & handler,
+                         Ex &, Awaitable &)
+  {
+    using allocator_type = std::allocator_traits<Allocator>
+                              ::template rebind_alloc<char>;
+    allocator_type allocator(boost::asio::get_associated_allocator(handler));
+
+    // round n up to max_align
+    if (const auto d = n % sizeof(std::max_align_t); d > 0u)
+      n += (sizeof(std::max_align_t) - d);
+
+    auto mem = std::allocator_traits<allocator_type>::
+                template rebind_traits<char>::
+                allocate(allocator, n + sizeof(allocator_type));
+
+    void* p = static_cast<char*>(mem) + n;
+    new (p) allocator_type(std::move(allocator));
+
+    return mem;
+  }
+  void   operator delete(void * ptr, std::size_t n)
+  {
+    if (const auto d = n % sizeof(std::max_align_t); d > 0u)
+      n += (sizeof(std::max_align_t) - d);
+  
+    using allocator_type = std::allocator_traits<Allocator>
+                              ::template rebind_alloc<char>;
+    auto allocator_p = reinterpret_cast<allocator_type*>(
+                                static_cast<char*>(ptr) + n);
+    auto allocator = std::move(*allocator_p);
+
+    allocator_p->~allocator_type();
+    allocator.deallocate(static_cast<char*>(ptr), n + sizeof(allocator_type));
+  }
+};
+
+template<>
+struct boost_asio_promise_type_allocator_base<std::allocator<void>>
+{
+};
+
+template<typename Handler, Executor Ex, IoAwaitable Awaitable>
+struct boost_asio_init_promise_type
+  : boost_asio_promise_type_allocator_base<
+      boost::asio::associated_allocator_t<Handler>>
+{
+    using args_type = completion_tuple_for_io_awaitable<Awaitable>;
+  
+    boost_asio_init_promise_type(
+      boost_asio_init &, 
+      Handler & h, 
+      Ex & exec, 
+      Awaitable &)
+        : handler(h), ex(exec) 
+    {
+    }
+
+    Handler & handler;
+    Ex &ex;
+
+    void get_return_object() {}
+    void unhandled_exception() {throw;}
+    void return_void() {}
+
+    std::suspend_never initial_suspend() noexcept {return {};}
+    std::suspend_never   final_suspend() noexcept {return {};}
+
+    struct completer 
+    {
+      Handler &handler;
+      Ex &ex;
+      args_type args;
+
+
+      bool await_ready() const {return false;}
+
+      void await_suspend(
+            std::coroutine_handle<boost_asio_init_promise_type> h) 
+      {
+        auto handler_ =         
+            std::apply( 
+              [&](auto ... args) 
+              {
+                return boost::asio::append(std::move(handler), 
+                                           std::move(args)...);
+              },
+              detail::decomposed_types(std::move(args)));
+
+        auto exec = boost::asio::get_associated_immediate_executor(
+                        handler_, 
+                        asio_executor_adapter(std::move(ex)));
+        h.destroy();
+        boost::asio::dispatch(exec, std::move(handler_));
+      }
+      void await_resume() const {}
+    };
+
+    completer yield_value(args_type value)
+    {
+      return {handler, ex, std::move(value)};
+    }
+        
+    struct wrapper
+    {
+      Awaitable r;
+      const Ex &ex;
+      io_env env;
+      std::stop_source stop_src;
+      boost::asio::cancellation_slot cancel_slot;
+
+      continuation c;
+
+      wrapper(Awaitable && r, const Ex &ex) 
+          : r(std::move(r)), ex(ex)
+      {
+      }
+
+      bool await_ready() {return r.await_ready(); }
+
+      auto await_suspend(
+          std::coroutine_handle<boost_asio_init_promise_type> tr)
+      {
+        env.executor = ex;
+        env.stop_token = stop_src.get_token();
+        cancel_slot = 
+          boost::asio::get_associated_cancellation_slot(tr.promise().handler);
+          
+        if (cancel_slot.is_connected())
+          cancel_slot.assign(
+              [this](boost::asio::cancellation_type ct)
+              {
+                if ((ct & boost::asio::cancellation_type::terminal)
+                  != boost::asio::cancellation_type::none)
+                  stop_src.request_stop(); 
+              });
+        env.frame_allocator = get_current_frame_allocator();
+
+        using suspend_kind = decltype(r.await_suspend(tr, &env));
+        if constexpr (std::is_void_v<suspend_kind>)
+          r.await_suspend(tr, &env);
+        else if constexpr (std::same_as<suspend_kind, bool>)
+          return r.await_suspend(tr, &env);
+        else
+        {
+          c.h = r.await_suspend(tr, &env);
+          return ex.dispatch(c);
+        }        
+      }
+      
+      completion_tuple_for_io_awaitable<Awaitable> await_resume()
+      {
+        if (cancel_slot.is_connected())
+          cancel_slot.clear();
+          
+        using type = decltype(r.await_resume());
+        if constexpr (!noexcept(r.await_resume()))
+        {
+          if constexpr (std::is_void_v<type>)
+            try 
+            {
+              r.await_resume();
+              return {std::exception_ptr()};
+            }
+            catch (...)
+            {
+              return std::current_exception();
+            }
+          else
+            try 
+            {
+              return {std::current_exception(), r.await_resume()};
+            }
+            catch (...)
+            {
+              return {std::current_exception(), type()};
+            }
+        }
+        else
+        {
+          if constexpr (std::is_void_v<type>)
+          {
+            r.await_resume();
+            return {};
+          }
+          else
+            return {r.await_resume()};
+        }
+      }
+    };
+
+    wrapper await_transform(Awaitable & r)
+    {
+      return wrapper{std::move(r), ex};
+    }
+};
+
+
+struct boost_asio_init
+{
+  template<typename Handler, Executor Ex, IoAwaitable Awaitable>
+  void operator()(
+                  Handler ,
+                  Ex,
+                  Awaitable awaitable)
+  {
+    auto res = co_await awaitable;
+    co_yield std::move(res);
+  }
+};
+
+template<typename Awaitable, typename Token>
+  requires
+    boost::asio::completion_token_for<
+        Token,
+        completion_signature_for_io_awaitable<Awaitable>
+    >
+struct initialize_asio_spawn_helper<Awaitable, Token>
+{
+  template<typename Executor>
+  static auto init(Executor ex, Awaitable r, Token && tk)
+    -> decltype( boost::asio::async_initiate<
+        Token,
+        completion_signature_for_io_awaitable<Awaitable>>(
+          boost_asio_init{},
+          tk, std::move(ex), std::move(r)
+          ))
+  {
+    return boost::asio::async_initiate<
+        Token,
+        completion_signature_for_io_awaitable<Awaitable>>(
+          boost_asio_init{},
+          tk, std::move(ex), std::move(r)
+          );
+  }
+};
+
+
+}
+
+
+template<typename Handler, typename Executor, typename Awaitable>
+struct std::coroutine_traits<void,
+                            boost::capy::detail::boost_asio_init&,
+                            Handler,
+                            Executor,
+                            Awaitable>
+{
+  using promise_type
+      = boost::capy::detail::boost_asio_init_promise_type<
+                      Handler,
+                      Executor,
+                      Awaitable>;
+}; 
+
+
+
+namespace boost::capy
+{
+
+
+namespace detail
+{
+
+template<typename Sequence>
+class asio_boost_buffer_range
+{
+public:
+    using sequence_type  = Sequence;
+    using iterator       = asio_buffer_iterator<
+                             decltype(boost::asio::buffer_sequence_begin(std::declval<const Sequence&>()))>;
+    using const_iterator = iterator;
+
+    asio_boost_buffer_range() = default;
+
+    explicit asio_boost_buffer_range(Sequence seq)
+        noexcept(std::is_nothrow_move_constructible_v<Sequence>)
+        : seq_(std::move(seq))
+    {
+    }
+
+    asio_boost_buffer_range(const asio_boost_buffer_range&) = default;
+    asio_boost_buffer_range(asio_boost_buffer_range&&) = default;
+    asio_boost_buffer_range& operator=(const asio_boost_buffer_range&) = default;
+    asio_boost_buffer_range& operator=(asio_boost_buffer_range&&) = default;
+
+    iterator begin() const
+        noexcept(noexcept(boost::asio::buffer_sequence_begin(std::declval<const Sequence&>())))
+    {
+        return iterator(boost::asio::buffer_sequence_begin(seq_));
+    }
+
+    iterator end() const
+        noexcept(noexcept(boost::asio::buffer_sequence_end(std::declval<const Sequence&>())))
+    {
+        return iterator(boost::asio::buffer_sequence_end(seq_));
+    }
+
+    /// Returns the underlying sequence.
+    const Sequence& base() const noexcept { return seq_; }
+
+private:
+    Sequence seq_{};
+};
+
+// Deduction guide
+template<typename Sequence>
+asio_boost_buffer_range(Sequence) -> asio_boost_buffer_range<Sequence>;
+
+
+asio_mutable_buffer asio_buffer_transformer_t::
+    operator()(const boost::asio::mutable_buffer &mb) const noexcept
+{
+  return {mb.data(), mb.size()};
+}
+
+asio_const_buffer asio_buffer_transformer_t::
+    operator()(const boost::asio::const_buffer &cb) const noexcept
+{
+  return {cb.data(), cb.size()};
+}
+
+}
+
+/** Convert a Boost.Asio buffer sequence for bidirectional Asio/capy compatibility.
+
+    Wraps a Boost.Asio buffer sequence in a transforming range that converts
+    each buffer element to asio_const_buffer or asio_mutable_buffer.
+    The returned range satisfies both Boost.Asio's buffer sequence requirements
+    and capy's buffer sequence concepts.
+
+    This overload uses `boost::asio::buffer_sequence_begin` and
+    `boost::asio::buffer_sequence_end` for iteration.
+
+    @par Example: Asio to Capy
+    @code
+    std::vector<boost::asio::mutable_buffer> asio_bufs = ...;
+    auto seq = capy::as_asio_buffer_sequence(asio_bufs);
+    std::size_t total = capy::buffer_size(seq);  // Use capy algorithms
+    @endcode
+
+    @param seq The Boost.Asio buffer sequence to convert
+    @return A transforming range over the buffer sequence
+
+    @see as_asio_buffer_sequence in buffers.hpp for capy buffer sequences
+*/
+template<typename T>
+  requires requires (const T & seq)
+  {
+    {boost::asio::buffer_sequence_begin(seq)}  -> std::bidirectional_iterator;
+    {boost::asio::buffer_sequence_end(seq)}    -> std::bidirectional_iterator;
+    {*boost::asio::buffer_sequence_begin(seq)} -> std::convertible_to<boost::asio::const_buffer>;
+    {*boost::asio::buffer_sequence_end(seq)}   -> std::convertible_to<boost::asio::const_buffer>;
+  }
+auto as_asio_buffer_sequence(const T & seq)
+{
+  return detail::asio_boost_buffer_range(seq);
+}
+
+asio_const_buffer::operator boost::asio::const_buffer() const 
+{
+  return {data(), size()};
+}
+
+asio_mutable_buffer::operator boost::asio::const_buffer() const 
+{
+  return {data(), size()};
+}
+
+asio_mutable_buffer::operator boost::asio::mutable_buffer() const 
+{
+  return {data(), size()};
+}
+
+}
+
+#endif //BOOST_CAPY_ASIO_BOOST_HPP
+

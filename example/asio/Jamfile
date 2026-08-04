@@ -14,17 +14,7 @@ project
       <include>.
     ;
 
-exe any_stream :
-    any_stream.cpp
-    api/capy_streams.cpp
+exe echo_server :
+    echo_server.cpp
     ;
 
-exe asio_callbacks :
-    asio_callbacks.cpp
-    api/capy_streams.cpp
-    ;
-
-exe use_capy_example :
-    use_capy_example.cpp
-    api/capy_streams.cpp
-    ;

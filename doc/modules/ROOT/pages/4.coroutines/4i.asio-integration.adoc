@@ -1,0 +1,671 @@
+//
+// Copyright (c) 2026 Vinnie Falco (vinnie.falco@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Asio Integration
+
+Capy provides seamless integration with both Boost.Asio and standalone Asio. This chapter explains how to use Asio's I/O facilities within capy coroutines and how to spawn capy coroutines from Asio code.
+
+== Prerequisites
+
+* Completed xref:4.coroutines/4a.tasks.adoc[The task Type]
+* Completed xref:4.coroutines/4b.launching.adoc[Launching Coroutines]
+* Familiarity with Asio's async model and completion tokens
+
+== Overview
+
+Capy's Asio integration provides two directions of interoperability:
+
+1. **Capy to Asio**: Await Asio async operations inside capy coroutines using `as_io_awaitable`
+2. **Asio to Capy**: Spawn capy coroutines from Asio code using `asio_spawn`
+
+Additionally, you can:
+
+* Wrap Asio executors for use with capy (`wrap_asio_executor`)
+* Wrap capy executors for use with Asio (`asio_executor_adapter`)
+
+== Choosing the Right Header
+
+[cols="1,2"]
+|===
+| Header | Use When
+
+| `<boost/capy/asio/boost.hpp>`
+| Using Boost.Asio (`boost::asio` namespace)
+
+| `<boost/capy/asio/standalone.hpp>`
+| Using standalone Asio (`asio` namespace)
+|===
+
+Both headers provide identical functionality, just targeting different Asio variants.
+
+== Awaiting Asio Operations in Capy Coroutines
+
+The `as_io_awaitable` completion token allows you to `co_await` any Asio async operation directly within a capy `io_task`.
+
+=== Basic Usage
+
+[source,cpp]
+----
+#include <boost/capy/asio/boost.hpp>
+#include <boost/asio.hpp>
+
+namespace capy = boost::capy;
+namespace asio = boost::asio;
+
+capy::io_task<std::size_t> read_some(asio::ip::tcp::socket& socket)
+{
+    std::array<char, 1024> buffer;
+
+    // Await the Asio operation using as_io_awaitable
+    auto [ec, bytes_read] = co_await socket.async_read_some(
+        asio::buffer(buffer),
+        capy::as_io_awaitable);
+
+    if (ec)
+        throw std::system_error(ec);
+
+    co_return bytes_read;
+}
+----
+
+The `as_io_awaitable` token transforms the operation into an awaitable that:
+
+* Suspends the coroutine until the operation completes
+* Returns the completion arguments as a tuple
+* Propagates cancellation from the capy stop token
+
+=== Completion Signatures
+
+The result type depends on the Asio operation's completion signature.
+When the signature begins with `error_code`, the result is an `io_result<Ts...>`
+which bundles the error code with any additional values and supports structured bindings.
+
+[cols="1,1"]
+|===
+| Asio Signature | co_await Result
+
+| `void(error_code, std::size_t)`
+| `io_result<std::size_t>`
+
+| `void(error_code)`
+| `io_result<>`
+
+| `void(std::exception_ptr, std::size_t)`
+| `std::size_t`
+
+| `void(std::exception_ptr)`
+| `void`
+
+| `void()`
+| `void`
+|===
+
+Use structured bindings for clean syntax:
+
+[source,cpp]
+----
+auto [ec, bytes] = co_await socket.async_read_some(buffer, capy::as_io_awaitable);
+----
+
+=== Setting as Default Token
+
+To avoid repeating `as_io_awaitable` on every call, rebind your I/O objects:
+
+[source,cpp]
+----
+// Method 1: Type alias
+using awaitable_socket = capy::as_io_awaitable_t::as_default_on_t<
+    asio::ip::tcp::socket>;
+
+awaitable_socket socket(io_context);
+auto [ec, n] = co_await socket.async_read_some(buffer);  // No token needed
+
+// Method 2: Runtime rebinding
+auto socket = capy::as_io_awaitable_t::as_default_on(
+    asio::ip::tcp::socket(io_context));
+----
+
+=== Cancellation
+
+When the capy coroutine receives a stop request (via its stop token), a terminal cancellation signal is sent to the Asio operation:
+
+[source,cpp]
+----
+capy::io_task<void> cancellable_read(asio::ip::tcp::socket& socket)
+{
+    std::array<char, 1024> buffer;
+
+    // If stop is requested, this operation will be cancelled
+    auto [ec, n] = co_await socket.async_read_some(
+        buffer, capy::as_io_awaitable);
+
+    if (ec == asio::error::operation_aborted)
+    {
+        // Cancelled via stop token
+        co_return;
+    }
+    // ...
+}
+----
+
+== Spawning Capy Coroutines from Asio
+
+The `asio_spawn` function allows you to run capy coroutines from Asio code, using any Asio completion token to handle the result.
+
+=== Basic Usage
+
+[source,cpp]
+----
+#include <boost/capy/asio/boost.hpp>
+#include <boost/asio.hpp>
+
+capy::io_task<int> compute()
+{
+    // ... async work ...
+    co_return 42;
+}
+
+int main()
+{
+    asio::io_context io;
+
+    // Wrap the Asio executor for capy
+    auto exec = capy::wrap_asio_executor(io.get_executor());
+
+    // Spawn the coroutine, fire-and-forget
+    capy::asio_spawn(exec, compute())(asio::detached);
+
+    io.run();
+}
+----
+
+=== Handling Results
+
+Use any Asio completion token to receive the result:
+
+[source,cpp]
+----
+// Callback handler
+capy::asio_spawn(exec, compute())(
+    [](std::exception_ptr ep, int result) {
+        if (ep)
+            std::rethrow_exception(ep);
+        std::cout << "Result: " << result << "\n";
+    });
+
+// With use_awaitable (in an Asio coroutine)
+auto [ep, result] = co_await capy::asio_spawn(exec, compute()));
+
+// With use_future
+auto future = capy::asio_spawn(exec, compute(), asio::use_future);
+auto [ep, result] = future.get();
+----
+
+=== Completion Signature
+
+The completion signature depends on the coroutine's return type 
+and the `noexcept` specification of `await_resume`:
+
+[cols="2,2"]
+|===
+| Coroutine | Completion Signature
+
+| `IoAwaitable<T>` (may throw)
+| `void(std::exception_ptr, T)`
+
+| `IoAwaitable<T>` (noexcept)
+| `void(T)`
+
+| `IoAwaitable<void>` (may throw)
+| `void(std::exception_ptr)`
+
+| `IoAwaitable<void>` (noexcept)
+| `void()`
+|===
+
+=== Three-Argument Form
+
+A convenience overload accepts the token directly:
+
+[source,cpp]
+----
+// Two-step form
+capy::asio_spawn(exec, compute())(asio::detached);
+
+// Equivalent three-argument form
+capy::asio_spawn(exec, compute(), asio::detached);
+----
+
+== Wrapping Executors
+
+=== Asio Executor to Capy
+
+Use `wrap_asio_executor` to adapt any Asio executor for capy:
+
+[source,cpp]
+----
+asio::io_context io;
+auto capy_exec = capy::wrap_asio_executor(io.get_executor());
+
+// Now use with capy's run/run_async
+capy::run_async(capy_exec)(my_task());
+----
+
+The function automatically detects and handles:
+
+* Legacy Networking TS executors (with `on_work_started`/`on_work_finished`)
+* Modern Boost.Asio standard executors
+* Standalone Asio standard executors
+
+=== Capy Executor to Asio
+
+The `asio_executor_adapter` wraps a capy executor for use with Asio:
+
+[source,cpp]
+----
+capy::thread_pool pool;
+capy::asio_executor_adapter<> asio_exec(pool.get_executor());
+
+// Use with Asio operations
+asio::post(asio_exec, []{ std::cout << "Hello!\n"; });
+----
+
+The adapter supports Asio's execution properties:
+
+* `blocking`: `possibly`, `never`, or `always`
+* `outstanding_work`: `tracked` or `untracked`
+* `allocator`: Custom allocator for handler allocation
+
+[source,cpp]
+----
+// Require non-blocking execution
+auto never_blocking = asio::require(asio_exec,
+    asio::execution::blocking.never);
+
+// Require work tracking
+auto tracked = asio::require(asio_exec,
+    asio::execution::outstanding_work.tracked);
+----
+
+== Complete Example: Echo Server
+
+This example demonstrates a complete echo server using capy coroutines with Boost.Asio:
+
+[source,cpp]
+----
+#include <boost/capy/asio/boost.hpp>
+#include <boost/capy/io_task.hpp>
+#include <boost/asio.hpp>
+#include <iostream>
+
+namespace capy = boost::capy;
+namespace asio = boost::asio;
+using tcp = asio::ip::tcp;
+
+// Rebind socket to use as_io_awaitable by default
+using socket_type = capy::as_io_awaitable_t::as_default_on_t<tcp::socket>;
+
+capy::task<void> handle_client(socket_type socket)
+{
+    std::array<char, 1024> buffer;
+
+    for (;;)
+    {
+        // Read some data
+        auto [read_ec, bytes_read] = co_await socket.async_read_some(
+            asio::buffer(buffer));
+
+        if (read_ec)
+        {
+            if (read_ec != asio::error::eof)
+                std::cerr << "Read error: " << read_ec.message() << "\n";
+            co_return;
+        }
+
+        // Echo it back
+        auto [write_ec, bytes_written] = co_await asio::async_write(
+            socket,
+            asio::buffer(buffer.data(), bytes_read));
+
+        if (write_ec)
+        {
+            std::cerr << "Write error: " << write_ec.message() << "\n";
+            co_return;
+        }
+    }
+}
+
+capy::task<void> accept_loop(tcp::acceptor& acceptor)
+{
+    auto exec = co_await capy::this_coro::executor;
+
+    for (;;)
+    {
+        // Accept a connection
+        auto [ec, socket] = co_await acceptor.async_accept(
+            capy::as_io_awaitable);
+
+        if (ec)
+        {
+            std::cerr << "Accept error: " << ec.message() << "\n";
+            continue;
+        }
+
+        // Spawn handler for this client (detached)
+        capy::asio_spawn(exec, handle_client(
+            socket_type(std::move(socket))))(asio::detached);
+    }
+}
+
+int main()
+{
+    asio::io_context io;
+
+    tcp::acceptor acceptor(io, {tcp::v4(), 8080});
+    std::cout << "Listening on port 8080...\n";
+
+    auto exec = capy::wrap_asio_executor(io.get_executor());
+    capy::asio_spawn(exec, accept_loop(acceptor))(asio::detached);
+
+    io.run();
+}
+----
+
+== Buffer Sequence Integration
+
+Capy provides utilities for seamless bidirectional conversion between Asio buffer sequences and capy's native buffer types. This allows:
+
+* Using capy's `MutableBufferSequence` and `ConstBufferSequence` with Asio I/O operations
+* Using Asio buffer sequences with capy's buffer concepts and algorithms
+
+=== Buffer Types
+
+Capy provides Asio-compatible buffer wrappers that inherit from capy's native buffer types:
+
+[cols="1,2"]
+|===
+| Type | Description
+
+| `asio_const_buffer`
+| Extends `const_buffer` with implicit conversions to `asio::const_buffer` and `boost::asio::const_buffer`
+
+| `asio_mutable_buffer`
+| Extends `mutable_buffer` with implicit conversions to both mutable and const Asio buffer types
+|===
+
+These types allow capy buffers to be used directly with Asio operations:
+
+[source,cpp]
+----
+capy::asio_mutable_buffer buf(data, size);
+
+// Works with Asio operations
+co_await socket.async_read_some(buf, capy::as_io_awaitable);
+----
+
+=== The as_asio_buffer_sequence Function
+
+The `as_asio_buffer_sequence` function provides bidirectional conversion between Asio and capy buffer sequences. The returned range satisfies both Asio's buffer sequence requirements and capy's `MutableBufferSequence`/`ConstBufferSequence` concepts.
+
+==== Capy to Asio
+
+Convert capy buffer sequences for use with Asio operations:
+
+[source,cpp]
+----
+// Single buffers -> array of 1
+auto seq1 = capy::as_asio_buffer_sequence(my_mutable_buffer);
+auto seq2 = capy::as_asio_buffer_sequence(my_const_buffer);
+
+// Capy buffer sequences -> wrapped with transforming range
+std::array<capy::mutable_buffer, 2u> buffers = /* ... */;
+auto seq3 = capy::as_asio_buffer_sequence(buffers);
+
+// Use with Asio
+co_await socket.async_read_some(seq3, capy::as_io_awaitable);
+----
+
+==== Asio to Capy
+
+Convert Asio buffer sequences for use with capy's buffer concepts:
+
+[source,cpp]
+----
+// Asio buffer sequences -> wrapped with transforming range
+std::vector<boost::asio::mutable_buffer> asio_buffers = /* ... */;
+auto seq = capy::as_asio_buffer_sequence(asio_buffers);
+
+// Now satisfies capy::MutableBufferSequence
+static_assert(capy::MutableBufferSequence<decltype(seq)>);
+
+// Use with capy buffer algorithms
+std::size_t total = capy::buffer_size(seq);
+----
+
+==== Pass-Through
+
+Ranges that already contain `asio_const_buffer` or `asio_mutable_buffer` elements are forwarded unchanged:
+
+[source,cpp]
+----
+std::vector<capy::asio_mutable_buffer> already_compatible = /* ... */;
+auto seq = capy::as_asio_buffer_sequence(already_compatible);
+// Returns the range as-is, no wrapping needed
+----
+
+=== Example: Scatter/Gather I/O
+
+Using buffer sequences enables efficient scatter/gather I/O:
+
+[source,cpp]
+----
+#include <boost/capy/asio/boost.hpp>
+
+capy::io_task<std::size_t> read_message(
+    boost::asio::ip::tcp::socket& socket)
+{
+    // Header + body buffers
+    std::array<char, 4> header;
+    std::array<char, 256> body;
+
+    std::array<capy::mutable_buffer, 2u> buffers(
+        capy::mutable_buffer(header.data(), header.size()),
+        capy::mutable_buffer(body.data(), body.size()));
+
+    // Scatter read into both buffers
+    auto [ec, n] = co_await socket.async_read_some(
+        capy::as_asio_buffer_sequence(buffers),
+        capy::as_io_awaitable);
+
+    if (ec)
+        throw std::system_error(ec);
+
+    co_return n;
+}
+----
+
+== Stream Adapters
+
+Capy provides bidirectional stream adapters for converting between Asio's `AsyncReadStream`/`AsyncWriteStream` types and capy's `ReadStream`/`WriteStream` concepts.
+
+=== Capy Streams to Asio
+
+The `async_read_stream`, `async_write_stream`, and `async_stream` classes wrap capy streams to provide Asio-style `async_read_some` and `async_write_some` operations with completion token support.
+
+[source,cpp]
+----
+#include <boost/capy/asio/stream.hpp>
+
+// Wrap a capy stream for Asio
+capy::any_stream my_stream = ...;
+auto exec = capy::wrap_asio_executor(io.get_executor());
+
+capy::async_stream asio_compatible(std::move(my_stream), exec);
+
+// Use with Asio-style async operations
+auto [ec, n] = co_await asio_compatible.async_read_some(
+    buffer, capy::as_io_awaitable);
+----
+
+These adapters are useful when you have a capy stream but need to use it with code expecting Asio's async model.
+
+[cols="1,2"]
+|===
+| Class | Description
+
+| `async_read_stream<Stream, Exec>`
+| Wraps a capy `ReadStream`, provides `async_read_some`
+
+| `async_write_stream<Stream, Exec>`
+| Wraps a capy `WriteStream`, provides `async_write_some`
+
+| `async_stream<Stream, Exec>`
+| Wraps a capy `Stream`, provides both operations
+|===
+
+=== Asio Streams to Capy
+
+The `asio_read_stream`, `asio_write_stream`, and `asio_stream` classes wrap Asio streams to satisfy capy's stream concepts, using `as_io_awaitable` internally.
+
+[source,cpp]
+----
+#include <boost/capy/asio/stream.hpp>
+
+// Wrap an Asio socket for capy
+boost::asio::ip::tcp::socket socket(io);
+capy::asio_stream stream(std::move(socket));
+
+// Use with capy's stream interface
+auto result = co_await stream.read_some(buffer);
+auto [ec, bytes] = result;
+----
+
+These adapters allow Asio I/O objects to be used with capy's stream algorithms and abstractions.
+
+[cols="1,2"]
+|===
+| Class | Description
+
+| `asio_read_stream<AsyncReadStream>`
+| Wraps an Asio `AsyncReadStream`, provides `read_some`
+
+| `asio_write_stream<AsyncWriteStream>`
+| Wraps an Asio `AsyncWriteStream`, provides `write_some`
+
+| `asio_stream<AsyncStream>`
+| Wraps an Asio stream, provides both operations
+|===
+
+=== Example: Bridging Stream Types
+
+[source,cpp]
+----
+#include <boost/capy/asio/boost.hpp>
+#include <boost/capy/asio/stream.hpp>
+
+// Convert Asio socket to capy stream
+capy::task<void> process_connection(boost::asio::ip::tcp::socket socket)
+{
+    // Wrap the Asio socket as a capy stream
+    capy::asio_stream stream(std::move(socket));
+
+    // Now use capy stream algorithms
+    std::array<char, 1024> buf;
+    capy::mutable_buffer buffer(buf.data(), buf.size());
+
+    while (true)
+    {
+        auto [ec, n] = co_await stream.read_some(buffer);
+        if (ec)
+            break;
+
+        // Echo back
+        co_await stream.write_some(capy::const_buffer(buf.data(), n));
+    }
+}
+----
+
+== Reference
+
+[cols="1,2"]
+|===
+| Header | Description
+
+| `<boost/capy/asio/buffers.hpp>`
+| Buffer types, iterator, and `as_asio_buffer_sequence` (included by boost.hpp/standalone.hpp)
+
+| `<boost/capy/asio/boost.hpp>`
+| Complete Boost.Asio integration
+
+| `<boost/capy/asio/standalone.hpp>`
+| Complete standalone Asio integration
+
+| `<boost/capy/asio/as_io_awaitable.hpp>`
+| The `as_io_awaitable` completion token (included by above)
+
+| `<boost/capy/asio/spawn.hpp>`
+| The `asio_spawn` function (included by above)
+
+| `<boost/capy/asio/executor_adapter.hpp>`
+| The `asio_executor_adapter` class (included by above)
+
+| `<boost/capy/asio/executor_from_asio.hpp>`
+| The `wrap_asio_executor` function (included by above)
+
+| `<boost/capy/asio/stream.hpp>`
+| Stream adapters for bidirectional Asio/capy conversion
+|===
+
+[cols="1,2"]
+|===
+| Symbol | Description
+
+| `as_io_awaitable`
+| Completion token for awaiting Asio operations
+
+| `as_io_awaitable_t::as_default_on`
+| Rebind I/O objects to default to `as_io_awaitable`
+
+| `asio_spawn`
+| Spawn capy coroutines with Asio completion tokens
+
+| `wrap_asio_executor`
+| Adapt Asio executors for capy
+
+| `asio_executor_adapter`
+| Adapt capy executors for Asio
+
+| `asio_const_buffer`
+| Capy const buffer with Asio conversion operators
+
+| `asio_mutable_buffer`
+| Capy mutable buffer with Asio conversion operators
+
+| `as_asio_buffer_sequence`
+| Convert any buffer sequence for Asio compatibility
+
+| `async_read_stream`
+| Wrap capy ReadStream for Asio async operations
+
+| `async_write_stream`
+| Wrap capy WriteStream for Asio async operations
+
+| `async_stream`
+| Wrap capy Stream for Asio async operations
+
+| `asio_read_stream`
+| Wrap Asio AsyncReadStream for capy ReadStream concept
+
+| `asio_write_stream`
+| Wrap Asio AsyncWriteStream for capy WriteStream concept
+
+| `asio_stream`
+| Wrap Asio stream for capy Stream concept
+|===
+

@@ -12,6 +12,7 @@ list(APPEND PFILES
     CMakeLists.txt
     Jamfile)
 
+
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} PREFIX "" FILES ${PFILES})
 
 add_executable(boost_capy_tests ${PFILES})
