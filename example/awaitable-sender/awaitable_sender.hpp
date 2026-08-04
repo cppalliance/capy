@@ -76,19 +76,21 @@ struct awaitable_sender
     channels based on its type:
 
     - `void` - calls `set_value()`.
-    - `error_code` or an empty `io_result` - calls
-      `set_value()` when the code is zero, `set_error(ec)`
-      otherwise.
-    - Any other single value `T` - calls `set_value(T)`,
-      including generic tuple-likes that happen to lead with
-      an `error_code`: only `io_result` declares the
-      element-0-is-outcome intent, so only it is split.
+    - `error_code`, or any single-element tuple-like whose
+      sole element is `error_code` (such as an empty
+      `io_result`) - calls `set_value()` when the code is
+      zero, `set_error(ec)` otherwise.
+    - Any other single value `T` - calls `set_value(T)`.
 
-    An `io_result` with payload elements is rejected at compile
-    time. Completion channels are exclusive, so a partial
-    success (an `error_code` arriving alongside bytes already
-    transferred) cannot be delivered on any single channel
-    without dropping data. Wrap such an operation in a
+    Compound results are rejected at compile time, and the
+    constraint is structural, not nominal: any tuple-like whose
+    element 0 is `error_code` with additional elements is
+    refused, whether it is `io_result<size_t>`,
+    `std::tuple<error_code, size_t>`, or a user-defined type of
+    the same shape. Completion channels are exclusive, so a
+    partial success (an `error_code` arriving alongside bytes
+    already transferred) cannot be delivered on any single
+    channel without dropping data. Wrap such an operation in a
     `task<error_code>` that inspects the full result, moves the
     payload out through a side channel, and returns the code.
 
@@ -116,12 +118,12 @@ auto as_sender(IoAw&& aw)
     using R = awaitable_result_t<std::decay_t<IoAw>>;
     static_assert(
         !detail::is_compound_ec_result_v<R>,
-        "as_sender does not accept awaitables whose result is an "
-        "io_result with payload elements: completion channels "
-        "are exclusive, so a partial success (error_code plus "
-        "payload) would be silently dropped. Wrap the operation "
-        "in a task<error_code> that inspects the full result "
-        "and returns the error code.");
+        "as_sender does not accept awaitables whose result "
+        "destructures into (error_code, ...): completion "
+        "channels are exclusive, so a partial success "
+        "(error_code plus payload) would be silently dropped. "
+        "Wrap the operation in a task<error_code> that inspects "
+        "the full result and returns the error code.");
     return awaitable_sender<std::decay_t<IoAw>>{
         std::forward<IoAw>(aw)};
 }

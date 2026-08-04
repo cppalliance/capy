@@ -796,26 +796,24 @@ void test_coawait_stopped_midflight()
     CHECK(coawait_out.ch == channel::stopped);
 }
 
-// Channel splitting is keyed on io_result, not tuple shape: a
-// std::tuple that happens to lead with error_code is a value.
-struct tuple_result_op
-{
-    bool await_ready() const noexcept { return false; }
-    auto await_suspend(
-        std::coroutine_handle<>, capy::io_env const*)
-    {
-        return std::noop_coroutine();
-    }
-    std::tuple<std::error_code, int> await_resume() noexcept
-    {
-        return {};
-    }
-};
-static_assert(std::is_same_v<
-    decltype(capy::detail::make_sigs<tuple_result_op>()),
-    ex::completion_signatures<
-        ex::set_value_t(std::tuple<std::error_code, int>),
-        ex::set_stopped_t()>>);
+// Channel splitting is structural, not nominal (P4093): any
+// tuple-like leading with error_code splits when it carries no
+// payload and is rejected when it does, io_result or not.
+static_assert(capy::detail::is_ec_outcome_v<std::error_code>);
+static_assert(capy::detail::is_ec_outcome_v<capy::io_result<>>);
+static_assert(capy::detail::is_ec_outcome_v<
+    std::tuple<std::error_code>>);
+static_assert(capy::detail::is_compound_ec_result_v<
+    capy::io_result<std::size_t>>);
+static_assert(capy::detail::is_compound_ec_result_v<
+    std::tuple<std::error_code, int>>);
+static_assert(capy::detail::is_compound_ec_result_v<
+    std::pair<std::error_code, std::size_t>>);
+// no tuple protocol, no error_code lead: plain values
+static_assert(!capy::detail::is_ec_outcome_v<int> &&
+    !capy::detail::is_compound_ec_result_v<int>);
+static_assert(!capy::detail::is_compound_ec_result_v<
+    std::pair<int, std::error_code>>);
 
 // AwaitableSender partitions the world correctly: read_op models
 // both protocols; compound_op is awaitable-only; the as_sender

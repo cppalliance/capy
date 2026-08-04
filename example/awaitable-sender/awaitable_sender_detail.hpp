@@ -81,32 +81,53 @@ struct io_sender_env
 
 namespace detail {
 
-// Channel splitting keys on capy's io_result, the type that
-// declares "element 0 is an error_code" as intent. A generic
-// tuple-like that merely happens to lead with an error_code is a
-// value, not an outcome to split — shape alone cannot tell a
-// result protocol from a payload. An io_result with payload
-// elements is rejected in make_sigs: exclusive completion
-// channels cannot carry a partial success without dropping data.
-// The arity trait avoids naming std::tuple_size on foreign
+// Channel splitting is structural, not nominal (P4093): any
+// tuple-like whose element 0 is error_code is an outcome, no
+// matter its name. A bare error_code or a single-element
+// tuple-like is a binary outcome and splits across the
+// channels; one with payload elements is rejected in
+// make_sigs, because exclusive completion channels cannot
+// carry a partial success without dropping data. The SFINAE
+// probe avoids naming std::tuple_size members on foreign
 // types, which would hard-error for non-tuples (&& does not
 // short-circuit instantiation).
-template<class T>
-struct io_result_arity
-    : std::integral_constant<std::size_t, 0> {};
-
-template<class... Ts>
-struct io_result_arity<io_result<Ts...>>
-    : std::integral_constant<std::size_t, 1 + sizeof...(Ts)> {};
+template<class T, class = void>
+struct has_tuple_protocol : std::false_type {};
 
 template<class T>
-constexpr bool is_ec_outcome_v =
-    std::is_same_v<T, std::error_code> ||
-    io_result_arity<T>::value == 1;
+struct has_tuple_protocol<T,
+    std::void_t<typename std::tuple_size<T>::type>>
+    : std::bool_constant<(std::tuple_size<T>::value > 0)> {};
+
+template<class T, bool = has_tuple_protocol<T>::value>
+struct is_ec_outcome
+    : std::is_same<T, std::error_code> {};
+
+template<class T>
+struct is_ec_outcome<T, true>
+    : std::bool_constant<
+        std::tuple_size_v<T> == 1 &&
+        std::is_same_v<
+            std::tuple_element_t<0, T>,
+            std::error_code>> {};
+
+template<class T>
+constexpr bool is_ec_outcome_v = is_ec_outcome<T>::value;
+
+template<class T, bool = has_tuple_protocol<T>::value>
+struct is_compound_ec_result : std::false_type {};
+
+template<class T>
+struct is_compound_ec_result<T, true>
+    : std::bool_constant<
+        std::tuple_size_v<T> >= 2 &&
+        std::is_same_v<
+            std::tuple_element_t<0, T>,
+            std::error_code>> {};
 
 template<class T>
 constexpr bool is_compound_ec_result_v =
-    io_result_arity<T>::value >= 2;
+    is_compound_ec_result<T>::value;
 
 // -------------------------------------------------------
 // frame_cb: synthetic coroutine frame for callback handles
@@ -140,12 +161,12 @@ auto make_sigs()
 
     static_assert(
         !is_compound_ec_result_v<R>,
-        "IoAwaitables whose result is an io_result with payload "
-        "elements cannot be senders: completion channels are "
-        "exclusive, so a partial success (error_code plus "
-        "payload) would be silently dropped. Wrap the operation "
-        "in a task<error_code> that inspects the full result "
-        "and returns the error code.");
+        "IoAwaitables whose result destructures into "
+        "(error_code, ...) cannot be senders: completion "
+        "channels are exclusive, so a partial success "
+        "(error_code plus payload) would be silently dropped. "
+        "Wrap the operation in a task<error_code> that inspects "
+        "the full result and returns the error code.");
 
     constexpr bool nothrow_resume =
         noexcept(std::declval<A&>().await_resume());
