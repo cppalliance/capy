@@ -62,7 +62,30 @@ Features:
 * Structured bindings for clean syntax
 * Error code is always present
 * Additional values (bytes transferred, etc.) included
-* `[[nodiscard]]` prevents ignoring results
+* An alias for `std::tuple`, so the whole standard tuple API
+  applies: `std::tie`, `std::apply`, `std::get`, comparisons
+* Library awaitables mark `await_resume` `[[nodiscard]]`, so
+  discarding a result is diagnosed
+
+== Rebinding with std::tie
+
+When a coroutine performs several operations in sequence,
+`std::tie` reassigns into existing variables instead of
+introducing a new binding per operation:
+
+[source,cpp]
+----
+std::error_code ec;
+std::size_t n = 0;
+
+std::tie(ec, n) = co_await s.read_some(buf);
+if (ec)
+    co_return ec;
+
+std::tie(ec, n) = co_await s.write(buf);
+if (ec)
+    co_return ec;
+----
 
 == io_result Variants
 
@@ -185,7 +208,7 @@ io_task<std::size_t> read_all(stream& s, buffer& buf)
         buf.commit(n);
         total += n;
     }
-    co_return {{}, total};  // Success with total bytes
+    co_return {std::error_code(), total};  // Success with total bytes
 }
 ----
 

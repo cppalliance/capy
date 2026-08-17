@@ -331,9 +331,9 @@ make_when_all_homogeneous_runner(Awaitable inner, StateType* state, std::size_t 
 {
     auto result = co_await std::move(inner);
 
-    if(result.ec)
+    if(std::get<0>(result))
     {
-        state->record_error(result.ec);
+        state->record_error(std::get<0>(result));
         state->core_.stop_source_.request_stop();
     }
     else
@@ -354,7 +354,7 @@ when_all_runner<when_all_state<Ts...>>
 make_when_all_io_runner(Awaitable inner, when_all_state<Ts...>* state)
 {
     auto result = co_await std::move(inner);
-    auto ec = result.ec;
+    auto ec = std::get<0>(result);
     std::get<Index>(state->results_).set(std::move(result));
 
     if(ec)
@@ -452,7 +452,11 @@ template<typename... Ts>
 auto extract_results(when_all_state<Ts...>& state)
 {
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        return std::tuple(extract_single_result<Is>(state)...);
+        // Explicit element types: CTAD would collapse a single
+        // io_result child via the tuple copy deduction guide
+        return std::tuple<
+            decltype(extract_single_result<Is>(state))...>(
+                extract_single_result<Is>(state)...);
     }(std::index_sequence_for<Ts...>{});
 }
 
@@ -618,7 +622,7 @@ template<IoAwaitableRange R>
     for(auto& opt : state.results_)
         results.push_back(std::move(*opt));
 
-    co_return io_result<std::vector<PayloadT>>{{}, std::move(results)};
+    co_return io_result<std::vector<PayloadT>>{std::error_code(), std::move(results)};
 }
 
 /** Execute a range of void io_result-returning awaitables concurrently.
@@ -725,7 +729,7 @@ template<IoAwaitable... As>
     auto r = detail::build_when_all_io_result<result_type>(
         detail::extract_results(state));
     if(state.has_error_.load(std::memory_order_relaxed))
-        r.ec = state.first_error_;
+        std::get<0>(r) = state.first_error_;
     co_return r;
 }
 

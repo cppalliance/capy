@@ -82,8 +82,8 @@ run_example(
         writer(client_stream, total_bytes),
         reader(server_stream, total_bytes));
 
-    if(r.ec)
-        std::printf("example error: %s\n", r.ec.message().c_str());
+    if(std::get<0>(r))
+        std::printf("example error: %s\n", std::get<0>(r).message().c_str());
     else
         std::printf("example complete!\n");
 }

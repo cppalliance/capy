@@ -48,7 +48,7 @@ capy::io_task<std::string> fetch_from_source(
         {
             std::cout << "  [" << name << "] cancelled at step "
                       << i << "/" << steps << "\n";
-            co_return capy::io_result<std::string>{{}, name + ": cancelled"};
+            co_return capy::io_result<std::string>{std::error_code(), name + ": cancelled"};
         }
 
         // Simulate work
@@ -59,7 +59,7 @@ capy::io_task<std::string> fetch_from_source(
                   << (i + 1) << "/" << steps << "\n";
     }
 
-    co_return capy::io_result<std::string>{{}, name + ": done"};
+    co_return capy::io_result<std::string>{std::error_code(), name + ": done"};
 }
 
 // Race three sources — the fastest one wins, the rest get cancelled.

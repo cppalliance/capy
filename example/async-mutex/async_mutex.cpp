@@ -72,9 +72,9 @@ int main()
         auto r = co_await capy::when_all(
             worker(0), worker(1), worker(2),
             worker(3), worker(4), worker(5));
-        if(r.ec)
+        if(std::get<0>(r))
             std::cerr << "when_all error: "
-                      << r.ec.message() << "\n";
+                      << std::get<0>(r).message() << "\n";
     };
 
     // Run on a strand so async_mutex operations are single-threaded

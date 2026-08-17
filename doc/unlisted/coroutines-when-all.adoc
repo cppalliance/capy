@@ -83,7 +83,7 @@ auto r = co_await when_all(
     task_void(),
     task_void()
 );
-if (r.ec)
+if (std::get<0>(r))
     // handle error
 ----
 

@@ -22,15 +22,6 @@ namespace boost {
 namespace capy {
 namespace detail {
 
-template<typename T>
-struct is_io_result : std::false_type {};
-
-template<typename... Args>
-struct is_io_result<io_result<Args...>> : std::true_type {};
-
-template<typename T>
-inline constexpr bool is_io_result_v = is_io_result<T>::value;
-
 /// True when every awaitable in the pack returns an io_result.
 template<typename... As>
 concept all_io_result_awaitables =
@@ -77,14 +68,16 @@ template<typename T>
 T
 extract_io_payload(io_result<T>&& r)
 {
-    return std::get<0>(std::move(r.values));
+    return std::get<1>(std::move(r));
 }
 
 template<typename... Ts>
 std::tuple<Ts...>
 extract_io_payload(io_result<Ts...>&& r)
 {
-    return std::move(r.values);
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+        return std::tuple<Ts...>(std::get<Is + 1>(std::move(r))...);
+    }(std::index_sequence_for<Ts...>{});
 }
 
 /// Reconstruct a success io_result from a payload extracted by when_any.
@@ -96,7 +89,7 @@ struct io_result_from_payload<io_result<T>>
 {
     static io_result<T> apply(T t)
     {
-        return io_result<T>{{}, std::move(t)};
+        return io_result<T>{std::error_code(), std::move(t)};
     }
 };
 
@@ -105,9 +98,8 @@ struct io_result_from_payload<io_result<Ts...>>
 {
     static io_result<Ts...> apply(std::tuple<Ts...> t)
     {
-        return std::apply([](auto&&... args) {
-            return io_result<Ts...>{{}, std::move(args)...};
-        }, std::move(t));
+        return std::tuple_cat(
+            std::tuple<std::error_code>(), std::move(t));
     }
 };
 
@@ -117,8 +109,8 @@ ResultType
 build_when_all_io_result_impl(Tuple&& results, std::index_sequence<Is...>)
 {
     std::error_code ec;
-    (void)((std::get<Is>(results).ec && !ec
-        ? (ec = std::get<Is>(results).ec, true)
+    (void)((std::get<0>(std::get<Is>(results)) && !ec
+        ? (ec = std::get<0>(std::get<Is>(results)), true)
         : false) || ...);
 
     return ResultType{ec, extract_io_payload(

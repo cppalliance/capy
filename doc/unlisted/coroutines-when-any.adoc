@@ -233,10 +233,10 @@ io_task<Response> fetch_with_cancel_support()
     for (auto& chunk : data_source)
     {
         if (token.stop_requested())
-            co_return io_result<Response>{{}, partial_response()};
+            co_return io_result<Response>{std::error_code(), partial_response()};
         co_await send_chunk(chunk);
     }
-    co_return io_result<Response>{{}, complete_response()};
+    co_return io_result<Response>{std::error_code(), complete_response()};
 }
 
 task<> example()
@@ -333,7 +333,7 @@ io_task<Response> fetch_with_redundancy(Request req)
         if constexpr (!std::is_same_v<std::decay_t<decltype(v)>, std::error_code>)
             resp = v;
     }, result);
-    co_return io_result<Response>{{}, std::move(resp)};
+    co_return io_result<Response>{std::error_code(), std::move(resp)};
 }
 ----
 
@@ -357,7 +357,7 @@ io_task<Connection> get_connection(std::vector<ConnectionPool>& pools)
 
     auto& [index, conn] = std::get<1>(result);
     std::cout << "Got connection from pool " << index << "\n";
-    co_return io_result<Connection>{{}, std::move(conn)};
+    co_return io_result<Connection>{std::error_code(), std::move(conn)};
 }
 ----
 

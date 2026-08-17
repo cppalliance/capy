@@ -17,6 +17,7 @@
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
+#include <boost/capy/io_result.hpp>
 
 #include <exception>
 #include <optional>
@@ -333,8 +334,20 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         @return The result value for non-void `T`; otherwise `void`.
 
         @throws The exception captured by the coroutine body, if any.
+
+        @note Discarding an `io_result` silently drops the error
+        code, so that overload is marked `[[nodiscard]]`.
     */
+    [[nodiscard]] auto await_resume()
+        requires detail::is_io_result_v<T>
+    {
+        if(h_.promise().has_ep_)
+            std::rethrow_exception(h_.promise().ep_);
+        return std::move(*h_.promise().result_);
+    }
+
     auto await_resume()
+        requires (! detail::is_io_result_v<T>)
     {
         if(h_.promise().has_ep_)
             std::rethrow_exception(h_.promise().ep_);

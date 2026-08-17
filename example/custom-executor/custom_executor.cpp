@@ -138,7 +138,7 @@ static_assert(capy::Executor<run_loop::executor_type>);
 capy::io_task<int> compute(int x)
 {
     std::cout << "  computing " << x << " * " << x << "\n";
-    co_return capy::io_result<int>{{}, x * x};
+    co_return capy::io_result<int>{std::error_code(), x * x};
 }
 
 capy::task<> run_tasks()

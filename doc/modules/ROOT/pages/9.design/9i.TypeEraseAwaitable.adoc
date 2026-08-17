@@ -72,7 +72,7 @@ std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* e
 
 io_result<size_t> await_resume() {
     if(!awaitable_active_)
-        return {{}, 0};                  // short-circuited
+        return {std::error_code(), 0};                  // short-circuited
     auto r = vt_->await_resume(cached_awaitable_);
     vt_->destroy_awaitable(cached_awaitable_);
     awaitable_active_ = false;
@@ -130,7 +130,7 @@ std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* e
 
 io_result<size_t> await_resume() {
     if(!active_ops_)
-        return {{}, 0};                  // short-circuited
+        return {std::error_code(), 0};                  // short-circuited
     auto r = active_ops_->await_resume(cached_awaitable_);
     active_ops_->destroy(cached_awaitable_);
     active_ops_ = nullptr;

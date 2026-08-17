@@ -126,7 +126,7 @@ write_at_least(S& stream, CB buffers, std::size_t n) -> io_task<std::size_t>
             co_return {ec, total_written};
     }
 
-    co_return {{}, total_written};
+    co_return {std::error_code(), total_written};
 }
 
 } // namespace capy

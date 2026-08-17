@@ -19,8 +19,8 @@ namespace capy {
 /** A task type for I/O operations yielding io_result.
 
     This is a convenience alias for `task<io_result<Ts...>>`.
-    The converting constructor on `io_result<>` allows direct
-    `co_return` of error codes:
+    The tuple converting constructor allows direct `co_return`
+    of error codes:
 
     @code
     io_task<> connect_to_server(socket& s, endpoint ep)

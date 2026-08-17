@@ -90,7 +90,7 @@ public:
                     self_->read_data_.data() + self_->read_pos_, avail);
                 std::size_t const n = buffer_copy(buffers_, src);
                 self_->read_pos_ += n;
-                return {{}, n};
+                return {std::error_code(), n};
             }
         };
         return awaitable{this, buffers};
@@ -122,13 +122,13 @@ public:
 
                 std::size_t n = buffer_size(buffers_);
                 if(n == 0)
-                    return {{}, 0};
+                    return {std::error_code(), 0};
 
                 std::size_t const old_size = self_->write_data_.size();
                 self_->write_data_.resize(old_size + n);
                 buffer_copy(make_buffer(
                     self_->write_data_.data() + old_size, n), buffers_, n);
-                return {{}, n};
+                return {std::error_code(), n};
             }
         };
         return awaitable{this, buffers};

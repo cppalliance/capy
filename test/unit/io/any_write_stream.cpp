@@ -46,7 +46,7 @@ struct pending_write_awaitable
     std::coroutine_handle<> await_suspend(std::coroutine_handle<>, io_env const*)
         { return std::noop_coroutine(); }
     io_result<std::size_t> await_resume()
-        { return {{}, 0}; }
+        { return {std::error_code(), 0}; }
 };
 
 struct pending_write_stream

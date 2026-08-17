@@ -45,7 +45,7 @@ struct immediate_test
 
         // immediate<io_result<std::size_t>> is always ready
         {
-            immediate<io_result<std::size_t>> im{{{}, 100}};
+            immediate<io_result<std::size_t>> im{{std::error_code(), 100}};
             BOOST_TEST(im.await_ready());
         }
     }
@@ -69,15 +69,15 @@ struct immediate_test
         {
             immediate<io_result<>> im{{}};
             auto r = im.await_resume();
-            BOOST_TEST(!r.ec);
+            BOOST_TEST(!std::get<0>(r));
         }
 
         // immediate<io_result<std::size_t>> returns result with value
         {
-            immediate<io_result<std::size_t>> im{{{}, 42}};
+            immediate<io_result<std::size_t>> im{{std::error_code(), 42}};
             auto r = im.await_resume();
-            BOOST_TEST(!r.ec);
-            BOOST_TEST_EQ(std::get<0>(r.values), 42u);
+            BOOST_TEST(!std::get<0>(r));
+            BOOST_TEST_EQ(std::get<1>(r), 42u);
         }
     }
 
@@ -97,18 +97,18 @@ struct immediate_test
         // co_await immediate<io_result<std::size_t>>
         {
             auto coro = []() -> io_task<std::size_t> {
-                co_return co_await immediate<io_result<std::size_t>>{{{}, 100}};
+                co_return co_await immediate<io_result<std::size_t>>{{std::error_code(), 100}};
             };
             io_result<std::size_t> result{};
             test::run_blocking([&](io_result<std::size_t> v) { result = v; })(coro());
-            BOOST_TEST(!result.ec);
-            BOOST_TEST_EQ(std::get<0>(result.values), 100u);
+            BOOST_TEST(!std::get<0>(result));
+            BOOST_TEST_EQ(std::get<1>(result), 100u);
         }
 
         // Structured binding with co_await
         {
             auto coro = []() -> task<std::size_t> {
-                auto [ec, n] = co_await immediate<io_result<std::size_t>>{{{}, 50}};
+                auto [ec, n] = co_await immediate<io_result<std::size_t>>{{std::error_code(), 50}};
                 if(ec)
                     co_return 0;
                 co_return n;
@@ -127,7 +127,7 @@ struct immediate_test
             auto im = ready();
             BOOST_TEST(im.await_ready());
             auto r = im.await_resume();
-            BOOST_TEST(!r.ec);
+            BOOST_TEST(!std::get<0>(r));
         }
 
         // co_await ready()
@@ -150,8 +150,8 @@ struct immediate_test
             auto im = ready(std::size_t{42});
             BOOST_TEST(im.await_ready());
             auto r = im.await_resume();
-            BOOST_TEST(!r.ec);
-            BOOST_TEST_EQ(std::get<0>(r.values), 42u);
+            BOOST_TEST(!std::get<0>(r));
+            BOOST_TEST_EQ(std::get<1>(r), 42u);
         }
 
         // co_await ready(n)
@@ -176,9 +176,9 @@ struct immediate_test
             auto im = ready(42, 3.14);
             BOOST_TEST(im.await_ready());
             auto r = im.await_resume();
-            BOOST_TEST(!r.ec);
-            BOOST_TEST_EQ(std::get<0>(r.values), 42);
-            BOOST_TEST_EQ(std::get<1>(r.values), 3.14);
+            BOOST_TEST(!std::get<0>(r));
+            BOOST_TEST_EQ(std::get<1>(r), 42);
+            BOOST_TEST_EQ(std::get<2>(r), 3.14);
         }
 
         // co_await ready(a, b)
@@ -203,10 +203,10 @@ struct immediate_test
             auto im = ready(1, 2, 3);
             BOOST_TEST(im.await_ready());
             auto r = im.await_resume();
-            BOOST_TEST(!r.ec);
-            BOOST_TEST_EQ(std::get<0>(r.values), 1);
-            BOOST_TEST_EQ(std::get<1>(r.values), 2);
-            BOOST_TEST_EQ(std::get<2>(r.values), 3);
+            BOOST_TEST(!std::get<0>(r));
+            BOOST_TEST_EQ(std::get<1>(r), 1);
+            BOOST_TEST_EQ(std::get<2>(r), 2);
+            BOOST_TEST_EQ(std::get<3>(r), 3);
         }
 
         // co_await ready(a, b, c)
@@ -232,7 +232,7 @@ struct immediate_test
             auto im = ready(ec);
             BOOST_TEST(im.await_ready());
             auto r = im.await_resume();
-            BOOST_TEST(r.ec);
+            BOOST_TEST(std::get<0>(r));
         }
 
         // ready(ec, T1) creates failed single-value result
@@ -241,8 +241,8 @@ struct immediate_test
             auto im = ready(ec, std::size_t{0});
             BOOST_TEST(im.await_ready());
             auto r = im.await_resume();
-            BOOST_TEST(r.ec);
-            BOOST_TEST_EQ(std::get<0>(r.values), 0u);
+            BOOST_TEST(std::get<0>(r));
+            BOOST_TEST_EQ(std::get<1>(r), 0u);
         }
 
         // ready(ec, T1, T2) creates failed two-value result
@@ -250,7 +250,7 @@ struct immediate_test
             auto ec = make_error_code(std::errc::invalid_argument);
             auto im = ready(ec, 0, 0.0);
             auto r = im.await_resume();
-            BOOST_TEST(r.ec);
+            BOOST_TEST(std::get<0>(r));
         }
 
         // ready(ec, T1, T2, T3) creates failed three-value result
@@ -258,7 +258,7 @@ struct immediate_test
             auto ec = make_error_code(std::errc::invalid_argument);
             auto im = ready(ec, 0, 0, 0);
             auto r = im.await_resume();
-            BOOST_TEST(r.ec);
+            BOOST_TEST(std::get<0>(r));
         }
 
         // co_await with error

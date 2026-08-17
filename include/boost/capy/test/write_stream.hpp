@@ -188,11 +188,11 @@ public:
                 return false;
             }
 
-            io_result<std::size_t>
+            [[nodiscard]] io_result<std::size_t>
             await_resume()
             {
                 if(buffer_empty(buffers_))
-                    return {{}, 0};
+                    return {std::error_code(), 0};
 
                 if(canceled_)
                     return {error::canceled, 0};
@@ -216,7 +216,7 @@ public:
                     return {ec, 0};
                 }
 
-                return {{}, n};
+                return {std::error_code(), n};
             }
         };
         return awaitable{this, buffers};

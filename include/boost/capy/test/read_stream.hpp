@@ -172,13 +172,13 @@ public:
                 return false;
             }
 
-            io_result<std::size_t>
+            [[nodiscard]] io_result<std::size_t>
             await_resume()
             {
                 // Empty buffer is a no-op regardless of
                 // stream state, stop token, or fuse.
                 if(buffer_empty(buffers_))
-                    return {{}, 0};
+                    return {std::error_code(), 0};
 
                 if(canceled_)
                     return {error::canceled, 0};
@@ -196,7 +196,7 @@ public:
                 auto src = make_buffer(self_->data_.data() + self_->pos_, avail);
                 std::size_t const n = buffer_copy(buffers_, src);
                 self_->pos_ += n;
-                return {{}, n};
+                return {std::error_code(), n};
             }
         };
         return awaitable{this, buffers};

@@ -57,7 +57,7 @@ capy::task<> fetch_user_dashboard(std::string username)
 
     auto wrap = [](auto inner) -> capy::io_task<decltype(inner.await_resume())> {
         co_return capy::io_result<decltype(inner.await_resume())>{
-            {}, co_await std::move(inner)};
+            std::error_code(), co_await std::move(inner)};
     };
 
     // tag::when_all_dashboard[]
@@ -94,7 +94,7 @@ capy::task<std::string> fetch_with_side_effects()
     auto r = co_await capy::when_all(
         log_access("api/data"),
         update_metrics("api_calls"));
-    if (r.ec)
+    if (std::get<0>(r))
         co_return "error";
     // end::when_all_void[]
 
@@ -115,7 +115,7 @@ capy::io_task<int> might_fail(bool should_fail, std::string name)
     }
 
     std::cout << "Task " << name << " completed\n";
-    co_return capy::io_result<int>{{}, 42};
+    co_return capy::io_result<int>{std::error_code(), 42};
 }
 
 capy::task<> demonstrate_error_handling()

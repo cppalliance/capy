@@ -37,7 +37,7 @@ struct suspending_write_awaitable
     std::coroutine_handle<>
     await_suspend(std::coroutine_handle<> h, io_env const*) noexcept
         { return h; }
-    io_result<std::size_t> await_resume() { return {{}, 5}; }
+    io_result<std::size_t> await_resume() { return {std::error_code(), 5}; }
 };
 
 struct suspending_write_stream

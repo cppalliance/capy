@@ -45,7 +45,7 @@ include::example$snippets/4f_composition.cpp[tag=when_all_basic,indent=0]
 include::example$snippets/4f_composition.cpp[tag=when_all_void_mix,indent=0]
 ----
 
-When all children are `io_task<>`, just check `r.ec`:
+When all children are `io_task<>`, just check the error code:
 
 [source,cpp]
 ----

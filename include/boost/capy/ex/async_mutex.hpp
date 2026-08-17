@@ -267,7 +267,7 @@ public:
             return std::noop_coroutine();
         }
 
-        io_result<> await_resume() noexcept
+        [[nodiscard]] io_result<> await_resume() noexcept
         {
             if(active_)
             {
@@ -361,12 +361,12 @@ public:
             return inner_.await_suspend(h, env);
         }
 
-        io_result<lock_guard> await_resume() noexcept
+        [[nodiscard]] io_result<lock_guard> await_resume() noexcept
         {
             auto r = inner_.await_resume();
-            if(r.ec)
-                return {r.ec, {}};
-            return {{}, lock_guard(m_)};
+            if(std::get<0>(r))
+                return {std::get<0>(r), lock_guard()};
+            return {std::error_code(), lock_guard(m_)};
         }
     };
 

@@ -108,7 +108,7 @@ read(S& stream, MB buffers) ->
             co_return {ec, total_read};
     }
 
-    co_return {{}, total_read};
+    co_return {std::error_code(), total_read};
 }
 
 } // namespace capy

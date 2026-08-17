@@ -32,7 +32,7 @@ capy::io_task<long long> partial_sum(int lo, int hi)
     long long sum = 0;
     for (int i = lo; i < hi; ++i)
         sum += i;
-    co_return capy::io_result<long long>{{}, sum};
+    co_return capy::io_result<long long>{std::error_code(), sum};
 }
 
 int main()
