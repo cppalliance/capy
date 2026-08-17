@@ -56,7 +56,7 @@ namespace capy {
         write(CB buffers)
         {
             auto n = process_sync(buffers);
-            return {{{}, n}};
+            return {{std::error_code(), n}};
         }
 
         immediate<io_result<>>
@@ -107,14 +107,14 @@ struct immediate
 
         @return The stored value, moved if non-const.
     */
-    constexpr T
+    [[nodiscard]] constexpr T
     await_resume() noexcept
     {
         return std::move(value_);
     }
 
     /** Returns the wrapped value (const overload). */
-    constexpr T const&
+    [[nodiscard]] constexpr T const&
     await_resume() const noexcept
     {
         return value_;
@@ -158,13 +158,13 @@ ready() noexcept
 
     @param t1 The result value.
 
-    @return An immediate awaitable containing `io_result<T1>{{}, t1}`.
+    @return An immediate awaitable containing `io_result<T1>{std::error_code(), t1}`.
 */
 template<class T1>
 immediate<io_result<T1>>
 ready(T1 t1)
 {
-    return {{{}, std::move(t1)}};
+    return {{std::error_code(), std::move(t1)}};
 }
 
 /** Create an immediate awaitable for a successful io_result with two values.
@@ -172,13 +172,13 @@ ready(T1 t1)
     @param t1 The first result value.
     @param t2 The second result value.
 
-    @return An immediate awaitable containing `io_result<T1,T2>{{}, t1, t2}`.
+    @return An immediate awaitable containing `io_result<T1,T2>{std::error_code(), t1, t2}`.
 */
 template<class T1, class T2>
 immediate<io_result<T1, T2>>
 ready(T1 t1, T2 t2)
 {
-    return {{{}, std::move(t1), std::move(t2)}};
+    return {{std::error_code(), std::move(t1), std::move(t2)}};
 }
 
 /** Create an immediate awaitable for a successful io_result with three values.
@@ -187,13 +187,13 @@ ready(T1 t1, T2 t2)
     @param t2 The second result value.
     @param t3 The third result value.
 
-    @return An immediate awaitable containing `io_result<T1,T2,T3>{{}, t1, t2, t3}`.
+    @return An immediate awaitable containing `io_result<T1,T2,T3>{std::error_code(), t1, t2, t3}`.
 */
 template<class T1, class T2, class T3>
 immediate<io_result<T1, T2, T3>>
 ready(T1 t1, T2 t2, T3 t3)
 {
-    return {{{}, std::move(t1), std::move(t2), std::move(t3)}};
+    return {{std::error_code(), std::move(t1), std::move(t2), std::move(t3)}};
 }
 
 /** Create an immediate awaitable for a failed io_result.

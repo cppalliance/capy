@@ -341,7 +341,7 @@ private:
                 return io_result<T>{
                     std::get<2>(result_), T{}};
             return io_result<T>{
-                {},
+                std::error_code(),
                 std::get<0>(
                     std::get<1>(
                         std::move(result_)))};
@@ -356,7 +356,7 @@ private:
                 return io_result<value_tuple>{
                     std::get<2>(result_), value_tuple{}};
             return io_result<value_tuple>{
-                {},
+                std::error_code(),
                 std::get<1>(
                     std::move(result_))};
         }

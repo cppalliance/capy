@@ -109,7 +109,7 @@ auto write(S& stream, CB buffers) -> io_task<std::size_t>
             co_return {ec, total_written};
     }
 
-    co_return {{}, total_written};
+    co_return {std::error_code(), total_written};
 }
 
 } // namespace capy

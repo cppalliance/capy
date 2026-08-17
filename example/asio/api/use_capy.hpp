@@ -162,31 +162,31 @@ public:
 private:
     void store_result(boost::system::error_code ec)
     {
-        result_.ec = ec;
+        std::get<0>(result_) = ec;
     }
 
     template<typename T1>
     void store_result(boost::system::error_code ec, T1&& t1)
     {
-        result_.ec = ec;
-        std::get<0>(result_.values) = std::forward<T1>(t1);
+        std::get<0>(result_) = ec;
+        std::get<1>(result_) = std::forward<T1>(t1);
     }
 
     template<typename T1, typename T2>
     void store_result(boost::system::error_code ec, T1&& t1, T2&& t2)
     {
-        result_.ec = ec;
-        std::get<0>(result_.values) = std::forward<T1>(t1);
-        std::get<1>(result_.values) = std::forward<T2>(t2);
+        std::get<0>(result_) = ec;
+        std::get<1>(result_) = std::forward<T1>(t1);
+        std::get<2>(result_) = std::forward<T2>(t2);
     }
 
     template<typename T1, typename T2, typename T3>
     void store_result(boost::system::error_code ec, T1&& t1, T2&& t2, T3&& t3)
     {
-        result_.ec = ec;
-        std::get<0>(result_.values) = std::forward<T1>(t1);
-        std::get<1>(result_.values) = std::forward<T2>(t2);
-        std::get<2>(result_.values) = std::forward<T3>(t3);
+        std::get<0>(result_) = ec;
+        std::get<1>(result_) = std::forward<T1>(t1);
+        std::get<2>(result_) = std::forward<T2>(t2);
+        std::get<3>(result_) = std::forward<T3>(t3);
     }
 };
 

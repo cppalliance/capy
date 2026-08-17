@@ -354,7 +354,7 @@ public:
                 return std::noop_coroutine();
             }
 
-            io_result<std::size_t>
+            [[nodiscard]] io_result<std::size_t>
             await_resume()
             {
                 if(stop_cb_active_)
@@ -364,7 +364,7 @@ public:
                 }
 
                 if(buffer_empty(buffers_))
-                    return {{}, 0};
+                    return {std::error_code(), 0};
 
                 if(canceled_)
                 {
@@ -402,7 +402,7 @@ public:
                     buffers_, make_buffer(side.buf),
                     side.max_read_size);
                 side.buf.erase(0, n);
-                return {{}, n};
+                return {std::error_code(), n};
             }
         };
         return awaitable{this, buffers};
@@ -456,12 +456,12 @@ public:
                 return false;
             }
 
-            io_result<std::size_t>
+            [[nodiscard]] io_result<std::size_t>
             await_resume()
             {
                 std::size_t n = buffer_size(buffers_);
                 if(n == 0)
-                    return {{}, 0};
+                    return {std::error_code(), 0};
 
                 if(canceled_)
                     return {error::canceled, 0};
@@ -488,7 +488,7 @@ public:
 
                 state::wake(side);
 
-                return {{}, n};
+                return {std::error_code(), n};
             }
         };
         return awaitable{this, buffers};

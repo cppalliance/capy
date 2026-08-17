@@ -643,7 +643,7 @@ struct quitter_test
     static quitter<io_result<std::size_t>>
     quitter_success_size(std::size_t n)
     {
-        co_return io_result<std::size_t>{{}, n};
+        co_return io_result<std::size_t>{std::error_code(), n};
     }
 
     void

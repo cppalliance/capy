@@ -268,7 +268,7 @@ capy::io_task<std::string> await_fetch(fetch_channel& ch)
         ch.cancelled.store(true);
         co_return capy::io_result<std::string>{ec, {}};
     }
-    co_return capy::io_result<std::string>{{}, std::move(ch.result)};
+    co_return capy::io_result<std::string>{std::error_code(), std::move(ch.result)};
 }
 
 // The other side of the race: completes once whatever plays the

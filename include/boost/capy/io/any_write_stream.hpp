@@ -412,11 +412,11 @@ any_write_stream::write_some(CB buffers)
                 self_->cached_awaitable_, h, env);
         }
 
-        io_result<std::size_t>
+        [[nodiscard]] io_result<std::size_t>
         await_resume()
         {
             if(!self_->awaitable_active_)
-                return {{}, 0};
+                return {std::error_code(), 0};
             struct guard {
                 any_write_stream* self;
                 ~guard() {

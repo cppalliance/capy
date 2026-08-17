@@ -103,9 +103,9 @@ namespace when_all_basics {
 
 // tag::when_all_basic[]
 
-io_task<int> fetch_a() { co_return io_result<int>{{}, 1}; }
-io_task<int> fetch_b() { co_return io_result<int>{{}, 2}; }
-io_task<std::string> fetch_c() { co_return io_result<std::string>{{}, "hello"}; }
+io_task<int> fetch_a() { co_return io_result<int>{std::error_code(), 1}; }
+io_task<int> fetch_b() { co_return io_result<int>{std::error_code(), 2}; }
+io_task<std::string> fetch_c() { co_return io_result<std::string>{std::error_code(), "hello"}; }
 
 task<> example()
 {
@@ -124,7 +124,7 @@ namespace void_mix {
 
 // tag::when_all_void_mix[]
 io_task<> void_task() { co_return io_result<>{}; }
-io_task<int> int_task() { co_return io_result<int>{{}, 42}; }
+io_task<int> int_task() { co_return io_result<int>{std::error_code(), 42}; }
 
 task<> example()
 {
@@ -146,7 +146,7 @@ io_task<> void_task_b() { co_return io_result<>{}; }
 task<> example()
 {
     auto r = co_await when_all(void_task_a(), void_task_b());
-    if (r.ec)
+    if (std::get<0>(r))
     {
         // handle error
     }
@@ -157,7 +157,7 @@ task<> example()
 
 namespace error_handling {
 
-io_task<int> task_a() { co_return io_result<int>{{}, 1}; }
+io_task<int> task_a() { co_return io_result<int>{std::error_code(), 1}; }
 io_task<int> task_b() { co_return io_result<int>{error::timeout, 0}; }
 
 // tag::when_all_error[]
@@ -178,7 +178,7 @@ io_task<int> might_throw(bool fail)
 {
     if (fail)
         throw std::runtime_error("failed");
-    co_return io_result<int>{{}, 42};
+    co_return io_result<int>{std::error_code(), 42};
 }
 
 task<> example()
@@ -228,8 +228,8 @@ io_task<> long_running()
 
 namespace any_basic {
 
-io_task<int> fetch_int() { co_return io_result<int>{{}, 7}; }
-io_task<std::string> fetch_string() { co_return io_result<std::string>{{}, "s"}; }
+io_task<int> fetch_int() { co_return io_result<int>{std::error_code(), 7}; }
+io_task<std::string> fetch_string() { co_return io_result<std::string>{std::error_code(), "s"}; }
 
 // tag::when_any_basic[]
 
@@ -274,7 +274,7 @@ io_task<> inner() { co_return io_result<>{error::timeout}; }
 io_task<std::error_code> wrapped()
 {
     auto [ec] = co_await inner();
-    co_return io_result<std::error_code>{{}, ec};
+    co_return io_result<std::error_code>{std::error_code(), ec};
 }
 
 // when_any(wrapped(), ...) -> variant<error_code, std::error_code, ...>
@@ -295,17 +295,17 @@ struct page_data
 
 io_task<std::string> fetch_header(std::string url)
 {
-    co_return io_result<std::string>{{}, url + ":header"};
+    co_return io_result<std::string>{std::error_code(), url + ":header"};
 }
 
 io_task<std::string> fetch_body(std::string url)
 {
-    co_return io_result<std::string>{{}, url + ":body"};
+    co_return io_result<std::string>{std::error_code(), url + ":body"};
 }
 
 io_task<std::string> fetch_sidebar(std::string url)
 {
-    co_return io_result<std::string>{{}, url + ":sidebar"};
+    co_return io_result<std::string>{std::error_code(), url + ":sidebar"};
 }
 
 // tag::parallel_fetch[]
@@ -319,7 +319,7 @@ io_task<page_data> fetch_page_data(std::string url)
     if (ec)
         co_return io_result<page_data>{ec, {}};
 
-    co_return io_result<page_data>{{}, {
+    co_return io_result<page_data>{std::error_code(), {
         std::move(header),
         std::move(body),
         std::move(sidebar)
@@ -358,7 +358,7 @@ task<int> process_all(std::vector<item> const& items)
 
 io_task<int> process_item(item const& i)
 {
-    co_return io_result<int>{{}, i.value};
+    co_return io_result<int>{std::error_code(), i.value};
 }
 
 } // namespace fanout
@@ -426,7 +426,7 @@ struct composition_test
             auto r = co_await when_all(
                 all_void::void_task_a(),
                 all_void::void_task_b());
-            BOOST_TEST(!r.ec);
+            BOOST_TEST(!std::get<0>(r));
             checked = true;
         };
         test::run_blocking()(check());
@@ -495,7 +495,7 @@ struct composition_test
             auto r = co_await when_all(
                 stop_prop::fail_fast(),
                 stop_prop::long_running());
-            BOOST_TEST(r.ec == cond::timeout);
+            BOOST_TEST(std::get<0>(r) == cond::timeout);
             checked = true;
         };
         test::run_blocking()(check());

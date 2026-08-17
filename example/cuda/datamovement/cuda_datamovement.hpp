@@ -339,7 +339,7 @@ public:
                 }
                 auto n = buf.size();
                 self->offset_ += n;
-                return {{}, n};
+                return {std::error_code(), n};
             }
         };
         return awaitable{this, *capy::begin(buffers)};

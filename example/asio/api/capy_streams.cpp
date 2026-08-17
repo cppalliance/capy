@@ -114,8 +114,8 @@ public:
                         boost::system::error_code ec,
                         std::size_t n) mutable
                     {
-                        result_.ec = ec;
-                        std::get<0>(result_.values) = n;
+                        std::get<0>(result_) = ec;
+                        std::get<1>(result_) = n;
                         ex.post(cont_);
                     }));
 
@@ -178,8 +178,8 @@ public:
                         boost::system::error_code ec,
                         std::size_t n) mutable
                     {
-                        result_.ec = ec;
-                        std::get<0>(result_.values) = n;
+                        std::get<0>(result_) = ec;
+                        std::get<1>(result_) = n;
                         ex.post(cont_);
                     }));
 

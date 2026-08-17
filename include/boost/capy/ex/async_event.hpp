@@ -214,7 +214,7 @@ public:
             return std::noop_coroutine();
         }
 
-        io_result<> await_resume() noexcept
+        [[nodiscard]] io_result<> await_resume() noexcept
         {
             if(active_)
             {

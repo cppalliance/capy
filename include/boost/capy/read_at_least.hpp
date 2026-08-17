@@ -132,7 +132,7 @@ read_at_least(S& stream, MB buffers, std::size_t n) ->
             co_return {ec, total_read};
     }
 
-    co_return {{}, total_read};
+    co_return {std::error_code(), total_read};
 }
 
 } // namespace capy

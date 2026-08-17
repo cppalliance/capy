@@ -405,7 +405,7 @@ any_read_stream::read_some(MB buffers)
                 self_->cached_awaitable_, h, env);
         }
 
-        io_result<std::size_t>
+        [[nodiscard]] io_result<std::size_t>
         await_resume()
         {
             struct guard {

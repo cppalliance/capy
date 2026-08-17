@@ -338,7 +338,7 @@ make_when_any_io_runner(Awaitable inner, StateType* state)
 {
     auto result = co_await std::move(inner);
 
-    if(!result.ec)
+    if(!std::get<0>(result))
     {
         // Success: try to claim winner
         if(state->core_.try_win(I))
@@ -358,7 +358,7 @@ make_when_any_io_runner(Awaitable inner, StateType* state)
     else
     {
         // Error: record but don't win
-        state->record_error(result.ec);
+        state->record_error(std::get<0>(result));
     }
 }
 
@@ -515,7 +515,7 @@ make_when_any_io_homogeneous_runner(
 {
     auto result = co_await std::move(inner);
 
-    if(!result.ec)
+    if(!std::get<0>(result))
     {
         if(state->core_.try_win(index))
         {
@@ -538,7 +538,7 @@ make_when_any_io_homogeneous_runner(
     }
     else
     {
-        state->record_error(result.ec);
+        state->record_error(std::get<0>(result));
     }
 }
 

@@ -46,7 +46,7 @@ include::example$parallel-fetch/parallel_fetch.cpp[tag=when_all_dashboard,indent
 include::example$parallel-fetch/parallel_fetch.cpp[tag=when_all_void,indent=0]
 ----
 
-`io_task<>` children return `io_result<>` (just an error code, no payload). Check `r.ec` to detect failure.
+`io_task<>` children return `io_result<>` (just an error code, no payload). Check `std::get<0>(r)` to detect failure.
 
 === Error Propagation
 

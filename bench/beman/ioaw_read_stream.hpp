@@ -42,7 +42,7 @@ struct ioaw_read_stream
         }
 
         boost::capy::io_result<std::size_t>
-        await_resume() noexcept { return {{}, 0}; }
+        await_resume() noexcept { return {std::error_code(), 0}; }
     };
 
     template <boost::capy::MutableBufferSequence MB>

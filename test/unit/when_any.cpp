@@ -37,7 +37,7 @@ namespace {
 io_task<size_t>
 io_success_size(size_t n)
 {
-    co_return io_result<size_t>{{}, n};
+    co_return io_result<size_t>{std::error_code(), n};
 }
 
 io_task<size_t>
@@ -49,7 +49,7 @@ io_error_size(std::error_code ec, size_t n = 0)
 io_task<std::string>
 io_success_string(std::string s)
 {
-    co_return io_result<std::string>{{}, std::move(s)};
+    co_return io_result<std::string>{std::error_code(), std::move(s)};
 }
 
 #if defined(_MSC_VER)
@@ -61,7 +61,7 @@ io_task<size_t>
 io_throws_size(char const* msg)
 {
     throw test_exception(msg);
-    co_return io_result<size_t>{{}, 0};
+    co_return io_result<size_t>{std::error_code(), 0};
 }
 
 #if defined(_MSC_VER)
@@ -97,7 +97,7 @@ struct immediate_io_awaitable
 
     io_result<size_t> await_resume()
     {
-        return io_result<size_t>{{}, n_};
+        return io_result<size_t>{std::error_code(), n_};
     }
 };
 
@@ -132,7 +132,8 @@ struct throwing_payload_awaitable
     }
     io_result<throwing_move_payload> await_resume()
     {
-        return io_result<throwing_move_payload>{{}, throwing_move_payload{7}};
+        return io_result<throwing_move_payload>{
+            std::error_code(), throwing_move_payload{7}};
     }
 };
 
@@ -454,7 +455,7 @@ struct when_any_vector_test
 
         auto counting = [&](size_t value) -> io_task<size_t> {
             ++completion_count;
-            co_return io_result<size_t>{{}, value};
+            co_return io_result<size_t>{std::error_code(), value};
         };
 
         std::vector<io_task<size_t>> tasks;
@@ -486,7 +487,7 @@ struct when_any_vector_test
 
         auto fast = [&]() -> io_task<size_t> {
             ++completed_normally_count;
-            co_return io_result<size_t>{{}, 42};
+            co_return io_result<size_t>{std::error_code(), 42};
         };
 
         auto slow = [&](size_t id, int steps) -> io_task<size_t> {
@@ -499,7 +500,7 @@ struct when_any_vector_test
                 co_await yield_awaitable{};
             }
             ++completed_normally_count;
-            co_return io_result<size_t>{{}, id};
+            co_return io_result<size_t>{std::error_code(), id};
         };
 
         std::vector<io_task<size_t>> tasks;
@@ -568,7 +569,7 @@ struct when_any_vector_test
             tasks.push_back(io_success_size(20));
             auto v = co_await when_any(std::move(tasks));
             if(v.index() == 1)
-                co_return io_result<size_t>{{}, std::get<1>(v).second};
+                co_return io_result<size_t>{std::error_code(), std::get<1>(v).second};
             co_return io_result<size_t>{std::get<0>(v), 0};
         };
 

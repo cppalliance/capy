@@ -247,7 +247,7 @@ class write_now
             return h_;
         }
 
-        io_result<std::size_t> await_resume()
+        [[nodiscard]] io_result<std::size_t> await_resume()
         {
             auto& p = h_.promise();
             if(p.ep_)
@@ -339,14 +339,14 @@ public:
         {
             auto r =
                 co_await stream_.write_some(cb.data());
-            cb.consume(std::get<0>(r.values));
-            total_written += std::get<0>(r.values);
-            if(r.ec)
+            cb.consume(std::get<1>(r));
+            total_written += std::get<1>(r);
+            if(std::get<0>(r))
                 co_return io_result<std::size_t>{
-                    r.ec, total_written};
+                    std::get<0>(r), total_written};
         }
         co_return io_result<std::size_t>{
-            {}, total_written};
+            std::error_code(), total_written};
     }
 #else
     template<ConstBufferSequence Buffers>
@@ -366,16 +366,16 @@ public:
             if(!inner.await_ready())
                 break;
             auto r = inner.await_resume();
-            if(r.ec)
+            if(std::get<0>(r))
                 co_return io_result<std::size_t>{
-                    r.ec, total_written};
-            cb.consume(std::get<0>(r.values));
-            total_written += std::get<0>(r.values);
+                    std::get<0>(r), total_written};
+            cb.consume(std::get<1>(r));
+            total_written += std::get<1>(r);
         }
 
         if(total_written >= total_size)
             co_return io_result<std::size_t>{
-                {}, total_written};
+                std::error_code(), total_written};
 
         co_yield 0;
 
@@ -383,14 +383,14 @@ public:
         {
             auto r =
                 co_await stream_.write_some(cb.data());
-            cb.consume(std::get<0>(r.values));
-            total_written += std::get<0>(r.values);
-            if(r.ec)
+            cb.consume(std::get<1>(r));
+            total_written += std::get<1>(r);
+            if(std::get<0>(r))
                 co_return io_result<std::size_t>{
-                    r.ec, total_written};
+                    std::get<0>(r), total_written};
         }
         co_return io_result<std::size_t>{
-            {}, total_written};
+            std::error_code(), total_written};
     }
 #endif
 

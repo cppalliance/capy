@@ -18,7 +18,7 @@ as their postconditions never say that the requested number of bytes will indeed
 processed.
 
 Each stream operation that may encounter a contingency await-returns
-a type which is a specialization of `capy::io_result`. These objects can be _destructured_
+an instance of `capy::io_result`. These objects can be _destructured_
 using a structured binding. The first binding of such destructuring is of type
 `std::error_code`. This binding, call it `ec`, is used to signal if and which
 contingency occured:

@@ -13,19 +13,20 @@
 #include <boost/capy/detail/config.hpp>
 #include <system_error>
 
-#include <cstddef>
 #include <tuple>
 #include <type_traits>
-#include <utility>
 
 namespace boost {
 namespace capy {
 
 /** Result type for asynchronous I/O operations.
 
-    This template provides a unified result type for async operations,
+    This alias provides a unified result type for async operations,
     always containing a `std::error_code` plus optional additional
-    values. It supports structured bindings via the tuple protocol.
+    values. Because it is a `std::tuple`, results interoperate with
+    the entire standard tuple API: structured bindings, `std::tie`,
+    `std::apply`, `std::get`, `std::tuple_cat`, comparisons, and
+    tuple assignment.
 
     @par Example
     @code
@@ -33,104 +34,45 @@ namespace capy {
     if (ec) { ... }
     @endcode
 
-    @note Whether the payload is meaningful when `ec` is set is
-        defined by the operation that produced the result. Many I/O
-        operations report a meaningful partial result alongside `ec`
-        (for example, the number of bytes transferred before the
-        condition, as with EOF); others leave it unspecified.
+    `std::tie` rebinds into existing variables without introducing
+    new bindings:
+    @code
+    std::error_code ec;
+    std::size_t n = 0;
+    std::tie(ec, n) = co_await s.read_some(buf);
+    @endcode
+
+    @note Whether the payload is meaningful when the error code is
+        set is defined by the operation that produced the result.
+        Many I/O operations report a meaningful partial result
+        alongside the error (for example, the number of bytes
+        transferred before the condition, as with EOF); others
+        leave it unspecified.
 
     @tparam Ts Ordered payload types following the leading
         `std::error_code`.
 */
 template<class... Ts>
-struct [[nodiscard]] io_result
-{
-    /// The error code from the operation.
-    std::error_code ec;
+using io_result = std::tuple<std::error_code, Ts...>;
 
-    /// The payload values. Their meaning when `ec` is set is defined
-    /// by the producing operation (see the class note).
-    std::tuple<Ts...> values;
+namespace detail {
 
-    /// Construct a default io_result.
-    io_result() = default;
+// Outcomes are structural, not nominal: any std::tuple whose first
+// element is error_code is an io_result, regardless of how the
+// producing operation spelled it.
+template<class T>
+struct is_io_result : std::false_type {};
 
-    /// Construct from an error code and payload values.
-    io_result(std::error_code ec_, Ts... ts)
-        : ec(ec_)
-        , values(std::move(ts)...)
-    {
-    }
+template<class... Ts>
+struct is_io_result<std::tuple<std::error_code, Ts...>>
+    : std::true_type {};
 
-    /// @cond
-    template<std::size_t I>
-    decltype(auto) get() & noexcept
-    {
-        static_assert(I < 1 + sizeof...(Ts), "index out of range");
-        if constexpr (I == 0) return (ec);
-        else return std::get<I - 1>(values);
-    }
+template<class T>
+inline constexpr bool is_io_result_v = is_io_result<T>::value;
 
-    template<std::size_t I>
-    decltype(auto) get() const& noexcept
-    {
-        static_assert(I < 1 + sizeof...(Ts), "index out of range");
-        if constexpr (I == 0) return (ec);
-        else return std::get<I - 1>(values);
-    }
-
-    template<std::size_t I>
-    decltype(auto) get() && noexcept
-    {
-        static_assert(I < 1 + sizeof...(Ts), "index out of range");
-        if constexpr (I == 0) return std::move(ec);
-        else return std::get<I - 1>(std::move(values));
-    }
-    /// @endcond
-};
-
-/// @cond
-template<std::size_t I, class... Ts>
-decltype(auto) get(io_result<Ts...>& r) noexcept
-{
-    return r.template get<I>();
-}
-
-template<std::size_t I, class... Ts>
-decltype(auto) get(io_result<Ts...> const& r) noexcept
-{
-    return r.template get<I>();
-}
-
-template<std::size_t I, class... Ts>
-decltype(auto) get(io_result<Ts...>&& r) noexcept
-{
-    return std::move(r).template get<I>();
-}
-/// @endcond
+} // namespace detail
 
 } // namespace capy
 } // namespace boost
-
-// Tuple protocol for structured bindings
-namespace std {
-
-template<class... Ts>
-struct tuple_size<boost::capy::io_result<Ts...>>
-    : std::integral_constant<std::size_t, 1 + sizeof...(Ts)> {};
-
-template<class... Ts>
-struct tuple_element<0, boost::capy::io_result<Ts...>>
-{
-    using type = std::error_code;
-};
-
-template<std::size_t I, class... Ts>
-struct tuple_element<I, boost::capy::io_result<Ts...>>
-{
-    using type = std::tuple_element_t<I - 1, std::tuple<Ts...>>;
-};
-
-} // namespace std
 
 #endif // BOOST_CAPY_IO_RESULT_HPP
