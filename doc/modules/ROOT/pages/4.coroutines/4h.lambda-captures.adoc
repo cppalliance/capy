@@ -1,15 +1,11 @@
 = Lambda Coroutine Captures
+:page-mode: how-to
 
-Lambda captures are a common source of undefined behavior in coroutine code. This section explains the problem and the safe patterns to use instead.
-
-== Prerequisites
-
-* Completed xref:4.coroutines/4g.allocators.adoc[Frame Allocators]
-* Understanding of coroutine frame lifetime from xref:../2.cpp20-coroutines/2c.machinery.adoc[Part III: Coroutine Machinery]
+Lambda captures are a common source of undefined behavior in coroutine code.
 
 == The Problem
 
-Consider this innocent-looking code:
+The lambda is defined and called in one expression -- the `()` after the closing brace -- so `started` holds the task, not the lambda. That shape is an _immediately invoked function expression_, or IIFE; it matters again below.
 
 [source,cpp]
 ----
@@ -24,7 +20,7 @@ In {cpp}20, lambda coroutine captures are stored in the lambda closure object, *
 
 1. The lambda closure is created, capturing `sock` by reference
 2. The lambda's `operator()()` is called
-3. A coroutine frame is allocated on the heap
+3. A coroutine frame is allocated (typically on the heap; HALO may elide this)
 4. The coroutine suspends at `initial_suspend`
 5. `operator()()` returns the task
 6. **The lambda closure is destroyed** — it was a temporary
@@ -43,7 +39,7 @@ The solution is to pass values as **function parameters** instead of **lambda ca
 include::example$snippets/4h_lambda_captures.cpp[tag=iife_parameter]
 ----
 
-This is an **Immediately Invoked Function Expression (IIFE)**. The parameter `s` is copied to the coroutine frame before the first suspension, so it remains valid for the coroutine's lifetime.
+The parameter `s` is copied to the coroutine frame before the first suspension, so it remains valid for the coroutine's lifetime.
 
 == Complete Example
 
@@ -97,25 +93,25 @@ Member function coroutines work correctly because `this` is an implicit paramete
 |===
 | Pattern | Safety | Notes
 
-| `[x]() -> task<> { use(x); }()`
-| UNSAFE
-| Capture `x` destroyed with lambda
-
-| `[](auto x) -> task<> { use(x); }(val)`
+| `[](auto x) ->` cpp:task[task]`<> { use(x); }(val)`
 | SAFE
 | Parameter `x` in coroutine frame
-
-| `[&x]() -> task<> { use(x); }()`
-| UNSAFE
-| Accessed through dangling `this` pointer to destroyed closure
-
-| `[](auto& x) -> task<> { use(x); }(val)`
-| SAFE*
-| Reference parameter; `val` must outlive coroutine
 
 | Member function coroutine
 | SAFE
 | `this` is an implicit parameter
+
+| `[](auto& x) ->` cpp:task[task]`<> { use(x); }(val)`
+| SAFE*
+| Reference parameter; `val` must outlive coroutine
+
+| `[x]() ->` cpp:task[task]`<> { use(x); }()`
+| UNSAFE
+| Capture `x` destroyed with lambda
+
+| `[&x]() ->` cpp:task[task]`<> { use(x); }()`
+| UNSAFE
+| Accessed through dangling `this` pointer to destroyed closure
 |===
 
 == Why Does {cpp} Work This Way?
@@ -126,9 +122,3 @@ The {cpp} standard specifies that coroutine parameters are copied to the corouti
 * The coroutine is the lambda's `operator()`
 * The coroutine frame only stores what is needed for the function body
 * The closure is external to the function body
-
-There have been proposals to change this behavior, but as of {cpp}23 the issue remains.
-
-== Next Steps
-
-You have now learned the major pitfalls of lambda coroutines. This completes the Coroutines in Capy section. Continue to xref:../5.buffers/5a.overview.adoc[Buffer Sequences] to learn about Capy's buffer model.

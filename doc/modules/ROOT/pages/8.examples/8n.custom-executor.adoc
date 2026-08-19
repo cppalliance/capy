@@ -1,16 +1,13 @@
 = Custom Executor
+:page-mode: how-to
 
 Implementing the Executor concept with a single-threaded run loop.
 
-== What You Will Learn
+== What This Example Shows
 
-* Satisfying the `Executor` concept
-* Implementing `execution_context`, `dispatch`, and `post`
+* Satisfying the cpp:Executor[] concept
+* Implementing cpp:execution_context[], cpp:Executor::dispatch[dispatch], and cpp:Executor::post[post]
 * Running Capy coroutines on a custom scheduling system
-
-== Prerequisites
-
-* Understanding of executors from xref:../4.coroutines/4c.executors.adoc[Executors and Execution Contexts]
 
 == Source Code
 
@@ -21,7 +18,7 @@ include::example$custom-executor/custom_executor.cpp[tag=full]
 
 == Build
 
-[source,cmake]
+[source,cmake,role=external]
 ----
 add_executable(custom_executor custom_executor.cpp)
 target_link_libraries(custom_executor PRIVATE Boost::capy)
@@ -36,24 +33,22 @@ target_link_libraries(custom_executor PRIVATE Boost::capy)
 include::example$custom-executor/custom_executor.cpp[tag=inherit]
 ----
 
-Custom execution contexts inherit from `execution_context` and pass `this` to the base constructor. The destructor must call `shutdown()` then `destroy()` to clean up coroutine state.
+The destructor must call `shutdown()` then `destroy()` to clean up coroutine state.
 
 === The Executor Concept
 
 The nested `executor_type` must provide:
 
-* `context()` -- returns a reference to the owning `execution_context`
-* `on_work_started()` / `on_work_finished()` -- work-tracking hooks
-* `dispatch(c)` -- resume immediately if already on this context, otherwise enqueue. Takes a `continuation&` and returns `std::coroutine_handle<>`.
+* cpp:Executor::context[context()] -- returns a reference to the owning cpp:execution_context[]
+* cpp:Executor::on_work_started[on_work_started()] / cpp:Executor::on_work_finished[on_work_finished()] -- work-tracking hooks
+* `dispatch(c)` -- resume immediately if already on this context, otherwise enqueue. Takes a cpp:continuation[]`&` and returns `std::coroutine_handle<>`.
 * `post(c)` -- always enqueue for later execution. Takes a `continuation&`.
-* `operator==` -- compare two executors for identity
+* cpp:Executor::operator==[+operator==+] -- compare two executors for identity
 
 [source,cpp]
 ----
 include::example$custom-executor/custom_executor.cpp[tag=concept_check]
 ----
-
-The `static_assert` verifies at compile time that all concept requirements are met.
 
 === Dispatch vs Post
 
@@ -73,15 +68,16 @@ include::example$custom-executor/custom_executor.cpp[tag=dispatch,indent=0]
 include::example$custom-executor/custom_executor.cpp[tag=drive,indent=0]
 ----
 
-`run_async` enqueues the initial coroutine. `loop.run()` drains the queue, resuming coroutines one by one until all work completes. This is analogous to a GUI event loop or game tick loop.
+cpp:run_async[] enqueues the initial coroutine. `loop.run()` drains the queue, resuming coroutines one by one until all work completes.
 
-Note that `run()` uses `capy::safe_resume(h)` instead of `h.resume()`. This saves and restores the thread-local frame allocator around each resumption, preventing coroutines from spoiling each other's allocator. All custom executor event loops must use `safe_resume` -- see xref:../4.coroutines/4g.allocators.adoc#_tls_preservation[TLS Preservation] for details.
+`run()` uses `capy::safe_resume(h)` instead of `h.resume()`. This saves and restores the thread-local frame allocator around each resumption, preventing coroutines from spoiling each other's allocator. All custom executor event loops must use cpp:safe_resume[] -- see xref:4.coroutines/4g.allocators.adoc#_tls_preservation[TLS Preservation] for details.
 
 == Output
 
+[role=output]
 ----
 Running event loop on main thread...
-Launching 3 tasks with when_all...
+Starting 3 tasks with when_all...
   computing 3 * 3
   computing 7 * 7
   computing 11 * 11
@@ -95,4 +91,4 @@ Event loop finished.
 
 1. Add a `stop()` method that causes `run()` to exit early, even with work remaining
 2. Make the run loop thread-safe so work can be posted from other threads
-3. Integrate the run loop with a platform event system (e.g., `epoll`, `kqueue`, or a GUI framework)
+3. Integrate the run loop with a platform event system (e.g., `epoll` or `kqueue`). For the GUI-framework case, xref:8.examples/8q.gui-integration.adoc[GUI Integration] works the example through, including where a coroutine resumes after awaiting work that finished on another thread

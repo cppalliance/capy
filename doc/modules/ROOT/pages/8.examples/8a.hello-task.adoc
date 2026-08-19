@@ -1,17 +1,13 @@
 = Hello Task
+:page-mode: how-to
 
 The minimal Capy program: a task that prints a message.
 
-== What You Will Learn
+== What This Example Shows
 
-* Creating a `task<>` coroutine
-* Using `thread_pool` as an execution context
-* Launching tasks with `run_async`
-
-== Prerequisites
-
-* {cpp}20 compiler
-* Capy library installed
+* Creating a cpp:task[task<>] coroutine
+* Using cpp:thread_pool[] as an execution context
+* Starting tasks with cpp:run_async[]
 
 == Source Code
 
@@ -22,10 +18,10 @@ include::example$hello-task/hello_task.cpp[tag=full]
 
 == Build
 
-[source,cmake]
+[source,cmake,role=external]
 ----
 add_executable(hello_task hello_task.cpp)
-target_link_libraries(hello_task PRIVATE capy)
+target_link_libraries(hello_task PRIVATE Boost::capy)
 ----
 
 == Walkthrough
@@ -37,9 +33,9 @@ target_link_libraries(hello_task PRIVATE capy)
 include::example$hello-task/hello_task.cpp[tag=say_hello]
 ----
 
-`task<>` is equivalent to `task<void>`—a coroutine that completes without returning a value. The `co_return` keyword marks this as a coroutine.
+cpp:task[task<>] is equivalent to `task<void>`—a coroutine that completes without returning a value. The `co_return` keyword marks this as a coroutine.
 
-Tasks are lazy: calling `say_hello()` creates a task object but does not execute the body. The `"Hello"` message is not printed until the task is launched.
+Tasks are lazy: calling `say_hello()` creates a task object but does not execute the body. The `"Hello"` message is not printed until the task is started.
 
 === The Thread Pool
 
@@ -48,26 +44,27 @@ Tasks are lazy: calling `say_hello()` creates a task object but does not execute
 include::example$hello-task/hello_task.cpp[tag=pool,indent=0]
 ----
 
-`thread_pool` provides an execution context with worker threads. By default, it creates one thread per CPU core.
+cpp:thread_pool[] provides an execution context with worker threads. By default, it creates one thread per CPU core.
 
 Call `pool.join()` before the pool is destroyed to wait for all outstanding work to finish. The destructor does *not* wait for queued work: `~thread_pool` calls `stop()`, which abandons any work that has not yet started, then joins the worker threads. Without the explicit `pool.join()`, `main` could destroy the pool and exit before `say_hello` ever runs, so `"Hello from Capy!"` might never print.
 
-=== Launching
+=== Starting the Task
 
 [source,cpp]
 ----
 include::example$hello-task/hello_task.cpp[tag=launch,indent=0]
 ----
 
-`run_async` bridges non-coroutine code (like `main`) to coroutine code. The two-call syntax:
+cpp:run_async[] bridges non-coroutine code (like `main`) to coroutine code. The two-call syntax:
 
-1. `run_async(pool.get_executor())` — Creates a launcher with the executor
+1. cpp:run_async[]`(pool.get_executor())` — Creates a launcher with the executor
 2. `(say_hello())` — Accepts the task and starts execution
 
 The task runs on one of the pool's worker threads.
 
 == Output
 
+[role=output]
 ----
 Hello from Capy!
 ----
@@ -75,8 +72,8 @@ Hello from Capy!
 == Exercises
 
 1. Modify `say_hello` to accept a `std::string_view` parameter and print it
-2. Create multiple tasks and launch them all
-3. Add a handler to `run_async` that prints when the task completes
+2. Create multiple tasks and start them all
+3. Add a handler to cpp:run_async[] that prints when the task completes
 
 == Next Steps
 

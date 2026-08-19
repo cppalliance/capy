@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -75,7 +76,11 @@ struct immediate
     /** The wrapped value. */
     T value_;
 
-    /** Always returns true - this awaitable never suspends. */
+    /** Always returns true - this awaitable never suspends.
+
+        @return Always `true`, so the awaiting coroutine does not suspend
+        and `await_suspend` is never called.
+    */
     constexpr bool
     await_ready() const noexcept
     {
@@ -113,7 +118,11 @@ struct immediate
         return std::move(value_);
     }
 
-    /** Returns the wrapped value (const overload). */
+    /** Returns the wrapped value (const overload).
+
+        @return A reference to the stored value. Nothing is moved, so the
+        reference is valid only while the `immediate` is alive.
+    */
     [[nodiscard]] constexpr T const&
     await_resume() const noexcept
     {

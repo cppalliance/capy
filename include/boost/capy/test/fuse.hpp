@@ -52,7 +52,7 @@ namespace boost {
 namespace capy {
 namespace test {
 
-/** A test utility for systematic error injection.
+/** Reruns a code path, injecting a failure at one later point on each pass.
 
     This class enables exhaustive testing of error handling
     paths by injecting failures at successive points in code.
@@ -240,7 +240,7 @@ class fuse
     }
 
 public:
-    /** Result of a fuse operation.
+    /** Converts to `bool`, reporting success, and carries the failure point on failure.
 
         Contains the outcome of @ref armed or @ref inert
         and, on failure, the source location of the failing
@@ -276,7 +276,10 @@ public:
         /// True if the test completed without a failure.
         bool success = true;
 
-        /// Return @ref success.
+        /** Return whether the test completed without a failure.
+
+            @return @ref success.
+        */
         constexpr explicit operator bool() const noexcept
         {
             return success;
@@ -412,7 +415,7 @@ public:
     /** Signal a test failure and stop execution.
 
         Call this from the test function to indicate a failure
-        condition. Both @ref armed and @ref inert will return
+        condition. Both @ref armed and @ref inert return
         a failed @ref result immediately.
 
         @par Example
@@ -456,7 +459,7 @@ public:
 
         Call this from the test function to indicate a failure
         condition with an associated exception. Both @ref armed
-        and @ref inert will return a failed @ref result with
+        and @ref inert return a failed @ref result with
         the captured exception pointer.
 
         @par Example
@@ -760,22 +763,22 @@ public:
         Behaves like the @ref IoRunnable overload of @ref armed, but
         instead of driving each iteration through @ref run_blocking, it
         hands the coroutine to `run_one`. This lets a caller run each
-        iteration on any execution context it chooses — in particular an
-        `io_context`, which operations built on `corosio::timeout` or
-        `corosio::delay` require, since those abort on a
-        non-`io_context` executor. `fuse` never learns about the context;
+        iteration on any execution context it chooses. Operations built
+        on `corosio::timeout` or `corosio::delay` in particular require
+        an `io_context`, because they abort on a non-`io_context`
+        executor. `fuse` never learns about the context;
         the caller owns the drive loop.
 
         @par Runner contract
         `run_one` is invoked once per round with the @ref IoRunnable
         produced by `fn`. It must run that task to completion
         synchronously and *return* any exception the task raised as a
-        `std::exception_ptr` (null on success). It must not rethrow:
+        `std::exception_ptr` (null on success). It must not rethrow.
         `armed` rethrows the returned pointer from its own synchronous
-        code so the exception phase observes injected failures, whereas
-        an exception escaping a `run_async` completion handler would call
-        `std::terminate`. Capture the exception in the error handler and
-        return it once the run loop is done.
+        code, so the exception phase observes injected failures. An
+        exception escaping a `run_async` completion handler would
+        instead call `std::terminate`. Capture the exception in the error
+        handler and return it once the run loop is done.
 
         @par Example
         @code
@@ -841,6 +844,10 @@ public:
         });
         @endcode
 
+        @param fn The test function to run under failure injection.
+
+        @return The @ref result of the armed run.
+
         @see armed
     */
     template<class F>
@@ -851,6 +858,10 @@ public:
     }
 
     /** Alias for @ref armed (coroutine overload).
+
+        @param fn The test coroutine factory to run under failure injection.
+
+        @return The @ref result of the armed run.
 
         @see armed
     */
@@ -899,7 +910,7 @@ public:
 
         @param fn The test function to invoke. It receives
         a reference to the fuse. Calls to @ref maybe_fail
-        will always succeed.
+        always succeed.
 
         @return A @ref result indicating success or failure.
         On failure, `result::loc` contains the source location
@@ -964,7 +975,7 @@ public:
 
         @param fn The coroutine test function to invoke. It receives
         a reference to the fuse. Calls to @ref maybe_fail
-        will always succeed.
+        always succeed.
 
         @return A @ref result indicating success or failure.
         On failure, `result::loc` contains the source location

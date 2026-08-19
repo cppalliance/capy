@@ -1,15 +1,9 @@
-= Part II: {cpp}20 Syntax
-
-This section introduces the three {cpp}20 keywords that create coroutines and walks you through building your first coroutine step by step.
-
-== Prerequisites
-
-* Completed xref:2.cpp20-coroutines/2a.foundations.adoc[Part I: Foundations]
-* Understanding of why coroutines exist and what problem they solve
+= {cpp}20 Syntax
+:page-mode: tutorial
 
 == The Three Keywords
 
-A function becomes a coroutine when its body contains any of three special keywords: `co_await`, `co_yield`, or `co_return`. The presence of any of these keywords signals to the compiler that the function requires coroutine machinery.
+A function becomes a coroutine when its body contains `co_await`, `co_yield`, or `co_return`, signaling to the compiler that it requires coroutine machinery.
 
 === co_await
 
@@ -45,18 +39,16 @@ For coroutines that do not return a value, use `co_return;` without an argument.
 The distinction between regular functions and coroutines matters because they behave fundamentally differently at runtime:
 
 * A regular function allocates its local variables on the stack. When it returns, those variables are gone.
-* A coroutine allocates its local variables in a heap-allocated *coroutine frame*. When it suspends, those variables persist. When it resumes, they are still there.
-
-Here is the minimal structure needed to create a coroutine:
+* A coroutine allocates its local variables in a *coroutine frame*, typically on the heap. When it suspends, those variables persist. When it resumes, they are still there.
 
 [source,cpp]
 ----
 include::example$snippets/2b_syntax.cpp[tag=simple_coroutine,indent=0]
 ----
 
-The `promise_type` nested structure provides the minimum scaffolding the compiler needs. You will learn what each method does in xref:2.cpp20-coroutines/2c.machinery.adoc[Part III: Coroutine Machinery].
+The `promise_type` nested structure provides the minimum scaffolding the compiler needs. xref:2.cpp20-coroutines/2c.machinery.adoc[Coroutine Machinery] explains what each method does.
 
-For now, observe that the presence of `co_return` transforms what looks like a regular function into a coroutine. If you try to compile a function with coroutine keywords but without proper infrastructure, the compiler will produce errors.
+The presence of `co_return` transforms what looks like a regular function into a coroutine.
 
 == Awaitables and Awaiters
 
@@ -75,6 +67,7 @@ include::example$programs/2b_syntax_counter.cpp[tag=full]
 
 *Output:*
 
+[role=output]
 ----
 counter: 0
 main: resuming
@@ -105,11 +98,7 @@ The {cpp} standard library provides two predefined awaiters:
 * `std::suspend_always` — `await_ready()` returns `false` (always suspend)
 * `std::suspend_never` — `await_ready()` returns `true` (never suspend)
 
-These are useful building blocks for promise types and custom awaitables.
-
 [source,cpp]
 ----
 include::example$snippets/2b_syntax.cpp[tag=standard_awaiters,indent=0]
 ----
-
-You have now learned the three coroutine keywords and how awaitables work. In the next section, you will learn about the promise type and coroutine handle—the machinery that makes coroutines function.

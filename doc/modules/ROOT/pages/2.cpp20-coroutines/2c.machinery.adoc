@@ -1,16 +1,9 @@
-= Part III: Coroutine Machinery
-
-This section explains the promise type and coroutine handle—the core machinery that controls coroutine behavior. You will build a complete generator type by understanding how these pieces work together.
-
-== Prerequisites
-
-* Completed xref:2.cpp20-coroutines/2b.syntax.adoc[Part II: {cpp}20 Syntax]
-* Understanding of the three coroutine keywords
-* Familiarity with awaitables and awaiters
+= Coroutine Machinery
+:page-mode: tutorial
 
 == The Promise Type
 
-Every coroutine has an associated *promise type*. This type acts as a controller for the coroutine, defining how it behaves at key points in its lifecycle. The promise type is not something you pass to the coroutine—it is a nested type inside the coroutine's return type that the compiler uses automatically.
+Every coroutine has an associated *promise type*. This type acts as a controller for the coroutine, defining how it behaves at key points in its lifecycle. The promise type is not something you pass to the coroutine.
 
 The compiler expects to find a type named `promise_type` nested inside your coroutine's return type. If your coroutine returns `Generator<int>`, the compiler looks for `Generator<int>::promise_type`.
 
@@ -19,7 +12,7 @@ The compiler expects to find a type named `promise_type` nested inside your coro
 The promise type must provide these methods:
 
 `get_return_object()`::
-Called to create the object that will be returned to the caller of the coroutine. This happens before the coroutine body begins executing.
+Called to create the object returned to the caller of the coroutine.
 
 `initial_suspend()`::
 Called immediately after `get_return_object()`. Returns an awaiter that determines whether the coroutine should suspend before running any of its body. Return `std::suspend_never{}` to start executing immediately, or `std::suspend_always{}` to suspend before the first statement.
@@ -39,6 +32,7 @@ The compiler transforms your coroutine body into something resembling this pseud
 
 NOTE: The `co_await` keywords below are intentional. This mirrors the {cpp} standard's own description ({cpp}20 [dcl.fct.def.coroutine]/5), which uses `co_await` to express the logical suspension points. The compiler expands each `co_await` into the full awaiter protocol (`await_ready`, `await_suspend`, `await_resume`) as described in xref:2.cpp20-coroutines/2b.syntax.adoc#_awaitables_and_awaiters[Awaitables and Awaiters].
 
+.What the compiler generates
 [source,cpp,role=pseudocode]
 ----
 {
@@ -64,7 +58,7 @@ NOTE: The `co_await` keywords below are intentional. This mirrors the {cpp} stan
 Important observations:
 
 * The return object is created before `initial_suspend()` runs, so it is available even if the coroutine suspends immediately
-* `final_suspend()` determines whether the coroutine frame persists after completion—if it returns `suspend_always`, you must manually destroy the coroutine; if it returns `suspend_never`, the frame is destroyed automatically
+* `final_suspend()` determines whether the coroutine frame persists after completion. If it returns `suspend_always`, you must manually destroy the coroutine; if it returns `suspend_never`, the frame is destroyed automatically
 
 === Tracing Promise Behavior
 
@@ -75,6 +69,7 @@ include::example$programs/2c_machinery_trace.cpp[tag=full]
 
 *Output:*
 
+[role=output]
 ----
 calling coroutine
 promise constructed
@@ -88,11 +83,11 @@ destroying coroutine handle
 promise destroyed
 ----
 
-Notice that the promise is constructed first, then `get_return_object()` creates the return value, then `initial_suspend()` runs. Since `initial_suspend()` returns `suspend_never`, the coroutine body executes immediately. After `co_return`, `return_void()` is called, followed by `final_suspend()`. Since `final_suspend()` returns `suspend_always`, the coroutine suspends one last time, and the promise is not destroyed until the coroutine handle is explicitly destroyed.
+The promise is constructed first, then `get_return_object()` creates the return value, then `initial_suspend()` runs. Since `initial_suspend()` returns `suspend_never`, the coroutine body executes immediately. Since `final_suspend()` returns `suspend_always`, the coroutine suspends one last time, and the promise is not destroyed until the coroutine handle is explicitly destroyed.
 
 [WARNING]
 ====
-If your coroutine can fall off the end of its body without executing `co_return`, and your promise type lacks a `return_void()` method, the behavior is undefined. Always ensure your promise type has `return_void()` if there is any code path that might reach the end of the coroutine body without an explicit `co_return`.
+A coroutine may fall off the end of its body without executing `co_return`. If its promise type lacks a `return_void()` method, the behavior is undefined. Your promise type must therefore have `return_void()` whenever any code path might reach the end of the coroutine body without an explicit `co_return`.
 ====
 
 == Coroutine Handle
@@ -133,6 +128,7 @@ A *generator* is a function that produces a sequence of values on demand. Instea
 
 The expression `co_yield value` is transformed by the compiler into:
 
+.What the compiler generates
 [source,cpp,role=pseudocode]
 ----
 co_await promise.yield_value(value)
@@ -149,6 +145,7 @@ include::example$programs/2c_machinery_generator.cpp[tag=full]
 
 *Output:*
 
+[role=output]
 ----
 1
 2
@@ -182,12 +179,11 @@ include::example$programs/2c_machinery_fibonacci.cpp[tag=full]
 
 *Output:*
 
+[role=output]
 ----
 0 1 1 2 3 5 8 13 21 34 
 ----
 
-The Fibonacci generator runs an infinite loop internally. It will produce values forever. But because it yields and suspends after each value, the caller controls when (and whether) to ask for more values. The generator only computes values on demand.
+The Fibonacci generator runs an infinite loop internally. But because it yields and suspends after each value, the caller controls when (and whether) to ask for more values.
 
-The variables `a` and `b` persist across yields because they live in the coroutine frame on the heap.
-
-You have now learned how promise types and coroutine handles work together to create useful abstractions like generators. In the next section, you will explore advanced topics: symmetric transfer, allocation, and exception handling.
+The variables `a` and `b` persist across yields because they live in the coroutine frame, typically on the heap.

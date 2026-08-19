@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -65,7 +66,7 @@ namespace capy {
     more efficient to process buffers in batches rather than
     one at a time. This class maintains a window of up to a
     fixed, implementation-defined number of buffer descriptors
-    (currently 16), automatically refilling from the underlying
+    (currently 16). It refills the window from the underlying
     sequence as buffers are consumed.
 
     @par Example
@@ -95,15 +96,20 @@ namespace capy {
     This class enables passing arbitrary buffer sequences through
     a virtual function boundary. The template function captures
     the buffer sequence by value and drives the iteration, while
-    the virtual function receives a simple span:
+    the virtual function receives a simple span. Plain CTAD
+    (`buffer_param bp(buffers)`) deduces `BS`'s own buffer type, so a
+    mutable sequence yields `span<mutable_buffer>`. That does not match
+    `write_impl`'s `span<const_buffer>` parameter. Use @ref const_buffer_param
+    to force `const_buffer` storage regardless of what `BS` is:
 
     @code
     class base
     {
     public:
-        task<> write(ConstBufferSequence auto buffers)
+        template<ConstBufferSequence BS>
+        task<> write(BS buffers)
         {
-            buffer_param bp(buffers);
+            const_buffer_param<BS> bp(buffers);
             while(true)
             {
                 auto bufs = bp.data();
@@ -132,7 +138,7 @@ template<class BS, bool MakeConst = false>
 class buffer_param
 {
 public:
-    /// The buffer type (const_buffer or mutable_buffer)
+    /// Names `const_buffer` when `MakeConst`, else `BS`'s own buffer type.
     using buffer_type = std::conditional_t<
         MakeConst,
         const_buffer,
@@ -243,11 +249,14 @@ public:
     }
 };
 
-// CTAD deduction guide
+/** Deduce the sequence type from the constructor argument.
+
+    @tparam BS The buffer sequence type.
+*/
 template<class BS>
 buffer_param(BS const&) -> buffer_param<BS>;
 
-/// Alias for buffer_param that always uses const_buffer storage.
+/// Forces `buffer_param` to store windows as `const_buffer`, regardless of `BS`.
 template<class BS>
 using const_buffer_param = buffer_param<BS, true>;
 

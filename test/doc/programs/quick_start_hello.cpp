@@ -34,7 +34,7 @@ int main()
 {
     capy::thread_pool pool(1);
 
-    // Launch the coroutine on the pool's executor
+    // Start the coroutine on the pool's executor
     capy::run_async(pool.get_executor())(greet());
 
     // join() waits for outstanding work to complete; the pool

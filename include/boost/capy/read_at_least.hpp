@@ -27,15 +27,15 @@ namespace capy {
 
     This is a straightforward extension of @ref read. While @ref read
     transfers exactly `buffer_size(buffers)` bytes, `read_at_least`
-    transfers at least `n` bytes: the loop stops as soon as `n` bytes
+    transfers at least `n` bytes. The loop stops as soon as `n` bytes
     have been read, even if `buffers` is not yet full. Any bytes beyond
-    `n` that a single `stream.read_some` happens to deliver (up to the
-    capacity of `buffers`) are kept, but no further awaiting is performed
-    to fill the remainder.
+    `n` that a single `stream.read_some` happens to deliver are kept, up
+    to the capacity of `buffers`. No further awaiting is performed to
+    fill the remainder.
 
     This is useful when a caller has a required amount of data `n` that
-    must be met or exceeded, while the subsequent capacity of `buffers`
-    is optional and should not block.
+    must be met or exceeded. The subsequent capacity of `buffers` is then
+    optional, and filling it should not block.
 
     @par Await-effects
 
@@ -73,8 +73,8 @@ namespace capy {
 
     @par Await-postcondition
     On success the returned count is greater than or equal to `n` and
-    less than or equal to `buffer_size(buffers)`, and `ec` is success;
-    otherwise `ec` is set.
+    less than or equal to `buffer_size(buffers)`, and `ec` is success.
+    Otherwise `ec` is set.
 
     @param stream The stream to read from. If the lifetime of `stream` ends
     before the coroutine finishes, the behavior is undefined.
@@ -85,6 +85,9 @@ namespace capy {
 
     @param n The minimum number of bytes to read. Must not exceed
     `buffer_size(buffers)`.
+
+    @return A task yielding `io_result<std::size_t>` whose second element
+    is the number of bytes read.
 
     @par Remarks
     Supports _IoAwaitable cancellation_.

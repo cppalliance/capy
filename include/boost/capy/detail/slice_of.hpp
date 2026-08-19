@@ -26,19 +26,20 @@ namespace detail {
 
     `slice_of<BS>` is the generic result of `buffer_slice` for a sequence
     that is not closed under sub-ranging (everything except a single
-    buffer). It models the same buffer-sequence concept as `BS`
-    (`MutableBufferSequence` if `BS` is mutable, otherwise
-    `ConstBufferSequence`), so it can be passed anywhere a buffer sequence
-    is expected.
+    buffer). It models the same buffer-sequence concept as `BS`:
+    `MutableBufferSequence` if `BS` is mutable, otherwise
+    `ConstBufferSequence`. It can therefore be passed anywhere a buffer
+    sequence is expected.
 
     It stores iterators into the underlying sequence plus front/back byte
     offsets; it neither owns nor copies the descriptors. The underlying
     sequence must outlive the view.
 
     @par Complexity
-    Construction is a single forward pass to the cut points: O(buffers up
-    to `offset`) for a to-end slice, O(buffers up to `offset + length`)
-    for a bounded slice. It never sums the whole sequence.
+    Construction is a single forward pass to the cut points. It is
+    O(buffers up to `offset`) for a to-end slice, and O(buffers up to
+    `offset + length`) for a bounded slice. It never sums the whole
+    sequence.
 */
 template<class BS>
     requires MutableBufferSequence<BS> || ConstBufferSequence<BS>

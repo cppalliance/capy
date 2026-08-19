@@ -28,7 +28,7 @@ namespace boost {
 namespace capy {
 namespace test {
 
-/** A mock stream for testing read operations.
+/** Buffers data supplied via `provide`, then hands it out through `read_some`.
 
     Use this to verify code that performs reads without needing
     real I/O. Call @ref provide to supply data, then @ref read_some
@@ -103,7 +103,10 @@ public:
         pos_ = 0;
     }
 
-    /// Return the number of bytes available for reading.
+    /** Return the number of bytes available for reading.
+
+        @return The number of provided bytes not yet consumed.
+    */
     std::size_t
     available() const noexcept
     {
@@ -130,7 +133,7 @@ public:
         failure point; no-throw otherwise.
 
         @par Cancellation
-        If the environment's stop token has been requested, the read
+        If the environment's stop token is requested, the read
         completes immediately with `error::canceled` and transfers no
         data. This lets code under test exercise its cancellation paths.
         An empty buffer sequence is a no-op that completes successfully

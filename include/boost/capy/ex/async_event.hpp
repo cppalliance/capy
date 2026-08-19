@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -46,7 +47,7 @@
 namespace boost {
 namespace capy {
 
-/** An asynchronous event for coroutines.
+/** Queues coroutines in `wait()` and resumes all of them when `set()` is called.
 
     This event provides a way to notify multiple coroutines that some
     condition has occurred. When a coroutine awaits an unset event, it
@@ -106,7 +107,7 @@ private:
     detail::intrusive_list<wait_awaiter> waiters_;
 
 public:
-    /** Awaiter returned by wait().
+    /** Suspends the caller until `set()` runs, or resumes it with `error::canceled` on a stop request.
     */
     class wait_awaiter
         : public detail::intrusive_list<wait_awaiter>::node
@@ -159,6 +160,14 @@ public:
         }
 
     public:
+        /** Destroy the awaiter, leaving the event unable to reach it.
+
+            Destroys the stop callback if one is registered, and unlinks
+            the awaiter from the event's wait queue if it is still linked.
+            Both are necessary when the coroutine frame is torn down while
+            suspended, so that neither `set()` nor the stop callback can
+            reach a destroyed awaiter.
+        */
         ~wait_awaiter()
         {
             if(active_)
@@ -167,11 +176,23 @@ public:
                 e_->waiters_.remove(this);
         }
 
+        /** Construct an awaiter for the given event.
+
+            @param e The event to wait on. It must outlive the awaiter.
+        */
         explicit wait_awaiter(async_event* e) noexcept
             : e_(e)
         {
         }
 
+        /** Construct by moving.
+
+            The moved-from awaiter is left inert: its destructor no longer
+            destroys the stop callback and no longer unlinks from the
+            event's wait queue.
+
+            @param o The awaiter to move from.
+        */
         wait_awaiter(wait_awaiter&& o) noexcept
             : e_(o.e_)
             , cont_(o.cont_)
@@ -184,16 +205,69 @@ public:
         {
         }
 
-        wait_awaiter(wait_awaiter const&) = delete;
-        wait_awaiter& operator=(wait_awaiter const&) = delete;
-        wait_awaiter& operator=(wait_awaiter&&) = delete;
+        /** Copy construction is disabled; a waiter is linked into the
+            event's wait queue by address.
 
+            @param other The awaiter that would be copied.
+        */
+        wait_awaiter(wait_awaiter const& other) = delete;
+
+        /** Copy assignment is disabled; a waiter is linked into the
+            event's wait queue by address.
+
+            @param other The awaiter that would be assigned from.
+
+            @return A reference to `*this`.
+        */
+        wait_awaiter& operator=(wait_awaiter const& other) = delete;
+
+        /** Move assignment is disabled; a waiter is linked into the
+            event's wait queue by address.
+
+            @param other The awaiter that would be moved from.
+
+            @return A reference to `*this`.
+        */
+        wait_awaiter& operator=(wait_awaiter&& other) = delete;
+
+        /** Report whether the event is already set.
+
+            @return `true` if the event is set, in which case the awaiting
+            coroutine does not suspend; otherwise `false`.
+        */
         bool await_ready() const noexcept
         {
             return e_->set_;
         }
 
-        /** IoAwaitable protocol overload. */
+        /** Enqueue the awaiting coroutine until the event is set.
+
+            This is the @ref IoAwaitable overload of `await_suspend`.
+
+            If a stop request is already pending on `env->stop_token`, the
+            awaiter records the cancellation and does not enqueue.
+
+            Otherwise it stores `h` and `env->executor`, links itself into
+            the event's wait queue, and registers a stop callback on
+            `env->stop_token`. Exactly one of `set()` and that callback posts
+            `h` through the stored executor, whichever claims the waiter
+            first. Only the post is subject to that race. A losing stop
+            callback does nothing at all, but `set()` unlinks every waiter it
+            pops whether it claims it or not. That is why @ref await_resume
+            unlinks a canceled waiter only when it is still linked.
+
+            @param h The awaiting coroutine, resumed when the event is set
+            or the wait is canceled.
+
+            @param env The execution environment. Its executor posts the
+            resumption and its stop token is watched for the duration of
+            the wait. It must outlive the wait.
+
+            @return `h` if a stop request was already pending, which
+            resumes the awaiting coroutine immediately without enqueuing
+            it. Otherwise `std::noop_coroutine()`, which leaves the
+            coroutine suspended and returns control to the resumer.
+        */
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
@@ -214,6 +288,16 @@ public:
             return std::noop_coroutine();
         }
 
+        /** Complete the wait and report the outcome.
+
+            Destroys the stop callback if one is registered. If the wait
+            was canceled while still linked into the event's wait queue,
+            unlinks it. `set()` pops every waiter, so a canceled waiter may
+            or may not still be linked when it resumes.
+
+            @return An empty `io_result<>` if the event was set, or one
+            holding `error::canceled` if the stop token fired first.
+        */
         [[nodiscard]] io_result<> await_resume() noexcept
         {
             if(active_)
@@ -238,17 +322,37 @@ public:
     /// Construct an unset event.
     async_event() = default;
 
-    /// Copy constructor (deleted).
-    async_event(async_event const&) = delete;
+    /** Copy construction is disabled; suspended waiters point into the
+        event's wait queue.
 
-    /// Copy assignment (deleted).
-    async_event& operator=(async_event const&) = delete;
+        @param other The event that would be copied.
+    */
+    async_event(async_event const& other) = delete;
 
-    /// Move constructor (deleted).
-    async_event(async_event&&) = delete;
+    /** Copy assignment is disabled; suspended waiters point into the
+        event's wait queue.
 
-    /// Move assignment (deleted).
-    async_event& operator=(async_event&&) = delete;
+        @param other The event that would be assigned from.
+
+        @return A reference to `*this`.
+    */
+    async_event& operator=(async_event const& other) = delete;
+
+    /** Move construction is disabled; suspended waiters point into the
+        event's wait queue.
+
+        @param other The event that would be moved from.
+    */
+    async_event(async_event&& other) = delete;
+
+    /** Move assignment is disabled; suspended waiters point into the
+        event's wait queue.
+
+        @param other The event that would be moved from.
+
+        @return A reference to `*this`.
+    */
+    async_event& operator=(async_event&& other) = delete;
 
     /** Returns an awaiter that waits until the event is set.
 
@@ -261,7 +365,7 @@ public:
         return wait_awaiter{this};
     }
 
-    /** Sets the event.
+    /** Resumes every waiting coroutine and marks the event set for later `wait()` calls.
 
         All waiting coroutines are resumed. Canceled waiters
         are skipped. Subsequent calls to wait() complete
@@ -286,7 +390,7 @@ public:
 
     /** Clears the event.
 
-        Subsequent calls to wait() will suspend until
+        Subsequent calls to wait() suspend until
         set() is called again.
     */
     void clear() noexcept
@@ -295,6 +399,8 @@ public:
     }
 
     /** Returns true if the event is currently set.
+
+        @return `true` if the event is set; otherwise `false`.
     */
     bool is_set() const noexcept
     {

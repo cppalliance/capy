@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -20,7 +21,7 @@
 namespace boost {
 namespace capy {
 
-/** Execution environment for IoAwaitables.
+/** Carries the executor, stop token, and frame allocator through a coroutine chain.
 
     This struct bundles the execution context passed through
     coroutine chains via the IoAwaitable protocol. It contains
@@ -29,8 +30,8 @@ namespace capy {
 
     @par Lifetime
 
-    Launch functions (@ref run_async, @ref run) own the `io_env` and
-    guarantee it outlives all tasks and awaitables in the launched
+    Launcher functions (@ref run_async, @ref run) own the `io_env` and
+    guarantee it outlives all tasks and awaitables in the started
     chain. Awaitables receive `io_env const*` in `await_suspend`
     and should store it directly, never copy the pointed-to object.
 

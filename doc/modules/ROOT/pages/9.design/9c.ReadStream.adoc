@@ -1,8 +1,9 @@
 = ReadStream Concept Design
+:page-mode: explanation
 
 == Overview
 
-This document describes the design of the `ReadStream` concept: the fundamental partial-read primitive in the concept hierarchy. It explains why `read_some` is the correct building block, how composed algorithms build on top of it, and the relationship to `ReadSource`.
+cpp:ReadStream[] is the fundamental partial-read primitive among Capy's stream concepts.
 
 == Definition
 
@@ -11,75 +12,15 @@ This document describes the design of the `ReadStream` concept: the fundamental 
 include::example$snippets/9c_read_stream.cpp[tag=concept_definition,indent=0]
 ----
 
-The `requires` clause checks `read_some` against a single representative buffer, `mutable_buffer_archetype`, because a {cpp} concept cannot quantify over "every buffer sequence." The contract is stronger than what the compiler verifies: a `ReadStream` must accept *any* `MutableBufferSequence`—a single buffer or a range of them—and the archetype stands in for that universally-quantified requirement. Read this as a textual requirement that the concept can only sample, not a claim that conformance is limited to the archetype type.
+The `requires` clause checks `read_some` against a single representative buffer, cpp:mutable_buffer_archetype[], because a {cpp} concept cannot quantify over "every buffer sequence." The contract is stronger than what the compiler verifies: a cpp:ReadStream[] must accept *any* cpp:MutableBufferSequence[]—a single buffer or a range of them—and the archetype stands in for that universally-quantified requirement.
 
-A `ReadStream` provides a single operation:
+A cpp:ReadStream[] provides a single operation:
 
 === `read_some(buffers)` -- Partial Read
 
-Attempts to read up to `buffer_size(buffers)` bytes from the stream into the buffer sequence. Returns `(error_code, std::size_t)` where `n` is the number of bytes read.
-
-==== Semantics
-
-If `buffer_size(buffers) > 0`:
-
-- If `!ec`, then `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were read into the buffer sequence.
-- If `ec`, then `n >= 0 && n \< buffer_size(buffers)`. `n` is the number of bytes read before the I/O condition arose.
-
-Equivalently, `n == buffer_size(buffers)` implies `!ec`: a completion that fills the buffer sequence is a success, even when the underlying operation also signals a condition such as end-of-stream. That condition is reported on a subsequent read.
-
-If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
-
-The caller must not assume the buffer is filled. `read_some` may return fewer bytes than the buffer can hold. This is the defining property of a partial-read primitive.
-
-Once `read_some` returns an error (including EOF), the caller must not call `read_some` again. The stream is done. Not all implementations can reproduce a prior error on subsequent calls, so the behavior after an error is undefined.
-
-Buffers in the sequence are filled in order.
-
-==== Error Reporting
-
-I/O conditions arising from the underlying I/O system (EOF, connection reset, broken pipe, etc.) are reported via the `error_code` component of the return value. Failures in the library wrapper itself (such as memory allocation failure) are reported via exceptions.
-
-*Throws:* `std::bad_alloc` if coroutine frame allocation fails.
-
-==== Buffer Lifetime
-
-The caller must ensure that the memory referenced by `buffers` remains valid until the `co_await` expression returns.
-
-==== Conforming Signatures
-
-[source,cpp]
-----
-include::example$snippets/9c_read_stream.cpp[tag=read_some_signature,indent=0]
-----
-
-Buffer sequences should be accepted by value when the member function is a coroutine, to ensure the sequence lives in the coroutine frame across suspension points.
-
-== Concept Hierarchy
-
-`ReadStream` is the base of the read-side hierarchy:
-
-----
-ReadStream    { read_some }
-    |
-    v
-ReadSource    { read_some, read }
-----
-
-`ReadSource` refines `ReadStream`. Every `ReadSource` is a `ReadStream`. Algorithms constrained on `ReadStream` accept both raw streams and sources. The `ReadSource` concept adds a complete-read primitive on top of the partial-read primitive.
-
-This mirrors the write side:
-
-----
-WriteStream   { write_some }
-    |
-    v
-WriteSink     { write_some, write, write_eof(buffers), write_eof() }
-----
+See cpp:ReadStream[] for the full syntactic and semantic contract: return-value semantics, behavior after an error, error reporting, throws, buffer lifetime, and conforming signatures.
 
 == Composed Algorithms
-
-A composed algorithm builds on `read_some`:
 
 === `read(stream, buffers)` -- Fill a Buffer Sequence
 
@@ -99,7 +40,7 @@ include::example$snippets/9c_read_stream.cpp[tag=read_header,indent=0]
 
 === Incremental Processing with `read_some`
 
-When processing data as it arrives without waiting for a full buffer, `read_some` is the right choice. This is common for real-time data or when the processing can handle partial input.
+When processing data as it arrives without waiting for a full buffer, `read_some` is the right choice.
 
 [source,cpp]
 ----
@@ -112,47 +53,44 @@ include::example$snippets/9c_read_stream.cpp[tag=echo,indent=0]
 |===
 | Read Side | Write Side
 
-| `ReadStream::read_some`
-| `WriteStream::write_some`
+| cpp:ReadStream::read_some[read_some]
+| cpp:WriteStream::write_some[WriteStream::write_some]
 
-| `read` free function (composed)
+| cpp:read[] free function (composed)
 | `write_now` (composed, eager)
-
-| `ReadSource::read`
-| `WriteSink::write`
 |===
 
 == Design Foundations: Why a Full Buffer Is Always Success
 
-The `read_some` contract treats a completion that fills the buffer sequence as a success: `n == buffer_size(buffers)` implies `!ec`. An error is reported only when the transfer was incomplete, in which case `n \< buffer_size(buffers)`. A pending condition, such as end-of-stream, is never delivered alongside a full buffer; it is deferred to the next read. This is the most consequential design decision in the `ReadStream` concept, with implications for every consumer of `read_some` in the library. This section explains the design and its consequences.
+The `read_some` contract treats a completion that fills the buffer sequence as a success: `n == buffer_size(buffers)` implies `!ec`. An error is reported only when the transfer was incomplete, in which case `n \< buffer_size(buffers)`. A pending condition, such as end-of-stream, is never delivered alongside a full buffer; it is deferred to the next read. This is the most consequential design decision in the cpp:ReadStream[] concept, with implications for every consumer of `read_some` in the library.
 
 === The Return Type's Purpose
 
-The `(error_code, size_t)` return type carries both a byte count and a condition, but the contract assigns them disjoint roles. A nonzero `ec` describes only a transfer that fell short of the requested size; it never qualifies a complete transfer. This gives every consumer a single, unambiguous test: if `n == buffer_size(buffers)` the operation succeeded and the bytes are valid, full stop. There is no need to inspect `ec` to decide whether the data can be used.
+The `(error_code, size_t)` return type carries both a byte count and a condition, but the contract assigns them disjoint roles. A nonzero `ec` describes only a transfer that fell short of the requested size; it never qualifies a complete transfer. This gives every consumer a single, unambiguous test: if `n == buffer_size(buffers)` the operation succeeded and the bytes are valid, full stop.
 
 === Deferring Conditions to the Next Read
 
 A condition such as end-of-stream is a property of the stream, not of the bytes that were just delivered. If a read happens to fill the buffer exactly as the stream reaches its end, the bytes are still good and the read still succeeded. Reporting EOF on that same completion would force every caller to reconcile "I got all my bytes" with "but there was also an error," which is precisely the ambiguity the contract removes. Instead the condition surfaces on the next read, when `n` is necessarily less than the buffer size, and the caller observes it cleanly.
 
-This is what lets generic composition algorithms such as `when_all` and `when_any` distinguish a completed transfer from a failure by inspecting `n` alone. A short read signals a condition; a full read does not.
+This is what lets generic composition algorithms such as cpp:when_all[] and cpp:when_any[] distinguish a completed transfer from a failure by inspecting `n` alone.
 
 === The Implementation Burden Is Internal
 
-Deferral is forced only at the boundary, when the final bytes exactly fill the buffer. Because `(ec, buffer_size(buffers))` is not a permitted result, a stream that fills the buffer and simultaneously reaches a stopping condition reports `(!ec, buffer_size(buffers))` now and surfaces the condition on the next call. When the buffer is not filled, no deferral is required: the stream may report the condition directly alongside the partial count. The bookkeeping for the rare exact-fill case lives inside the stream, where it already has the context, rather than being pushed onto every caller. The concept imposes the postcondition that makes consumers simplest, and conforming streams arrange their internal state to honor it.
+Deferral is forced only at the boundary, when the final bytes exactly fill the buffer. Because `(ec, buffer_size(buffers))` is not a permitted result, a stream that fills the buffer and simultaneously reaches a stopping condition reports `(!ec, buffer_size(buffers))` now and surfaces the condition on the next call. When the buffer is not filled, no deferral is required: the stream may report the condition directly alongside the partial count. The bookkeeping for the rare exact-fill case lives inside the stream, where it already has the context, rather than being pushed onto every caller.
 
 === The Empty-Buffer Rule
 
 When `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
 
-Whether the implementation performs a system call for a zero-length buffer is unspecified. A concrete type that short-circuits with `(!ec, 0)` conforms. A concrete type that forwards the zero-length call to the OS and reports whatever condition arises also conforms. The concept leaves this to the implementation.
+Whether the implementation performs a system call for a zero-length buffer is unspecified. A concrete type that short-circuits with `(!ec, 0)` conforms. A concrete type that forwards the zero-length call to the OS and reports whatever condition arises also conforms.
 
 This flexibility permits zero-length operations to serve as probes (fd validation, broken pipe detection) on implementations that support it, without the concept forbidding the resulting error.
 
 === Why EOF Is an Error
 
-EOF is reported as an error code (`cond::eof`) rather than as a success with `n == 0`, for two reasons:
+EOF is reported as an error code (cpp:cond::eof[cond::eof]) rather than as a success with `n == 0`, for two reasons:
 
-*Composed operations need EOF-as-error to report early termination.* The composed `read(stream, buffer(buf, 100))` promises to fill exactly 100 bytes. If the stream ends after 50, the operation did not fulfill its contract. Reporting `{success, 50}` would be misleading. Reporting `{eof, 50}` tells the caller both what happened (50 bytes landed in the buffer) and why the operation stopped (the stream ended).
+*Composed operations need EOF-as-error to report early termination.* The composed cpp:read[]`(stream, make_buffer(buf, 100))` promises to fill exactly 100 bytes. If the stream ends after 50, the operation did not fulfill its contract. Reporting `{success, 50}` would be misleading. Reporting `{eof, 50}` tells the caller both what happened (50 bytes landed in the buffer) and why the operation stopped (the stream ended).
 
 *EOF-as-error disambiguates the empty-buffer case from the end of a stream.* Without EOF-as-error, both `read_some(empty_buffer)` on a live stream and `read_some(non_empty_buffer)` on an exhausted stream could produce `{success, 0}`. The caller could not distinguish "I passed no buffer" from "the stream is done."
 
@@ -165,23 +103,21 @@ Every composed read algorithm that accumulates progress follows the same pattern
 include::example$snippets/9c_read_stream.cpp[tag=canonical_loop,indent=0]
 ----
 
-The advance-then-check ordering is the only correct pattern. It is required for any operation that can report partial progress alongside an error -- `read` returning `(eof, 47)` being the canonical example. If the check precedes the advance, the 47 bytes are silently dropped.
-
-Because an error can accompany partial data, the advance must run before the check so the bytes that did arrive are counted; on a clean completion the same code advances by the full amount. Writing the check first would silently drop those bytes, so advance-then-check is the only correct order.
+The advance-then-check ordering is the only correct pattern. It is required for any operation that can report partial progress alongside an error -- cpp:read[] returning `(eof, 47)` being the canonical example. If the check precedes the advance, the 47 bytes are silently dropped. On a clean completion the same code advances by the full amount.
 
 === Implementer Freedom
 
-When a stream produces some bytes and then observes a stopping condition before the buffer is full, it reports both at once: `(ec, k)` with `k \< buffer_size(buffers)`. There is no deferred state, no discarded data, and no internal replay buffer. A stream that decrypts or decompresses into the caller's buffer and then hits a terminal marker simply returns the bytes and the condition together.
+When a stream produces some bytes and then observes a stopping condition before the buffer is full, it reports both at once: `(ec, k)` with `k \< buffer_size(buffers)`. There is no deferred state, no discarded data, and no internal replay buffer. A stream that decrypts or decompresses into the caller's buffer and then hits a terminal marker returns the bytes and the condition together.
 
-The one case that requires deferral is the exact-fill boundary, where the final bytes leave no free space. Since `(ec, buffer_size(buffers))` is not permitted, the stream reports `(!ec, buffer_size(buffers))` and carries the condition to the next call. This case is rare, and its bookkeeping is local to the stream.
+The one case that requires deferral is the exact-fill boundary, where the final bytes leave no free space.
 
 === Consistency from Primitives Through Composed Operations
 
-`read_some` and the composed `read` report progress with the same shape: `(ec, n)`, where `n` counts the bytes transferred before the condition. The composed `read` returns `(eof, m)` with `m` short of the requested total when the stream ends early; the primitive `read_some` likewise returns `(ec, n)` with `n` short of the buffer size. Partial progress alongside an error code is the same pattern at every level. The single refinement at the primitive level, that an exactly full buffer is reported as success, keeps `n` a reliable proxy for completion at every layer.
+`read_some` and the composed cpp:read[] report progress with the same shape: `(ec, n)`, where `n` counts the bytes transferred before the condition. The composed `read` returns `(eof, m)` with `m` short of the requested total when the stream ends early; the primitive `read_some` likewise returns `(ec, n)` with `n` short of the buffer size. The single refinement at the primitive level, that an exactly full buffer is reported as success, keeps `n` a reliable proxy for completion at every layer.
 
 === Conforming Sources
 
-Concrete `ReadStream` implementations are free to report `n == 0` or `n > 0` on error, whichever is natural:
+Concrete cpp:ReadStream[] implementations are free to report `n == 0` or `n > 0` on error, whichever is natural:
 
 - **TCP sockets**: `read_some` maps to a single `recv()` or `WSARecv()` call. POSIX and Windows enforce binary outcomes, so these naturally produce `(ec, 0)` on error.
 - **TLS streams**: `read_some` decrypts application data. If a fatal alert arrives after decrypting a partial record, the implementation may report `(ec, n)` with the bytes that were decrypted.
@@ -193,14 +129,13 @@ Concrete `ReadStream` implementations are free to report `n == 0` or `n > 0` on 
 - **Buffered read streams**: `read_some` returns data from an internal buffer. EOF propagates from the underlying stream.
 - **Test mock streams**: `read_some` returns configurable data and error sequences for testing.
 
-No source is forced into an unnatural pattern. Sources that naturally separate data from errors continue to do so. Sources that naturally discover errors alongside data are free to report both.
+No source is forced into an unnatural pattern.
 
 == Summary
 
-`ReadStream` provides `read_some` as the single partial-read primitive. This is deliberately minimal:
+cpp:ReadStream[] provides `read_some` as the single partial-read primitive. This is deliberately minimal:
 
-- Algorithms that need to fill a buffer completely use the `read` composed algorithm.
+- Algorithms that need to fill a buffer completely use the cpp:read[] composed algorithm.
 - Algorithms that need to process data as it arrives use `read_some` directly.
-- `ReadSource` refines `ReadStream` by adding `read` for complete-read semantics.
 
 The contract permits errors to accompany partial data, with one rule: a completely filled buffer is always reported as success, and any condition that coincides with it is deferred to the next call. This uses the `(error_code, size_t)` return type to its full potential, keeps a stream from deferring in the common partial case, and keeps `n` a reliable proxy for completion from `read_some` through composed operations. The canonical advance-then-check loop handles every case correctly with no additional call-site cost.

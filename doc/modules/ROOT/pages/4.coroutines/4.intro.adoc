@@ -8,11 +8,25 @@
 //
 
 = Coroutines in Capy
+:page-mode: explanation
 
-You know how {cpp}20 coroutines work at the language level. You understand threads, synchronization, and the problems that concurrency introduces. Now it is time to see how Capy brings these together into a practical, high-performance library.
+Capy's coroutine model is built around a single principle: asynchronous code should look like synchronous code. The code reads top to bottom, with local variables and normal control flow. Capy handles suspension, resumption, thread scheduling, and cancellation behind the scenes. The result is code that is both easier to read and harder to get wrong.
 
-Capy's coroutine model is built around a single principle: asynchronous code should look like synchronous code. You write a function that reads from a socket, processes the data, and writes a response--top to bottom, with local variables and normal control flow. Capy handles suspension, resumption, thread scheduling, and cancellation behind the scenes. The result is code that is both easier to read and harder to get wrong.
+== What This Section Covers
 
-But this is not magic, and it is not a black box. Every piece of Capy's coroutine infrastructure is designed to be transparent. You can see how tasks are scheduled, control where they run, propagate cancellation, compose concurrent operations, and tune memory allocation. Understanding these mechanisms is what separates someone who uses the library from someone who uses it _well_.
-
-This section is the bridge between theory and practice. You will see how Capy turns C++20 coroutines into a complete async programming model--from launching and scheduling tasks, through cancellation and concurrent composition, to fine-grained control over memory allocation. Each topic builds on the last, and by the end you will be writing real asynchronous programs with Capy.
+* xref:4.coroutines/4a.tasks.adoc[The task Type] -- Declaring, returning values from, and
+  awaiting cpp:task[task<T>] coroutines.
+* xref:4.coroutines/4b.launching.adoc[Starting Coroutines] -- Starting coroutines with
+  cpp:run_async[], and binding child tasks with cpp:run[].
+* xref:4.coroutines/4c.executors.adoc[Executors and Execution Contexts] -- Executors,
+  execution contexts, thread pools, and strands.
+* xref:4.coroutines/4d.io-awaitable.adoc[The IoAwaitable Protocol] -- How the executor and
+  stop token propagate through a chain of awaited coroutines.
+* xref:4.coroutines/4e.cancellation.adoc[Stop Tokens and Cancellation] -- Cooperative
+  cancellation with `std::stop_token`, and how Capy tasks observe it.
+* xref:4.coroutines/4f.composition.adoc[Concurrent Composition] -- Running tasks
+  concurrently with cpp:when_all[] and cpp:when_any[].
+* xref:4.coroutines/4g.allocators.adoc[Frame Allocators] -- How coroutine frames are
+  allocated, and how to customize the allocator.
+* xref:4.coroutines/4h.lambda-captures.adoc[Lambda Coroutine Captures] -- A critical
+  pitfall: lambda captures versus coroutine frame lifetime.

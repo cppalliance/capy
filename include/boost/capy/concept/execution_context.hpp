@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -19,10 +20,10 @@
 namespace boost {
 namespace capy {
 
-/** Concept for types that provide a place where work is executed.
+/** Requires a type to expose a `noexcept get_executor()` bound to its own resources.
 
     An execution context owns the resources (threads, event loops,
-    completion ports) needed to execute function objects. It serves
+    completion ports) needed to run coroutine continuations. It serves
     as the factory for executors, which are lightweight handles used
     to submit work. Multiple executors may reference the same context.
 
@@ -30,20 +31,20 @@ namespace capy {
 
     @par Syntactic Requirements
 
-    @li `X` must be publicly derived from `execution_context`
-    @li `X::executor_type` must be a type satisfying @ref Executor
-    @li `x.get_executor()` must return `X::executor_type` and be `noexcept`
+    @li `X` must be publicly derived from `execution_context`.
+    @li `X::executor_type` must be a type satisfying @ref Executor.
+    @li `x.get_executor()` must return `X::executor_type` and be `noexcept`.
 
     @par Semantic Requirements
 
     The execution context owns the execution environment:
 
     @li Work submitted via any executor from this context runs on
-        resources owned by the context
+        resources owned by the context.
     @li The context remains valid while any executor referencing it
-        exists and may be used
-    @li Destroying the context destroys all unexecuted work submitted
-        via associated executors
+        exists and may be used.
+    @li Destroying the context abandons work submitted via associated
+        executors that has not started running.
 
     @par Conforming Signatures
 
@@ -58,12 +59,15 @@ namespace capy {
 
     @par Example
 
+    `post` takes a `continuation&`, which no closure converts to; ordinary
+    callers reach it indirectly through `run_async` or similar combinators:
+
     @code
     template<ExecutionContext Ctx>
-    void spawn_work( Ctx& ctx )
+    void spawn_work( Ctx& ctx, task<> work )
     {
         auto ex = ctx.get_executor();
-        ex.post( []{ } ); // work runs on ctx
+        run_async(ex)(std::move(work)); // schedules work; runs on ctx
     }
     @endcode
 

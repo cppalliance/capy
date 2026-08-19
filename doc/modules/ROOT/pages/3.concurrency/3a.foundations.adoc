@@ -1,14 +1,5 @@
-= Part I: Foundations
-
-This section introduces the fundamental concepts of concurrent programming. You will learn what concurrency is, why it matters, and how threads provide the foundation for parallel execution.
-
-== Prerequisites
-
-Before beginning this tutorial, you should have:
-
-* A {cpp} compiler with {cpp}11 or later support
-* Familiarity with basic {cpp} concepts: functions, classes, and lambdas
-* Understanding of how programs execute sequentially
+= Threads
+:page-mode: tutorial
 
 == Why Concurrency Matters
 
@@ -18,7 +9,7 @@ Consider downloading a large file. Without concurrency, your application freezes
 
 The benefits compound in computationally intensive work. Image processing, scientific simulations, video encoding—these tasks can be split into independent pieces. Process them simultaneously and your program finishes in a fraction of the time.
 
-But concurrency is not free. It introduces complexity. Multiple threads accessing the same data can corrupt it. Threads waiting on each other can freeze forever. These problems—*race conditions* and *deadlocks*—are the challenges you will learn to handle.
+But concurrency is not free. It introduces complexity. Multiple threads accessing the same data can corrupt it. Threads waiting on each other can freeze forever. These problems—*race conditions* and *deadlocks*—are the challenges you learn to handle.
 
 == Threads—Your Program's Parallel Lives
 
@@ -27,8 +18,6 @@ When you run a program, the operating system creates a *process* for it. This pr
 Think of a thread as a bookmark in a book of instructions. It marks where you are in the code. The processor reads the instruction at that bookmark, executes it, and moves the bookmark forward. One thread means one bookmark—your program can only be at one place in the code at a time.
 
 But you can create additional threads. Each thread is its own bookmark, tracking its own position in the code. Now your program can be at multiple places simultaneously. Each thread has its own *call stack*—its own record of which functions called which—but all threads share the same *heap memory*.
-
-This sharing is both the power and the peril of threads.
 
 == Creating Threads
 
@@ -39,9 +28,9 @@ The `<thread>` header provides `std::thread`, the standard way to create threads
 include::example$programs/3a_foundations_hello.cpp[tag=full]
 ----
 
-The `std::thread` constructor takes a function (or any *callable*) and immediately starts a new thread running that function. Two bookmarks now move through your code simultaneously.
+The `std::thread` constructor takes a function (or any *callable*) and immediately starts a new thread running that function.
 
-The `join()` call makes the main thread wait until thread `t` finishes. Without it, `main()` might return and terminate the program before `say_hello()` completes. Always join your threads before they go out of scope.
+The `join()` call makes the main thread wait until thread `t` finishes. Without it, `main()` might return and terminate the program before `say_hello()` completes.
 
 === Parallel Execution
 
@@ -52,6 +41,7 @@ include::example$programs/3a_foundations_parallel.cpp[tag=full]
 
 Run this and you might see output like:
 
+[role=output]
 ----
 Alice: 1
 Bob: 1
@@ -63,6 +53,7 @@ Alice: 3
 
 Or perhaps:
 
+[role=output]
 ----
 AliceBob: : 1
 1
@@ -70,7 +61,7 @@ Alice: 2
 ...
 ----
 
-The interleaving varies each run. Both threads race to print, and their outputs jumble together. This unpredictability is your first glimpse of concurrent programming's fundamental challenge: when threads share resources (here, `std::cout`), chaos can ensue.
+The interleaving varies each run: both threads race to print, and when they share a resource like `std::cout`, output can jumble together.
 
 == Ways to Create Threads
 
@@ -85,7 +76,7 @@ Lambda expressions are often the clearest choice:
 include::example$programs/3a_foundations_lambda.cpp[tag=full]
 ----
 
-The lambda captures `x` by value—it copies `x` into the lambda. By default, `std::thread` copies all arguments passed to it. Even if your function declares a reference parameter, the thread receives a copy.
+The lambda captures `x` by value—it copies `x` into the lambda. By default, `std::thread` also decays and copies every argument passed to its constructor, before invoking the callable.
 
 To pass by reference, use `std::ref()`:
 
@@ -94,7 +85,7 @@ To pass by reference, use `std::ref()`:
 include::example$programs/3a_foundations_ref.cpp[tag=full]
 ----
 
-Without `std::ref()`, the thread would modify a copy, leaving `counter` unchanged.
+Without `std::ref()`, this fails to compile. `std::thread` decays arguments to values, and a decayed `int` cannot bind to `increment`'s `int&` parameter.
 
 === Member Functions
 
@@ -113,7 +104,7 @@ Every thread must be either *joined* or *detached* before its `std::thread` obje
 
 === join()
 
-`join()` blocks the calling thread until the target thread finishes. This is how you wait for work to complete:
+`join()` blocks the calling thread until the target thread finishes:
 
 [source,cpp]
 ----
@@ -122,7 +113,7 @@ include::example$snippets/3a_foundations.cpp[tag=join,indent=0]
 
 === detach()
 
-Sometimes you want a thread to run independently, continuing even after the `std::thread` object is destroyed. That is what `detach()` does:
+`detach()` lets a thread run independently, continuing after the `std::thread` object is destroyed:
 
 [source,cpp]
 ----
@@ -141,5 +132,3 @@ include::example$snippets/3a_foundations.cpp[tag=joinable,indent=0]
 ----
 
 A thread is joinable if it represents an actual thread of execution. After joining or detaching, or after default construction, a `std::thread` is not joinable.
-
-You have now learned the basics of threads: creation, execution, and lifecycle management. In the next section, you will learn about the dangers of shared data and how to protect it with synchronization primitives.

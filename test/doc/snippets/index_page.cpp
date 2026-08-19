@@ -9,7 +9,6 @@
 
 // Compiled fragments shown in pages/index.adoc.
 
-// tag::convention[]
 // Fragments deliberately leave results and bindings unused; the pages
 // explain the values in prose instead.
 #if defined(__GNUC__) || defined(__clang__)
@@ -37,6 +36,7 @@
 #pragma warning(disable: 4459) // declaration hides global declaration
 #endif
 
+// tag::convention[]
 #include <boost/capy.hpp>
 
 using namespace boost::capy;

@@ -1,11 +1,5 @@
-= Part II: Synchronization
-
-This section introduces the dangers of shared data access and the synchronization primitives that protect against them. You will learn about race conditions, mutexes, lock guards, and deadlocks.
-
-== Prerequisites
-
-* Completed xref:3.concurrency/3a.foundations.adoc[Part I: Foundations]
-* Understanding of threads and their lifecycle
+= Mutexes & Deadlock
+:page-mode: tutorial
 
 == The Danger: Race Conditions
 
@@ -18,9 +12,9 @@ Consider this code:
 include::example$programs/3b_synchronization_race.cpp[tag=full]
 ----
 
-Two threads, each incrementing 100,000 times. You would expect 200,000. But run this repeatedly and you will see different results—180,000, 195,327, maybe occasionally 200,000. Something is wrong.
+Two threads, each incrementing 100,000 times. You would expect 200,000. But run this repeatedly and you see different results—180,000, 195,327, maybe occasionally 200,000.
 
-The `++counter` operation looks atomic—indivisible—but it is not. It actually consists of three steps:
+The `++counter` operation looks atomic—indivisible—but it is not. It consists of three steps:
 
 1. Read the current value
 2. Add one
@@ -28,13 +22,13 @@ The `++counter` operation looks atomic—indivisible—but it is not. It actuall
 
 Between any of these steps, the other thread might execute its own steps. Imagine both threads read `counter` when it is 5. Both add one, getting 6. Both write 6 back. Two increments, but the counter only went up by one. This is a *lost update*, a classic race condition.
 
-The more threads, the more opportunity for races. The faster your processor, the more instructions execute between context switches, potentially hiding the bug—until one critical day in production.
+The faster your processor, the more instructions execute between context switches, potentially hiding the bug—until one critical day in production.
 
 == Mutual Exclusion: Mutexes
 
 The solution to data races is *mutual exclusion*: ensuring that only one thread accesses shared data at a time.
 
-A *mutex* (mutual exclusion object) is a lockable resource. Before accessing shared data, a thread *locks* the mutex. If another thread already holds the lock, the requesting thread blocks until the lock is released. This serializes access to the protected data.
+A *mutex* (mutual exclusion object) is a lockable resource. Before accessing shared data, a thread *locks* the mutex. If another thread already holds the lock, the requesting thread blocks until the lock is released.
 
 [source,cpp]
 ----
@@ -56,11 +50,11 @@ Lock guards apply RAII to mutexes:
 include::example$snippets/3b_synchronization.cpp[tag=lock_guard]
 ----
 
-The `std::lock_guard` locks the mutex on construction and unlocks it on destruction. Even if an exception is thrown, the destructor runs and the mutex is released. This is the correct way to use mutexes.
+The `std::lock_guard` locks the mutex on construction and unlocks it on destruction. Even if an exception is thrown, the destructor runs and the mutex is released.
 
 === std::scoped_lock ({cpp}17)
 
-Since {cpp}17, `std::scoped_lock` is preferred. It works like `lock_guard` but can lock multiple mutexes simultaneously, avoiding a class of deadlock:
+Since {cpp}17, `std::scoped_lock` is preferred. It works like `lock_guard` but can lock multiple mutexes simultaneously:
 
 [source,cpp]
 ----
@@ -76,7 +70,7 @@ For more control, use `std::unique_lock`. It can be unlocked before destruction,
 include::example$snippets/3b_synchronization.cpp[tag=unique_lock,indent=0]
 ----
 
-`std::unique_lock` is more flexible but slightly more expensive than `std::lock_guard`. Use the simplest tool that does the job.
+`std::unique_lock` is more flexible but slightly more expensive than `std::lock_guard`.
 
 == The Deadlock Dragon
 
@@ -88,8 +82,6 @@ Imagine two threads and two mutexes. Thread A locks mutex 1, then tries to lock 
 ----
 include::example$snippets/3b_synchronization.cpp[tag=deadlock]
 ----
-
-If both threads run and each acquires its first mutex before the other acquires the second, deadlock occurs.
 
 === Preventing Deadlock
 
@@ -110,5 +102,3 @@ include::example$snippets/3b_synchronization.cpp[tag=scoped_lock_multi]
 2. *Use std::scoped_lock for multiple mutexes* — Let the library handle deadlock avoidance
 3. *Hold locks for minimal time* — Reduce the window for contention
 4. *Avoid nested locks when possible* — Simpler designs prevent deadlock by construction
-
-You have now learned about race conditions, mutexes, lock guards, and deadlocks. In the next section, you will explore advanced synchronization primitives: atomics, condition variables, and shared locks.

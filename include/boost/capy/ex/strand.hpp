@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -38,7 +39,7 @@ namespace capy {
     @par Implementation
     Each strand allocates a private serialization state. Strands
     constructed from the same execution context share a small pool
-    of mutexes (193 entries) selected by hash; mutex sharing causes
+    of mutexes (193 entries) selected by hash. Mutex sharing causes
     only brief contention on the push/pop critical section, never
     cross-strand state sharing. Construction cost: one
     `std::make_shared` per strand.
@@ -56,11 +57,11 @@ namespace capy {
     outlive every post() and dispatch() call; posting or dispatching
     concurrently with, or after, the context's destruction is undefined
     behavior. To guarantee this, submit work through @ref run_async or
-    @ref run — whose operations are work-tracked, so the context's
-    `join()` waits for them — and call `join()` on the context before
+    @ref run. Their operations are work-tracked, so the context's
+    `join()` waits for them. Call `join()` on the context before
     destroying it, rather than posting to a strand from an external
     thread the context does not track. Destroying the strand handle
-    itself is always safe, including after the context has been
+    itself is always safe, including after the context is
     destroyed.
 
     @par Thread Safety
@@ -95,7 +96,7 @@ class strand
     friend struct strand_test;
 
 public:
-    /** The type of the underlying executor.
+    /** Names the executor type this `strand<Ex>` wraps.
     */
     using inner_executor_type = Ex;
 
@@ -104,8 +105,8 @@ public:
         Allocates a fresh strand implementation from the service
         associated with the executor's context.
 
-        @param ex The inner executor to wrap. Coroutines will
-            ultimately be dispatched through this executor.
+        @param ex The inner executor to wrap. Coroutines are
+            ultimately dispatched through this executor.
 
         @note This constructor is disabled if the argument is a
             strand type, to prevent strand-of-strand wrapping.
@@ -127,27 +128,42 @@ public:
 
         Creates a strand that shares serialization state with
         the original. Coroutines dispatched through either strand
-        will be serialized with respect to each other.
+        are serialized with respect to each other.
+
+        @param other The strand to copy.
     */
-    strand(strand const&) = default;
+    strand(strand const& other) = default;
 
     /** Construct by moving.
 
+        @param other The strand to move from.
+
         @note A moved-from strand is only safe to destroy
             or reassign.
     */
-    strand(strand&&) = default;
+    strand(strand&& other) = default;
 
     /** Assign by copying.
+
+        Shares serialization state with `other`, as the copy
+        constructor does.
+
+        @param other The strand to copy.
+
+        @return A reference to `*this`.
     */
-    strand& operator=(strand const&) = default;
+    strand& operator=(strand const& other) = default;
 
     /** Assign by moving.
 
+        @param other The strand to move from.
+
+        @return A reference to `*this`.
+
         @note A moved-from strand is only safe to destroy
             or reassign.
     */
-    strand& operator=(strand&&) = default;
+    strand& operator=(strand&& other) = default;
 
     /** Return the underlying executor.
 
@@ -172,8 +188,9 @@ public:
 
     /** Notify that work has started.
 
-        Delegates to the inner executor's `on_work_started()`.
-        This is a no-op for most executor types.
+        Delegates to the inner executor's `on_work_started()`. For a
+        `thread_pool` inner executor, this increments the count that
+        `join()` blocks on.
     */
     void
     on_work_started() const noexcept
@@ -183,8 +200,9 @@ public:
 
     /** Notify that work has finished.
 
-        Delegates to the inner executor's `on_work_finished()`.
-        This is a no-op for most executor types.
+        Delegates to the inner executor's `on_work_finished()`. For a
+        `thread_pool` inner executor, this decrements the count that
+        `join()` blocks on.
     */
     void
     on_work_finished() const noexcept
@@ -272,7 +290,10 @@ public:
     }
 };
 
-// Deduction guide
+/** Deduce the executor type from the constructor argument.
+
+    @tparam Ex The wrapped executor type.
+*/
 template<typename Ex>
 strand(Ex) -> strand<Ex>;
 

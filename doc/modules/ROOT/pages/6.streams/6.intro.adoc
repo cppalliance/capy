@@ -8,13 +8,17 @@
 //
 
 = Stream Concepts
+:page-mode: explanation
 
-Data flows. It arrives from a network socket in unpredictable chunks. It leaves through a file descriptor as fast as the disk allows. It passes through encryption, compression, and framing layers--each transforming it before handing it off to the next. Modeling this flow well is one of the most important things an I/O library can do.
+Capy organizes data flow around three concepts: cpp:ReadStream[], cpp:WriteStream[], and cpp:Stream[]. _Partial_ operations and _complete_ operations are fundamentally different things, and conflating them leads to bugs.
 
-Capy organizes data flow around six concepts, arranged in three complementary pairs. The design reflects a truth about I/O that most libraries gloss over: _partial_ operations and _complete_ operations are fundamentally different things, and conflating them leads to bugs.
+A socket might give you 47 bytes when you asked for 1024. That is not an error--it is the nature of the hardware. Capy's stream concepts cover the partial case directly: `read_some` and `write_some` transfer whatever the hardware allows. The complete case is a composed algorithm, not a separate concept. cpp:read[], cpp:write[], cpp:read_at_least[], and cpp:write_at_least[] loop over `read_some` or `write_some` until the buffer is satisfied or an error occurs.
 
-A socket might give you 47 bytes when you asked for 1024. That is not an error--it is the nature of the hardware. Some code needs to handle those 47 bytes immediately and ask for more. Other code needs exactly 1024 bytes and should not return until it has them (or an error occurs). These are different operations with different contracts, and Capy gives them different names: _streams_ for partial I/O, and _sources_ and _sinks_ for complete I/O.
+== What This Section Covers
 
-On top of this, Capy adds _buffer sources_ and _buffer sinks_--concepts that work with dynamic buffers, enabling protocol parsers and message builders to grow their storage as needed without manual bookkeeping.
-
-This section introduces the concepts that form Capy's vocabulary for data flow. You will learn the distinction between partial and complete I/O, how the concept pairs relate to each other, and how transfer algorithms and physical isolation let you write I/O logic that is composable, testable, and independent of any particular transport. Once you understand these concepts, every I/O operation in the library will feel familiar.
+* xref:6.streams/6a.overview.adoc[Overview] -- What cpp:ReadStream[], cpp:WriteStream[], and
+  cpp:Stream[] model, and why partial I/O needs its own concepts.
+* xref:6.streams/6b.streams.adoc[Streams (Partial I/O)] -- The cpp:ReadStream[] and
+  cpp:WriteStream[] concepts, and the type-erased `any_stream` wrappers.
+* xref:6.streams/6f.isolation.adoc[Physical Isolation] -- Type erasure as a compilation
+  firewall for transport-independent, testable I/O code.

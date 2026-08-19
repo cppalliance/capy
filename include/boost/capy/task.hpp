@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -57,7 +58,7 @@ struct task_return_base<void>
 
 } // namespace detail
 
-/** Lazy coroutine task satisfying @ref IoRunnable.
+/** Defers a coroutine body until awaited, then runs it inline on the caller's thread.
 
     Use `task<T>` as the return type for coroutines that perform I/O
     and return a value of type `T`. The coroutine body does not start
@@ -68,6 +69,36 @@ struct task_return_base<void>
     it receives the caller's executor and stop token, propagating them
     to nested `co_await` expressions. This enables cancellation and
     proper completion dispatch across executor boundaries.
+
+    @par Await-effects
+
+    Let `t` be a `task<T>`. `co_await t` always suspends the awaiting
+    coroutine, then transfers control directly into the task's coroutine
+    body on the current thread; no executor operation is posted. The task
+    records the caller's environment (executor, stop token, and frame
+    allocator) by pointer rather than copying it. It propagates that
+    environment to every `co_await` inside the body.
+
+    The body runs until it returns or exits via an exception. Control
+    then transfers directly back to the awaiting coroutine, again
+    without an executor operation.
+
+    `task` never inspects the stop token; it only propagates it. A task
+    body observes a stop request through the results of the operations it
+    awaits, or by reading the token itself. See @ref quitter for a task
+    that stops its own body.
+
+    @par Await-returns
+    The value the body passed to `co_return`, moved out of the task, or
+    nothing when `T` is `void`.
+
+    If the body exits via an unhandled exception, that exception is
+    rethrown instead.
+
+    @par Await-postcondition
+    The task's coroutine has run to completion and is suspended at its
+    final suspend point. The task still owns the frame, but not the
+    result: the await moves it out, so a task must not be awaited twice.
 
     @par Thread Safety
     Distinct objects: Safe.
@@ -99,7 +130,7 @@ template<typename T = void>
 struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     task
 {
-    /** The coroutine promise type for `task<T>`.
+    /** Stores `task<T>`'s result and joins the I/O awaitable protocol via `io_awaitable_promise_base`.
 
         This is the promise object the compiler associates with a
         `task<T>` coroutine. It satisfies the coroutine promise
@@ -246,14 +277,33 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         template<class Awaitable>
         struct transform_awaiter
         {
+            /// The wrapped awaitable, decayed and stored by value.
             std::decay_t<Awaitable> a_;
+
+            /// The promise of the coroutine performing the `co_await`.
             promise_type* p_;
 
+            /** Report whether the wrapped awaitable is already complete.
+
+                @return The wrapped awaitable's own `await_ready` result:
+                `true` if no suspension is needed.
+            */
             bool await_ready() noexcept
             {
                 return a_.await_ready();
             }
 
+            /** Restore the frame allocator, then resume the wrapped
+                awaitable.
+
+                Reinstalls the thread-local frame allocator from the stored
+                environment before the body continues. This is needed
+                because the resumption may arrive on a different thread
+                than the one that suspended.
+
+                @return The wrapped awaitable's await-result, forwarded
+                unchanged.
+            */
             decltype(auto) await_resume()
             {
                 // Restore TLS before body resumes
@@ -261,6 +311,27 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                 return a_.await_resume();
             }
 
+            /** Suspend by calling the wrapped awaitable with the
+                environment.
+
+                This is the plain `await_suspend` the compiler calls for the
+                nested `co_await`. It forwards to the wrapped awaitable's
+                @ref IoAwaitable overload, supplying the promise's stored
+                environment as the second argument. It then hands back
+                that call's result unchanged, so the wrapped awaitable's
+                suspension decision, whatever form it takes, is preserved.
+
+                @param h The coroutine performing the `co_await`.
+
+                @return Whatever the wrapped awaitable's `await_suspend`
+                returns. When that is a `std::coroutine_handle<>`, the
+                handle is routed through `detail::symmetric_transfer`.
+                On MSVC that helper resumes the handle on the current
+                stack, and this function returns `void`, so the awaiting
+                coroutine suspends unconditionally. On every other
+                compiler the handle is returned unchanged for symmetric
+                transfer.
+            */
             template<class Promise>
             auto await_suspend(std::coroutine_handle<Promise> h) noexcept
             {
@@ -359,9 +430,9 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
     /** Start the task with the awaiting coroutine's context.
 
-        Stores `cont` as the continuation to resume on completion and
-        `env` as the execution environment propagated to nested
-        `co_await` expressions, then transfers control into the task's
+        Stores `cont` as the continuation to resume on completion.
+        Stores `env` as the execution environment propagated to nested
+        `co_await` expressions. Then transfers control into the task's
         coroutine body via the returned handle.
 
         @param cont The awaiting coroutine to resume when the task
@@ -383,7 +454,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
         @note Do not call `destroy()` on the returned handle while the
         task is being awaited. The task's lifetime is normally managed
-        by `run_async`, `run`, or the awaiting parent; manually
+        by `run_async`, `run`, or the awaiting parent. Manually
         destroying a suspended task that another coroutine is awaiting
         produces undefined behavior. For cooperative cancellation, use
         `std::stop_token`.
@@ -401,22 +472,34 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         coroutine frame. The caller becomes responsible for the frame's
         lifetime.
 
-        @note If the caller intends to call `destroy()` on the
-        released handle, it must do so only when the task has not
-        started or has fully completed. Destroying a suspended task
-        that is being awaited produces undefined behavior.
+        @note The caller may call `destroy()` on the released handle
+        only when the task has not started or has fully completed.
+        Destroying a suspended task that is being awaited produces
+        undefined behavior.
 
         @par Postconditions
-        `handle()` returns the original handle, but the task no longer
-        owns it.
+        `handle()` returns a null handle. Callers needing the
+        original handle must save it, via @ref handle, before
+        calling this.
     */
     void release() noexcept
     {
         h_ = nullptr;
     }
 
-    task(task const&) = delete;
-    task& operator=(task const&) = delete;
+    /** Copy construction is disabled; a task uniquely owns its frame.
+
+        @param other The task that would be copied.
+    */
+    task(task const& other) = delete;
+
+    /** Copy assignment is disabled; a task uniquely owns its frame.
+
+        @param other The task that would be assigned from.
+
+        @return A reference to `*this`.
+    */
+    task& operator=(task const& other) = delete;
 
     /** Construct by moving, transferring ownership of the frame.
 
@@ -440,7 +523,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
         @param other The task to move from.
 
-        @return `*this`.
+        @return A reference to `*this`.
     */
     task& operator=(task&& other) noexcept
     {

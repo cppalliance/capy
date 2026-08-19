@@ -1,0 +1,184 @@
+= GUI Integration
+:page-mode: tutorial
+
+Running a Capy coroutine on a GUI framework's event loop, and resuming on the GUI thread to update widgets.
+
+== What This Example Shows
+
+* Wrapping a GUI toolkit's "run this on the main thread" primitive as an executor
+* Moving slow work off the GUI thread with cpp:run[], and coming back
+* Awaiting an operation the toolkit completes on a thread of its own
+* Why widget access stays on the GUI thread with no hop written by hand
+
+== Source Code
+
+[source,cpp]
+----
+include::example$gui-integration/gui_integration.cpp[tag=full]
+----
+
+== Build
+
+[source,cmake,role=external]
+----
+add_executable(gui_integration gui_integration.cpp)
+target_link_libraries(gui_integration PRIVATE Boost::capy)
+----
+
+== Walkthrough
+
+=== A Toolkit Stand-In
+
+The program links no GUI library. It uses a stand-in instead.
+
+[source,cpp]
+----
+include::example$gui-integration/gui_integration.cpp[tag=gui_app]
+----
+
+`gui_app` records the thread it is constructed on, holds a queue of coroutine handles, and exposes `post_to_gui_thread`. That last operation is the one primitive every toolkit already provides. Qt names it `QMetaObject::invokeMethod`, GTK `g_idle_add`, wxWidgets `wxEvtHandler::CallAfter`, Win32 `PostMessage`.
+
+=== The Event Loop
+
+[source,cpp]
+----
+include::example$gui-integration/gui_integration.cpp[tag=run,indent=0]
+----
+
+The loop blocks while the queue is empty. A GUI loop must do this: the background operation is still running, and an empty queue does not mean the program is finished. `quit()` sets the flag that lets the loop return once the queue drains.
+
+Resumption goes through cpp:safe_resume[] rather than `h.resume()`. This saves and restores the thread-local frame allocator around each resumption. See xref:4.coroutines/4g.allocators.adoc#_tls_preservation[TLS Preservation].
+
+=== Wrapping the Primitive as an Executor
+
+[source,cpp]
+----
+include::example$gui-integration/gui_integration.cpp[tag=executor]
+----
+
+This class is the entire binding between Capy and the toolkit. `post` forwards to `post_to_gui_thread`. `dispatch` resumes inline when the caller is already on the GUI thread, and otherwise posts.
+
+[source,cpp]
+----
+include::example$gui-integration/gui_integration.cpp[tag=concept_check]
+----
+
+=== A Widget That Checks Its Thread
+
+[source,cpp]
+----
+include::example$gui-integration/gui_integration.cpp[tag=label]
+----
+
+`label` stands in for `QLabel`, `GtkLabel`, or `wxStaticText`. Real widgets are not thread-safe. Touching one off the GUI thread is undefined behavior, and a real toolkit rarely tells you. This one tells you, on every access:
+
+[source,cpp]
+----
+include::example$gui-integration/gui_integration.cpp[tag=check]
+----
+
+The check is the program's reason to exist, so it must survive a release build. `assert` would compile out under `NDEBUG`.
+
+=== Work That Leaves the GUI Thread
+
+Slow work must not run on the GUI thread, or the interface stops repainting. Put it in a task of its own:
+
+[source,cpp]
+----
+include::example$gui-integration/gui_integration.cpp[tag=pool_task]
+----
+
+The check is the second half of the proof. The widget checks say the updates happen on the GUI thread; this one says the work does not.
+
+=== Where the Coroutine Resumes
+
+[source,cpp]
+----
+include::example$gui-integration/gui_integration.cpp[tag=coroutine]
+----
+
+`count_rows` runs on the pool. The line after the first `co_await` touches a widget, so it must run on the GUI thread. It does, and the source contains no hop. The second `co_await` is the toolkit's dialog, covered next.
+
+cpp:run[] is what moves the work. It starts the inner task on the executor you name, and posts the awaiting coroutine back through the executor that coroutine was started with. The whole subtree under `count_rows` runs on the pool; only the boundary crosses back.
+
+Three contracts combine to put that boundary on the GUI thread:
+
+* cpp:run_async[] builds one cpp:io_env[] holding the executor it was given, and passes the task a pointer to it.
+* cpp:task[] propagates that pointer into every `co_await` in its body. A task completes by symmetric transfer and never posts, so nothing in the chain substitutes a different executor.
+* cpp:run[] records the caller's executor and posts the caller back through it when the inner task completes. That post runs on a pool thread and lands in the GUI queue.
+
+This is the xref:4.coroutines/4c.executors.adoc#the-same-executor-invariant[same-executor invariant] seen from a GUI application. Start the task on the GUI executor, and every line of the body runs on the GUI thread, whatever thread the awaited work ran on.
+
+[NOTE]
+====
+Two conditions carry the invariant, and both are contracts rather than magic.
+
+The executor must resume handles on one thread only. A GUI loop does, by construction.
+
+Every awaitable in the chain must honor the cpp:IoAwaitable[] requirement to resume through cpp:io_env::executor[env->executor]. Capy's own types do: cpp:when_all[] and cpp:when_any[] return control to the caller through the caller's executor, and cpp:run[] does the same at an executor boundary. An awaitable that resumes the handle directly from a foreign thread breaks the invariant, and no other part of the library can repair it. <<toolkit-completion,The next section>> shows one that honors it.
+====
+
+[#toolkit-completion]
+=== A Completion From the Toolkit's Own Thread
+
+cpp:run[] covers work you hand to Capy. A toolkit also completes operations of its own, and it reports them on whichever thread it chose. A modal dialog is the common case:
+
+[source,cpp]
+----
+include::example$gui-integration/gui_integration.cpp[tag=dialog]
+----
+
+Awaiting that needs an cpp:IoAwaitable[]. xref:4.coroutines/4d.io-awaitable.adoc#bridging-a-foreign-awaitable[Bridging a Foreign Awaitable] covers the protocol. One line of it decides thread affinity:
+
+[source,cpp]
+----
+include::example$gui-integration/gui_integration.cpp[tag=dialog_awaitable]
+----
+
+The toolkit's thread does not resume the coroutine. It posts the continuation through cpp:io_env::executor[env->executor], and the executor resumes it on the GUI thread. That is the second condition above, honored in one call.
+
+The widget update after this `co_await` carries the same thread check as every other access. Resume the handle directly instead of posting, and the check fires.
+
+`show_dialog` does not watch `env->stop_token`, so a stop request cannot interrupt a dialog already showing. Exercise 2 adds that.
+
+=== Starting and Stopping the Loop
+
+[source,cpp]
+----
+include::example$gui-integration/gui_integration.cpp[tag=main]
+----
+
+The GUI thread is whichever thread constructs `gui_app`. Real toolkits impose the same rule on their application object.
+
+cpp:run_async[] is called on that thread, so `dispatch` resumes the task inline and the body reaches its `co_await` before `app.run()` is called. Nothing is lost if the pool finishes first: the continuation waits in the queue, and the loop picks it up when it starts.
+
+The completion handler runs on the GUI thread, because the task completed there. It calls `quit()`, the loop drains and returns, and `main` checks the final text. The program needs no sleep and no timeout to exit.
+
+=== Substituting a Real Toolkit
+
+The stand-in exists to prove the contract, not to model a toolkit. Five pieces change when the toolkit is real, and the rest does not:
+
+* `post_to_gui_thread` forwards to the toolkit's own post operation, and the receiving side calls cpp:safe_resume[] on the handle.
+* `gui_app::run` disappears. The toolkit already owns a loop, such as `QApplication::exec`, `g_main_loop_run`, or `wxApp::OnRun`.
+* `gui_app::quit` forwards to the toolkit's own quit, such as `QCoreApplication::quit`, `g_main_loop_quit`, or `wxAppConsole::ExitMainLoop`.
+* `label` becomes a real widget. Its thread check is the part the toolkit does not do for you.
+* `dialog` becomes the toolkit's own dialog, and its callback the toolkit's completion notification. The `gui_app&` it holds only for the thread check goes away.
+
+`executor_type`, `show_dialog`, `count_rows`, and `refresh` are unchanged. Those four are the pattern worth copying.
+
+== Output
+
+[role=output]
+----
+[gui] label: Loading...
+[gui] label: Loaded 42 rows
+[gui] label: Confirmed: OK
+[gui] event loop finished
+----
+
+== Exercises
+
+1. Break the invariant on purpose. Make `post` resume the handle inline instead of queueing it, and watch the widget check fire
+2. Make `show_dialog` cancellable. Pass a `std::stop_token` to cpp:run_async[], request the stop before the dialog is awaited, and complete early in `await_suspend` when the token reports one
+3. Give `dialog` a Cancel answer, and skip the update when the user chooses it
+4. Add a second background step and a second widget, and check that both updates land on the GUI thread

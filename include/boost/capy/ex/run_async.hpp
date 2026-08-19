@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -36,10 +37,10 @@ namespace detail {
 
 /** Match types usable as `run_async` completion handlers.
 
-    Excludes the types meaningful to the other `run_async` parameters,
-    so a stop token, memory resource pointer, or allocator argument
-    selects its dedicated overload by conversion instead of deducing
-    as an exact-match handler.
+    Excludes the types meaningful to the other `run_async` parameters.
+    A stop token, memory resource pointer, or allocator argument
+    therefore selects its dedicated overload by conversion. It does not
+    deduce as an exact-match handler.
 */
 template<class H>
 concept RunAsyncHandler =
@@ -322,7 +323,7 @@ make_trampoline(Ex, Handlers, Alloc)
 
 } // namespace detail
 
-/** Wrapper returned by run_async that accepts a task for execution.
+/** Installs the frame allocator, then starts the task on the executor when called once.
 
     This wrapper holds the run_async_trampoline coroutine, executor, stop token,
     and handlers. The run_async_trampoline is allocated when the wrapper is constructed
@@ -339,14 +340,51 @@ make_trampoline(Ex, Handlers, Alloc)
     The wrapper itself should only be used from one thread. The handlers
     may be invoked from any thread where the executor schedules work.
 
+    @warning **Always construct the task as the direct argument of the
+    two-call expression `run_async(ex)(task)`.** The wrapper's constructor
+    installs the frame allocator in thread-local storage. The task's
+    `operator new` reads that thread-local state. Splitting the two calls
+    apart in any of the following ways allocates the task's coroutine
+    frame under the wrong allocator. Each does so silently, with no
+    compile error.
+    @li *Stored wrapper.* Storing the wrapper itself
+        (`auto w = run_async(ex);`) compiles fine. C++17 guaranteed copy
+        elision constructs `w` directly from the prvalue. The deleted
+        copy/move constructors are never considered. What the rvalue
+        ref-qualifier on `operator()` rejects is calling through that
+        stored lvalue: `w(my_task())` does not compile, and
+        `std::move(w)(my_task())` is required instead. The silent
+        variant is storing the *task*
+        (`auto t = my_task(); run_async(ex)(std::move(t));`): `t`'s frame
+        is allocated before `run_async(ex)` ever runs.
+    @li *Preconstructed task.* Passing an already-constructed task object
+        has the same effect as the stored-wrapper case. So does passing a
+        moved-from local, or a task returned from an earlier statement.
+        The frame exists before the allocator is installed.
+    @li *Wrapper function.* Forwarding the task through a helper that
+        itself performs the two-call pattern constructs the task as an
+        argument to the helper. It is therefore constructed before the
+        helper's body runs, and so before `run_async` runs. An example is
+        `submit(ex, my_task())`, where `submit` calls
+        `run_async(ex)(std::forward<Task>(t))` internally.
+
+    See the Frame Allocators guide
+    (`doc/modules/ROOT/pages/4.coroutines/4g.allocators.adoc`) for the full
+    C++17-evaluation-order rationale behind this constraint.
+
     @par Example
     @code
-    // Correct usage - wrapper is temporary
+    // Correct usage - wrapper is temporary, task is the direct argument
     run_async(ex)(my_task());
 
-    // Compile error - cannot call operator() on lvalue
+    // Compiles - copy elision constructs w directly from the prvalue
     auto w = run_async(ex);
-    w(my_task());  // Error: operator() requires rvalue
+    w(my_task());             // Compile error: operator() requires rvalue
+    std::move(w)(my_task());  // Compiles: w is now an rvalue
+
+    // Compiles, but WRONG - task frame allocated before run_async runs
+    auto t = my_task();
+    run_async(ex)(std::move(t));
     @endcode
 
     @see run_async
@@ -361,10 +399,10 @@ class [[nodiscard]] run_async_wrapper
 public:
     /** Construct the wrapper and install the frame allocator.
 
-        Builds the trampoline, saves the current thread-local frame
-        allocator, and installs the trampoline's resource as the new
-        thread-local allocator so that the task frame (evaluated as the
-        argument to @ref operator()) is allocated from it.
+        Builds the trampoline and saves the current thread-local frame
+        allocator. Then installs the trampoline's resource as the new
+        thread-local allocator. The task frame, evaluated as the argument
+        to @ref operator(), is therefore allocated from that resource.
 
         @param ex The executor on which the task runs.
         @param st The stop token for cooperative cancellation.
@@ -398,8 +436,8 @@ public:
     /** Restore the previously installed frame allocator.
 
         Resets the thread-local frame allocator to the value saved at
-        construction, so a stale pointer to the trampoline's resource does
-        not outlive the execution context that owns it.
+        construction. A stale pointer to the trampoline's resource
+        therefore does not outlive the execution context that owns it.
     */
     ~run_async_wrapper()
     {
@@ -407,14 +445,38 @@ public:
     }
 
     // Non-copyable, non-movable (must be used immediately)
-    run_async_wrapper(run_async_wrapper const&) = delete;
-    run_async_wrapper(run_async_wrapper&&) = delete;
-    run_async_wrapper& operator=(run_async_wrapper const&) = delete;
-    run_async_wrapper& operator=(run_async_wrapper&&) = delete;
 
-    /** Launch the task for execution.
+    /** Copy construction is disabled; the wrapper must be used immediately.
 
-        This operator accepts a task and launches it on the executor.
+        @param other The wrapper that would be copied.
+    */
+    run_async_wrapper(run_async_wrapper const& other) = delete;
+
+    /** Move construction is disabled; the wrapper must be used immediately.
+
+        @param other The wrapper that would be moved from.
+    */
+    run_async_wrapper(run_async_wrapper&& other) = delete;
+
+    /** Copy assignment is disabled; the wrapper must be used immediately.
+
+        @param other The wrapper that would be assigned from.
+
+        @return A reference to `*this`.
+    */
+    run_async_wrapper& operator=(run_async_wrapper const& other) = delete;
+
+    /** Move assignment is disabled; the wrapper must be used immediately.
+
+        @param other The wrapper that would be moved from.
+
+        @return A reference to `*this`.
+    */
+    run_async_wrapper& operator=(run_async_wrapper&& other) = delete;
+
+    /** Start the task for execution.
+
+        This operator accepts a task and starts it on the executor.
         The rvalue ref-qualifier ensures the wrapper is consumed, enforcing
         correct LIFO destruction order.
 
@@ -426,7 +488,7 @@ public:
         @tparam Task The IoRunnable type.
 
         @param t The task to execute. Ownership is transferred to the
-                 run_async_trampoline which will destroy it after completion.
+                 run_async_trampoline which destroys it after completion.
     */
     template<IoRunnable Task>
     void operator()(Task t) &&
@@ -457,7 +519,7 @@ public:
 
 // Executor only (uses default recycling allocator)
 
-/** Asynchronously launch a lazy task on the given executor.
+/** Bind an executor to produce a launcher. Invoke the launcher with a task to start it.
 
     Use this to start execution of a `task<T>` that was created lazily.
     The returned wrapper must be immediately invoked with the task;
@@ -465,13 +527,15 @@ public:
 
     Uses the default recycling frame allocator for coroutine frames.
     With no handlers, the result is discarded. An unhandled exception
-    thrown by the task calls `std::terminate`; pass an error handler to
-    receive it as an `exception_ptr`, or `co_await` the work inside a
-    coroutine if you want to catch it.
+    thrown by the task calls `std::terminate`. To catch it instead, pass
+    an error handler that receives it as an `exception_ptr`, or `co_await`
+    the work inside a coroutine.
+
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
 
     @par Thread Safety
-    The wrapper and handlers may be called from any thread where the
-    executor schedules work.
+    The wrapper itself should only be used from one thread.
 
     @par Example
     @code
@@ -483,7 +547,8 @@ public:
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex>
 [[nodiscard]] auto
@@ -497,15 +562,18 @@ run_async(Ex ex)
         mr);
 }
 
-/** Asynchronously launch a lazy task with a result handler.
+/** Bind an executor and a result handler to produce a launcher. Invoke the launcher with a task to start it.
 
     The handler `h1` is called with the task's result on success. If `h1`
     is also invocable with `std::exception_ptr`, it handles exceptions too.
     Otherwise, an unhandled exception calls `std::terminate`.
 
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
     @par Thread Safety
-    The handler may be called from any thread where the executor
-    schedules work.
+    The wrapper itself should only be used from one thread. The handlers
+    may be invoked from any thread where the executor schedules work.
 
     @par Example
     @code
@@ -527,7 +595,8 @@ run_async(Ex ex)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex, class H1>
     requires detail::RunAsyncHandler<H1>
@@ -542,14 +611,17 @@ run_async(Ex ex, H1 h1)
         mr);
 }
 
-/** Asynchronously launch a lazy task with separate result and error handlers.
+/** Bind an executor and separate result and error handlers to produce a launcher. Invoke the launcher with a task to start it.
 
     The handler `h1` is called with the task's result on success.
     The handler `h2` is called with the exception_ptr on failure.
 
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
     @par Thread Safety
-    The handlers may be called from any thread where the executor
-    schedules work.
+    The wrapper itself should only be used from one thread. The handlers
+    may be invoked from any thread where the executor schedules work.
 
     @par Example
     @code
@@ -571,7 +643,8 @@ run_async(Ex ex, H1 h1)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex, class H1, class H2>
     requires (detail::RunAsyncHandler<H1> && detail::RunAsyncHandler<H2>)
@@ -588,15 +661,17 @@ run_async(Ex ex, H1 h1, H2 h2)
 
 // Ex + stop_token
 
-/** Asynchronously launch a lazy task with stop token support.
+/** Bind an executor and a stop token to produce a launcher. Invoke the launcher with a task to start it.
 
     The stop token is propagated to the task, enabling cooperative
     cancellation. With no handlers, the result is discarded and an
     unhandled exception calls `std::terminate`.
 
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
     @par Thread Safety
-    The wrapper may be called from any thread where the executor
-    schedules work.
+    The wrapper itself should only be used from one thread.
 
     @par Example
     @code
@@ -611,7 +686,8 @@ run_async(Ex ex, H1 h1, H2 h2)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex>
 [[nodiscard]] auto
@@ -625,11 +701,18 @@ run_async(Ex ex, std::stop_token st)
         mr);
 }
 
-/** Asynchronously launch a lazy task with stop token and result handler.
+/** Bind an executor, a stop token, and a result handler to produce a launcher. Invoke the launcher with a task to start it.
 
     The stop token is propagated to the task for cooperative cancellation.
     The handler `h1` is called with the result on success, and optionally
     with exception_ptr if it accepts that type.
+
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
+    @par Thread Safety
+    The wrapper itself should only be used from one thread. The handlers
+    may be invoked from any thread where the executor schedules work.
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
@@ -638,7 +721,8 @@ run_async(Ex ex, std::stop_token st)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex, class H1>
     requires detail::RunAsyncHandler<H1>
@@ -653,10 +737,17 @@ run_async(Ex ex, std::stop_token st, H1 h1)
         mr);
 }
 
-/** Asynchronously launch a lazy task with stop token and separate handlers.
+/** Bind an executor, a stop token, and separate result and error handlers to produce a launcher. Invoke the launcher with a task to start it.
 
     The stop token is propagated to the task for cooperative cancellation.
     The handler `h1` is called on success, `h2` on failure.
+
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
+    @par Thread Safety
+    The wrapper itself should only be used from one thread. The handlers
+    may be invoked from any thread where the executor schedules work.
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
@@ -666,7 +757,8 @@ run_async(Ex ex, std::stop_token st, H1 h1)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex, class H1, class H2>
     requires (detail::RunAsyncHandler<H1> && detail::RunAsyncHandler<H2>)
@@ -683,10 +775,17 @@ run_async(Ex ex, std::stop_token st, H1 h1, H2 h2)
 
 // Ex + memory_resource*
 
-/** Asynchronously launch a lazy task with custom memory resource.
+/** Bind an executor and a memory resource to produce a launcher. Invoke the launcher with a task to start it.
 
-    The memory resource is used for coroutine frame allocation. The caller
-    is responsible for ensuring the memory resource outlives all tasks.
+    The memory resource is used for coroutine frame allocation.
+
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
+    @par Thread Safety
+    The wrapper itself should only be used from one thread.
+
+    @pre `mr` outlives every task started through the returned wrapper.
 
     @param ex The executor to execute the task on.
     @param mr The memory resource for frame allocation.
@@ -694,7 +793,8 @@ run_async(Ex ex, std::stop_token st, H1 h1, H2 h2)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex>
 [[nodiscard]] auto
@@ -707,7 +807,16 @@ run_async(Ex ex, std::pmr::memory_resource* mr)
         mr);
 }
 
-/** Asynchronously launch a lazy task with memory resource and handler.
+/** Bind an executor, a memory resource, and a result handler to produce a launcher. Invoke the launcher with a task to start it.
+
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
+    @par Thread Safety
+    The wrapper itself should only be used from one thread. The handlers
+    may be invoked from any thread where the executor schedules work.
+
+    @pre `mr` outlives every task started through the returned wrapper.
 
     @param ex The executor to execute the task on.
     @param mr The memory resource for frame allocation.
@@ -716,7 +825,8 @@ run_async(Ex ex, std::pmr::memory_resource* mr)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex, class H1>
 [[nodiscard]] auto
@@ -729,7 +839,16 @@ run_async(Ex ex, std::pmr::memory_resource* mr, H1 h1)
         mr);
 }
 
-/** Asynchronously launch a lazy task with memory resource and handlers.
+/** Bind an executor, a memory resource, and separate result and error handlers to produce a launcher. Invoke the launcher with a task to start it.
+
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
+    @par Thread Safety
+    The wrapper itself should only be used from one thread. The handlers
+    may be invoked from any thread where the executor schedules work.
+
+    @pre `mr` outlives every task started through the returned wrapper.
 
     @param ex The executor to execute the task on.
     @param mr The memory resource for frame allocation.
@@ -739,7 +858,8 @@ run_async(Ex ex, std::pmr::memory_resource* mr, H1 h1)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex, class H1, class H2>
 [[nodiscard]] auto
@@ -754,7 +874,15 @@ run_async(Ex ex, std::pmr::memory_resource* mr, H1 h1, H2 h2)
 
 // Ex + stop_token + memory_resource*
 
-/** Asynchronously launch a lazy task with stop token and memory resource.
+/** Bind an executor, a stop token, and a memory resource to produce a launcher. Invoke the launcher with a task to start it.
+
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
+    @par Thread Safety
+    The wrapper itself should only be used from one thread.
+
+    @pre `mr` outlives every task started through the returned wrapper.
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
@@ -763,7 +891,8 @@ run_async(Ex ex, std::pmr::memory_resource* mr, H1 h1, H2 h2)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex>
 [[nodiscard]] auto
@@ -776,7 +905,16 @@ run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr)
         mr);
 }
 
-/** Asynchronously launch a lazy task with stop token, memory resource, and handler.
+/** Bind an executor, a stop token, a memory resource, and a result handler to produce a launcher. Invoke the launcher with a task to start it.
+
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
+    @par Thread Safety
+    The wrapper itself should only be used from one thread. The handlers
+    may be invoked from any thread where the executor schedules work.
+
+    @pre `mr` outlives every task started through the returned wrapper.
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
@@ -786,7 +924,8 @@ run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex, class H1>
 [[nodiscard]] auto
@@ -799,7 +938,16 @@ run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr, H1 h1)
         mr);
 }
 
-/** Asynchronously launch a lazy task with stop token, memory resource, and handlers.
+/** Bind an executor, a stop token, a memory resource, and separate result and error handlers to produce a launcher. Invoke the launcher with a task to start it.
+
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
+    @par Thread Safety
+    The wrapper itself should only be used from one thread. The handlers
+    may be invoked from any thread where the executor schedules work.
+
+    @pre `mr` outlives every task started through the returned wrapper.
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
@@ -810,7 +958,8 @@ run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr, H1 h1)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex, class H1, class H2>
 [[nodiscard]] auto
@@ -825,10 +974,16 @@ run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr, H1 h1, H2 h2
 
 // Ex + standard Allocator (value type)
 
-/** Asynchronously launch a lazy task with custom allocator.
+/** Bind an executor and an allocator to produce a launcher. Invoke the launcher with a task to start it.
 
     The allocator is wrapped in a frame_memory_resource and stored in the
     run_async_trampoline, ensuring it outlives all coroutine frames.
+
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
+    @par Thread Safety
+    The wrapper itself should only be used from one thread.
 
     @param ex The executor to execute the task on.
     @param alloc The allocator for frame allocation (copied and stored).
@@ -836,7 +991,8 @@ run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr, H1 h1, H2 h2
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex, detail::Allocator Alloc>
 [[nodiscard]] auto
@@ -849,7 +1005,14 @@ run_async(Ex ex, Alloc alloc)
         std::move(alloc));
 }
 
-/** Asynchronously launch a lazy task with allocator and handler.
+/** Bind an executor, an allocator, and a result handler to produce a launcher. Invoke the launcher with a task to start it.
+
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
+    @par Thread Safety
+    The wrapper itself should only be used from one thread. The handlers
+    may be invoked from any thread where the executor schedules work.
 
     @param ex The executor to execute the task on.
     @param alloc The allocator for frame allocation (copied and stored).
@@ -858,7 +1021,8 @@ run_async(Ex ex, Alloc alloc)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex, detail::Allocator Alloc, class H1>
 [[nodiscard]] auto
@@ -871,7 +1035,14 @@ run_async(Ex ex, Alloc alloc, H1 h1)
         std::move(alloc));
 }
 
-/** Asynchronously launch a lazy task with allocator and handlers.
+/** Bind an executor, an allocator, and separate result and error handlers to produce a launcher. Invoke the launcher with a task to start it.
+
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
+    @par Thread Safety
+    The wrapper itself should only be used from one thread. The handlers
+    may be invoked from any thread where the executor schedules work.
 
     @param ex The executor to execute the task on.
     @param alloc The allocator for frame allocation (copied and stored).
@@ -881,7 +1052,8 @@ run_async(Ex ex, Alloc alloc, H1 h1)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex, detail::Allocator Alloc, class H1, class H2>
 [[nodiscard]] auto
@@ -896,7 +1068,13 @@ run_async(Ex ex, Alloc alloc, H1 h1, H2 h2)
 
 // Ex + stop_token + standard Allocator
 
-/** Asynchronously launch a lazy task with stop token and allocator.
+/** Bind an executor, a stop token, and an allocator to produce a launcher. Invoke the launcher with a task to start it.
+
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
+    @par Thread Safety
+    The wrapper itself should only be used from one thread.
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
@@ -905,7 +1083,8 @@ run_async(Ex ex, Alloc alloc, H1 h1, H2 h2)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex, detail::Allocator Alloc>
 [[nodiscard]] auto
@@ -918,7 +1097,14 @@ run_async(Ex ex, std::stop_token st, Alloc alloc)
         std::move(alloc));
 }
 
-/** Asynchronously launch a lazy task with stop token, allocator, and handler.
+/** Bind an executor, a stop token, an allocator, and a result handler to produce a launcher. Invoke the launcher with a task to start it.
+
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
+    @par Thread Safety
+    The wrapper itself should only be used from one thread. The handlers
+    may be invoked from any thread where the executor schedules work.
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
@@ -928,7 +1114,8 @@ run_async(Ex ex, std::stop_token st, Alloc alloc)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex, detail::Allocator Alloc, class H1>
 [[nodiscard]] auto
@@ -941,7 +1128,14 @@ run_async(Ex ex, std::stop_token st, Alloc alloc, H1 h1)
         std::move(alloc));
 }
 
-/** Asynchronously launch a lazy task with stop token, allocator, and handlers.
+/** Bind an executor, a stop token, an allocator, and separate result and error handlers to produce a launcher. Invoke the launcher with a task to start it.
+
+    Construct the task as the direct argument of the two-call expression
+    `run_async(ex)(task)`.
+
+    @par Thread Safety
+    The wrapper itself should only be used from one thread. The handlers
+    may be invoked from any thread where the executor schedules work.
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
@@ -952,7 +1146,8 @@ run_async(Ex ex, std::stop_token st, Alloc alloc, H1 h1)
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
     @see task
-    @see executor
+    @see Executor
+    @see run_async_wrapper
 */
 template<Executor Ex, detail::Allocator Alloc, class H1, class H2>
 [[nodiscard]] auto

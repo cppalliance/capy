@@ -47,10 +47,6 @@
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/task.hpp>
 
-#include <concepts>
-#include <coroutine>
-#include <cstddef>
-#include <string_view>
 #include <vector>
 
 #include "test_suite.hpp"
@@ -81,55 +77,6 @@ task<void> handle_client(connection& conn)
     conn.stats.requests++;
 }
 // end::handle_client[]
-
-// The page shows the requires-expression; the real concept in
-// <boost/capy/concept/executor.hpp> adds nothrow copy/move
-// constructibility, which the prose states separately.
-namespace executor_concept_sketch {
-
-template<class E>
-// tag::executor_concept[]
-concept Executor = requires(E const& ce, E const& ce2, continuation& c) {
-    // Equality comparable
-    { ce == ce2 } noexcept -> std::convertible_to<bool>;
-
-    // Owning context, returned as an lvalue reference to a type
-    // derived from execution_context
-    { ce.context() } noexcept;
-
-    // Work tracking
-    { ce.on_work_started() } noexcept;
-    { ce.on_work_finished() } noexcept;
-
-    // Scheduling
-    { ce.dispatch(c) } -> std::same_as<std::coroutine_handle<>>;
-    { ce.post(c) };
-};
-// end::executor_concept[]
-
-} // namespace executor_concept_sketch
-
-static_assert(executor_concept_sketch::Executor<
-    thread_pool::executor_type>);
-static_assert(executor_concept_sketch::Executor<
-    strand<thread_pool::executor_type>>);
-
-// Signature sketch; the real declaration is in
-// <boost/capy/ex/thread_pool.hpp>.
-namespace api_sketch {
-
-class thread_pool
-{
-public:
-    // tag::thread_pool_ctor[]
-    thread_pool(
-        std::size_t num_threads = 0,
-        std::string_view thread_name_prefix = "capy-pool-"
-    );
-    // end::thread_pool_ctor[]
-};
-
-} // namespace api_sketch
 
 struct my_executor;
 
@@ -227,7 +174,7 @@ struct executors_test
         thread_pool pool(4);
         auto ex = pool.get_executor();
 
-        // Launch independent tasks directly on the pool
+        // Start independent tasks directly on the pool
         std::vector<task<int>> tasks;
         for (int i = 0; i < 100; ++i)
             run_async(ex)(independent_task(i));

@@ -1,0 +1,157 @@
+#
+# Copyright (c) 2026 Michael Vandeberg
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/capy
+#
+
+# Capy documentation vocabulary — class (a) terms only.
+#
+# Every line is a case-insensitive regex, matched with word boundaries. `(?i)` is
+# deliberate: a case-SENSITIVE entry makes Vale synthesise an error-level Vale.Terms
+# alert on every other casing of the term, which would turn this file into a silent
+# new casing rule. Possessives ("Capy's") are handled by Vale; plurals are not, so
+# inflections are spelled out.
+#
+# ONLY genuine prose words and proper nouns belong here. A bare C++ identifier
+# sitting unbackticked in running prose is a real defect (style guide B1) and must
+# stay visible as a Vale.Spelling alert — do not add one to silence it.
+
+# --- Projects, libraries, tools, publishers -------------------------------------
+(?i)capy
+(?i)corosio
+(?i)asio
+(?i)tmc
+(?i)http
+(?i)traccc
+(?i)tcmalloc
+(?i)wxwidgets
+(?i)javadoc
+
+# --- People and cited sources ---------------------------------------------------
+(?i)carruth
+(?i)cern
+(?i)chuanqi
+(?i)dimovian
+(?i)dobb
+(?i)kohlhoff
+(?i)lakos
+(?i)nostrand
+(?i)ousterhout
+(?i)parnas
+(?i)stepanov
+(?i)yaknyam
+
+# --- Coroutine and asynchrony vocabulary (style guide C.1) ----------------------
+(?i)coroutines?
+(?i)awaitables?
+(?i)awaiters?
+(?i)wakers?
+(?i)wakeup
+(?i)resumers?
+(?i)combinators?
+(?i)async
+(?i)asynchrony
+
+# --- Types, idioms and roles named in prose -------------------------------------
+(?i)mutex(es)?
+(?i)vtables?
+(?i)typelists?
+(?i)mixins?
+(?i)serializers?
+(?i)associators?
+(?i)accessors?
+(?i)functors?
+(?i)callables?
+(?i)callees?
+(?i)requestors?
+(?i)decompressors?
+(?i)unchunkers?
+(?i)proactors?
+(?i)toolkits?
+(?i)namespaces?
+(?i)destructors?
+(?i)virtuals?
+(?i)freelists?
+(?i)allocators?
+(?i)implementors?
+(?i)pimpl
+(?i)data
+
+# --- Platform and systems terms -------------------------------------------------
+(?i)epoll
+(?i)kqueue
+(?i)io_uring
+(?i)iovec
+(?i)syscalls?
+(?i)apis?
+(?i)abis?
+(?i)cpus?
+
+# --- C++ terms used adjectivally or nominally in running prose ------------------
+(?i)const
+(?i)constness
+(?i)nullptr
+(?i)nothrow
+(?i)enum
+(?i)bool
+(?i)boolean
+(?i)lvalues?
+(?i)rvalues?
+(?i)variadic
+(?i)templated
+(?i)invocable
+(?i)arity
+(?i)config
+(?i)codegen
+(?i)devirtualization
+(?i)prefetch
+(?i)pseudocode
+(?i)subtree
+(?i)postconditions?
+
+# --- Coined adjectives and nouns the guide uses ---------------------------------
+(?i)joinable
+(?i)schedulable
+(?i)launchable
+(?i)buildable
+(?i)greppable
+(?i)greppability
+(?i)composable
+(?i)composability
+(?i)reusability
+(?i)discoverability
+(?i)levelization
+(?i)levelized
+(?i)swappable
+(?i)untyped
+(?i)unbuffered
+(?i)uncancellable
+(?i)unclamped
+(?i)uncontended
+(?i)unexecuted
+(?i)preconstructed
+(?i)walkthrough
+
+# --- Verbs and participles ------------------------------------------------------
+(?i)rethrow(s|n|ing)?
+(?i)preallocat(e|es|ed|ion)
+(?i)deallocat(e|es|ed|ion)
+(?i)dequeue[sd]?
+(?i)enqueue[sd]?
+(?i)dereferences?
+(?i)destructuring
+(?i)disambiguates?
+(?i)deregisters?
+(?i)unregisters?
+(?i)unlinks?
+(?i)downcasts?
+(?i)recompiles?
+(?i)reframed
+(?i)reinstalls?
+(?i)interop
+(?i)interoperate
+(?i)interoperation
+(?i)websocket

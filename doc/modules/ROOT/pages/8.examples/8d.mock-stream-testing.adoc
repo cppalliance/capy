@@ -1,17 +1,13 @@
 = Mock Stream Testing
+:page-mode: how-to
 
 Unit testing protocol code with mock streams and error injection.
 
-== What You Will Learn
+== What This Example Shows
 
-* Using `test::read_stream` and `test::write_stream`
-* Error injection with `fuse`
-* Synchronous testing with `run_blocking`
-
-== Prerequisites
-
-* Completed xref:8.examples/8c.buffer-composition.adoc[Buffer Composition]
-* Understanding of streams from xref:../6.streams/6b.streams.adoc[Streams]
+* Using cpp:test::read_stream[test::read_stream] and cpp:test::write_stream[test::write_stream]
+* Error injection with cpp:test::fuse[fuse]
+* Synchronous testing with cpp:test::run_blocking[run_blocking]
 
 == Source Code
 
@@ -22,10 +18,10 @@ include::example$mock-stream-testing/mock_stream_testing.cpp[tag=full]
 
 == Build
 
-[source,cmake]
+[source,cmake,role=external]
 ----
 add_executable(mock_stream_testing mock_stream_testing.cpp)
-target_link_libraries(mock_stream_testing PRIVATE capy)
+target_link_libraries(mock_stream_testing PRIVATE Boost::capy)
 ----
 
 == Walkthrough
@@ -37,7 +33,7 @@ target_link_libraries(mock_stream_testing PRIVATE capy)
 include::example$snippets/8d_mock_stream_testing.cpp[tag=mock_streams,indent=0]
 ----
 
-`test::stream` is a bidirectional mock that satisfies both `ReadStream` and `WriteStream`:
+cpp:test::stream[test::stream] is a bidirectional mock that satisfies both cpp:ReadStream[] and cpp:WriteStream[]:
 
 * Streams are obtained in connected pairs from `make_stream_pair(f)`; the shared `fuse` enables error injection
 * `provide(data)` — Supplies data for the peer's reads
@@ -51,7 +47,7 @@ include::example$snippets/8d_mock_stream_testing.cpp[tag=mock_streams,indent=0]
 include::example$mock-stream-testing/mock_stream_testing.cpp[tag=any_stream,indent=0]
 ----
 
-Use pointer construction (`&a`) so the `any_stream` wrapper references the stream end without taking ownership. This allows inspecting `b.data()` after operations.
+Use pointer construction (`&a`) so the cpp:any_stream[] wrapper references the stream end without taking ownership. This allows inspecting `b.data()` after operations.
 
 === Synchronous Testing
 
@@ -75,10 +71,9 @@ include::example$snippets/8d_mock_stream_testing.cpp[tag=fuse_armed,indent=0]
 2. Second run: error at operation 2
 3. ...and so on until all operations succeed
 
-This systematically tests all error handling paths.
-
 == Output
 
+[role=output]
 ----
 Test: happy path
   PASSED
@@ -95,7 +90,7 @@ All tests passed!
 
 1. Add a test for EOF handling (what if input doesn't end with newline?)
 2. Test with different max_read_size values
-3. Add a test for write errors using `test::write_stream`
+3. Add a test for write errors using cpp:test::write_stream[test::write_stream]
 
 == Next Steps
 

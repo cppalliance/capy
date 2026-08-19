@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -32,7 +33,7 @@
 namespace boost {
 namespace capy {
 
-/** Type-erased wrapper for any ReadStream.
+/** Dispatches `read_some` through a type-erased vtable, using preallocated awaitable storage.
 
     This class provides type erasure for any type satisfying the
     @ref ReadStream concept, enabling runtime polymorphism for
@@ -63,14 +64,15 @@ namespace capy {
     @par Example
     @code
     // Owning - takes ownership of the stream
-    any_read_stream stream(socket{ioc});
+    any_read_stream owning_stream(socket{ioc});
 
     // Reference - wraps without ownership
     socket sock(ioc);
-    any_read_stream stream(&sock);
+    any_read_stream ref_stream(&sock);
 
-    mutable_buffer buf(data, size);
-    auto [ec, n] = co_await stream.read_some(buf);
+    char data[1024];
+    mutable_buffer buf(data, sizeof(data));
+    auto [ec, n] = co_await owning_stream.read_some(buf);
     @endcode
 
     @see any_write_stream, any_stream, ReadStream
@@ -99,17 +101,29 @@ public:
 
     /** Construct a default instance.
 
-        Constructs an empty wrapper. Operations on a default-constructed
-        wrapper result in undefined behavior.
+        Constructs an empty wrapper. @ref has_value and `operator bool`
+        report the empty state; calling @ref read_some before the
+        wrapper holds a stream is undefined behavior.
     */
     any_read_stream() = default;
 
     /** Non-copyable.
 
         The awaitable cache is per-instance and cannot be shared.
+
+        @param other The wrapper that would be copied.
     */
-    any_read_stream(any_read_stream const&) = delete;
-    any_read_stream& operator=(any_read_stream const&) = delete;
+    any_read_stream(any_read_stream const& other) = delete;
+
+    /** Copy assignment is disabled.
+
+        The awaitable cache is per-instance and cannot be shared.
+
+        @param other The wrapper that would be assigned from.
+
+        @return A reference to `*this`.
+    */
+    any_read_stream& operator=(any_read_stream const& other) = delete;
 
     /** Construct by moving.
 
@@ -142,7 +156,7 @@ public:
     /** Construct by taking ownership of a ReadStream.
 
         Allocates storage and moves the stream into this wrapper.
-        The wrapper owns the stream and will destroy it.
+        The wrapper owns the stream and destroys it.
 
         @param s The stream to take ownership of.
     */
@@ -185,7 +199,7 @@ public:
     /** Initiate an asynchronous read operation.
 
         Reads data into the provided buffer sequence. The operation
-        completes when at least one byte has been read, or an error
+        completes when at least one byte is read, or an error
         occurs.
 
         @param buffers The buffer sequence to read into. Passed by
@@ -205,8 +219,11 @@ public:
 
         @par Preconditions
         The wrapper must contain a valid stream (`has_value() == true`).
-        The caller must not call this function again after a prior
-        call returned an error (including EOF).
+
+        @par After an Error
+        A subsequent call is permitted. The wrapper forwards directly
+        to the underlying stream, imposing no stricter rule than
+        @ref ReadStream.
     */
     template<MutableBufferSequence MB>
     auto

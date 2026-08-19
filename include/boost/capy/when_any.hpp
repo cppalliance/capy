@@ -542,7 +542,7 @@ make_when_any_io_homogeneous_runner(
     }
 }
 
-/** Launches all io_result-aware homogeneous runners concurrently. */
+/** Starts all io_result-aware homogeneous runners concurrently. */
 template<IoAwaitableRange Range>
 class when_any_io_homogeneous_launcher
 {
@@ -622,6 +622,62 @@ public:
     the failures is reported — either an error_code at variant index 0,
     or a child's exception rethrown.
 
+    @par Await-effects
+
+    Takes ownership of the range, creates one wrapper coroutine per
+    element, then posts every wrapper to the caller's executor. All
+    children therefore run concurrently, each awaited with the caller's
+    executor and frame allocator and with a stop token owned by this
+    operation.
+
+    Awaiting an empty range throws `std::invalid_argument` before any
+    child is started.
+
+    The first child to await-return a zero `ec` claims the win. Claiming
+    the win requests stop on the operation's own stop token, which every
+    sibling observes through the stop token it was awaited with. A child
+    that await-returns a non-zero `ec`, or that exits via an exception,
+    does not claim the win and does not request stop. The operation keeps
+    waiting for a success. A stop request on the caller's stop token is
+    also forwarded to every child.
+
+    The await completes only after every child has finished, regardless of
+    whether a win was claimed.
+
+    @par Await-returns
+    An object of type
+    `std::variant<std::error_code, std::pair<std::size_t, PayloadT>>`,
+    where `PayloadT` is the payload of one child's `io_result`.
+
+    @li Index 1 holds the winner's position in the input range paired
+        with its payload.
+    @li Index 0 holds a non-zero `error_code` when no child won, that is,
+        when every child failed. It is the `ec` of one of the failed
+        children; which one is unspecified.
+
+    A child that succeeds after the win has already been claimed
+    contributes nothing: its payload is discarded.
+
+    If no child won and the failure selected for reporting is an
+    exception rather than an `ec`, that exception is rethrown instead of
+    await-returning. The choice of child is unspecified.
+
+    @par Await-postcondition
+    Every child has finished. If at least one child await-returned a zero
+    `ec`, the result holds index 1. If producing the winner's payload
+    threw, that exception is rethrown. Otherwise the result holds index 0,
+    or a failed child's exception is rethrown.
+
+    @par Remarks
+    Supports _IoAwaitable cancellation_. A canceled child await-returns a
+    non-zero `ec` and so cannot win; if no child has already succeeded,
+    the result settles at index 0.
+
+    @par Thread Safety
+    The returned task must be awaited from a single execution context.
+    Child awaitables execute concurrently but complete through the caller's
+    executor.
+
     @param awaitables Range of io_result-returning awaitables (must
         not be empty).
 
@@ -630,11 +686,13 @@ public:
         index and payload.
 
     @throws std::invalid_argument if range is empty.
-    @throws Rethrows the winner's exception if extracting or
-        move-constructing the winning payload throws (a winner was
-        found but its result could not be produced).
-    @throws Rethrows a child's exception when all children fail and the
-        reported failure is an exception (which child is unspecified).
+
+    @par Exception Safety
+    The winner's exception is rethrown if extracting or
+    move-constructing the winning payload throws. In that case a winner
+    was found, but its result could not be produced. If all children
+    fail and the reported failure is an exception, that child's
+    exception is rethrown (which child is unspecified).
 
     @par Example
     @code
@@ -705,6 +763,56 @@ template<IoAwaitableRange R>
     Only a child returning !ec can win. Returns the winner's index
     at variant index 1, or error_code at index 0 on all-fail.
 
+    @par Await-effects
+
+    Takes ownership of the range, creates one wrapper coroutine per
+    element, then posts every wrapper to the caller's executor. All
+    children therefore run concurrently, each awaited with the caller's
+    executor and frame allocator and with a stop token owned by this
+    operation.
+
+    Awaiting an empty range throws `std::invalid_argument` before any
+    child is started.
+
+    The first child to await-return a zero `ec` claims the win. Claiming
+    the win requests stop on the operation's own stop token, which every
+    sibling observes through the stop token it was awaited with. A child
+    that await-returns a non-zero `ec`, or that exits via an exception,
+    does not claim the win and does not request stop. The operation keeps
+    waiting for a success. A stop request on the caller's stop token is
+    also forwarded to every child.
+
+    The await completes only after every child has finished, regardless of
+    whether a win was claimed.
+
+    @par Await-returns
+    An object of type `std::variant<std::error_code, std::size_t>`.
+
+    @li Index 1 holds the winner's position in the input range. The
+        children have no payloads, so nothing else is reported.
+    @li Index 0 holds a non-zero `error_code` when no child won, that is,
+        when every child failed. It is the `ec` of one of the failed
+        children; which one is unspecified.
+
+    If no child won and the failure selected for reporting is an
+    exception rather than an `ec`, that exception is rethrown instead of
+    await-returning. The choice of child is unspecified.
+
+    @par Await-postcondition
+    Every child has finished. The result holds index 1 if at least one
+    child await-returned a zero `ec`. Otherwise the result holds index 0,
+    or a failed child's exception is rethrown.
+
+    @par Remarks
+    Supports _IoAwaitable cancellation_. A canceled child await-returns a
+    non-zero `ec` and so cannot win; if no child has already succeeded,
+    the result settles at index 0.
+
+    @par Thread Safety
+    The returned task must be awaited from a single execution context.
+    Child awaitables execute concurrently but complete through the caller's
+    executor.
+
     @param awaitables Range of io_result<>-returning awaitables (must
         not be empty).
 
@@ -712,8 +820,10 @@ template<IoAwaitableRange R>
         is failure and index 1 carries the winner's index.
 
     @throws std::invalid_argument if range is empty.
-    @throws Rethrows a child's exception when all children fail and the
-        reported failure is an exception (which child is unspecified).
+
+    @par Exception Safety
+    If all children fail and the reported failure is an exception,
+    that child's exception is rethrown (which child is unspecified).
 
     @par Example
     @code
@@ -778,6 +888,58 @@ template<IoAwaitableRange R>
     Only a child returning !ec can win. Errors and exceptions do
     not claim winner status.
 
+    @par Await-effects
+
+    Creates and posts one wrapper coroutine per argument to the caller's
+    executor, in argument order. All children therefore run concurrently,
+    each awaited with the caller's executor and frame allocator and with
+    a stop token owned by this operation. The overload requires at least
+    one awaitable, so there is no empty case.
+
+    The first child to await-return a zero `ec` claims the win. Claiming
+    the win requests stop on the operation's own stop token, which every
+    sibling observes through the stop token it was awaited with. A child
+    that await-returns a non-zero `ec`, or that exits via an exception,
+    does not claim the win and does not request stop. The operation keeps
+    waiting for a success. A stop request on the caller's stop token is
+    also forwarded to every child.
+
+    The await completes only after every child has finished, regardless of
+    whether a win was claimed.
+
+    @par Await-returns
+    An object of type `std::variant<std::error_code, P1, ..., Pn>`, where
+    `Pi` is the payload of the i-th child's `io_result`.
+
+    @li Index i+1 identifies the i-th argument as the winner and holds
+        its payload.
+    @li Index 0 holds a non-zero `error_code` when no child won, that is,
+        when every child failed. It is the `ec` of one of the failed
+        children; which one is unspecified.
+
+    A child that succeeds after the win has already been claimed
+    contributes nothing: its payload is discarded.
+
+    If no child won and the failure selected for reporting is an
+    exception rather than an `ec`, that exception is rethrown instead of
+    await-returning. The choice of child is unspecified.
+
+    @par Await-postcondition
+    Every child has finished. If at least one child await-returned a zero
+    `ec`, the result holds the index of the winning child. If producing
+    the winner's payload threw, that exception is rethrown. Otherwise the
+    result holds index 0, or a failed child's exception is rethrown.
+
+    @par Remarks
+    Supports _IoAwaitable cancellation_. A canceled child await-returns a
+    non-zero `ec` and so cannot win; if no child has already succeeded,
+    the result settles at index 0.
+
+    @par Thread Safety
+    The returned task must be awaited from a single execution context.
+    Child awaitables execute concurrently but complete through the caller's
+    executor.
+
     @param as The awaitables to race. Each must satisfy @ref
         IoAwaitable and is consumed (moved-from) when `when_any`
         is awaited.
@@ -788,11 +950,12 @@ template<IoAwaitableRange R>
         an error_code from one of the failed children (unspecified
         which; no priority between errors and exceptions).
 
-    @throws Rethrows the winner's exception if extracting or
-        constructing the winning payload throws (a winner was found
-        but its result could not be produced).
-    @throws Rethrows a child's exception when all children fail and the
-        reported failure is an exception (which child is unspecified).
+    @par Exception Safety
+    The winner's exception is rethrown if extracting or constructing
+    the winning payload throws. In that case a winner was found, but
+    its result could not be produced. If all children fail and the
+    reported failure is an exception, that child's exception is
+    rethrown (which child is unspecified).
 
     @note A failing child does not cancel its siblings; `when_any`
         waits for a success or for every child to finish. To make a

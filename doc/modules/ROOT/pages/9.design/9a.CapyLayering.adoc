@@ -8,37 +8,31 @@
 //
 
 = Layered Abstractions
+:page-mode: explanation
 
 {cpp} async libraries have traditionally forced users into a single abstraction level, and every choice comes with baggage. You go with templates and you get zero overhead, full optimization, and unreadable error messages that scroll for pages. Compile times explode. You cannot hide implementation behind a compilation boundary, so you have no ABI stability. You go with virtual dispatch and you get readable code, stable ABIs, and a runtime cost that every call path pays whether it needs to or not.
 
 This is a false binary. Users need different things at different layers of their system. A protocol parser needs zero-copy buffer access and zero overhead because it runs on every byte of every message. Business logic needs readability because the person maintaining it in two years needs to understand what it does. Library boundaries need ABI stability because you do not want downstream code recompiling every time an internal detail changes.
 
-One abstraction level cannot serve all of these needs simultaneously. The insight behind Capy's architecture is that users should choose the abstraction level appropriate to each part of their code, and the library should make that choice natural rather than painful.
+The insight behind Capy's architecture is that users should choose the abstraction level appropriate to each part of their code, and the library should make that choice natural rather than painful.
 
 
 == The Three Layers
 
-Capy offers three layers. They coexist. They interoperate. Users pick the one that matches their constraints.
-
-The first layer is concepts. These are the template-based interfaces: `ReadStream`, `WriteStream`, `Stream`. Algorithms written against concepts get full optimization. The compiler sees through everything. There is no indirection, no vtable, no allocation overhead. This is what you use for hot inner loops, for protocol parsing, for any path where performance dominates:
-
-[source,cpp]
-----
-include::example$snippets/9a_capy_layering.cpp[tag=write_signature,indent=0]
-----
+The first layer is concepts. These are the template-based interfaces: cpp:ReadStream[], cpp:WriteStream[], cpp:Stream[]. Algorithms written against concepts get full optimization. There is no indirection, no vtable, no allocation overhead. This is what you use for hot inner loops, for protocol parsing, for any path where performance dominates. cpp:write[] is one example: a free function template constrained by cpp:WriteStream[] and cpp:ConstBufferSequence[].
 
 The cost is that templates propagate. Every caller sees the full implementation. Compile times grow. You cannot hide this behind a `.cpp` file.
 
-The second layer is type-erased wrappers. `any_stream`, `any_read_stream`, `any_write_stream`. These use a vtable internally, similar to `std::function` but specialized for I/O. You can write an algorithm against `any_stream&` and it compiles once, lives in a single translation unit, and works with any stream type:
+The second layer is type-erased wrappers. cpp:any_stream[], cpp:any_read_stream[], cpp:any_write_stream[]. These use a vtable internally, similar to `std::function` but specialized for I/O. You can write an algorithm against `any_stream&` and it compiles once, lives in a single translation unit, and works with any stream type:
 
 [source,cpp]
 ----
 include::example$snippets/9a_capy_layering.cpp[tag=any_stream_echo,indent=0]
 ----
 
-The cost is a virtual call per I/O operation. For operations dominated by syscalls and network latency, this cost is invisible. For tight loops over in-memory buffers, it matters.
+The cost is up to five vtable calls per I/O operation, not one per continuation -- four when the read or write completes synchronously, since `await_suspend` is skipped whenever `await_ready` returns `true`. For operations dominated by syscalls and network latency, this cost is invisible. For tight loops over in-memory buffers, it matters.
 
-The third layer is coroutine type erasure via `task<>`. This is the most powerful form of type erasure in the language. Inside a coroutine, when you write `co_await`, everything in the awaitable becomes type-erased from the perspective of the caller. The caller sees a `task<>`. The implementation is invisible. A pure virtual function returning `task<>` hides the stream type, the buffer strategy, the algorithm, the error handling - everything:
+The third layer is coroutine type erasure via cpp:task[task<>]. This is the most powerful form of type erasure in the language. Inside a coroutine, when you write `co_await`, everything in the awaitable becomes type-erased from the perspective of the caller. The caller sees a `task<>`. A pure virtual function returning `task<>` hides the stream type, the buffer strategy, the algorithm, the error handling - everything:
 
 [source,cpp]
 ----
@@ -52,32 +46,31 @@ This is the layer you use for architectural boundaries. Plugin systems. Transpor
 
 == Compilation Boundary Economics
 
-Benchmarks on Corosio gave us hard numbers on the cost of crossing a compilation boundary. The result is intuitive once you see it: the cost is proportional to the size of the coroutine.
+Benchmarks on Corosio gave us hard numbers on the cost of crossing a compilation boundary. The cost is proportional to the size of the coroutine.
 
 For small, fast coroutines - the kind that do a quick buffer manipulation and return - the overhead of virtual dispatch plus parameter marshalling is a significant percentage of total execution time. For larger operations - data transfers dominated by syscalls, protocol handshakes, connection establishment - the boundary cost vanishes into noise.
 
-This has a direct implication for how you structure code. Use concepts for tight inner operations where the work per call is small. Use type erasure at module boundaries where the work per call is large enough to absorb the overhead. The library does not make this decision for you. You make it based on your profiling data and your architecture requirements.
+Use concepts for tight inner operations where the work per call is small. Use type erasure at module boundaries where the work per call is large enough to absorb the overhead. You make that choice based on your profiling data and your architecture requirements.
 
 The user chooses where the boundary falls. Not the library.
 
 
 == Symmetric Transfer and the Pump
 
-Symmetric transfer is the mechanism that allows Corosio to match or beat ASIO callback throughput. When one coroutine completes and its continuation is ready to run, symmetric transfer reuses the same coroutine frame without allocation and bypasses the global work queue entirely. ASIO callbacks always go through the queue. Symmetric transfer skips that step.
+Symmetric transfer is the mechanism that allows Corosio to match or beat ASIO callback throughput. When one coroutine completes and its continuation is ready to run, symmetric transfer reuses the same coroutine frame without allocation and bypasses the global work queue entirely. ASIO callbacks always go through the queue.
 
-The pump mechanism extends this by allowing multiple inline completions before returning to the queue. If a chain of coroutines completes quickly, the pump lets them execute back-to-back without touching the scheduler. For throughput-sensitive workloads like HTTP servers, this is significant.
+The pump mechanism extends this by allowing multiple inline completions before returning to the queue. For throughput-sensitive workloads like HTTP servers, this is significant.
 
-The trade-off is P99 latency. While the pump is running inline completions, queued work waits. For latency-sensitive workloads, you want to return to the queue more frequently so that every piece of work gets prompt attention. The pump is configurable. You can disable it entirely for HFT-style workloads that care about tail latency, or let it ramp up for servers that care about throughput.
+The trade-off is P99 latency. While the pump is running inline completions, queued work waits. For latency-sensitive workloads, you want to return to the queue more frequently. The pump is configurable. You can disable it entirely for HFT-style workloads that care about tail latency, or let it ramp up for servers that care about throughput.
 
-The frame recycler is a per-thread cache of coroutine frames. Chain workloads that allocate and free frames in sequence benefit from this cache. Fan-out workloads that spawn many concurrent tasks can exhaust it. The `right_now` pattern addresses this for repeated invocations of the same operation: declare a stack object with a one-element frame cache, and repeated calls reuse that cache without touching the recycler at all. `when_all` could carry its own private frame cache sized to its arity, giving each child a frame from the parent's stash via a TLS hook. Every use case that you make better can make another use case worse. You have to pay attention to that which is not seen.
+The frame recycler is a per-thread cache of coroutine frames. Chain workloads that allocate and free frames in sequence benefit from this cache. Fan-out workloads that start many concurrent tasks can exhaust it. The `write_now` pattern addresses this for repeated invocations of the same operation: declare a stack object with a one-element frame cache, and repeated calls reuse that cache without touching the recycler at all. cpp:when_all[] could carry its own private frame cache sized to its arity, giving each child a frame from the parent's stash via a TLS hook. Every use case that you make better can make another use case worse. You have to pay attention to that which is not seen.
 
 
 == The Type System as Architecture
 
-The derived class pattern is the practical application of everything described above. A base class implements business logic against type-erased references. Derived classes carry concrete types and implement the operations that differ between transports.
+Derived classes carry concrete types and implement the operations that differ between transports. Each derived class lives in its own translation unit. The linker only pulls in what is used. No variant that pulls in all transport code. No enum and switch that ties everything together. The type system enforces the separation:
 
-Each derived class lives in its own translation unit. The linker only pulls in what is used. Users who need only TCP link only TCP code. Users who need SSL link the SSL translation unit. No variant that pulls in all transport code. No enum and switch that ties everything together. The type system enforces the separation:
-
+.Design sketch
 [source,cpp,role=pseudocode]
 ----
 // User who needs only plain TCP
@@ -92,19 +85,19 @@ multi_connection conn(ctx, config);
 
 This extends naturally to testing. Derive a mock connection that uses Capy's test stream with a fuse for error injection, and a mock timer for deterministic time control. The base class algorithm runs against the mock exactly as it would against a real connection. No conditional compilation, no test-only code paths in production logic, no `#ifdef TESTING`.
 
-A database library built this way can express protocol parsing with zero-copy buffer sinks for the hot path, implement connection logic against type-erased streams for maintainability, let users select TCP vs. SSL vs. Unix at the type level for linker efficiency, and test without linking OpenSSL or running a real server. The hot paths use concepts. The cold paths use virtual dispatch. The architectural boundaries use `task<>`. Every user finds the abstraction level they need.
+A database library built this way can express protocol parsing with zero-copy buffer sinks for the hot path, implement connection logic against type-erased streams for maintainability, let users select TCP vs. SSL vs. Unix at the type level for linker efficiency, and test without linking OpenSSL or running a real server. Every user finds the abstraction level they need.
 
 
 == Choosing the Right Layer
 
-The question that matters is: can a library author look at their problem and immediately see which layer to use? If the answer is yes, the design is working. If they have to think about it, something is wrong.
+The question that matters is: can a library author look at their problem and immediately see which layer to use? If they have to think about it, something is wrong.
 
-**Protocol parsing:** use the `ReadStream` and `WriteStream` concepts as template parameters. Zero overhead. Call member functions whose awaitables do all the work, with no coroutine frame allocation. The compiler optimizes everything.
+**Protocol parsing:** use the cpp:ReadStream[] and cpp:WriteStream[] concepts as template parameters. Zero overhead. Call member functions whose awaitables do all the work, with no coroutine frame allocation.
 
 **Connection management:** use concrete types like `tcp_socket`. These give you `connect()` and `shutdown()` - the operations that are transport-specific. But the concrete type is derived from `io_stream`, a class that models `capy::Stream`, so you can pass `io_stream&` to a non-template function for the business logic that sits on top of the connection.
 
-**Full transport abstraction across a library boundary:** use `any_stream`. Complete type erasure, but you lose connection management - there is no `connect()` on an `any_stream`. This means you have to carefully arrange your code so it genuinely requires a physical separation in the Lakos sense. The protocol logic and the connection logic live in separate components, and the type-erased boundary sits between them.
+**Full transport abstraction across a library boundary:** use cpp:any_stream[]. Complete type erasure, but you lose connection management - there is no `connect()` on an `any_stream`. This means you have to carefully arrange your code so it genuinely requires a physical separation in the Lakos sense. The protocol logic and the connection logic live in separate components, and the type-erased boundary sits between them.
 
-The layers compose. An algorithm written against a `ReadStream` concept can be called from inside a coroutine that is type-erased behind a `task<>`, which is dispatched through a virtual function on a base class that holds an `any_stream&`. Each layer handles its part. Nothing leaks through the boundaries unless you want it to.
+The layers compose. An algorithm written against a cpp:ReadStream[] concept can be called from inside a coroutine that is type-erased behind a cpp:task[task<>], which is dispatched through a virtual function on a base class that holds an cpp:any_stream[]`&`. Nothing leaks through the boundaries unless you want it to.
 
-This is what it means when we say the user chooses. Capy provides the tools. The user decides where the boundaries go based on what they know about their performance requirements, their compilation budget, and their architecture. The library does not impose a single answer because there is not one.
+Capy provides the tools. The user decides where the boundaries go based on what they know about their performance requirements, their compilation budget, and their architecture. The library does not impose a single answer because there is not one.

@@ -1,75 +1,11 @@
 ﻿= Frame Allocators
-
-This section explains how coroutine frames are allocated and how to customize allocation for performance.
-
-== Prerequisites
-
-* Completed xref:4.coroutines/4f.composition.adoc[Concurrent Composition]
-* Understanding of coroutine frame allocation from xref:../2.cpp20-coroutines/2d.advanced.adoc[{cpp}20 Coroutines Tutorial]
-
-== The Timing Constraint
-
-Coroutine frame allocation has a unique constraint: memory must be allocated *before* the coroutine body begins executing. The standard {cpp} mechanism—promise type's `operator new`—is called before the promise is constructed.
-
-This creates a challenge: how can a coroutine use a custom allocator when the allocator might be passed as a parameter, which is stored *in* the frame?
-
-== Thread-Local Propagation
-
-Capy solves this with thread-local propagation:
-
-1. Before evaluating the task argument, `run_async` sets a thread-local allocator
-2. The task's `operator new` reads this thread-local allocator
-3. The task stores the allocator in its promise for child propagation
-
-This is why `run_async` uses two-call syntax:
-
-[source,cpp]
-----
-include::example$snippets/4g_allocators.cpp[tag=two_call,indent=0]
-----
-
-== The Window
-
-The "window" is the interval between setting the thread-local allocator and the coroutine's first suspension point. During this window:
-
-* The task is allocated using the TLS allocator
-* The task captures the TLS allocator in its promise
-* Child tasks inherit the allocator
-
-After the window closes (at the first suspension), the TLS allocator may be restored to a previous value. The task retains its captured allocator regardless.
-
-== TLS Preservation
-
-Between a coroutine's `await_resume` (which sets TLS to the correct allocator) and the next child coroutine invocation (whose `operator new` reads TLS), arbitrary user code runs. If that code resumes a coroutine from a different chain on the same thread -- by calling `.resume()` directly, pumping a completion queue, or running nested dispatch -- the other coroutine's `await_resume` overwrites TLS with its own allocator. The original coroutine's next child would then allocate from the wrong resource.
-
-To prevent this, any code that calls `.resume()` on a coroutine handle must use `safe_resume` from `<boost/capy/ex/frame_allocator.hpp>`:
-
-[source,cpp]
-----
-include::example$snippets/4g_allocators.cpp[tag=safe_resume,indent=0]
-----
-
-`safe_resume` saves the current thread-local allocator, calls `h.resume()`, then restores the saved value. This makes TLS behave like a stack: nested resumes cannot spoil the outer value. All of Capy's built-in executors (`thread_pool`, strands, `blocking_context`) use `safe_resume` internally. Custom executor event loops must do the same -- see xref:8.examples/8n.custom-executor.adoc[Custom Executor] for an example.
-
-== Custom Allocator Requirements
-
-Custom allocators must meet the usual {cpp} allocator requirements, or be a `std::pmr::memory_resource*`. The library does not expose a separate public concept for them; a value-type allocator works as a frame allocator when it provides, illustratively:
-
-[source,cpp,role=pseudocode]
-----
-// Illustrative requirements — not a named public concept:
-typename A::value_type;
-a.allocate(n)        // -> A::value_type*
-a.deallocate(p, n);
-----
-
-In practice, any standard allocator works.
+:page-mode: explanation
 
 == Using Custom Allocators
 
 === With run_async
 
-Pass an allocator to `run_async`:
+Pass an allocator to cpp:run_async[]:
 
 [source,cpp]
 ----
@@ -85,36 +21,49 @@ include::example$snippets/4g_allocators.cpp[tag=run_async_memory_resource,indent
 
 === Default Allocator
 
-When no allocator is specified, `run_async` uses the execution context's default frame allocator, typically a recycling allocator optimized for coroutine frame sizes.
+When no allocator is specified, cpp:run_async[] uses the execution context's default frame allocator, typically a recycling allocator optimized for coroutine frame sizes.
+
+== Custom Allocator Requirements
+
+Custom allocators must meet the usual {cpp} allocator requirements, or be a `std::pmr::memory_resource*`. The library does not expose a separate public concept for them; a value-type allocator works as a frame allocator when it provides, illustratively:
+
+.Illustrative requirements - not a named concept
+[source,cpp,role=pseudocode]
+----
+typename A::value_type;
+a.allocate(n)        // -> A::value_type*
+a.deallocate(p, n);
+----
 
 == Recycling Allocator
 
-Capy provides `recycling_memory_resource`, a memory resource optimized for coroutine frames:
+Capy provides cpp:recycling_memory_resource[], a memory resource optimized for coroutine frames:
 
 * Maintains freelists by size class
 * Reuses recently freed blocks (cache-friendly)
 * Falls back to upstream allocator for new sizes
 
-This allocator is used by default for `thread_pool` and other execution contexts.
+This allocator is used by default for cpp:thread_pool[] and other execution contexts.
 
-NOTE: `recycling_memory_resource` honors only the default new alignment (`__STDCPP_DEFAULT_NEW_ALIGNMENT__`, typically `alignof(std::max_align_t)`). The alignment argument passed to `do_allocate`/`do_deallocate` is ignored, so over-aligned requests are not satisfied. This is sufficient for coroutine frames but means the resource is not a drop-in replacement where over-aligned allocations are required.
+NOTE: cpp:recycling_memory_resource[] honors only the default new alignment (`__STDCPP_DEFAULT_NEW_ALIGNMENT__`, typically `alignof(std::max_align_t)`). The alignment argument passed to cpp:recycling_memory_resource::do_allocate[do_allocate]/cpp:recycling_memory_resource::do_deallocate[do_deallocate] is ignored, so over-aligned requests are not satisfied. This is sufficient for coroutine frames but means the resource is not a drop-in replacement where over-aligned allocations are required.
 
-== Frame Allocator Mixin
+=== Observing Reuse
 
-Most users never need to allocate coroutine frames manually -- `task<T>` and the built-in awaitable types already participate in TLS frame allocation. When you write your own coroutine promise type and want it to use the same fast path, inherit from `frame_alloc_mixin`:
+This `memory_resource` pools each freed block by size and counts how many allocations come from the heap versus a recycled block:
 
 [source,cpp]
 ----
-include::example$snippets/4g_allocators.cpp[tag=frame_alloc_mixin]
+include::example$snippets/4g_allocators.cpp[tag=recycling_observe_resource,indent=0]
 ----
 
-`frame_alloc_mixin` (in `<boost/capy/ex/frame_alloc_mixin.hpp>`) supplies `operator new` and `operator delete` that:
+Run the same task eight times through it, one run at a time:
 
-* Read the thread-local frame allocator set by `run_async` (falling back to `std::pmr::get_default_resource()` when none is set).
-* Bypass virtual dispatch when that allocator is the default recycling memory resource.
-* Store the resolved allocator pointer at the tail of each frame, so deallocation uses the correct resource even if the thread-local allocator has since changed.
+[source,cpp]
+----
+include::example$snippets/4g_allocators.cpp[tag=recycling_observe,indent=0]
+----
 
-This is the same strategy used internally by `io_awaitable_promise_base`. Use the mixin directly when your promise type does not need the full environment and continuation support that `io_awaitable_promise_base` provides. The allocation fast path uses thread-local storage and needs no synchronization; the global pool fallback is mutex-protected.
+The first run finds an empty pool and takes its coroutine frames from the heap. Each `pool.join()` returns those frames to the resource, so the next cpp:run_async[] call reuses them. Once the pool is warm, the upstream count stops climbing while the task keeps running -- the seven warm runs allocate nothing new. cpp:recycling_memory_resource[] does the same thing with size-class freelists and a lock-free thread-local cache.
 
 == HALO Optimization
 
@@ -124,7 +73,7 @@ This is the same strategy used internally by `io_awaitable_promise_base`. Use th
 * The frame size is known at compile time
 * Optimization is enabled
 
-Capy's `task<T>` uses the `[[clang::coro_await_elidable]]` attribute (when available) to enable HALO:
+Capy's cpp:task[task<T>] uses the `+[[clang::coro_await_elidable]]+` attribute (when available) to enable HALO:
 
 [source,cpp]
 ----
@@ -156,7 +105,7 @@ For most applications, the default recycling allocator provides good performance
 
 === Consider Memory Resources for Batched Work
 
-When launching many short-lived tasks together, a monotonic buffer resource can be efficient:
+When starting many short-lived tasks together, a monotonic buffer resource can be efficient:
 
 [source,cpp]
 ----
@@ -165,9 +114,9 @@ include::example$snippets/4g_allocators.cpp[tag=batch_allocator]
 
 === Scope Variables to Reduce Frame Size
 
-Compilers use declaration scope (braces) to decide which variables cross suspend points and must live in the coroutine frame. Variables declared in an outer scope remain in the frame even after their last use, as long as a `co_await` follows within the same scope.
+Clang decides frame layout after optimization, so declaration scope controls what it keeps. A variable whose scope spans a `co_await` stays in the frame until that scope ends.
 
-Wrapping buffer usage in explicit braces can dramatically reduce frame size:
+Wrapping buffer usage in explicit braces can therefore cut frame size sharply:
 
 [source,cpp]
 ----
@@ -176,7 +125,7 @@ include::example$snippets/4g_allocators.cpp[tag=frame_scope_bad]
 include::example$snippets/4g_allocators.cpp[tag=frame_scope_good]
 ----
 
-This technique also enables the compiler to *overlap* variables in the frame. When two variables have completely non-overlapping lifetimes (in separate scoped blocks), the compiler can reuse the same frame memory for both — even on Clang:
+The same technique lets Clang *overlap* two variables. When their lifetimes cannot coexist, both can occupy one frame offset:
 
 [source,cpp]
 ----
@@ -185,7 +134,31 @@ include::example$snippets/4g_allocators.cpp[tag=pipeline_overlap_bad]
 include::example$snippets/4g_allocators.cpp[tag=pipeline_overlap_good]
 ----
 
-In the second version, `read_buf` and `write_buf` never coexist, so the compiler can place them at the same frame offset — halving the frame's buffer footprint. This optimization applies to any variables with non-overlapping lifetimes, not just arrays.
+In the second version, `read_buf` and `write_buf` never coexist, so they can share storage. This applies to any variables with non-overlapping lifetimes, not just arrays.
+
+[IMPORTANT]
+====
+*Both techniques are Clang optimizations, and both need `-O1` or higher.* GCC sizes the frame in its frontend, so neither one changes anything there.
+
+Frame bytes for the four coroutines above, reported by the promise's `operator new` with 4 KB buffers:
+
+[cols="2,1,1,1"]
+|===
+| Pattern | Clang 22 `-O2` | Clang 22 `-O0` | GCC 16 `-O0` and `-O2`
+
+| Scoping: outer buffer, then braced
+| 4128 -> *32*
+| 4128 -> 4128
+| 4136 -> 4136
+
+| Overlap: shared scope, then separate scopes
+| 8224 -> *4128*
+| 8224 -> 8224
+| 8224 -> 8224
+|===
+
+On GCC, scoping does not shrink the frame. Keep large buffers out of the coroutine instead: pass them in by reference, or allocate them outside the frame.
+====
 
 === GCC vs Clang Frame Sizes
 
@@ -196,28 +169,99 @@ GCC and Clang use fundamentally different strategies for coroutine frame layout:
 * **Clang** performs frame layout after middle-end optimizations. Dead variables, unused temporaries, and constant-folded intermediates are eliminated before the frame is sized.
 * **GCC** performs frame layout in the frontend, before optimizations. Every local variable whose scope spans a suspend point ends up in the frame, even if optimizations would later prove it dead.
 
-The practical consequence is that GCC coroutine frames are often 5-10x larger than Clang's for the same source code. In one benchmark, the same coroutine produced a 24-byte frame on Clang and a 16,032-byte frame on GCC.
+How large the gap gets depends on how much the optimizer can discard. Without optimization the two are comparable, as the table above shows. With optimization enabled, Clang's frames can be smaller by an order of magnitude or more. The cited article reports a coroutine whose frame was 24 bytes on Clang against 16,032 bytes on GCC.
 
-For production coroutine workloads, Clang currently produces substantially better code. If you must use GCC, pay extra attention to variable scoping (above) and consider supplying a custom `memory_resource` with larger block sizes, since frames above 2048 bytes bypass the default recycling allocator's pooling.
+For production coroutine workloads, Clang currently produces substantially better code. On GCC, do not rely on scoping; keep large buffers outside the frame, and consider a custom `memory_resource` with larger block sizes. Frames above 2048 bytes bypass the default recycling allocator's pooling.
 
 === Profile Before Optimizing
 
 Coroutine frame allocation is rarely the bottleneck. Profile your application before investing in custom allocators.
 
-== Reference
 
-[cols="1,3"]
-|===
-| Header | Description
+== How Frame Allocation Works
 
-| `<boost/capy/ex/frame_allocator.hpp>`
-| Frame allocator concept and utilities
+The three sections below are the mechanism behind everything above. You do not need them to use a custom allocator, but you do need them to write an executor or a promise type.
 
-| `<boost/capy/ex/frame_alloc_mixin.hpp>`
-| Mixin base for promise types that use the TLS frame allocator
+[#timing-constraint]
+=== The Timing Constraint
 
-| `<boost/capy/ex/recycling_memory_resource.hpp>`
-| Default recycling allocator implementation
-|===
+Coroutine frame allocation has a unique constraint: memory must be allocated *before* the coroutine body begins executing. The standard {cpp} mechanism—promise type's `operator new`—is called before the promise is constructed.
 
-You have now learned how coroutine frame allocation works and how to customize it. Continue to xref:4.coroutines/4h.lambda-captures.adoc[Lambda Coroutine Captures] to learn about a critical pitfall with lambda coroutines.
+How can a coroutine use a custom allocator when the allocator might be passed as a parameter, which is stored *in* the frame?
+
+[#two-call-rationale]
+=== Thread-Local Propagation
+
+Capy solves this with thread-local propagation:
+
+1. Before evaluating the task argument, cpp:run_async[] sets a thread-local allocator
+2. The task's `operator new` reads this thread-local allocator
+3. The task stores the allocator in its promise for child propagation
+
+This is why cpp:run_async[] uses two-call syntax:
+
+[source,cpp]
+----
+include::example$snippets/4g_allocators.cpp[tag=two_call,indent=0]
+----
+
+Three patterns split those two calls apart, and two of them do it without any
+diagnostic. xref:4.coroutines/4b.launching.adoc[Starting Coroutines] lists all
+three.
+
+=== The Window
+
+The "window" is the interval between setting the thread-local allocator and the coroutine's first suspension point. During this window:
+
+* The task is allocated using the TLS allocator
+* The task captures the TLS allocator in its promise
+* Child tasks inherit the allocator
+
+After the window closes (at the first suspension), the TLS allocator may be restored to a previous value. The task retains its captured allocator regardless.
+
+=== TLS Preservation
+
+Between a coroutine's `await_resume` (which sets TLS to the correct allocator) and the next child coroutine invocation (whose `operator new` reads TLS), arbitrary user code runs. That code can call `.resume()` directly, pump a completion queue, or run nested dispatch. If it resumes a coroutine from a different chain on the same thread, the other coroutine's `await_resume` overwrites TLS with its own allocator. The original coroutine's next child would then allocate from the wrong resource.
+
+To prevent this, any code that calls `.resume()` on a coroutine handle must use cpp:safe_resume[] from `<boost/capy/ex/frame_allocator.hpp>`:
+
+[source,cpp]
+----
+include::example$snippets/4g_allocators.cpp[tag=safe_resume,indent=0]
+----
+
+cpp:safe_resume[] saves the current thread-local allocator, calls `h.resume()`, then restores the saved value. This makes TLS behave like a stack: nested resumes cannot spoil the outer value. All of Capy's built-in executors (cpp:thread_pool[], strands, cpp:test::blocking_context[blocking_context]) use `safe_resume` internally. Custom executor event loops must do the same -- see xref:8.examples/8n.custom-executor.adoc[Custom Executor] for an example.
+
+[NOTE]
+====
+cpp:safe_resume[]'s implementation:
+
+[source,cpp]
+----
+include::example$snippets/9k_executor.cpp[tag=safe_resume]
+----
+
+The cost is two TLS accesses (one read, one write) per `.resume()` call, negligible compared to the cost of resuming a coroutine.
+
+Two `.resume()` call sites intentionally do _not_ use cpp:safe_resume[]:
+
+* **`symmetric_transfer`** (MSVC workaround). The calling coroutine is about to suspend unconditionally. When it later resumes, `await_resume` restores TLS from the promise's stored environment. Save/restore would add overhead with no benefit.
+* **`run_async_wrapper::operator()`**. TLS is already saved in the wrapper's constructor and restored in its destructor, which bracket the entire task lifetime.
+====
+
+== Frame Allocator Mixin
+
+Most users never need to allocate coroutine frames manually -- cpp:task[task<T>] and the built-in awaitable types already participate in TLS frame allocation. When you write your own coroutine promise type and want it to use the same fast path, inherit from cpp:frame_alloc_mixin[]:
+
+[source,cpp]
+----
+include::example$snippets/4g_allocators.cpp[tag=frame_alloc_mixin]
+----
+
+cpp:frame_alloc_mixin[] (in `<boost/capy/ex/frame_alloc_mixin.hpp>`) supplies `operator new` and `operator delete` that:
+
+* Read the thread-local frame allocator set by cpp:run_async[] (falling back to `std::pmr::get_default_resource()` when none is set).
+* Bypass virtual dispatch when that allocator is the default recycling memory resource.
+* Store the resolved allocator pointer at the tail of each frame, so deallocation uses the correct resource even if the thread-local allocator has since changed.
+
+This is the same strategy used internally by cpp:io_awaitable_promise_base[]. Use the mixin directly when your promise type does not need the full environment and continuation support that `io_awaitable_promise_base` provides. The allocation fast path uses thread-local storage and needs no synchronization; the global pool fallback is mutex-protected.

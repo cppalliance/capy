@@ -76,9 +76,10 @@ struct frame_alloc_mixin
 
         @return A pointer to storage for the frame.
 
-        @throws Propagates any exception thrown by the underlying
-        memory resource's `allocate` (for example `std::bad_alloc`
-        from `::operator new`).
+        @par Exception Safety
+        Propagates any exception thrown by the underlying memory
+        resource's `allocate`, for example `std::bad_alloc` from
+        `::operator new`.
     */
     static void* operator new(std::size_t size)
     {
@@ -104,6 +105,12 @@ struct frame_alloc_mixin
         Reads the allocator pointer stored at the end of the frame
         to ensure correct deallocation regardless of current TLS.
         Bypasses virtual dispatch for the recycling allocator.
+
+        @param ptr The frame storage returned by `operator new`.
+
+        @param size The size, in bytes, that was passed to `operator new`.
+        The allocator pointer is read from `ptr + size`, which is where
+        `operator new` wrote it, so this value must match.
     */
     static void operator delete(void* ptr, std::size_t size) noexcept
     {

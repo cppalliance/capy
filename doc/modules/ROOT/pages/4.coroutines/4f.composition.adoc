@@ -1,11 +1,9 @@
 = Concurrent Composition
+:page-mode: how-to
 
-This section explains how to run multiple tasks concurrently using `when_all` and `when_any`.
+Headers: `<boost/capy/when_all.hpp>` and `<boost/capy/when_any.hpp>`. cpp:async_waker[] on this page is `<boost/capy/ex/async_waker.hpp>`.
 
-== Prerequisites
-
-* Completed xref:4.coroutines/4e.cancellation.adoc[Stop Tokens and Cancellation]
-* Understanding of stop token propagation
+Both combinators take cpp:io_task[] children and return their results as a single cpp:io_result[]. If those two names are new, read xref:4.coroutines/4a.tasks.adoc#io-result-and-io-task[Reporting Errors] first -- everything below is expressed in them.
 
 == Overview
 
@@ -25,7 +23,7 @@ include::example$snippets/4f_composition.cpp[tag=concurrent,indent=0]
 
 == when_all: Wait for All Tasks
 
-`when_all` launches multiple `io_task` children concurrently and waits for all of them to complete. It returns `task<io_result<R1, R2, ..., Rn>>`, a single `ec` plus the flattened payloads:
+cpp:when_all[] starts multiple cpp:io_task[] children concurrently and waits for all of them to complete. It returns cpp:task[task]`<io_result<R1, R2, ..., Rn>>`, a single `ec` plus the flattened payloads:
 
 [source,cpp]
 ----
@@ -34,18 +32,18 @@ include::example$snippets/4f_composition.cpp[tag=when_all_basic,indent=0]
 
 === Result Type
 
-`when_all` returns `io_result<R1, ..., Rn>` where each `Ri` is the child's payload flattened: `io_result<T>` contributes `T`, `io_result<>` contributes `tuple<>`. Check `ec` first; values are only meaningful when `!ec`.
+cpp:when_all[] returns cpp:io_result[io_result]`<R1, ..., Rn>` where each `Ri` is the child's payload flattened: `io_result<T>` contributes `T`, `io_result<>` contributes `tuple<>`. Check `ec` first; values are only meaningful when `!ec`.
 
 === Void io_tasks
 
-`io_task<>` children contribute `tuple<>` to the result:
+cpp:io_task[io_task<>] children contribute `tuple<>` to the result:
 
 [source,cpp]
 ----
 include::example$snippets/4f_composition.cpp[tag=when_all_void_mix,indent=0]
 ----
 
-When all children are `io_task<>`, just check the error code:
+When all children are cpp:io_task[io_task<>], just check the error code:
 
 [source,cpp]
 ----
@@ -54,11 +52,11 @@ include::example$snippets/4f_composition.cpp[tag=when_all_all_void,indent=0]
 
 === Error Handling
 
-I/O errors are reported through the `ec` field of the `io_result`. When any child returns a non-zero `ec`:
+I/O errors are reported through the error code that leads the cpp:io_result[io_result]. When any child returns a non-zero error code:
 
 1. Stop is requested for sibling tasks
 2. All tasks complete (or respond to stop)
-3. The first `ec` (in completion order, not input order) is propagated in the outer `io_result`
+3. The first `ec` (in completion order, not input order) is propagated in the outer cpp:io_result[io_result]
 
 [source,cpp]
 ----
@@ -74,7 +72,7 @@ include::example$snippets/4f_composition.cpp[tag=when_all_exception,indent=0]
 
 === Stop Propagation
 
-When one task fails, `when_all` requests stop for its siblings. Well-behaved tasks should check their stop token and exit promptly:
+Well-behaved tasks should check their stop token and exit promptly:
 
 [source,cpp]
 ----
@@ -83,26 +81,26 @@ include::example$snippets/4f_composition.cpp[tag=stop_propagation,indent=0]
 
 == when_any: First-to-Succeed Wins
 
-`when_any` launches multiple `io_task` children concurrently and returns when the first one *succeeds* (`!ec`):
+cpp:when_any[] starts multiple cpp:io_task[] children concurrently and returns when the first one *succeeds* (`!ec`):
 
 [source,cpp]
 ----
 include::example$snippets/4f_composition.cpp[tag=when_any_basic,indent=0]
 ----
 
-The result is a `variant` with `error_code` at index 0 (failure/no winner) and one alternative per input task at indices 1..N. Only tasks returning `!ec` can win; errors and exceptions do not count as winning. When a winner is found, stop is requested for all siblings. All tasks complete before `when_any` returns.
+The result is a `variant` with `error_code` at index 0 (failure/no winner) and one alternative per input task at indices 1..N. When a winner is found, stop is requested for all siblings. All tasks complete before cpp:when_any[] returns.
 
-When every task fails, `when_any` reports a failure, but *which* one is unspecified: the result either carries an `error_code` at index 0 or rethrows one of the children's exceptions. Unlike `when_all`, there is no priority between error codes and exceptions, and no guarantee about which task's failure surfaces (including no guarantee that it is the first or last to complete). Do not rely on receiving the failure from any particular task.
+When every task fails, cpp:when_any[] reports a failure, but *which* one is unspecified. The result either carries an `error_code` at index 0 or rethrows one of the children's exceptions. Unlike cpp:when_all[], there is no priority between error codes and exceptions. In particular, there is no guarantee that it is the first or last to complete.
 
 === Errors Do Not Win (wait_for_one_success)
 
-A child that returns a non-zero `ec` (or throws) does *not* win, and it does *not* cancel its siblings. `when_any` keeps waiting until some child succeeds or until every child has finished. Only when *all* children fail does the result settle at index 0, holding an `error_code`.
+A child that returns a non-zero `ec` (or throws) does *not* win, and it does *not* cancel its siblings. cpp:when_any[] keeps waiting until some child succeeds or until every child has finished. Only when *all* children fail does the result settle at index 0, holding an `error_code`.
 
 If you need "complete on the first child to *finish*, success or error," that behavior is opt-in — wrap the child as shown below.
 
 === Treating an Error as a Win
 
-To make a child win on an error, wrap it so the error becomes a success before `when_any` sees it.
+To make a child win on an error, wrap it so the error becomes a success before cpp:when_any[] sees it.
 
 The first pattern translates a specific, benign error into success. Other errors propagate unchanged, so they still do not win:
 
@@ -138,9 +136,22 @@ Process items in parallel, then combine results using the range overload:
 include::example$snippets/4f_composition.cpp[tag=fan_out,indent=0]
 ----
 
+[NOTE]
+====
+`process_item` takes its item by value. The tasks it returns are collected in a
+vector and awaited later. A reference parameter would be read long after the
+loop that bound it.
+
+In the snippet above nothing dangles: `items` outlives the cpp:when_all[]. The
+hazard is what a caller could do -- passing a temporary would leave the stored
+task holding a reference to it. Awaiting a task immediately, as `read_all` on
+xref:5.buffers/5a.buffers.adoc[Buffer Sequences] does, is the case where a
+reference parameter is safe.
+====
+
 === Racing a Deadline
 
-`when_any` is the tool for expressing a deadline race directly. Two waker waits, one completed by the operation itself, the other by whatever plays the clock, race as ordinary `when_any` children:
+cpp:when_any[] is the tool for expressing a deadline race directly. Two waker waits, one completed by the operation itself, the other by whatever plays the clock, race as ordinary `when_any` children:
 
 [source,cpp]
 ----
@@ -159,7 +170,7 @@ For timed I/O against a socket, prefer Corosio's own timed operations: they sche
 
 === Task Storage
 
-`when_all` stores all tasks in its coroutine frame. Tasks are moved from the arguments, so the original task objects become empty after the call.
+cpp:when_all[] stores all tasks in its coroutine frame. Tasks are moved from the arguments, so the original task objects become empty after the call.
 
 === Completion Tracking
 
@@ -169,27 +180,9 @@ A shared atomic counter tracks how many tasks remain. Each task completion decre
 
 Each child task is wrapped in a "runner" coroutine that:
 
-1. Receives context (executor, stop token) from `when_all`
+1. Receives context (executor, stop token) from cpp:when_all[]
 2. Awaits the child task
 3. Stores the result in shared state
 4. Signals completion
 
 This design ensures proper context propagation to all children.
-
-== Reference
-
-[cols="1,3"]
-|===
-| Header | Description
-
-| `<boost/capy/when_all.hpp>`
-| Concurrent composition with when_all
-
-| `<boost/capy/when_any.hpp>`
-| First-completion racing with when_any
-
-| `<boost/capy/ex/async_waker.hpp>`
-| Single-waiter notification point for deadlines and other external events
-|===
-
-You have now learned how to compose tasks concurrently with `when_all` and `when_any`. In the next section, you will learn about frame allocators for customizing coroutine memory allocation.

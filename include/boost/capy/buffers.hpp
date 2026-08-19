@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -50,15 +51,33 @@ public:
     /// Construct an empty buffer.
     mutable_buffer() = default;
 
-    /// Construct a copy.
+    /** Construct a copy.
+
+        @param other The buffer to copy.
+    */
     mutable_buffer(
-        mutable_buffer const&) = default;
+        mutable_buffer const& other) = default;
 
-    /// Assign by copying.
+    /** Assign by copying.
+
+        @param other The buffer to copy.
+
+        @return A reference to `*this`.
+    */
     mutable_buffer& operator=(
-        mutable_buffer const&) = default;
+        mutable_buffer const& other) = default;
 
-    /// Construct from pointer and size.
+    /** Construct from a pointer and size.
+
+        Takes `void*` so a pointer to any object type binds without a
+        cast, since the buffer represents a raw, untyped writable
+        region. Stored internally as `unsigned char*` for byte-wise
+        pointer arithmetic (see `operator+=`).
+
+        @param data A pointer to the first byte of the region.
+
+        @param size The size of the region, in bytes.
+    */
     constexpr mutable_buffer(
         void* data, std::size_t size) noexcept
         : p_(static_cast<unsigned char*>(data))
@@ -66,13 +85,22 @@ public:
     {
     }
 
-    /// Return a pointer to the memory region.
+    /** Return a pointer to the memory region.
+
+        Returns `void*`, symmetric with the constructor, so the
+        caller can reinterpret the raw region as whatever type it needs.
+
+        @return A pointer to the first byte of the region.
+    */
     constexpr void* data() const noexcept
     {
         return p_;
     }
 
-    /// Return the size in bytes.
+    /** Return the size in bytes.
+
+        @return The size of the region, in bytes.
+    */
     constexpr std::size_t size() const noexcept
     {
         return n_;
@@ -81,6 +109,8 @@ public:
     /** Advance the buffer start, shrinking the region.
 
         @param n Bytes to skip. Clamped to `size()`.
+
+        @return A reference to `*this`.
     */
     mutable_buffer&
     operator+=(std::size_t n) noexcept
@@ -111,14 +141,32 @@ public:
     /// Construct an empty buffer.
     const_buffer() = default;
 
-    /// Construct a copy.
-    const_buffer(const_buffer const&) = default;
+    /** Construct a copy.
 
-    /// Assign by copying.
+        @param other The buffer to copy.
+    */
+    const_buffer(const_buffer const& other) = default;
+
+    /** Assign by copying.
+
+        @param other The buffer to copy.
+
+        @return A reference to `*this`.
+    */
     const_buffer& operator=(
         const_buffer const& other) = default;
 
-    /// Construct from pointer and size.
+    /** Construct from a pointer and size.
+
+        Takes `void const*` so a pointer to any object type binds
+        without a cast, since the buffer represents a raw, untyped
+        read-only region. Stored internally as `unsigned char const*`
+        for byte-wise pointer arithmetic (see `operator+=`).
+
+        @param data A pointer to the first byte of the region.
+
+        @param size The size of the region, in bytes.
+    */
     constexpr const_buffer(
         void const* data, std::size_t size) noexcept
         : p_(static_cast<unsigned char const*>(data))
@@ -126,7 +174,10 @@ public:
     {
     }
 
-    /// Construct from mutable_buffer.
+    /** Construct from mutable_buffer.
+
+        @param b The writable buffer whose region is referenced.
+    */
     constexpr const_buffer(
         mutable_buffer const& b) noexcept
         : p_(static_cast<unsigned char const*>(b.data()))
@@ -134,13 +185,22 @@ public:
     {
     }
 
-    /// Return a pointer to the memory region.
+    /** Return a pointer to the memory region.
+
+        Returns `void const*`, symmetric with the constructor, so the
+        caller can reinterpret the raw region as whatever type it needs.
+
+        @return A pointer to the first byte of the region.
+    */
     constexpr void const* data() const noexcept
     {
         return p_;
     }
 
-    /// Return the size in bytes.
+    /** Return the size in bytes.
+
+        @return The size of the region, in bytes.
+    */
     constexpr std::size_t size() const noexcept
     {
         return n_;
@@ -149,6 +209,8 @@ public:
     /** Advance the buffer start, shrinking the region.
 
         @param n Bytes to skip. Clamped to `size()`.
+
+        @return A reference to `*this`.
     */
     const_buffer&
     operator+=(std::size_t n) noexcept
@@ -161,7 +223,7 @@ public:
     }
 };
 
-/** Concept for sequences of read-only buffer regions.
+/** Requires a type to convert to `const_buffer`, or be a range of such buffers.
 
     A type satisfies `ConstBufferSequence` if it represents one or more
     contiguous memory regions that can be read. This includes single
@@ -179,12 +241,16 @@ concept ConstBufferSequence =
         std::ranges::bidirectional_range<T> &&
         std::is_convertible_v<std::ranges::range_value_t<T>, const_buffer>);
 
-/** Concept for sequences of writable buffer regions.
+/** Requires a type to convert to `mutable_buffer`, or be a range of such buffers.
 
     A type satisfies `MutableBufferSequence` if it represents one or more
     contiguous memory regions that can be written. This includes single
     buffers (convertible to `mutable_buffer`) and ranges of buffers.
-    Every `MutableBufferSequence` also satisfies `ConstBufferSequence`.
+
+    This does not imply `ConstBufferSequence`. A type reaching
+    `mutable_buffer` through its own conversion operator would need a
+    second conversion, to `const_buffer`. An implicit conversion
+    sequence allows only one user-defined step.
 
     @par Syntactic Requirements
     @li Convertible to `mutable_buffer`, OR
@@ -402,6 +468,10 @@ length_impl(It first, It last, long)
     For a single buffer, returns 1. For a range, returns the
     distance from `begin` to `end`.
 
+    @param bs The buffer sequence.
+
+    @return The number of buffers in `bs`.
+
     @see buffer_size
 */
 template<ConstBufferSequence CB>
@@ -412,7 +482,7 @@ buffer_length(CB const& bs)
         begin(bs), end(bs), 0);
 }
 
-/// Alias for `mutable_buffer` or `const_buffer` based on sequence type.
+/// Names `mutable_buffer` for a mutable sequence, `const_buffer` otherwise.
 template<typename BS>
 using buffer_type = std::conditional_t<
     MutableBufferSequence<BS>,

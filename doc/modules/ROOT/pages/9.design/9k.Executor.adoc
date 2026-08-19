@@ -1,10 +1,9 @@
 = Executor Concept Design
+:page-mode: explanation
 
 == Overview
 
-This document describes the design of the `Executor` concept: the interface through which coroutines are scheduled for execution. It explains the relationship to Asio's executor model, why `dispatch` returns `std::coroutine_handle<>`, why `defer` was dropped, how `executor_ref` achieves zero-allocation type erasure, and the I/O completion pattern that motivates the entire design.
-
-The `Executor` concept exists to answer one question: when a coroutine is ready to run, _where_ does it run? The concept captures the rules for scheduling coroutine resumption, tracking outstanding work for graceful shutdown, and accessing the execution context that owns the executor. Every I/O awaitable in Corosio -- sockets, acceptors, timers, resolvers -- depends on this concept to dispatch completions back to the correct executor.
+The cpp:Executor[] concept exists to answer one question: when a coroutine is ready to run, _where_ does it run? Every I/O awaitable in Corosio -- sockets, acceptors, timers, resolvers -- depends on this concept to dispatch completions back to the correct executor.
 
 == Definition
 
@@ -13,7 +12,7 @@ The `Executor` concept exists to answer one question: when a coroutine is ready 
 include::example$snippets/9k_executor.cpp[tag=executor_concept]
 ----
 
-An `Executor` provides exactly two scheduling operations:
+An cpp:Executor[] provides exactly two scheduling operations:
 
 === `dispatch(c)` -- Execute If Safe
 
@@ -21,19 +20,15 @@ If the executor determines it is safe (e.g., the current thread is already assoc
 
 === `post(c)` -- Always Queue
 
-Queues the continuation for later execution without ever executing it inline. Never blocks. The continuation is linked into the executor's internal queue via its `reserved` slot -- no per-post heap allocation.
-
-Both operations accept `continuation&` rather than `std::coroutine_handle<>`. A `continuation` wraps a coroutine handle with a pointer-sized `reserved` slot, which the executor commandeers as its queue link, enabling zero-allocation queuing.
-
-The remaining operations support context access, lifecycle management, and identity:
+Queues the continuation for later execution without ever executing it inline. Never blocks. The continuation is linked into the executor's internal queue via its cpp:continuation::reserved[reserved] slot -- no per-post heap allocation.
 
 === `context()` -- Access the Execution Context
 
-Returns an lvalue reference to the `execution_context` that created this executor. The context provides service infrastructure, frame allocators, and shutdown coordination.
+Returns an lvalue reference to the cpp:execution_context[] that created this executor. The context provides service infrastructure, frame allocators, and shutdown coordination.
 
 === `on_work_started()` / `on_work_finished()` -- Track Work
 
-Paired calls that track outstanding work. When the count reaches zero, the context's event loop (`run()`) returns. These calls must be balanced: each `on_work_started` must have a matching `on_work_finished`.
+Paired calls that track outstanding work. When the count reaches zero, the context's event loop (`run()`) returns. These calls must be balanced: each cpp:Executor::on_work_started[on_work_started] must have a matching cpp:Executor::on_work_finished[on_work_finished].
 
 === `operator==` -- Equality Comparison
 
@@ -51,23 +46,21 @@ ____
 
 Capy retains the core elements of this model:
 
-- **Work tracking.** `on_work_started` / `on_work_finished` for graceful shutdown.
-- **`dispatch` / `post` duality.** Execute-if-safe versus always-queue.
-- **`execution_context` base class.** Service infrastructure and context lifetime management.
+- **Work tracking.** cpp:Executor::on_work_started[on_work_started] / cpp:Executor::on_work_finished[on_work_finished] for graceful shutdown.
+- **cpp:Executor::dispatch[dispatch] / cpp:Executor::post[post] duality.** Execute-if-safe versus always-queue.
+- **cpp:execution_context[] base class.** Service infrastructure and context lifetime management.
 - **Equality comparison.** Same-executor optimization.
 
 Capy removes or changes:
 
 - **`defer`.** Dropped entirely. See <<why-not-defer>>.
-- **Function object submission.** Asio executors accept arbitrary callables. Capy executors accept `continuation&` -- a coroutine handle wrapped with an intrusive queue pointer. This removes the need for allocator-aware function erasure, eliminates per-post heap allocation, and enables a simpler, cheaper type-erased wrapper (`executor_ref`).
-- **`dispatch` return type.** Asio's `dispatch` returns void. Capy's `dispatch` returns `std::coroutine_handle<>` for symmetric transfer. See <<why-dispatch-returns-handle>>.
-
-The result is a concept that preserves Asio's proven execution model while removing the machinery that a coroutine-native library does not need.
+- **Function object submission.** Asio executors accept arbitrary callables. Capy executors accept cpp:continuation[]`&` -- a coroutine handle wrapped with an intrusive queue pointer. This removes the need for allocator-aware function erasure, eliminates per-post heap allocation, and enables a simpler, cheaper type-erased wrapper (cpp:executor_ref[]).
+- **cpp:Executor::dispatch[dispatch] return type.** Asio's `dispatch` returns void. Capy's cpp:Executor::dispatch[dispatch] returns `std::coroutine_handle<>` for symmetric transfer. See <<why-dispatch-returns-handle>>.
 
 [[why-dispatch-returns-handle]]
 == Why `dispatch` Returns `std::coroutine_handle<>`
 
-`dispatch` returns a `std::coroutine_handle<>` so that callers can use it for symmetric transfer from `await_suspend`. When the executor determines that inline resumption is safe, it returns `c.h` -- the caller returns this from `await_suspend` and the compiler performs a tail-call transfer to the target coroutine. When inline resumption is not safe, the executor queues the continuation and returns `std::noop_coroutine()`, which suspends the caller without resuming anything.
+cpp:Executor::dispatch[dispatch] returns a `std::coroutine_handle<>` so that callers can use it for symmetric transfer from `await_suspend`. Returning `c.h` lets the compiler perform a tail-call transfer to the target coroutine; returning `std::noop_coroutine()` suspends the caller without resuming anything.
 
 A conforming implementation:
 
@@ -76,18 +69,18 @@ A conforming implementation:
 include::example$snippets/9k_executor.cpp[tag=dispatch_impl,indent=0]
 ----
 
-This design enables the common fast path -- same-executor dispatch at `final_suspend` -- to avoid queuing entirely, transferring control directly via symmetric transfer.
+This design enables the common fast path -- same-executor dispatch at `final_suspend` -- to avoid queuing entirely.
 
 === I/O Awaitables and Symmetric Transfer
 
 I/O awaitables return `std::noop_coroutine()` from `await_suspend` rather than a handle for symmetric transfer. The I/O operation is initiated during `await_suspend`, but completion comes from the reactor or proactor asynchronously. The awaitable cannot know which coroutine to transfer to at suspension time.
 
-Symmetric transfer from `dispatch` is used at a different level: when a child coroutine completes and its `final_suspend` dispatches the parent's continuation through the executor. If the parent is on the same executor, `dispatch` returns the parent's handle for direct symmetric transfer. If not, it queues the continuation and returns `std::noop_coroutine()`.
+Symmetric transfer from cpp:Executor::dispatch[dispatch] is used at a different level: when a child coroutine completes and its `final_suspend` dispatches the parent's continuation through the executor. If the parent is on the same executor, cpp:Executor::dispatch[dispatch] returns the parent's handle for direct symmetric transfer.
 
 [[why-not-defer]]
 == Why Two Operations, Not Three
 
-Asio provides three submission methods: `dispatch`, `post`, and `defer`. Capy provides only `dispatch` and `post`.
+Asio provides three submission methods: `dispatch`, `post`, and `defer`. Capy provides only cpp:Executor::dispatch[dispatch] and cpp:Executor::post[post].
 
 === What `defer` Does
 
@@ -102,7 +95,7 @@ when submitting a function object that represents a continuation
 of the caller.
 ____
 
-The optimization this enables is thread-local queuing. When the caller is already executing within the executor's context, `defer` saves the continuation to a thread-local queue instead of the shared work queue. From P0113R0:
+The optimization this enables is thread-local queuing. From P0113R0:
 
 [quote]
 ____
@@ -129,11 +122,11 @@ ____
 
 When `task<T>::await_suspend` returns the parent's coroutine handle, the compiler performs a tail-call-like transfer directly to the parent. No queue, no executor submission, no `defer`. The optimization that `defer` provides through a runtime hint, symmetric transfer provides through a compile-time guarantee.
 
-Corosio confirms this in practice: its entire I/O layer -- sockets, acceptors, timers, resolvers, signals -- across all three backends (epoll, IOCP, select) uses only `dispatch` and `post`. No code path requires `defer`.
+Corosio confirms this in practice: its entire I/O layer -- sockets, acceptors, timers, resolvers, signals -- across all five backends (epoll, kqueue, io_uring, IOCP, select) uses only cpp:Executor::dispatch[dispatch] and cpp:Executor::post[post]. No code path requires `defer`.
 
 == Why `continuation`, Not Raw `coroutine_handle<>`
 
-The executor accepts `continuation&` rather than `std::coroutine_handle<>`. A `continuation` wraps the handle with a pointer-sized `reserved` slot that the executor commandeers as its queue link, enabling zero-allocation queuing:
+The executor accepts cpp:continuation[]`&` rather than `std::coroutine_handle<>`. A cpp:continuation[] wraps the handle with a pointer-sized cpp:continuation::reserved[reserved] slot that the executor commandeers as its queue link, enabling zero-allocation queuing:
 
 [source,cpp]
 ----
@@ -142,61 +135,61 @@ include::example$snippets/9k_executor.cpp[tag=continuation_struct]
 
 This design has three consequences:
 
-- **Zero-allocation posting.** The thread pool links the `continuation` directly into its work queue via `reserved`. No `new work(h)` per post. The queue node is embedded in the thing being queued -- the awaitable, combinator state, or trampoline promise that owns the continuation.
+- **Zero-allocation posting.** The thread pool links the cpp:continuation[] directly into its work queue via cpp:continuation::reserved[reserved]. No `new work(h)` per post. The queue node is embedded in the thing being queued -- the awaitable, combinator state, or trampoline promise that owns the continuation.
 
-- **Type erasure remains possible.** `executor_ref` wraps any executor behind a uniform vtable. The vtable function pointers accept `continuation&`, which is a concrete type. No templates on promise type are needed.
+- **Type erasure remains possible.** cpp:executor_ref[] wraps any executor behind a uniform vtable. The vtable function pointers accept cpp:continuation[]`&`, which is a concrete type. No templates on promise type are needed.
 
-- **I/O operation structures stay simple.** Every I/O awaitable embeds a `continuation` for the caller's handle and an `executor_ref` for the executor. Both are non-templated, keeping I/O backend code non-generic and out of headers.
+- **I/O operation structures stay simple.** Every I/O awaitable embeds a cpp:continuation[] for the caller's handle and an cpp:executor_ref[] for the executor. Both are non-templated, keeping I/O backend code non-generic and out of headers.
 
-The handle within the `continuation` is still type-erased (`std::coroutine_handle<>`) for the same reasons that applied before: executor implementations are independent of coroutine internals, and the type-erased handle provides exactly the right interface (`resume()` and nothing else).
+The handle within the cpp:continuation[] is still type-erased (`std::coroutine_handle<>`) for the same reasons that applied before: executor implementations are independent of coroutine internals, and the type-erased handle provides exactly the right interface (`resume()` and nothing else).
 
 == Why Nothrow Copy and Move
 
 The concept requires `std::is_nothrow_copy_constructible_v<E>` and `std::is_nothrow_move_constructible_v<E>`.
 
-Executors propagate through coroutine machinery at points where exceptions cannot be handled: inside `await_suspend`, during promise construction, and through type-erased wrappers like `executor_ref`. An exception thrown from an executor copy at any of these points would leave the coroutine in an unrecoverable state -- suspended but with no executor to resume it through.
+Executors propagate through coroutine machinery at points where exceptions cannot be handled: inside `await_suspend`, during promise construction, and through type-erased wrappers like cpp:executor_ref[]. An exception thrown from an executor copy at any of these points would leave the coroutine in an unrecoverable state -- suspended but with no executor to resume it through.
 
-The nothrow requirement eliminates this failure mode entirely. In practice, executors are lightweight handles -- a pointer to the execution context and perhaps a strand pointer or a priority value. Nothrow copy and move are natural for such types. The requirement does not impose a burden; it documents what is already true of every reasonable executor implementation.
+The nothrow requirement eliminates this failure mode entirely. In practice, executors are lightweight handles -- a pointer to the execution context and perhaps a strand pointer or a priority value. The requirement does not impose a burden; it documents what is already true of every reasonable executor implementation.
 
 == Work Tracking, Shutdown, and Executor Validity
 
-The `on_work_started` and `on_work_finished` operations serve three roles.
+The cpp:Executor::on_work_started[on_work_started] and cpp:Executor::on_work_finished[on_work_finished] operations serve three roles.
 
 === Event Loop Lifetime
 
-Work tracking is the mechanism by which the event loop knows when to stop. When outstanding work reaches zero, `run()` returns. This is not bookkeeping -- it is the event loop's termination signal.
+When outstanding work reaches zero, `run()` returns. This is not bookkeeping -- it is the event loop's termination signal.
 
-In Corosio, `on_work_finished` triggers `stop()` when the atomic work count reaches zero:
+In Corosio, cpp:Executor::on_work_finished[on_work_finished] triggers `stop()` when the atomic work count reaches zero:
 
 [source,cpp]
 ----
 include::example$snippets/9k_executor.cpp[tag=on_work_finished,indent=0]
 ----
 
-Every `run_async` call increments the count. When the launched task completes, the count decrements. When no tasks remain, `run()` returns. Without work tracking in the executor, the event loop would need a separate signaling mechanism or would spin indefinitely.
+Every cpp:run_async[] call increments the count. When the task it starts completes, the count decrements. Without work tracking in the executor, the event loop would need a separate signaling mechanism or would spin indefinitely.
 
 === Public Visibility
 
-These operations are public, not private with friendship. The reason is extensibility: `work_guard` is the library's RAII wrapper for work tracking, but users may define their own guards with additional behaviors (logging, metrics, timeout detection). Making work tracking private would require the library to grant friendship to types it cannot anticipate.
+These operations are public, not private with friendship. The reason is extensibility: cpp:work_guard[] is the library's RAII wrapper for work tracking, but users may define their own guards with additional behaviors (logging, metrics, timeout detection). Making work tracking private would require the library to grant friendship to types it cannot anticipate.
 
 === Executor Validity
 
-An executor becomes invalid when its context's `shutdown()` returns. After shutdown:
+An executor becomes invalid when its context's cpp:execution_context::shutdown[shutdown()] returns. After shutdown:
 
-- `dispatch`, `post`, `on_work_started`, `on_work_finished`: undefined behavior.
-- Copy, comparison, `context()`: valid until the context is destroyed.
+- cpp:Executor::dispatch[dispatch], cpp:Executor::post[post], cpp:Executor::on_work_started[on_work_started], cpp:Executor::on_work_finished[on_work_finished]: undefined behavior.
+- Copy, comparison, cpp:Executor::context[context()]: valid until the context is destroyed.
 
 This two-phase model exists because shutdown drains outstanding work. During the drain, executors must still be copyable (they are stored in pending operations) and comparable (for same-executor checks). Only the work-submission operations become invalid, because the context has stopped accepting new work.
 
 == Why `context()` Returns `execution_context&`
 
-The `context()` operation returns a reference to the `execution_context` base class, not the concrete derived type.
+The cpp:Executor::context[context()] operation returns a reference to the cpp:execution_context[] base class, not the concrete derived type.
 
 This serves two purposes:
 
-- **Type erasure.** `executor_ref` can wrap any executor without knowing its context type. If `context()` returned a concrete type, the vtable would need a different return type per executor type.
+- **Type erasure.** cpp:executor_ref[] can wrap any executor without knowing its context type. If cpp:Executor::context[context()] returned a concrete type, the vtable would need a different return type per executor type.
 
-- **Service lookup.** The `execution_context` base class provides `use_service<T>()` and `make_service<T>()`, which is sufficient for all runtime service discovery. I/O objects do not need the concrete context type to find their services.
+- **Service lookup.** The cpp:execution_context[] base class provides cpp:execution_context::use_service[use_service<T>()] and cpp:execution_context::make_service[make_service<T>()], which is sufficient for all runtime service discovery. I/O objects do not need the concrete context type to find their services.
 
 Corosio demonstrates this pattern throughout its public API. I/O objects accept any executor and extract the context via the base class reference:
 
@@ -205,11 +198,11 @@ Corosio demonstrates this pattern throughout its public API. I/O objects accept 
 include::example$snippets/9k_executor.cpp[tag=socket_ctor,indent=0]
 ----
 
-The socket constructor receives `execution_context&` and looks up the socket service. The concrete context type -- `epoll_context`, `iocp_context`, `select_context` -- is irrelevant to the socket.
+The concrete context type -- `corosio::io_context` instantiated with a backend tag such as `epoll_t` or `iocp_t` -- is irrelevant to the socket.
 
 == The `executor_ref` Design
 
-`executor_ref` is a non-owning, type-erased wrapper for any executor satisfying the `Executor` concept. It is the mechanism by which I/O operations store and use executors without templates.
+cpp:executor_ref[] is a non-owning, type-erased wrapper for any executor satisfying the cpp:Executor[] concept. It is the mechanism by which I/O operations store and use executors without templates.
 
 === Two Pointers
 
@@ -220,7 +213,7 @@ The entire object is two pointers:
 include::example$snippets/9k_executor.cpp[tag=executor_ref_layout]
 ----
 
-Two pointers fit in two registers. `executor_ref` can be passed by value as cheaply as passing a pointer. No heap allocation, no small-buffer optimization, no reference counting.
+Two pointers fit in two registers. cpp:executor_ref[] can be passed by value as cheaply as passing a pointer.
 
 === Why Not `std::function` or `std::any`
 
@@ -232,25 +225,25 @@ Two pointers fit in two registers. `executor_ref` can be passed by value as chea
 
 - **Indirection.** SBO wrappers store either inline data or a heap pointer, adding a branch on every operation.
 
-`executor_ref` avoids all three. The vtable pointer goes directly to a `static constexpr` structure in `.rodata`. One indirection, no branches, no allocation.
+cpp:executor_ref[] avoids all three. The vtable pointer goes directly to a `static constexpr` structure in `.rodata`. One indirection, no branches, no allocation.
 
 === Why Not {cpp} Virtual Functions
 
-{cpp} virtual dispatch places the vtable pointer inside each heap-allocated object. Every virtual call chases a pointer from the object to its vtable, which may reside at an unpredictable address in memory. When objects of different types are interleaved on the heap, their vtable pointers point to different locations in `.rodata`, defeating spatial prefetch and polluting the instruction cache.
+{cpp} virtual dispatch places the vtable pointer inside each heap-allocated object. Every virtual call chases a pointer from the object to its vtable, which may reside at an unpredictable address in memory. When objects of different types are interleaved on the heap, their vtable pointers point to different locations in `.rodata`, defeating spatial prefetch and polluting the data cache.
 
-`executor_ref` separates the vtable from the object. The vtable is a `static constexpr` structure -- one per executor type, shared by all instances of that type. Because most programs use only one or two executor types (a thread pool executor and perhaps a strand), the vtable stays hot in L1 cache. The executor pointer and the vtable pointer sit adjacent in the `executor_ref` object, so both are loaded in a single cache line.
+cpp:executor_ref[] separates the vtable from the object. The vtable is a `static constexpr` structure -- one per executor type, shared by all instances of that type. Because most programs use only one or two executor types (a thread pool executor and perhaps a strand), the vtable stays hot in L1 cache. The executor pointer and the vtable pointer sit adjacent in the cpp:executor_ref[] object, so both are loaded in a single cache line.
 
 === Reference Semantics
 
-`executor_ref` stores a pointer to the executor, not a copy. The executor must outlive the `executor_ref`. This matches how executors propagate through coroutine chains: the executor is owned by the execution context (which outlives all coroutines running on it), and `executor_ref` is a lightweight handle passed through `await_suspend` and stored in I/O operation structures.
+cpp:executor_ref[] stores a pointer to the executor, not a copy. The executor must outlive the cpp:executor_ref[]. This matches how executors propagate through coroutine chains: the executor is owned by the execution context (which outlives all coroutines running on it), and cpp:executor_ref[] is a lightweight handle passed through `await_suspend` and stored in I/O operation structures.
 
 == The I/O Completion Pattern
 
-The executor concept is designed around a single use case: I/O completion dispatch. This pattern is the reason the concept exists.
+The executor concept is designed around a single use case: I/O completion dispatch.
 
 === Capture at Initiation
 
-When a coroutine `co_await`s an I/O awaitable, the awaitable's `await_suspend` receives the caller's handle and executor. The awaitable embeds a `continuation` for the caller's handle:
+When a coroutine `co_await`s an I/O awaitable, the awaitable's `await_suspend` receives the caller's handle and executor. The awaitable embeds a cpp:continuation[] for the caller's handle:
 
 [source,cpp]
 ----
@@ -266,43 +259,19 @@ When the I/O completes (from the reactor thread for epoll, the completion port f
 include::example$snippets/9k_executor.cpp[tag=dispatch_at_completion,indent=0]
 ----
 
-`post` links the continuation into the executor's work queue via `cont_.reserved`. No heap allocation occurs -- the continuation is embedded in the awaitable, which is alive for the duration of the suspension. A worker thread dequeues the continuation and calls `cont_.h.resume()`.
+No heap allocation occurs -- the continuation is embedded in the awaitable, which is alive for the duration of the suspension. A worker thread dequeues the continuation and calls `cont_.h.resume()`.
 
 === Platform Independence
 
-This pattern is identical across all three Corosio backends: epoll (Linux), IOCP (Windows), and select (POSIX fallback). The executor concept and `executor_ref` provide the abstraction that makes this possible. The backend-specific code deals with I/O readiness or completion notification. The executor-specific code deals with coroutine scheduling. The two concerns are cleanly separated.
+This pattern is identical across all five Corosio backends: epoll and io_uring (Linux), kqueue (BSD/macOS), IOCP (Windows), and select (portable fallback). The executor concept and cpp:executor_ref[] provide the abstraction that makes this possible. The backend-specific code deals with I/O readiness or completion notification. The executor-specific code deals with coroutine scheduling.
 
-== Frame Allocator Preservation
-
-Capy propagates frame allocators via thread-local storage (see xref:../4.coroutines/4g.allocators.adoc#_thread_local_propagation[Thread-Local Propagation]). The TLS value is set in `await_resume` when a coroutine resumes and read in `operator new` when a child coroutine is created. Between these two points, the coroutine body executes arbitrary user code.
-
-If that user code resumes a coroutine from a different chain on the same thread -- by calling `.resume()` directly, pumping a dispatch queue, or running nested event loop work -- the other coroutine's `await_resume` overwrites TLS. The original coroutine's next child then allocates from the wrong resource.
-
-=== The Save/Restore Protocol
-
-The fix is to save and restore TLS around every `.resume()` call:
-
-[source,cpp]
-----
-include::example$snippets/9k_executor.cpp[tag=safe_resume]
-----
-
-This makes TLS behave like a stack. Each nested resume pushes its own allocator; when the coroutine suspends and `.resume()` returns, the previous value is restored. The cost is two TLS accesses (one read, one write) per `.resume()` call -- negligible compared to the cost of resuming a coroutine.
-
-=== Where It Applies
-
-All executor event loops and strand dispatch loops must use `safe_resume` instead of calling `.resume()` directly. Capy's `thread_pool`, `blocking_context`, and `strand_queue` all use it internally.
-
-Two `.resume()` call sites intentionally do _not_ use `safe_resume`:
-
-* **`symmetric_transfer`** (MSVC workaround). The calling coroutine is about to suspend unconditionally. When it later resumes, `await_resume` restores TLS from the promise's stored environment. Save/restore would add overhead with no benefit.
-
-* **`run_async_wrapper::operator()`**. TLS is already saved in the wrapper's constructor and restored in its destructor, which bracket the entire task lifetime.
+NOTE: For the TLS save/restore protocol required around `.resume()` calls (cpp:safe_resume[]), including which two call sites are deliberately exempt, see xref:4.coroutines/4g.allocators.adoc#_tls_preservation[TLS Preservation].
 
 == Why Not `std::execution` (P2300)
 
 https://wg21.link/P2300[P2300] defines a sender/receiver model where execution context flows _backward_ from receiver to sender via queries after `connect()`:
 
+[source,cpp,role=external]
 ----
 task<int> async_work();              // Frame allocated NOW
 auto sndr = async_work();
@@ -312,7 +281,7 @@ start(op);                           //   -- too late
 
 For coroutines, this ordering is fatal. Coroutine frame allocation happens _before_ the coroutine body executes. The compiler calls `operator new` first, then constructs the promise, then begins execution. Any mechanism that provides the allocator _after_ the coroutine call -- receiver queries, `await_transform`, explicit method calls -- arrives after the frame is already allocated with the wrong (or default) allocator.
 
-Capy's model flows context _forward_ from launcher to task. The `run_async(ex, alloc)(my_task())` two-phase invocation sets the thread-local allocator _before_ the task expression is evaluated, so `operator new` reads it in time. This is described in detail in xref:9.design/9l.RunApi.adoc[Run API].
+Capy's model flows context _forward_ from launcher to task. The cpp:run_async[]`(ex, alloc)(my_task())` two-phase invocation sets the thread-local allocator _before_ the task expression is evaluated, so `operator new` reads it in time. This is described in detail in xref:9.design/9l.RunApi.adoc[Run API].
 
 The same forward-flowing model applies to executors. The launcher binds the executor before the task runs. The task's promise stores the executor and propagates it to nested awaitables via `await_transform`. Context flows from caller to callee at every level, never backward.
 
@@ -327,6 +296,6 @@ include::example$snippets/9k_executor.cpp[tag=minimal_executor]
 
 == Summary
 
-The `Executor` concept provides `dispatch` and `post` for coroutine scheduling, work tracking for event loop lifetime, and `context()` for service access. The design descends from Asio's executor model but is adapted for coroutines: `defer` is replaced by symmetric transfer, function objects are replaced by `continuation&` for zero-allocation intrusive queuing, and `dispatch` returns `std::coroutine_handle<>` for symmetric transfer at `final_suspend`.
+The cpp:Executor[] concept provides cpp:Executor::dispatch[dispatch] and cpp:Executor::post[post] for coroutine scheduling, work tracking for event loop lifetime, and cpp:Executor::context[context()] for service access. The design descends from Asio's executor model but is adapted for coroutines: `defer` is replaced by symmetric transfer, function objects are replaced by cpp:continuation[]`&` for zero-allocation intrusive queuing, and cpp:Executor::dispatch[dispatch] returns `std::coroutine_handle<>` for symmetric transfer at `final_suspend`.
 
-`executor_ref` type-erases any executor into two pointers, enabling platform-independent I/O completion dispatch with zero allocation and predictable cache behavior. The capture-at-initiation / dispatch-at-completion pattern is the fundamental use case the concept serves.
+cpp:executor_ref[] type-erases any executor into two pointers, enabling platform-independent I/O completion dispatch with zero allocation and predictable cache behavior. The capture-at-initiation / dispatch-at-completion pattern is the fundamental use case the concept serves.

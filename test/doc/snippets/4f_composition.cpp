@@ -9,7 +9,6 @@
 
 // Compiled fragments shown in pages/4.coroutines/4f.composition.adoc.
 
-// tag::when_all_basic[]
 // Fragments deliberately leave results and bindings unused; the pages
 // explain the values in prose instead.
 #if defined(__GNUC__) || defined(__clang__)
@@ -37,6 +36,7 @@
 #pragma warning(disable: 4459) // declaration hides global declaration
 #endif
 
+// tag::when_all_basic[]
 #include <boost/capy/when_all.hpp>
 // end::when_all_basic[]
 // tag::when_any_basic[]
@@ -337,7 +337,7 @@ struct item
 };
 
 // tag::fan_out[]
-io_task<int> process_item(item const& i);
+io_task<int> process_item(item i);
 
 task<int> process_all(std::vector<item> const& items)
 {
@@ -356,7 +356,7 @@ task<int> process_all(std::vector<item> const& items)
 }
 // end::fan_out[]
 
-io_task<int> process_item(item const& i)
+io_task<int> process_item(item i)
 {
     co_return io_result<int>{std::error_code(), i.value};
 }

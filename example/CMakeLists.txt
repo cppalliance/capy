@@ -11,6 +11,7 @@
 add_subdirectory(async-mutex)
 add_subdirectory(buffer-composition)
 add_subdirectory(custom-executor)
+add_subdirectory(gui-integration)
 add_subdirectory(hello-task)
 add_subdirectory(mock-stream-testing)
 add_subdirectory(parallel-fetch)

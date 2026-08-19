@@ -1,11 +1,5 @@
 = Physical Isolation
-
-This section explains how type-erased wrappers enable compilation firewalls and transport-independent APIs.
-
-== Prerequisites
-
-* Completed xref:6.streams/6b.streams.adoc[Streams (Partial I/O)]
-* Understanding of type-erased wrappers
+:page-mode: explanation
 
 == The Compilation Firewall Pattern
 
@@ -84,8 +78,6 @@ include::example$snippets/6f_isolation.cpp[tag=accept_type_erased,indent=0]
 include::example$snippets/6f_isolation.cpp[tag=wrap_call_site,indent=0]
 ----
 
-The wrapper creation is explicit and localized.
-
 === Return Concrete Types (Usually)
 
 [source,cpp]
@@ -111,8 +103,6 @@ Users don't need to know how HTTP is implemented:
 include::example$snippets/6f_isolation.cpp[tag=user_code,indent=0]
 ----
 
-The HTTP library is isolated from transport details. It compiles once. Users bring their own transport.
-
 == Wrapper Overhead
 
 Type erasure has runtime cost:
@@ -127,13 +117,3 @@ When profiling shows wrapper overhead matters:
 1. Consider batching operations
 2. Use concrete types in hot paths
 3. Accept the template cost for that code path
-
-== Reference
-
-Type-erased wrappers are in `<boost/capy/io/>`:
-
-* `any_stream`
-* `any_read_stream`, `any_write_stream`
-* `any_buffer_source`, `any_buffer_sink`
-
-You have now completed the Stream Concepts section. These abstractions—streams and their type-erased wrappers—form the foundation for Capy's I/O model. Continue to xref:../8.examples/8a.hello-task.adoc[Example Programs] to see complete working examples.

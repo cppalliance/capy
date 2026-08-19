@@ -201,6 +201,41 @@ private:
 };
 // end::my_awaitable[]
 
+// tag::runnable_awaitable[]
+// A complete IoAwaitable following the pattern above. It produces a
+// value, then resumes the caller on the caller's own executor by posting
+// its continuation. A real one would do this from an async completion
+// callback; here the "operation" finishes immediately.
+struct add_awaitable
+{
+    int a_;
+    int b_;
+    io_env const* env_ = nullptr;
+    // Defaulted, so the call site supplies only a_ and b_.
+    continuation cont_{};
+    result_type result_{};
+
+    bool await_ready() const noexcept { return false; }
+
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env)
+    {
+        env_ = env;
+        cont_.h = h;
+        result_ = a_ + b_;             // the operation produced a value
+        env_->executor.post(cont_);    // resume the caller on its executor
+        return std::noop_coroutine();
+    }
+
+    result_type await_resume() { return result_; }
+};
+
+// A task awaits the custom IoAwaitable and returns what it delivered.
+task<int> add_via_awaitable()
+{
+    co_return co_await add_awaitable{2, 3};
+}
+// end::runnable_awaitable[]
+
 // tag::stoppable_awaitable[]
 struct stoppable_awaitable
 {
@@ -324,8 +359,24 @@ struct io_awaitable_test
         BOOST_TEST(done);
     }
 
+    void testRunning()
+    {
+        // tag::run_awaitable[]
+        // Run the task on a thread pool and observe the value the
+        // custom IoAwaitable delivered to the completion handler.
+        thread_pool pool(1);
+        int result = 0;
+        run_async(pool.get_executor(), [&result](int value) {
+            result = value;   // the awaitable delivered 5
+        })(add_via_awaitable());
+        pool.join();
+        // end::run_awaitable[]
+        BOOST_TEST(result == 5);
+    }
+
     void run()
     {
+        testRunning();
         testForeignBridge();
     }
 };

@@ -29,7 +29,7 @@ namespace boost {
 namespace capy {
 namespace test {
 
-/** A mock stream for testing write operations.
+/** Captures bytes passed to `write_some`, retrievable afterward through `data`.
 
     Use this to verify code that performs writes without needing
     real I/O. Call @ref write_some to write data, then @ref data
@@ -46,9 +46,14 @@ namespace test {
     @par Example
     @code
     fuse f;
-    write_stream ws( f );
 
     auto r = f.armed( [&]( fuse& ) -> task<void> {
+        // Constructed inside the lambda: armed() re-invokes this
+        // function once per injected failure point, and a write_stream
+        // constructed outside would carry accumulated data across
+        // those rounds.
+        write_stream ws( f );
+
         auto [ec, n] = co_await ws.write_some(
             const_buffer( "Hello", 5 ) );
         if( ec )
@@ -96,7 +101,10 @@ public:
     {
     }
 
-    /// Return the written data as a string view.
+    /** Return the written data as a string view.
+
+        @return A view of bytes written but not yet matched by @ref expect.
+    */
     std::string_view
     data() const noexcept
     {
@@ -120,7 +128,10 @@ public:
         return consume_match_();
     }
 
-    /// Return the number of bytes written.
+    /** Return the number of bytes written.
+
+        @return The number of bytes written but not yet matched by @ref expect.
+    */
     std::size_t
     size() const noexcept
     {
@@ -147,7 +158,7 @@ public:
         failure point; no-throw otherwise.
 
         @par Cancellation
-        If the environment's stop token has been requested, the write
+        If the environment's stop token is requested, the write
         completes immediately with `error::canceled` and transfers no
         data. An empty buffer sequence is a no-op that completes
         successfully regardless of the stop token.

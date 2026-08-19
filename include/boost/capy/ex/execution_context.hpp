@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -25,7 +26,7 @@
 namespace boost {
 namespace capy {
 
-/** Base class for I/O object containers providing service management.
+/** Registers, looks up, and shuts down `service` objects owned by a derived context.
 
     An execution context represents a place where function objects are
     executed. It provides a service registry where polymorphic services
@@ -109,14 +110,17 @@ protected:
         `target<Derived>()` to return `nullptr`.
 
         @tparam Derived The most-derived context type.
+
+        @param self `this`, typed as the most-derived context type.
+            Only its type is recorded; the pointer is not stored.
     */
     template< typename Derived >
-    explicit execution_context( Derived* ) noexcept;
+    explicit execution_context( Derived* self ) noexcept;
 
 public:
     //------------------------------------------------
 
-    /** Abstract base class for services owned by an execution context.
+    /** Gives a derived service a `shutdown()` hook, run when its owning `execution_context` is destroyed.
 
         Services provide extensible functionality to an execution context.
         Each service type can be registered at most once. Services are
@@ -153,9 +157,11 @@ public:
         service
     {
     public:
+        /// Destructor.
         virtual ~service() = default;
 
     protected:
+        /// Construct a service. Only derived classes may do so.
         service() = default;
 
         /** Called when the owning execution context shuts down.
@@ -185,9 +191,19 @@ public:
 
     //------------------------------------------------
 
-    execution_context(execution_context const&) = delete;
+    /** Copy construction is disabled; a context owns its services.
 
-    execution_context& operator=(execution_context const&) = delete;
+        @param other The context that would be copied.
+    */
+    execution_context(execution_context const& other) = delete;
+
+    /** Copy assignment is disabled; a context owns its services.
+
+        @param other The context that would be assigned from.
+
+        @return A reference to `*this`.
+    */
+    execution_context& operator=(execution_context const& other) = delete;
 
     /** Destructor.
 
@@ -376,7 +392,7 @@ public:
     /** Set the memory resource used for coroutine frame allocation.
 
         The caller is responsible for ensuring the memory resource
-        remains valid for the lifetime of all coroutines launched
+        remains valid for the lifetime of all coroutines started
         using this context's executor.
 
         @par Thread Safety
@@ -491,7 +507,7 @@ protected:
         This function is idempotent; subsequent calls have no effect.
 
         @par Preconditions
-        @li `shutdown()` has been called.
+        @li `shutdown()` was called.
 
         @par Effects
         All services are deleted and removed from the container.

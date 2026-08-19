@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -123,7 +124,7 @@ using awaitable_return_t = decltype(
 
 } // namespace detail
 
-/** Concept for types that decompose to a specific typelist.
+/** Requires a type to destructure via structured bindings into the given types.
 
     A type satisfies `decomposes_to` if it can be decomposed via
     structured bindings into the specified types. This includes
@@ -146,7 +147,7 @@ concept decomposes_to = requires(T&& t) {
     { detail::decomposed_types(std::forward<T>(t)) } -> std::same_as<std::tuple<Types...>>;
 };
 
-/** Concept for awaitables whose return type decomposes to a specific typelist.
+/** Requires an awaitable's result to destructure into the given types.
 
     A type satisfies `awaitable_decomposes_to` if it is an awaitable
     (has `await_resume`) and its return type decomposes to the

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -19,7 +20,7 @@
 namespace boost {
 namespace capy {
 
-/** Result type for asynchronous I/O operations.
+/** Bundles an error code with optional payload values, exposed via the tuple protocol.
 
     This alias provides a unified result type for async operations,
     always containing a `std::error_code` plus optional additional
@@ -46,7 +47,7 @@ namespace capy {
         set is defined by the operation that produced the result.
         Many I/O operations report a meaningful partial result
         alongside the error (for example, the number of bytes
-        transferred before the condition, as with EOF); others
+        transferred before the condition, as with EOF). Others
         leave it unspecified.
 
     @tparam Ts Ordered payload types following the leading

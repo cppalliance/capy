@@ -1,15 +1,27 @@
 = The task Type
+:page-mode: explanation
 
-This section introduces Capy's `task<T>` type—the fundamental coroutine type for asynchronous programming in Capy.
+cpp:task[task<T>] is declared in:
 
-== Prerequisites
+[source,cpp]
+----
+include::example$snippets/4a_tasks.cpp[tag=include_task]
+----
 
-* Completed xref:../2.cpp20-coroutines/2d.advanced.adoc[{cpp}20 Coroutines Tutorial]
-* Understanding of promise types, coroutine handles, and symmetric transfer
+[NOTE]
+====
+*How this manual names headers.* Each page gives the specific header for what it introduces, so you can include only what you use. The runnable examples instead include the umbrella header, which pulls in everything:
+
+[source,cpp]
+----
+include::example$snippets/4a_tasks.cpp[tag=include_umbrella]
+----
+
+====
 
 == Overview
 
-`task<T>` is Capy's primary coroutine return type. It represents an asynchronous operation that eventually produces a value of type `T` (or nothing, for `task<void>`).
+cpp:task[task<T>] is Capy's primary coroutine return type. It represents an asynchronous operation that eventually produces a value of type `T` (or nothing, for `task<void>`).
 
 Key characteristics:
 
@@ -21,14 +33,14 @@ Key characteristics:
 
 == Declaring task Coroutines
 
-Any function that returns `task<T>` and contains coroutine keywords (`co_await`, `co_return`) is a `task` coroutine:
+Any function that returns cpp:task[task<T>] and contains coroutine keywords (`co_await`, `co_return`) is a `task` coroutine:
 
 [source,cpp]
 ----
 include::example$snippets/4a_tasks.cpp[tag=declaring]
 ----
 
-The syntax `task<>` is equivalent to `task<void>` and represents a coroutine that completes without producing a value.
+The syntax cpp:task[task<>] is equivalent to `task<void>`.
 
 == Returning Values with co_return
 
@@ -39,7 +51,36 @@ Use `co_return` to complete the coroutine and provide its result:
 include::example$snippets/4a_tasks.cpp[tag=returning]
 ----
 
-For `task<void>`, you can either use `co_return;` explicitly or let execution fall off the end of the function body.
+For cpp:task[task<void>], you can either use `co_return;` explicitly or let execution fall off the end of the function body.
+
+[#io-result-and-io-task]
+== Reporting Errors: io_result and io_task
+
+I/O operations report an expected failure as a value rather than an exception. They return the error alongside the result, in a cpp:io_result[io_result<Ts...>]: a `std::tuple` holding a `std::error_code` followed by zero or more payload values. Exceptions remain for genuine errors, such as a failed frame allocation.
+
+cpp:io_task[io_task<Ts...>] names a task returning one of those results:
+
+[source,cpp]
+----
+include::example$snippets/4a_tasks.cpp[tag=io_task]
+----
+
+Because cpp:io_result[] is a `std::tuple`, the whole standard tuple API applies: structured bindings, `std::tie`, `std::apply`, `std::get`, `std::tuple_cat`, comparisons, and tuple assignment. The error code is the first element, so `auto [ec, n] = co_await s.read_some(buf);` destructures it directly, and `std::tie` rebinds into existing variables without introducing new ones. Always test the error code before reading a payload; a payload's meaning when it is set is defined by the operation that produced it.
+
+For cpp:io_result[io_result<>] -- no payload -- a `std::error_code` converts implicitly, so `co_return some_ec;` compiles. With payloads present you must supply the whole result, as `count_ready` shows.
+
+These two names are the vocabulary the stream concepts and the concurrent combinators are written in. xref:4.coroutines/4f.composition.adoc[Concurrent Composition] and xref:6.streams/6.intro.adoc[Stream Concepts] both assume them.
+
+== Running a Task
+
+A cpp:task[task] is lazy, so declaring one does not run it. To run a task to completion from ordinary (non-coroutine) code, pass it to cpp:run_async[] with an executor and a completion handler. The task runs on the executor, and its result is delivered to the handler:
+
+[source,cpp]
+----
+include::example$snippets/4a_tasks.cpp[tag=run]
+----
+
+Here `add(2, 3)` runs on a cpp:thread_pool[] executor, and the completion handler receives the result, `5`. The call to `pool.join()` waits for the pooled work to finish before the result is read.
 
 == Awaiting Other Tasks
 
@@ -59,7 +100,7 @@ When you `co_await` a task:
 
 == Lazy Execution
 
-A critical property of `task<T>` is *lazy execution*: creating a task does not start its execution. The coroutine body runs only when the task is awaited.
+A critical property of cpp:task[task<T>] is *lazy execution*: creating a task does not start its execution.
 
 [source,cpp]
 ----
@@ -68,6 +109,7 @@ include::example$snippets/4a_tasks.cpp[tag=lazy]
 
 *Output:*
 
+[role=output]
 ----
 Task created
 Computing...
@@ -79,8 +121,6 @@ Lazy execution enables efficient composition—tasks that are never awaited neve
 == Symmetric Transfer
 
 When a task completes, control transfers directly to its continuation (the coroutine that awaited it) using *symmetric transfer*. This avoids stack accumulation even with deep chains of coroutine calls.
-
-Consider:
 
 [source,cpp]
 ----
@@ -117,21 +157,3 @@ include::example$snippets/4a_tasks.cpp[tag=exceptions]
 ----
 
 The exception is stored in the promise when it occurs and rethrown in `await_resume` when the calling coroutine resumes.
-
-== Reference
-
-The `task<T>` type is defined in:
-
-[source,cpp]
-----
-include::example$snippets/4a_tasks.cpp[tag=include_task]
-----
-
-Or included via the umbrella header:
-
-[source,cpp]
-----
-include::example$snippets/4a_tasks.cpp[tag=include_umbrella]
-----
-
-You have now learned how to declare, return values from, and await `task<T>` coroutines. In the next section, you will learn how to launch tasks for execution using `run_async` and `run`.

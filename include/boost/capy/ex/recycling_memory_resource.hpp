@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -20,7 +21,7 @@
 namespace boost {
 namespace capy {
 
-/** Recycling memory resource with size-class buckets.
+/** Recycles freed blocks through per-thread pools, with a shared pool for cross-thread reuse.
 
     This memory resource recycles memory blocks using power-of-two
     size classes for O(1) allocation lookup. It maintains a thread-local
@@ -132,6 +133,12 @@ class BOOST_CAPY_DECL recycling_memory_resource : public std::pmr::memory_resour
     static void arm_thread_cleanup() noexcept;
 
 public:
+    /** Destroy the resource.
+
+        No cached block is released here. Every pool is static, so an
+        instance holds no state of its own. The thread-local pool is
+        drained at thread exit, and the global pool at process exit.
+    */
     ~recycling_memory_resource();
 
     /** Allocate without virtual dispatch.
@@ -139,6 +146,21 @@ public:
         Handles the fast path inline (thread-local bucket pop)
         and falls through to the slow path for global pool or
         heap allocation.
+
+        A request larger than the largest size class (2048 bytes)
+        bypasses the pools and goes straight to `::operator new`.
+
+        The second parameter is the requested alignment, and it is ignored.
+        Every block comes from `::operator new`, so blocks carry the
+        implementation's default new alignment and no more.
+
+        @param bytes The number of bytes to allocate.
+
+        @return A pointer to a block of at least `bytes` bytes. A pooled
+        block is rounded up to its size class, so it may be larger than
+        requested.
+
+        @throws std::bad_alloc If the underlying `::operator new` fails.
     */
     void*
     allocate_fast(std::size_t bytes, std::size_t)
@@ -158,6 +180,19 @@ public:
         Handles the fast path inline (thread-local bucket push)
         and falls through to the slow path for global pool or
         heap deallocation.
+
+        The block is cached in the pool of the thread that frees it, not
+        the thread that allocated it.
+
+        The third parameter is the alignment the block was allocated with,
+        and it is ignored, as it is on allocation.
+
+        @param p The block to return. It must have come from
+        @ref allocate_fast or @ref do_allocate on this resource.
+
+        @param bytes The size the block was allocated with. The size class
+        is recomputed from it, so passing a different value puts the block
+        in the wrong bucket.
     */
     void
     deallocate_fast(void* p, std::size_t bytes, std::size_t)
@@ -185,12 +220,48 @@ public:
     }
 
 protected:
+    /** Allocate through the `std::pmr::memory_resource` interface.
+
+        Forwards to @ref allocate_fast, so it has that function's contract.
+        Call `allocate_fast` directly to skip the virtual dispatch.
+
+        @param bytes The number of bytes to allocate.
+
+        @param alignment The requested alignment. It is ignored.
+
+        @return A pointer to a block of at least `bytes` bytes.
+
+        @throws std::bad_alloc If the underlying `::operator new` fails.
+    */
     void*
-    do_allocate(std::size_t bytes, std::size_t) override;
+    do_allocate(std::size_t bytes, std::size_t alignment) override;
 
+    /** Deallocate through the `std::pmr::memory_resource` interface.
+
+        Forwards to @ref deallocate_fast, so it has that function's
+        contract.
+
+        @param p The block to return, as obtained from this resource.
+
+        @param bytes The size the block was allocated with.
+
+        @param alignment The alignment the block was allocated with. It is
+        ignored.
+    */
     void
-    do_deallocate(void* p, std::size_t bytes, std::size_t) override;
+    do_deallocate(void* p, std::size_t bytes, std::size_t alignment) override;
 
+    /** Compare this resource with another for equality.
+
+        Equality is object identity: two distinct
+        `recycling_memory_resource` objects compare unequal, even though the
+        pools they draw from are static and therefore shared.
+
+        @param other The resource to compare against.
+
+        @return `true` if `other` is the same object as `*this`; otherwise
+        `false`.
+    */
     bool
     do_is_equal(const memory_resource& other) const noexcept override
     {

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -16,12 +17,12 @@
 namespace boost {
 namespace capy {
 
-/** Archetype for ConstBufferSequence concept checking.
+/** Satisfies `ConstBufferSequence` without being default-constructible.
 
     This type satisfies @ref ConstBufferSequence but cannot be
-    default-constructed; it is intended only as an unevaluated
-    parameter type in `requires`-clauses, to verify that a function
-    template accepts any ConstBufferSequence.
+    default-constructed. Use it only as an unevaluated parameter
+    type in `requires`-clauses, to verify that a function template
+    accepts any ConstBufferSequence.
 
     @par Example
     @code
@@ -35,29 +36,58 @@ namespace capy {
 */
 struct const_buffer_archetype_
 {
+    /// Default construction is not permitted.
     const_buffer_archetype_() = delete;
-    const_buffer_archetype_(const_buffer_archetype_ const&) = default;
-    const_buffer_archetype_(const_buffer_archetype_&&) = default;
-    const_buffer_archetype_& operator=(const_buffer_archetype_ const&) = default;
-    const_buffer_archetype_& operator=(const_buffer_archetype_&&) = default;
 
-    /// Convert to const_buffer.
+    /** Construct a copy.
+
+        @param other The archetype to copy.
+    */
+    const_buffer_archetype_(const_buffer_archetype_ const& other) = default;
+
+    /** Construct by moving.
+
+        @param other The archetype to move from.
+    */
+    const_buffer_archetype_(const_buffer_archetype_&& other) = default;
+
+    /** Assign by copying.
+
+        @param other The archetype to copy.
+
+        @return A reference to `*this`.
+    */
+    const_buffer_archetype_& operator=(const_buffer_archetype_ const& other) = default;
+
+    /** Assign by moving.
+
+        @param other The archetype to move from.
+
+        @return A reference to `*this`.
+    */
+    const_buffer_archetype_& operator=(const_buffer_archetype_&& other) = default;
+
+    /** Convert to const_buffer.
+
+        @return An empty `const_buffer`.
+    */
     operator const_buffer() const noexcept { return {}; }
 };
 
 #ifdef __clang__
+/// Falls back to `const_buffer` itself: `const_buffer_archetype_` crashes clang.
 using const_buffer_archetype = const_buffer;
 #else
-/// Alias for the const buffer archetype type.
+/// Picks `const_buffer_archetype_` to keep default construction rejected.
 using const_buffer_archetype = const_buffer_archetype_;
 #endif
 
-/** Archetype for MutableBufferSequence concept checking.
+/** Satisfies `MutableBufferSequence` without being default-constructible.
 
     This type satisfies @ref MutableBufferSequence but cannot be
-    default-constructed; it is intended only as an unevaluated
-    parameter type in `requires`-clauses, to verify that a function
-    template accepts any MutableBufferSequence.
+    default-constructed. Use it only as an unevaluated parameter
+    type in `requires`-clauses, to verify that a function template
+    accepts any MutableBufferSequence.
 
     @par Example
     @code
@@ -71,23 +101,55 @@ using const_buffer_archetype = const_buffer_archetype_;
 */
 struct mutable_buffer_archetype_
 {
+    /// Default construction is not permitted.
     mutable_buffer_archetype_() = delete;
-    mutable_buffer_archetype_(mutable_buffer_archetype_ const&) = default;
-    mutable_buffer_archetype_(mutable_buffer_archetype_&&) = default;
-    mutable_buffer_archetype_& operator=(mutable_buffer_archetype_ const&) = default;
-    mutable_buffer_archetype_& operator=(mutable_buffer_archetype_&&) = default;
 
-    /// Convert to mutable_buffer.
+    /** Construct a copy.
+
+        @param other The archetype to copy.
+    */
+    mutable_buffer_archetype_(mutable_buffer_archetype_ const& other) = default;
+
+    /** Construct by moving.
+
+        @param other The archetype to move from.
+    */
+    mutable_buffer_archetype_(mutable_buffer_archetype_&& other) = default;
+
+    /** Assign by copying.
+
+        @param other The archetype to copy.
+
+        @return A reference to `*this`.
+    */
+    mutable_buffer_archetype_& operator=(mutable_buffer_archetype_ const& other) = default;
+
+    /** Assign by moving.
+
+        @param other The archetype to move from.
+
+        @return A reference to `*this`.
+    */
+    mutable_buffer_archetype_& operator=(mutable_buffer_archetype_&& other) = default;
+
+    /** Convert to mutable_buffer.
+
+        @return An empty `mutable_buffer`.
+    */
     operator mutable_buffer() const noexcept { return {}; }
 
-    /// Convert to const_buffer.
+    /** Convert to const_buffer.
+
+        @return An empty `const_buffer`.
+    */
     operator const_buffer() const noexcept { return {}; }
 };
 
 #ifdef __clang__
+/// Falls back to `mutable_buffer` itself: `mutable_buffer_archetype_` crashes clang.
 using mutable_buffer_archetype = mutable_buffer;
 #else
-/// Alias for the mutable buffer archetype type.
+/// Picks `mutable_buffer_archetype_` to keep default construction rejected.
 using mutable_buffer_archetype = mutable_buffer_archetype_;
 #endif
 

@@ -8,11 +8,7 @@
 //
 
 = Buffer Inspection
-
-Two small utilities round out the toolkit. `bufgrind` iterates every split
-point of a buffer sequence, exercising every chunk-boundary condition in the
-system under test. `buffer_to_string` concatenates buffer sequences into a
-`std::string` for assertion.
+:page-mode: how-to
 
 == bufgrind
 
@@ -24,7 +20,7 @@ a buffer in chunks is exercised at every possible chunk boundary with a single
 `while` loop.
 
 `bufgrind` does not perform I/O and does not consult a fuse, so the snippets
-on this page drive it under `f.inert(...)`: a single pass is sufficient to
+on this page drive it under `f.inert(...)`. A single pass is sufficient to
 visit every split position, and there are no async failure sites to inject.
 
 [source,cpp]
@@ -36,6 +32,7 @@ include::example$snippets/7e_buffer_inspection.cpp[tag=all_splits,indent=0]
 
 For a 5-byte input `"hello"`, `bufgrind` yields six positions:
 
+[role=output]
 ----
 pos=0: b1=""      b2="hello"
 pos=1: b1="h"     b2="ello"
@@ -64,35 +61,19 @@ two positions: 0 and size.
 
 === Mutability Preservation
 
-`bufgrind` is templated on a `ConstBufferSequence` but the slices it
+`bufgrind` is templated on a cpp:ConstBufferSequence[] but the slices it
 produces follow the mutability of the input. Each half is itself a
-buffer sequence (`slice_type`). Passing a `mutable_buffer` yields halves
-that model `MutableBufferSequence`; passing a `const_buffer` yields
-halves that model `ConstBufferSequence`. This matters for tests that
-need to write into the produced buffers rather than only read from them.
+buffer sequence (cpp:test::bufgrind::slice_type[slice_type]). Passing a cpp:mutable_buffer[] yields halves
+that model cpp:MutableBufferSequence[]; passing a cpp:const_buffer[] yields
+halves that model `ConstBufferSequence`.
 
 [source,cpp]
 ----
 include::example$snippets/7e_buffer_inspection.cpp[tag=mutability,indent=0]
 ----
 
-[cols="1,2"]
-|===
-| Member | Description
-
-| `bufgrind(BS const& bs, std::size_t step = 1)`
-| Construct over a buffer sequence. `step` controls how many bytes to
-  advance on each call to `next()`. A step of 0 is treated as 1.
-  The final split at `buffer_size(bs)` is always included.
-
-| `operator bool() const`
-| Return `true` while more split positions remain.
-
-| `next()`
-| Advance to the next split position. Returns an awaitable that yields
-  `split_type`, a `std::pair` of `slice_type<BS>` values representing
-  the two pieces at the current position.
-|===
+See cpp:test::bufgrind[] for the complete member list: the
+constructor's `step` parameter, `operator bool`, and `next`.
 
 == buffer_to_string
 
@@ -117,40 +98,16 @@ input:
 include::example$snippets/7e_buffer_inspection.cpp[tag=reconstruct,indent=0]
 ----
 
-[cols="1,2"]
-|===
-| Function | Description
-
-| `buffer_to_string(Buffers const&... bufs) -> std::string`
-| Concatenate one or more `ConstBufferSequence` arguments into a single
-  `std::string`. Arguments are appended in the order given.
-|===
+See cpp:test::buffer_to_string[] for the exact signature.
 
 == Putting It Together
 
 The following snippet tests a hypothetical parser that reads from a
-`read_stream`. `bufgrind` exercises every split of the input so the parser
-is run against every possible chunk boundary; `buffer_to_string` verifies
-the output at each split:
+cpp:test::read_stream[read_stream], applying both utilities together:
 
 [source,cpp]
 ----
 include::example$snippets/7e_buffer_inspection.cpp[tag=parser_all_splits,indent=0]
 ----
 
-== Reference
-
-[cols="1,3"]
-|===
-| Header | Contents
-
-| `<boost/capy/test/bufgrind.hpp>`
-| Exhaustive buffer split-point iterator.
-
-| `<boost/capy/test/buffer_to_string.hpp>`
-| Buffer-sequence to string helper.
-|===
-
-You have reached the end of the Testing section. Continue
-to xref:8.examples/8.intro.adoc[Example Programs] for end-to-end usage
-or xref:reference:boost/capy.adoc[Reference] for the API browser.
+See xref:reference:boost/capy.adoc[Reference] for the full API browser.

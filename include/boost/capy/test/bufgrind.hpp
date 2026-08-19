@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -25,7 +26,7 @@ namespace boost {
 namespace capy {
 namespace test {
 
-/** A test utility for iterating buffer sequence split points.
+/** Iterates split points of a buffer sequence into two adjacent halves.
 
     This class iterates through all possible ways to split a buffer
     sequence into two parts (b1, b2) where concatenating them yields
@@ -96,12 +97,11 @@ class bufgrind
     std::size_t pos_ = 0;
 
 public:
-    /// The buffer-sequence type produced for each half of a split.
+    /// Names the buffer-sequence type `buffer_slice` yields for each half.
     using slice_type = std::decay_t<
         decltype(buffer_slice(std::declval<BS const&>()))>;
 
-    /// The type returned by @ref next. Each half is itself a buffer
-    /// sequence (the value returned by `buffer_slice`).
+    /// Pairs the two `slice_type` halves that @ref next yields together.
     using split_type = std::pair<slice_type, slice_type>;
 
     /** Construct a buffer grinder.
@@ -132,15 +132,31 @@ public:
         return pos_ <= size_;
     }
 
-    /** Awaitable returned by @ref next.
+    /** Computes the current split synchronously, so awaiting it never suspends the caller.
     */
     struct next_awaitable
     {
+        /// The grinder that produced this awaitable.
         bufgrind* self_;
 
+        /** Report whether the awaitable is ready.
+
+            @return `true` always; the split is available without suspending.
+        */
         bool await_ready() const noexcept { return true; }
+
+        /** Resume the caller inline without suspending.
+
+            @param h The awaiting coroutine handle.
+
+            @return @p h, so the caller resumes immediately.
+        */
         std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const*) const noexcept { return h; }
 
+        /** Return the current split and advance to the next.
+
+            @return The `(b1, b2)` split at the current position.
+        */
         split_type
         await_resume()
         {

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -34,7 +35,7 @@ struct is_strand_type<strand<E>> : std::true_type {};
 
 } // detail
 
-/** A type-erased wrapper for executor objects.
+/** Forwards `dispatch`/`post`/`context` calls through a shared, type-erased executor pointer.
 
     This class provides type erasure for any executor type, enabling
     runtime polymorphism with automatic memory management via shared
@@ -45,16 +46,18 @@ struct is_strand_type<strand<E>> : std::true_type {};
     @par Value Semantics
 
     This class has value semantics with shared ownership. Copy and
-    move operations are cheap, simply copying the internal shared
+    move operations are cheap, copying the internal shared
     pointer. Multiple `any_executor` instances may share the same
     underlying executor. Move operations do not invalidate the
     source; there is no moved-from state.
 
     @par Default State
 
-    A default-constructed `any_executor` holds no executor. Calling
-    executor operations on a default-constructed instance results
-    in undefined behavior. Use `operator bool()` to check validity.
+    A default-constructed `any_executor` holds no executor.
+    `operator bool()`, `operator==`, and `target_type()` report the
+    empty state. `context()`, `on_work_started()`, `on_work_finished()`,
+    `dispatch()`, and `post()` are undefined behavior until an
+    executor is assigned.
 
     @par Thread Safety
 
@@ -150,9 +153,10 @@ class any_executor
 public:
     /** Construct a default instance.
 
-        Constructs an empty `any_executor`. Calling any executor
-        operations on a default-constructed instance results in
-        undefined behavior.
+        Constructs an empty `any_executor`. `operator bool()` reports
+        the empty state; `context()`, `on_work_started()`,
+        `on_work_finished()`, `dispatch()`, and `post()` are undefined
+        behavior until an executor is assigned.
 
         @par Postconditions
         @li `!*this`
@@ -164,19 +168,25 @@ public:
         Creates a new `any_executor` sharing ownership of the
         underlying executor with `other`.
 
+        @param other The executor to copy.
+
         @par Postconditions
         @li `*this == other`
     */
-    any_executor(any_executor const&) = default;
+    any_executor(any_executor const& other) = default;
 
     /** Copy assignment operator.
 
         Shares ownership of the underlying executor with `other`.
 
+        @param other The executor to copy.
+
+        @return A reference to `*this`.
+
         @par Postconditions
         @li `*this == other`
     */
-    any_executor& operator=(any_executor const&) = default;
+    any_executor& operator=(any_executor const& other) = default;
 
     /** Constructs from any executor type.
 

@@ -8,46 +8,41 @@
 //
 
 = Testing
+:page-mode: explanation
 
 Real I/O is a poor foundation for unit tests. Network operations are slow,
 non-deterministic, and do not fail on demand -- so error-handling paths go
-untested until production breaks them. Capy ships a self-contained toolkit
-that replaces the transport with in-memory mocks, drives coroutines to
-completion on the calling thread, and injects failures at every
-`maybe_fail()` site so that every error branch is exercised automatically.
-Because each mock satisfies the same concept as its production counterpart,
-test code reads the same as production code -- the only difference is the
-type of the stream or source you pass in.
+untested until production breaks them. Capy replaces the transport with
+in-memory mocks. Because each mock satisfies the same concept as its
+production counterpart, test code reads the same as production code. The
+only difference is the type of the stream you pass in.
 
 == What This Section Covers
 
-* xref:7.testing/7a.drivers.adoc[Driving Tests] -- `run_blocking` drives a
-  coroutine to completion on the calling thread without a real executor;
-  `fuse` runs the test body repeatedly, injecting an error at each
-  `maybe_fail()` site in turn until every failure path has been covered;
-  and the `thread_name` header's `set_current_thread_name` function labels
+* xref:7.testing/7a.drivers.adoc[Driving Tests] -- cpp:test::run_blocking[run_blocking] drives a
+  coroutine to completion on the calling thread without a real executor.
+  cpp:test::fuse[fuse] runs the test body repeatedly, injecting an error at each
+  `maybe_fail()` site in turn until every failure path is covered.
+  The `thread_name` header's cpp:set_current_thread_name[] function labels
   worker threads so that failures in multi-threaded tests are easier to
   attribute.
 
-* xref:7.testing/7b.mock-streams.adoc[Mock Streams] -- `read_stream`,
-  `write_stream`, and `stream` (a connected pair) implement the partial-I/O
+* xref:7.testing/7b.mock-streams.adoc[Mock Streams] -- cpp:test::read_stream[read_stream],
+  cpp:test::write_stream[write_stream], and cpp:test::stream[stream] (a connected pair) implement the partial-I/O
   concepts from xref:6.streams/6b.streams.adoc[Streams]. Use them to test
   protocol logic that calls `read_some` and `write_some` without touching a
   socket.
 
-* xref:7.testing/7e.buffer-inspection.adoc[Buffer Inspection] -- `bufgrind`
+* xref:7.testing/7e.buffer-inspection.adoc[Buffer Inspection] -- cpp:test::bufgrind[bufgrind]
   iterates every split point of a buffer sequence, exercising every
-  chunk-boundary condition; `buffer_to_string` concatenates buffer sequences
+  chunk-boundary condition; cpp:test::buffer_to_string[buffer_to_string] concatenates buffer sequences
   into a `std::string` for easy assertion.
 
 == How the Pieces Fit
 
 A typical test constructs one or more mocks, arms a `fuse`, and hands the
 mocks to the code under test inside a `run_blocking` call. The `fuse`
-repeats the test body automatically -- once for each failure site and once
-in exception mode -- while `run_blocking` keeps the whole thing on the
-calling thread. Buffer utilities such as `bufgrind` and `buffer_to_string`
-wrap the mock data for assertions, letting you verify that every split of
+repeats the test body automatically in two full sweeps -- error-code mode,
+then exception mode. Buffer utilities such as `bufgrind` and `buffer_to_string`
+wrap the mock data for assertions. They let you verify that every split of
 an input buffer produces the same correct output.
-
-Continue to xref:7.testing/7a.drivers.adoc[Driving Tests] to begin.

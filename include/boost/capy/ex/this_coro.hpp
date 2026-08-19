@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -37,7 +38,7 @@ namespace capy {
 */
 namespace this_coro {
 
-/** Tag type for coroutine environment retrieval.
+/** Selects `co_await this_coro::environment` to fetch the running coroutine's environment.
 
     This tag is intercepted by a promise type's `await_transform` to
     yield the coroutine's current execution environment. The tag itself
@@ -48,7 +49,7 @@ namespace this_coro {
 */
 struct environment_tag {};
 
-/** Tag type for coroutine executor retrieval.
+/** Selects `co_await this_coro::executor` to fetch the running coroutine's executor.
 
     This tag is intercepted by a promise type's `await_transform` to
     yield the coroutine's current executor. The tag itself carries no
@@ -59,7 +60,7 @@ struct environment_tag {};
 */
 struct executor_tag {};
 
-/** Tag type for coroutine stop token retrieval.
+/** Selects `co_await this_coro::stop_token` to fetch the running coroutine's stop token.
 
     This tag is intercepted by a promise type's `await_transform` to
     yield the coroutine's current stop token. The tag itself carries
@@ -70,7 +71,7 @@ struct executor_tag {};
 */
 struct stop_token_tag {};
 
-/** Tag type for coroutine frame allocator retrieval.
+/** Selects `co_await this_coro::frame_allocator` to fetch the running coroutine's frame allocator.
 
     This tag is intercepted by a promise type's `await_transform` to
     yield the coroutine's current frame allocator. The tag itself carries
@@ -101,7 +102,7 @@ struct frame_allocator_tag {};
 
     @par Preconditions
     An `io_env` must have been installed for this coroutine before the tag
-    is awaited. Launching the coroutine via @ref run or `run_async` installs
+    is awaited. Starting the coroutine via @ref run or `run_async` installs
     one; awaiting the tag without an installed environment is undefined
     behavior (an assertion fires in debug builds).
 
@@ -136,7 +137,7 @@ inline constexpr environment_tag environment{};
     environment is undefined behavior (an assertion fires in debug builds).
 
     @par Behavior
-    @li Returns the installed environment's `executor` field. If the launched
+    @li Returns the installed environment's `executor` field. If the started
         chain installed an `io_env` whose `executor` was left default, the
         result is a default-constructed `executor_ref` (where `operator bool()`
         returns `false`).
@@ -170,7 +171,7 @@ inline constexpr executor_tag executor{};
     environment is undefined behavior (an assertion fires in debug builds).
 
     @par Behavior
-    @li Returns the installed environment's `stop_token` field. If the launched
+    @li Returns the installed environment's `stop_token` field. If the started
         chain installed an `io_env` whose `stop_token` was left default, the
         result is a default-constructed `std::stop_token` (where
         `stop_possible()` returns `false`).

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -28,11 +29,17 @@ namespace capy {
     @code
     auto [ec, n] = co_await stream.read_some( bufs );
     if( ec == cond::canceled )
+    {
         // handle cancellation
+    }
     else if( ec == cond::eof )
+    {
         // handle end of stream
+    }
     else if( ec )
+    {
         // handle other errors
+    }
     @endcode
 
     @see error
@@ -42,8 +49,8 @@ enum class cond
     /** End-of-stream condition.
 
         An `error_code` compares equal to `eof` when the stream
-        reached its natural end, such as when a peer sends TCP FIN
-        or a file reaches EOF.
+        reached its natural end. Examples are a peer sending TCP
+        FIN, or a file reaching EOF.
     */
     eof = 1,
 
@@ -105,7 +112,13 @@ BOOST_CAPY_DECL extern cond_cat_type cond_cat;
 
 } // detail
 
-/// Create an error_condition from a cond value.
+/** Create an error_condition from a cond value.
+
+    @param ev The library condition value.
+
+    @return An `std::error_condition` holding `ev` in the library's
+        condition category.
+*/
 inline
 std::error_condition
 make_error_condition(

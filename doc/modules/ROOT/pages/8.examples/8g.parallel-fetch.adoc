@@ -1,17 +1,13 @@
 = Parallel Fetch
+:page-mode: how-to
 
-Running multiple operations concurrently with `when_all`.
+Running multiple operations concurrently with cpp:when_all[].
 
-== What You Will Learn
+== What This Example Shows
 
-* Using `when_all` to run tasks in parallel
+* Using cpp:when_all[] to run tasks in parallel
 * Structured bindings for results
 * Error propagation in concurrent tasks
-
-== Prerequisites
-
-* Completed xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation]
-* Understanding of `when_all` from xref:../4.coroutines/4f.composition.adoc[Composition]
 
 == Source Code
 
@@ -22,10 +18,10 @@ include::example$parallel-fetch/parallel_fetch.cpp[tag=full]
 
 == Build
 
-[source,cmake]
+[source,cmake,role=external]
 ----
 add_executable(parallel_fetch parallel_fetch.cpp)
-target_link_libraries(parallel_fetch PRIVATE capy)
+target_link_libraries(parallel_fetch PRIVATE Boost::capy)
 ----
 
 == Walkthrough
@@ -37,7 +33,7 @@ target_link_libraries(parallel_fetch PRIVATE capy)
 include::example$parallel-fetch/parallel_fetch.cpp[tag=when_all_dashboard,indent=0]
 ----
 
-`when_all` requires children returning `io_result`, so plain tasks are wrapped. All three run concurrently. The result is `io_result<std::string, int, double>`, a single `ec` plus the flattened payloads in input order.
+cpp:when_all[] requires children returning cpp:io_result[], so plain tasks are wrapped. The result is `io_result<std::string, int, double>`, a single `ec` plus the flattened payloads in input order.
 
 === Void io_tasks
 
@@ -46,7 +42,7 @@ include::example$parallel-fetch/parallel_fetch.cpp[tag=when_all_dashboard,indent
 include::example$parallel-fetch/parallel_fetch.cpp[tag=when_all_void,indent=0]
 ----
 
-`io_task<>` children return `io_result<>` (just an error code, no payload). Check `std::get<0>(r)` to detect failure.
+cpp:io_task[io_task<>] children return cpp:io_result[io_result<>] (an error code, no payload). Check `std::get<0>(r)` to detect failure.
 
 === Error Propagation
 
@@ -55,10 +51,11 @@ include::example$parallel-fetch/parallel_fetch.cpp[tag=when_all_void,indent=0]
 include::example$parallel-fetch/parallel_fetch.cpp[tag=when_all_errors,indent=0]
 ----
 
-I/O errors are reported via `ec` in the `io_result`. Thrown exceptions are captured separately — Upon error cancellation is requested and the first exception is rethrown after all tasks complete.
+I/O errors are reported via `ec` in the cpp:io_result[io_result]. Thrown exceptions are captured separately. Upon error, cancellation is requested and the first exception is rethrown after all tasks complete.
 
 == Output
 
+[role=output]
 ----
 === Fetching dashboard for: alice ===
 Fetching user ID for: alice

@@ -1,4 +1,5 @@
 = Type-Erasing Awaitables
+:page-mode: explanation
 
 == Overview
 
@@ -8,8 +9,9 @@ The vtable layout depends on how many async operations the wrapper exposes and w
 
 == Single-Operation: Flat Vtable
 
-When a wrapper exposes exactly one async operation (e.g. `any_read_stream` with `read_some`, or `any_write_stream` with `write_some`), all function pointers live in a single flat vtable:
+When a wrapper exposes exactly one async operation (e.g. cpp:any_read_stream[] with `read_some`, or cpp:any_write_stream[] with `write_some`), all function pointers live in a single flat vtable:
 
+.Design sketch
 [source,cpp,role=pseudocode]
 ----
 // Flat vtable -- 64 bytes, one cache line
@@ -26,12 +28,11 @@ struct vtable
 };
 ----
 
-The inner awaitable can be constructed in either `await_ready` or `await_suspend`, depending on whether the outer awaitable has a short-circuit path.
-
 === Construct in await_ready (any_read_stream)
 
 When there is no outer short-circuit, constructing in `await_ready` lets immediate completions skip `await_suspend` entirely:
 
+.Design sketch
 [source,cpp,role=pseudocode]
 ----
 bool await_ready() {
@@ -56,6 +57,7 @@ io_result<size_t> await_resume() {
 
 When the outer awaitable has a short-circuit (empty buffers), construction is deferred to `await_suspend` so the inner awaitable is never created on the fast path:
 
+.Design sketch
 [source,cpp,role=pseudocode]
 ----
 bool await_ready() const noexcept {
@@ -80,17 +82,18 @@ io_result<size_t> await_resume() {
 }
 ----
 
-Both variants touch the same two cache lines on the hot path.
-
 == Multi-Operation: Per-Construct awaitable_ops
 
 When a wrapper exposes more than one async operation, it cannot embed a single set of per-awaitable function pointers in its vtable, because each operation produces a distinct concrete awaitable type. Instead the vtable holds one `construct_*_awaitable` pointer per operation, and each `construct` call returns a pointer to a `static constexpr` ops struct describing the awaitable it just created.
 
 Two sub-cases arise, distinguished by whether the operations share an await-return type:
 
-* *Same await-return type* (`any_read_source`: `read_some` and `read` both await-return `io_result<std::size_t>`). One ops struct (`awaitable_ops`) serves both operations; both `construct_*_awaitable` pointers return the same layout.
-* *Different await-return types* (`any_buffer_source`: `pull` await-returns `io_result<std::span<const_buffer>>` while its synthesized `read_some`/`read` await-return `io_result<std::size_t>`; `any_buffer_sink` and `any_write_sink` similarly mix `io_result<>`, `io_result<std::size_t>`). These need more than one ops struct (e.g. `awaitable_ops` plus `read_awaitable_ops`/`write_awaitable_ops`/`eof_awaitable_ops`), and each `construct` returns the ops matching its result type.
+* *Same await-return type* (Boost.Http's `http::any_read_source`: `read_some` and `read` both await-return cpp:io_result[io_result<std::size_t>]). One ops struct (`awaitable_ops`) serves both operations; both `construct_*_awaitable` pointers return the same layout.
+* *Different await-return types* (Boost.Http's `http::any_buffer_source`: `pull` await-returns cpp:io_result[io_result<std::span<const_buffer>>] while its synthesized `read_some`/`read` await-return `io_result<std::size_t>`; `http::any_buffer_sink` and `http::any_write_sink` similarly mix `io_result<>`, `io_result<std::size_t>`). These need more than one ops struct (e.g. `awaitable_ops` plus `read_awaitable_ops`/`write_awaitable_ops`/`eof_awaitable_ops`), and each `construct` returns the ops matching its result type.
 
+Capy's own multi-operation wrapper avoids this problem entirely. cpp:any_stream[] exposes two operations, `read_some` and `write_some`, but does not build a shared per-construct ops table for them: it inherits from cpp:any_read_stream[] and cpp:any_write_stream[], composing two independent flat, single-operation vtables. Per-construct ops are needed only when multiple operations act on one shared inner source or sink object.
+
+.Design sketch
 [source,cpp,role=pseudocode]
 ----
 // Per-awaitable dispatch -- one struct per await-return type
@@ -115,6 +118,7 @@ struct vtable
 
 The inner awaitable is constructed in `await_suspend`. Outer `await_ready` handles short-circuits (e.g. empty buffers) before the inner type is ever created:
 
+.Design sketch
 [source,cpp,role=pseudocode]
 ----
 bool await_ready() const noexcept {
@@ -142,13 +146,20 @@ io_result<size_t> await_resume() {
 
 Immediate completion path -- inner `await_ready` returns true:
 
+[role=figure]
 ----
 Flat (any_read_stream, any_write_stream): 2 cache lines
   LINE 1  object        stream_, vt_, cached_awaitable_, ...
   LINE 2  vtable        construct → await_ready → await_resume → destroy
                          (contiguous, sequential access, prefetch-friendly)
 
-Per-construct ops (any_read_source, any_buffer_source,
+Composed flat (any_stream = any_read_stream + any_write_stream): 2 cache
+lines per operation
+  read_some and write_some each hit their own base's 2-line flat vtable
+  independently -- no shared ops table, because the two operations
+  already live in two separate single-operation wrappers.
+
+Per-construct ops (Boost.Http's any_read_source, any_buffer_source,
                    any_buffer_sink, any_write_sink):  3 cache lines
   LINE 1  object        source_, vt_, cached_awaitable_, active_ops_, ...
   LINE 2  vtable        construct_*_awaitable pointers
@@ -165,18 +176,23 @@ The flat layout keeps all per-awaitable function pointers adjacent to `construct
 | Layout | Wrappers
 
 | Flat vtable (one operation, ops embedded in vtable)
-| `any_read_stream` (`read_some`) +
-  `any_write_stream` (`write_some`)
+| cpp:any_read_stream[] (`read_some`) +
+  cpp:any_write_stream[] (`write_some`)
+
+| Composed flat vtables (multiple operations via inheritance from single-operation wrappers)
+| cpp:any_stream[] (`read_some` via cpp:any_read_stream[]; `write_some` via cpp:any_write_stream[] -- two independent flat vtables, no shared ops table)
 
 | Per-construct ops, single ops struct (multiple operations, all sharing one await-return type)
-| `any_read_source` (`read_some`, `read` -- both `io_result<size_t>`)
+| Boost.Http's `http::any_read_source` (`read_some`, `read` -- both cpp:io_result[io_result<size_t>])
 
 | Per-construct ops, multiple ops structs (operations differ in await-return type)
-| `any_buffer_source` (`pull` → `io_result<span>`; synthesized `read_some`/`read` → `io_result<size_t>`) +
-  `any_buffer_sink` (`commit`/`commit_eof` → `io_result<>`; `write_some`/`write` → `io_result<size_t>`) +
-  `any_write_sink` (`write_some`/`write` → `io_result<size_t>`; `write_eof()` → `io_result<>`)
+| Boost.Http's `http::any_buffer_source` (`pull` → cpp:io_result[io_result<span>]; synthesized `read_some`/`read` → `io_result<size_t>`) +
+  `http::any_buffer_sink` (`commit`/`commit_eof` → `io_result<>`; `write_some`/`write` → `io_result<size_t>`) +
+  `http::any_write_sink` (`write_some`/`write` → `io_result<size_t>`; `write_eof()` → `io_result<>`)
 |===
 
 == Why the Flat Layout Cannot Scale
 
-With multiple operations, each `construct` call produces a different concrete awaitable type. The per-awaitable function pointers (`await_ready`, `await_suspend`, `await_resume`, `destroy`) must match the type that was constructed. Returning the correct ops pointer from each `construct` call solves this. Embedding the four function pointers directly in the vtable, as the flat layout does, would require one full set per operation -- workable for one operation, unwieldy for four. When the operations share an await-return type (`any_read_source`) a single ops struct suffices; when they differ (`any_buffer_source`, `any_buffer_sink`, `any_write_sink`) the wrapper carries one ops struct per result type.
+With multiple operations against a shared inner object, each `construct` call produces a different concrete awaitable type. The per-awaitable function pointers (`await_ready`, `await_suspend`, `await_resume`, `destroy`) must match the type that was constructed. Embedding the four function pointers directly in the vtable, as the flat layout does, would require one full set per operation -- workable for one operation, unwieldy for four.
+
+This scaling problem is specific to wrappers with several operations on one inner object. cpp:any_stream[] never hits it: its two operations belong to two separate inner-object-free bases, each already a flat single-operation wrapper.

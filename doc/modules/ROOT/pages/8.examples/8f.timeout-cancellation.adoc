@@ -1,20 +1,16 @@
 = Timeout with Cancellation
+:page-mode: how-to
 
 Racing a slow operation against a deadline, and cancelling work directly
 with a stop token.
 
-== What You Will Learn
+== What This Example Shows
 
 * Where timed operations belong in the layering
 * Using `async_waker` as the escape hatch for external timing
-* Racing a fetch against a deadline with `when_any`
+* Racing a fetch against a deadline with cpp:when_any[]
 * Checking `stop_requested()` in coroutines
 * Direct cancellation with `std::stop_source`
-
-== Prerequisites
-
-* Completed xref:8.examples/8e.type-erased-echo.adoc[Type-Erased Echo]
-* Understanding of stop tokens from xref:../4.coroutines/4e.cancellation.adoc[Cancellation]
 
 == Source Code
 
@@ -25,10 +21,10 @@ include::example$timeout-cancellation/timeout_cancellation.cpp[tag=full]
 
 == Build
 
-[source,cmake]
+[source,cmake,role=external]
 ----
 add_executable(timeout_cancellation timeout_cancellation.cpp)
-target_link_libraries(timeout_cancellation PRIVATE capy)
+target_link_libraries(timeout_cancellation PRIVATE Boost::capy)
 ----
 
 == Walkthrough
@@ -36,10 +32,9 @@ target_link_libraries(timeout_cancellation PRIVATE capy)
 === Where Timing Lives
 
 Capy is the coroutine layer: no reactor, no clock, no hidden threads.
-Every thread Capy touches is one you handed it, a `thread_pool` worker,
-or the thread that calls `run`. Timing needs a clock and something to
-sleep on it, and that belongs to the I/O layer, where a reactor and
-platform clock already exist for other reasons: Corosio provides
+Every thread Capy touches is one you handed it, a cpp:thread_pool[] worker,
+or the thread that calls cpp:run[]. Timing belongs to the I/O layer, where a reactor and
+platform clock already exist for other reasons. Corosio provides
 `delay()` and `timeout()` built on its event loop.
 
 In pure Capy, with no Corosio in the picture, the user's own thread
@@ -49,27 +44,27 @@ plays the clock, and `async_waker` gives it a suspension point to wake.
 
 `async_waker` is Capy's answer to "how do I wait for something that isn't
 a coroutine?" It hands a single wakeup from any thread to one waiting
-coroutine: one coroutine suspends in `wait()`; any thread, including one
-you spun up yourself to play the role of a clock, wakes it with `wake()`:
+coroutine. One coroutine suspends in cpp:async_waker::wait[wait]`()`. Any thread, including one
+you spun up yourself to play the role of a clock, wakes it with cpp:async_waker::wake[wake]`()`:
 
 [source,cpp]
 ----
 include::example$timeout-cancellation/timeout_cancellation.cpp[tag=fetch_channel]
 ----
 
-`wait()` returns an `io_result<>` that is empty on wakeup and carries
-`cond::canceled` if the environment's stop token fires first. A wakeup
+cpp:async_waker::wait[wait]`()` returns an cpp:io_result[io_result<>] that is empty on wakeup and carries
+cpp:cond::canceled[cond::canceled] if the environment's stop token fires first. A wakeup
 with no waiter present is latched as one pending token, so the
-wake-before-wait race is benign; extra wakes collapse into that single
+wake-before-wait race is benign. Extra wakes collapse into that single
 token rather than queuing up. Because `wake()` is the only operation
 callable from a foreign thread, the pattern generalizes to anything
-external: a timer, a hardware interrupt, a completion callback from
-another library.
+external. Examples are a timer, a hardware interrupt, a completion
+callback from another library.
 
 === Racing a Fetch Against a Deadline
 
-`demo_timeout` builds two `io_task` children, each just a waker wait, and
-races them with `when_any`:
+`demo_timeout` builds two cpp:io_task[] children, each just a waker wait, and
+races them with cpp:when_any[]:
 
 [source,cpp]
 ----
@@ -79,12 +74,12 @@ include::example$timeout-cancellation/timeout_cancellation.cpp[tag=race,indent=0
 `await_fetch` completes when the fetch worker thread finishes and wakes
 `fetch_ch.fetch_ready`. `deadline` completes when a second user thread,
 playing the clock, sleeps for the allotted duration and wakes
-`deadline_waker`. Whichever wakes first wins;
-`when_any` requests stop on the loser, which is exactly how `await_fetch`
+`deadline_waker`. Whichever wakes first wins.
+cpp:when_any[] requests stop on the loser, which is exactly how `await_fetch`
 learns to set `cancelled` and let the fetch worker thread bail out early.
 
-`async_waker::wait()` must only be awaited on a single-threaded
-executor, so both children run on `thread_pool(1)`. The slow, blocking
+cpp:async_waker::wait[wait]`()` must only be awaited on a single-threaded
+executor, so both children run on cpp:thread_pool[]`(1)`. The slow, blocking
 work itself still happens off that thread, on the two `std::thread`
 objects the demo owns directly.
 
@@ -95,7 +90,7 @@ objects the demo owns directly.
 include::example$timeout-cancellation/timeout_cancellation.cpp[tag=get_stop_token,indent=0]
 ----
 
-Inside a task, `this_coro::stop_token` retrieves the stop token propagated from the caller. You can also access it through the full environment via `co_await this_coro::environment`.
+Inside a task, cpp:this_coro::stop_token[this_coro::stop_token] retrieves the stop token propagated from the caller. You can also access it through the full environment via `co_await this_coro::environment`.
 
 === Checking for Cancellation
 
@@ -126,6 +121,7 @@ Cancellation doesn't have to throw. You can return partial results or a sentinel
 
 == Output
 
+[role=output]
 ----
 Demo: Fetch races a deadline
   Completed step 0

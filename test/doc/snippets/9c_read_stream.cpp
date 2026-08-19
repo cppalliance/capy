@@ -82,15 +82,6 @@ static_assert(capy::ReadStream<capy::test::read_stream>);
 
 } // namespace definition
 
-// Scaffold owning the conforming-signature declaration.
-struct conforming_stream
-{
-    // tag::read_some_signature[]
-    template<MutableBufferSequence Buffers>
-    IoAwaitable auto read_some(Buffers buffers);
-    // end::read_some_signature[]
-};
-
 namespace composed {
 
 // tag::read_signature[]

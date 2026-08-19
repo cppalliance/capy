@@ -1,0 +1,444 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Buffer Sequences
+:page-mode: explanation
+:page-aliases: 5.buffers/5a.overview.adoc, 5.buffers/5b.types.adoc, 5.buffers/5c.sequences.adoc, 5.buffers/5d.system-io.adoc, 5.buffers/5e.algorithms.adoc
+
+Every I/O operation comes down to moving bytes between your program and the outside world. The question is how you describe where those bytes live.
+
+A pointer and a size answers it for one contiguous region. Real I/O is rarely that tidy. A message may be a protocol header, a payload, and a checksum, each produced by different code and each in its own memory.
+
+Capy describes any such arrangement without copying it, using _buffer sequences_.
+
+Everything here lives in `<boost/capy/buffers.hpp>`.
+
+== Buffer Types
+
+=== Buffers Are Handles
+
+A cpp:const_buffer[] or cpp:mutable_buffer[] is a *handle*: a non-owning `(pointer, size)` view of memory it does not own. Constructing one copies no bytes, and destroying one frees nothing.
+
+This splits lifetime responsibility cleanly:
+
+* *You own the bytes.* The memory a buffer refers to--a stack array, a `std::string`, a slab from your allocator--is yours to keep alive. It must stay valid for the whole duration of any operation you hand the buffer to. That includes the suspension points of a `co_await`-ed I/O operation.
+* *The library owns the handles.* Capy creates and manages buffer handles on your behalf. Those are the sub-range a cpp:buffer_slice[] produces, and the descriptors a type-erased stream passes to the OS. Each is valid only for the window its API documents.
+
+=== const_buffer
+
+cpp:const_buffer[] represents a contiguous region of read-only memory.
+
+[source,cpp]
+----
+include::example$snippets/5b_types.cpp[tag=const_buffer_construct,indent=0]
+----
+
+Accessors:
+
+[source,cpp]
+----
+include::example$snippets/5b_types.cpp[tag=const_buffer_accessors,indent=0]
+----
+
+The `+=` operator removes bytes from the front, which is useful when processing a buffer incrementally:
+
+[source,cpp]
+----
+include::example$snippets/5b_types.cpp[tag=const_buffer_prefix,indent=0]
+----
+
+=== mutable_buffer
+
+cpp:mutable_buffer[] represents a contiguous region of writable memory. The interface mirrors cpp:const_buffer[], but `data()` returns non-const `void*`.
+
+A cpp:mutable_buffer[] converts implicitly to a cpp:const_buffer[]:
+
+[source,cpp]
+----
+include::example$snippets/5b_types.cpp[tag=mutable_to_const,indent=0]
+----
+
+The reverse is not allowed.
+
+=== make_buffer
+
+cpp:make_buffer[] creates buffers from various sources:
+
+[source,cpp]
+----
+include::example$snippets/5b_types.cpp[tag=make_buffer_include]
+
+include::example$snippets/5b_types.cpp[tag=make_buffer_sources,indent=0]
+----
+
+It accepts any sized, contiguous range of trivially-copyable elements, including `std::span` and `boost::span`. The returned type follows the element constness:
+
+* Ranges of mutable elements -> cpp:mutable_buffer[]
+* Ranges of const elements, `string_view`, string literals -> cpp:const_buffer[]
+
+The buffer's size in bytes is `count * sizeof(element)`.
+
+[NOTE]
+====
+*Why `void*` rather than `std::byte`?*
+
+Two concrete forces decide it:
+
+* *The platform types already use it.* The OS structures Capy maps onto are `void*` or `char*`: `iovec`'s `iov_base`, `WSABUF`'s `buf`. The pointer field never needs reinterpreting.
+* *Callers supply many element types.* Data arrives as `char[]`, `unsigned char[]`, `std::byte[]`, `std::string`, and more. One neutral pointer erases all of them to a single representation. `std::span<std::byte>` would make every caller reinterpret first, and `std::span<void>` is ill-formed.
+
+This is an argument from layout and from caller convenience, not from semantics. "Raw memory" describes `std::byte` just as well as it describes `void*`.
+====
+
+== Buffer Sequences
+
+A *buffer sequence* is any type that can produce an iteration of buffers:
+
+* A single buffer is a sequence of one element
+* A range of buffers, such as `vector<const_buffer>`, is a multi-element sequence
+* Any bidirectional range with buffer-convertible values qualifies
+
+Treating a single buffer as a one-element sequence is deliberate. It lets one concept-constrained signature serve both the common single-buffer call and scatter/gather composition. There is no overload and no explicit wrap at the call site.
+
+=== The Concepts
+
+[source,cpp]
+----
+include::example$snippets/5c_sequences.cpp[tag=const_buffer_sequence_concept,indent=0]
+----
+
+A type satisfies cpp:ConstBufferSequence[] if it converts to cpp:const_buffer[] directly, or if it is a bidirectional range whose elements convert to cpp:const_buffer[].
+
+[source,cpp]
+----
+include::example$snippets/5c_sequences.cpp[tag=mutable_buffer_sequence_concept,indent=0]
+----
+
+cpp:MutableBufferSequence[] follows the same pattern for cpp:mutable_buffer[].
+
+Many common types satisfy these concepts:
+
+[source,cpp]
+----
+include::example$snippets/5c_sequences.cpp[tag=concept_models,indent=0]
+----
+
+`std::string` and `std::string_view` are ranges of characters, not of buffers, so they do not satisfy the concepts themselves. Wrap them with cpp:make_buffer[].
+
+=== Heterogeneous Composition
+
+Because the concept accepts anything convertible to a buffer, you can mix types freely:
+
+[source,cpp]
+----
+include::example$snippets/5c_sequences.cpp[tag=send_signature,indent=0]
+
+include::example$snippets/5c_sequences.cpp[tag=send_calls,indent=0]
+----
+
+A single buffer works in the same signature, with no wrapping:
+
+[source,cpp]
+----
+include::example$snippets/5b_types.cpp[tag=write_data_signature,indent=0]
+
+include::example$snippets/5b_types.cpp[tag=write_data_calls,indent=0]
+----
+
+[NOTE]
+====
+*Why concepts rather than one span type?*
+
+`std::span<std::span<std::byte>>` is the reflexive answer for multiple buffers, and it works. The problem is composition. Joining a two-buffer header to a three-buffer body means building a new five-element array, so every composition allocates:
+
+[source,cpp]
+----
+include::example$snippets/5a_overview.cpp[tag=span_combine,indent=0]
+----
+
+A concept accepts the composite directly, with no allocation and no overload per shape.
+
+At type-erasure boundaries the tradeoff reverses. Virtual functions need concrete types, so Capy converts to concrete descriptors internally and keeps concepts at the user-facing edge.
+====
+
+=== Iterating Buffer Sequences
+
+Use `begin()` and `end()` from `<boost/capy/buffers.hpp>`:
+
+[source,cpp]
+----
+include::example$snippets/5c_sequences.cpp[tag=iterate,indent=0]
+----
+
+These handle both single buffers, returning pointer-to-self, and ranges, returning standard iterators:
+
+[source,cpp]
+----
+include::example$snippets/5b_types.cpp[tag=begin_end_uniform,indent=0]
+----
+
+=== buffer_slice
+
+cpp:buffer_slice[] returns a byte sub-range of a buffer sequence, as a value:
+
+[source,cpp]
+----
+include::example$snippets/5c_sequences.cpp[tag=buffer_slice_include]
+
+include::example$snippets/5c_sequences.cpp[tag=buffer_slice,indent=0]
+----
+
+cpp:buffer_slice[]`(seq, offset, length)` returns a value that is itself a buffer sequence, so you can pass it to any operation expecting one. Both `offset` and `length` are optional, which makes it a general byte sub-range primitive. Except in the single-buffer case the result borrows `seq`, so the sequence must outlive the slice.
+
+=== consuming_buffers
+
+When transferring data incrementally, cpp:consuming_buffers[] is a cursor that tracks progress:
+
+[source,cpp]
+----
+include::example$snippets/5c_sequences.cpp[tag=consuming_buffers_include]
+
+include::example$snippets/5c_sequences.cpp[tag=read_all,indent=0]
+----
+
+The cursor borrows the underlying sequence and provides:
+
+* cpp:consuming_buffers::data[data]`()` -- buffer sequence view of the remaining bytes
+* cpp:consuming_buffers::consume[consume]`(n)` -- advance past `n` transferred bytes, in place
+
+[NOTE]
+====
+`read_all` takes its stream by reference and its buffers by value. Both are safe
+here, because the caller owns the stream and awaits the task immediately.
+
+A coroutine reads its parameters when its body runs, not when the call is
+written. A task that is stored and awaited later outlives its call expression,
+so a reference parameter can dangle by then. That is why the fan-out example on
+xref:4.coroutines/4f.composition.adoc[Concurrent Composition] takes its item by
+value: it collects its tasks first, then awaits them together.
+====
+
+=== Why Bidirectional?
+
+The concepts require bidirectional ranges, not merely forward ranges, for two reasons:
+
+1. Some algorithms traverse buffers backwards
+2. The slice views from cpp:buffer_slice[] and cpp:consuming_buffers::data[]`()` must adjust the first and last buffers' bounds
+
+If your custom sequence offers only forward iteration, wrap it in a type that provides bidirectional access.
+
+== System I/O Integration
+
+=== Platform Buffer Structures
+
+[source,c,role=external]
+----
+struct iovec {
+    void*  iov_base;  // Pointer to data
+    size_t iov_len;   // Length of data
+};
+----
+
+POSIX uses `iovec` with `readv()`, `writev()`, `recvmsg()`, and `sendmsg()`. Capy's buffer types place the pointer first and the size second, matching `iovec` in both order and width. Filling an `iovec` is therefore a field-for-field copy, with no conversion.
+
+[WARNING]
+====
+*Matching layout does not license a cast.* Do not `reinterpret_cast` an array of cpp:mutable_buffer[] or cpp:const_buffer[] to `iovec*` and hand it to the OS, even though the fields line up. No object of the target type exists in that storage, so the access is undefined behavior. These are not implicit-lifetime types either, so `std::start_lifetime_as_array` cannot rescue it.
+
+Copy field by field into a real platform array, which is what Capy does internally.
+====
+
+[source,c,role=external]
+----
+typedef struct _WSABUF {
+    ULONG  len;  // Length (note: first!)
+    CHAR*  buf;  // Pointer
+} WSABUF;
+----
+
+Windows uses `WSABUF` with `WSARecv()` and `WSASend()`. The field order is reversed and the length is 32-bit, so Capy copies descriptors into a `WSABUF` array rather than casting.
+
+=== Translation Process
+
+When you call an I/O function with a buffer sequence:
+
+[source,cpp]
+----
+include::example$snippets/5d_system_io.cpp[tag=write_some_signature]
+----
+
+Capy counts the buffers, fills an array of platform structures with the descriptors, calls the OS function, and returns the result.
+
+Conversion always happens on the stack; the implementation never allocates. A fixed on-frame window of 16 descriptors is filled from the sequence and passed to the OS call. If the sequence holds more buffers than fit, the window is refilled and the call repeated:
+
+.Pseudocode - internal implementation
+[source,cpp,role=pseudocode]
+----
+template<ConstBufferSequence Buffers>
+auto platform_write(Buffers const& buffers)
+{
+    iovec iovecs[16];  // fixed on-frame window, never heap-allocated
+
+    auto it = begin(buffers);
+    auto last = end(buffers);
+    while (it != last)
+    {
+        std::size_t count = fill_iovecs(iovecs, it, last, 16);  // up to 16
+        auto result = writev(fd, iovecs, count);
+        // ... advance the window past the buffers just written
+    }
+}
+----
+
+The window size is implementation-defined.
+
+=== Why Vectored I/O
+
+Consider sending an HTTP message whose headers and body sit in separate buffers. With a single-buffer API you have two options, and each costs something:
+
+* *Copy.* Allocate a buffer large enough for both, copy the headers in, copy the body after them, then send once. That is an allocation plus two copies of data you already have.
+* *Call twice.* Send the headers, then send the body. No copy, but two system calls rather than one. On a datagram socket it also changes the result: two datagrams instead of one.
+
+Vectored I/O avoids both. One call transfers several non-contiguous buffers as a single logical operation:
+
+[source,cpp]
+----
+include::example$snippets/5d_system_io.cpp[tag=two_syscalls,indent=0]
+----
+
+[source,cpp]
+----
+include::example$snippets/5d_system_io.cpp[tag=gather_syscall,indent=0]
+----
+
+The data is never copied into a contiguous staging buffer; the OS reads directly from each region. The write is also atomic at the file offset level, so other processes see all of the data or none of it.
+
+=== Registered Buffers
+
+Some platforms allow buffers to be pre-registered with the kernel, removing per-operation address translation. On Linux 5.1+, io_uring supports this:
+
+[source,cpp]
+----
+include::example$snippets/5d_system_io.cpp[tag=io_uring_fixed,indent=0]
+----
+
+Windows IOCP offers a comparable optimization with pre-registered memory regions.
+
+Corosio does not currently expose either. Every operation goes through the per-call translation described above.
+
+=== Writing Efficient Code
+
+Fewer buffers means less translation overhead:
+
+[source,cpp]
+----
+include::example$snippets/5d_system_io.cpp[tag=minimize_buffer_count,indent=0]
+----
+
+For repeated I/O with the same structure, consider caching the platform array:
+
+[source,cpp]
+----
+include::example$snippets/5d_system_io.cpp[tag=cached_iovecs]
+----
+
+Buffer translation is rarely the bottleneck. Profile network latency, disk time, and your own processing before optimizing descriptor copying.
+
+== Buffer Algorithms
+
+=== Measuring
+
+cpp:buffer_size[] returns the total number of *bytes* across every buffer in a sequence:
+
+[source,cpp]
+----
+include::example$snippets/5e_algorithms.cpp[tag=buffer_size_example,indent=0]
+----
+
+cpp:buffer_length[] returns the *number of buffers* in the sequence:
+
+[source,cpp]
+----
+include::example$snippets/5e_algorithms.cpp[tag=buffer_length_example,indent=0]
+----
+
+[IMPORTANT]
+====
+These two names are easy to confuse, so read them as answering different questions:
+
+* cpp:buffer_size[] -- how many bytes of data? This is what I/O operations care about.
+* cpp:buffer_length[] -- how many buffers hold it? This is the element count of the sequence, the analogue of `std::ranges::size`.
+
+A three-buffer sequence of 100 bytes each has a cpp:buffer_size[] of 300 and a cpp:buffer_length[] of 3. You want cpp:buffer_size[] far more often.
+====
+
+cpp:buffer_empty[] reports whether a sequence carries no data, either because it holds no buffers or because every buffer has size zero:
+
+[source,cpp]
+----
+include::example$snippets/5e_algorithms.cpp[tag=buffer_empty_example,indent=0]
+----
+
+=== Copying
+
+cpp:buffer_copy[] copies data from one buffer sequence to another and returns the number of bytes copied:
+
+[source,cpp]
+----
+include::example$snippets/5e_algorithms.cpp[tag=buffer_copy_example,indent=0]
+----
+
+Its `at_most` parameter caps the transfer, which is useful for protocols with size limits:
+
+[source,cpp]
+----
+include::example$snippets/5e_algorithms.cpp[tag=buffer_copy_at_most,indent=0]
+----
+
+Source and target need not have the same shape:
+
+[source,cpp]
+----
+include::example$snippets/5e_algorithms.cpp[tag=buffer_copy_cross,indent=0]
+----
+
+The algorithm fills target buffers in order, reading from source buffers as needed. It handles a source buffer spanning several targets, and the reverse.
+
+=== Partial Transfer Loops
+
+Real transfers move some of the bytes, not all of them. Drive the loop with a cpp:consuming_buffers[] cursor, described under <<_consuming_buffers,consuming_buffers>> above.
+
+[source,cpp]
+----
+include::example$snippets/5e_algorithms.cpp[tag=read_loop]
+----
+
+[source,cpp]
+----
+include::example$snippets/5e_algorithms.cpp[tag=write_loop]
+----
+
+=== Custom Buffer Types
+
+Any memory region can be a buffer, including a memory-mapped one:
+
+[source,cpp]
+----
+include::example$snippets/5e_algorithms.cpp[tag=mmap_buffer,indent=0]
+----
+
+You can also define your own type satisfying the concepts:
+
+[source,cpp]
+----
+include::example$snippets/5e_algorithms.cpp[tag=custom_sequence]
+----
+
+Here `chunk_iterator` is a small bidirectional iterator whose `operator*` returns each chunk as a cpp:const_buffer[].

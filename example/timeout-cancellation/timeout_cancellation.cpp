@@ -197,7 +197,7 @@ void demo_cancellation()
     std::stop_source source;
     std::latch done(1);  // std::latch - wait for 1 task
 
-    // Launch the task
+    // Start the task
     capy::run_async(pool.get_executor(), source.get_token(),
         [&done](std::optional<std::string> result) {
             if (result)

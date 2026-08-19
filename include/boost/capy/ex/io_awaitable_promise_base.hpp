@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -135,6 +136,19 @@ class io_awaitable_promise_base
     mutable std::coroutine_handle<> cont_{std::noop_coroutine()};
 
 public:
+    /** Destroy the promise, destroying an orphaned continuation.
+
+        A continuation is still stored only when the coroutine never
+        reached `final_suspend`, because @ref continuation consumes the
+        stored handle. Destroying it here is what keeps an abandoned
+        coroutine from leaking the trampoline frame that was waiting on it.
+
+        @par Preconditions
+        No parent coroutine is awaiting this one. A parent's `await_suspend`
+        installs its own handle as the continuation, so destroying such a
+        coroutine directly would destroy the parent from here as well. See
+        @ref task::handle and @ref quitter::handle for the contract.
+    */
     ~io_awaitable_promise_base()
     {
         // Abnormal teardown: destroy an orphaned continuation, e.g.
@@ -168,7 +182,7 @@ public:
     /** Return and consume the stored continuation handle.
 
         Resets the stored handle to `noop_coroutine()` so the
-        destructor will not double-destroy it.
+        destructor does not double-destroy it.
 
         @return The continuation for symmetric transfer.
     */

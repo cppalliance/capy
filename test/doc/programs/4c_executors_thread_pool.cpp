@@ -32,7 +32,7 @@ int main()
     // Get an executor for this pool
     auto ex = pool.get_executor();
 
-    // Launch work on the pool
+    // Start work on the pool
     run_async(ex)(my_task());
 
     pool.join();  // wait for outstanding work to complete

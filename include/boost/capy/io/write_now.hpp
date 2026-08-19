@@ -59,7 +59,7 @@ namespace capy {
     @par Preconditions
     Only one operation may be outstanding at a time. A new call to
     `operator()` must not be made until the previous operation has
-    completed (i.e., the returned awaitable has been fully consumed).
+    completed (i.e., the returned awaitable is fully consumed).
 
     @par Example
 
