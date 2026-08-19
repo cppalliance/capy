@@ -114,7 +114,7 @@ endfunction()
 
 if (BOOST_CAPY_MRDOCS_BUILD)
     file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/mrdocs.cpp"
-        "#include <boost/capy.hpp>\n")
+        "#include <boost/capy.hpp>\n#include <boost/capy/test.hpp>\n")
     add_library(boost_capy_mrdocs "${CMAKE_CURRENT_BINARY_DIR}/mrdocs.cpp")
     boost_capy_setup_properties(boost_capy_mrdocs)
     target_compile_definitions(boost_capy_mrdocs PUBLIC BOOST_CAPY_MRDOCS)

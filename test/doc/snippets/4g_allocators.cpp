@@ -50,6 +50,7 @@
 #include <cstddef>
 #include <memory_resource>
 #include <system_error>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -169,6 +170,55 @@ void process_batch(std::vector<item> const& items)
 }
 // end::batch_allocator[]
 
+// tag::recycling_observe_resource[]
+// A memory resource that pools freed blocks by size. When a coroutine
+// frame is freed, its block is kept; the next frame of the same size
+// reuses it instead of allocating again -- the strategy that makes
+// recycling_memory_resource fast. The two counters let the test observe
+// upstream allocations versus reuse.
+struct pooling_resource : std::pmr::memory_resource
+{
+    std::size_t upstream = 0;   // blocks taken from the heap
+    std::size_t reused = 0;     // blocks served from the freelist
+
+    void*
+    do_allocate(std::size_t bytes, std::size_t) override
+    {
+        auto& blocks = pool_[bytes];
+        if(! blocks.empty())
+        {
+            ++reused;
+            void* p = blocks.back();
+            blocks.pop_back();
+            return p;
+        }
+        ++upstream;
+        return ::operator new(bytes);
+    }
+
+    void
+    do_deallocate(void* p, std::size_t bytes, std::size_t) override
+    {
+        pool_[bytes].push_back(p);   // keep the block for the next frame
+    }
+
+    bool
+    do_is_equal(memory_resource const& other) const noexcept override
+    {
+        return this == &other;
+    }
+
+    ~pooling_resource() override
+    {
+        for(auto& [bytes, blocks] : pool_)
+            for(void* p : blocks)
+                ::operator delete(p);
+    }
+
+    std::unordered_map<std::size_t, std::vector<void*>> pool_;
+};
+// end::recycling_observe_resource[]
+
 struct io_step
 {
     std::error_code ec;
@@ -202,14 +252,13 @@ void prepare(char*, char const*, std::size_t) {}
 
 void prepare(char*, std::size_t) {}
 
-char reply[] = "reply";
-
 namespace scope_bad {
 
 // tag::frame_scope_bad[]
 // BAD: buf lives in frame across all subsequent co_awaits
 task<> process(stream& s)
 {
+    char reply[] = "ok";
     char buf[4096];
     auto [ec, n] = co_await s.read_some(buf);
     co_await do_work(buf, n);
@@ -225,11 +274,10 @@ namespace scope_good {
 // GOOD: braces end buf's lifetime before next suspend
 task<> process(stream& s)
 {
-    std::size_t n;
+    char reply[] = "ok";
     {
         char buf[4096];
-        auto [ec, n_] = co_await s.read_some(buf);
-        n = n_;
+        auto [ec, n] = co_await s.read_some(buf);
         co_await do_work(buf, n);
     }
     co_await s.write_some(reply);  // 4K saved
@@ -345,6 +393,38 @@ struct allocators_test
     }
 
     void
+    testRecyclingObserved()
+    {
+        // tag::recycling_observe[]
+        // Run the same task repeatedly through one pooling resource. The
+        // first run has an empty pool, so its frames come from upstream.
+        // Once the task completes, its frames go back into the pool, so
+        // every later run reuses a freed block of the right size.
+        pooling_resource pooling;
+
+        auto run_once = [&]
+        {
+            thread_pool pool(1);
+            run_async(pool.get_executor(), &pooling)(my_task());
+            pool.join();   // task done: its frames are back in the pool
+        };
+
+        run_once();                                     // cold: fills pool
+        std::size_t const upstream_when_warm = pooling.upstream;
+
+        for(int i = 0; i < 7; ++i)
+            run_once();                                 // warm: reuses pool
+        // end::recycling_observe[]
+
+        // The frames really were allocated through our resource...
+        BOOST_TEST(pooling.upstream > 0);
+        // ...and the seven warm runs added no upstream allocations: every
+        // frame came from a recycled block.
+        BOOST_TEST(pooling.upstream == upstream_when_warm);
+        BOOST_TEST(pooling.reused > 0);
+    }
+
+    void
     testHaloPatterns()
     {
         std::vector<task<int>> tasks;
@@ -395,6 +475,7 @@ struct allocators_test
         testSafeResume();
         testRunAsyncPmrAllocator();
         testRunAsyncMemoryResource();
+        testRecyclingObserved();
         testHaloPatterns();
         testBatchAllocator();
         testFrameScope();

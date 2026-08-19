@@ -1,4 +1,5 @@
 = Capy
+:page-mode: explanation
 
 Capy abstracts away sockets, files, and asynchrony with type-erased streams and buffer sequences—code compiles fast because the implementation is hidden. It provides the framework for concurrent algorithms that transact in buffers of memory: networking, serial ports, console, timers, and any platform I/O. This is only possible because Capy is coroutine-only, enabling optimizations and ergonomics that hybrid approaches must sacrifice.
 
@@ -6,32 +7,32 @@ Capy abstracts away sockets, files, and asynchrony with type-erased streams and 
 
 Capy is two things at once:
 
-* *A protocol.* `IoAwaitable` is a protocol for propagating a coroutine's _execution environment_—its executor, stop token, and allocator—forward through `co_await` chains. This is the vocabulary that lets awaitable-based coroutine libraries interoperate.
+* *A protocol.* cpp:IoAwaitable[] is a protocol for propagating a coroutine's _execution environment_—its executor, stop token, and allocator—forward through `co_await` chains. This is the vocabulary that lets awaitable-based coroutine libraries interoperate.
 * *A reference implementation.* A concrete library—thread pool, task types, byte streams, buffer sequences, synchronization primitives—that proves the protocol works in practice.
 
-The protocol is the smaller, more general library living inside Capy. Without a shared protocol, _N_ coroutine libraries need _N_×(_N_−1) adapters to interoperate; with one shared protocol for environment propagation, a single bridge covers everyone. This is the role `IoAwaitable` plays.
+The protocol is the smaller, more general library living inside Capy. Without a shared protocol, _N_ coroutine libraries need _N_×(_N_−1) adapters to interoperate. With one shared protocol for environment propagation, a single bridge covers everyone.
 
 [IMPORTANT]
 ====
-*The core invariant: a coroutine always resumes on the executor it was launched with.*
+*The core invariant: a coroutine always resumes on the executor it was started with.*
 
-Launch a coroutine on a strand, and every resumption—after every `co_await`—happens on that strand. Shared state touched between suspension points is free of data races without a mutex. A _plain_ awaitable can resume a coroutine on any thread and would break this guarantee, so Capy rejects it at compile time and provides an explicit way to bridge such awaitables when you need one.
+Start a coroutine on a strand, and every resumption—after every `co_await`—happens on that strand. Shared state touched between suspension points is free of data races without a mutex. A _plain_ awaitable can resume a coroutine on any thread and would break this guarantee. Capy therefore rejects it at compile time, and provides an explicit way to bridge such awaitables when you need one.
 
 See xref:4.coroutines/4c.executors.adoc#the-same-executor-invariant[the same-executor invariant] for the rationale and xref:4.coroutines/4d.io-awaitable.adoc#bridging-a-foreign-awaitable[bridging a foreign awaitable] for the escape hatch.
 ====
 
 == What Capy Is Not
 
-Capy is _not_ an all-purpose coroutine framework, and it is _not_ an implementation detail of Corosio. It is the execution model and byte-stream layer—usable standalone for logic that operates on streams without any platform I/O (HTTP parsing, protocol state machines, serialization), and usable as the foundation for Corosio's networking layer. CERN's traccc project uses Capy without Corosio for GPU reconstruction pipelines; the Boost.HTTP parser is built entirely on Capy's byte streams.
+Capy is _not_ an all-purpose coroutine framework, and it is _not_ an implementation detail of Corosio. It is the execution model and byte-stream layer. It works standalone for logic that operates on streams without any platform I/O (HTTP parsing, protocol state machines, serialization). It also serves as the foundation for Corosio's networking layer. CERN's traccc project uses Capy without Corosio for GPU reconstruction pipelines; the Boost.HTTP parser is built entirely on Capy's byte streams.
 
 == What This Library Does
 
-* *Lazy coroutine tasks* — `task<T>` with forward-propagating stop tokens and automatic cancellation
+* *Lazy coroutine tasks* — cpp:task[task<T>] with forward-propagating stop tokens and automatic cancellation
 * *Buffer sequences* — taken straight from Asio and improved
-* *Stream concepts* — three coroutine stream concepts: `ReadStream`, `WriteStream`, `Stream`
-* *Type-erased streams* — `any_stream`, `any_read_stream`, `any_write_stream` for fast compilation
-* *Concurrency facilities* — executors, strands, thread pools, `when_all`, `when_any`
-* *Test utilities* — mock streams, mock sources/sinks, error injection
+* *Stream concepts* — three coroutine stream concepts: cpp:ReadStream[], cpp:WriteStream[], cpp:Stream[]
+* *Type-erased streams* — cpp:any_stream[], cpp:any_read_stream[], cpp:any_write_stream[] for fast compilation
+* *Concurrency facilities* — executors, strands, thread pools, cpp:when_all[], cpp:when_any[]
+* *Test utilities* — mock streams, error injection
 
 == What This Library Does Not Do
 
@@ -48,8 +49,6 @@ Capy is _not_ an all-purpose coroutine framework, and it is _not_ an implementat
 * Users of *Websocket* — sans-I/O WebSocket
 * Users of *Beast2* — high-level HTTP/WebSocket servers
 * Users of *Burl* — high-level HTTP client
-
-All of these are built on Capy. Understanding its concepts—tasks, buffer sequences, streams, executors—unlocks the full power of the stack.
 
 == The Library Family
 
@@ -89,7 +88,7 @@ None. Capy is self-contained and does not require Boost.
 
 === Linking
 
-Capy is a compiled library. Link against `capy`.
+Capy is a compiled library. Link against `Boost::capy`.
 
 == Code Convention
 
@@ -101,26 +100,28 @@ Unless otherwise specified, all code examples in this documentation assume the f
 ----
 include::example$snippets/index_page.cpp[tag=convention]
 ----
+
+The examples deliberately leave some results and bindings unused, so the
+surrounding prose can explain them. Do not build them with `-Wall` or
+`-Werror`.
 ====
 
 == Quick Example
-
-This example demonstrates a minimal coroutine that reads from a stream and echoes the data back:
 
 [source,cpp]
 ----
 include::example$programs/index_page_echo.cpp[tag=full]
 ----
 
-The `echo` function accepts an `any_stream&`—a type-erased wrapper that works with any concrete stream implementation. The function reads data into a buffer, then writes it back. Both operations use `co_await` to suspend until the I/O completes.
+The `echo` function accepts an `any_stream&`—a type-erased wrapper that works with any concrete stream implementation. Each `co_await` suspends until the I/O completes.
 
-The `task<>` return type (equivalent to `task<void>`) creates a lazy coroutine that does not start executing until awaited or launched with `run_async`.
+The cpp:task[task<>] return type (equivalent to `task<void>`) creates a lazy coroutine that does not start executing until awaited or started with cpp:run_async[].
 
 == Next Steps
 
 * xref:quick-start.adoc[Quick Start] — Set up your first Capy project
 * xref:2.cpp20-coroutines/2a.foundations.adoc[{cpp}20 Coroutines Tutorial] — Learn coroutines from the ground up
 * xref:3.concurrency/3a.foundations.adoc[Concurrency Tutorial] — Understand threads, mutexes, and synchronization
-* xref:4.coroutines/4a.tasks.adoc[Coroutines in Capy] — Deep dive into `task<T>` and the IoAwaitable protocol
-* xref:5.buffers/5a.overview.adoc[Buffer Sequences] — Master the concept-driven buffer model
-* xref:6.streams/6a.overview.adoc[Stream Concepts] — Understand the seven stream concepts
+* xref:4.coroutines/4a.tasks.adoc[Coroutines in Capy] — Deep dive into cpp:task[task<T>] and the IoAwaitable protocol
+* xref:5.buffers/5a.buffers.adoc[Buffer Sequences] — Buffer types, sequences, system I/O, and the algorithms over them
+* xref:6.streams/6a.overview.adoc[Stream Concepts] — Understand the three stream concepts

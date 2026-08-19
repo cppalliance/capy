@@ -8,8 +8,7 @@
 //
 
 = Quick Start
-
-This page gets you from zero to a working coroutine program in five minutes.
+:page-mode: tutorial
 
 NOTE: Capy requires {cpp}20 with coroutine support.
 
@@ -24,33 +23,47 @@ include::example$programs/quick_start_hello.cpp[tag=full]
 
 == Build and Run
 
-[source,bash]
-----
-# With GCC
-g++ -std=c++20 -o hello_coro hello_coro.cpp -lcapy -pthread
+Capy is not installed as a system package, so build it first:
 
-# Run
+[source,bash,role=external]
+----
+cmake -B build && cmake --build build
+----
+
+Replace both paths below with where you built Capy:
+
+[source,bash,role=external]
+----
+g++ -std=c++20 -I/path/to/capy/include -o hello_coro hello_coro.cpp \
+    /path/to/capy/build/libboost_capy.a -pthread
+----
+
+Then run it:
+
+[source,bash,role=external]
+----
 ./hello_coro
 ----
 
 Expected output:
 
+[role=output]
 ----
 The answer is 42
 ----
 
 == What Just Happened?
 
-1. `answer()` creates a suspended coroutine that will return 42
-2. `greet()` creates a suspended coroutine that will await `answer()`
-3. `run_async(executor)(greet())` starts `greet()` on the pool's executor
+1. `answer()` creates a suspended coroutine that returns 42
+2. `greet()` creates a suspended coroutine that awaits `answer()`
+3. cpp:run_async[]`(executor)(greet())` starts `greet()` on the pool's executor
 4. `greet()` runs until it hits `co_await answer()`
 5. `answer()` runs and returns 42
 6. `greet()` resumes with the result and prints it
 7. `greet()` completes, `pool.join()` returns, and `main()` exits
 
-The key insight: both coroutines ran on the same executor because affinity
-propagated automatically through the `co_await`.
+Both coroutines ran on the same executor because affinity propagated
+automatically through the `co_await`.
 
 == Handling Results
 
@@ -72,8 +85,6 @@ include::example$snippets/quick_start.cpp[tag=errors,indent=0]
 
 == Next Steps
 
-Now that you have a working program:
-
 * xref:4.coroutines/4a.tasks.adoc[Tasks] — Learn how lazy tasks work
-* xref:4.coroutines/4b.launching.adoc[Launching Tasks] — Understand `run_async` in detail
+* xref:4.coroutines/4b.launching.adoc[Starting Tasks] — Understand cpp:run_async[] in detail
 * xref:4.coroutines/4c.executors.adoc[Executors and Execution Contexts] — Control where coroutines execute

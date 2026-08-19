@@ -37,11 +37,12 @@ namespace test {
     const_buffer b2( " world", 6 );
     std::string s = buffer_to_string( b1, b2 );  // "hello world"
 
-    // With bufgrind splits
+    // With bufgrind splits: each half is itself a buffer sequence,
+    // so pass it directly -- there is no .data() to unwrap.
     bufgrind bg( cb );
     while( bg ) {
         auto [b1, b2] = co_await bg.next();
-        BOOST_TEST_EQ( buffer_to_string( b1.data(), b2.data() ), "hello" );
+        BOOST_TEST_EQ( buffer_to_string( b1, b2 ), "hello" );
     }
     @endcode
 

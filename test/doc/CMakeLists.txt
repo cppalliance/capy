@@ -11,11 +11,26 @@
 # files by tag through the Antora collector, so a fragment that fails to
 # build here is a fragment that would render broken on the site.
 
+# Jamfile sets <warnings>extra and <warnings-as-errors>on for this
+# directory, and the b2 leg is a hard CI gate. Mirror that posture on the
+# doc-test targets so a local CMake build fails on the same warnings; a
+# CMake build that cannot fail on warnings is not a check of these files.
+# Scoped to this directory: the library and the main test suite keep their
+# own settings.
+function(boost_capy_doc_warnings_as_errors target)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /WX)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+    endif()
+endfunction()
+
 file(GLOB SNIPPETS CONFIGURE_DEPENDS snippets/*.cpp)
 set(PFILES ${SNIPPETS} CMakeLists.txt Jamfile)
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} PREFIX "" FILES ${PFILES})
 
 add_executable(boost_capy_doc_tests ${PFILES})
+boost_capy_doc_warnings_as_errors(boost_capy_doc_tests)
 target_link_libraries(
     boost_capy_doc_tests PRIVATE
     Boost::capy_test_suite_main
@@ -39,6 +54,7 @@ file(GLOB DOC_PROGRAMS CONFIGURE_DEPENDS programs/*.cpp)
 foreach(src ${DOC_PROGRAMS})
     get_filename_component(name ${src} NAME_WE)
     add_executable(boost_capy_doc_${name} ${src})
+    boost_capy_doc_warnings_as_errors(boost_capy_doc_${name})
     target_link_libraries(boost_capy_doc_${name} PRIVATE Boost::capy)
     add_dependencies(tests boost_capy_doc_${name})
     if(name IN_LIST COMPILE_ONLY_PROGRAMS)

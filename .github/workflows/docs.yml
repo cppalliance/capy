@@ -15,28 +15,66 @@ on:
     branches:
       - master
       - develop
+      - develop-2
+      - 'pr/**'
     paths:
       - 'doc/**'
+      - 'include/**'
       - '*.adoc'
       - 'README.adoc'
+      - '.github/workflows/docs.yml'
   pull_request:
     paths:
       - 'doc/**'
+      - 'include/**'
       - '*.adoc'
       - 'README.adoc'
+      - '.github/workflows/docs.yml'
+  # Manual trigger, for authoring a replacement doc/lint/baseline.json in the CI
+  # environment — see the "Baseline reseed" steps at the end of the antora job.
+  # A reseed REWRITES the reference point of the blocking doc-quality gate, so it
+  # must never happen on push or pull_request: an automatic reseed would absorb
+  # real regressions into the grandfathered backlog, which is precisely what the
+  # gate exists to prevent. workflow_dispatch is the only trigger that reaches
+  # those steps (they are additionally guarded on github.event_name), and they
+  # only upload an artifact for a human to review and commit.
+  workflow_dispatch:
 
 jobs:
   antora:
     name: Antora Docs
     runs-on: 'ubuntu-latest'
+    # The a11y contrast gate (E4) is Review tier, not blocking (doc/STYLE_GUIDE.md
+    # Part F.0 — demoted alongside E2: all gated failures were color-contrast on
+    # shared Antora theme nav chrome, not Capy-fixable). pa11y still needs a
+    # launchable browser to run the scan as a non-blocking report: .pa11yci.json
+    # defaults to /usr/bin/chromium (local), but ubuntu-latest ships google-chrome
+    # at /usr/bin/google-chrome and has no chromium. run-a11y.mjs reads
+    # PA11Y_CHROME_PATH to override the config, so point it at the runner's
+    # pre-installed Chrome for every step that runs the a11y scan (the scan step
+    # and the omnibus report).
+    env:
+      PA11Y_CHROME_PATH: /usr/bin/google-chrome
     defaults:
       run:
         shell: bash
     steps:
+      # asciidoctor here is the Ruby CLI that Vale 3.x shells out to when
+      # linting .adoc files (its lintAdoc scope). It is NOT the same as the JS
+      # @asciidoctor/core that Antora/build_antora.sh pulls in via `npm ci` —
+      # that has no `asciidoctor` binary on PATH. Without the Ruby CLI, `vale
+      # modules` and baseline.mjs's vale_adoc error with "asciidoctor not found"
+      # → the check is marked skipped → and because vale_adoc AND vale_docstrings
+      # are both GATED checks (A7 Capy.PartHeadings on the pages; C4/C9/C10 on both
+      # surfaces since Phase-4 exit) the gate's gated-skip path would fail the job on
+      # missing infra. Note the docstring corpus needs asciidoctor too: the extracted
+      # files are `.adoc`, so a missing Ruby CLI skips that slice as well. The apt package
+      # installs /usr/bin/asciidoctor, on PATH for every later step. This first
+      # step runs before the Antora build, the Vale steps, and the blocking gate.
       - name: Install packages
         uses: alandefreitas/cpp-actions/package-install@v1.9.0
         with:
-          apt-get: git cmake
+          apt-get: git cmake asciidoctor
 
       - name: Clone Boost.Capy
         uses: actions/checkout@v4
@@ -113,3 +151,264 @@ jobs:
         with:
           name: antora-docs
           path: boost-root/libs/capy/doc/build/site
+
+      # --- Doc-quality checks (Style Guide Part F.0 / doc improvement plan Task 2) ---
+      # Individual check steps below stay non-blocking (continue-on-error: true): they
+      # print each tool's raw findings for review. Enforcement is done by the
+      # no-new-violations comparator, which diffs a fresh run against baseline.json.
+      # At Phase-4 exit the gated rules are A1/A6/A7/B2/D2/ANCHOR + MrDocs-no-warnings +
+      # C2/C4/C9/C10: the blocking gate step below runs the comparator with --strict
+      # --gate and IS blocking (continue-on-error: false) — it fails the job on any NEW
+      # A1/A6/A7/B2/D2/ANCHOR violation, any NEW MrDocs reference-surface warning, or any NEW
+      # C2/C4/C9/C10 wording violation on either surface. E4 (a11y contrast) is Review
+      # tier, not gated (doc/STYLE_GUIDE.md Part F.0); the a11y scan below stays a
+      # non-blocking report. All other rules remain warning-only via the non-blocking
+      # "no-new-violations report" step.
+      # The accuracy gate for .adoc example code (B2/B3/D2 correctness) is separate and
+      # stays a hard gate: the boost_capy_doc_tests b2 target defined in
+      # test/doc/Jamfile, run via `./b2 libs/capy/test` in ci.yml, not this job
+      # (test/doc/CMakeLists.txt defines the equivalent CMake target).
+
+      - name: Install Vale
+        if: always()
+        continue-on-error: true
+        run: |
+          mkdir -p "$RUNNER_TEMP/vale-bin"
+          curl -sSL https://github.com/errata-ai/vale/releases/download/v3.15.1/vale_3.15.1_Linux_64-bit.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/vale-bin" vale
+          echo "$RUNNER_TEMP/vale-bin" >> "$GITHUB_PATH"
+          echo "$(pwd)/boost-root/libs/capy/doc/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Doc-quality - Vale sync (Google style package)
+        if: always()
+        continue-on-error: true
+        working-directory: boost-root/libs/capy/doc
+        run: vale sync
+
+      - name: Doc-quality - Vale over .adoc pages
+        if: always()
+        continue-on-error: true
+        working-directory: boost-root/libs/capy/doc
+        run: vale modules
+
+      - name: Doc-quality - extract + Vale over header docstrings
+        if: always()
+        continue-on-error: true
+        working-directory: boost-root/libs/capy/doc
+        run: |
+          node lint/extract-docstrings.mjs
+          vale lint/.docstrings
+
+      - name: Doc-quality - structural lint (doc-lint.mjs)
+        if: always()
+        continue-on-error: true
+        working-directory: boost-root/libs/capy/doc
+        run: node lint/doc-lint.mjs
+
+      - name: Doc-quality - accessibility contrast scan (pa11y-ci)
+        if: always()
+        continue-on-error: true
+        working-directory: boost-root/libs/capy/doc
+        run: node lint/run-a11y.mjs
+
+      - name: Doc-quality - MrDocs no-warnings scan
+        if: always()
+        continue-on-error: true
+        working-directory: boost-root/libs/capy/doc
+        run: node lint/mrdocs-warnings.mjs
+
+      - name: Doc-quality - no-new-violations report (all rules, non-blocking)
+        if: always()
+        continue-on-error: true
+        working-directory: boost-root/libs/capy/doc
+        run: node lint/check-no-new-violations.mjs
+
+      # BLOCKING Phase-4 gate: fails the job on any NEW A1/A6/A7/B2/D2/ANCHOR violation, any
+      # NEW MrDocs reference-surface warning, and — promoted at Phase-4 exit — any NEW
+      # C2/C4/C9/C10 wording violation on EITHER surface. A1/A6/B2/D2 are doc_lint
+      # fingerprints; A7 is the Vale rule Capy.PartHeadings; MrDocs-no-warnings gates
+      # the whole mrdocs_warnings check; C4/C9/C10 are the Vale rules
+      # Capy.SimpleTense / Capy.NoFluff / Capy.Terminology, gated over both the .adoc
+      # pages (vale_adoc) and the extracted header docstrings (vale_docstrings), so
+      # vale_docstrings is now a GATED check too. C2's authority is
+      # lint/sentence-length.mjs, not a Vale rule — Capy.SentenceLength is
+      # `level: suggestion` and enforces nothing (see
+      # .vale/styles/Capy/SentenceLength.yml) — so C2 gates that script's hard slice.
+      # E4 (a11y contrast) is Review tier, not gated — see doc/STYLE_GUIDE.md Part F.0
+      # (demoted like E2: the gated failures were color-contrast on shared Antora theme
+      # nav chrome, which Capy cannot fix). A skip of ANY gated check (doc_lint /
+      # vale_adoc / vale_docstrings / sentence_length / mrdocs_warnings) fails the gate
+      # (can't verify a gated rule = not a pass); a skip of the non-blocking a11y scan
+      # does not. The pre-existing backlog is grandfathered by baseline.json.
+      #
+      # THE TWO GATE-SPEC SHAPES DIFFER, AND THE DIFFERENCE IS LOAD-BEARING.
+      # check-no-new-violations.mjs tests each regex against the WHOLE fingerprint.
+      #   * Vale fingerprints are `file:#N:Check.Name` — check name at the TAIL. So the
+      #     Vale specs tail-anchor with `$` and MUST NOT carry a leading `^`. An
+      #     `^`-anchored Vale spec matches nothing and reports `gated: true,
+      #     gatedNew: 0` — a gate that says it is gating while checking nothing. That
+      #     was measured twice on this branch; it is why the A7 spec is written
+      #     `Capy\.PartHeadings$` and not `^Capy\.PartHeadings$`.
+      #   * sentence_length fingerprints are `C2:file:#N:message` — rule at the HEAD. So
+      #     `^C2:` is the correct shape THERE, and it deliberately cannot reach the
+      #     `advisory-C2` design-essay slice (doc/STYLE_GUIDE.md Part C2 makes the
+      #     25-word limit soft in essays; 67 findings under
+      #     modules/ROOT/pages/9.design/ and .../A.specification-methods/ are an
+      #     explicit carve-out, not a backlog).
+      # Fingerprint-shape contract: doc/lint/README.md. Never promote a rule here on the
+      # strength of a green run — plant a violation and watch this step fail first.
+      #
+      # !!! THIS STEP IS RED TODAY, ON PURPOSE, AND THE FIX IS A POST-MERGE RESEED.
+      # `sentence_length` has NO entry in the committed baseline.json (the check was
+      # added after that snapshot was taken), so nothing in its slice is grandfathered
+      # and `--gate 'sentence_length:^C2:'` exits 1 on the whole hard slice. That slice
+      # is exactly TWO findings, both in include/boost/capy/when_any.hpp
+      # (lint/.docstrings/when_any.hpp.adoc), a 27-word and a 31-word sentence of the
+      # form "If at least one child await-returned a zero `ec`, the result holds …,
+      # unless producing the winner's payload threw, in which case that exception is
+      # rethrown." They are ACCEPTED REFUSALS, not defects: a Phase-4 rewrite that split
+      # them made a false claim against the code and was reverted verbatim, and the
+      # maintainer's content review carries that text. Zero .adoc fingerprints remain
+      # under `^C2:`.
+      # The maintainer chose visible debt over new machinery: the in-source
+      # refusal-marker option was declined. Do NOT add a suppression mechanism and do
+      # NOT reseed baseline.json locally (a local run grandfathers ~357 local-vs-CI
+      # drift fingerprints). The fix is the `workflow_dispatch` reseed at the end of this
+      # job, run AFTER merge, per doc/lint/README.md.
+      # By contrast the C4/C9/C10 gates (both surfaces) are GREEN today with no reseed
+      # needed: their three residual .adoc findings sit inside two verbatim third-party
+      # quoted passages and are already grandfathered by baseline.json.
+      - name: Doc-quality - Phase-4 gate (A1/A6/A7/B2/D2/ANCHOR + MrDocs + C2/C4/C9/C10, blocking)
+        if: always()
+        continue-on-error: false
+        working-directory: boost-root/libs/capy/doc
+        run: |
+          # Expected state until the post-merge reseed: EXIT 1 with exactly two gated
+          # findings, both C2:lint/.docstrings/when_any.hpp.adoc (see the note above).
+          # Any OTHER gated finding is a real regression.
+          node lint/check-no-new-violations.mjs --strict \
+            --gate 'doc_lint:^(A1|A6|B2|D2|ANCHOR):' \
+            --gate 'vale_adoc:Capy\.PartHeadings$' \
+            --gate 'mrdocs_warnings:.*' \
+            --gate 'sentence_length:^C2:' \
+            --gate 'vale_adoc:(Capy\.SimpleTense|Capy\.NoFluff|Capy\.Terminology)$' \
+            --gate 'vale_docstrings:(Capy\.SimpleTense|Capy\.NoFluff|Capy\.Terminology)$'
+
+      # --- Baseline reseed (workflow_dispatch only) ---------------------------
+      # doc/lint/baseline.json is the gate's reference point: anything in it is
+      # grandfathered. It goes stale as the backlog is worked down (a fix removes
+      # findings but not their baseline entries), and a stale-high baseline
+      # grandfathers findings that no longer exist — so they can be reintroduced
+      # and the gate stays green. Retiring them needs a regenerated baseline.
+      #
+      # Regenerating on a developer machine is NOT safe: a local run differs from
+      # a CI run by hundreds of fingerprints (measured: 297 — a different MrDocs
+      # 0.8.0 build hash, chromium vs google-chrome, file-processing order), and
+      # committing those differences would grandfather environment drift as if it
+      # were the real backlog. So the candidate is authored HERE, by the same job,
+      # on the same runner image, with the same PATH (Ruby asciidoctor for Vale's
+      # .adoc scope, doc/node_modules/.bin, the RUNNER_TEMP vale binary) and the
+      # same PA11Y_CHROME_PATH the blocking gate above just used. Reusing the gate's
+      # own job — rather than a second job that re-creates its setup — is
+      # deliberate: an imitated environment is exactly the bug this avoids, and it
+      # cannot drift from the gate's environment because it IS the gate's
+      # environment.
+      #
+      # Two safety properties of the ordering and paths below:
+      #   * these steps run AFTER the blocking gate, and
+      #   * the candidate is written to RUNNER_TEMP, never to the checked-out
+      #     doc/lint/baseline.json,
+      # so the gate in this same run still compares against the COMMITTED
+      # baseline. A candidate that overwrote it first would make the gate compare
+      # a run against itself and pass unconditionally.
+      #
+      # The job never commits or pushes. It uploads a candidate for review; a
+      # human reads the diff and commits it. Maintainer procedure, including how
+      # to read the report and when NOT to reseed: doc/lint/README.md.
+      - name: Baseline reseed - regenerate a candidate in the CI environment
+        if: always() && github.event_name == 'workflow_dispatch'
+        working-directory: boost-root/libs/capy/doc
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/baseline-candidate"
+          node lint/baseline.mjs "$RUNNER_TEMP/baseline-candidate/baseline.json"
+
+      # Reports per-check counts before/after and, per check and rule, which
+      # fingerprints the candidate would ADD (grandfather) and REMOVE (retire).
+      # Any ADDED fingerprint matching the gate spec is a finding a reseed would
+      # silently un-gate; those are named individually and fail this step. So do a
+      # SKIPPED check and a GATED check that collapsed to zero findings — both
+      # would wipe a merge-blocking check's whole grandfathered backlog.
+      #
+      # The gate spec is EXTRACTED from this workflow file rather than restated
+      # here. A second verbatim copy is a rot hazard with a silent failure mode:
+      # promote a rule in the blocking step above, forget this one, and the report
+      # keeps printing "none gated" for a rule that now blocks merges — the safety
+      # net stops covering exactly the rule that was just deemed important enough
+      # to gate. Extraction means there is one copy, in the blocking step, and this
+      # step cannot disagree with it. If extraction yields nothing (someone
+      # reformatted the blocking step's arguments), the step FAILS rather than
+      # reporting against an empty gate spec, which would look identical to "no
+      # gated additions."
+      - name: Baseline reseed - report what the candidate would change
+        if: always() && github.event_name == 'workflow_dispatch'
+        working-directory: boost-root/libs/capy/doc
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/baseline-candidate"
+          workflow=../.github/workflows/docs.yml
+
+          # Read ONLY the blocking step's run block: from its comparator invocation
+          # to the blank line that ends it, then stop. `awk ... {exit}` rather than a
+          # sed range because a sed range restarts at every match of its start
+          # pattern — including the copy of that pattern in this very extractor,
+          # which silently pulled the extractor's own quoting into the gate spec.
+          # Stopping at the first block also makes the source of truth unambiguous:
+          # the step that actually blocks merges. `grep -o` takes every occurrence
+          # per line, in case the arguments are ever reflowed onto one.
+          gate_args=()
+          while IFS= read -r spec; do
+            gate_args+=(--gate "$spec")
+          done < <(
+            awk '/check-no-new-violations\.mjs --strict/ { inblock = 1 }
+                 inblock && /^[[:space:]]*$/ { exit }
+                 inblock' "$workflow" \
+              | grep -o -- "--gate '[^']*'" \
+              | sed "s/^--gate '//; s/'\$//" \
+              | sort -u
+          )
+          if [ "${#gate_args[@]}" -eq 0 ]; then
+            echo "::error title=Gate spec not found::could not extract any --gate spec from $workflow; refusing to report against an empty gate spec"
+            exit 1
+          fi
+          echo "gate spec extracted from $workflow: ${gate_args[*]}"
+
+          status=0
+          node lint/baseline-diff.mjs lint/baseline.json "$out/baseline.json" \
+            "${gate_args[@]}" | tee "$out/baseline-diff.txt" || status=$?
+          # Full text diff of the file itself: the only place a single changed
+          # fingerprint is visible verbatim. `diff` exits 1 when files differ.
+          diff -u lint/baseline.json "$out/baseline.json" > "$out/baseline.json.diff" || true
+          # GitHub rejects a step summary over 1 MiB. A real report is ~14 KB, but a
+          # pathological candidate must not turn a reporting step into an infra
+          # failure, so cap it and point at the artifact for the full text.
+          {
+            echo '## Candidate doc/lint/baseline.json'
+            echo
+            echo 'Download the `doc-lint-baseline-candidate` artifact. Do not commit it'
+            echo 'without accounting for every ADDED fingerprint below. Full untruncated'
+            echo 'report: `baseline-diff.txt` in that artifact.'
+            echo
+            echo '```'
+            head -c 900000 "$out/baseline-diff.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - name: Baseline reseed - upload the candidate for review
+        if: always() && github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: doc-lint-baseline-candidate
+          path: ${{ runner.temp }}/baseline-candidate
+          if-no-files-found: error

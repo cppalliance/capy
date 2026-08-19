@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -21,7 +22,7 @@
 namespace boost {
 namespace capy {
 
-/** Type-erased wrapper for bidirectional streams.
+/** Dispatches `read_some` and `write_some` through independent type-erased vtables.
 
     This class provides type erasure for any type satisfying both
     the @ref ReadStream and @ref WriteStream concepts, enabling
@@ -52,26 +53,29 @@ namespace capy {
 
     @par Example
     @code
+    void reader(any_read_stream&);
+    void writer(any_write_stream&);
+
     // Owning - takes ownership of the stream
-    any_stream stream(socket{ioc});
+    any_stream owning_stream(socket{ioc});
 
     // Reference - wraps without ownership
     socket sock(ioc);
-    any_stream stream(&sock);
+    any_stream ref_stream(&sock);
 
-    // Use read_some from any_read_stream base
-    mutable_buffer rbuf(rdata, rsize);
-    auto [ec1, n1] = co_await stream.read_some(std::span(&rbuf, 1));
+    // Use read_some from the any_read_stream base
+    char rdata[1024];
+    mutable_buffer rbuf(rdata, sizeof(rdata));
+    auto [ec1, n1] = co_await owning_stream.read_some(std::span(&rbuf, 1));
 
-    // Use write_some from any_write_stream base
-    const_buffer wbuf(wdata, wsize);
-    auto [ec2, n2] = co_await stream.write_some(std::span(&wbuf, 1));
+    // Use write_some from the any_write_stream base
+    char wdata[] = "hello";
+    const_buffer wbuf(wdata, sizeof(wdata));
+    auto [ec2, n2] = co_await owning_stream.write_some(std::span(&wbuf, 1));
 
     // Pass to functions expecting one capability
-    void reader(any_read_stream&);
-    void writer(any_write_stream&);
-    reader(stream);  // Implicit upcast
-    writer(stream);  // Implicit upcast
+    reader(owning_stream);  // Implicit upcast
+    writer(owning_stream);  // Implicit upcast
     @endcode
 
     @see any_read_stream, any_write_stream, ReadStream, WriteStream
@@ -101,17 +105,29 @@ public:
 
     /** Construct a default instance.
 
-        Constructs an empty wrapper. Operations on a default-constructed
-        wrapper result in undefined behavior.
+        Constructs an empty wrapper. @ref has_value and `operator bool`
+        report the empty state; calling `read_some` or `write_some`
+        before the wrapper holds a stream is undefined behavior.
     */
     any_stream() = default;
 
     /** Non-copyable.
 
         The awaitable caches are per-instance and cannot be shared.
+
+        @param other The wrapper that would be copied.
     */
-    any_stream(any_stream const&) = delete;
-    any_stream& operator=(any_stream const&) = delete;
+    any_stream(any_stream const& other) = delete;
+
+    /** Copy assignment is disabled.
+
+        The awaitable caches are per-instance and cannot be shared.
+
+        @param other The wrapper that would be assigned from.
+
+        @return A reference to `*this`.
+    */
+    any_stream& operator=(any_stream const& other) = delete;
 
     /** Construct by moving.
 
@@ -160,7 +176,7 @@ public:
     /** Construct by taking ownership of a bidirectional stream.
 
         Allocates storage and moves the stream into this wrapper.
-        The wrapper owns the stream and will destroy it.
+        The wrapper owns the stream and destroys it.
 
         @param s The stream to take ownership of. Must satisfy both
             ReadStream and WriteStream concepts.

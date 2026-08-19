@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -70,17 +71,17 @@ inline constexpr executor_vtable vtable_for = {
 
 } // detail
 
-/** A type-erased reference wrapper for executor objects.
+/** Forwards `dispatch`/`post`/`context` calls through a non-owning, type-erased executor pointer.
 
     This class provides type erasure for any executor type, enabling
     runtime polymorphism without virtual functions or allocation.
     It stores a pointer to the original executor and a pointer to a
-    static vtable, allowing executors of different types to be stored
-    uniformly while satisfying the full `Executor` concept.
+    static vtable. Executors of different types are therefore stored
+    uniformly, while satisfying the full `Executor` concept.
 
     @par Reference Semantics
     This class has reference semantics: it does not allocate or own
-    the wrapped executor. Copy operations simply copy the internal
+    the wrapped executor. Copy operations copy the internal
     pointers. The caller must ensure the referenced executor outlives
     all `executor_ref` instances that wrap it.
 
@@ -115,9 +116,11 @@ class executor_ref
 public:
     /** Construct a default instance.
 
-        Constructs an empty `executor_ref`. Calling any executor
-        operations on a default-constructed instance results in
-        undefined behavior.
+        Constructs an empty `executor_ref`. `operator bool()` and
+        `operator==()` report the empty state; `context()`,
+        `on_work_started()`, `on_work_finished()`, `dispatch()`,
+        `post()`, and `target()` are undefined behavior until an
+        executor is assigned.
     */
     executor_ref() = default;
 
@@ -126,11 +129,18 @@ public:
         Copies the internal pointers, preserving identity.
         This enables the same-executor optimization when passing
         executor_ref through coroutine chains.
-    */
-    executor_ref(executor_ref const&) = default;
 
-    /** Copy assignment operator. */
-    executor_ref& operator=(executor_ref const&) = default;
+        @param other The reference to copy.
+    */
+    executor_ref(executor_ref const& other) = default;
+
+    /** Copy assignment operator.
+
+        @param other The reference to copy.
+
+        @return A reference to `*this`.
+    */
+    executor_ref& operator=(executor_ref const& other) = default;
 
     /** Constructs from any executor type.
 

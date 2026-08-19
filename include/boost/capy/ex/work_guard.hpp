@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -27,7 +28,7 @@ namespace capy {
     `on_work_finished()` on destruction, ensuring proper work tracking.
 
     The guard is useful when you need to keep an execution context
-    running while waiting for external events or when work will be
+    running while waiting for external events or when work is
     posted later.
 
     @par RAII Semantics
@@ -45,19 +46,17 @@ namespace capy {
 
     @par Example
     @code
-    io_context ctx;
+    thread_pool pool(1);
 
-    // Keep context running while we set things up
-    auto guard = make_work_guard(ctx);
+    // Keep the pool from completing while we set things up
+    auto guard = make_work_guard(pool.get_executor());
 
-    std::thread t([&ctx]{ ctx.run(); });
+    // ... post work to pool ...
 
-    // ... post work to ctx ...
-
-    // Allow context to complete when work is done
+    // Allow the pool to complete when work is done
     guard.reset();
 
-    t.join();
+    pool.join();
     @endcode
 
     @note The executor is returned by reference, allowing callers to
@@ -76,7 +75,7 @@ class work_guard
     bool owns_;
 
 public:
-    /** The underlying executor type. */
+    /** Names the executor type this `work_guard<Ex>` guards. */
     using executor_type = Ex;
 
     /** Construct a work guard.
@@ -158,7 +157,17 @@ public:
             ex_.on_work_finished();
     }
 
-    work_guard& operator=(work_guard const&) = delete;
+    /** Copy assignment is disabled.
+
+        A guard takes its work reference at construction and releases it at
+        destruction or through @ref reset. No operation rebinds an existing
+        guard to a different executor.
+
+        @param other The work guard that would be assigned from.
+
+        @return A reference to `*this`.
+    */
+    work_guard& operator=(work_guard const& other) = delete;
 
     /** Return the underlying executor by reference.
 
@@ -181,7 +190,7 @@ public:
         @par Exception Safety
         No-throw guarantee.
 
-        @return `true` if this guard will call `on_work_finished()`
+        @return `true` if this guard calls `on_work_finished()`
             on destruction, `false` otherwise.
     */
     bool

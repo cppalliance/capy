@@ -26,11 +26,11 @@ namespace capy {
 
     This is a straightforward extension of @ref write. While @ref write
     transfers exactly `buffer_size(buffers)` bytes, `write_at_least`
-    transfers at least `n` bytes: the loop stops as soon as `n` bytes
+    transfers at least `n` bytes. The loop stops as soon as `n` bytes
     have been written, even if `buffers` has not been fully consumed.
     Any bytes beyond `n` that a single `stream.write_some` happens to
-    transfer are counted, but no further awaiting is performed to write
-    the remainder.
+    transfer are counted. No further awaiting is performed to write the
+    remainder.
 
     Provided for symmetry with @ref read_at_least.
 
@@ -71,8 +71,8 @@ namespace capy {
 
     @par Await-postcondition
     On success the returned count is greater than or equal to `n` and
-    less than or equal to `buffer_size(buffers)`, and `ec` is success;
-    otherwise `ec` is set.
+    less than or equal to `buffer_size(buffers)`, and `ec` is success.
+    Otherwise `ec` is set.
 
     @param stream The stream to write to. If the lifetime of `stream` ends
     before the coroutine finishes, the behavior is undefined.
@@ -83,6 +83,9 @@ namespace capy {
 
     @param n The minimum number of bytes to write. Must not exceed
     `buffer_size(buffers)`.
+
+    @return A task yielding `io_result<std::size_t>` whose second element
+    is the number of bytes written.
 
     @par Remarks
     Supports _IoAwaitable cancellation_.

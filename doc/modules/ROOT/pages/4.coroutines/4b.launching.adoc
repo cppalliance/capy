@@ -1,24 +1,18 @@
-= Launching Coroutines
-
-This section explains how to launch coroutines for execution. You will learn about `run_async` for entry from non-coroutine code and `run` for executor hopping within coroutine code.
-
-== Prerequisites
-
-* Completed xref:4.coroutines/4a.tasks.adoc[The task Type]
-* Understanding of lazy task execution
+= Starting Coroutines
+:page-mode: how-to
 
 == The Execution Model
 
 Capy tasks are lazy—they do not execute until something drives them. Two mechanisms exist:
 
 * *Awaiting* — One coroutine awaits another (`co_await task`)
-* *Launching* — Non-coroutine code initiates execution (`run_async`)
+* *Starting* — Non-coroutine code initiates execution (cpp:run_async[])
 
-When a task is awaited, the awaiting coroutine provides context: an executor for dispatching completion and a stop token for cancellation. But what about the first task in a chain? That task needs explicit launching.
+When a task is awaited, the awaiting coroutine provides context: an executor for dispatching completion and a stop token for cancellation. Non-coroutine code must start the first task in a chain explicitly.
 
 == run_async: Entry from Non-Coroutine Code
 
-`run_async` is the bridge between regular code and coroutine code. It takes an executor, creates the necessary context, and starts the task executing.
+cpp:run_async[] takes an executor, creates the necessary context, and starts the task executing.
 
 [source,cpp]
 ----
@@ -27,7 +21,7 @@ include::example$programs/4b_launching_run_async.cpp[tag=full]
 
 === Two-Call Syntax
 
-Notice the unusual syntax: `run_async(executor)(task)`. This is intentional and relates to {cpp}17 evaluation order.
+Notice the unusual syntax: cpp:run_async[]`(executor)(task)`. This is intentional and relates to {cpp}17 evaluation order.
 
 {cpp}17 guarantees that in the expression `f(a)(b)`:
 
@@ -35,25 +29,46 @@ Notice the unusual syntax: `run_async(executor)(task)`. This is intentional and 
 2. `b` is evaluated second
 3. The callable is invoked with `b`
 
-This ordering matters because the task's coroutine frame is allocated during step 2, and `run_async` sets up thread-local allocator state in step 1. The task inherits that allocator.
+This ordering matters because the task's coroutine frame is allocated during step 2, and cpp:run_async[] sets up thread-local allocator state in step 1. The task inherits that allocator.
 
 [WARNING]
 ====
-Do not store the result of `run_async(executor)` and call it later. The
-wrapper's call operator is rvalue-qualified, so this fails to compile:
+Construct the task as the direct argument of the two-call expression. Three
+patterns split the two calls apart, and only the first is caught by the
+compiler.
 
+*Stored wrapper.* Storing the result of cpp:run_async[]`(executor)` and calling
+it later does not compile, because the wrapper's call operator is
+rvalue-qualified:
+
+.Does not compile
 [source,cpp,role=pseudocode]
 ----
 auto wrapper = run_async(pool.get_executor());  // Don't do this
 wrapper(compute());  // Error: operator() requires an rvalue
 ----
 
+*Preconstructed task.* Storing the *task* in a local and passing it in
+afterwards compiles and runs. Its frame is allocated by the time the wrapper
+exists, so it never sees the wrapper's allocator. A moved-from local, or a task
+returned by an earlier statement, behaves the same way.
+
+*Wrapper function.* A helper that accepts a task and performs the two-call
+pattern internally has the same effect. Its caller constructs the task as an
+argument to the helper, which is before the helper's body runs.
+
+The two silent patterns produce no diagnostic at all: the task runs, on a
+coroutine frame that came from the wrong allocator.
+cpp:run_async_wrapper[] documents each pattern, and
+xref:4.coroutines/4g.allocators.adoc#two-call-rationale[Frame Allocators] carries the
+{cpp}17-evaluation-order rationale.
+
 Always use the two-call pattern in a single expression.
 ====
 
 === Handler Overloads
 
-`run_async` accepts optional handlers for results and exceptions:
+cpp:run_async[] accepts optional handlers for results and exceptions:
 
 [source,cpp]
 ----
@@ -65,11 +80,11 @@ that goes unhandled (no error handler was supplied, or a handler let one
 escape) calls `std::terminate`. To react to an error, pass an error handler;
 it receives the `std::exception_ptr` and should handle it in place rather
 than rethrowing. To catch an error, `co_await` the work inside a coroutine
-and use `try`/`catch` rather than launching it fire-and-forget.
+and use `try`/`catch` rather than starting it fire-and-forget.
 
 == run: Executor Hopping Within Coroutines
 
-Inside a coroutine, use `run` to execute a child task on a different executor:
+Inside a coroutine, use cpp:run[] to execute a child task on a different executor:
 
 [source,cpp]
 ----
@@ -80,7 +95,7 @@ include::example$snippets/4b_launching.cpp[tag=run_hop]
 
 By default, a task inherits its caller's executor. This means completions are dispatched through that executor, ensuring thread affinity for thread-sensitive code.
 
-`run` overrides this inheritance for a specific child task, binding it to a different executor. The child task runs on the specified executor, and when it completes, the parent task resumes on its original executor.
+cpp:run[] overrides this inheritance for a specific child task, binding it to a different executor. When it completes, the parent task resumes on its original executor.
 
 This pattern is useful for:
 
@@ -90,11 +105,11 @@ This pattern is useful for:
 
 == Stop Token Propagation
 
-Both `run_async` and `run` propagate stop tokens to the launched task and all tasks it awaits. The task accesses its token via `co_await this_coro::stop_token`.
+Both cpp:run_async[] and cpp:run[] propagate stop tokens to the task they start and all tasks it awaits. The task accesses its token via `co_await this_coro::stop_token`.
 
 === Injecting a Token with run_async
 
-Since `run_async` is called from non-coroutine code, there is no caller token to inherit. Pass a stop token explicitly:
+Since cpp:run_async[] is called from non-coroutine code, there is no caller token to inherit. Pass a stop token explicitly:
 
 [source,cpp]
 ----
@@ -103,7 +118,7 @@ include::example$snippets/4b_launching.cpp[tag=inject_token,indent=0]
 
 === Inheritance with run
 
-`run` is called from within a coroutine, so it inherits the caller's stop token by default:
+cpp:run[] is called from within a coroutine, so it inherits the caller's stop token by default:
 
 [source,cpp]
 ----
@@ -119,26 +134,10 @@ include::example$snippets/4b_launching.cpp[tag=override_token,indent=0]
 
 == Handler Threading
 
-Handlers passed to `run_async` are invoked on whatever thread the executor schedules:
+Handlers passed to cpp:run_async[] are invoked on whatever thread the executor schedules:
 
 [source,cpp]
 ----
 include::example$snippets/4b_launching.cpp[tag=handler_thread,indent=0]
 ----
 
-If you need results on a specific thread, use appropriate synchronization or dispatch mechanisms.
-
-== Reference
-
-[cols="1,3"]
-|===
-| Header | Description
-
-| `<boost/capy/ex/run_async.hpp>`
-| Entry point for launching tasks from non-coroutine code
-
-| `<boost/capy/ex/run.hpp>`
-| Executor binding for child tasks within coroutines
-|===
-
-You have now learned how to launch coroutines using `run_async` and bind child tasks to specific executors using `run`. In the next section, you will learn about executors and execution contexts in detail.

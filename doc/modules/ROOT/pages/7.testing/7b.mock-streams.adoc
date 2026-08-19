@@ -8,17 +8,17 @@
 //
 
 = Mock Streams
+:page-mode: how-to
 
 Concept-conforming test doubles for the partial-I/O concepts in
 xref:6.streams/6b.streams.adoc[Streams]. Use them to drive protocol
-code without real network I/O, with optional chunking to exercise
-partial-transfer paths.
+code without real network I/O.
 
 == read_stream
 
-`read_stream` implements the `ReadStream` concept. Test code stages bytes
+cpp:test::read_stream[] implements the cpp:ReadStream[] concept. Test code stages bytes
 via `provide()`, then the system under test (or the test body) calls
-`read_some()` to consume them. The attached `fuse` injects errors at
+`read_some()` to consume them. The attached cpp:test::fuse[] injects errors at
 every read call, exercising the caller's error-handling paths. Because
 `fuse` copies share state (see
 xref:7.testing/7a.drivers.adoc#_shared_state_across_copies[Shared State Across Copies]),
@@ -44,8 +44,8 @@ include::example$snippets/7b_mock_streams.cpp[tag=read_stream_chunked,indent=0]
 
 === EOF Behavior
 
-When all provided data has been consumed, `read_some` returns
-`cond::eof` with a byte count of zero. The stream does not
+When all provided data is consumed, `read_some` returns
+cpp:cond::eof[cond::eof] with a byte count of zero. The stream does not
 suspend; the result is available immediately.
 
 [source,cpp]
@@ -53,39 +53,16 @@ suspend; the result is available immediately.
 include::example$snippets/7b_mock_streams.cpp[tag=read_stream_eof,indent=0]
 ----
 
-[cols="1,2"]
-|===
-| Member | Description
-
-| `explicit read_stream(fuse f = {}, std::size_t max_read_size = std::size_t(-1))`
-| Construct with an optional shared `fuse` and an optional per-read byte limit.
-  When omitted, the fuse is inert and reads return all available data at once.
-  Set `max_read_size` to simulate chunked network delivery.
-
-| `provide(std::string_view sv)`
-| Append bytes to the internal buffer for subsequent reads. Multiple
-  calls accumulate data.
-
-| `read_some(MutableBufferSequence buffers)`
-| Partial read. Returns up to `max_read_size` bytes (or all available
-  if no limit was set). Returns `cond::eof` when the buffer is drained.
-  Consults the fuse before every read.
-
-| `available() -> std::size_t`
-| Return the number of bytes remaining to be read.
-
-| `clear()`
-| Clear all data and reset the read position.
-|===
+See cpp:test::read_stream[] for the complete member list: the
+constructor's `fuse` and `max_read_size` parameters, `provide`,
+`read_some`, `available`, and `clear`.
 
 == write_stream
 
-`write_stream` implements the `WriteStream` concept. The system under
+cpp:test::write_stream[] implements the cpp:WriteStream[] concept. The system under
 test calls `write_some()` and the test inspects what was written via
-`data()`. Test code may also call `expect()` to register the data it
-anticipates; any mismatch between written bytes and that prefix causes
-`write_some()` to return `error::test_failure` directly. The fuse is a
-separate concern used only for error injection. Because `fuse` copies
+`data()`. The fuse is a separate concern used only for error injection.
+Because `fuse` copies
 share state (see
 xref:7.testing/7a.drivers.adoc#_shared_state_across_copies[Shared State Across Copies]),
 constructing `write_stream ws(f)` by value still ties `ws` to the same
@@ -112,49 +89,24 @@ include::example$snippets/7b_mock_streams.cpp[tag=write_stream_chunked,indent=0]
 Call `expect()` before or after writes to assert that the written data
 matches a prefix. Matched bytes are consumed from both sides. If written
 data does not match the expected prefix, the next `write_some` call
-returns `error::test_failure`.
+returns cpp:error::test_failure[error::test_failure].
 
 [source,cpp]
 ----
 include::example$snippets/7b_mock_streams.cpp[tag=write_stream_expect,indent=0]
 ----
 
-[cols="1,2"]
-|===
-| Member | Description
-
-| `explicit write_stream(fuse f = {}, std::size_t max_write_size = std::size_t(-1))`
-| Construct with an optional shared `fuse` and an optional per-write byte limit.
-  When omitted, the fuse is inert and writes accept all bytes at once.
-  Set `max_write_size` to simulate chunked network delivery.
-
-| `write_some(ConstBufferSequence buffers)`
-| Partial write. Appends up to `max_write_size` bytes to the internal
-  buffer, then checks against the expected prefix. On mismatch, rolls
-  back the appended bytes and returns `(error::test_failure, 0)`.
-  Consults the fuse before every write.
-
-| `data() -> std::string_view`
-| Return bytes written but not yet matched by `expect()`.
-
-| `size() -> std::size_t`
-| Return the number of bytes written.
-
-| `expect(std::string_view sv) -> std::error_code`
-| Register expected data and immediately check any already-written
-  bytes. Returns an error if existing data does not match.
-|===
+See cpp:test::write_stream[] for the complete member list: the
+constructor's `fuse` and `max_write_size` parameters, `write_some`,
+`data`, `size`, and `expect`.
 
 == stream
 
-`stream` is a connected bidirectional test double. Create a pair with
-`make_stream_pair(f)`. Bytes written to one end become readable on the
-other. If `read_some` is called on an end with no buffered data, the
-calling coroutine suspends until the peer calls `write_some`. This
-makes `stream` useful for testing client/server code without real
+cpp:test::stream[] is a connected bidirectional test double. Create a pair with
+cpp:test::make_stream_pair[]`(f)` to test client/server code without real
 sockets.
 
-Both `stream` ends satisfy `ReadStream` and `WriteStream`.
+Both `stream` ends satisfy cpp:ReadStream[] and cpp:WriteStream[].
 
 [source,cpp]
 ----
@@ -178,13 +130,13 @@ operation under test.
 
 Calling `close()` on one end signals EOF to the peer. The peer drains
 any buffered data first; once the buffer is empty, subsequent
-`read_some` calls on the peer return `cond::eof`. The peer may still
+`read_some` calls on the peer return cpp:cond::eof[cond::eof]. The peer may still
 call `write_some` after receiving EOF.
 
 When the fuse injects an error during `read_some` or `write_some`, the
-pair is automatically closed: the calling end returns the injected
-error, any suspended reader on the other end is resumed with
-`cond::eof`, and all subsequent operations on both ends return
+pair is automatically closed. The calling end returns the injected
+error, and any suspended reader on the other end is resumed with
+cpp:cond::eof[cond::eof]. All subsequent operations on both ends return
 `cond::eof`.
 
 === Thread Safety
@@ -193,49 +145,14 @@ Single-threaded only. Both ends of the pair must be accessed from the
 same thread. Concurrent access from multiple threads or multiple
 concurrent coroutines is undefined behavior.
 
-[cols="1,2"]
-|===
-| Function / Member | Description
-
-| `make_stream_pair(fuse f = {}) -> std::pair<stream, stream>`
-| Create a connected pair sharing the supplied fuse.
-
-| `read_some(MutableBufferSequence buffers)`
-| Partial read from the peer's outgoing data. Suspends if no data is
-  available. Returns `cond::eof` when the stream is closed or the peer
-  called `close()`. Consults the fuse before every read (unless
-  draining after `close()`).
-
-| `write_some(ConstBufferSequence buffers)`
-| Partial write into the peer's incoming buffer. Resumes a suspended
-  peer reader if any. Returns `cond::eof` if the stream is closed.
-  Consults the fuse before every write.
-
-| `close()`
-| Signal EOF to the peer's reads. Buffered data is drained first.
-  Writes from the peer are unaffected.
-
-| `set_max_read_size(std::size_t n)`
-| Limit bytes returned per `read_some` call on this end, simulating
-  chunked network delivery (applies to this end only; the peer end has
-  its own independent limit).
-
-| `provide(std::string_view sv)`
-| Inject bytes into this stream for reading, bypassing the fuse.
-  Resumes a suspended `read_some` if any.
-
-| `expect(std::string_view expected) -> std::pair<std::error_code, bool>`
-| Read exactly `expected.size()` bytes and compare. Returns the error
-  code and whether the data matched.
-
-| `data() -> std::string_view`
-| Return a view of the unread bytes buffered in this stream.
-|===
+See cpp:test::stream[] and cpp:test::make_stream_pair[] for the
+complete member list: pair construction, `read_some`, `write_some`,
+`close`, `set_max_read_size`, `provide`, `expect`, and `data`.
 
 == Putting It Together
 
 The following snippet tests a function that reads a single line
-terminated by `'\n'` from a `ReadStream`. The `fuse.armed()` loop
+terminated by `'\n'` from a cpp:ReadStream[]. The `fuse.armed()` loop
 runs the coroutine repeatedly, failing at every `read_some` call in
 turn, then reruns in exception mode. Each injected failure exercises
 a different error-handling branch inside `read_line`.
@@ -245,20 +162,3 @@ a different error-handling branch inside `read_line`.
 include::example$snippets/7b_mock_streams.cpp[tag=read_line_test]
 ----
 
-== Reference
-
-[cols="1,3"]
-|===
-| Header | Contents
-
-| `<boost/capy/test/read_stream.hpp>`
-| Mock ReadStream with controllable partial reads.
-
-| `<boost/capy/test/write_stream.hpp>`
-| Mock WriteStream with controllable partial writes and expectations.
-
-| `<boost/capy/test/stream.hpp>`
-| Connected bidirectional pair for client/server tests.
-|===
-
-Continue to xref:7.testing/7e.buffer-inspection.adoc[Buffer Inspection].

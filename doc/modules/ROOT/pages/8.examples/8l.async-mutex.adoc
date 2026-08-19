@@ -1,17 +1,14 @@
 = Async Mutex
+:page-mode: how-to
 
-Fair FIFO coroutine locking with `async_mutex`.
+Fair FIFO coroutine locking with cpp:async_mutex[].
 
-== What You Will Learn
+== What This Example Shows
 
-* Using `async_mutex` for mutual exclusion between coroutines
+* Using cpp:async_mutex[] for mutual exclusion between coroutines
 * RAII lock guards with `scoped_lock`
 * FIFO fairness guarantees
-* Comparing `async_mutex` to strand-based serialization
-
-== Prerequisites
-
-* Completed xref:8.examples/8k.strand-serialization.adoc[Strand Serialization]
+* Comparing cpp:async_mutex[] to strand-based serialization
 
 == Source Code
 
@@ -22,7 +19,7 @@ include::example$async-mutex/async_mutex.cpp[tag=full]
 
 == Build
 
-[source,cmake]
+[source,cmake,role=external]
 ----
 add_executable(async_mutex async_mutex.cpp)
 target_link_libraries(async_mutex PRIVATE Boost::capy)
@@ -37,7 +34,7 @@ target_link_libraries(async_mutex PRIVATE Boost::capy)
 include::example$async-mutex/async_mutex.cpp[tag=mutex,indent=0]
 ----
 
-`async_mutex` is a coroutine-aware mutex. Unlike `std::mutex`, it suspends the calling coroutine instead of blocking the thread, allowing other coroutines to run while waiting for the lock.
+cpp:async_mutex[] is a coroutine-aware mutex. Unlike `std::mutex`, it suspends the calling coroutine instead of blocking the thread, allowing other coroutines to run while waiting for the lock.
 
 === Scoped Lock
 
@@ -46,18 +43,19 @@ include::example$async-mutex/async_mutex.cpp[tag=mutex,indent=0]
 include::example$async-mutex/async_mutex.cpp[tag=scoped_lock,indent=0]
 ----
 
-`scoped_lock()` returns an `io_result` with an error code and an RAII guard. The guard automatically releases the lock when it goes out of scope. If the operation is canceled (e.g., via a stop token), `ec` will be set.
+`scoped_lock()` returns an cpp:io_result[] with an error code and an RAII guard. The guard automatically releases the lock when it goes out of scope. If the operation is canceled (e.g., via a stop token), `ec` is set.
 
 === FIFO Fairness
 
-Workers acquire the lock in the order they request it. Unlike `std::mutex`, which has no fairness guarantees, `async_mutex` ensures FIFO ordering -- the first coroutine to call `scoped_lock()` is the first to acquire it.
+Unlike `std::mutex`, which has no fairness guarantees, cpp:async_mutex[] ensures FIFO ordering -- the first coroutine to call `scoped_lock()` is the first to acquire it.
 
 === Strand vs Async Mutex
 
-The strand serialization example showed how a strand can protect shared state by running all coroutines sequentially. `async_mutex` provides finer-grained control: coroutines run concurrently and only serialize when entering the critical section.
+The strand serialization example showed how a strand can protect shared state by running all coroutines sequentially. cpp:async_mutex[] provides finer-grained control: coroutines run concurrently and only serialize when entering the critical section.
 
 == Output
 
+[role=output]
 ----
 Worker 0 waiting for lock
 Worker 0 acquired lock (sequence 0)
@@ -85,7 +83,7 @@ Acquisition order: W0 -> W1 -> W2 -> W3 -> W4 -> W5
 
 1. Add work outside the critical section (before and after `scoped_lock`) to observe concurrent execution
 2. Use a stop token to cancel waiting workers after a timeout
-3. Replace `async_mutex` with a strand and compare the two approaches
+3. Replace cpp:async_mutex[] with a strand and compare the two approaches
 
 == Next Steps
 

@@ -1,17 +1,13 @@
 = Calling Asio from a Capy Coroutine
+:page-mode: how-to
 
 Using Boost.Asio async operations directly inside a Capy coroutine through a `use_capy` completion token.
 
-== What You Will Learn
+== What This Example Shows
 
 * How a completion token adapts _any_ Asio async operation into an xref:4.coroutines/4d.io-awaitable.adoc[IoAwaitable]
 * How the token bridges `std::stop_token` to Asio's cancellation slot
 * How the bridge preserves the xref:4.coroutines/4c.executors.adoc#the-same-executor-invariant[same-executor invariant]
-
-== Prerequisites
-
-* Completed xref:4.coroutines/4d.io-awaitable.adoc[The IoAwaitable Protocol]
-* Boost.Asio available to the build
 
 [NOTE]
 ====
@@ -20,7 +16,7 @@ This example is built when a `Boost::asio` target is available. The full source 
 
 == The Completion Token
 
-Asio async operations accept a _completion token_ that decides what the call returns. `use_capy` is a token whose `async_result` returns an `IoAwaitable`. When co-awaited, its `await_suspend` starts the Asio operation and arranges the completion handler to post the resumption through the caller's executor—so the coroutine resumes on the executor it was launched with, never on whatever thread Asio completed on. From `example/asio/api/use_capy.hpp`:
+Asio async operations accept a _completion token_ that decides what the call returns. `use_capy` is a token whose `async_result` returns an cpp:IoAwaitable[]. When co-awaited, its `await_suspend` starts the Asio operation and arranges the completion handler to post the resumption through the caller's executor. The coroutine therefore resumes on the executor it was started with, never on whatever thread Asio completed on. From `example/asio/api/use_capy.hpp`:
 
 [source,cpp]
 ----
@@ -29,17 +25,18 @@ include::example$asio/api/use_capy.hpp[tag=await_suspend,indent=0]
 
 == Using the Token
 
-Pass `use_capy` where an Asio operation expects a completion token. The `co_await` yields an `io_result` carrying the error code and the operation's result:
+Pass `use_capy` where an Asio operation expects a completion token. The `co_await` yields an cpp:io_result[] carrying the error code and the operation's result:
 
 [source,cpp]
 ----
 include::example$asio/use_capy_example.cpp[tag=writer]
 ----
 
-The reader is symmetric, using `async_read_some`. `run_example` drives both concurrently over a connected socket pair with `when_all`, then reports completion.
+The reader is symmetric, using `async_read_some`. `run_example` drives both concurrently over a connected socket pair with cpp:when_all[], then reports completion.
 
 == Output
 
+[role=output]
 ----
 writer: wrote 128 bytes (total 128)
 reader: read 128 bytes (total 128)

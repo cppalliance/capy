@@ -79,7 +79,13 @@ BOOST_CAPY_DECL extern error_cat_type error_cat;
 
 } // detail
 
-/// Create an error_code from an error value.
+/** Create an error_code from an error value.
+
+    @param ev The library error value.
+
+    @return An `std::error_code` holding `ev` in the library's
+        error category.
+*/
 inline
 std::error_code
 make_error_code(

@@ -11,8 +11,6 @@
 // include the tagged regions; scaffolding stays outside the tags. The
 // page's protocol.hpp and http_client.hpp live next to this file.
 
-// tag::protocol_impl[]
-// protocol.cpp - Implementation isolated here
 
 // Fragments deliberately leave results and bindings unused; the pages
 // explain the values in prose instead.
@@ -52,6 +50,8 @@
 #endif
 #endif
 
+// tag::protocol_impl[]
+// protocol.cpp - Implementation isolated here
 #include "protocol.hpp"
 #include <boost/capy/read.hpp>
 #include <boost/capy/write.hpp>

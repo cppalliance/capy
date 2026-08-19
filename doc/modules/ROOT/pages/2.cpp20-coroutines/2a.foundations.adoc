@@ -1,24 +1,9 @@
-= Part I: Foundations
-
-This section introduces the fundamental concepts you need before working with {cpp}20 coroutines. You will learn how normal functions work, what makes coroutines different, and why coroutines exist as a language feature.
-
-== Prerequisites
-
-Before beginning this tutorial, you should have:
-
-* A {cpp} compiler with {cpp}20 support (GCC 10+, Clang 14+, or MSVC 2019 16.8+)
-* Familiarity with basic {cpp} concepts: functions, classes, templates, and lambdas
-* Understanding of how function calls work: the call stack, local variables, and return values
-
-The examples in this tutorial use standard {cpp}20 features. Compile with:
-
-* GCC: `g++ -std=c++20 -fcoroutines your_file.cpp`
-* Clang: `clang++ -std=c++20 your_file.cpp`
-* MSVC: `cl /std:c++20 your_file.cpp`
+= Coroutine Foundations
+:page-mode: tutorial
 
 == Functions and the Call Stack
 
-When you call a regular function, the system allocates space on the *call stack* for the function's local variables and parameters. This stack space is called a *stack frame*. When the function returns, this stack space is reclaimed. The function's state exists only during the call.
+Calling a regular function allocates a *stack frame*: space on the *call stack* for its local variables and parameters, reclaimed when the function returns. The function's state exists only during the call.
 
 Consider this function:
 
@@ -27,18 +12,11 @@ Consider this function:
 include::example$snippets/2a_foundations.cpp[tag=compute,indent=0]
 ----
 
-When `compute` is called:
-
-1. A stack frame is allocated containing `x`, `y`, and `result`
-2. The function body executes
-3. The return value is passed back to the caller
-4. The stack frame is deallocated
-
 This model has a fundamental constraint: *run-to-completion*. Once a function starts, it must finish before control returns to the caller. The function cannot pause midway, let other code run, and resume later.
 
 == What Is a Coroutine?
 
-A *coroutine* is a function that can suspend its execution and resume later from exactly where it left off. Think of it as a bookmark in a book of instructions—instead of reading the entire book in one sitting, you can mark your place, do something else, and return to continue reading.
+A *coroutine* is a function that can suspend its execution and resume later from exactly where it left off.
 
 When a coroutine suspends:
 
@@ -51,11 +29,11 @@ When a coroutine resumes:
 * Local variables are restored to their previous values
 * Execution continues from the suspension point
 
-This capability is implemented through a *coroutine frame*—a heap-allocated block of memory that stores the coroutine's state. Unlike stack frames, coroutine frames persist across suspension points because they live on the heap rather than the stack.
+This capability is implemented through a *coroutine frame*—a block of memory, typically heap-allocated, that stores the coroutine's state. Unlike stack frames, coroutine frames persist across suspension points. xref:2.cpp20-coroutines/2d.advanced.adoc[Advanced Topics] covers when the compiler can place one elsewhere instead.
 
+.Conceptual illustration - not real syntax
 [source,cpp,role=pseudocode]
 ----
-// Conceptual illustration (not real syntax)
 task<int> fetch_and_process()
 {
     auto data = co_await fetch_from_network();  // suspends here
@@ -63,8 +41,6 @@ task<int> fetch_and_process()
     return process(data);
 }
 ----
-
-The variable `data` maintains its value even though the function may have suspended and resumed. This is the fundamental capability that coroutines provide.
 
 == Why Coroutines?
 
@@ -92,7 +68,7 @@ include::example$snippets/2a_foundations.cpp[tag=callback_request,indent=0]
 
 This code does not block. Each operation starts, registers a callback, and returns immediately. When the operation completes, the callback runs.
 
-But look what has happened to the code: three levels of nesting, logic scattered across multiple lambda functions, and local variables that cannot be shared between callbacks without careful lifetime management. A single logical operation becomes fragmented across multiple functions.
+But look what has happened to the code: three levels of nesting and logic scattered across multiple lambda functions. Local variables cannot be shared between callbacks without careful lifetime management. A single logical operation becomes fragmented across multiple functions.
 
 === The Coroutine Solution
 
@@ -112,5 +88,3 @@ Coroutines also enable:
 * *Generators* — Functions that produce sequences of values on demand, computing each value only when requested
 * *State machines* — Complex control flow expressed as linear code with suspension points
 * *Cooperative multitasking* — Multiple logical tasks interleaved on a single thread
-
-You have now learned what coroutines are and why they exist. In the next section, you will learn the {cpp}20 syntax for creating coroutines.

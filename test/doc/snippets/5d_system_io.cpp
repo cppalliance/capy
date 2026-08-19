@@ -11,7 +11,6 @@
 // OS-level fragments compile only where the platform headers exist;
 // guards keep this TU portable while the tags stay extractable.
 
-// tag::include_buffers[]
 // Fragments deliberately leave results and bindings unused; the pages
 // explain the values in prose instead.
 #if defined(__GNUC__) || defined(__clang__)
@@ -39,6 +38,7 @@
 #pragma warning(disable: 4459) // declaration hides global declaration
 #endif
 
+// tag::include_buffers[]
 #include <boost/capy/buffers.hpp>
 // end::include_buffers[]
 

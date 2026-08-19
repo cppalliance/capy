@@ -1,0 +1,20 @@
+{
+  "_comment": "Style Guide E4 — contrast check (light + dark), Part F.0 'a11y contrast' gate. As of Phase-2 exit the contrast subset is BLOCKING (see docs.yml Phase-2 gate). Serve doc/build/site (e.g. `npx http-server doc/build/site -p 8088`) before running pa11y-ci against these paths, or point urls at file:// paths directly. chromeLaunchConfig.executablePath below is the LOCAL default (/usr/bin/chromium); run-a11y.mjs overrides it from the PA11Y_CHROME_PATH env var when set — CI sets that to the runner's browser (ubuntu-latest ships google-chrome at /usr/bin/google-chrome, not chromium).",
+  "defaults": {
+    "timeout": 30000,
+    "wait": 250,
+    "runners": ["axe"],
+    "standard": "WCAG2AA",
+    "chromeLaunchConfig": {
+      "executablePath": "/usr/bin/chromium",
+      "args": ["--no-sandbox"]
+    }
+  },
+  "urls": [
+    "http://localhost:8088/capy/index.html",
+    "http://localhost:8088/capy/why-capy.html",
+    "http://localhost:8088/capy/quick-start.html",
+    "http://localhost:8088/capy/4.coroutines/4a.tasks.html",
+    "http://localhost:8088/capy/reference/boost/capy.html"
+  ]
+}

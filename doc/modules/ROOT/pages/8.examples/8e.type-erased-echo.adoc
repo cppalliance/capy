@@ -1,17 +1,13 @@
 = Type-Erased Echo
+:page-mode: how-to
 
 Echo server demonstrating the compilation firewall pattern.
 
-== What You Will Learn
+== What This Example Shows
 
-* Using `any_stream` for transport-independent code
+* Using cpp:any_stream[] for transport-independent code
 * Physical isolation through separate compilation
 * Build time benefits of type erasure
-
-== Prerequisites
-
-* Completed xref:8.examples/8d.mock-stream-testing.adoc[Mock Stream Testing]
-* Understanding of type erasure from xref:../6.streams/6f.isolation.adoc[Physical Isolation]
 
 == Source Code
 
@@ -38,10 +34,10 @@ include::example$type-erased-echo/main.cpp[tag=full]
 
 == Build
 
-[source,cmake]
+[source,cmake,role=external]
 ----
 add_library(echo_lib echo.cpp)
-target_link_libraries(echo_lib PUBLIC capy)
+target_link_libraries(echo_lib PUBLIC Boost::capy)
 
 add_executable(echo_demo main.cpp)
 target_link_libraries(echo_demo PRIVATE echo_lib)
@@ -55,8 +51,6 @@ target_link_libraries(echo_demo PRIVATE echo_lib)
 ----
 include::example$type-erased-echo/echo.hpp[tag=session_decl]
 ----
-
-The header declares only the signature. It includes `any_stream` and `task`, but no concrete transport types.
 
 Clients of this header:
 
@@ -85,10 +79,9 @@ When you change `echo.cpp`:
 * `main.cpp` and other clients do not recompile
 * Link step updates the binary
 
-This scales: in large projects, changes to implementation files don't cascade through dependencies.
-
 == Output
 
+[role=output]
 ----
 Echo output: Hello, World!
 ----

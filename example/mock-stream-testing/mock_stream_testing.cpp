@@ -123,7 +123,7 @@ void test_with_error_injection()
         
         capy::any_stream stream{&a};  // any_stream
         
-        // Run the protocol - fuse will inject errors at each step
+        // Run the protocol - fuse injects errors at each step
         bool result = co_await echo_line_uppercase(stream);  // bool
         
         // Either succeeds with correct output, or fails cleanly

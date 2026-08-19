@@ -13,7 +13,6 @@
 // Fragments deliberately leave named results unused; page comments
 // explain the values instead.
 
-// tag::include_task[]
 // Fragments deliberately leave results and bindings unused; the pages
 // explain the values in prose instead.
 #if defined(__GNUC__) || defined(__clang__)
@@ -41,6 +40,7 @@
 #pragma warning(disable: 4459) // declaration hides global declaration
 #endif
 
+// tag::include_task[]
 #include <boost/capy/task.hpp>
 // end::include_task[]
 
@@ -105,6 +105,39 @@ task<> log_message(std::string msg)
 // end::returning[]
 
 } // namespace returning
+
+namespace io_results {
+
+// tag::io_task[]
+// io_result<Ts...> holds an error code `ec` plus zero or more payload
+// values. io_task<Ts...> is just an alias for task<io_result<Ts...>>.
+
+io_task<> ensure_ready(bool ready)
+{
+    if(! ready)
+        co_return make_error_code(std::errc::not_connected);  // ec converts
+    co_return {};                                             // success
+}
+
+io_task<std::size_t> count_ready(bool ready)
+{
+    using result = io_result<std::size_t>;
+    if(! ready)
+        co_return result{make_error_code(std::errc::not_connected), 0};
+    co_return result{std::error_code(), 42};  // success, carrying a value
+}
+
+task<> use_them()
+{
+    // io_result models the tuple protocol: ec first, then the payloads.
+    auto [ec, n] = co_await count_ready(true);
+    if(ec)
+        co_return;  // always check ec first
+    (void)n;        // n is only meaningful when ec is falsy
+}
+// end::io_task[]
+
+} // namespace io_results
 
 namespace awaiting {
 
@@ -256,6 +289,26 @@ struct tasks_test
     }
 
     void
+    testRunning()
+    {
+        using returning::add;
+        // tag::run[]
+        // You have a task; run it on an executor and observe its result.
+        thread_pool pool(1);
+        auto ex = pool.get_executor();
+
+        int total = 0;
+        run_async(ex, [&](int result) {
+            std::cout << "Result: " << result << "\n";  // prints 5
+            total = result;
+        })(add(2, 3));
+
+        pool.join();  // wait for the pooled task to finish
+        // end::run[]
+        BOOST_TEST(total == 5);
+    }
+
+    void
     testAwaiting()
     {
         thread_pool pool(1);
@@ -303,6 +356,7 @@ struct tasks_test
     {
         testDeclaring();
         testReturning();
+        testRunning();
         testAwaiting();
         testLazy();
         testChain();

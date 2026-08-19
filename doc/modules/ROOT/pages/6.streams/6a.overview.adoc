@@ -1,30 +1,23 @@
 = Stream Concepts Overview
-
-This section introduces Capy's stream concepts—the abstractions that enable data to flow through your programs.
-
-== Prerequisites
-
-* Understanding of buffer sequences
+:page-mode: explanation
 
 == Three Concepts for Data Flow
-
-Capy defines three concepts for I/O operations:
 
 [cols="1,1,2"]
 |===
 | Concept | Direction | Description
 
-| `ReadStream`
+| cpp:ReadStream[]
 | Read
 | Partial reads—returns whatever is available
 
-| `WriteStream`
+| cpp:WriteStream[]
 | Write
 | Partial writes—writes as much as possible
 
-| `Stream`
+| cpp:Stream[]
 | Read + Write
-| A connected pair—satisfies both `ReadStream` and `WriteStream`
+| A connected pair—satisfies both cpp:ReadStream[] and cpp:WriteStream[]
 |===
 
 == Streams: Partial I/O
@@ -42,20 +35,18 @@ This matches raw OS behavior—syscalls return when data is available, not when 
 
 == Type-Erasing Wrappers
 
-Each concept has a corresponding type-erasing wrapper:
-
 [cols="1,1"]
 |===
 | Concept | Wrapper
 
-| `ReadStream`
-| `any_read_stream`
+| cpp:ReadStream[]
+| cpp:any_read_stream[]
 
-| `WriteStream`
-| `any_write_stream`
+| cpp:WriteStream[]
+| cpp:any_write_stream[]
 
 | (Both)
-| `any_stream`
+| cpp:any_stream[]
 |===
 
 These wrappers enable:
@@ -71,6 +62,12 @@ These wrappers enable:
 * You need raw, unbuffered I/O
 * You're implementing a protocol that processes data incrementally
 * Performance is critical and you want minimal abstraction
+
+=== Use Type-Erased Wrappers When:
+
+* You need runtime transport selection
+* You want a compilation firewall
+* Testing actual production code instead of an instantiation is important
 
 == The Value Proposition
 
@@ -88,6 +85,4 @@ The caller decides the concrete implementation:
 include::example$snippets/6a_overview.cpp[tag=caller_decides,indent=0]
 ----
 
-Same code, different transports: the in-memory test stream shown here, a TCP socket, or a TLS stream. Compile once, link anywhere.
-
-Continue to xref:6.streams/6b.streams.adoc[Streams (Partial I/O)] to learn the `ReadStream` and `WriteStream` concepts in detail.
+Same code, different transports: the in-memory test stream shown here, a TCP socket, or a TLS stream.

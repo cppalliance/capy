@@ -54,45 +54,6 @@ namespace {
 
 using namespace boost::capy;
 
-// Interface sketches shown on the page; the sketch namespaces keep them
-// from clashing with the real types. Compiling them is the test.
-namespace const_buffer_sketch {
-
-// tag::const_buffer_interface[]
-class const_buffer
-{
-public:
-    const_buffer() = default;
-    const_buffer(void const* data, std::size_t size) noexcept;
-    const_buffer(mutable_buffer const& b) noexcept;  // Implicit conversion
-
-    void const* data() const noexcept;
-    std::size_t size() const noexcept;
-
-    const_buffer& operator+=(std::size_t n) noexcept;  // Remove prefix
-};
-// end::const_buffer_interface[]
-
-} // namespace const_buffer_sketch
-
-namespace mutable_buffer_sketch {
-
-// tag::mutable_buffer_interface[]
-class mutable_buffer
-{
-public:
-    mutable_buffer() = default;
-    mutable_buffer(void* data, std::size_t size) noexcept;
-
-    void* data() const noexcept;
-    std::size_t size() const noexcept;
-
-    mutable_buffer& operator+=(std::size_t n) noexcept;
-};
-// end::mutable_buffer_interface[]
-
-} // namespace mutable_buffer_sketch
-
 // Records the size seen so the conversion fragment is observable.
 std::size_t processed_size = 0;
 

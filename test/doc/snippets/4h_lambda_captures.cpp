@@ -101,13 +101,15 @@ namespace capy = boost::capy;
 
 void process(socket& sock)
 {
-    auto task = [&sock]() -> capy::task<>
+    // The lambda is created and called on the spot. `started` holds the
+    // task the call returned -- not the lambda itself.
+    capy::task<> started = [&sock]() -> capy::task<>
     {
         char buf[1024];
         auto [ec, n] = co_await sock.read_some(make_buffer(buf));
-    }();
+    }();  // <-- called here, so the lambda is a temporary and dies now
 
-    run_async(executor)(std::move(task));
+    run_async(executor)(std::move(started));
 }
 // end::dangling_capture[]
 

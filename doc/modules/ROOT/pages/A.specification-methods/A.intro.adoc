@@ -8,9 +8,16 @@
 //
 
 = Methods of API Description
+:page-mode: explanation
 
+This section describes the conventions used to specify the API of this library in the
+following xref:reference:boost/capy.adoc[Reference] section.
 
+== What This Section Covers
 
-This section describes the conventions used to specify the API of this library in the following 
-xref:reference:boost/capy.adoc[Reference] section.
+* xref:A.specification-methods/Ab.cancellation.adoc[Cancellation] -- What it means for a
+  function to support `IoAwaitable` cancellation via a propagated `std::stop_token`.
+* xref:A.specification-methods/Ac.contingencies.adoc[Contingencies] -- What a
+  _contingency_ is, and how the reference describes operations that cannot complete in
+  full.
 

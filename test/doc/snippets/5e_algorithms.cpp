@@ -64,34 +64,6 @@ namespace {
 using namespace boost::capy;
 using namespace std::string_view_literals;
 
-// The pages show the algorithms with function-style synopses; the real
-// entities are function objects with identical call signatures. The
-// declarations only need to compile.
-namespace synopsis {
-
-// tag::buffer_size_signature[]
-template<ConstBufferSequence CB>
-std::size_t buffer_size(CB const& buffers);
-// end::buffer_size_signature[]
-
-// tag::buffer_empty_signature[]
-template<ConstBufferSequence CB>
-bool buffer_empty(CB const& buffers);
-// end::buffer_empty_signature[]
-
-// tag::buffer_length_signature[]
-template<ConstBufferSequence CB>
-std::size_t buffer_length(CB const& buffers);
-// end::buffer_length_signature[]
-
-// tag::buffer_copy_signature[]
-template<MutableBufferSequence Target, ConstBufferSequence Source>
-std::size_t buffer_copy(Target const& target, Source const& source,
-                        std::size_t at_most = std::size_t(-1));
-// end::buffer_copy_signature[]
-
-} // namespace synopsis
-
 // tag::read_loop[]
 template<ReadStream Stream, MutableBufferSequence Buffers>
 task<std::size_t> read_full(Stream& stream, Buffers buffers)

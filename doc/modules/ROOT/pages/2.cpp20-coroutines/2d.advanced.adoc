@@ -1,15 +1,9 @@
-= Part IV: Advanced Topics
-
-This section covers advanced coroutine topics: symmetric transfer for efficient resumption, coroutine allocation strategies, and exception handling. These concepts are essential for building production-quality coroutine types.
-
-== Prerequisites
-
-* Completed xref:2.cpp20-coroutines/2c.machinery.adoc[Part III: Coroutine Machinery]
-* Understanding of promise types, coroutine handles, and generators
+= Advanced Topics
+:page-mode: tutorial
 
 == Symmetric Transfer
 
-When a coroutine completes or awaits another coroutine, control must transfer somewhere. The naive approach—simply calling `handle.resume()`—has a problem: each nested coroutine adds a frame to the call stack. With deep nesting, you risk stack overflow.
+When a coroutine completes or awaits another coroutine, control must transfer somewhere. The naive approach—calling `handle.resume()`—has a problem: each nested coroutine adds a frame to the call stack. With deep nesting, you risk stack overflow.
 
 *Symmetric transfer* solves this by returning a coroutine handle from `await_suspend`. Instead of resuming the target coroutine via a function call, the compiler generates a tail call that transfers control without growing the stack.
 
@@ -30,7 +24,18 @@ Without symmetric transfer, when `a` awaits `b`:
 4. That calls `c.handle.resume()`
 5. The stack now has frames for `a`'s suspension, `b`'s suspension, and `c`'s execution
 
-Each suspension adds a stack frame. With thousands of nested coroutines, the stack overflows.
+=== Return Types for await_suspend
+
+`await_suspend`'s return type can be one of three types, each meaning something different:
+
+`void`::
+Always suspend. The coroutine is suspended and some external mechanism must resume it.
+
+`bool`::
+Conditional suspension. Return `true` to suspend, `false` to continue without suspending.
+
+`std::coroutine_handle<>`::
+Symmetric transfer. The returned handle is resumed; returning `std::noop_coroutine()` suspends without resuming anything.
 
 === The Solution: Return the Handle
 
@@ -43,27 +48,13 @@ include::example$snippets/2d_advanced.cpp[tag=symmetric_await_suspend,indent=0]
 
 When `await_suspend` returns a handle, the compiler generates code equivalent to:
 
+.What the compiler generates
 [source,cpp,role=pseudocode]
 ----
 auto next = awaiter.await_suspend(current);
 if (next != std::noop_coroutine())
     next.resume();  // tail call, doesn't grow stack
 ----
-
-The key insight: returning a handle enables the compiler to implement the resumption as a tail call. The current stack frame is reused for the next coroutine.
-
-=== Return Types for await_suspend
-
-`await_suspend` can return three types:
-
-`void`::
-Always suspend. The coroutine is suspended and some external mechanism must resume it.
-
-`bool`::
-Conditional suspension. Return `true` to suspend, `false` to continue without suspending.
-
-`std::coroutine_handle<>`::
-Symmetric transfer. The returned handle is resumed; returning `std::noop_coroutine()` suspends without resuming anything.
 
 === Using Symmetric Transfer in Generators
 
@@ -76,7 +67,7 @@ include::example$snippets/2d_advanced.cpp[tag=generator_final_suspend,indent=0]
 
 == Coroutine Allocation
 
-Every coroutine needs memory for its *coroutine frame*—the heap-allocated structure holding local variables, parameters, and suspension state.
+Every coroutine needs memory for its *coroutine frame*—the structure, typically heap-allocated, holding local variables, parameters, and suspension state.
 
 === Default Allocation
 
@@ -99,7 +90,7 @@ Compilers can sometimes eliminate coroutine frame allocation entirely through *H
 HALO is most effective when:
 
 * Coroutines are awaited immediately after creation
-* The coroutine type is marked with `[[clang::coro_await_elidable]]` (Clang extension)
+* The coroutine type is marked with `+[[clang::coro_await_elidable]]+` (Clang extension)
 * Optimization is enabled (`-O2` or higher)
 
 [source,cpp]
@@ -179,6 +170,7 @@ include::example$programs/2d_advanced_exception.cpp[tag=full]
 
 *Output:*
 
+[role=output]
 ----
 Starting risky operation
 Operation failed: Something went wrong
@@ -190,7 +182,7 @@ Exceptions thrown before the first suspension point (before `initial_suspend` co
 
 == Building a Production Generator
 
-With all these concepts, here is a production-quality generic generator:
+Here is a production-quality generic generator:
 
 [source,cpp]
 ----
@@ -205,15 +197,4 @@ This generator:
 * Manages coroutine lifetime with RAII
 * Supports move semantics
 
-== Conclusion
-
-You have now learned the complete mechanics of {cpp}20 coroutines:
-
-* *Keywords* — `co_await`, `co_yield`, and `co_return` transform functions into coroutines
-* *Promise types* — Control coroutine behavior at initialization, suspension, completion, and error handling
-* *Coroutine handles* — Lightweight references for resuming, querying, and destroying coroutines
-* *Symmetric transfer* — Efficient control flow without stack accumulation
-* *Allocation* — Custom allocation and HALO optimization
-* *Exception handling* — Capturing and propagating exceptions across suspension points
-
-These fundamentals prepare you for understanding Capy's `task<T>` type and the IoAwaitable protocol, which build on standard coroutine machinery with executor affinity and stop token propagation.
+These fundamentals prepare you for understanding Capy's cpp:task[task<T>] type and the IoAwaitable protocol. Both build on standard coroutine machinery with executor affinity and stop token propagation.

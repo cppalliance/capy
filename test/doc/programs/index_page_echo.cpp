@@ -34,7 +34,7 @@ task<> echo(any_stream& stream)
 int main()
 {
     // In a real application, you would obtain a stream from Corosio,
-    // then launch the coroutine on its io_context and run it:
+    // then start the coroutine on its io_context and run it:
     //
     //   corosio::io_context ioc;
     //   corosio::tcp_socket stream = /* from an acceptor or connect */;

@@ -8,7 +8,21 @@
 //
 
 = Design
+:page-mode: explanation
 
-Capy's public interface--tasks, buffers, streams--is intentionally small. Behind that interface are design decisions that determine how concepts compose, where responsibility boundaries fall, and what guarantees the library can make. This section documents those decisions.
+Capy's public interface--tasks, buffers, streams--is intentionally small. Behind that interface are design decisions that determine how concepts compose, where responsibility boundaries fall, and what guarantees the library can make.
 
-Each page examines one concept or facility in depth: its formal definition, the rationale behind its design, the alternatives that were considered, and the tradeoffs that were made. If you have ever wondered _why_ a particular concept requires a specific primitive, or why certain abstractions exist as separate concepts, the answers are here. These documents are reference material for library contributors and advanced users. They assume familiarity with the tutorial sections and focus on design reasoning rather than usage.
+Each page examines one concept or facility in depth: the rationale behind its design, the alternatives that were considered, and the tradeoffs that were made. Formal definitions live in the header reference; these pages link to `cpp:` symbols rather than repeat them. These documents are reference material for library contributors and advanced users. They assume familiarity with the tutorial sections.
+
+== What This Section Covers
+
+* xref:9.design/9a.CapyLayering.adoc[Layered Abstractions] -- Why Capy offers templates, virtual dispatch, and type erasure as separate layers instead of one abstraction level.
+* xref:9.design/9b.Separation.adoc[Why Capy Is Separate] -- Why Capy and Corosio are two libraries instead of one.
+* xref:9.design/9c.ReadStream.adoc[ReadStream] -- Why `read_some` is the fundamental partial-read primitive.
+* xref:9.design/9f.WriteStream.adoc[WriteStream] -- Why `write_some` is the fundamental partial-write primitive, and when it outperforms `write_now`.
+* xref:9.design/9i.TypeEraseAwaitable.adoc[Type-Erasing Awaitables] -- How the `any_*` wrappers achieve zero steady-state allocation.
+* xref:9.design/9k.Executor.adoc[Executor] -- The `Executor` concept's relationship to Asio, and why `dispatch` returns a coroutine handle.
+* xref:9.design/9l.RunApi.adoc[Run API] -- Why `run_async` and `run` use a two-phase `f(context)(task)` call syntax.
+* xref:9.design/9m.WhyNotCobalt.adoc[Why Not Cobalt?] -- How Capy's foundation differs from Boost.Cobalt's Asio-based design.
+* xref:9.design/9n.WhyNotCobaltConcepts.adoc[Why Not Cobalt Concepts?] -- A side-by-side look at type-erased write-stream algorithms in both libraries.
+* xref:9.design/9o.WhyNotTMC.adoc[Why Not TooManyCooks?] -- Choosing between Capy and TooManyCooks by workload: network I/O versus compute.

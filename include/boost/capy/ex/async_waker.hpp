@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -88,11 +89,11 @@ namespace capy {
 
     Distinct objects: Safe.@n
     Shared objects: `wake()` may be called from any thread.
-    `wait()` must only be awaited by one coroutine at a time, and
-    only on an executor that never runs the coroutine's
-    continuations concurrently: a single-threaded executor or a
-    strand over a multi-threaded one (the same threading model as
-    `async_event` and `async_mutex`). Awaiting `wait()` directly
+    `wait()` must only be awaited by one coroutine at a time. The
+    executor must never run the coroutine's continuations
+    concurrently: use a single-threaded executor, or a strand over
+    a multi-threaded one. That is the same threading model as
+    `async_event` and `async_mutex`. Awaiting `wait()` directly
     on a multi-threaded executor is undefined.
 
     This type is non-copyable and non-movable because a suspended
@@ -129,7 +130,7 @@ private:
     wait_awaiter* waiter_ = nullptr;
 
 public:
-    /** Awaiter returned by wait().
+    /** Suspends the caller until `wake()` runs, or resumes it with `error::canceled` on a stop request.
     */
     class wait_awaiter
     {
@@ -181,6 +182,15 @@ public:
         }
 
     public:
+        /** Destroy the awaiter, leaving the waker unable to reach it.
+
+            Destroys the stop callback if one is registered. If the awaiter
+            is still armed, it also returns the waker's slot to the empty
+            state, so a later `wake()` cannot dereference a destroyed
+            awaiter. That case means the frame is being torn down without
+            ever being resumed; a wake arriving afterward latches a token
+            instead.
+        */
         ~wait_awaiter()
         {
             if(active_)
@@ -198,11 +208,23 @@ public:
             }
         }
 
+        /** Construct an awaiter for the given waker.
+
+            @param waker The waker to wait on. It must outlive the awaiter.
+        */
         explicit wait_awaiter(async_waker* waker) noexcept
             : waker_(waker)
         {
         }
 
+        /** Construct by moving.
+
+            The moved-from awaiter is left inert: its destructor no longer
+            destroys the stop callback and no longer deregisters from the
+            waker.
+
+            @param o The awaiter to move from.
+        */
         wait_awaiter(wait_awaiter&& o) noexcept
             : waker_(o.waker_)
             , cont_(o.cont_)
@@ -213,11 +235,42 @@ public:
         {
         }
 
-        wait_awaiter(wait_awaiter const&) = delete;
-        wait_awaiter& operator=(wait_awaiter const&) = delete;
-        wait_awaiter& operator=(wait_awaiter&&) = delete;
+        /** Copy construction is disabled; an armed waiter is registered
+            with the waker by address.
 
-        /// Consume a latched token, completing synchronously.
+            @param other The awaiter that would be copied.
+        */
+        wait_awaiter(wait_awaiter const& other) = delete;
+
+        /** Copy assignment is disabled; an armed waiter is registered
+            with the waker by address.
+
+            @param other The awaiter that would be assigned from.
+
+            @return A reference to `*this`.
+        */
+        wait_awaiter& operator=(wait_awaiter const& other) = delete;
+
+        /** Move assignment is disabled; an armed waiter is registered
+            with the waker by address.
+
+            @param other The awaiter that would be moved from.
+
+            @return A reference to `*this`.
+        */
+        wait_awaiter& operator=(wait_awaiter&& other) = delete;
+
+        /** Consume a latched token, completing synchronously.
+
+            This is not a pure query: the check is a compare-exchange that
+            takes the token. Calling it twice is not idempotent: the second
+            call reports `false`, because the first already consumed the
+            wakeup.
+
+            @return `true` if a pending wakeup token was latched and has now
+            been consumed, in which case the awaiting coroutine does not
+            suspend; otherwise `false`.
+        */
         bool await_ready() noexcept
         {
             int expected = state_token;
@@ -227,7 +280,40 @@ public:
                 std::memory_order_acquire);
         }
 
-        /** IoAwaitable protocol overload. */
+        /** Arm the waker with the awaiting coroutine.
+
+            This is the @ref IoAwaitable overload of `await_suspend`.
+            Unlike `async_event` and `async_mutex`, it has three outcomes,
+            because a `wake()` from another thread can land in the window
+            between `await_ready` and this call.
+
+            @li A stop request is already pending on `env->stop_token`: the
+                awaiter records the cancellation and does not arm.
+
+            @li The waker's slot is no longer empty. Under the single-waiter
+                precondition that means a wakeup was latched after
+                `await_ready` looked, so the token is consumed here instead
+                and the wait succeeds.
+
+            @li Otherwise the slot moves to the armed state, publishing this
+                awaiter to the waker, and a stop callback is registered on
+                `env->stop_token`. Whichever of `wake()` and that callback
+                wins the armed-to-empty transition posts `h` through
+                `env->executor`. The loser does nothing, and a losing
+                `wake()` re-latches its token for the next `wait()`.
+
+            @param h The awaiting coroutine, resumed when the waker fires
+            or the wait is canceled.
+
+            @param env The execution environment. Its executor posts the
+            resumption and its stop token is watched for the duration of
+            the wait. It must outlive the wait.
+
+            @return `h` in the first two cases, which resumes the awaiting
+            coroutine immediately; otherwise `std::noop_coroutine()`, which
+            leaves the coroutine suspended and returns control to the
+            resumer.
+        */
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
@@ -266,6 +352,16 @@ public:
             return std::noop_coroutine();
         }
 
+        /** Complete the wait and report the outcome.
+
+            Destroys the stop callback if one is registered and clears the
+            armed bookkeeping, so the destructor does not deregister a slot
+            the resumption already consumed.
+
+            @return An empty `io_result<>` if the wait was woken, whether by
+            `wake()` or by a token consumed inline. Otherwise one holding
+            `error::canceled`, which means the stop token won the race.
+        */
         [[nodiscard]] io_result<> await_resume() noexcept
         {
             if(active_)
@@ -283,17 +379,35 @@ public:
     /// Construct with no token latched.
     async_waker() = default;
 
-    /// Copy constructor (deleted).
-    async_waker(async_waker const&) = delete;
+    /** Copy construction is disabled; an armed waiter points into the
+        waker.
 
-    /// Copy assignment (deleted).
-    async_waker& operator=(async_waker const&) = delete;
+        @param other The waker that would be copied.
+    */
+    async_waker(async_waker const& other) = delete;
 
-    /// Move constructor (deleted).
-    async_waker(async_waker&&) = delete;
+    /** Copy assignment is disabled; an armed waiter points into the waker.
 
-    /// Move assignment (deleted).
-    async_waker& operator=(async_waker&&) = delete;
+        @param other The waker that would be assigned from.
+
+        @return A reference to `*this`.
+    */
+    async_waker& operator=(async_waker const& other) = delete;
+
+    /** Move construction is disabled; an armed waiter points into the
+        waker.
+
+        @param other The waker that would be moved from.
+    */
+    async_waker(async_waker&& other) = delete;
+
+    /** Move assignment is disabled; an armed waiter points into the waker.
+
+        @param other The waker that would be moved from.
+
+        @return A reference to `*this`.
+    */
+    async_waker& operator=(async_waker&& other) = delete;
 
     /** Asynchronously wait until woken.
 

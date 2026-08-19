@@ -40,16 +40,11 @@
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/io/any_stream.hpp>
-#include <boost/capy/io_task.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/fuse.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 #include <boost/capy/test/stream.hpp>
 #include <boost/capy/write.hpp>
-
-#include <concepts>
-#include <cstddef>
-#include <span>
 
 #include "test_suite.hpp"
 
@@ -58,16 +53,6 @@ namespace capy = boost::capy;
 namespace {
 
 using namespace boost::capy;
-
-namespace concept_layer {
-
-// tag::write_signature[]
-template<WriteStream S, ConstBufferSequence CB>
-io_task<std::size_t>
-write(S& stream, CB buffers);
-// end::write_signature[]
-
-} // namespace concept_layer
 
 // tag::any_stream_echo[]
 task<> echo(any_stream& stream)

@@ -1,17 +1,13 @@
 = Strand Serialization
+:page-mode: how-to
 
 Protecting shared state with a strand instead of a mutex.
 
-== What You Will Learn
+== What This Example Shows
 
-* Using a `strand` to serialize coroutine access to shared state
+* Using a cpp:strand[] to serialize coroutine access to shared state
 * Lock-free shared state management
-* Combining `when_all` with strand-based serialization
-
-== Prerequisites
-
-* Completed xref:8.examples/8b.producer-consumer.adoc[Producer-Consumer] (introduces `strand`)
-* Understanding of `when_all` from xref:../4.coroutines/4f.composition.adoc[Composition]
+* Combining cpp:when_all[] with strand-based serialization
 
 == Source Code
 
@@ -22,7 +18,7 @@ include::example$strand-serialization/strand_serialization.cpp[tag=full]
 
 == Build
 
-[source,cmake]
+[source,cmake,role=external]
 ----
 add_executable(strand_serialization strand_serialization.cpp)
 target_link_libraries(strand_serialization PRIVATE Boost::capy)
@@ -37,7 +33,7 @@ target_link_libraries(strand_serialization PRIVATE Boost::capy)
 include::example$strand-serialization/strand_serialization.cpp[tag=strand,indent=0]
 ----
 
-A `strand` wraps an executor and guarantees that handlers dispatched through it never run concurrently. This replaces the need for a mutex when protecting shared state accessed by coroutines.
+A cpp:strand[] wraps an executor and guarantees that handlers dispatched through it never run concurrently.
 
 === Lock-Free Shared Access
 
@@ -46,7 +42,7 @@ A `strand` wraps an executor and guarantees that handlers dispatched through it 
 include::example$strand-serialization/strand_serialization.cpp[tag=counter,indent=0]
 ----
 
-Multiple coroutines increment the same `counter` without any locks. The strand serializes execution so only one coroutine runs at a time, preventing data races.
+The strand serializes execution so only one coroutine runs at a time, preventing data races.
 
 === Running on the Strand
 
@@ -55,10 +51,11 @@ Multiple coroutines increment the same `counter` without any locks. The strand s
 include::example$strand-serialization/strand_serialization.cpp[tag=run_on_strand,indent=0]
 ----
 
-Passing the strand `s` to `run_async` ensures the entire coroutine tree executes through the strand. Even though the underlying `thread_pool` has 4 threads, the strand constrains execution to one coroutine at a time.
+Passing the strand `s` to cpp:run_async[] ensures the entire coroutine tree executes through the strand. Even though the underlying cpp:thread_pool[] has 4 threads, the strand constrains execution to one coroutine at a time.
 
 == Output
 
+[role=output]
 ----
 Coroutine 0 finished, counter = 1000
 Coroutine 1 finished, counter = 2000

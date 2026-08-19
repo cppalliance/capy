@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -33,7 +34,7 @@
 namespace boost {
 namespace capy {
 
-/** Type-erased wrapper for any WriteStream.
+/** Dispatches `write_some` through a type-erased vtable, using preallocated awaitable storage.
 
     This class provides type erasure for any type satisfying the
     @ref WriteStream concept, enabling runtime polymorphism for
@@ -64,14 +65,15 @@ namespace capy {
     @par Example
     @code
     // Owning - takes ownership of the stream
-    any_write_stream stream(socket{ioc});
+    any_write_stream owning_stream(socket{ioc});
 
     // Reference - wraps without ownership
     socket sock(ioc);
-    any_write_stream stream(&sock);
+    any_write_stream ref_stream(&sock);
 
-    const_buffer buf(data, size);
-    auto [ec, n] = co_await stream.write_some(std::span(&buf, 1));
+    char data[] = "hello";
+    const_buffer buf(data, sizeof(data));
+    auto [ec, n] = co_await owning_stream.write_some(std::span(&buf, 1));
     @endcode
 
     @see any_read_stream, any_stream, WriteStream
@@ -100,17 +102,29 @@ public:
 
     /** Construct a default instance.
 
-        Constructs an empty wrapper. Operations on a default-constructed
-        wrapper result in undefined behavior.
+        Constructs an empty wrapper. @ref has_value and `operator bool`
+        report the empty state; calling @ref write_some before the
+        wrapper holds a stream is undefined behavior.
     */
     any_write_stream() = default;
 
     /** Non-copyable.
 
         The awaitable cache is per-instance and cannot be shared.
+
+        @param other The wrapper that would be copied.
     */
-    any_write_stream(any_write_stream const&) = delete;
-    any_write_stream& operator=(any_write_stream const&) = delete;
+    any_write_stream(any_write_stream const& other) = delete;
+
+    /** Copy assignment is disabled.
+
+        The awaitable cache is per-instance and cannot be shared.
+
+        @param other The wrapper that would be assigned from.
+
+        @return A reference to `*this`.
+    */
+    any_write_stream& operator=(any_write_stream const& other) = delete;
 
     /** Construct by moving.
 
@@ -143,7 +157,7 @@ public:
     /** Construct by taking ownership of a WriteStream.
 
         Allocates storage and moves the stream into this wrapper.
-        The wrapper owns the stream and will destroy it.
+        The wrapper owns the stream and destroys it.
 
         @param s The stream to take ownership of.
     */
@@ -186,7 +200,7 @@ public:
     /** Initiate an asynchronous write operation.
 
         Writes data from the provided buffer sequence. The operation
-        completes when at least one byte has been written, or an error
+        completes when at least one byte is written, or an error
         occurs.
 
         @param buffers The buffer sequence containing data to write.
@@ -208,6 +222,11 @@ public:
 
         @par Preconditions
         The wrapper must contain a valid stream (`has_value() == true`).
+
+        @par After an Error
+        A subsequent call is permitted. The wrapper forwards directly
+        to the underlying stream, imposing no stricter rule than
+        @ref WriteStream.
     */
     template<ConstBufferSequence CB>
     auto

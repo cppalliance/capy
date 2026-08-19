@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -23,14 +24,14 @@ namespace capy {
 /** A cursor that drives consumption of a buffer sequence.
 
     `consuming_buffers` is the dedicated driver for `read_some`/`write_some`
-    loops: it presents the not-yet-consumed bytes of a buffer sequence via
+    loops. It presents the not-yet-consumed bytes of a buffer sequence via
     `data()`, and `consume(n)` advances past `n` transferred bytes **in
     place**.
 
     It is deliberately **not** itself a buffer sequence — it hands out the
     remaining bytes through `data()` (returning a `slice_of` view). It
-    **borrows** the underlying sequence (iterators + a consumed-byte offset);
-    the sequence must outlive the cursor, which is the natural case when the
+    **borrows** the underlying sequence (iterators + a consumed-byte offset).
+    The sequence must outlive the cursor. That is the natural case when the
     cursor is a local of a composed operation that took its buffers by value.
 
     @par Example
@@ -53,7 +54,7 @@ template<class Seq>
 class consuming_buffers
 {
 public:
-    /// The buffer type of the underlying sequence.
+    /// Names the buffer type the underlying sequence `Seq` yields.
     using buffer_type = capy::buffer_type<Seq>;
 
 private:
@@ -75,10 +76,16 @@ public:
     {
     }
 
-    /// Reject construction from a temporary (the view would dangle).
-    consuming_buffers(Seq const&&) = delete;
+    /** Reject construction from a temporary (the view would dangle).
 
-    /// Return the remaining (unconsumed) bytes as a buffer sequence.
+        @param s The sequence that would be consumed.
+    */
+    consuming_buffers(Seq const&& s) = delete;
+
+    /** Return the remaining (unconsumed) bytes as a buffer sequence.
+
+        @return The bytes not yet consumed, as a buffer sequence.
+    */
     detail::slice_of<Seq>
     data() const noexcept
     {
@@ -110,7 +117,10 @@ public:
     }
 };
 
-// CTAD: deduce the sequence type from the constructor argument.
+/** Deduce the sequence type from the constructor argument.
+
+    @tparam Seq The buffer sequence type.
+*/
 template<class Seq>
 consuming_buffers(Seq const&) -> consuming_buffers<Seq>;
 

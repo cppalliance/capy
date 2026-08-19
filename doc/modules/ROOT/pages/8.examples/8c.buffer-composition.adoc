@@ -1,17 +1,13 @@
 = Buffer Composition
+:page-mode: how-to
 
 Composing buffer sequences without allocation for scatter/gather I/O.
 
-== What You Will Learn
+== What This Example Shows
 
 * Creating buffers from different sources
 * Using `std::array<const_buffer, N>` and `std::array<mutable_buffer, N>` for scatter/gather I/O
 * Zero-allocation buffer sequence patterns
-
-== Prerequisites
-
-* Completed xref:8.examples/8b.producer-consumer.adoc[Producer-Consumer]
-* Understanding of buffer types from xref:../5.buffers/5b.types.adoc[Buffer Types]
 
 == Source Code
 
@@ -22,10 +18,10 @@ include::example$buffer-composition/buffer_composition.cpp[tag=full]
 
 == Build
 
-[source,cmake]
+[source,cmake,role=external]
 ----
 add_executable(buffer_composition buffer_composition.cpp)
-target_link_libraries(buffer_composition PRIVATE capy)
+target_link_libraries(buffer_composition PRIVATE Boost::capy)
 ----
 
 == Walkthrough
@@ -37,7 +33,7 @@ target_link_libraries(buffer_composition PRIVATE capy)
 include::example$buffer-composition/buffer_composition.cpp[tag=make_buffer,indent=0]
 ----
 
-`make_buffer` creates buffer views from various sources. No data is copied—the buffers reference the original storage.
+cpp:make_buffer[] creates buffer views from various sources. No data is copied—the buffers reference the original storage.
 
 === Two-Buffer Scatter/Gather
 
@@ -46,7 +42,7 @@ include::example$buffer-composition/buffer_composition.cpp[tag=make_buffer,inden
 include::example$buffer-composition/buffer_composition.cpp[tag=two_buffer,indent=0]
 ----
 
-Capy's buffer-sequence concepts accept any range of `const_buffer` or `mutable_buffer`, so `std::array<X, 2>` is a buffer sequence with no further wrapping required. Use `mutable_buffer` for receive paths.
+Capy's buffer-sequence concepts accept any range of cpp:const_buffer[] or cpp:mutable_buffer[], so `std::array<X, 2>` is a buffer sequence with no further wrapping required. Use `mutable_buffer` for receive paths.
 
 === Multi-Buffer Arrays
 
@@ -64,7 +60,7 @@ For more than two buffers, the same pattern works with a larger `std::array`. Bu
 include::example$snippets/8c_buffer_composition.cpp[tag=write_gather,indent=0]
 ----
 
-When you write a buffer sequence, the OS receives all buffers in a single system call. This is *scatter/gather I/O*:
+Writing a buffer sequence is *scatter/gather I/O*:
 
 * No intermediate buffer allocation
 * No copying data together
@@ -72,6 +68,7 @@ When you write a buffer sequence, the OS receives all buffers in a single system
 
 == Output
 
+[role=output]
 ----
 === Single Buffer Examples ===
 
@@ -102,7 +99,7 @@ Prepared 2 buffers with 128 bytes total capacity
 
 == Exercises
 
-1. Create a function that takes any `ConstBufferSequence` and prints its contents
+1. Create a function that takes any cpp:ConstBufferSequence[] and prints its contents
 2. Implement a simple message framing protocol using buffer composition
 
 == Next Steps

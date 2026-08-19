@@ -1,33 +1,29 @@
 = Bridging a P2300 Sender
+:page-mode: how-to
 
 Awaiting a `std::execution` (P2300) sender from inside a Capy coroutine.
 
-== What You Will Learn
+== What This Example Shows
 
 * How to `co_await` a foreign awaitable that does not implement the xref:4.coroutines/4d.io-awaitable.adoc[IoAwaitable protocol]
 * How a bridge restores the xref:4.coroutines/4c.executors.adoc#the-same-executor-invariant[same-executor invariant] by posting the resumption through the caller's executor
-* How a sender's value and error completion channels map onto `io_result`
-
-== Prerequisites
-
-* Completed xref:4.coroutines/4d.io-awaitable.adoc[The IoAwaitable Protocol]
-* A `std::execution` implementation (this example uses https://github.com/bemanproject/execution[beman.execution])
+* How a sender's value and error completion channels map onto cpp:io_result[]
 
 [NOTE]
 ====
-This example is built only when `BOOST_CAPY_BUILD_P2300_EXAMPLES=ON` (it requires C++23 and fetches `beman.execution`). The full source is in `example/sender-bridge/`.
+This example is built only when `BOOST_CAPY_BUILD_P2300_EXAMPLES=ON` (it requires C++23 and fetches https://github.com/bemanproject/execution[beman.execution]). The full source is in `example/sender-bridge/`.
 ====
 
 == The Bridge
 
-A P2300 sender is a foreign awaitable: it has no two-argument `await_suspend`, so a Capy `task` cannot `co_await` it directly. `await_sender` wraps it in an `IoAwaitable`. The key move is in the bridge's _receiver_: when the sender completes—on whatever thread its scheduler chose—it does not resume the coroutine inline. It stores the result and posts the continuation back through the caller's executor. From `example/sender-bridge/sender_awaitable.hpp`:
+A P2300 sender is a foreign awaitable: it has no two-argument `await_suspend`, so a Capy cpp:task[] cannot `co_await` it directly. `await_sender` wraps it in an cpp:IoAwaitable[]. The key move is in the bridge's _receiver_: when the sender completes—on whatever thread its scheduler chose—it does not resume the coroutine inline. It stores the result and posts the continuation back through the caller's executor. From `example/sender-bridge/sender_awaitable.hpp`:
 
 [source,cpp]
 ----
 include::example$sender-bridge/sender_awaitable.hpp[tag=set_value,indent=0]
 ----
 
-`await_sender` inspects the sender's completion signatures. If the sender can complete with `set_error(std::error_code)`, the bridge yields `io_result<T>` so the error stays a value rather than an exception; otherwise it yields the value directly.
+`await_sender` inspects the sender's completion signatures. If the sender can complete with `set_error(std::error_code)`, the bridge yields cpp:io_result[io_result<T>] so the error stays a value rather than an exception. Otherwise the bridge yields the value directly.
 
 == Source Code
 
@@ -38,8 +34,9 @@ include::example$sender-bridge/sender_bridge.cpp[tag=full]
 
 == Output
 
-The sender runs on the `run_loop` thread, but the coroutine resumes on the `thread_pool` executor it was launched with—the invariant holds across the bridge:
+The sender runs on the `run_loop` thread, but the coroutine resumes on the cpp:thread_pool[] executor it was started with—the invariant holds across the bridge:
 
+[role=output]
 ----
 main thread: 139667952822976
   sender running on thread 139667946014400

@@ -84,15 +84,6 @@ static_assert(capy::WriteStream<test::write_stream>);
 static_assert(!concept_sketch::WriteStream<test::read_stream>);
 static_assert(!capy::WriteStream<test::read_stream>);
 
-// The page shows the conforming member signature in isolation.
-struct member_signatures
-{
-    // tag::write_some_signature[]
-    template<ConstBufferSequence Buffers>
-    IoAwaitable auto write_some(Buffers buffers);
-    // end::write_some_signature[]
-};
-
 // The real algorithms live in <boost/capy/write.hpp> and
 // <boost/capy/io/write_now.hpp>; these sketches mirror the interface
 // the page presents and are checked against the real API below.

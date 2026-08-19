@@ -37,7 +37,7 @@ namespace boost {
 namespace capy {
 namespace test {
 
-/** A connected stream for testing bidirectional I/O.
+/** Suspends a reader until its paired end writes, or the shared fuse injects an error.
 
     Streams are created in pairs via @ref make_stream_pair.
     Data written to one end becomes available for reading on
@@ -47,11 +47,12 @@ namespace test {
     injection at controlled points in both directions.
 
     When the fuse injects an error or throws on one end, the
-    other end is automatically closed: any suspended reader is
-    resumed with `error::eof`, and subsequent operations on
-    both ends return `error::eof`. Calling @ref close on one
-    end signals eof to the peer's reads after draining any
-    buffered data, while the peer may still write.
+    pair is automatically closed. Any suspended reader on
+    either end is resumed with `error::eof`, and subsequent
+    operations on both ends return `error::eof`. Calling
+    @ref close on one end signals eof to the peer's reads
+    after draining any buffered data, while the peer may
+    still write.
 
     @par Thread Safety
     Single-threaded only. Both ends of the pair must be
@@ -61,9 +62,14 @@ namespace test {
     @par Example
     @code
     fuse f;
-    auto [a, b] = make_stream_pair( f );
 
     auto r = f.armed( [&]( fuse& ) -> task<> {
+        // Constructed inside the lambda: armed() re-invokes this
+        // function once per injected failure point, and a stream
+        // pair constructed outside would carry buffered state
+        // across those rounds.
+        auto [a, b] = make_stream_pair( f );
+
         auto [ec, n] = co_await a.write_some(
             const_buffer( "hello", 5 ) );
         if( ec )
@@ -165,10 +171,33 @@ class stream
     make_stream_pair(fuse);
 
 public:
-    stream(stream const&) = delete;
-    stream& operator=(stream const&) = delete;
-    stream(stream&&) = default;
-    stream& operator=(stream&&) = default;
+    /** Copy construction is disabled; a stream end is move-only.
+
+        @param other The stream end that would be copied.
+    */
+    stream(stream const& other) = delete;
+
+    /** Copy assignment is disabled; a stream end is move-only.
+
+        @param other The stream end that would be assigned from.
+
+        @return A reference to `*this`.
+    */
+    stream& operator=(stream const& other) = delete;
+
+    /** Move constructor.
+
+        @param other The stream end to move from.
+    */
+    stream(stream&& other) = default;
+
+    /** Move assignment.
+
+        @param other The stream end to move from.
+
+        @return A reference to `*this`.
+    */
+    stream& operator=(stream&& other) = default;
 
     /** Signal end-of-stream to the peer.
 
@@ -208,7 +237,7 @@ public:
         the calling coroutine suspends until the peer calls
         @ref write_some. Before every read, the attached
         @ref fuse is consulted to possibly inject an error.
-        If the fuse fires, the peer is automatically closed.
+        If the fuse fires, the pair is automatically closed.
         If the stream is closed, returns `error::eof`.
         The returned `std::size_t` is the number of bytes
         transferred.
@@ -218,9 +247,9 @@ public:
         @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @par Cancellation
-        Cancellation applies only to a read that would otherwise suspend:
-        if no data is available and the environment's stop token is
-        requested (before or during the wait), the read resumes with
+        Cancellation applies only to a read that would otherwise suspend.
+        If no data is available and the environment's stop token is
+        requested, before or during the wait, the read resumes with
         `error::canceled`. A read that can complete immediately from
         buffered data is unaffected by the stop token.
 
@@ -414,7 +443,7 @@ public:
         peer's incoming buffer. If the peer is suspended in
         @ref read_some, it is resumed. Before every write,
         the attached @ref fuse is consulted to possibly inject
-        an error. If the fuse fires, the peer is automatically
+        an error. If the fuse fires, the pair is automatically
         closed. If the stream is closed, returns `error::eof`.
         The returned `std::size_t` is the number of bytes
         transferred.
@@ -425,7 +454,7 @@ public:
         @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @par Cancellation
-        If the environment's stop token has been requested, the write
+        If the environment's stop token is requested, the write
         completes immediately with `error::canceled` and transfers no
         data. An empty buffer sequence is a no-op that completes
         successfully regardless of the stop token.
@@ -578,7 +607,7 @@ public:
     is available, it suspends until the peer writes. Before
     every read or write, the @ref fuse is consulted to
     possibly inject an error for testing fault scenarios.
-    When the fuse fires, the peer is automatically closed.
+    When the fuse fires, the pair is automatically closed.
 
     @param f The fuse used to inject errors during operations.
 

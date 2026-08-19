@@ -8,22 +8,18 @@
 //
 
 = Driving Tests
+:page-mode: how-to
 
 Three utilities work together to run capy code synchronously inside a unit
-test: `run_blocking` drives a coroutine to completion on the calling thread,
-`fuse` injects errors at controlled points and reruns the test body until
-every failure path is covered, and `set_current_thread_name` labels worker
+test. cpp:test::run_blocking[run_blocking] drives a coroutine to completion on the calling
+thread. cpp:test::fuse[fuse] injects errors at controlled points and reruns the test body
+until every failure path is covered. cpp:set_current_thread_name[] labels worker
 threads so that multi-threaded test output is readable.
-
-== Prerequisites
-
-* xref:4.coroutines/4.intro.adoc[Coroutines in Capy]
-* xref:6.streams/6.intro.adoc[Stream Concepts]
 
 == run_blocking
 
 `run_blocking` bridges async coroutine code into a synchronous test body.
-It creates a single-threaded event loop on the calling thread, launches the
+It creates a single-threaded event loop on the calling thread, starts the
 coroutine through it, and blocks until the coroutine finishes or throws.
 No real executor or thread pool is involved.
 
@@ -45,7 +41,7 @@ include::example$snippets/7a_drivers.cpp[tag=run_blocking_overloads,indent=0]
 
 === How It Works
 
-`run_blocking` creates a `blocking_context`, an internal single-threaded
+`run_blocking` creates a cpp:test::blocking_context[blocking_context], an internal single-threaded
 execution context. Work posted to it is queued and processed on the calling
 thread until the coroutine signals completion, then control returns to the
 caller. The inline executor performs symmetric transfer for `dispatch` calls
@@ -53,49 +49,26 @@ so that the coroutine chain runs without unnecessary context switches.
 Use this only in test code. Production code should use a real execution
 context such as a thread pool.
 
-[cols="1,2"]
-|===
-| Overload | Behavior
-
-| `run_blocking()`
-| Discard result. Rethrows captured exceptions.
-
-| `run_blocking(on_value)`
-| Invoke `on_value(v)` on success. Rethrows exceptions if `on_value`
-  does not accept `std::exception_ptr`.
-
-| `run_blocking(on_value, on_error)`
-| Invoke `on_value(v)` on success or `on_error(ep)` with
-  `std::exception_ptr` on failure.
-
-| `run_blocking(stop_token)`
-| Drive with an external stop token; discard result.
-
-| `run_blocking(stop_token, on_value)`
-| Drive with an external stop token; invoke `on_value(v)` on success.
-
-| `run_blocking(stop_token, on_value, on_error)`
-| Drive with an external stop token; invoke `on_value(v)` on success or
-  `on_error(ep)` on failure.
-|===
+See cpp:test::run_blocking[] for the complete overload set. Each
+overload optionally takes a success handler, an error handler, or an
+external stop token.
 
 === Exercising Cancellation
 
 The stop token supplied to `run_blocking` propagates through the execution
 environment to every `capy::test` awaitable. When the token is requested, the
-next awaited test operation resolves to `error::canceled` instead of
-performing its work, so code under test can be driven down its cancellation
-paths without real I/O.
+next awaited test operation resolves to cpp:error::canceled[error::canceled] instead of
+performing its work. Code under test can therefore be driven down its
+cancellation paths without real I/O.
 
 [source,cpp]
 ----
 include::example$snippets/7a_drivers.cpp[tag=run_blocking_cancellation,indent=0]
 ----
 
-The mock sources, sinks, and buffer adapters complete synchronously, so they
-check the token up front: an outstanding stop request yields `error::canceled`
-on the next operation. A connected `stream` whose `read_some` is *blocked*
-waiting for its peer is resumed with `error::canceled` when the token fires; a
+The mock streams and buffer adapters complete synchronously, so they
+check the token up front. A connected cpp:test::stream[stream] whose `read_some` is *blocked*
+waiting for its peer is resumed with `error::canceled` when the token fires. A
 read that can satisfy from already-buffered data is unaffected.
 
 == fuse
@@ -120,9 +93,7 @@ exception mode) and is the normal choice for exhaustive error coverage.
 
 Use `inert()` for happy-path verification ("does this work when nothing
 fails?"). Use `armed()` for fault-tolerance verification ("does this
-handle a failure at every async step?"). A typical test suite pairs
-both -- `inert()` confirms the function works at all, then `armed()`
-confirms it handles every error site:
+handle a failure at every async step?"). A typical test suite pairs both:
 
 [source,cpp]
 ----
@@ -155,8 +126,8 @@ include::example$snippets/7a_drivers.cpp[tag=early_return,indent=0]
 
 === Coroutine Support
 
-`armed()` detects when the test lambda returns an `IoRunnable` (such as
-`task<void>`) and drives it to completion via `run_blocking` internally.
+`armed()` detects when the test lambda returns an cpp:IoRunnable[] (such as
+cpp:task[task<void>]) and drives it to completion via `run_blocking` internally.
 You do not need to call `run_blocking` yourself:
 
 [source,cpp]
@@ -169,7 +140,7 @@ include::example$snippets/7a_drivers.cpp[tag=armed_coroutine,indent=0]
 A type that holds a `fuse` reference can call `maybe_fail()` from its own
 methods to declare additional fail points beyond those built into the
 mocks. Outside `armed()` or `inert()` the call is a no-op (returns an
-empty error code immediately); inside `armed()` it participates in
+empty error code immediately). Inside `armed()` the call participates in
 fault injection alongside every other site.
 
 [source,cpp]
@@ -187,69 +158,16 @@ The default injected code is `error::test_failure`. Pass any
 include::example$snippets/7a_drivers.cpp[tag=custom_error_code,indent=0]
 ----
 
-[cols="1,2"]
-|===
-| Member | Description
-
-| `fuse()`
-| Construct with the default error code (`error::test_failure`).
-
-| `explicit fuse(std::error_code ec)`
-| Construct with a custom error code delivered by `maybe_fail()`.
-
-| `armed(fn) -> result`
-| Run `fn` repeatedly in error-code mode then exception mode, failing
-  at successive `maybe_fail()` sites. Accepts plain lambdas and coroutine
-  lambdas returning `IoRunnable`.
-
-| `armed(run_one, fn) -> result`
-| Like `armed(fn)` for coroutine lambdas, but drives each iteration
-  through the caller-supplied `run_one` instead of `run_blocking`, so the
-  task runs on any execution context the caller chooses (for example an
-  `io_context`, required by operations built on `corosio::timeout`).
-  `run_one` runs the task to completion and returns any escaped exception
-  as a `std::exception_ptr` (null on success); `armed` rethrows it.
-
-| `inert(fn) -> result`
-| Run `fn` once with no injection. `maybe_fail()` always returns `{}`.
-  Accepts plain lambdas and coroutine lambdas returning `IoRunnable`.
-
-| `operator()(fn) -> result`
-| Alias for `armed(fn)`.
-
-| `maybe_fail() -> std::error_code`
-| Return the injected error code at the active failure point, or `{}`
-  otherwise. In exception mode, throws `std::system_error` instead of
-  returning an error. Outside `armed`/`inert`, always returns `{}`.
-
-| `fail()`
-| Signal an explicit test failure and stop execution. Records the call
-  site in `result::loc`.
-
-| `fail(std::exception_ptr)`
-| Signal a test failure with an associated exception. Stored in
-  `result::ep`.
-
-| `result::success`
-| `true` if the run completed without any failure.
-
-| `result::loc`
-| Source location of the last `maybe_fail()` or `fail()` call on failure.
-
-| `result::ep`
-| Exception pointer captured from a `fail(ep)` call, or `nullptr`.
-
-| `result::operator bool()`
-| Returns `result::success`.
-|===
+See cpp:test::fuse[] for the complete member list. It covers both
+constructors, the `armed`/`inert`/`operator()` entry points,
+`maybe_fail`, the `fail` overloads, and `result`'s fields.
 
 == thread_name
 
-`set_current_thread_name` names the calling thread so that debuggers,
+cpp:set_current_thread_name[] names the calling thread so that debuggers,
 `htop`, and core dumps show a recognizable label instead of a generic thread
 ID. This is most useful when a test failure occurs inside a thread pool
-worker and you need to identify which worker was involved. The function is a
-no-op on platforms without thread-naming support.
+worker and you need to identify which worker was involved.
 
 Platform limits on the name length:
 
@@ -262,7 +180,7 @@ Platform limits on the name length:
 include::example$snippets/7a_drivers.cpp[tag=thread_name,indent=0]
 ----
 
-Note that `set_current_thread_name` lives in namespace `boost::capy`, not
+cpp:set_current_thread_name[] lives in namespace `boost::capy`, not
 `boost::capy::test`, because the function is useful in any context, not only
 tests.
 
@@ -270,31 +188,30 @@ tests.
 |===
 | Function | Description
 
-| `set_current_thread_name(char const* name)`
+| cpp:set_current_thread_name[]`(char const* name)`
 | Set the OS thread name for the calling thread. Truncated to the
   platform limit. No-op on unsupported platforms.
 |===
 
 == Putting It Together
 
-The canonical test skeleton combines a small coroutine and `fuse.armed()`.
-The coroutine overload of `armed()` drives the task itself via `run_blocking`
-internally, so the test body uses `co_await` directly:
+The canonical test skeleton combines a small coroutine and `fuse.armed()`:
 
 [source,cpp]
 ----
 include::example$snippets/7a_drivers.cpp[tag=canonical_skeleton]
 ----
 
-When the operation under test needs a specific execution context -- for
-example an `io_context`, which operations built on `corosio::timeout` or
-`corosio::delay` require and which `run_blocking` does not provide -- use the
-`armed(run_one, fn)` overload. The caller supplies `run_one`, which drives
-each iteration's task on a context it owns and returns any exception the task
-raised as a `std::exception_ptr` (null on success); `armed` rethrows it.
+Use the `armed(run_one, fn)` overload when the operation under test needs a
+specific execution context. Operations built on `corosio::timeout` or
+`corosio::delay`, for example, require an `io_context`, which `run_blocking`
+does not provide. The caller supplies `run_one`, which drives each iteration's
+task on a context it owns. `run_one` returns any exception the task raised as a
+`std::exception_ptr`, or null on success, and `armed` rethrows it.
 `fuse` never learns about the context -- the caller owns the drive loop:
 
-[source,cpp,role=external]
+.Excerpt - not compiled here
+[source,cpp,role=pseudocode]
 ----
 fuse f;
 auto io_runner = [](task<void> t) -> std::exception_ptr {
@@ -313,9 +230,10 @@ auto r = f.armed(
 BOOST_TEST(r.success);
 ----
 
-`run_one` must *return* the exception rather than rethrow it: an exception
-escaping a `run_async` completion handler calls `std::terminate`, so the
-handler captures it and the runner hands it back once the run loop is done.
+`run_one` must *return* the exception rather than rethrow it. An exception
+escaping a cpp:run_async[] completion handler calls `std::terminate`. The
+handler therefore captures it, and the runner hands it back once the run loop
+is done.
 A fresh `io_context` per iteration (as above) needs no `restart()`; reuse one
 across iterations only if you call `restart()` between rounds.
 
@@ -325,28 +243,10 @@ across iterations only if you call `restart()` between rounds.
 of a `fuse` object shares the same internal state, so all copies respond
 to the same `armed()` or `inert()` call. This is what makes the canonical
 pattern work: pass a copy of `f` to each mock at construction time, then
-call `f.armed(...)` once -- the injection machinery reaches every mock
-because they all hold a copy pointing to the same shared state.
+call `f.armed(...)` once.
 
 For tests that need mocks, replace `add` with a function that takes a
-`read_stream`, `write_stream`, or other mock, and construct those mocks
-with the same `fuse f`. The armed loop will then exercise every I/O
+cpp:test::read_stream[read_stream], cpp:test::write_stream[write_stream], or other mock.
+Construct those mocks with the same `fuse f`. The armed loop then exercises every I/O
 failure path through both error-code and exception modes automatically.
 
-== Reference
-
-[cols="1,3"]
-|===
-| Header | Contents
-
-| `<boost/capy/test/run_blocking.hpp>`
-| Synchronous coroutine driver.
-
-| `<boost/capy/test/fuse.hpp>`
-| Systematic error injection.
-
-| `<boost/capy/test/thread_name.hpp>`
-| Thread naming for diagnostics.
-|===
-
-Continue to xref:7.testing/7b.mock-streams.adoc[Mock Streams].

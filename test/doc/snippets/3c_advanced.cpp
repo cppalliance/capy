@@ -9,7 +9,6 @@
 
 // Compiled fragments shown in pages/3.concurrency/3c.advanced.adoc.
 
-// tag::shared_mutex[]
 // Fragments deliberately leave results and bindings unused; the pages
 // explain the values in prose instead.
 #if defined(__GNUC__) || defined(__clang__)
@@ -37,6 +36,7 @@
 #pragma warning(disable: 4459) // declaration hides global declaration
 #endif
 
+// tag::shared_mutex[]
 #include <iostream>
 #include <thread>
 #include <shared_mutex>

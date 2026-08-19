@@ -8,21 +8,18 @@
 //
 
 = Why Capy Is Separate
+:page-mode: explanation
 
 "Why are Capy and Corosio two separate libraries? Why not just put everything in one place?"
 
 The answer is physical design. Capy and Corosio sit at different levels of the physical hierarchy. They encapsulate different information, change for different reasons, and have different platform dependencies. Merging them would degrade the design along every axis that matters for a large-scale system: testability, reusability, and build cost.
 
-This document applies well-established physical design principles to show why the separation is a structural requirement.
-
 
 == What Lives Where
 
-**Capy** provides the foundational abstractions for coroutine-based I/O. Tasks. Buffers. Stream concepts. Executors. The IoAwaitable protocol. Type-erased streams. Composition primitives like `when_all` and `when_any`. It is pure {cpp}20. It does not include a single line of platform-specific code. No sockets. No file descriptors. No `#ifdef _WIN32`.
+**Capy** provides the foundational abstractions for coroutine-based I/O. Tasks. Buffers. Stream concepts. Executors. The IoAwaitable protocol. Type-erased streams. Composition primitives like cpp:when_all[] and cpp:when_any[]. It is pure {cpp}20. It has no platform-specific I/O code. No sockets. No file descriptors. No OS event loop.
 
-**Corosio** provides platform networking. TCP sockets. TLS streams. DNS resolution. Delays and timeouts. Signal handling. It implements four platform-specific event loop backends: IOCP on Windows, epoll on Linux, kqueue on macOS/BSD, and POSIX select as a fallback. Corosio depends on Capy. Capy does not depend on Corosio.
-
-The dependency arrow points in one direction. That is not an accident.
+**Corosio** provides platform networking. TCP sockets. TLS streams. DNS resolution. Delays and timeouts. Signal handling. It implements five platform-specific event loop backends: epoll and io_uring on Linux, kqueue on macOS/BSD, IOCP on Windows, and POSIX select as a fallback. Corosio depends on Capy. Capy does not depend on Corosio.
 
 
 == Levelization
@@ -42,7 +39,7 @@ The levels are straightforward:
 * A component that depends on level-1 components is *level 2*.
 * And so on.
 
-This creates a directed acyclic graph where dependencies flow in one direction. If the graph has a cycle, the design is broken. The presence of acyclic dependencies does not guarantee good design, but the presence of cycles guarantees bad design.
+This creates a directed acyclic graph where dependencies flow in one direction. The presence of acyclic dependencies does not guarantee good design, but the presence of cycles guarantees bad design.
 
 [quote, John Lakos, 'https://www.amazon.com/dp/0201633620[Large-Scale C++ Software Design] (1996)']
 ____
@@ -51,7 +48,7 @@ easier and more economical to maintain, test, and reuse than
 tightly interdependent systems.
 ____
 
-Knowing that logical designs must be levelized, you alter the logical designs accordingly. This is the insight that separates engineers who have built at scale from those who have not.
+Knowing that logical designs must be levelized, you alter the logical designs accordingly.
 
 Capy sits at a lower level. It provides tasks, buffers, stream concepts, and executors - abstractions that do not depend on any particular I/O backend. Corosio sits at a higher level. It provides sockets, TLS, and event loops that depend on Capy's abstractions.
 
@@ -60,10 +57,11 @@ Components at different levels belong in different packages. This is a structura
 
 == Cumulative Component Dependency
 
-Lakos quantified the cost of getting levels wrong with Cumulative Component Dependency (CCD): the sum over all components in a subsystem of the number of components needed in order to test each component incrementally (see Figure 4-22, p. 191 of Lakos'96).
+Lakos quantified the cost of getting levels wrong with Cumulative Component Dependency (CCD): the sum over all components in a subsystem of the number of components needed to test each component incrementally (see Figure 4-22, p. 191 of Lakos'96).
 
-CCD ranges from N for a perfectly horizontal (flat) design to N-squared for a vertical or cyclically dependent one. The metric is additive for independent subsystems. If two independent libraries each have CCD of 5, combining them without adding cross-dependencies gives CCD 10 - exactly the sum:
+CCD ranges from N for a perfectly horizontal (flat) design to N-squared for a vertical or cyclically dependent one. The metric is additive for independent subsystems. If two independent libraries each have CCD of 5, combining them without adding cross-dependencies gives CCD 10:
 
+[role=figure]
 ----
 --------    ----------
    [3]         [3]
@@ -82,7 +80,7 @@ CCD = 5      CCD = 5
 
 Each component should have a single purpose. Ideally all of the functionality within a component is primitive - if you can write a function in terms of a type rather than as a member of that type, write a free function (or today, a template function constrained by a concept). This keeps levels flat and CCD low.
 
-Merging two libraries at different levels inflates CCD. Every component that only needs buffers and tasks now drags in sockets, TLS, and four platform backends. Testing cost, build cost, and cognitive cost all increase.
+Merging two libraries at different levels inflates CCD. Every component that only needs buffers and tasks now drags in sockets, TLS, and five platform backends. Testing cost, build cost, and cognitive cost all increase.
 
 
 == Deep Modules
@@ -95,9 +93,9 @@ The best modules are those that provide powerful functionality,
 but have a simple interface.
 ____
 
-Capy is a deep module. Its public surface is narrow: a handful of concepts (`ReadStream`, `WriteStream`, `Stream`), a task type, an executor model, and buffer utilities. Behind that surface lives a substantial implementation: coroutine frame allocation, forward propagation of executors and stop tokens, type-erased stream machinery, and composition primitives.
+Capy is a deep module. Its public surface is narrow: a handful of concepts (cpp:ReadStream[], cpp:WriteStream[], cpp:Stream[]), a task type, an executor model, and buffer utilities. Behind that surface lives a substantial implementation: coroutine frame allocation, forward propagation of executors and stop tokens, type-erased stream machinery, and composition primitives.
 
-Corosio is also a deep module, but a different one. It hides platform-specific event loop complexity (IOCP, epoll, kqueue, select) behind a uniform socket and timer interface.
+Corosio is also a deep module, but a different one. It hides platform-specific event loop complexity (IOCP, epoll, io_uring, kqueue, select) behind a uniform socket and timer interface.
 
 These two modules hide different information. That is the practical reason they are separate. Lakos would say: do not collocate two independent systems, because doing so creates gratuitous physical dependencies. Ousterhout would say: modules that hide different information should remain different modules.
 
@@ -106,27 +104,27 @@ Capy pulls the complexity of coroutine execution, buffer management, and context
 
 == Writing Against the Narrowest Interface
 
-A `ReadStream` concept captures the essential operation: anything you can `read_some` from. TCP sockets, TLS streams, file handles, in-memory buffers - one generic algorithm works with all of them. That algorithm belongs in Capy, not Corosio, because it depends only on the concept, not on any particular implementation.
+A cpp:ReadStream[] concept captures the essential operation: anything you can `read_some` from. TCP sockets, TLS streams, file handles, in-memory buffers - one generic algorithm works with all of them. That algorithm belongs in Capy, not Corosio, because it depends only on the concept, not on any particular implementation.
 
-Stepanov's principle applies here: algorithms should be abstracted away from particular implementations so that the minimum requirements the algorithm assumes are the only requirements the code uses. In practice, zero-overhead abstraction is an ideal rather than a guarantee - Chandler Carruth has argued persuasively that real compilers on real hardware rarely achieve it perfectly. But the principle of coding against minimal requirements remains sound, even when the abstraction has some cost.
+Stepanov's principle applies here: algorithms should be abstracted away from particular implementations so that the minimum requirements the algorithm assumes are the only requirements the code uses.
 
 If you can express your algorithm using Capy instead of Corosio, you depend on fewer things. Fewer dependencies means lower CCD, easier testing, and broader reuse.
 
 
 == The Existence Proof
 
-Boost.Http is a sans-I/O HTTP/1.1 protocol library. It parses requests, serializes responses, and implements routing. It is written entirely against Capy. It has zero dependency on Corosio.
+Boost.Http is a sans-I/O HTTP/1.1 protocol library. It is written entirely against Capy. It has zero dependency on Corosio.
 
-This is not a hypothetical. It is a real library, shipping today. It works with any I/O backend that satisfies Capy's stream concepts. You could plug in Corosio's TCP sockets, or Asio's sockets, or a mock stream for testing. The protocol logic does not care.
+It is a real library, shipping today. It works with any I/O backend that satisfies Capy's stream concepts. You could plug in Corosio's TCP sockets, or Asio's sockets, or a mock stream for testing. The protocol logic does not care.
 
 If Capy were merged into Corosio, Boost.Http would be forced to depend on platform networking it never touches. Every user who wants to parse HTTP headers would need to link against IOCP on Windows, epoll on Linux, and kqueue on macOS. The HTTP parser does not use sockets. It should not pay for sockets.
 
-This is precisely the excessive link-time dependency that levelization is designed to prevent. Merging Capy into Corosio does not create a cycle, but it forces every consumer of Capy's abstractions to inherit Corosio's platform dependencies. The cost is paid by everyone, even those who need nothing from Corosio.
+This is precisely the excessive link-time dependency that levelization is designed to prevent. Merging Capy into Corosio does not create a cycle, but it forces every consumer of Capy's abstractions to inherit Corosio's platform dependencies.
 
 
 == Testing in Isolation
 
-With Capy as a separate library, you can test buffer algorithms, stream concepts, and task machinery without a network stack. No sockets. No event loops. No platform dependencies. Just pure {cpp}20 coroutine logic.
+With Capy as a separate library, you can test buffer algorithms, stream concepts, and task machinery without a network stack.
 
 With Corosio as a separate library, you can test socket behavior, DNS resolution, and timer accuracy against a known-good Capy foundation.
 
@@ -135,25 +133,26 @@ Merge them, and every test of a buffer copy routine must compile against platfor
 
 == Platform Isolation
 
-Capy is portable {cpp}20. It compiles on any conforming compiler with no platform-specific code. It can be used on embedded systems, in WebAssembly, on platforms that do not have sockets, and in environments where the I/O backend has not been written yet.
+Capy is portable {cpp}20. It compiles on any conforming compiler with no platform-specific I/O code. It can be used on embedded systems, in WebAssembly, on platforms that do not have sockets, and in environments where the I/O backend has not been written yet.
 
-Corosio contains four platform backends, each a substantial body of platform-specific code:
+Corosio contains five platform backends, each a substantial body of platform-specific code:
 
 * *IOCP* on Windows (sockets, overlapped I/O, NT timers)
 * *epoll* on Linux
+* *io_uring* on Linux
 * *kqueue* on macOS and BSD
 * *select* as a POSIX fallback
 
-Merging these into Capy would mean that a developer who wants a `task<>` type or a `buffer_slice` must compile against platform I/O headers. Keeping Capy separate ensures that none of the headers a consumer includes transitively pull in anything from the platform I/O layer. Consumers take only what they need.
+Merging these into Capy would mean that a developer who wants a cpp:task[task<>] type or a cpp:buffer_slice[] must compile against platform I/O headers. Keeping Capy separate ensures that none of the headers a consumer includes transitively pull in anything from the platform I/O layer.
 
 
 == Conclusion
 
 Good design separates things that change for different reasons. Capy changes when the coroutine execution model evolves - new composition primitives, new buffer types, refinements to the IoAwaitable protocol. Corosio changes when platform I/O APIs evolve - new io_uring features on Linux, new IOCP capabilities on Windows, new TLS backends.
 
-The converse is also important: things that change together should not be separated. An unstable implementation detail that serves only one component belongs inside that component, not in a separate library. Capy and Corosio do not change together. They have different rates of change, different levels of abstraction, and different platform dependencies.
+The converse is also important: things that change together should not be separated. An unstable implementation detail that serves only one component belongs inside that component, not in a separate library. Capy and Corosio do not change together.
 
-These are distinct reasons for separation. Levelization demands acyclic dependencies between packages. Isolation prevents excessive compile-time and link-time coupling. Abstraction - hiding unnecessary details - reduces the interface each consumer must understand. The three reinforce each other, but they are separate concerns.
+Levelization demands acyclic dependencies between packages. Isolation prevents excessive compile-time and link-time coupling. Abstraction - hiding unnecessary details - reduces the interface each consumer must understand. The three reinforce each other, but they are separate concerns.
 
 Capy is the narrow waist. It is the small-surface-area interface that hides substantial machinery. It is the lower-level foundation that everything else builds on. Merging it into Corosio would force every consumer of portable abstractions to pay for platform networking they do not use.
 

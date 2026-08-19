@@ -10,6 +10,28 @@ file-patterns:
 # Filters
 include-symbols:
   - 'boost::capy::**'
+# Internal-only test helper types: implementation machinery of the public
+# run_blocking / bufgrind toolkit, not user-facing API. Omitted from the
+# reference (Doxygen @cond does not suppress warnings in this MrDocs build).
+exclude-symbols:
+  - 'boost::capy::test::blocking_handler_wrapper'
+  - 'boost::capy::test::run_blocking_wrapper'
+  - 'boost::capy::test::bufgrind::next_awaitable'
+# Private members of buffer_param's anonymous union. `inaccessible-members:
+# never` does not reach variant members of an anonymous union in this MrDocs
+# build, so these two private fields leak into the reference as "[variant
+# member]" rows. They are storage internals, not API. The `**` spans the
+# unnamed union's own scope, which sits between the class and the members.
+  - 'boost::capy::buffer_param::**::dummy_'
+  - 'boost::capy::buffer_param::**::arr_'
+# Same anonymous-union leak in the task and quitter promises: `ep_` is the
+# exception_ptr held in a union so it is not constructed or destroyed
+# automatically, and it sits in a `private:` section that `inaccessible-members:
+# never` would otherwise filter. Its sibling `has_ep_`/`state_` -- private but
+# not in a union -- is correctly filtered, which is what identifies the union as
+# the cause.
+  - 'boost::capy::task::**::ep_'
+  - 'boost::capy::quitter::**::ep_'
 implementation-defined:
   - 'boost::capy::detail'
   - 'boost::capy::*::detail'
@@ -25,6 +47,24 @@ verbose: true
 multipage: true
 # use-system-libc: true
 # use-system-stdlib: true
+
+# Warnings (Style Guide Part F.0 "MrDocs-no-warnings" gate; doc/lint/mrdocs-warnings.mjs
+# scans the build log for these). Deliberately not warn-as-error: the gate stays
+# non-blocking until Phase 2 exit promotes it (see task-2 brief).
+warnings: true
+warn-if-undocumented: true
+warn-no-paramdoc: true
+warn-unnamed-param: true
+warn-broken-ref: true
+warn-if-doc-error: true
+
+# Two further MrDocs 0.8.0 limitations stay grandfathered in
+# doc/lint/baseline.json instead of being fixed here. The reasoning lives next
+# to the affected code so it is findable from either end:
+#   include/boost/capy/buffers/front.hpp -- the six buffer CPO
+#     "variable is undocumented" findings
+#   include/boost/capy/ex/run.hpp -- "run: Documented parameter 'alloc'
+#     does not exist"
 
 # Automation
 auto-function-metadata: false

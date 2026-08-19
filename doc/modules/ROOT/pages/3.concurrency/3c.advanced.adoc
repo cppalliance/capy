@@ -1,11 +1,5 @@
-= Part III: Advanced Primitives
-
-This section covers advanced synchronization primitives: atomics for lock-free operations, condition variables for efficient waiting, and shared locks for reader/writer patterns.
-
-== Prerequisites
-
-* Completed xref:3.concurrency/3b.synchronization.adoc[Part II: Synchronization]
-* Understanding of mutexes, lock guards, and deadlocks
+= Atomics, Condition Variables & Shared Locks
+:page-mode: tutorial
 
 == Atomics: Lock-Free Operations
 
@@ -17,8 +11,6 @@ An atomic operation completes entirely before any other thread can observe its e
 ----
 include::example$programs/3c_advanced_atomics.cpp[tag=full]
 ----
-
-No mutex, no lock guard, yet the result is always 200,000. The `std::atomic<int>` ensures that increments are indivisible.
 
 === When to Use Atomics
 
@@ -62,7 +54,13 @@ The worker thread calls `cv.wait()`, which atomically releases the mutex and sus
 
 === The Predicate
 
-The lambda `[]{ return ready; }` is the *predicate*. `wait()` will not return until this evaluates to true. This guards against *spurious wakeups*—rare events where a thread wakes without notification. Always use a predicate.
+The lambda `[]{ return ready; }` is the *predicate*. `wait()` does not return until this evaluates to true. This guards against *spurious wakeups*—events where a thread wakes without a matching notification. Always use a predicate.
+
+Spurious wakeups are permitted on purpose. Implementations are commonly layered on operating-system primitives, such as POSIX condition variables, which themselves permit a wait to return without a matching notification. Requiring `wait` to suppress that would force every implementation to add bookkeeping the platform does not provide.
+
+An operating-system signal can also wake a waiting thread. On some platforms a notification wakes several waiters when only one can proceed.
+
+There is also a real race. Between the notification and the waiter reacquiring the mutex, another thread can take the mutex and consume the condition. The waiter then wakes correctly notified and still finds nothing to do, which is indistinguishable from a spurious wakeup. Re-checking a predicate handles both.
 
 === Notification Methods
 
@@ -80,7 +78,7 @@ include::example$snippets/3c_advanced.cpp[tag=wait_variants,indent=0]
 
 == Shared Locks: Readers and Writers
 
-Consider a data structure that is read frequently but written rarely. A regular mutex serializes all access—but why block readers from each other? Multiple threads can safely read simultaneously; only writes require exclusive access.
+Consider a data structure that is read frequently but written rarely. A regular mutex serializes all access. Multiple threads can safely read simultaneously; only writes require exclusive access.
 
 *Shared mutexes* support this pattern:
 
@@ -111,7 +109,3 @@ This pattern maximizes concurrency for read-heavy workloads. Use `std::shared_mu
 ----
 include::example$snippets/3c_advanced.cpp[tag=thread_safe_cache,indent=0]
 ----
-
-Multiple threads can call `get()` simultaneously without blocking each other. Only `put()` requires exclusive access.
-
-You have now learned about atomics, condition variables, and shared locks. In the next section, you will explore communication patterns: futures, promises, async, and practical concurrent patterns.

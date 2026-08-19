@@ -1,15 +1,9 @@
-= Part IV: Communication & Patterns
-
-This section covers communication mechanisms for getting results from threads and practical patterns for concurrent programming.
-
-== Prerequisites
-
-* Completed xref:3.concurrency/3c.advanced.adoc[Part III: Advanced Primitives]
-* Understanding of atomics, condition variables, and shared locks
+= Futures, async & Patterns
+:page-mode: tutorial
 
 == Futures and Promises: Getting Results Back
 
-Threads can perform work, but how do you get results from them? Passing references works but is clunky. {cpp} offers a cleaner abstraction: *futures* and *promises*.
+Passing references works but is clunky. {cpp} offers a cleaner abstraction: *futures* and *promises*.
 
 A `std::promise` is a write-once container: a thread can set its value. A `std::future` is the corresponding read-once container: another thread can get that value. They form a one-way communication channel.
 
@@ -18,7 +12,7 @@ A `std::promise` is a write-once container: a thread can set its value. A `std::
 include::example$programs/3d_patterns_promise_future.cpp[tag=full]
 ----
 
-The worker thread calls `set_value()`. The main thread calls `get()`, which blocks until the value is available.
+The main thread calls `get()`, which blocks until the value is available.
 
 === Important Behaviors
 
@@ -36,9 +30,9 @@ Creating threads manually, managing promises, joining at the end—it is mechani
 include::example$programs/3d_patterns_async.cpp[tag=full]
 ----
 
-`std::async` launches the function (potentially in a new thread), returning a future. No explicit thread creation, no promise management, no join call.
+`std::async` starts the function (potentially in a new thread), returning a future. No explicit thread creation, no promise management, no join call.
 
-=== Launch Policies
+=== `std::launch` Policies
 
 By default, the system decides whether to run the function in a new thread or defer it until you call `get()`. You can specify:
 
@@ -46,8 +40,6 @@ By default, the system decides whether to run the function in a new thread or de
 ----
 include::example$snippets/3d_patterns.cpp[tag=launch_policies,indent=0]
 ----
-
-For quick parallel tasks, `std::async` is often the cleanest choice.
 
 == Thread-Local Storage
 
@@ -60,7 +52,7 @@ Declare it `thread_local`:
 include::example$programs/3d_patterns_thread_local.cpp[tag=full]
 ----
 
-Each thread sees its own `counter`. T1 prints 1, then 2. T2 independently prints 1, then 2. No synchronization needed because the data is not shared.
+Each thread sees its own `counter`. No synchronization needed because the data is not shared.
 
 Thread-local storage is useful for per-thread caches, random number generators, or error state.
 
@@ -91,24 +83,9 @@ Split a loop across multiple threads:
 include::example$programs/3d_patterns_parallel_for.cpp[tag=full]
 ----
 
-The work is divided into chunks, each handled by its own thread. For CPU-bound work on large datasets, this can dramatically reduce execution time.
+For CPU-bound work on large datasets, this can dramatically reduce execution time.
 
-== Summary
-
-You have learned the fundamentals of concurrent programming:
-
-* *Threads* — Independent flows of execution within a process
-* *Mutexes* — Mutual exclusion to prevent data races
-* *Lock guards* — RAII wrappers that ensure mutexes are properly released
-* *Atomics* — Lock-free safety for single operations
-* *Condition variables* — Efficient waiting for events
-* *Shared locks* — Multiple readers or one writer
-* *Futures and promises* — Communication of results between threads
-* *std::async* — Simplified launching of parallel work
-
-You have seen the dangers—race conditions, deadlocks—and the tools to avoid them.
-
-=== Best Practices
+== Best Practices
 
 * *Start with std::async* when possible
 * *Prefer immutable data* — shared data that never changes needs no synchronization
@@ -117,6 +94,4 @@ You have seen the dangers—race conditions, deadlocks—and the tools to avoid 
 * *Avoid nested locks* — when unavoidable, use `std::scoped_lock`
 * *Test thoroughly* — test with many threads, on different machines, under load
 
-Concurrency is challenging. Bugs hide until the worst moment. Testing is hard because timing varies. But the rewards are substantial: responsive applications, full hardware utilization, and elegant solutions to naturally parallel problems.
-
-This foundation prepares you for understanding Capy's concurrency facilities: `thread_pool`, `strand`, `when_all`, `async_event`, `async_mutex`, and `async_waker`. These build on standard primitives to provide coroutine-friendly concurrent programming.
+Capy's concurrency facilities—cpp:thread_pool[], cpp:strand[], cpp:when_all[], cpp:async_event[], cpp:async_mutex[], and cpp:async_waker[]—build on these standard primitives for coroutine-friendly concurrent programming.

@@ -1,44 +1,20 @@
 = Streams (Partial I/O)
-
-This section explains the `ReadStream` and `WriteStream` concepts for partial I/O operations.
-
-== Prerequisites
-
-* Completed xref:6.streams/6a.overview.adoc[Stream Concepts Overview]
-* Understanding of the six stream concept categories
+:page-mode: explanation
 
 == ReadStream
 
-A type satisfies `ReadStream` if it provides partial read operations via `read_some`:
+A type satisfies cpp:ReadStream[] if it provides partial read operations via `read_some`:
 
 [source,cpp]
 ----
 include::example$snippets/6b_streams.cpp[tag=read_stream_concept]
 ----
 
-The `requires` clause names a single representative buffer (`mutable_buffer_archetype`) because a {cpp} concept cannot say "works with every buffer sequence." The real contract is that `read_some` accepts *any* `MutableBufferSequence`—one buffer or a range; the archetype only samples that requirement.
+The `requires` clause names a single representative buffer (cpp:mutable_buffer_archetype[]) because a {cpp} concept cannot say "works with every buffer sequence." The real contract is that `read_some` accepts *any* cpp:MutableBufferSequence[]—one buffer or a range; the archetype only samples that requirement.
 
 === read_some Semantics
 
-[source,cpp]
-----
-include::example$snippets/6b_streams.cpp[tag=read_some_signature,indent=0]
-----
-
-Attempts to read up to `buffer_size(buffers)` bytes from the stream into the buffer sequence. Await-returns `(error_code, std::size_t)`:
-
-If `buffer_size(buffers) > 0`:
-
-* If `!ec`, then `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were read into the buffer sequence.
-* If `ec`, then `n >= 0 && n < buffer_size(buffers)`. `n` is the number of bytes read before the I/O condition arose.
-
-Equivalently, `n == buffer_size(buffers)` implies `!ec`: a read that fills the buffer sequence is a success even when the underlying operation also signals a condition such as end-of-stream. That condition is reported on a subsequent read.
-
-If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
-
-I/O conditions from the underlying system are reported via `ec`. Failures in the library itself (such as allocation failure) are reported via exceptions.
-
-*Throws:* `std::bad_alloc` if coroutine frame allocation fails.
+See cpp:ReadStream[] for the full contract: return-value semantics, error reporting, throws, and buffer lifetime.
 
 === Partial Transfer
 
@@ -60,36 +36,18 @@ include::example$snippets/6b_streams.cpp[tag=dump_stream]
 
 == WriteStream
 
-A type satisfies `WriteStream` if it provides partial write operations via `write_some`:
+A type satisfies cpp:WriteStream[] if it provides partial write operations via `write_some`:
 
 [source,cpp]
 ----
 include::example$snippets/6b_streams.cpp[tag=write_stream_concept]
 ----
 
-As with `ReadStream`, the `const_buffer_archetype` is only a representative: the real contract is that `write_some` accepts *any* `ConstBufferSequence`, which a {cpp} concept cannot fully express.
+As with cpp:ReadStream[], the cpp:const_buffer_archetype[] is only a representative: the real contract is that `write_some` accepts *any* cpp:ConstBufferSequence[], which a {cpp} concept cannot fully express.
 
 === write_some Semantics
 
-[source,cpp]
-----
-include::example$snippets/6b_streams.cpp[tag=write_some_signature,indent=0]
-----
-
-Attempts to write up to `buffer_size(buffers)` bytes from the buffer sequence to the stream. Await-returns `(error_code, std::size_t)`:
-
-If `buffer_size(buffers) > 0`:
-
-* If `!ec`, then `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were written from the buffer sequence.
-* If `ec`, then `n >= 0 && n < buffer_size(buffers)`. `n` is the number of bytes written before the I/O condition arose.
-
-Equivalently, `n == buffer_size(buffers)` implies `!ec`: a write that drains the entire buffer sequence is a success even when the underlying operation also signals a condition. That condition is reported on a subsequent write.
-
-If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
-
-I/O conditions from the underlying system are reported via `ec`. Failures in the library itself (such as allocation failure) are reported via exceptions.
-
-*Throws:* `std::bad_alloc` if coroutine frame allocation fails.
+See cpp:WriteStream[] for the full contract: return-value semantics, error reporting, throws, and buffer lifetime.
 
 === Partial Transfer
 
@@ -106,7 +64,7 @@ To write all data, loop until complete (or use the `write()` composed operation)
 
 === any_read_stream
 
-Wraps any `ReadStream` in a type-erased container:
+Wraps any cpp:ReadStream[] in a type-erased container:
 
 [source,cpp]
 ----
@@ -115,11 +73,9 @@ include::example$snippets/6b_streams.cpp[tag=any_read_stream_include]
 include::example$snippets/6b_streams.cpp[tag=any_read_stream_ctors,indent=0]
 ----
 
-Each wrapper has two construction modes. Passing an object by value takes ownership: the wrapper moves the stream into internally allocated storage. Passing a pointer wraps the pointed-to stream by reference, and that stream must outlive the wrapper.
-
 === any_write_stream
 
-Wraps any `WriteStream`:
+Wraps any cpp:WriteStream[]:
 
 [source,cpp]
 ----
@@ -130,7 +86,7 @@ include::example$snippets/6b_streams.cpp[tag=any_write_stream_ctors,indent=0]
 
 === any_stream
 
-Wraps bidirectional streams (both `ReadStream` and `WriteStream`):
+Wraps bidirectional streams (both cpp:ReadStream[] and cpp:WriteStream[]):
 
 [source,cpp]
 ----
@@ -163,27 +119,3 @@ include::example$snippets/6b_streams.cpp[tag=echo_server]
 ----
 
 The implementation doesn't know the concrete stream type. It compiles once and works with any transport.
-
-== Reference
-
-[cols="1,3"]
-|===
-| Header | Description
-
-| `<boost/capy/concept/read_stream.hpp>`
-| ReadStream concept definition
-
-| `<boost/capy/concept/write_stream.hpp>`
-| WriteStream concept definition
-
-| `<boost/capy/io/any_read_stream.hpp>`
-| Type-erased read stream wrapper
-
-| `<boost/capy/io/any_write_stream.hpp>`
-| Type-erased write stream wrapper
-
-| `<boost/capy/io/any_stream.hpp>`
-| Type-erased bidirectional stream wrapper
-|===
-
-You have now learned the stream concepts for partial I/O. Continue to xref:6.streams/6f.isolation.adoc[Physical Isolation].

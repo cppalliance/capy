@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -64,6 +65,8 @@ namespace capy {
     @param buffers The buffer sequence to fill. If the lifetime of the buffer
     sequence represented by `buffers` ends before the coroutine finishes, the behavior is undefined.
 
+    @return A task yielding `io_result<std::size_t>` whose second element
+    is the number of bytes read.
 
     @par Remarks
     Supports _IoAwaitable cancellation_.

@@ -1,8 +1,9 @@
 = Capy and TooManyCooks: A Comparison
+:page-mode: explanation
 
-You want to write async code in {cpp}. You've heard about coroutines. Two libraries exist: Capy and TooManyCooks (TMC). Both let you write `co_await`. Both run on multiple threads.
+Two libraries exist: Capy and TooManyCooks (TMC). Both let you write `co_await`. Both run on multiple threads.
 
-One was designed for network I/O. The other was designed for compute tasks. Choosing the wrong one creates friction. This document helps you choose.
+One was designed for network I/O. The other was designed for compute tasks. Choosing the wrong one creates friction.
 
 == The Simple Version
 
@@ -23,7 +24,7 @@ One was designed for network I/O. The other was designed for compute tasks. Choo
 
 If you're building a network server, one of these is swimming upstream.
 
-NOTE: *On priorities:* Capy defines executors using a concept. Nothing stops you from implementing a priority-enforcing executor. You could have 24 priority levels, if 16 somehow felt insufficient.
+NOTE: *On priorities:* Capy defines executors using a concept. Nothing stops you from implementing a priority-enforcing executor.
 
 == Where Does Your Code Run?
 
@@ -33,16 +34,14 @@ When async code finishes waiting, it needs to resume somewhere. Where?
 
 * Context flows forward through `await_suspend(h, env)` where `env` is an `io_env`
 * Your coroutine started on executor X? It resumes on executor X.
-* Child tasks can run on different executors via `run(other_ex)(child_task())`
 
 *TMC's answer:* Where you tell it, with flexibility to change mid-execution.
 
 * Context flows via `tmc::detail::awaitable_traits` - a traits-based injection mechanism
-* Thread-local variables track the current executor for quick access
 * Coroutines can hop executors mid-body via `resume_on()` and `enter()`/`exit()`
 * Works fine within TMC's ecosystem; integrating external I/O requires the coordination headers (`ex_asio.hpp`, `aw_asio.hpp`)
 
-Both libraries propagate executor context. They differ in mechanism and mobility.
+Both libraries propagate executor context.
 
 == Executor Mobility
 
@@ -65,7 +64,7 @@ tmc::task<void> example() {
 
 This is powerful for compute workloads where work can migrate between thread pools.
 
-*Capy's design choice:* Intentionally prevent mid-coroutine executor switching. A coroutine stays on its bound executor for its entire lifetime. Child tasks can run on different executors via `run(other_ex)(child_task())`, but the parent never moves.
+*Capy's design choice:* A coroutine stays on its bound executor for its entire lifetime. Child tasks can run on different executors via cpp:run[]`(other_ex)(child_task())`, but the parent never moves.
 
 *Why Capy prevents this:* I/O objects often have invariants tied to their executor:
 
@@ -95,7 +94,7 @@ The TMC author acknowledged that automatic cancellation propagation is an "excel
 
 == Keeping Things Orderly
 
-Both libraries support multi-threaded execution. Sometimes you need guarantees: "these operations must not overlap."
+Sometimes you need guarantees: "these operations must not overlap."
 
 *Capy's strand:*
 
@@ -111,13 +110,11 @@ Both libraries support multi-threaded execution. Sometimes you need guarantees: 
 * Another coroutine may enter and begin executing
 * When you resume, the state may have changed
 
-TMC's documentation describes this as "optimized for higher throughput with many serialized tasks." This is a design choice. Whether it matches your mental model is a separate question.
+TMC's documentation describes this as "optimized for higher throughput with many serialized tasks." Whether it matches your mental model is a separate question.
 
 NOTE: Neither library prevents the caller from initiating multiple concurrent I/O operations on the same object - that's always the caller's responsibility. Both provide mutual exclusion for coroutine/handler execution only, not I/O operation queuing.
 
 == Working with Data
-
-Network code moves bytes around. A lot of bytes. Efficiently.
 
 *Capy provides:*
 
@@ -137,7 +134,7 @@ HALO (Heap Allocation Lowering Optimization) lets compilers eliminate coroutine 
 
 *Capy provides:*
 
-* Custom allocator propagation via `run_async(ex, allocator)` and `run(allocator)`
+* Custom allocator propagation via cpp:run_async[]`(ex, allocator)` and cpp:run[]`(allocator)`
 * Per-connection arena allocation
 * Memory isolation between connections
 * Instant reclamation on connection close
@@ -179,9 +176,9 @@ The awaitable receives:
 
 * `h` — The handle (for resumption)
 * `env` — The execution environment containing:
-** `env->executor` — The executor (where to resume)
-** `env->stop_token` — A stop token (for cancellation)
-** `env->frame_allocator` — An optional `std::pmr::memory_resource*` for coroutine frame allocation (null selects the default allocator)
+** cpp:io_env::executor[env->executor] — The executor (where to resume)
+** cpp:io_env::stop_token[env->stop_token] — A stop token (for cancellation)
+** cpp:io_env::frame_allocator[env->frame_allocator] — An optional `std::pmr::memory_resource*` for coroutine frame allocation (null selects the default allocator)
 
 *TMC's approach:*
 
@@ -196,7 +193,7 @@ awaitable_traits<T>::set_continuation_executor(awaitable, executor);
 
 TMC also tracks `this_thread::executor` and `this_task.prio` in thread-local variables for quick access.
 
-Both approaches achieve context propagation. Neither is compatible with arbitrary third-party awaitables without explicit support.
+Neither approach is compatible with arbitrary third-party awaitables without explicit support.
 
 == Protocol Strictness
 
@@ -236,7 +233,7 @@ return tmc::detail::safe_wrap(std::forward<Awaitable>(awaitable));
 | More permissive interop
 |===
 
-Capy makes the conscious decision that *silent degradation is worse than compilation failure*. If an awaitable doesn't carry context forward, the code doesn't compile. This prevents subtle bugs where cancellation or executor affinity silently stops working.
+Capy makes the conscious decision that *silent degradation is worse than compilation failure*. This prevents subtle bugs where cancellation or executor affinity silently stops working.
 
 TMC's approach is more flexible for incremental adoption but risks silent context loss when mixing TMC with non-TMC awaitables.
 
@@ -244,28 +241,36 @@ TMC's approach is more flexible for incremental adoption but risks silent contex
 
 [cols="1,1,1"]
 |===
-| Aspect | TMC | Capy
+| Aspect | Capy | TMC
 
 | External adapter
-| Traits specialization (non-intrusive)
 | Member function (intrusive)
+| Traits specialization (non-intrusive)
 
 | Unknown awaitables
-| `safe_wrap()` trampoline
 | `static_assert` failure
+| `safe_wrap()` trampoline
 
 | Context mechanism
-| Traits + TLS capture
 | Parameter passing
+| Traits + TLS capture
 |===
 
-Both require explicit support from awaitables. TMC's traits are external specializations, making it theoretically easier to build adapters for third-party libraries without modifying them. Capy's member function signature requires the awaitable itself to implement the protocol.
+TMC's traits are external specializations, making it theoretically easier to build adapters for third-party libraries without modifying them. Capy's member function signature requires the awaitable itself to implement the protocol.
 
 Practically, both require cooperation from awaitable authors for full functionality.
 
 == I/O Performance: Native vs Integration
 
-TMC integrates with Asio via `aw_asio.hpp`/`ex_asio.hpp`. Corosio provides native I/O objects built on Capy's protocol.
+Corosio provides native I/O objects built on Capy's protocol. TMC integrates with Asio via `aw_asio.hpp`/`ex_asio.hpp`.
+
+*Corosio native call chain for `socket.read_some(buf)`:*
+
+. Returns `read_some_awaitable` (stack object)
+. `await_suspend(h, ex, token)` calls `impl_.read_some()` - virtual call to platform impl
+. Platform impl issues direct syscall (`recv`/`WSARecv`)
+. Registers with reactor
+. On completion: `ex.dispatch(h)` - inline resume when on io_context executor
 
 *TMC + Asio call chain for `socket.async_read_some(buf, tmc::aw_asio)`:*
 
@@ -277,43 +282,35 @@ TMC integrates with Asio via `aw_asio.hpp`/`ex_asio.hpp`. Corosio provides nativ
 . On completion: callback stores result, calls `resume_continuation()`
 . `resume_continuation()` checks executor/priority, posts if different
 
-*Corosio native call chain for `socket.read_some(buf)`:*
-
-. Returns `read_some_awaitable` (stack object)
-. `await_suspend(h, ex, token)` calls `impl_.read_some()` - virtual call to platform impl
-. Platform impl issues direct syscall (`recv`/`WSARecv`)
-. Registers with reactor
-. On completion: `ex.dispatch(h)` - inline resume when on io_context executor
-
 *Overhead comparison:*
 
 [cols="1,1,1"]
 |===
-| Aspect | TMC + Asio | Corosio Native
+| Aspect | Corosio Native | TMC + Asio
 
 | Virtual calls
-| 1 (`initiate_await`)
 | 1 (platform impl)
+| 1 (`initiate_await`)
 
 | Type erasure
+| cpp:executor_ref[] only
 | Asio handler + `ex_any`
-| `executor_ref` only
 
 | Tuple packing
-| Yes (init args)
 | No
+| Yes (init args)
 
 | Handler storage
-| Asio internal (likely heap)
 | Operation slot in socket
+| Asio internal (likely heap)
 
 | Completion dispatch
-| Checks executor/priority, posts if different
 | `dispatch()` call, inline resume on io_context
+| Checks executor/priority, posts if different
 
 | Lambda wrapper
-| Yes (`ex_asio::post`)
 | No
+| Yes (`ex_asio::post`)
 |===
 
 The critical path difference is completion. TMC+Asio goes through `resume_continuation()` which checks executor/priority and often posts via `asio::post()`. Corosio's `dispatch()` can resume the coroutine inline when already on the io_context executor, avoiding the post overhead.
@@ -322,9 +319,9 @@ The critical path difference is completion. TMC+Asio goes through `resume_contin
 
 *Capy:*
 
-* `any_stream`, `any_read_stream`, `any_write_stream`
+* cpp:any_stream[], cpp:any_read_stream[], cpp:any_write_stream[]
 * Write a function taking `any_stream&` - it compiles once
-* One virtual call per I/O operation
+* Up to five vtable calls per I/O operation (four when synchronous), not one per continuation
 * Clean ABI boundaries
 
 *TMC:*
@@ -335,7 +332,7 @@ The critical path difference is completion. TMC+Asio goes through `resume_contin
 
 == Different Positions in the Tree of Need
 
-TMC and Capy occupy different architectural positions. Rather than competing, they serve different needs:
+Rather than competing, TMC and Capy serve different needs:
 
 *TMC sits above I/O:*
 
@@ -355,12 +352,12 @@ Neither is "more fundamental." If you're building a network server, Capy's const
 
 == Corosio: Proof It Works
 
-Capy is a foundation. Corosio builds real networking on it:
+Corosio builds real networking on Capy:
 
 * TCP sockets, acceptors
-* TLS streams (WolfSSL)
+* TLS streams (OpenSSL, WolfSSL)
 * Timers, DNS resolution, signal handling
-* Native backends: IOCP (Windows), epoll (Linux), io_uring (planned)
+* Native backends: epoll and io_uring (Linux), kqueue (BSD/macOS), IOCP (Windows), select (portable fallback)
 
 All built on Capy's IoAwaitable protocol. Coroutines only. No callbacks.
 
@@ -386,20 +383,20 @@ All built on Capy's IoAwaitable protocol. Coroutines only. No callbacks.
 
 *Or use both:*
 
-TMC for compute scheduling, Capy/Corosio for I/O. They can coexist at different layers of your application.
+TMC for compute scheduling, Capy/Corosio for I/O.
 
 == Summary
 
 [cols="1,1,1"]
 |===
-| Aspect | Capy | TooManyCooks
+| Aspect | Capy | TMC
 
 | Primary purpose
 | I/O foundation
 | Compute scheduling
 
 | Threading
-| Multi-threaded (`thread_pool`)
+| Multi-threaded (cpp:thread_pool[])
 | Multi-threaded (work-stealing)
 
 | Executor mobility
@@ -407,7 +404,7 @@ TMC for compute scheduling, Capy/Corosio for I/O. They can coexist at different 
 | Mid-body switching (`resume_on`)
 
 | Serialization
-| `strand` (ordering preserved across suspend)
+| cpp:strand[] (ordering preserved across suspend)
 | `ex_braid` (lock released on suspend)
 
 | Context propagation
@@ -431,11 +428,11 @@ TMC for compute scheduling, Capy/Corosio for I/O. They can coexist at different 
 | No (use Asio)
 
 | Stream concepts
-| Yes (`ReadStream`, `WriteStream`, etc.)
+| Yes (cpp:ReadStream[], cpp:WriteStream[], etc.)
 | No
 
 | Type-erased streams
-| Yes (`any_stream`)
+| Yes (cpp:any_stream[])
 | No
 
 | I/O support
@@ -453,14 +450,4 @@ TMC for compute scheduling, Capy/Corosio for I/O. They can coexist at different 
 | Executor model
 | Concept-based (user-extensible)
 | Traits-based (`executor_traits<T>`)
-|===
-
-== Revision History
-
-[cols="1,3"]
-|===
-| Date | Changes
-
-| 2026-02-04
-| Revised to correct inaccuracies regarding TMC's context propagation mechanism. The author of TooManyCooks provided feedback clarifying that TMC implements executor affinity via `tmc::detail::awaitable_traits`, not just thread-local state. Reframed comparison to acknowledge both libraries as complementary solutions for different architectural positions rather than competitors.
 |===
