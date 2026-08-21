@@ -373,19 +373,8 @@ make_trampoline(Ex, Handlers, Alloc)
     C++17-evaluation-order rationale behind this constraint.
 
     @par Example
-    @code
-    // Correct usage - wrapper is temporary, task is the direct argument
-    run_async(ex)(my_task());
+    @par !example example
 
-    // Compiles - copy elision constructs w directly from the prvalue
-    auto w = run_async(ex);
-    w(my_task());             // Compile error: operator() requires rvalue
-    std::move(w)(my_task());  // Compiles: w is now an rvalue
-
-    // Compiles, but WRONG - task frame allocated before run_async runs
-    auto t = my_task();
-    run_async(ex)(std::move(t));
-    @endcode
 
     @see run_async
 */
@@ -538,9 +527,8 @@ public:
     The wrapper itself should only be used from one thread.
 
     @par Example
-    @code
-    run_async(ioc.get_executor())(my_task());
-    @endcode
+    @par !example example_1
+
 
     @param ex The executor to execute the task on.
 
@@ -576,18 +564,8 @@ run_async(Ex ex)
     may be invoked from any thread where the executor schedules work.
 
     @par Example
-    @code
-    // Handler for result only (exceptions rethrown)
-    run_async(ex, [](int result) {
-        std::cout << "Got: " << result << "\n";
-    })(compute_value());
+    @par !example example_2
 
-    // Overloaded handler for both result and exception
-    run_async(ex, overloaded{
-        [](int result) { std::cout << "Got: " << result << "\n"; },
-        [](std::exception_ptr) { std::cout << "Failed\n"; }
-    })(compute_value());
-    @endcode
 
     @param ex The executor to execute the task on.
     @param h1 The handler to invoke with the result (and optionally exception).
@@ -624,17 +602,8 @@ run_async(Ex ex, H1 h1)
     may be invoked from any thread where the executor schedules work.
 
     @par Example
-    @code
-    run_async(ex,
-        [](int result) { std::cout << "Got: " << result << "\n"; },
-        [](std::exception_ptr ep) {
-            try { std::rethrow_exception(ep); }
-            catch (std::exception const& e) {
-                std::cout << "Error: " << e.what() << "\n";
-            }
-        }
-    )(compute_value());
-    @endcode
+    @par !example example_3
+
 
     @param ex The executor to execute the task on.
     @param h1 The handler to invoke with the result on success.
@@ -674,11 +643,8 @@ run_async(Ex ex, H1 h1, H2 h2)
     The wrapper itself should only be used from one thread.
 
     @par Example
-    @code
-    std::stop_source source;
-    run_async(ex, source.get_token())(cancellable_task());
-    // Later: source.request_stop();
-    @endcode
+    @par !example example_4
+
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.

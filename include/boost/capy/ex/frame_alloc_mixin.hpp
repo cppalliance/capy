@@ -41,19 +41,8 @@ namespace capy {
     support that `io_awaitable_promise_base` provides.
 
     @par Example
-    @code
-    struct my_internal_coroutine
-    {
-        struct promise_type : frame_alloc_mixin
-        {
-            my_internal_coroutine get_return_object();
-            std::suspend_always initial_suspend() noexcept;
-            std::suspend_always final_suspend() noexcept;
-            void return_void();
-            void unhandled_exception() noexcept;
-        };
-    };
-    @endcode
+    @par !example example
+
 
     @par Thread Safety
     The allocation fast path uses thread-local storage and requires

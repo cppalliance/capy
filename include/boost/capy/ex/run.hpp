@@ -611,9 +611,8 @@ namespace boost::capy {
     When co_awaited, the task runs on the specified executor.
 
     @par Example
-    @code
-    co_await run(other_executor)(my_task());
-    @endcode
+    @par !example example_2
+
 
     @param ex The executor on which the task should run.
 
@@ -712,10 +711,8 @@ run(Ex ex, std::stop_token st, Alloc alloc)
     is overridden.
 
     @par Example
-    @code
-    std::stop_source source;
-    co_await run(source.get_token())(cancellable_task());
-    @endcode
+    @par !example example_1
+
 
     @param st The stop token for cooperative cancellation.
 

@@ -380,10 +380,8 @@ constexpr struct
         @return The sum of the sizes of all buffers in `bs`.
 
         @par Example
-        @code
-        std::array<mutable_buffer, 2> bufs = { ... };
-        std::size_t total = buffer_size( bufs );  // sum of both sizes
-        @endcode
+        @par !example example
+
     */
     template<ConstBufferSequence CB>
     constexpr std::size_t operator()(

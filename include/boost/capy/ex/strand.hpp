@@ -69,18 +69,8 @@ namespace capy {
     Shared objects: Safe.
 
     @par Example
-    @code
-    thread_pool pool(4);
-    strand strand(pool.get_executor());  // CTAD deduces the executor type
+    @par !example example
 
-    // Continuations are linked intrusively into the strand's queue,
-    // so each one must outlive its time there. Storage is typically
-    // owned by the awaitable or operation state that posted it.
-    continuation c1{h1}, c2{h2}, c3{h3};
-    strand.post(c1);
-    strand.post(c2);
-    strand.post(c3);
-    @endcode
 
     @tparam Ex The type of the underlying executor. Must
         satisfy the `Executor` concept.

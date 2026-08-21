@@ -80,10 +80,8 @@ namespace capy {
     remains valid until the `co_await` expression returns.
 
     @par Conforming Signatures
-    @code
-    template< MutableBufferSequence MB >
-    IoAwaitable auto read_some( MB buffers );
-    @endcode
+    @par !example example_1
+
 
     @warning **Pass buffer sequences by value.** A by-value parameter
     is copied into the coroutine frame, or into the awaitable's state.
@@ -101,21 +99,8 @@ namespace capy {
     copies in O(1). See `doc/buffers-passing-rationale.md`.
 
     @par Example
-    @code
-    template< ReadStream Stream >
-    task<> read_all( Stream& s, char* buf, std::size_t size )
-    {
-        std::size_t total = 0;
-        while( total < size )
-        {
-            auto [ec, n] = co_await s.read_some(
-                mutable_buffer( buf + total, size - total ) );
-            total += n;
-            if( ec )
-                co_return;
-        }
-    }
-    @endcode
+    @par !example example_2
+
 
     @see IoAwaitable, MutableBufferSequence, awaitable_decomposes_to
 */

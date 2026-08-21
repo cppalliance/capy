@@ -695,20 +695,8 @@ public:
     exception is rethrown (which child is unspecified).
 
     @par Example
-    @code
-    task<void> example()
-    {
-        std::vector<io_task<size_t>> reads;
-        for (auto& buf : buffers)
-            reads.push_back(stream.read_some(buf));
+    @par !example example_1
 
-        auto result = co_await when_any(std::move(reads));
-        if (result.index() == 1)
-        {
-            auto [idx, n] = std::get<1>(result);
-        }
-    }
-    @endcode
 
     @see IoAwaitableRange, when_any
 */
@@ -826,20 +814,8 @@ template<IoAwaitableRange R>
     that child's exception is rethrown (which child is unspecified).
 
     @par Example
-    @code
-    task<void> example()
-    {
-        std::vector<io_task<>> jobs;
-        jobs.push_back(background_work_a());
-        jobs.push_back(background_work_b());
+    @par !example example_2
 
-        auto result = co_await when_any(std::move(jobs));
-        if (result.index() == 1)
-        {
-            auto winner = std::get<1>(result);
-        }
-    }
-    @endcode
 
     @see IoAwaitableRange, when_any
 */

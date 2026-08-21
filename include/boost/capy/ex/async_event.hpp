@@ -81,21 +81,8 @@ namespace capy {
     waiters hold intrusive pointers into the event's internal list.
 
     @par Example
-    @code
-    async_event event;
+    @par !example example
 
-    task<> waiter() {
-        auto [ec] = co_await event.wait();
-        if(ec)
-            co_return;
-        // ... event was set ...
-    }
-
-    task<> notifier() {
-        // ... do some work ...
-        event.set();  // Wake all waiters
-    }
-    @endcode
 */
 class async_event
 {

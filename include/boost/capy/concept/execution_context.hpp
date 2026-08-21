@@ -48,28 +48,16 @@ namespace capy {
 
     @par Conforming Signatures
 
-    @code
-    class X : public execution_context
-    {
-    public:
-        using executor_type = // Executor
-        executor_type get_executor() noexcept;
-    };
-    @endcode
+    @par !example example_1
+
 
     @par Example
 
     `post` takes a `continuation&`, which no closure converts to; ordinary
     callers reach it indirectly through `run_async` or similar combinators:
 
-    @code
-    template<ExecutionContext Ctx>
-    void spawn_work( Ctx& ctx, task<> work )
-    {
-        auto ex = ctx.get_executor();
-        run_async(ex)(std::move(work)); // schedules work; runs on ctx
-    }
-    @endcode
+    @par !example example_2
+
 
     @see Executor, execution_context
 */

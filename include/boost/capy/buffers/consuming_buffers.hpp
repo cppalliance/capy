@@ -35,17 +35,8 @@ namespace capy {
     cursor is a local of a composed operation that took its buffers by value.
 
     @par Example
-    @code
-    consuming_buffers consuming(buffers);
-    std::size_t total = 0, want = buffer_size(buffers);
-    while (total < want)
-    {
-        auto [ec, n] = co_await stream.read_some(consuming.data());
-        consuming.consume(n);
-        total += n;
-        if (ec && total < want) co_return {ec, total};
-    }
-    @endcode
+    @par !example example
+
 
     @see buffer_slice, slice_of
 */

@@ -125,26 +125,8 @@ namespace capy {
     waiters hold intrusive pointers into the mutex's internal list.
 
     @par Example
-    @code
-    async_mutex cm;
+    @par !example example
 
-    task<> protected_operation() {
-        auto [ec] = co_await cm.lock();
-        if(ec)
-            co_return;
-        // ... critical section ...
-        cm.unlock();
-    }
-
-    // Or with RAII:
-    task<> protected_operation_raii() {
-        auto [ec, guard] = co_await cm.scoped_lock();
-        if(ec)
-            co_return;
-        // ... critical section ...
-        // unlocks automatically
-    }
-    @endcode
 */
 class async_mutex
 {

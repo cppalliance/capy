@@ -72,14 +72,8 @@ struct is_strand_type<strand<E>> : std::true_type {};
     anywhere a concrete executor is expected.
 
     @par Example
-    @code
-    any_executor exec = ctx.get_executor();
-    if(exec)
-    {
-        auto& context = exec.context();
-        exec.post(my_coroutine);
-    }
-    @endcode
+    @par !example example
+
 
     @see executor_ref, Executor
 */

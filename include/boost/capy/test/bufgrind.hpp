@@ -45,46 +45,16 @@ namespace test {
     Not thread-safe.
 
     @par Example
-    @code
-    // Test all split points of a buffer
-    std::string data = "hello world";
-    auto cb = make_buffer( data );
+    @par !example example_1
 
-    fuse f;
-    auto r = f.inert( [&]( fuse& ) -> task<> {
-        bufgrind bg( cb );
-        while( bg ) {
-            auto [b1, b2] = co_await bg.next();
-            // b1 contains first N bytes (as a buffer sequence)
-            // b2 contains remaining bytes (as a buffer sequence)
-            // concatenating b1 + b2 equals original
-            co_await some_async_operation( b1, b2 );
-        }
-    } );
-    @endcode
 
     @par Mutable Buffer Example
-    @code
-    // Mutable buffers preserve mutability
-    char data[100];
-    mutable_buffer mb( data, sizeof( data ) );
+    @par !example example_2
 
-    bufgrind bg( mb );
-    while( bg ) {
-        auto [b1, b2] = co_await bg.next();
-        // b1, b2 yield mutable_buffer when iterated
-    }
-    @endcode
 
     @par Step Size Example
-    @code
-    // Skip by 10 bytes for faster iteration
-    bufgrind bg( cb, 10 );
-    while( bg ) {
-        auto [b1, b2] = co_await bg.next();
-        // Visits positions 0, 10, 20, ..., and always size
-    }
-    @endcode
+    @par !example example_3
+
 
     @see buffer_slice
 */

@@ -95,16 +95,8 @@ inline constexpr executor_vtable vtable_for = {
     anywhere a concrete executor is expected.
 
     @par Example
-    @code
-    void store_executor(executor_ref ex)
-    {
-        if(ex)
-            ex.post(my_continuation);
-    }
+    @par !example example
 
-    thread_pool ctx;
-    store_executor(ctx.get_executor());
-    @endcode
 
     @see any_executor, Executor
 */

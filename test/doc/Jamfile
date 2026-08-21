@@ -18,7 +18,26 @@ project
       <warnings-as-errors>on
     ;
 
-run [ glob snippets/*.cpp ]
+# reference/*.cpp holds the examples MrDocs injects into the reference; they are
+# compiled here so the b2 legs check them too, not just the CMake ones.
+#
+# Except under coverage. The examples are never executed, and the coverage build
+# passes -fkeep-static-functions (see boost-ci ci/codecov.sh), which keeps the
+# unused internal-linkage template instantiations an example pulls in from the
+# headers. Those land in include/boost/capy as never-entered lines and read as
+# lost coverage -- detail::decomposed_types is the visible case. The coverage
+# report comes from this b2 build, via .github/workflows/code-coverage.yml, so
+# the equivalent guard in test/doc/CMakeLists.txt does not cover it.
+import modules ;
+local argv = [ modules.peek : ARGV ] ;
+local coverage-build = [ MATCH "(--coverage|-fkeep-static-functions)" : $(argv) ] ;
+local reference-snippets ;
+if ! $(coverage-build)
+{
+    reference-snippets = [ glob reference/*.cpp ] ;
+}
+
+run [ glob snippets/*.cpp ] $(reference-snippets)
     ../../extra/test_suite/test_main.cpp
     ../../extra/test_suite/test_suite.cpp
     : : : <include>../../extra/test_suite

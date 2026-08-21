@@ -60,10 +60,8 @@ using slice_type = std::conditional_t<
         concept as `seq` (mutable if `seq` is mutable).
 
     @par Example
-    @code
-    co_await write(sock, buffer_slice(bufs, 0, 16384));  // first 16 KB
-    auto rest = buffer_slice(bufs, n);                   // drop first n
-    @endcode
+    @par !example example
+
 
     @see slice_type, consuming_buffers
 */

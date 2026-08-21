@@ -50,10 +50,8 @@ namespace capy {
     When used in coroutine APIs, the outer template function
     MUST accept the buffer sequence parameter BY VALUE:
 
-    @code
-    task<> write(ConstBufferSequence auto buffers);   // CORRECT
-    task<> write(ConstBufferSequence auto& buffers);  // WRONG - dangling reference
-    @endcode
+    @par !example example_1
+
 
     Pass-by-value ensures the buffer sequence is copied into
     the coroutine frame and remains valid across suspension
@@ -76,20 +74,8 @@ namespace capy {
     processing some bytes, call `consume()` to advance through
     the sequence.
 
-    @code
-    task<> send(ConstBufferSequence auto buffers)
-    {
-        buffer_param bp(buffers);
-        while(true)
-        {
-            auto bufs = bp.data();
-            if(bufs.empty())
-                break;
-            auto n = co_await do_something(bufs);
-            bp.consume(n);
-        }
-    }
-    @endcode
+    @par !example example_2
+
 
     @par Virtual Interface Pattern
 
@@ -102,31 +88,8 @@ namespace capy {
     `write_impl`'s `span<const_buffer>` parameter. Use @ref const_buffer_param
     to force `const_buffer` storage regardless of what `BS` is:
 
-    @code
-    class base
-    {
-    public:
-        template<ConstBufferSequence BS>
-        task<> write(BS buffers)
-        {
-            const_buffer_param<BS> bp(buffers);
-            while(true)
-            {
-                auto bufs = bp.data();
-                if(bufs.empty())
-                    break;
-                std::size_t n = 0;
-                co_await write_impl(bufs, n);
-                bp.consume(n);
-            }
-        }
+    @par !example example_3
 
-    protected:
-        virtual task<> write_impl(
-            std::span<const_buffer> buffers,
-            std::size_t& bytes_written) = 0;
-    };
-    @endcode
 
     @tparam BS The buffer sequence type. Must satisfy either
         ConstBufferSequence or MutableBufferSequence.

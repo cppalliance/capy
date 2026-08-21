@@ -401,9 +401,8 @@ public:
     rethrown to the caller.
 
     @par Example
-    @code
-    run_blocking()(my_void_task());
-    @endcode
+    @par !example example_2
+
 
     @return A wrapper that accepts a task for blocking execution.
 
@@ -434,10 +433,8 @@ run_blocking()
     rethrown.
 
     @par Example
-    @code
-    int result = 0;
-    run_blocking([&](int v) { result = v; })(compute());
-    @endcode
+    @par !example example_3
+
 
     @param h1 Handler invoked with the result on success,
         and optionally with `std::exception_ptr` on failure.
@@ -469,15 +466,8 @@ run_blocking(H1 h1)
     to `h2`.
 
     @par Example
-    @code
-    int result = 0;
-    run_blocking(
-        [&](int v) { result = v; },
-        [](std::exception_ptr ep) {
-            std::rethrow_exception(ep);
-        }
-    )(compute());
-    @endcode
+    @par !example example_1
+
 
     @param h1 Handler invoked with the result on success.
     @param h2 Handler invoked with the exception on failure.

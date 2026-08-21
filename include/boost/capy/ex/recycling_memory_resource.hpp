@@ -39,10 +39,8 @@ namespace capy {
     The global pool uses a mutex for cross-thread access.
 
     @par Example
-    @code
-    auto* mr = get_recycling_memory_resource();
-    run_async(ex, mr)(my_task());
-    @endcode
+    @par !example example
+
 
     @see get_recycling_memory_resource
     @see run_async

@@ -82,16 +82,8 @@ namespace capy {
 
     @par Example
 
-    @code
-    capy::task<> send_response(capy::WriteStream auto& stream, std::string_view body)
-    {
-        auto [ec, n] = co_await capy::write(stream, capy::make_buffer(body));
-        if (ec)
-            throw std::system_error(ec);
+    @par !example example
 
-        // All bytes written successfully
-    }
-    @endcode
 
     @see WriteStream, ConstBufferSequence, IoAwaitable, io_result, cond.
 */

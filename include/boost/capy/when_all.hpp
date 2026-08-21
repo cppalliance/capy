@@ -618,18 +618,8 @@ public:
     all children complete (exception beats error_code).
 
     @par Example
-    @code
-    task<void> example()
-    {
-        std::vector<io_task<size_t>> reads;
-        for (auto& buf : buffers)
-            reads.push_back(stream.read_some(buf));
+    @par !example example_1
 
-        auto [ec, counts] = co_await when_all(std::move(reads));
-        if (ec) { // handle error
-        }
-    }
-    @endcode
 
     @see IoAwaitableRange, when_all
 */
@@ -741,16 +731,8 @@ template<IoAwaitableRange R>
     all children complete (exception beats error_code).
 
     @par Example
-    @code
-    task<void> example()
-    {
-        std::vector<io_task<>> jobs;
-        for (int i = 0; i < n; ++i)
-            jobs.push_back(process(i));
+    @par !example example_2
 
-        auto [ec] = co_await when_all(std::move(jobs));
-    }
-    @endcode
 
     @see IoAwaitableRange, when_all
 */

@@ -51,35 +51,8 @@ namespace capy {
     and must only be called during destruction.
 
     @par Example
-    @code
-    struct file_service : execution_context::service
-    {
-    protected:
-        void shutdown() override {}
-    };
+    @par !example example
 
-    struct posix_file_service : file_service
-    {
-        using key_type = file_service;
-
-        explicit posix_file_service(execution_context&) {}
-    };
-
-    class io_context : public execution_context
-    {
-    public:
-        ~io_context()
-        {
-            shutdown();
-            destroy();
-        }
-    };
-
-    io_context ctx;
-    ctx.make_service<posix_file_service>();
-    ctx.find_service<file_service>();       // returns posix_file_service*
-    ctx.find_service<posix_file_service>(); // also works
-    @endcode
 
     @see service, ExecutionContext
 */
@@ -138,18 +111,8 @@ public:
         @li Optionally define `key_type` to enable base-class lookup.
 
         @par Example
-        @code
-        struct my_service : execution_context::service
-        {
-            explicit my_service(execution_context&) {}
+        @par !example example
 
-        protected:
-            void shutdown() override
-            {
-                // Cancel pending operations, release resources
-            }
-        };
-        @endcode
 
         @see execution_context
     */

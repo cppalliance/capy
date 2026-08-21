@@ -74,19 +74,8 @@ namespace capy {
 
     @par Example
 
-    @code
-    capy::task<> process_message(capy::ReadStream auto& stream)
-    {
-        std::vector<char> header(16);  // known header size for some protocol
-        auto [ec, n] = co_await capy::read(stream, capy::make_buffer(header));
-        if (ec == capy::cond::eof)
-            co_return;  // Connection closed
-        if (ec)
-            throw std::system_error(ec);
+    @par !example example
 
-        // at this point `header` contains exactly 16 bytes
-    }
-    @endcode
 
     @see ReadStream, MutableBufferSequence
 */

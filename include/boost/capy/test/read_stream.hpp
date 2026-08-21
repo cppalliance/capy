@@ -42,21 +42,8 @@ namespace test {
     Not thread-safe.
 
     @par Example
-    @code
-    fuse f;
-    read_stream rs( f );
-    rs.provide( "Hello, " );
-    rs.provide( "World!" );
+    @par !example example
 
-    auto r = f.armed( [&]( fuse& ) -> task<void> {
-        char buf[32];
-        auto [ec, n] = co_await rs.read_some(
-            mutable_buffer( buf, sizeof( buf ) ) );
-        if( ec )
-            co_return;
-        // buf contains "Hello, World!"
-    } );
-    @endcode
 
     @see fuse, ReadStream
 */
