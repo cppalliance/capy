@@ -46,49 +46,16 @@ namespace capy {
 
     For coroutines that need to access their execution environment:
 
-    @code
-    struct my_task
-    {
-        struct promise_type : io_awaitable_promise_base<promise_type>
-        {
-            my_task get_return_object();
-            std::suspend_always initial_suspend() noexcept;
-            std::suspend_always final_suspend() noexcept;
-            void return_void();
-            void unhandled_exception();
-        };
+    @par !example example_1
 
-        // ... awaitable interface ...
-    };
-
-    my_task example()
-    {
-        auto env = co_await this_coro::environment;
-        // Access env->executor, env->stop_token, env->frame_allocator
-
-        // Or use fine-grained accessors:
-        auto ex = co_await this_coro::executor;
-        auto token = co_await this_coro::stop_token;
-        auto* alloc = co_await this_coro::frame_allocator;
-    }
-    @endcode
 
     @par Custom Awaitable Transformation
 
     If your promise needs to transform awaitables (e.g., for affinity or
     logging), override `transform_awaitable` instead of `await_transform`:
 
-    @code
-    struct promise_type : io_awaitable_promise_base<promise_type>
-    {
-        template<typename A>
-        auto transform_awaitable(A&& a)
-        {
-            // Your custom transformation logic
-            return std::forward<A>(a);
-        }
-    };
-    @endcode
+    @par !example example_2
+
 
     The mixin's `await_transform` intercepts @ref this_coro::environment_tag
     and the fine-grained tag types (@ref this_coro::executor_tag,
@@ -102,21 +69,8 @@ namespace capy {
     (satisfying @ref IoAwaitable), implement the `await_suspend` overload
     on your coroutine return type:
 
-    @code
-    struct my_task
-    {
-        struct promise_type : io_awaitable_promise_base<promise_type> { ... };
+    @par !example example_3
 
-        std::coroutine_handle<promise_type> h_;
-
-        // IoAwaitable await_suspend receives and stores the environment
-        std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const* env)
-        {
-            h_.promise().set_environment(env);
-            // ... rest of suspend logic ...
-        }
-    };
-    @endcode
 
     @par Thread Safety
     The environment is stored during `await_suspend` and read during

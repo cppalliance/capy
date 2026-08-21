@@ -72,38 +72,18 @@ namespace test {
 
     @par Basic Inline Usage
 
-    @code
-    fuse()([](fuse& f) {
-        auto ec = f.maybe_fail();
-        if(ec)
-            return;
+    @par !example example_1
 
-        ec = f.maybe_fail();
-        if(ec)
-            return;
-    });
-    @endcode
 
     @par Named Fuse with armed()
 
-    @code
-    fuse f;
-    MyObject obj(f);
-    auto r = f.armed([&](fuse&) {
-        obj.do_something();
-    });
-    @endcode
+    @par !example example_2
+
 
     @par Using inert() for Single-Run Tests
 
-    @code
-    fuse f;
-    auto r = f.inert([](fuse& f) {
-        auto ec = f.maybe_fail();  // Always succeeds
-        if(some_condition)
-            f.fail();  // Only way to signal failure
-    });
-    @endcode
+    @par !example example_3
+
 
     @par Dependency Injection (Standalone Usage)
 
@@ -112,87 +92,23 @@ namespace test {
     to classes for dependency injection without affecting
     normal operation.
 
-    @code
-    class MyService
-    {
-        fuse& f_;
-    public:
-        explicit MyService(fuse& f) : f_(f) {}
+    @par !example example_4
 
-        std::error_code do_work()
-        {
-            auto ec = f_.maybe_fail();  // No-op outside armed/inert
-            if(ec)
-                return ec;
-            // ... actual work ...
-            return {};
-        }
-    };
-
-    // Production usage - fuse is no-op
-    fuse f;
-    MyService svc(f);
-    svc.do_work();  // maybe_fail() returns {} always
-
-    // Test usage - failures are injected
-    auto r = f.armed([&](fuse&) {
-        svc.do_work();  // maybe_fail() triggers failures
-    });
-    @endcode
 
     @par Custom Error Code
 
-    @code
-    auto custom_ec = make_error_code(
-        std::errc::operation_canceled);
-    fuse f(custom_ec);
-    auto r = f.armed([](fuse& f) {
-        auto ec = f.maybe_fail();
-        if(ec)
-            return;
-    });
-    @endcode
+    @par !example example_5
+
 
     @par Checking the Result
 
-    @code
-    fuse f;
-    auto r = f([](fuse& f) {
-        auto ec = f.maybe_fail();
-        if(ec)
-            return;
-    });
+    @par !example example_6
 
-    if(!r)
-    {
-        std::cerr << "Failure at "
-            << r.loc.file_name() << ":"
-            << r.loc.line() << "\n";
-    }
-    @endcode
 
     @par Test Framework Integration
 
-    @code
-    fuse f;
-    auto r = f([](fuse& f) {
-        auto ec = f.maybe_fail();
-        if(ec)
-            return;
-    });
+    @par !example example_7
 
-    // Boost.Test
-    BOOST_TEST(r.success);
-    if(!r)
-        BOOST_TEST_MESSAGE("Failed at " << r.loc.file_name()
-            << ":" << r.loc.line());
-
-    // Catch2
-    REQUIRE(r.success);
-    if(!r)
-        INFO("Failed at " << r.loc.file_name()
-            << ":" << r.loc.line());
-    @endcode
 */
 class fuse
 {
@@ -249,21 +165,8 @@ public:
 
         @par Example
 
-        @code
-        fuse f;
-        auto r = f([](fuse& f) {
-            auto ec = f.maybe_fail();
-            if(ec)
-                return;
-        });
+        @par !example example
 
-        if(!r)
-        {
-            std::cerr << "Failure at "
-                << r.loc.file_name() << ":"
-                << r.loc.line() << "\n";
-        }
-        @endcode
     */
     struct result
     {
@@ -290,23 +193,8 @@ public:
 
         @par Example
 
-        @code
-        auto custom_ec = make_error_code(
-            std::errc::operation_canceled);
-        fuse f(custom_ec);
+        @par !example example_1
 
-        std::error_code captured_ec;
-        auto r = f([&](fuse& f) {
-            auto ec = f.maybe_fail();
-            if(ec)
-            {
-                captured_ec = ec;
-                return;
-            }
-        });
-
-        assert(captured_ec == custom_ec);
-        @endcode
 
         @param ec The error code to deliver at failure points.
     */
@@ -322,21 +210,8 @@ public:
 
         @par Example
 
-        @code
-        fuse f;
-        std::error_code captured_ec;
+        @par !example example_2
 
-        auto r = f([&](fuse& f) {
-            auto ec = f.maybe_fail();
-            if(ec)
-            {
-                captured_ec = ec;
-                return;
-            }
-        });
-
-        assert(captured_ec == error::test_failure);
-        @endcode
     */
     fuse()
         : fuse(error::test_failure)
@@ -358,27 +233,13 @@ public:
 
         @par Example
 
-        @code
-        fuse f;
-        auto r = f([](fuse& f) {
-            // Error code mode: returns the error
-            auto ec = f.maybe_fail();
-            if(ec)
-                return;
+        @par !example example_1
 
-            // Exception mode: throws system_error
-            ec = f.maybe_fail();
-            if(ec)
-                return;
-        });
-        @endcode
 
         @par Standalone Usage
 
-        @code
-        fuse f;
-        auto ec = f.maybe_fail();  // Always returns {} (no-op)
-        @endcode
+        @par !example example_2
+
 
         @param loc The source location of the call site,
         captured automatically.
@@ -420,28 +281,8 @@ public:
 
         @par Example
 
-        @code
-        fuse f;
-        auto r = f([](fuse& f) {
-            auto ec = f.maybe_fail();
-            if(ec)
-                return;
+        @par !example example_1
 
-            // Explicit failure when a condition is not met
-            if(some_value != expected)
-            {
-                f.fail();
-                return;
-            }
-        });
-
-        if(!r)
-        {
-            std::cerr << "Test failed at "
-                << r.loc.file_name() << ":"
-                << r.loc.line() << "\n";
-        }
-        @endcode
 
         @param loc The source location of the call site,
         captured automatically.
@@ -464,33 +305,8 @@ public:
 
         @par Example
 
-        @code
-        fuse f;
-        auto r = f([](fuse& f) {
-            try
-            {
-                do_something();
-            }
-            catch(...)
-            {
-                f.fail(std::current_exception());
-                return;
-            }
-        });
+        @par !example example_2
 
-        if(!r)
-        {
-            try
-            {
-                if(r.ep)
-                    std::rethrow_exception(r.ep);
-            }
-            catch(std::exception const& e)
-            {
-                std::cerr << "Exception: " << e.what() << "\n";
-            }
-        }
-        @endcode
 
         @param ep The exception pointer to capture.
 
@@ -604,25 +420,8 @@ public:
 
         @par Example
 
-        @code
-        fuse f;
-        auto r = f.armed([](fuse& f) {
-            auto ec = f.maybe_fail();
-            if(ec)
-                return;
+        @par !example example_2
 
-            ec = f.maybe_fail();
-            if(ec)
-                return;
-        });
-
-        if(!r)
-        {
-            std::cerr << "Failure at "
-                << r.loc.file_name() << ":"
-                << r.loc.line() << "\n";
-        }
-        @endcode
 
         @param fn The test function to invoke. It receives
         a reference to the fuse and should call @ref maybe_fail
@@ -722,25 +521,8 @@ public:
 
         @par Example
 
-        @code
-        fuse f;
-        auto r = f.armed([&](fuse&) -> task<void> {
-            auto ec = f.maybe_fail();
-            if(ec)
-                co_return;
+        @par !example example_3
 
-            ec = f.maybe_fail();
-            if(ec)
-                co_return;
-        });
-
-        if(!r)
-        {
-            std::cerr << "Failure at "
-                << r.loc.file_name() << ":"
-                << r.loc.line() << "\n";
-        }
-        @endcode
 
         @param fn The coroutine test function to invoke. It receives
         a reference to the fuse and should call @ref maybe_fail
@@ -781,25 +563,8 @@ public:
         handler and return it once the run loop is done.
 
         @par Example
-        @code
-        // Drive each iteration on a fresh io_context.
-        auto io_runner = [](capy::task<> t) -> std::exception_ptr
-        {
-            corosio::io_context ioc;
-            std::exception_ptr ep;
-            capy::run_async(ioc.get_executor(),
-                [](auto&&...){},
-                [&ep](std::exception_ptr e){ ep = e; }
-            )(std::move(t));
-            ioc.run();
-            return ep;
-        };
-        auto r = f.armed(io_runner,
-            [&](capy::test::fuse&) -> capy::task<>
-            {
-                co_await corosio::timeout(some_op(), 5s);
-            });
-        @endcode
+        @par !example example_1
+
 
         @param run_one A callable invoked with each iteration's task; it
         runs the task to completion and returns any escaped exception
@@ -830,19 +595,8 @@ public:
 
         @par Example
 
-        @code
-        // These are equivalent:
-        fuse f;
-        auto r1 = f.armed([](fuse& f) { ... });
-        auto r2 = f([](fuse& f) { ... });
+        @par !example example
 
-        // Inline usage:
-        auto r3 = fuse()([](fuse& f) {
-            auto ec = f.maybe_fail();
-            if(ec)
-                return;
-        });
-        @endcode
 
         @param fn The test function to run under failure injection.
 
@@ -886,27 +640,8 @@ public:
 
         @par Example
 
-        @code
-        fuse f;
-        auto r = f.inert([](fuse& f) {
-            auto ec = f.maybe_fail();  // Always succeeds
-            assert(!ec);
+        @par !example example_1
 
-            // Only way to signal failure:
-            if(some_condition)
-            {
-                f.fail();
-                return;
-            }
-        });
-
-        if(!r)
-        {
-            std::cerr << "Test failed at "
-                << r.loc.file_name() << ":"
-                << r.loc.line() << "\n";
-        }
-        @endcode
 
         @param fn The test function to invoke. It receives
         a reference to the fuse. Calls to @ref maybe_fail
@@ -951,27 +686,8 @@ public:
 
         @par Example
 
-        @code
-        fuse f;
-        auto r = f.inert([](fuse& f) -> task<void> {
-            auto ec = f.maybe_fail();  // Always succeeds
-            assert(!ec);
+        @par !example example_2
 
-            // Only way to signal failure:
-            if(some_condition)
-            {
-                f.fail();
-                co_return;
-            }
-        });
-
-        if(!r)
-        {
-            std::cerr << "Test failed at "
-                << r.loc.file_name() << ":"
-                << r.loc.line() << "\n";
-        }
-        @endcode
 
         @param fn The coroutine test function to invoke. It receives
         a reference to the fuse. Calls to @ref maybe_fail

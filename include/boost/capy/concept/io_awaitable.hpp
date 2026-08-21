@@ -114,36 +114,7 @@ namespace detail {
     The example demonstrates a "leaf" awaitable: one that is associated directly with 
     a system's I/O operation but no coroutine.
 
-    @code
-    class my_awaitable
-    {
-        capy::io_env const* env_ = nullptr;
-        capy::continuation  cont_;
-        std::error_code     ec_ {};
-        
-    public:
-        bool await_ready() const noexcept { return false; }
-        
-        std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, capy::io_env const* env) noexcept
-        {
-            env_  = env;                      // store the pointer, never a copy
-            cont_ = capy::continuation{h};
-            
-            auto completion = [this](std::error_code ec) noexcept
-            {
-                ec_ = ec;                     // publish result; touch *this
-                env_->executor.post(cont_);   // only before post, never after
-            };
-                
-            start_my_io_op(env_->stop_token, completion);
-
-            return std::noop_coroutine(); // go back to scheduler
-        }
-        
-        capy::io_result<> await_resume() const noexcept { return {ec_}; }
-    };
-    @endcode
+    @par !example example
 
     @par Models
 

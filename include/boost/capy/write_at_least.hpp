@@ -92,17 +92,8 @@ namespace capy {
 
     @par Example
 
-    @code
-    capy::task<> flush_at_least(capy::WriteStream auto& stream, std::string_view data)
-    {
-        auto [ec, n] = co_await capy::write_at_least(
-            stream, capy::make_buffer(data), 8);
-        if(ec)
-            throw std::system_error(ec);
+    @par !example example
 
-        // at least 8 bytes written; n may be larger
-    }
-    @endcode
 
     @see write, WriteStream, ConstBufferSequence
 */

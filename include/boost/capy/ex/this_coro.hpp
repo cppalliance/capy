@@ -24,15 +24,8 @@ namespace capy {
     `await_transform` to yield the appropriate values without suspending.
 
     @par Example
-    @code
-    task<void> example()
-    {
-        auto* env = co_await this_coro::environment;
-        auto ex = co_await this_coro::executor;
-        auto token = co_await this_coro::stop_token;
-        auto* alloc = co_await this_coro::frame_allocator;
-    }
-    @endcode
+    @par !example example
+
 
     @see io_awaitable_promise_base, io_env
 */
@@ -90,15 +83,8 @@ struct frame_allocator_tag {};
     executor, stop token, and allocator for this coroutine.
 
     @par Example
-    @code
-    task<void> example()
-    {
-        auto* env = co_await this_coro::environment;
-        // env->executor - the executor this coroutine is bound to
-        // env->stop_token - the stop token for cancellation
-        // env->frame_allocator - the frame allocator
-    }
-    @endcode
+    @par !example example
+
 
     @par Preconditions
     An `io_env` must have been installed for this coroutine before the tag
@@ -124,12 +110,8 @@ inline constexpr environment_tag environment{};
     executor this coroutine is bound to.
 
     @par Example
-    @code
-    task<void> example()
-    {
-        executor_ref ex = co_await this_coro::executor;
-    }
-    @endcode
+    @par !example example
+
 
     @par Preconditions
     An `io_env` must have been installed for this coroutine before the tag
@@ -156,14 +138,8 @@ inline constexpr executor_tag executor{};
     token was passed to this coroutine when it was awaited.
 
     @par Example
-    @code
-    task<void> cancellable_work()
-    {
-        auto token = co_await this_coro::stop_token;
-        if (token.stop_requested())
-            co_return;
-    }
-    @endcode
+    @par !example example
+
 
     @par Preconditions
     An `io_env` must have been installed for this coroutine before the tag
@@ -191,13 +167,8 @@ inline constexpr stop_token_tag stop_token{};
     used for coroutine frame allocation.
 
     @par Example
-    @code
-    task<void> example()
-    {
-        auto* alloc = co_await this_coro::frame_allocator;
-        // alloc is nullptr when using the default allocator
-    }
-    @endcode
+    @par !example example
+
 
     @par Preconditions
     An `io_env` must have been installed for this coroutine before the tag

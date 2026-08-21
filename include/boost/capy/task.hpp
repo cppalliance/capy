@@ -106,21 +106,8 @@ struct task_return_base<void>
 
     @par Example
 
-    @code
-    task<int> compute_value()
-    {
-        auto [ec, n] = co_await stream.read_some( buf );
-        if( ec )
-            co_return 0;
-        co_return process( buf, n );
-    }
+    @par !example example
 
-    task<> run_session( tcp_socket sock )
-    {
-        int result = co_await compute_value();
-        // ...
-    }
-    @endcode
 
     @tparam T The result type. Use `task<>` for `task<void>`.
 

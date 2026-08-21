@@ -27,24 +27,8 @@ namespace test {
     arguments, it concatenates them in order.
 
     @par Example
-    @code
-    // Single buffer sequence
-    const_buffer cb( "hello", 5 );
-    std::string s = buffer_to_string( cb );  // "hello"
+    @par !example example
 
-    // Multiple buffer sequences (concatenation)
-    const_buffer b1( "hello", 5 );
-    const_buffer b2( " world", 6 );
-    std::string s = buffer_to_string( b1, b2 );  // "hello world"
-
-    // With bufgrind splits: each half is itself a buffer sequence,
-    // so pass it directly -- there is no .data() to unwrap.
-    bufgrind bg( cb );
-    while( bg ) {
-        auto [b1, b2] = co_await bg.next();
-        BOOST_TEST_EQ( buffer_to_string( b1, b2 ), "hello" );
-    }
-    @endcode
 
     @param bufs One or more buffer sequences to concatenate.
 

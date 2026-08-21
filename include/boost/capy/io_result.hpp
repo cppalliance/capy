@@ -30,18 +30,13 @@ namespace capy {
     tuple assignment.
 
     @par Example
-    @code
-    auto [ec, n] = co_await s.read_some(buf);
-    if (ec) { ... }
-    @endcode
+    @par !example example_1
+
 
     `std::tie` rebinds into existing variables without introducing
     new bindings:
-    @code
-    std::error_code ec;
-    std::size_t n = 0;
-    std::tie(ec, n) = co_await s.read_some(buf);
-    @endcode
+    @par !example example_2
+
 
     @note Whether the payload is meaningful when the error code is
         set is defined by the operation that produced the result.

@@ -26,21 +26,8 @@ namespace capy {
 
     @par Example
 
-    @code
-    auto [ec, n] = co_await stream.read_some( bufs );
-    if( ec == cond::canceled )
-    {
-        // handle cancellation
-    }
-    else if( ec == cond::eof )
-    {
-        // handle end of stream
-    }
-    else if( ec )
-    {
-        // handle other errors
-    }
-    @endcode
+    @par !example example
+
 
     @see error
 */

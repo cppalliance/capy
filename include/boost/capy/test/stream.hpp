@@ -60,29 +60,8 @@ namespace test {
     undefined behavior.
 
     @par Example
-    @code
-    fuse f;
+    @par !example example
 
-    auto r = f.armed( [&]( fuse& ) -> task<> {
-        // Constructed inside the lambda: armed() re-invokes this
-        // function once per injected failure point, and a stream
-        // pair constructed outside would carry buffered state
-        // across those rounds.
-        auto [a, b] = make_stream_pair( f );
-
-        auto [ec, n] = co_await a.write_some(
-            const_buffer( "hello", 5 ) );
-        if( ec )
-            co_return;
-
-        char buf[32];
-        auto [ec2, n2] = co_await b.read_some(
-            mutable_buffer( buf, sizeof( buf ) ) );
-        if( ec2 )
-            co_return;
-        // buf contains "hello"
-    } );
-    @endcode
 
     @see make_stream_pair, fuse
 */

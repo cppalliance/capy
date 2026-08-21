@@ -135,12 +135,8 @@ using awaitable_return_t = decltype(
     @tparam Types The expected element types after decomposition.
 
     @par Example
-    @code
-    struct result { int a; double b; };
+    @par !example example
 
-    static_assert(decomposes_to<result, int, double>);
-    static_assert(decomposes_to<std::tuple<int, double>, int, double>);
-    @endcode
 */
 template <typename T, typename... Types>
 concept decomposes_to = requires(T&& t) {
@@ -161,19 +157,8 @@ concept decomposes_to = requires(T&& t) {
     @li The return type of `await_resume()` must decompose to `Types...`
 
     @par Example
-    @code
-    // Constrain a function to accept only awaitables that return
-    // a decomposable result of (error_code, size_t)
-    template<typename A>
-        requires awaitable_decomposes_to<A, std::error_code, std::size_t>
-    task<void> process(A&& op)
-    {
-        auto [ec, n] = co_await std::forward<A>(op);
-        if (ec)
-            co_return;
-        // process n bytes...
-    }
-    @endcode
+    @par !example example
+
 */
 template<typename A, typename... Types>
 concept awaitable_decomposes_to = requires {

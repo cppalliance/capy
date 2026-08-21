@@ -94,19 +94,8 @@ namespace capy {
 
     @par Example
 
-    @code
-    capy::task<> fill_buffer(capy::ReadStream auto& stream)
-    {
-        std::vector<char> storage(4096);  // generous capacity
-        // Require 16 header bytes; opportunistically take more.
-        auto [ec, n] = co_await capy::read_at_least(
-            stream, capy::make_buffer(storage), 16);
-        if(ec)
-            throw std::system_error(ec);
+    @par !example example
 
-        // at least 16 bytes are available; n may be larger
-    }
-    @endcode
 
     @see read, ReadStream, MutableBufferSequence
 */

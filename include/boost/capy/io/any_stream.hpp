@@ -52,31 +52,8 @@ namespace capy {
     and one write may be in flight simultaneously.
 
     @par Example
-    @code
-    void reader(any_read_stream&);
-    void writer(any_write_stream&);
+    @par !example example
 
-    // Owning - takes ownership of the stream
-    any_stream owning_stream(socket{ioc});
-
-    // Reference - wraps without ownership
-    socket sock(ioc);
-    any_stream ref_stream(&sock);
-
-    // Use read_some from the any_read_stream base
-    char rdata[1024];
-    mutable_buffer rbuf(rdata, sizeof(rdata));
-    auto [ec1, n1] = co_await owning_stream.read_some(std::span(&rbuf, 1));
-
-    // Use write_some from the any_write_stream base
-    char wdata[] = "hello";
-    const_buffer wbuf(wdata, sizeof(wdata));
-    auto [ec2, n2] = co_await owning_stream.write_some(std::span(&wbuf, 1));
-
-    // Pass to functions expecting one capability
-    reader(owning_stream);  // Implicit upcast
-    writer(owning_stream);  // Implicit upcast
-    @endcode
 
     @see any_read_stream, any_write_stream, ReadStream, WriteStream
 */

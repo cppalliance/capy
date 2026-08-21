@@ -25,14 +25,8 @@ namespace capy {
     accepts any ConstBufferSequence.
 
     @par Example
-    @code
-    template<typename T>
-    concept MyWritable =
-        requires(T& stream, const_buffer_archetype buffers)
-        {
-            stream.write(buffers);
-        };
-    @endcode
+    @par !example example
+
 */
 struct const_buffer_archetype_
 {
@@ -90,14 +84,8 @@ using const_buffer_archetype = const_buffer_archetype_;
     accepts any MutableBufferSequence.
 
     @par Example
-    @code
-    template<typename T>
-    concept MyReadable =
-        requires(T& stream, mutable_buffer_archetype buffers)
-        {
-            stream.read(buffers);
-        };
-    @endcode
+    @par !example example
+
 */
 struct mutable_buffer_archetype_
 {

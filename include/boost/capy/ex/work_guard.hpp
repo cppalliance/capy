@@ -45,19 +45,8 @@ namespace capy {
     object requires external synchronization.
 
     @par Example
-    @code
-    thread_pool pool(1);
+    @par !example work_guard
 
-    // Keep the pool from completing while we set things up
-    auto guard = make_work_guard(pool.get_executor());
-
-    // ... post work to pool ...
-
-    // Allow the pool to complete when work is done
-    guard.reset();
-
-    pool.join();
-    @endcode
 
     @note The executor is returned by reference, allowing callers to
     manage the executor's lifetime directly. This is essential in

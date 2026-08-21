@@ -87,16 +87,8 @@ class execution_context;
 
     A conforming implementation might look like:
 
-    @code
-    std::coroutine_handle<> dispatch(
-        continuation& c ) const
-    {
-        if( ctx_.running_in_this_thread() )
-            return c.h;            // symmetric transfer
-        post( c );
-        return std::noop_coroutine();
-    }
-    @endcode
+    @par !example example_1
+
 
     The `post` operation queues for later execution:
 
@@ -143,22 +135,8 @@ class execution_context;
 
     @par Conforming Signatures
 
-    @code
-    class E
-    {
-    public:
-        execution_context& context() const noexcept;
+    @par !example example_2
 
-        void on_work_started() const noexcept;
-        void on_work_finished() const noexcept;
-
-        std::coroutine_handle<> dispatch(
-            continuation& c ) const;
-        void post( continuation& c ) const;
-
-        bool operator==( E const& ) const noexcept;
-    };
-    @endcode
 
     @see ExecutionContext, execution_context
 */

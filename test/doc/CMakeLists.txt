@@ -26,7 +26,57 @@ function(boost_capy_doc_warnings_as_errors target)
 endfunction()
 
 file(GLOB SNIPPETS CONFIGURE_DEPENDS snippets/*.cpp)
-set(PFILES ${SNIPPETS} CMakeLists.txt Jamfile)
+# Reference examples: injected into the MrDocs reference by
+# doc/addons/extensions/reference-snippets.lua, and compiled here so an example
+# in the reference is one the build has already checked. Same target as the
+# page snippets -- each file keeps its code in an anonymous namespace, so
+# independently authored examples that both define example() do not collide.
+#
+# They are compiled and never run: several would deadlock or race if executed,
+# and some demonstrate a property with static_assert alone. Under coverage that
+# makes them worse than useless. Compiling an example instantiates whatever
+# header templates it names -- deducing an `auto` return type instantiates the
+# body even from an unevaluated context -- and nothing then calls it, so the
+# lines land in include/ as instantiated-but-never-entered and read as lost
+# coverage. detail::decomposed_types is the visible case.
+#
+# Detected from the flags the coverage jobs already pass, so a coverage build
+# needs no extra argument of its own. Still an option, so it can be forced
+# either way by hand.
+#
+# This covers ci.yml's coverage leg. The published coverage report comes from a
+# b2 build instead (.github/workflows/code-coverage.yml), so test/doc/Jamfile
+# carries the same guard.
+string(TOUPPER "${CMAKE_BUILD_TYPE}" BOOST_CAPY_BUILD_TYPE_UPPER)
+# Every route the flag can arrive by: the cache variables, the per-config
+# variables, the linker flags (coverage needs it at link time too), and the
+# environment, since CMake seeds CMAKE_<LANG>_FLAGS from CXXFLAGS/CFLAGS only on
+# the first configure of a fresh tree.
+set(BOOST_CAPY_COVERAGE_FLAGS
+    "${CMAKE_CXX_FLAGS} ${CMAKE_C_FLAGS}"
+    "${CMAKE_CXX_FLAGS_${BOOST_CAPY_BUILD_TYPE_UPPER}}"
+    "${CMAKE_C_FLAGS_${BOOST_CAPY_BUILD_TYPE_UPPER}}"
+    "${CMAKE_EXE_LINKER_FLAGS} ${CMAKE_SHARED_LINKER_FLAGS}"
+    "$ENV{CXXFLAGS} $ENV{CFLAGS} $ENV{LDFLAGS}")
+if(BOOST_CAPY_COVERAGE_FLAGS MATCHES
+        "(--coverage|-fprofile-arcs|-ftest-coverage|-fprofile-instr-generate)")
+    set(BOOST_CAPY_REFERENCE_SNIPPETS_DEFAULT OFF)
+else()
+    set(BOOST_CAPY_REFERENCE_SNIPPETS_DEFAULT ON)
+endif()
+option(BOOST_CAPY_BUILD_REFERENCE_SNIPPETS
+    "Compile the reference examples in test/doc/reference (off under coverage)"
+    ${BOOST_CAPY_REFERENCE_SNIPPETS_DEFAULT})
+
+if(BOOST_CAPY_BUILD_REFERENCE_SNIPPETS)
+    file(GLOB REFERENCE_SNIPPETS CONFIGURE_DEPENDS reference/*.cpp)
+else()
+    set(REFERENCE_SNIPPETS)
+    message(STATUS
+        "[reference-examples] not compiled: they are never executed, and under "
+        "coverage they only add never-entered template instantiations")
+endif()
+set(PFILES ${SNIPPETS} ${REFERENCE_SNIPPETS} CMakeLists.txt Jamfile)
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} PREFIX "" FILES ${PFILES})
 
 add_executable(boost_capy_doc_tests ${PFILES})

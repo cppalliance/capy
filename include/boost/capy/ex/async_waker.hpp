@@ -100,21 +100,8 @@ namespace capy {
     waiter holds a pointer into the object.
 
     @par Example
-    @code
-    async_waker waker;
+    @par !example example
 
-    // user-provided timing thread
-    std::thread th([&waker] {
-        std::this_thread::sleep_for(100ms);
-        waker.wake();
-    });
-
-    task<> waiter() {
-        auto [ec] = co_await waker.wait();
-        // resumed on the executor after ~100ms
-    }
-    // ... th.join() after the pool drains
-    @endcode
 */
 class async_waker
 {

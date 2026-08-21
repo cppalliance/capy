@@ -35,38 +35,12 @@ namespace capy {
     @tparam T The result type to wrap.
 
     @par Example
-    @code
-    // Wrap a sync operation as an awaitable
-    immediate<int> get_value()
-    {
-        return {42};
-    }
+    @par !example example_1
 
-    task<void> example()
-    {
-        int x = co_await get_value();  // No suspension, returns 42
-    }
-    @endcode
 
     @par Building synchronous I/O operations
-    @code
-    struct my_sync_sink
-    {
-        template<ConstBufferSequence CB>
-        immediate<io_result<std::size_t>>
-        write(CB buffers)
-        {
-            auto n = process_sync(buffers);
-            return {{std::error_code(), n}};
-        }
+    @par !example example_2
 
-        immediate<io_result<>>
-        write_eof()
-        {
-            return {{}};
-        }
-    };
-    @endcode
 
     @see ready, io_result
 */
@@ -136,21 +110,8 @@ struct immediate
     with no error and the provided values.
 
     @par Example
-    @code
-    immediate<io_result<std::size_t>>
-    write(const_buffer buf)
-    {
-        auto n = write_sync(buf);
-        return ready(n);  // success with n bytes
-    }
+    @par !example example_1
 
-    immediate<io_result<>>
-    connect()
-    {
-        connect_sync();
-        return ready();  // void success
-    }
-    @endcode
 
     @return An immediate awaitable containing a successful io_result.
 
@@ -211,16 +172,8 @@ ready(T1 t1, T2 t2, T3 t3)
     with an error code.
 
     @par Example
-    @code
-    immediate<io_result<std::size_t>>
-    write(const_buffer buf)
-    {
-        auto ec = write_sync(buf);
-        if(ec)
-            return ready(ec, std::size_t{0});
-        return ready(buffer_size(buf));
-    }
-    @endcode
+    @par !example example_2
+
 
     @param ec The error code.
 

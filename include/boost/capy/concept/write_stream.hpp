@@ -88,10 +88,8 @@ namespace capy {
 
     @par Conforming Signatures
 
-    @code
-    template< ConstBufferSequence Buffers >
-    IoAwaitable auto write_some( Buffers buffers );
-    @endcode
+    @par !example example_1
+
 
     @warning **Pass buffer sequences by value.** A by-value parameter
     is copied into the coroutine frame, or into the awaitable's state.
@@ -110,21 +108,8 @@ namespace capy {
 
     @par Example
 
-    @code
-    template< WriteStream Stream >
-    task<> write_all( Stream& s, char const* buf, std::size_t size )
-    {
-        std::size_t total = 0;
-        while( total < size )
-        {
-            auto [ec, n] = co_await s.write_some(
-                const_buffer( buf + total, size - total ) );
-            total += n;
-            if( ec )
-                co_return;
-        }
-    }
-    @endcode
+    @par !example example_2
+
 
     @see IoAwaitable, ConstBufferSequence, awaitable_decomposes_to
 */

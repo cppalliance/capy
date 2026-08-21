@@ -35,11 +35,14 @@ exclude-symbols:
 implementation-defined:
   - 'boost::capy::detail'
   - 'boost::capy::*::detail'
-inaccessible-members: never
-inaccessible-bases: never
+# `inaccessible-members`/`inaccessible-bases` are gone on develop, which is the
+# channel the docs are pinned to (see doc/local-playbook.yml). Their job is done
+# by the extract-private* defaults: verified that state_, has_ep_, dummy_, arr_
+# and ep_ appear nowhere in the generated corpus without them.
 
-# Generator
-generate: adoc
+# Generator. Spelled `generator` since develop; the Antora reference extension
+# passes --generator=adoc explicitly in any case.
+generator: adoc
 base-url: https://www.github.com/cppalliance/capy/blob/develop/
 
 # Style
@@ -65,6 +68,13 @@ warn-if-doc-error: true
 #     "variable is undocumented" findings
 #   include/boost/capy/ex/run.hpp -- "run: Documented parameter 'alloc'
 #     does not exist"
+
+# Reference examples are injected by addons/extensions/reference-snippets.lua.
+# MrDocs loads extensions from <install>/share/mrdocs/addons/extensions, so the
+# doc build installs it there (see .github/workflows/docs.yml). Setting
+# `addons-supplemental` here does NOT work: the key is recognised but only the
+# command-line flag reaches extension discovery, and the Antora extension does
+# not expose one.
 
 # Automation
 auto-function-metadata: false

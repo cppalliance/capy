@@ -81,22 +81,8 @@ namespace capy {
 
     @par Conforming Signatures
 
-    @code
-    class T
-    {
-    public:
-        struct promise_type
-        {
-            std::exception_ptr exception() noexcept;
-            R result();  // non-void tasks only
-            void set_continuation(std::coroutine_handle<>) noexcept;
-            void set_environment(io_env const*) noexcept;
-        };
+    @par !example example
 
-        std::coroutine_handle<promise_type> handle() const noexcept;
-        void release() noexcept;
-    };
-    @endcode
 
     @see IoAwaitable, run, run_async
 */
