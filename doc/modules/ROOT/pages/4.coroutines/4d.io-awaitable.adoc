@@ -57,7 +57,7 @@ Following the convention of awaiters in C++, the return type of the function has
 
 * `void`,
 * `bool`,
-* `std::coroutine_handle<>`.
+* `std::coroutine_handle<P>` for any type `P`.
 
 Many types modelling cpp:IoAwaitable[] return `std::coroutine_handle<>` to enable
 xref:2.cpp20-coroutines/2d.advanced.adoc#_symmetric_transfer[symmetric transfer].
@@ -66,10 +66,10 @@ xref:2.cpp20-coroutines/2d.advanced.adoc#_symmetric_transfer[symmetric transfer]
 
 Concept cpp:IoAwaitable[] specifies all requirements on a type that can be ``co_await``ed
 in Capy-coroutines. Apart from the two-argument `await_suspend`, the type also needs to 
-provide.
+provide the two member functions specific to awaiters: `await_ready` and `await_resume`.    
 
 In order to model cpp:IoAwaitable[] a type need not be associated with any coroutine. In fact,
-this is the case for a number of cpp:IoAwaitable[]s in Corosio..
+this is the case for a number of cpp:IoAwaitable[]s in Corosio.
 
 == IoRunnable Concept
 

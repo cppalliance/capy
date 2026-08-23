@@ -22,7 +22,13 @@ namespace capy {
 namespace detail {
 
     template <typename T>
-    concept await_suspend_valid_result = std::same_as<T, void> || std::same_as<T, bool> || std::same_as<T, std::coroutine_handle<>>;
+    constexpr bool is_coroutine_handle = false;
+
+    template <typename T>
+    constexpr bool is_coroutine_handle<std::coroutine_handle<T>> = true; 
+
+    template <typename T>
+    concept await_suspend_valid_result = std::same_as<T, void> || std::same_as<T, bool> || is_coroutine_handle<T>;
 }
 
 /** Describes types that can be `co_await`-ed in Capy-coroutines and 
@@ -62,7 +68,7 @@ namespace detail {
     _Effects_: If this operations instructs a coroutine to be resumed, it shall make sure that the coroutine's 
     promise type is passed the @c env parameter, in a manner specific to `A`.
 
-    _Returns_: The signature has one of the three return types: `void`, `bool` and `std::coroutine_handle<>`.
+    _Returns_: The signature has one of the these return types: `void`, `bool` and `std::coroutine_handle<P>` for any type `P`.
 
     If the return type is `void`, instructs the coroutine machinery that the control shall be 
     returned to the resumer of the coroutine that invoked the `co_await` expression. 
@@ -75,7 +81,7 @@ namespace detail {
 
     @li value @c false instructs the coroutine machinery to resume the coroutine represented by @c h and to immediately invoke @c await_resume .
 
-    If the return type is `std::coroutine_handle<>`, instructs the compiler to resume 
+    If the return type is `std::coroutine_handle<P>`, instructs the compiler to resume 
     the coroutine represented by the returned handle, in a tail call manner (not consuming the stack). 
 
     _Note_: 

@@ -43,9 +43,10 @@ class await_suspend_helper_test
     };
 
     // await_suspend returning a handle: symmetric transfer to it.
+    template <typename P>
     struct handle_awaitable
     {
-        std::coroutine_handle<> next;
+        std::coroutine_handle<P> next;
         std::coroutine_handle<>
         await_suspend(std::coroutine_handle<>, io_env const*)
         {
@@ -59,22 +60,36 @@ public:
     {
         auto const h = std::noop_coroutine();
 
-        // void -> noop_coroutine, and the awaitable was invoked.
-        void_awaitable va;
-        BOOST_TEST(call_await_suspend(&va, h, nullptr) == h);
-        BOOST_TEST(va.suspended);
+        {
+            // void -> noop_coroutine, and the awaitable was invoked.
+            void_awaitable va;
+            BOOST_TEST(call_await_suspend(&va, h, nullptr) == h);
+            BOOST_TEST(va.suspended);
+        }
 
-        // bool true -> noop_coroutine (stay suspended).
-        bool_awaitable bt{true};
-        BOOST_TEST(call_await_suspend(&bt, h, nullptr) == h);
+        {
+            // bool true -> noop_coroutine (stay suspended).
+            bool_awaitable bt{true};
+            BOOST_TEST(call_await_suspend(&bt, h, nullptr) == h);
+        }
 
-        // bool false -> the original handle (resume).
-        bool_awaitable bf{false};
-        BOOST_TEST(call_await_suspend(&bf, h, nullptr) == h);
+        {
+            // bool false -> the original handle (resume).
+            bool_awaitable bf{false};
+            BOOST_TEST(call_await_suspend(&bf, h, nullptr) == h);
+        }
 
-        // handle -> the returned handle.
-        handle_awaitable ha{h};
-        BOOST_TEST(call_await_suspend(&ha, h, nullptr) == h);
+        {
+            // handle<void> -> the returned handle.
+            handle_awaitable<void> hv{h};
+            BOOST_TEST(call_await_suspend(&hv, h, nullptr) == h);
+        }
+
+        {
+            // handle<P> -> the returned handle.
+            handle_awaitable<std::noop_coroutine_promise> hp{h};
+            BOOST_TEST(call_await_suspend(&hp, h, nullptr) == h);
+        }
     }
 };
 

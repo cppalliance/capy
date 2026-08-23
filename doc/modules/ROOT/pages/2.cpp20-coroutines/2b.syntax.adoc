@@ -58,8 +58,8 @@ An awaitable conveys state and the type, but on its own it doesn't do much.
 When expression `co_await aw` is evaluated, as the first thing, awaitable `aw`
 is used to produce an *awaiter*. This is done by first trying to call member function
 `await_transform` of the coroutine's promise object, if present, and then calling member
-funciton `operator co_await` -- if present -- on the result. The result is the awaiter.
-It is next use to control the coroutine suspension and resumption via its interface
+function `operator co_await` -- if present -- on the result. The result is the awaiter.
+It is next used to control the coroutine suspension and resumption via its interface
 in the form of three member functions: 
 
 * `await_ready()` — Returns `true` if the result is immediately available and no suspension is needed.
