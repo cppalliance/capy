@@ -19,119 +19,143 @@
 namespace boost {
 namespace capy {
 
-/** Requires `await_suspend` to accept a coroutine handle and an `io_env` pointer.
+namespace detail {
 
-    An awaitable satisfies `IoAwaitable` if its `await_suspend` accepts
-    an `io_env`, enabling scheduler affinity, cancellation, and allocator
-    propagation. This extended signature distinguishes I/O awaitables
-    from standard C++ awaitables that only take a coroutine handle.
+    template <typename T>
+    concept await_suspend_valid_result = std::same_as<T, void> || std::same_as<T, bool> || std::same_as<T, std::coroutine_handle<>>;
+}
 
-    `IoAwaitable` constrains only this one member function,
-    `await_suspend(std::coroutine_handle<>, io_env const*)`. It is the
-    single customization point that receives the `io_env`. It is
-    therefore the only member that needs the executor, stop token, and
-    frame allocator used to start, schedule, and cancel the operation.
-    `await_ready` and `await_resume` operate on state local to the
-    awaitable and take no `io_env` parameter, so this concept does not
-    check them.
+/** Describes types that can be `co_await`-ed in Capy-coroutines and 
+    that can be passed the information about the execution environment.
+
+    See the tutorial section _The IoAwaitable Protocol_ for the description
+    of the execution environment propagation mechanism in Capy.
+
+
 
     @tparam A The awaitable type.
 
-    @par Syntactic Requirements
+    @par `await_ready`
 
-    @li `a.await_suspend(h, env)` must be a valid expression where:
-        - `h` is a `std::coroutine_handle<>` (coroutine handle).
-        - `env` is an `io_env const*`.
+    In the context of processing a `co_await` expression, says
+    if the expression can be computed synchronously, without engaging
+    the further awaiting machinery.
 
-    @par Semantic Requirements
+    _Returns_: 
 
-    When `await_suspend` is called:
+    @li @c true when the operation can be computed synchronously via immediately calling
+    @c await_resume ,
+    @li @c false when @c await_suspend needs to be called. 
 
-    @li The awaitable uses `env->executor` to schedule
-        resumption of the coroutine when the operation completes.
-    @li The awaitable should monitor `env->stop_token` and
-        complete early with a cancellation error if stop is
-        requested.
-    @li The awaitable may use `env->frame_allocator` for internal
-        allocations.
-    @li The awaitable must propagate `env->frame_allocator` faithfully
-        to any child coroutines it creates.
-    @li The awaitable may return `std::noop_coroutine()` to
-        indicate the operation was started asynchronously.
+    @par `await_suspend`
 
-    @par Lifetime
+    In the context of processing a `co_await` expression, instructs the coroutine machinery,
+    which coroutine needs to be launched or resumed.
 
-    The `io_env` passed to `await_suspend` remains valid for the
-    lifetime of the awaitable's async operation. @ref run,
-    @ref run_async and the other functions that start a task
-    guarantee this.
-    Awaitables that need to retain access to the environment should
-    store it as `io_env const*`, never as a copy. Copying is
-    unnecessary and wasteful because the referent is guaranteed to
-    outlive the operation.
+    _preconditions_: `a.await_ready() == false`.
 
-    @par Conforming Signatures
+    _Parameters_:
 
-    Only the `await_suspend` overload shown below is checked by
-    `IoAwaitable`. `await_ready` and `await_resume` are shown for
-    context. The C++ awaitable protocol (`co_await`) requires the
-    compiler to find them on the awaiter type. This concept does not
-    require them.
+    @li @c h — the handle to the just suspended coroutine,
+    @li @c env — the execution environment of the just suspended coroutine. 
 
-    @code
-    struct A
-    {
-        bool await_ready() const noexcept;
+    _Effects_: If this operations instructs a coroutine to be resumed, it shall make sure that the coroutine's 
+    promise type is passed the @c env parameter, in a manner specific to `A`.
 
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            io_env const* env );
+    _Returns_: The signature has one of the three return types: `void`, `bool` and `std::coroutine_handle<>`.
 
-        T await_resume();
-    };
-    @endcode
+    If the return type is `void`, instructs the coroutine machinery that the control shall be 
+    returned to the resumer of the coroutine that invoked the `co_await` expression. 
+    Takes the ownership for scheduling the
+    resumption of the coroutine represented by `h` via either  `env->executor.post` or `env->executor.dispatch`.
+
+    If the return type is `bool`:
+
+    @li value @c true indicates the behavior equivalent to that of the @c void return type;
+
+    @li value @c false instructs the coroutine machinery to resume the coroutine represented by @c h and to immediately invoke @c await_resume .
+
+    If the return type is `std::coroutine_handle<>`, instructs the compiler to resume 
+    the coroutine represented by the returned handle, in a tail call manner (not consuming the stack). 
+
+    _Note_: 
+    
+    @li Returning @c h is equivalent to returning @c false in the @c bool return type signature.
+    @li Returning @c std::noop_coroutine() is equivalent to using the @c void return type, returning @c true in the @c bool return type signature.
+
+
+    _Lifetime_: The object of type @ref io_env pointed to by `env` remains valid 
+    for the duration of the async operation represented by `A`. This is guarantee is maintained
+    by @ref run, @ref run_async and the other functions that "start a task".
+    
+
+    @par `await_resume`
+
+    In the context of processing a `co_await` expression, when the suspended coroutine is being resumed or
+    upon immediate resumption, returns a value — if any — that shall be returned from the `co_await` expression.
+
+    If it throws an exception, the exception is propagated out of the `co_await` expression into the awaiting coroutine's
+    scope.
+
+    _Returns_: value intended to be returned from the `co_await` expression. The return type determines the type of
+    the enclosing `co_await` expression and can be `void`.
+    
+    
+
 
     @par Example
 
+    The example demonstrates a "leaf" awaitable: one that is associated directly with 
+    a system's I/O operation but no coroutine.
+
     @code
-    struct my_io_op
+    class my_awaitable
     {
-        io_env const* env_ = nullptr;
-        continuation cont_;
-
-        auto await_suspend(
-            std::coroutine_handle<> h,
-            io_env const* env )
-        {
-            env_ = env;
-            cont_ = continuation{h};
-            // Pass members by value; capturing this
-            // risks use-after-free in async callbacks.
-            // When the async operation completes, resume
-            // via executor.post(cont_) or executor.dispatch(cont_)
-            // rather than calling h.resume() directly.
-            start_async(
-                env_->stop_token,
-                env_->executor,
-                cont_ );
-            return std::noop_coroutine();
-        }
-
+        capy::io_env const* env_ = nullptr;
+        capy::continuation  cont_;
+        std::error_code     ec_ {};
+        
+    public:
         bool await_ready() const noexcept { return false; }
-        void await_resume() {}
+        
+        std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<> h, capy::io_env const* env) noexcept
+        {
+            env_  = env;                      // store the pointer, never a copy
+            cont_ = capy::continuation{h};
+            
+            auto completion = [this](std::error_code ec) noexcept
+            {
+                ec_ = ec;                     // publish result; touch *this
+                env_->executor.post(cont_);   // only before post, never after
+            };
+                
+            start_my_io_op(env_->stop_token, completion);
+
+            return std::noop_coroutine(); // go back to scheduler
+        }
+        
+        capy::io_result<> await_resume() const noexcept { return {ec_}; }
     };
     @endcode
 
-    @see IoRunnable
+    @par Models
+
+    General-purpose class templates that model `IoAwaitable`: @ref task, @ref quitter, @ref immediate.
+
+
+    @see @ref IoRunnable, @ref io_env, @ref executor_ref
 */
 template<typename A>
-concept IoAwaitable =
+concept IoAwaitable = std::move_constructible<A> &&
     requires(
         A a,
         std::coroutine_handle<> h,
         io_env const* env)
     {
-        a.await_suspend(h, env);
+        { a.await_ready() } -> std::same_as<bool>;
+        { a.await_suspend(h, env) } -> detail::await_suspend_valid_result;   
+        a.await_resume();
     };
 
 /** Names what `co_await a` yields for awaitable type A.
