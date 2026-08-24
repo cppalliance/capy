@@ -33,7 +33,12 @@ Capy uses *forward propagation*: the caller passes context to the awaitable thro
 
 == The Two-Argument await_suspend
 
-The IoAwaitable protocol extends `await_suspend` to receive context:
+In order to make sure — and statically enforce — that every awaitable ``co_await``ed in Capy-coroutines
+footnote:[The only awaitables excluded from this constraint are "tag objects" from namespace cpp:this_coro[]: cpp:this_coro::environment[environment], cpp:this_coro::executor[executor], cpp:this_coro::frame_allocator[frame_allocator] and cpp:this_coro::stop_token[stop_token].]
+participates in the execution environment propagation, the awaitables
+are required to provide member function `await_suspend`, similar
+to the one present in C++ awaiters, which takes the second parameter representing
+the execution environment:
 
 [source,cpp]
 ----
@@ -48,18 +53,23 @@ This signature receives:
 ** cpp:io_env::stop_token[env->stop_token] — A stop token for cooperative cancellation
 ** cpp:io_env::frame_allocator[env->frame_allocator] — An optional frame allocator
 
-Many IoAwaitables return `std::coroutine_handle<>` to enable symmetric transfer.
+Following the convention of awaiters in C++, the return type of the function has to be one of:
+
+* `void`,
+* `bool`,
+* `std::coroutine_handle<P>` for any type `P`.
+
+Many types modelling cpp:IoAwaitable[] return `std::coroutine_handle<>` to enable
+xref:2.cpp20-coroutines/2d.advanced.adoc#_symmetric_transfer[symmetric transfer].
 
 == IoAwaitable Concept
 
-An awaitable satisfies cpp:IoAwaitable[] if `a.await_suspend(h, env)` is a valid expression:
+Concept cpp:IoAwaitable[] specifies all requirements on a type that can be ``co_await``ed
+in Capy-coroutines. Apart from the two-argument `await_suspend`, the type also needs to 
+provide the two member functions specific to awaiters: `await_ready` and `await_resume`.    
 
-[source,cpp]
-----
-include::example$snippets/4d_io_awaitable.cpp[tag=io_awaitable_concept]
-----
-
-The concept constrains only the two-argument `await_suspend` that receives the `io_env`. It does not require `await_ready` or `await_resume`, nor does it constrain the return type of `await_suspend`. A complete awaitable still provides `await_ready` and `await_resume` so it can be `co_await`-ed.
+In order to model cpp:IoAwaitable[] a type need not be associated with any coroutine. In fact,
+this is the case for a number of cpp:IoAwaitable[]s in Corosio.
 
 == IoRunnable Concept
 
@@ -82,9 +92,8 @@ Capy's cpp:task[task<T>] satisfies this concept.
 
 When you write `co_await child_task()` inside a cpp:task[task<T>]:
 
-1. The parent task's `await_transform` intercepts the awaitable
-2. It wraps the child in a transform awaiter
-3. The transform awaiter's `await_suspend` passes context:
+1. Member function `await_transform` of the ``task``'s `promise_type` transforms the awaitable into an awaiter (see xref:2.cpp20-coroutines/2b.syntax.adoc#awaitables_and_awaiters[Awaitables and Awaiters]).
+2. The resulting awaiter's `await_suspend` passes context:
 
 [source,cpp]
 ----

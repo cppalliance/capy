@@ -30,7 +30,7 @@ Called if an exception escapes the coroutine body. Typically you either rethrow 
 
 The compiler transforms your coroutine body into something resembling this pseudocode:
 
-NOTE: The `co_await` keywords below are intentional. This mirrors the {cpp} standard's own description ({cpp}20 [dcl.fct.def.coroutine]/5), which uses `co_await` to express the logical suspension points. The compiler expands each `co_await` into the full awaiter protocol (`await_ready`, `await_suspend`, `await_resume`) as described in xref:2.cpp20-coroutines/2b.syntax.adoc#_awaitables_and_awaiters[Awaitables and Awaiters].
+NOTE: The `co_await` keywords below are intentional. This mirrors the {cpp} standard's own description ({cpp}20 [dcl.fct.def.coroutine]/5), which uses `co_await` to express the logical suspension points. The compiler expands each `co_await` into the full awaiter protocol (`await_ready`, `await_suspend`, `await_resume`) as described in xref:2.cpp20-coroutines/2b.syntax.adoc#awaitables_and_awaiters[Awaitables and Awaiters].
 
 .What the compiler generates
 [source,cpp,role=pseudocode]

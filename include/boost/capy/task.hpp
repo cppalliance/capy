@@ -364,7 +364,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             }
             else
             {
-                static_assert(sizeof(A) == 0, "requires IoAwaitable");
+                static_assert(IoAwaitable<A>, "requires IoAwaitable");
             }
         }
     };

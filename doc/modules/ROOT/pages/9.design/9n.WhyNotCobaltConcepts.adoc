@@ -28,12 +28,14 @@ IoAwaitable
 IoRunnable
 ....
 
-cpp:IoAwaitable[] is the base. It requires a single syntactic property -- the `await_suspend` signature must accept an cpp:io_env[] parameter containing the execution environment:
+cpp:IoAwaitable[] is the base. It describes what operations a type must provide
+to be able to be ``co_await``ed inside a Capy-coroutine:
 
-[source,cpp]
-----
-include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=io_awaitable_concept]
-----
+ * `await_ready` -- tells if the coroutine needs to be suspended.
+ * `await_suspend` -- invoked immediately after the coroutine is suspended.
+   Obtains the execution environment via an cpp:io_env[] parameter and tells which coroutine needs to be now resumed.
+ * `await_resume` -- tells what value shall be returned when the coroutine is resumed.
+
 
 cpp:IoRunnable[] refines cpp:IoAwaitable[] with operations needed to start a task from non-coroutine contexts: cpp:IoRunnable::handle[handle()], cpp:IoRunnable::release[release()], cpp:IoRunnable::exception[exception()], cpp:IoRunnable::result[result()], and the promise-level cpp:IoRunnable::set_continuation[set_continuation()] and cpp:IoRunnable::set_environment[set_environment()].
 

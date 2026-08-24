@@ -87,7 +87,7 @@ struct std_awaiter_handle
 struct io_awaiter_signature
 {
     // tag::two_arg_await_suspend[]
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env);
+    auto await_suspend(std::coroutine_handle<> h, io_env const* env);
     // end::two_arg_await_suspend[]
 };
 
