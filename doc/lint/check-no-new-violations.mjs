@@ -58,6 +58,17 @@ import { fileURLToPath } from 'node:url';
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
 const strict = argv.includes('--strict');
+// --show-baseline additionally lists findings that are present RIGHT NOW and are
+// grandfathered by baseline.json, as warnings. That is deliberately the live
+// intersection (current ∩ baseline), not the baseline file's contents: the
+// baseline is only ever reseeded when something is ADDED, so it accumulates dead
+// clauses for findings that were long since fixed. Printing the file would list
+// thousands of already-fixed items; printing the intersection is the real
+// remaining worklist.
+const showBaseline = argv.includes('--show-baseline');
+// --json restores the machine-readable dump for tooling. Nothing in-tree parses
+// it today; the CI steps read the human output.
+const jsonOut = argv.includes('--json');
 
 // Parse --gate specs; everything else (except --strict) is passed through to
 // baseline.mjs. NB: --gate values must NOT reach baseline.mjs, whose first
@@ -67,7 +78,7 @@ const allowEmptied = new Set(); // checks whose zero is an accepted milestone
 const extraArgs = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
-  if (a === '--strict') continue;
+  if (a === '--strict' || a === '--show-baseline' || a === '--json') continue;
   let allow = null;
   if (a === '--allow-emptied') allow = argv[++i];
   else if (a.startsWith('--allow-emptied=')) allow = a.slice('--allow-emptied='.length);
@@ -106,7 +117,7 @@ if (!fs.existsSync(baselinePath)) {
 const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
 
 const tmpPath = path.join(os.tmpdir(), `doc-lint-current-${process.pid}.json`);
-const r = spawnSync('node', [path.join(SCRIPT_DIR, 'baseline.mjs'), ...extraArgs, tmpPath], { encoding: 'utf8' });
+const r = spawnSync('node', [path.join(SCRIPT_DIR, 'baseline.mjs'), '--details', ...extraArgs, tmpPath], { encoding: 'utf8' });
 if (r.status !== 0 || !fs.existsSync(tmpPath)) {
   console.log(JSON.stringify({ error: 'failed to generate a current snapshot', stderr: r.stderr }, null, 2));
   process.exit(0);
@@ -143,8 +154,11 @@ for (const [check, currentCheck] of Object.entries(current.checks)) {
   const baseSet = new Set(baseline.checks[check]?.fingerprints || []);
   const currentSet = currentCheck.fingerprints || [];
   const newOnes = currentSet.filter((fp) => !baseSet.has(fp));
+  const stillPresent = currentSet.filter((fp) => baseSet.has(fp));
   totalNew += newOnes.length;
   const entry = { baselineCount: baseline.checks[check]?.count ?? 0, currentCount: currentCheck.count, newCount: newOnes.length, newFindings: newOnes };
+  entry.stillPresent = stillPresent;
+  entry.details = currentCheck.details || {};
   if (gateRes) {
     const gatedOnes = newOnes.filter((fp) => gateRes.some((re) => re.test(fp)));
     entry.gated = true;
@@ -202,23 +216,162 @@ if (anySkipped) {
 // The blocking condition: gated slice when --gate is present, omnibus otherwise.
 const blockingNew = gated ? gatedNew : totalNew;
 const blockingSkip = gated ? gatedSkipped : anySkipped;
-if (gated && blockingNew > 0) {
-  console.error(`GATE: ${blockingNew} new gated violation(s):`);
-  for (const f of gatedFindings) console.error(`  - ${f}`);
+
+// ---------------------------------------------------------------------------
+// Human-readable report.
+//
+// This used to print the whole comparison as JSON. On a real failure that was
+// ~250 lines of which 8 mattered, and the 8 carried no line number and no
+// quote — so the reader still had to grep the corpus to find out what broke.
+// The rule now: say what is wrong, where, and show enough of it to recognise.
+const isCI = !!process.env.GITHUB_ACTIONS;
+const fmtLoc = (d, fp) => (d && d.file ? `${d.file}${d.line ? `:${d.line}` : ''}` : fp);
+
+// One finding, three lines at most: location, rule + message, excerpt.
+function emit(level, check, fp, d) {
+  const loc = fmtLoc(d, fp);
+  const rule = d?.rule ? d.rule : check;
+  const msg = d?.message || fp;
+  console.error(`${level}  ${loc}`);
+  console.error(`       [${check} ${rule}] ${msg}`);
+  if (d?.excerpt) console.error(`       "${d.excerpt}"`);
+  // GitHub annotations put the finding on the diff line itself. Only for
+  // findings that actually block: a non-blocking step annotating every new
+  // finding buries the handful that matter under a hundred that do not.
+  //
+  // Emitted as ::warning, not ::error, deliberately. The annotation's job is
+  // to locate the finding on the diff; the check status is what says the run
+  // failed, and it already does (exit 1). A red inline marker on prose nits
+  // reads as broken code to anyone skimming the Files-changed tab.
+  if (isCI && level === 'ERROR' && d?.file) {
+    const esc = (t) => String(t).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+    console.log(`::warning file=${d.file}${d.line ? `,line=${d.line}` : ''}::${esc(`[${check} ${rule}] ${msg}`)}`);
+  }
 }
+
+// Errors: the findings that actually block. Under --gate that is the gated
+// slice; without --gate every new finding is reported as an error, because
+// then there is no narrower thing to mean.
+// Two independent questions, and conflating them has bitten twice:
+//
+//   * WHICH findings deserve attention — the gated slice, when --gate is given.
+//     Those get called out and annotated on the diff.
+//   * WHETHER the run fails — --strict, and nothing else.
+//
+// Keying attention on `gated` alone made the un-gated report step announce all
+// ~124 new findings as blocking and annotate every one. Keying it on `strict`
+// instead then meant that dropping --strict silently removed the annotations
+// too. The gate spec says what matters; --strict only says whether mattering is
+// fatal.
+const errorList = [];
+const newNonBlocking = [];
+for (const [check, e] of Object.entries(report)) {
+  if (e.skipped) continue;
+  const gatedSet = new Set(e.gatedNewFindings || []);
+  for (const fp of e.newFindings || []) {
+    (gated && gatedSet.has(fp) ? errorList : newNonBlocking).push([check, fp, e.details?.[fp]]);
+  }
+}
+
+if (errorList.length) {
+  console.error(`\n${errorList.length} new gated violation(s) (${strict
+    ? 'these block the merge'
+    : 'reported, not blocking — fix them before this gate is promoted'}):\n`);
+  for (const [check, fp, d] of errorList) emit('ERROR', check, fp, d);
+}
+
+if (newNonBlocking.length) {
+  console.error(`\n${newNonBlocking.length} other new finding(s) since the baseline ` +
+    `(${gated ? 'not in a gated slice' : 'report only'}):\n`);
+  for (const [check, fp, d] of newNonBlocking) emit('NEW  ', check, fp, d);
+}
+
 for (const check of emptiedGated) {
-  console.error(`GATE: gated check '${check}' reports 0 findings but the committed baseline has ` +
+  console.error(`\nERROR  gated check '${check}' reports 0 findings but the committed baseline has ` +
     `${baseline.checks[check]?.fingerprints?.length ?? 0} — a check that did not run looks exactly ` +
     `like this. Verify it really ran; if the backlog is genuinely closed, re-run with ` +
     `--allow-emptied ${check}.`);
 }
 
-console.log(JSON.stringify({
-  totalNew, anySkipped, strict,
-  gated, gatedNew: gated ? gatedNew : undefined, gatedSkipped: gated ? gatedSkipped : undefined,
-  gatedEmptied: gated ? gatedEmptied : undefined,
-  emptiedGated: gated ? emptiedGated : undefined,
-  gatedFindings: gated ? gatedFindings : undefined,
-  checks: report,
-}, null, 2));
-process.exit(strict && (blockingNew > 0 || blockingSkip || (gated && gatedEmptied)) ? 1 : 0);
+if (showBaseline) {
+  const live = [];
+  for (const [check, e] of Object.entries(report)) {
+    if (e.skipped) continue;
+    for (const fp of e.stillPresent || []) live.push([check, fp, e.details?.[fp]]);
+  }
+  console.error(`\n${live.length} grandfathered finding(s) still present — the remaining backlog:\n`);
+  for (const [check, fp, d] of live) emit('WARN ', check, fp, d);
+}
+
+if (!errorList.length && !newNonBlocking.length && !emptiedGated.length && !anySkipped) {
+  console.error(`No new ${gated ? 'gated ' : ''}findings.` +
+    (showBaseline ? '' : ' Re-run with --show-baseline to list the remaining backlog.'));
+}
+
+// ---------------------------------------------------------------------------
+// GitHub job summary. Annotations land on the diff, but a fork PR cannot be
+// commented on (the pull_request token is read-only), so the run page is the
+// one place a full report is reachable from the check without extra machinery.
+// Same pattern ci.yml and the reseed step already use.
+if (process.env.GITHUB_STEP_SUMMARY) {
+  const md = [];
+  // Pipes and newlines would break the table; excerpts are prose and can hold both.
+  const cell = (t) => String(t ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
+
+  // The blocking findings are deliberately NOT tabulated here. They are already
+  // annotated on the diff, which is where you act on them; repeating them on the
+  // run page just means reading the same eight things twice, in the place that is
+  // one click further away.
+  if (errorList.length) {
+    md.push(`### ${strict ? '❌' : '⚠️'} ${errorList.length} new gated violation(s)` +
+            ' — see the annotations on the diff', '');
+  } else if (!emptiedGated.length && gated) {
+    md.push('### ✅ No new gated violations', '');
+  }
+
+  for (const check of emptiedGated) {
+    md.push(`### ❌ Gated check \`${check}\` reported zero findings`, '',
+      `The committed baseline has ${baseline.checks[check]?.fingerprints?.length ?? 0}. ` +
+      'A check that did not run looks exactly like this — verify it ran before believing it.', '');
+  }
+
+  if (newNonBlocking.length) {
+    const why = gated ? 'not in a gated slice' : 'report only';
+    md.push(`<details><summary>${newNonBlocking.length} new finding(s) since the baseline — ${why}</summary>`, '', '```');
+    for (const [check, fp, d] of newNonBlocking.slice(0, 200)) md.push(`${fmtLoc(d, fp)}  [${d?.rule || check}] ${d?.message || ''}`);
+    if (newNonBlocking.length > 200) md.push(`… and ${newNonBlocking.length - 200} more`);
+    md.push('```', '</details>', '');
+  }
+
+  if (showBaseline) {
+    const live = [];
+    for (const [check, e] of Object.entries(report)) {
+      if (e.skipped) continue;
+      for (const fp of e.stillPresent || []) live.push([check, fp, e.details?.[fp]]);
+    }
+    md.push(`<details><summary>${live.length} grandfathered finding(s) still present — the remaining backlog</summary>`, '', '```');
+    for (const [check, fp, d] of live) md.push(`${fmtLoc(d, fp)}  [${d?.rule || check}] ${d?.message || ''}`);
+    md.push('```', '</details>', '');
+  }
+
+  for (const [check, e] of Object.entries(report)) {
+    if (e.skipped) md.push(`> ⚠️ \`${check}\` was **skipped** (${cell(e.reason)}) — not compared.`, '');
+  }
+
+  fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md.join('\n') + '\n');
+}
+
+if (jsonOut) {
+  console.log(JSON.stringify({
+    totalNew, anySkipped, strict,
+    gated, gatedNew: gated ? gatedNew : undefined, gatedSkipped: gated ? gatedSkipped : undefined,
+    gatedEmptied: gated ? gatedEmptied : undefined,
+    emptiedGated: gated ? emptiedGated : undefined,
+    gatedFindings: gated ? gatedFindings : undefined,
+    checks: report,
+  }, null, 2));
+}
+// process.exit() truncates buffered stdout when stdout is a pipe — it does not
+// wait for the flush. That silently cut the --json payload mid-string. Setting
+// exitCode lets Node drain normally and exit with the same status.
+process.exitCode = strict && (blockingNew > 0 || blockingSkip || (gated && gatedEmptied)) ? 1 : 0;

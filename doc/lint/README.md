@@ -22,10 +22,19 @@ site build. Node built-ins only, no dependencies of their own.
 | `mrdocs-warnings.mjs` | Runs the pinned MrDocs 0.8.0 directly and parses its reference-surface warnings. |
 | `run-a11y.mjs` | pa11y-ci contrast/a11y scan over the built site (`doc/build/site`). |
 | `baseline.mjs` | Runs every check and snapshots their findings to `baseline.json`. |
-| `check-no-new-violations.mjs` | **The gate.** Diffs a fresh run against `baseline.json` and fails on NEW findings. |
+| `check-no-new-violations.mjs` | **The gate.** Diffs a fresh run against `baseline.json` and fails on NEW findings. Prints a human report; `--show-baseline` adds the remaining backlog, `--json` restores the machine dump. |
 | `baseline-diff.mjs` | Explains what replacing `baseline.json` with a candidate would change. |
 
 ## How the gate works
+
+**The gate reports; it does not block.** The Documentation job's gate step runs without
+`--strict`, so it exits 0 and the workflow stays green. Gated findings are still identified,
+listed, and emitted as `::warning` annotations on the diff — they are simply not fatal. That is
+a maintainer decision, taken deliberately, and it has a cost worth stating: a new gated
+violation can now be introduced and will sit in the report until a reseed grandfathers it,
+which is the mechanism behind the existing backlog. Restoring the block is adding `--strict`
+back to that one step; the machinery is unchanged and `--strict` is still honoured.
+
 
 `baseline.json` is a snapshot of every finding that already existed when it was taken.
 `check-no-new-violations.mjs` runs a fresh scan and reports only fingerprints that are **not**
@@ -48,6 +57,45 @@ Fingerprints are built by `baseline.mjs` and their shape is load-bearing:
 text above a finding does not rename it. It sits mid-key on purpose: the gate spec
 `vale_adoc:Capy\.PartHeadings$` is anchored on the tail, and anything appended after the check
 name would make that gate match nothing while still exiting 0.
+
+## Reading the output
+
+The gate prints one entry per finding — location, rule, message, and a quote:
+
+```
+ERROR  include/boost/capy/concept/io_awaitable.hpp:68
+       [sentence_length C2] sentence over 25 words (30)
+       "_Effects_: If this operations instructs a coroutine to be resumed, i ... anner specific to `A`."
+```
+
+Three things make that possible, and each has a constraint worth knowing:
+
+- **Line numbers are not in the fingerprint** (see above), so they are carried separately.
+  `baseline.mjs --details` emits a `details` map keyed by the same fingerprint, holding
+  `{file, line, excerpt}`. The comparator always passes `--details`; the reseed never does,
+  so a committed `baseline.json` still contains no line numbers and cannot churn.
+- **Docstring findings are reported against the header, not the generated corpus.** A finding
+  in `lint/.docstrings/concept/io_awaitable.hpp.adoc` is unactionable — nobody edits that file.
+  `extract-docstrings.mjs` writes a `<file>.adoc.lines.json` sidecar mapping output-line ranges
+  back to the line in the `.hpp` where each doc comment starts, and the reporter refines within
+  the block by locating the excerpt in the header text. The sidecar is written *beside* the
+  `.adoc`, never into it, so the extracted prose stays byte-identical.
+- **Under GitHub Actions** each blocking finding is additionally emitted as a
+  `::warning file=…,line=…::` annotation, so it lands on the diff. A warning rather than an
+  error on purpose: the annotation locates the finding, the check status is what reports the
+  failure, and a red inline marker on a prose nit reads as broken code.
+
+Two modes:
+
+| Invocation | Shows |
+|---|---|
+| default | New findings only. With `--gate`, the gated ones are `ERROR` (they block) and the rest are summarised as a count. |
+| `--show-baseline` | Adds every grandfathered finding **still present** as `WARN` — the live backlog. |
+
+`--show-baseline` deliberately prints the intersection of the current scan with the baseline,
+not the baseline file. The baseline is only reseeded when something is *added*, so it
+accumulates dead clauses for findings that were long since fixed; listing the file would be
+mostly noise. The intersection is what is genuinely still broken.
 
 ### `ANCHOR`
 
@@ -132,40 +180,18 @@ it is, makes `role=output` a blanket exemption for real C++; this file catches i
 the SHAPE advisory sidecar (doc/STYLE_GUIDE.md B3) fires on a role=output/role=figure block whose
 content looks like code and stays silent on a genuine one.
 
-### `sentence_length` has no baseline entry — so the C2 gate is RED, on purpose
+### `sentence_length` is gated, and its backlog is now grandfathered
 
-**Read this before you try to make the Documentation job green.** `sentence_length` was added
-after the committed `baseline.json` was taken, so **nothing in its slice is grandfathered** and
-every one of its findings reports as new. Phase-4 exit gated it anyway
-(`--gate 'sentence_length:^C2:'`), which means the blocking step **exits 1** on the whole hard
-slice. Measured at 620fdf2c, that slice is exactly **two** findings, both in
-`include/boost/capy/when_any.hpp` (`lint/.docstrings/when_any.hpp.adoc`) — a 27-word and a
-31-word sentence of the shape *"If at least one child await-returned a zero `ec`, the result
-holds …, unless producing the winner's payload threw, in which case that exception is
-rethrown."* **Zero `.adoc` fingerprints remain under `^C2:`.**
+Until the 2026-08-25 reseed this check had **no** baseline entry — it was added after the
+previous snapshot — so every one of its findings reported as new on every run, and the old note
+here described that state. It now carries 65 grandfathered fingerprints: **7 `C2`** (PR #383's,
+accepted as backlog) and **58 `advisory-C2`**. Anything beyond those is genuinely new.
 
-Those two are **accepted refusals, not defects.** A Phase-4 rewrite that split them made a false
-claim against the code and was reverted verbatim; the maintainer's content review carries that
-exact text. The maintainer declined an in-source refusal marker and chose **visible debt over new
-machinery**, so:
+Two rules from the old note still stand:
 
 * **Do not** add a suppression mechanism, and **do not** widen or head-trim the gate spec.
-* **Do not** reseed `baseline.json` locally — a local run grandfathers ~357 local-vs-CI drift
-  fingerprints (see below).
-* The fix is the **post-merge `workflow_dispatch` reseed** documented in the next section. Until
-  it lands, the Documentation job is red on one step with two known findings.
-
-By contrast the **C4/C9/C10** gates — `Capy.SimpleTense` / `Capy.NoFluff` / `Capy.Terminology`
-over *both* surfaces — are **green today and need no reseed**. Their three residual `.adoc`
-findings sit inside two verbatim third-party quoted passages and are already in
-`baseline.json`, with fingerprints verified to describe those same sentences.
-
-One further consequence of gating this check: a **crash** of `sentence-length.mjs` is now fatal.
-It is reported as `SKIPPED` on stderr, and a skip of a *gated* check fails the gate.
-
----
-
-## Reseeding `baseline.json`
+* **Do not** reseed `baseline.json` locally — a local run grandfathers hundreds of
+  local-vs-CI drift fingerprints (see below).
 
 ### When you need to
 
@@ -175,11 +201,11 @@ can be reintroduced later and the gate will still pass, because the snapshot say
 known issue. Reseed when a batch of fixes has landed and you want the gate to start protecting
 them.
 
-**Never reseed to make a red gate go green** — *with exactly one pre-authorised exception, the
-C2 case described under "`sentence_length` has no baseline entry", above.* Outside that case, a
-red gate means something new was introduced: fix that instead. The exception exists because the
-C2 gate is red for findings that were never new and were never defects, and grandfathering them
-is the ruled resolution rather than a way around a real regression.
+**Never reseed to make a red gate go green.** A gated addition means something new was
+introduced: fix that instead. There is no standing exception. One was granted once, by hand, for
+the reseed of 2026-08-25 — it accepted PR #383's eight gated findings as backlog rather than
+block an already-merged PR — and it was retired with that commit. A future exception is a
+maintainer decision recorded in its own reseed commit message, not a precedent set here.
 
 ### Why not just run `baseline.mjs` locally
 
@@ -208,7 +234,7 @@ gh workflow run docs.yml --ref <branch-you-want-a-baseline-for>
 gh run list --workflow=docs.yml    # then: gh run watch <run-id>
 ```
 
-The run does everything a normal docs run does — including the blocking gate against the
+The run does everything a normal docs run does — including the gate against the
 *currently committed* baseline — and then produces a candidate baseline, **only** because you
 dispatched it manually. A push or a pull request never produces one; an automatic reseed would
 absorb real regressions into the grandfathered backlog.
@@ -219,32 +245,6 @@ Open the finished run and read its **Summary** page, under "Candidate
 doc/lint/baseline.json". The report ends in a `RESULT:` line; **if it does not say
 `candidate retires … none gated`, the reseed step has failed and you must not commit the
 file.**
-
-> **The one pre-authorised exception, for the first reseed after the doc-improvement branch
-> merges.** The point of that reseed is to grandfather the two accepted `when_any.hpp` C2
-> refusals described above — and a gated addition is exactly what the report treats as fatal.
-> So the report **will** exit 1 with `RESULT: candidate must not be committed until its gated
-> additions are justified`, and it **will** list precisely:
->
-> ```
->   - sentence_length :: C2:lint/.docstrings/when_any.hpp.adoc:#1:sentence over 25 words
->   - sentence_length :: C2:lint/.docstrings/when_any.hpp.adoc:#2:sentence over 25 words
-> ```
->
-> Because that step ends in `exit "$status"` (`.github/workflows/docs.yml:406`), **the
-> "report what the candidate would change" step shows as FAILED in the Actions UI.** That is
-> expected here and is not an infra problem. **The candidate is still retrievable:** the upload
-> step is guarded `if: always()` (`docs.yml:408-414`), so the
-> `doc-lint-baseline-candidate` artifact is attached to the run even though the report step went
-> red. Download it as usual.
->
-> Those **two fingerprints, and nothing else**, are the justification. There is no
-> `--allow-gated` flag today; accepting them is a maintainer decision made by hand and recorded
-> in the reseed commit message. **Anything else in that list is a real regression — go fix the
-> documentation instead.**
->
-> **Delete this blockquote once the reseed is committed.** It documents a one-shot transition;
-> left in place afterwards it becomes a standing exception to a rule that should have none.
 
 Then check four things, in this order:
 
@@ -302,7 +302,7 @@ next person can audit the decision:
 ci: reseed doc/lint/baseline.json from CI run <run-id>
 
 Retires <N> stale fingerprints (<breakdown>). Adds <M>, all in non-gated
-slices (<breakdown>); no added fingerprint matches the blocking gate spec.
+slices (<breakdown>); no added fingerprint matches the gate spec.
 ```
 
 Open a PR. The Documentation workflow on that PR runs the gate against your new baseline —
@@ -312,7 +312,7 @@ Open a PR. The Documentation workflow on that PR runs the gate against your new 
 ### Reading a candidate by hand (diagnosis only)
 
 `baseline-diff.mjs` compares any two snapshots. The CI step derives its `--gate` values from
-the blocking step in `.github/workflows/docs.yml` so the two cannot rot apart; when you run it
+the gate step in `.github/workflows/docs.yml` so the two cannot rot apart; when you run it
 by hand, copy them from that step — a report run with a stale or missing gate spec prints
 `none gated` and means nothing.
 
@@ -328,7 +328,7 @@ node lint/baseline-diff.mjs lint/baseline.json /path/to/candidate.json \
 ```
 
 Six specs as of Phase-4 exit. The CI step extracts them, so this hand-run copy is the one that
-can rot — check it against the blocking step before trusting a `none gated` result.
+can rot — check it against the gate step before trusting a `none gated` result.
 
 Exit 0 means the candidate is explainable (it may still add *ungated* findings — read the
 report). Exit 1 means it must not be committed as-is, for one of three reasons, all named in

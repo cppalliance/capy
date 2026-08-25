@@ -50,14 +50,21 @@ import { fileURLToPath } from 'node:url';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, '../..');
-const INCLUDE_ROOT = path.join(REPO_ROOT, 'include/boost/capy');
+// argv[3] overrides the header tree so a self-test can point this at a fixture
+// instead of the real corpus. The `///` assertion used to derive its sample from
+// the live tree, which meant it silently depended on which headers happened to
+// exist — excluding detail/ removed every `///`-only header and broke it.
+const INCLUDE_ROOT = path.resolve(REPO_ROOT, process.argv[3] || 'include/boost/capy');
 const OUT_DIR = path.resolve(REPO_ROOT, process.argv[2] || 'doc/lint/.docstrings');
 
 function walk(dir) {
   let out = [];
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, ent.name);
-    if (ent.isDirectory()) out = out.concat(walk(p));
+    // `detail/` is implementation-defined per doc/mrdocs.yml, so none of its
+    // prose reaches a reader. Linting it inflated the docstring backlog with
+    // findings nobody can act on. The linted corpus tracks the published one.
+    if (ent.isDirectory()) { if (ent.name !== 'detail') out = out.concat(walk(p)); }
     else if (ent.name.endsWith('.hpp')) out.push(p);
   }
   return out;
@@ -146,6 +153,24 @@ function cleanBlock(raw) {
 // mistaken for a doc comment of its own. There is no such line in the tree today
 // (`grep -rn '^[[:space:]]*\*.*///'` finds none), but the cost of being wrong is a
 // commented-out doc comment silently entering the linted corpus.
+// Byte ranges of every `namespace detail { ... }` block, brace-matched. A public
+// header can carry detail helpers (run_async.hpp, when_all.hpp, when_any.hpp,
+// executor_ref.hpp, buffers/asio.hpp all do), and mrdocs.yml marks
+// `boost::capy::detail` AND `boost::capy::*::detail` implementation-defined — so
+// those doc comments are no more published than the ones under detail/.
+// Excluding the directory alone would leave 33 of them in the corpus.
+function detailNamespaceRanges(text) {
+  const ranges = [];
+  for (const m of text.matchAll(/\bnamespace\s+detail\s*\{/g)) {
+    let depth = 0;
+    for (let j = m.end !== undefined ? m.end : m.index + m[0].length - 1; j < text.length; j++) {
+      if (text[j] === '{') depth++;
+      else if (text[j] === '}') { depth--; if (depth === 0) { ranges.push([m.index, j]); break; } }
+    }
+  }
+  return ranges;
+}
+
 function blockCommentRanges(text) {
   const ranges = [];
   for (const m of text.matchAll(/\/\*[\s\S]*?\*\//g)) ranges.push([m.index, m.index + m[0].length]);
@@ -161,6 +186,7 @@ function docComments(text) {
   const found = [];
   for (const m of text.matchAll(/\/\*\*([\s\S]*?)\*\//g)) found.push({ at: m.index, raw: m[1] });
 
+  const inDetail = detailNamespaceRanges(text);
   const inBlock = blockCommentRanges(text);
   const covered = (off) => inBlock.some(([a, b]) => off >= a && off < b);
   const lineRe = /^[ \t]*\/\/\/(?!\/)(.*)$/;
@@ -179,19 +205,55 @@ function docComments(text) {
   }
   flushRun();
 
-  return found.sort((a, b) => a.at - b.at).map((d) => d.raw);
+  // Keep the byte offset so the caller can turn it into a source line. The
+  // extracted .adoc is a generated file nobody edits, so a finding reported
+  // against it is unactionable without a way back to the .hpp. See the
+  // sidecar written below.
+  const lineOf = (off) => text.slice(0, off).split('\n').length; // 1-based
+  return found
+    .filter((d) => !inDetail.some(([a, b]) => d.at >= a && d.at < b))
+    .sort((a, b) => a.at - b.at)
+    .map((d) => ({ raw: d.raw, srcLine: lineOf(d.at) }));
 }
+
+// Clear the output tree first. The generator never used to, so a header that
+// stops producing output — renamed, deleted, or now excluded — left its last
+// .adoc behind for Vale to keep linting. That is also the stale-corpus hazard
+// baseline.mjs guards against from the other side.
+fs.rmSync(OUT_DIR, { recursive: true, force: true });
 
 let written = 0;
 for (const file of walk(INCLUDE_ROOT)) {
   const text = fs.readFileSync(file, 'utf8');
-  const blocks = docComments(text).map(cleanBlock).filter(Boolean);
-  if (blocks.length === 0) continue;
+  const found = docComments(text)
+    .map((d) => ({ text: cleanBlock(d.raw), srcLine: d.srcLine }))
+    .filter((d) => d.text);
+  if (found.length === 0) continue;
 
   const rel = path.relative(INCLUDE_ROOT, file);
   const outPath = path.join(OUT_DIR, `${rel}.adoc`);
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  fs.writeFileSync(outPath, blocks.join('\n\n') + '\n');
+  fs.writeFileSync(outPath, found.map((d) => d.text).join('\n\n') + '\n');
+
+  // Sidecar line map: output line (1-based, into the .adoc just written) ->
+  // the line in the ORIGINAL header where that doc comment starts. Written
+  // beside the .adoc rather than into it, so the extracted prose stays
+  // byte-identical and no baseline fingerprint moves.
+  //
+  // Granularity is per doc comment, not per sentence: cleanBlock() reflows
+  // `@li` items and folds continuation lines, so an output line has no single
+  // source line. The comment's start line plus the excerpt the reporter
+  // quotes is enough to land on the right block in a 200-line header.
+  const spans = [];
+  let out = 1;
+  for (const d of found) {
+    const n = d.text.split('\n').length;
+    spans.push({ from: out, to: out + n - 1, srcLine: d.srcLine });
+    out += n + 1; // the '\n\n' join contributes one blank line between blocks
+  }
+  fs.writeFileSync(`${outPath}.lines.json`, JSON.stringify({
+    source: path.relative(REPO_ROOT, file), spans,
+  }));
   written++;
 }
 

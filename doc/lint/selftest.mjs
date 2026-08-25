@@ -134,29 +134,37 @@ check('only the hard key is reachable from a ^C2: gate spec',
 //    retire the coverage silently: the corpus just gets smaller, every count drops,
 //    and nothing reads as broken. The expectations below are DERIVED from the real
 //    header tree rather than written down, so they cannot go stale.
-const INCLUDE_ROOT = path.resolve(DOC_DIR, '..', 'include/boost/capy');
+const FIXTURE_INCLUDE = path.join(SCRIPT_DIR, 'fixtures/include');
 const TMP_OUT = fs.mkdtempSync(path.join(os.tmpdir(), 'capy-selftest-docstrings-'));
 try {
-  const walkHpp = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-    const p = path.join(dir, e.name);
-    return e.isDirectory() ? walkHpp(p) : (e.name.endsWith('.hpp') ? [p] : []);
-  });
-  // Headers whose ONLY doc comments are `///` runs: they have no output file at all
-  // unless the `///` branch works, which makes them the sharpest available probe.
-  const slashOnly = walkHpp(INCLUDE_ROOT).filter((f) => {
-    const t = fs.readFileSync(f, 'utf8');
-    return /^[ \t]*\/\/\/(?!\/)/m.test(t) && !t.includes('/**');
-  }).map((f) => `${path.relative(INCLUDE_ROOT, f)}.adoc`);
-
-  const x = spawnSync('node', [path.join(SCRIPT_DIR, 'extract-docstrings.mjs'), TMP_OUT],
+  // Run against a FIXTURE header tree, not the live one. The old form derived its
+  // sample from the real corpus — "headers with `///` and no `/** */`" — which
+  // silently depended on which headers happened to exist. Every such header lived
+  // under detail/, so excluding detail/ from extraction broke the assertion for a
+  // legitimate reason. A fixture cannot go stale that way.
+  const x = spawnSync('node',
+    [path.join(SCRIPT_DIR, 'extract-docstrings.mjs'), TMP_OUT, FIXTURE_INCLUDE],
     { encoding: 'utf8', cwd: DOC_DIR, maxBuffer: 16 * 1024 * 1024 });
-  check('extract-docstrings.mjs exits 0', x.status === 0, `exited ${x.status}: ${(x.stderr || '').trim().slice(-200)}`);
-  check('extract-docstrings.mjs finds some `///`-only headers to prove the branch on',
-    slashOnly.length > 0, 'no header in the tree has `///` docs and no `/** */` block');
-  const missing = slashOnly.filter((rel) => !fs.existsSync(path.join(TMP_OUT, rel)));
-  check('`///` doc comments are extracted', missing.length === 0,
-    `${missing.length} of ${slashOnly.length} `
-    + `\`///\`-only header(s) produced no output: ${missing.slice(0, 3).join(', ')}`);
+  check('extract-docstrings.mjs exits 0', x.status === 0,
+    `exited ${x.status}: ${(x.stderr || '').trim().slice(-200)}`);
+
+  const out = path.join(TMP_OUT, 'slash_only.hpp.adoc');
+  const got = fs.existsSync(out) ? fs.readFileSync(out, 'utf8') : '';
+  check('`///` doc comments are extracted', got.includes('Reports whether the fixture extracted'),
+    'the `///`-only fixture header produced no output — the `///` branch is not firing');
+  check('`///` continuation lines fold into one comment',
+    got.includes('folded into the same doc comment'), 'second `///` line was dropped');
+  // detail/ is excluded by directory; this covers the OTHER half — `namespace detail`
+  // inside an otherwise-public header, which 5 real headers have.
+  check('doc comments inside `namespace detail` are NOT extracted',
+    !got.includes('must NOT be extracted'),
+    'a `namespace detail` doc comment reached the linted corpus');
+  // The other half of the exclusion: a whole file under detail/. Covered
+  // separately because the `namespace detail` fixture cannot reach it — a
+  // mutation removing the directory skip passed until this fixture existed.
+  check('headers under detail/ are NOT extracted at all',
+    !fs.existsSync(path.join(TMP_OUT, 'detail/excluded.hpp.adoc')),
+    'a header under detail/ produced output in the linted corpus');
 } finally {
   fs.rmSync(TMP_OUT, { recursive: true, force: true });
 }

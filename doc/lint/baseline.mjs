@@ -24,6 +24,13 @@ const DOC_DIR = path.resolve(SCRIPT_DIR, '..');
 const REPO_ROOT = path.resolve(DOC_DIR, '..');
 const cliArgs = process.argv.slice(2);
 const skipA11y = cliArgs.includes('--skip-a11y');
+// --details additionally emits a `details` map per check, keyed by the SAME
+// fingerprint string, carrying { file, line, excerpt } for human-readable
+// reporting. Deliberately opt-in and deliberately NOT part of a committed
+// baseline: line numbers move, so persisting them would reintroduce exactly
+// the churn occurrenceKey() exists to avoid (see its comment). The reseed
+// path never passes this; check-no-new-violations.mjs always does.
+const wantDetails = cliArgs.includes('--details');
 const outArg = cliArgs.find((a) => !a.startsWith('--'));
 
 function run(cmd, args, opts = {}) {
@@ -69,6 +76,75 @@ function valeRelPath(file) {
   return path.relative(DOC_DIR, path.resolve(DOC_DIR, file)).split(path.sep).join('/');
 }
 
+
+// ---------------------------------------------------------------------------
+// Source resolution for human-readable reporting (--details only).
+//
+// A docstring finding is reported against lint/.docstrings/<h>.adoc, a
+// GENERATED file nobody edits — unactionable on its own. extract-docstrings.mjs
+// writes a `<file>.lines.json` sidecar mapping output-line ranges back to the
+// line in the real header where that doc comment starts; we then refine within
+// the block by locating the excerpt in the header text, because a single doc
+// comment can be 100 output lines long.
+const lineMapCache = new Map();
+const srcCache = new Map();
+
+const normText = (s) => s.replace(/^[\s*\/]+/, '').replace(/\s+/g, ' ').trim();
+
+// Find `excerpt` in the header at/after `fromLine`, tolerating the reflow that
+// cleanBlock() applied (`*` prefixes stripped, continuation lines folded). Returns
+// a 1-based line, or null when the probe is too short or does not match — in which
+// case the caller keeps the block's start line, which is always correct if coarse.
+function locateInSource(relSource, fromLine, excerpt) {
+  if (!excerpt) return null;
+  let lines = srcCache.get(relSource);
+  if (lines === undefined) {
+    try { lines = fs.readFileSync(path.join(REPO_ROOT, relSource), 'utf8').split('\n'); }
+    catch { lines = null; }
+    srcCache.set(relSource, lines);
+  }
+  if (!lines) return null;
+  let buf = '';
+  const owner = [];
+  for (let i = fromLine - 1; i < Math.min(lines.length, fromLine + 400); i++) {
+    const t = normText(lines[i]);
+    if (!t) continue;
+    if (buf) { buf += ' '; owner.push(i + 1); }
+    for (let k = 0; k < t.length; k++) owner.push(i + 1);
+    buf += t;
+  }
+  const probe = normText(excerpt).slice(0, 60);
+  if (probe.length < 12) return null;
+  const at = buf.indexOf(probe);
+  return at >= 0 ? owner[at] : null;
+}
+
+// Map a linted path + line to the file a developer should actually open.
+function resolveSource(relFile, line, excerpt) {
+  if (!relFile || !relFile.startsWith('lint/.docstrings/')) {
+    return { file: relFile ? `doc/${relFile}` : null, line: line ?? null };
+  }
+  const mapPath = path.join(DOC_DIR, `${relFile}.lines.json`);
+  let map = lineMapCache.get(mapPath);
+  if (map === undefined) {
+    try { map = JSON.parse(fs.readFileSync(mapPath, 'utf8')); } catch { map = null; }
+    lineMapCache.set(mapPath, map);
+  }
+  if (!map) return { file: `doc/${relFile}`, line: line ?? null };
+  const span = line == null ? null : map.spans.find((sp) => line >= sp.from && line <= sp.to);
+  if (!span) return { file: map.source, line: null };
+  return { file: map.source, line: locateInSource(map.source, span.srcLine, excerpt) ?? span.srcLine };
+}
+
+// Head+tail excerpt: a 30-word sentence is unreadable inline, but its opening
+// and closing words are what let you find it in the file.
+function excerptOf(text, max = 96) {
+  if (!text) return null;
+  const t = normText(String(text));
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 28).trimEnd()} ... ${t.slice(-22).trimStart()}`;
+}
+
 function valeFingerprints(target) {
   const r = run('vale', ['--output=JSON', target], { cwd: DOC_DIR });
   if (r.error) {
@@ -88,11 +164,20 @@ function valeFingerprints(target) {
     return { count: 0, skipped: true, reason: `vale on '${target}' did not produce findings (exit ${r.status}): ${tail}`, fingerprints: [] };
   }
   const fingerprints = [];
+  const details = {};
   const seen = new Map();
   for (const [file, alerts] of Object.entries(parsed)) {
-    for (const a of alerts) fingerprints.push(occurrenceKey(seen, valeRelPath(file), a.Check));
+    const rel = valeRelPath(file);
+    for (const a of alerts) {
+      const fp = occurrenceKey(seen, rel, a.Check);
+      fingerprints.push(fp);
+      if (wantDetails) {
+        details[fp] = { ...resolveSource(rel, a.Line, a.Match), rule: a.Check,
+                        message: a.Message, excerpt: excerptOf(a.Match) };
+      }
+    }
   }
-  return { count: fingerprints.length, fingerprints: fingerprints.sort() };
+  return { count: fingerprints.length, fingerprints: fingerprints.sort(), details };
 }
 
 // A crashed check must report as SKIPPED, never as zero findings. doc-lint.mjs and
@@ -126,6 +211,7 @@ function docLintFingerprints() {
     };
   }
   const fingerprints = [];
+  const details = {};
   const seen = new Map();
   for (const [check, items] of Object.entries(parsed.findings || {})) {
     // SHAPE is advisory-only and never gated (see doc-lint.mjs's header
@@ -136,9 +222,17 @@ function docLintFingerprints() {
     // zero, silently disarming the "gated check reports 0 against a
     // non-empty baseline" backstop (check-no-new-violations.mjs:187).
     if (check === 'SHAPE') continue;
-    for (const it of items) fingerprints.push(occurrenceKey(seen, `${check}:${it.file}`, it.message));
+    for (const it of items) {
+      const fp = occurrenceKey(seen, `${check}:${it.file}`, it.message);
+      fingerprints.push(fp);
+      // doc-lint reports paths relative to the pages tree, not to doc/.
+      if (wantDetails) {
+        details[fp] = { ...resolveSource(`modules/ROOT/pages/${it.file}`, it.line ?? null, null),
+                        rule: check, message: it.message, excerpt: null };
+      }
+    }
   }
-  return { count: fingerprints.length, byRule: parsed.summary, fingerprints: fingerprints.sort() };
+  return { count: fingerprints.length, byRule: parsed.summary, fingerprints: fingerprints.sort(), details };
 }
 
 // C2 (sentence length) is checked by our own script, not by Vale — see the
@@ -163,11 +257,20 @@ function sentenceLengthFingerprints() {
     };
   }
   const fingerprints = [];
+  const details = {};
   const seen = new Map();
   for (const [check, items] of Object.entries(parsed.findings || {})) {
-    for (const it of items) fingerprints.push(occurrenceKey(seen, `${check}:${it.file}`, it.message));
+    for (const it of items) {
+      const fp = occurrenceKey(seen, `${check}:${it.file}`, it.message);
+      fingerprints.push(fp);
+      if (wantDetails) {
+        details[fp] = { ...resolveSource(it.file, it.line ?? null, it.sentence),
+                        rule: check, message: it.words ? `${it.message} (${it.words})` : it.message,
+                        excerpt: excerptOf(it.sentence) };
+      }
+    }
   }
-  return { count: fingerprints.length, byRule: parsed.summary, fingerprints: fingerprints.sort() };
+  return { count: fingerprints.length, byRule: parsed.summary, fingerprints: fingerprints.sort(), details };
 }
 
 function mrdocsFingerprints() {
@@ -178,8 +281,16 @@ function mrdocsFingerprints() {
   try { parsed = JSON.parse(r.stdout || '{}'); } catch { /* fall through */ }
   if (parsed.error) return { count: 0, skipped: true, reason: parsed.error, fingerprints: [] };
   const seen = new Map();
-  const fingerprints = (parsed.findings || []).map((f) => occurrenceKey(seen, f.file ?? '?', f.message));
-  return { count: fingerprints.length, fingerprints: fingerprints.sort() };
+  const details = {};
+  const fingerprints = (parsed.findings || []).map((f) => {
+    const fp = occurrenceKey(seen, f.file ?? '?', f.message);
+    if (wantDetails) {
+      details[fp] = { file: f.file ?? null, line: f.line ?? null,
+                      rule: 'mrdocs', message: f.message, excerpt: null };
+    }
+    return fp;
+  });
+  return { count: fingerprints.length, fingerprints: fingerprints.sort(), details };
 }
 
 function a11yFingerprints() {
@@ -237,6 +348,7 @@ const baseline = {
     count: v.count, skipped: v.skipped || false, reason: v.reason,
     byRule: v.byRule, contrastCount: v.contrastCount,
     fingerprints: v.fingerprints,
+    ...(wantDetails && v.details ? { details: v.details } : {}),
   }])),
 };
 

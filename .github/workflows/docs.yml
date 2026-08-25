@@ -127,7 +127,7 @@ jobs:
         with:
           node-version: 18
 
-      - name: Build Antora Docs
+      - name: "Docs: build site"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -146,7 +146,7 @@ jobs:
               exit 1
           fi
 
-      - name: Create Antora Docs Artifact
+      - name: "Docs: upload site artifact"
         uses: actions/upload-artifact@v4
         with:
           name: antora-docs
@@ -156,20 +156,20 @@ jobs:
       # Individual check steps below stay non-blocking (continue-on-error: true): they
       # print each tool's raw findings for review. Enforcement is done by the
       # no-new-violations comparator, which diffs a fresh run against baseline.json.
-      # At Phase-4 exit the gated rules are A1/A6/A7/B2/D2/ANCHOR + MrDocs-no-warnings +
-      # C2/C4/C9/C10: the blocking gate step below runs the comparator with --strict
-      # --gate and IS blocking (continue-on-error: false) — it fails the job on any NEW
-      # A1/A6/A7/B2/D2/ANCHOR violation, any NEW MrDocs reference-surface warning, or any NEW
-      # C2/C4/C9/C10 wording violation on either surface. E4 (a11y contrast) is Review
-      # tier, not gated (doc/STYLE_GUIDE.md Part F.0); the a11y scan below stays a
-      # non-blocking report. All other rules remain warning-only via the non-blocking
-      # "no-new-violations report" step.
+      # The gated rules are A1/A6/A7/B2/D2/ANCHOR + MrDocs-no-warnings + C2/C4/C9/C10.
+      # The gate step below names them via --gate and REPORTS them: it prints each with
+      # file, line and an excerpt, and annotates it on the diff, but runs without
+      # --strict, so it does not fail the job. It keeps continue-on-error: false so a
+      # crash in the comparator itself still surfaces. Re-blocking is adding --strict
+      # back to that one step. E4 (a11y contrast) is Review tier, not gated
+      # (doc/STYLE_GUIDE.md Part F.0). Everything outside the gated slice is reported by
+      # the "Lint: remaining backlog" step.
       # The accuracy gate for .adoc example code (B2/B3/D2 correctness) is separate and
       # stays a hard gate: the boost_capy_doc_tests b2 target defined in
       # test/doc/Jamfile, run via `./b2 libs/capy/test` in ci.yml, not this job
       # (test/doc/CMakeLists.txt defines the equivalent CMake target).
 
-      - name: Install Vale
+      - name: "Lint: install Vale"
         if: always()
         continue-on-error: true
         run: |
@@ -179,51 +179,86 @@ jobs:
           echo "$RUNNER_TEMP/vale-bin" >> "$GITHUB_PATH"
           echo "$(pwd)/boost-root/libs/capy/doc/node_modules/.bin" >> "$GITHUB_PATH"
 
-      - name: Doc-quality - Vale sync (Google style package)
+      - name: "Lint: sync Vale styles"
         if: always()
         continue-on-error: true
         working-directory: boost-root/libs/capy/doc
         run: vale sync
 
-      - name: Doc-quality - Vale over .adoc pages
+      - name: "Lint: Vale over pages"
         if: always()
         continue-on-error: true
         working-directory: boost-root/libs/capy/doc
-        run: vale modules
+        # Vale's exit codes: 0 = no alerts, 1 = alerts found, 2 = fatal (e.g.
+        # asciidoctor off PATH). 1 is the normal state on this corpus and fires
+        # every run, which surfaced as a red "Process completed with exit code 1"
+        # annotation saying nothing -- the alerts themselves are reported, with
+        # file, line and quote, by the no-new-violations steps below. Treat 1 as
+        # success so only a genuine Vale failure annotates.
+        run: |
+          vale modules; s=$?
+          [ "$s" -le 1 ] || exit "$s"
 
-      - name: Doc-quality - extract + Vale over header docstrings
+      - name: "Lint: Vale over docstrings"
         if: always()
         continue-on-error: true
         working-directory: boost-root/libs/capy/doc
+        # Vale's exit codes: 0 = no alerts, 1 = alerts found, 2 = fatal (e.g.
+        # asciidoctor off PATH). 1 is the normal state on this corpus and fires
+        # every run, which surfaced as a red "Process completed with exit code 1"
+        # annotation saying nothing -- the alerts themselves are reported, with
+        # file, line and quote, by the no-new-violations steps below. Treat 1 as
+        # success so only a genuine Vale failure annotates.
         run: |
           node lint/extract-docstrings.mjs
-          vale lint/.docstrings
+          vale lint/.docstrings; s=$?
+          [ "$s" -le 1 ] || exit "$s"
 
-      - name: Doc-quality - structural lint (doc-lint.mjs)
+      - name: "Lint: structure (doc-lint.mjs)"
         if: always()
         continue-on-error: true
         working-directory: boost-root/libs/capy/doc
         run: node lint/doc-lint.mjs
 
-      - name: Doc-quality - accessibility contrast scan (pa11y-ci)
+      - name: "Lint: accessibility (pa11y-ci)"
         if: always()
         continue-on-error: true
         working-directory: boost-root/libs/capy/doc
         run: node lint/run-a11y.mjs
 
-      - name: Doc-quality - MrDocs no-warnings scan
+      - name: "Lint: reference warnings (MrDocs)"
         if: always()
         continue-on-error: true
         working-directory: boost-root/libs/capy/doc
         run: node lint/mrdocs-warnings.mjs
 
-      - name: Doc-quality - no-new-violations report (all rules, non-blocking)
+      # selftest.mjs mutates the linters and asserts they notice. It is the only
+      # thing standing between a silent linter regression and a green run — most
+      # of the gates here (A1's value whitelist, A7's numeral match, B2's block
+      # walk, the role=output exemption boundary) were fail-open at some point
+      # and were only found by planting a violation. SHAPE in particular is
+      # advisory and reads 0, so a broken looksLikeCode() is invisible everywhere
+      # else. Non-blocking for now: it is a meta-test, and it can go red for
+      # reasons unrelated to the documentation (a refactor of the linters
+      # themselves). Promote to blocking once it has proven quiet.
+      - name: "Lint: linter self-test"
         if: always()
         continue-on-error: true
         working-directory: boost-root/libs/capy/doc
-        run: node lint/check-no-new-violations.mjs
+        run: node lint/selftest.mjs
 
-      # BLOCKING Phase-4 gate: fails the job on any NEW A1/A6/A7/B2/D2/ANCHOR violation, any
+      # The remaining backlog, as warnings: every finding present RIGHT NOW that
+      # baseline.json grandfathers. Not the baseline file's contents — the
+      # baseline is only reseeded when something is ADDED, so it accumulates dead
+      # clauses for findings already fixed. This prints the live intersection,
+      # which is the actual worklist.
+      - name: "Lint: remaining backlog"
+        if: always()
+        continue-on-error: true
+        working-directory: boost-root/libs/capy/doc
+        run: node lint/check-no-new-violations.mjs --show-baseline
+
+      # The gate: reports any NEW A1/A6/A7/B2/D2/ANCHOR violation, any
       # NEW MrDocs reference-surface warning, and — promoted at Phase-4 exit — any NEW
       # C2/C4/C9/C10 wording violation on EITHER surface. A1/A6/B2/D2 are doc_lint
       # fingerprints; A7 is the Vale rule Capy.PartHeadings; MrDocs-no-warnings gates
@@ -258,35 +293,26 @@ jobs:
       # Fingerprint-shape contract: doc/lint/README.md. Never promote a rule here on the
       # strength of a green run — plant a violation and watch this step fail first.
       #
-      # !!! THIS STEP IS RED TODAY, ON PURPOSE, AND THE FIX IS A POST-MERGE RESEED.
-      # `sentence_length` has NO entry in the committed baseline.json (the check was
-      # added after that snapshot was taken), so nothing in its slice is grandfathered
-      # and `--gate 'sentence_length:^C2:'` exits 1 on the whole hard slice. That slice
-      # is exactly TWO findings, both in include/boost/capy/when_any.hpp
-      # (lint/.docstrings/when_any.hpp.adoc), a 27-word and a 31-word sentence of the
-      # form "If at least one child await-returned a zero `ec`, the result holds …,
-      # unless producing the winner's payload threw, in which case that exception is
-      # rethrown." They are ACCEPTED REFUSALS, not defects: a Phase-4 rewrite that split
-      # them made a false claim against the code and was reverted verbatim, and the
-      # maintainer's content review carries that text. Zero .adoc fingerprints remain
-      # under `^C2:`.
-      # The maintainer chose visible debt over new machinery: the in-source
-      # refusal-marker option was declined. Do NOT add a suppression mechanism and do
-      # NOT reseed baseline.json locally (a local run grandfathers ~357 local-vs-CI
-      # drift fingerprints). The fix is the `workflow_dispatch` reseed at the end of this
-      # job, run AFTER merge, per doc/lint/README.md.
+      # `sentence_length` was added after the previous baseline snapshot, so nothing in
+      # its slice was grandfathered and every finding read as new. The 2026-08-25 reseed
+      # took a snapshot that includes it: 65 fingerprints, 7 C2 and 58 advisory-C2. The
+      # 7 are PR #383's, accepted as backlog by maintainer decision.
+      #
+      # Do NOT add a suppression mechanism, and do NOT reseed baseline.json locally — a
+      # local run grandfathers hundreds of local-vs-CI drift fingerprints. Reseed via the
+      # `workflow_dispatch` steps at the end of this job, per doc/lint/README.md.
       # By contrast the C4/C9/C10 gates (both surfaces) are GREEN today with no reseed
       # needed: their three residual .adoc findings sit inside two verbatim third-party
       # quoted passages and are already grandfathered by baseline.json.
-      - name: Doc-quality - Phase-4 gate (A1/A6/A7/B2/D2/ANCHOR + MrDocs + C2/C4/C9/C10, blocking)
+      - name: "Lint: gate (new violations)"
         if: always()
         continue-on-error: false
         working-directory: boost-root/libs/capy/doc
         run: |
-          # Expected state until the post-merge reseed: EXIT 1 with exactly two gated
-          # findings, both C2:lint/.docstrings/when_any.hpp.adoc (see the note above).
-          # Any OTHER gated finding is a real regression.
-          node lint/check-no-new-violations.mjs --strict \
+          # Reports gated findings and annotates them on the diff; does NOT fail the
+          # job (no --strict). The two when_any.hpp C2 refusals this once expected are
+          # gone — resolved before #383 — and the live gated findings are #383's own.
+          node lint/check-no-new-violations.mjs \
             --gate 'doc_lint:^(A1|A6|B2|D2|ANCHOR):' \
             --gate 'vale_adoc:Capy\.PartHeadings$' \
             --gate 'mrdocs_warnings:.*' \
@@ -325,7 +351,7 @@ jobs:
       # The job never commits or pushes. It uploads a candidate for review; a
       # human reads the diff and commits it. Maintainer procedure, including how
       # to read the report and when NOT to reseed: doc/lint/README.md.
-      - name: Baseline reseed - regenerate a candidate in the CI environment
+      - name: "Reseed: generate candidate"
         if: always() && github.event_name == 'workflow_dispatch'
         working-directory: boost-root/libs/capy/doc
         run: |
@@ -350,7 +376,7 @@ jobs:
       # reformatted the blocking step's arguments), the step FAILS rather than
       # reporting against an empty gate spec, which would look identical to "no
       # gated additions."
-      - name: Baseline reseed - report what the candidate would change
+      - name: "Reseed: report changes"
         if: always() && github.event_name == 'workflow_dispatch'
         working-directory: boost-root/libs/capy/doc
         run: |
@@ -370,7 +396,7 @@ jobs:
           while IFS= read -r spec; do
             gate_args+=(--gate "$spec")
           done < <(
-            awk '/check-no-new-violations\.mjs --strict/ { inblock = 1 }
+            awk '/name: "Lint: gate/ { inblock = 1 }
                  inblock && /^[[:space:]]*$/ { exit }
                  inblock' "$workflow" \
               | grep -o -- "--gate '[^']*'" \
@@ -405,7 +431,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit "$status"
 
-      - name: Baseline reseed - upload the candidate for review
+      - name: "Reseed: upload candidate"
         if: always() && github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:

@@ -200,7 +200,14 @@ it only in the sense the row names. **scheduler** is approved only in its P2300 
 - **E4.** The theme passes a contrast check in both light and dark mode. *(Review tier: the
   gated failures were all `color-contrast` on shared Antora theme nav chrome — an external UI
   bundle Capy cannot fix, the same rationale that demoted E2; scan runs non-blocking, verify by
-  eye, do not gate.)*
+  eye, do not gate.)* The same reasoning covers the other rule classes the scan reports, checked
+  against the built HTML at the 2026-08-25 reseed: `link-name` is Asciidoctor's empty
+  `<a class="anchor">` before every section heading, `link-in-text-block` is the MrDocs reference
+  title's auto-linked namespace segment, and `scrollable-region-focusable` is the `ui-bundle`
+  stylesheet putting `overflow-x:auto` on `.listingblock pre` without a `tabindex`. All three are
+  generator or theme output, not authored content, so they are grandfathered on the same terms —
+  **but only for those shapes.** An a11y finding on markup Capy actually writes is a defect and
+  this carve-out does not reach it.
 
 ## Part F — Enforcement (makes this guide checkable)
 
