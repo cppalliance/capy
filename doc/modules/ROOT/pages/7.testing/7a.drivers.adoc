@@ -213,18 +213,18 @@ task on a context it owns. `run_one` returns any exception the task raised as a
 .Excerpt - not compiled here
 [source,cpp,role=pseudocode]
 ----
-fuse f;
-auto io_runner = [](task<void> t) -> std::exception_ptr {
+capy::test::fuse f;
+auto io_runner = [](capy::task<void> t) -> std::exception_ptr {
     corosio::io_context ioc;
     std::exception_ptr ep;
-    run_async(ioc.get_executor(),
+    capy::run_async(ioc.get_executor(),
         [](auto&&...){}, [&ep](std::exception_ptr e){ ep = e; })(std::move(t));
     ioc.run();
     return ep;
 };
 auto r = f.armed(
     io_runner,
-    [&](fuse&) -> task<void> {
+    [&](capy::test::fuse&) -> capy::task<void> {
         co_await corosio::timeout(some_op(), 5s);
     });
 BOOST_TEST(r.success);

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -18,11 +19,10 @@
 #include <boost/capy/task.hpp>
 // end::protocol_header[]
 
-// The page shows unqualified names.
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 // tag::protocol_header[]
 
 // Declaration only - no implementation details
-task<> handle_protocol(any_stream& stream);
+capy::task<> handle_protocol(capy::any_stream& stream);
 // end::protocol_header[]

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -9,32 +10,7 @@
 
 // Compiled fragments shown in pages/4.coroutines/4e.cancellation.adoc.
 
-// Fragments deliberately leave results and bindings unused; the pages
-// explain the values in prose instead.
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-value"
-#pragma GCC diagnostic ignored "-Wunused-result"
-#pragma GCC diagnostic ignored "-Wunused-function"
-// gcc 15 with sanitizers misattributes coroutine frame delete paths
-#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
-#endif
-#if defined(__clang__)
-#pragma clang diagnostic ignored "-Wunused-lambda-capture"
-#pragma clang diagnostic ignored "-Wunused-private-field"
-#endif
-#if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
-#endif
+#include "../doc_warnings.hpp"
 
 #include <boost/capy/cond.hpp>
 #include <boost/capy/continuation.hpp>
@@ -69,7 +45,6 @@ namespace capy = boost::capy;
 
 namespace {
 
-using namespace boost::capy;
 
 void do_work() {}
 
@@ -109,28 +84,28 @@ void example()
 }
 // end::observer_pattern[]
 
-task<> child();
+capy::task<> child();
 
 // tag::token_propagation[]
-task<> parent()
+capy::task<> parent()
 {
     // Our stop token is automatically passed to child
     co_await child();
 }
 
-task<> child()
+capy::task<> child()
 {
     // Receives parent's stop token via IoAwaitable protocol
-    auto token = co_await this_coro::stop_token;  // Access current token
+    auto token = co_await capy::this_coro::stop_token;  // Access current token
 }
 // end::token_propagation[]
 
-task<> do_chunk_of_work() { co_return; }
+capy::task<> do_chunk_of_work() { co_return; }
 
 // tag::access_stop_token[]
-task<> cancellable_work()
+capy::task<> cancellable_work()
 {
-    auto token = co_await this_coro::stop_token;
+    auto token = co_await capy::this_coro::stop_token;
 
     while (!token.stop_requested())
     {
@@ -141,12 +116,12 @@ task<> cancellable_work()
 
 struct Item {};
 
-task<> process(Item const&) { co_return; }
+capy::task<> process(Item const&) { co_return; }
 
 // tag::check_token[]
-task<> process_items(std::vector<Item> const& items)
+capy::task<> process_items(std::vector<Item> const& items)
 {
-    auto token = co_await this_coro::stop_token;
+    auto token = co_await capy::this_coro::stop_token;
 
     for (auto const& item : items)
     {
@@ -162,13 +137,13 @@ struct resource_handle {};
 
 resource_handle acquire_resource() { return {}; }
 
-task<> use_resource(resource_handle&) { co_return; }
+capy::task<> use_resource(resource_handle&) { co_return; }
 
 // tag::raii_cleanup[]
-task<> with_resource()
+capy::task<> with_resource()
 {
     auto resource = acquire_resource();  // RAII wrapper
-    auto token = co_await this_coro::stop_token;
+    auto token = co_await capy::this_coro::stop_token;
 
     while (!token.stop_requested())
     {
@@ -178,17 +153,17 @@ task<> with_resource()
 }
 // end::raii_cleanup[]
 
-task<std::string> do_fetch() { co_return "payload"; }
+capy::task<std::string> do_fetch() { co_return "payload"; }
 
 // tag::canceled_convention[]
-task<std::string> fetch_with_cancel()
+capy::task<std::string> fetch_with_cancel()
 {
-    auto token = co_await this_coro::stop_token;
+    auto token = co_await capy::this_coro::stop_token;
 
     if (token.stop_requested())
     {
         throw std::system_error(
-            make_error_code(error::canceled));
+            capy::make_error_code(capy::error::canceled));
     }
 
     co_return co_await do_fetch();
@@ -200,7 +175,7 @@ task<std::string> fetch_with_cancel()
 std::optional<std::stop_callback<std::coroutine_handle<>>> stop_cb;
 
 std::coroutine_handle<> await_suspend(
-    std::coroutine_handle<> h, io_env const* env)
+    std::coroutine_handle<> h, capy::io_env const* env)
 {
     stop_cb.emplace(env->stop_token, h);  // Resumes inline!
     return std::noop_coroutine();
@@ -210,23 +185,23 @@ std::coroutine_handle<> await_suspend(
 // Compile-only bug demo: firing the callback would resume the
 // coroutine on the stopping thread, so nothing ever calls it.
 [[maybe_unused]] std::coroutine_handle<> (* const wrong_pattern)(
-    std::coroutine_handle<>, io_env const*) = &await_suspend;
+    std::coroutine_handle<>, capy::io_env const*) = &await_suspend;
 
-void start_async_operation(std::coroutine_handle<>, io_env const*) {}
+void start_async_operation(std::coroutine_handle<>, capy::io_env const*) {}
 
 // tag::stoppable_awaitable[]
 struct my_stoppable_awaitable
 {
     using stop_cb_t = std::stop_callback<std::function<void()>>;
 
-    mutable continuation cont_;
+    mutable capy::continuation cont_;
     std::unique_ptr<stop_cb_t> stop_cb_;
     // ... other members for the async operation ...
 
     bool await_ready() { return false; }
 
     std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> h, io_env const* env)
+        std::coroutine_handle<> h, capy::io_env const* env)
     {
         if (env->stop_token.stop_requested())
             return h;  // Already cancelled
@@ -244,7 +219,7 @@ struct my_stoppable_awaitable
 };
 // end::stoppable_awaitable[]
 
-task<> use_stoppable()
+capy::task<> use_stoppable()
 {
     co_await my_stoppable_awaitable{};
 }
@@ -280,27 +255,28 @@ capy::io_task<> deadline(capy::async_waker& waker)
 }
 // end::racing_deadline[]
 
-task<> race(fetch_channel& ch, capy::async_waker& waker, std::size_t& winner)
+capy::task<> race(
+    fetch_channel& ch, capy::async_waker& waker, std::size_t& winner)
 {
-    auto result = co_await when_any(await_fetch(ch), deadline(waker));
+    auto result = co_await capy::when_any(await_fetch(ch), deadline(waker));
     winner = result.index();
 }
 
-task<> fetch_next_chunk(std::string const&) { co_return; }
+capy::task<> fetch_next_chunk(std::string const&) { co_return; }
 
-task<void> download(std::string url);
+capy::task<void> download(std::string url);
 
 // tag::user_cancellation[]
 class download_manager
 {
-    executor_ref executor_;
+    capy::executor_ref executor_;
     std::stop_source stop_source_;
 
 public:
     void start_download(std::string url)
     {
         // Token propagated via io_env, not as a function argument
-        run_async(executor_, stop_source_.get_token())(download(url));
+        capy::run_async(executor_, stop_source_.get_token())(download(url));
     }
 
     void cancel()
@@ -309,9 +285,10 @@ public:
     }
 };
 
-task<void> download(std::string url)
+capy::task<void> download(std::string url)
 {
-    auto token = co_await this_coro::stop_token;  // From run_async's io_env
+    // From run_async's io_env
+    auto token = co_await capy::this_coro::stop_token;
     while (!token.stop_requested())
     {
         co_await fetch_next_chunk(url);
@@ -321,13 +298,14 @@ task<void> download(std::string url)
 
 // download_manager needs a live execution context to launch; the
 // class itself is the demonstration, so nothing instantiates it.
-[[maybe_unused]] task<void> (* const download_demo)(std::string) = &download;
+[[maybe_unused]] capy::task<void> (* const download_demo)(std::string)
+    = &download;
 
 struct connection {};
 
-task<> process_request(connection&) { co_return; }
+capy::task<> process_request(connection&) { co_return; }
 
-task<> send_goodbye(connection&) { co_return; }
+capy::task<> send_goodbye(connection&) { co_return; }
 
 // tag::graceful_shutdown[]
 class server
@@ -341,7 +319,7 @@ public:
         // All pending operations receive stop request
     }
 
-    task<> handle_connection(connection conn)
+    capy::task<> handle_connection(connection conn)
     {
         auto token = shutdown_source_.get_token();
 

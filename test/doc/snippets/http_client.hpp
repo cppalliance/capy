@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -17,8 +18,7 @@
 #include <map>
 #include <string>
 
-// The page shows unqualified names.
-using namespace boost::capy;
+namespace capy = boost::capy;
 
 // tag::http_client_header[]
 // http_client.hpp
@@ -36,10 +36,11 @@ struct http_response
 {
     int status_code;
     std::map<std::string, std::string> headers;
-    any_read_stream body;  // Body is read as a stream
+    capy::any_read_stream body;  // Body is read as a stream
 };
 
 // Send request, receive response
 // Works with any transport that provides any_stream
-task<http_response> send_request(any_stream& conn, http_request const& req);
+capy::task<http_response> send_request(
+    capy::any_stream& conn, http_request const& req);
 // end::http_client_header[]

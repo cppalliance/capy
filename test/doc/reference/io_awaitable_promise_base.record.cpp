@@ -15,31 +15,7 @@
 // suppressions and namespaces around them are scaffolding. Each region gets
 // its own namespace so that examples which reuse a name still compile.
 
-// Examples leave results unused; the reference explains them in prose.
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-value"
-#pragma GCC diagnostic ignored "-Wunused-result"
-#pragma GCC diagnostic ignored "-Wunused-function"
-// gcc 15 with sanitizers misattributes coroutine frame delete paths
-#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
-#endif
-#if defined(__clang__)
-#pragma clang diagnostic ignored "-Wunused-lambda-capture"
-#pragma clang diagnostic ignored "-Wunused-private-field"
-#endif
-#if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
-#endif
+#include "../doc_warnings.hpp"
 
 #include <boost/capy.hpp>
 
@@ -51,7 +27,6 @@
 #include <vector>
 
 namespace capy = boost::capy;
-using namespace boost::capy;
 
 namespace {
 
@@ -62,7 +37,7 @@ namespace ex_1 {
 // variations on promise plumbing.
 struct my_task
 {
-    struct promise_type : io_awaitable_promise_base<promise_type>
+    struct promise_type : capy::io_awaitable_promise_base<promise_type>
     {
         my_task get_return_object()
         {
@@ -103,20 +78,20 @@ struct my_task
 
 my_task example()
 {
-    auto env = co_await this_coro::environment;
+    auto env = co_await capy::this_coro::environment;
     // Access env->executor, env->stop_token, env->frame_allocator
 
     // Or use fine-grained accessors:
-    auto ex = co_await this_coro::executor;
-    auto token = co_await this_coro::stop_token;
-    auto* alloc = co_await this_coro::frame_allocator;
+    auto ex = co_await capy::this_coro::executor;
+    auto token = co_await capy::this_coro::stop_token;
+    auto* alloc = co_await capy::this_coro::frame_allocator;
 }
 // end::example_1[]
 } // namespace ex_1
 
 namespace ex_2 {
 // tag::example_2[]
-struct promise_type : io_awaitable_promise_base<promise_type>
+struct promise_type : capy::io_awaitable_promise_base<promise_type>
 {
     template<typename A>
     auto transform_awaitable(A&& a)
@@ -134,7 +109,7 @@ namespace ex_3 {
 // section's point is the await_suspend overload below, not the promise.
 struct my_task
 {
-    struct promise_type : io_awaitable_promise_base<promise_type>
+    struct promise_type : capy::io_awaitable_promise_base<promise_type>
     {
         my_task get_return_object()
         {
@@ -174,7 +149,7 @@ struct my_task
 
     // IoAwaitable await_suspend receives and stores the environment,
     // then resumes into the coroutine body via symmetric transfer
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const* env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, capy::io_env const* env)
     {
         h_.promise().set_continuation(cont);
         h_.promise().set_environment(env);

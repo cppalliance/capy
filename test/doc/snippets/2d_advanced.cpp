@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -10,32 +11,7 @@
 // Compiled fragments shown in pages/2.cpp20-coroutines/2d.advanced.adoc.
 // Pages include the tagged regions; scaffolding stays outside the tags.
 
-// Fragments deliberately leave results and bindings unused; the pages
-// explain the values in prose instead.
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-value"
-#pragma GCC diagnostic ignored "-Wunused-result"
-#pragma GCC diagnostic ignored "-Wunused-function"
-// gcc 15 with sanitizers misattributes coroutine frame delete paths
-#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
-#endif
-#if defined(__clang__)
-#pragma clang diagnostic ignored "-Wunused-lambda-capture"
-#pragma clang diagnostic ignored "-Wunused-private-field"
-#endif
-#if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
-#endif
+#include "../doc_warnings.hpp"
 
 #include <boost/capy/task.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -171,15 +147,13 @@ namespace capy = boost::capy;
 
 namespace {
 
-using capy::task;
-
-task<> b();
-task<> c();
+capy::task<> b();
+capy::task<> c();
 
 // tag::task_chain[]
-task<> a() { co_await b(); }
-task<> b() { co_await c(); }
-task<> c() { co_return; }
+capy::task<> a() { co_await b(); }
+capy::task<> b() { co_await c(); }
+capy::task<> c() { co_return; }
 // end::task_chain[]
 
 // Awaiter scaffolding for the symmetric-transfer fragment
@@ -235,14 +209,14 @@ struct promise_type
 
 } // namespace symmetric_generator
 
-task<void> compute_something()
+capy::task<void> compute_something()
 {
     co_return;
 }
 
-void store_for_later(task<void>) {}
+void store_for_later(capy::task<void>) {}
 
-[[maybe_unused]] task<void> halo_demo()
+[[maybe_unused]] capy::task<void> halo_demo()
 {
     // tag::halo[]
     // HALO might apply here because the task is awaited immediately

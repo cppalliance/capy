@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -9,32 +10,7 @@
 
 // Compiled fragments shown in pages/7.testing/7b.mock-streams.adoc.
 
-// Fragments deliberately leave results and bindings unused; the pages
-// explain the values in prose instead.
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-value"
-#pragma GCC diagnostic ignored "-Wunused-result"
-#pragma GCC diagnostic ignored "-Wunused-function"
-// gcc 15 with sanitizers misattributes coroutine frame delete paths
-#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
-#endif
-#if defined(__clang__)
-#pragma clang diagnostic ignored "-Wunused-lambda-capture"
-#pragma clang diagnostic ignored "-Wunused-private-field"
-#endif
-#if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
-#endif
+#include "../doc_warnings.hpp"
 
 // GCC gives false positive -Wmaybe-uninitialized on structured bindings
 // via the tuple protocol inside coroutine frames.
@@ -69,20 +45,19 @@ namespace {
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/task.hpp>
 
-using namespace boost::capy;
-using namespace boost::capy::test;
+namespace capy = boost::capy;
 
 void test_read_stream()
 {
-    fuse f;
-    read_stream rs(f);
+    capy::test::fuse f;
+    capy::test::read_stream rs(f);
     rs.provide("Hello, ");
     rs.provide("World!");
 
-    auto r = f.armed([&](fuse&) -> task<void> {
+    auto r = f.armed([&](capy::test::fuse&) -> capy::task<void> {
         char buf[32];
         auto [ec, n] = co_await rs.read_some(
-            mutable_buffer(buf, sizeof(buf)));
+            capy::mutable_buffer(buf, sizeof(buf)));
         if(ec)
             co_return;
         BOOST_TEST(std::string_view(buf, n) == "Hello, World!");
@@ -97,18 +72,17 @@ void test_read_stream()
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/task.hpp>
 
-using namespace boost::capy;
-using namespace boost::capy::test;
+namespace capy = boost::capy;
 
 void test_write_stream()
 {
-    fuse f;
+    capy::test::fuse f;
 
-    auto r = f.armed([&](fuse&) -> task<void> {
-        write_stream ws(f);
+    auto r = f.armed([&](capy::test::fuse&) -> capy::task<void> {
+        capy::test::write_stream ws(f);
 
         auto [ec, n] = co_await ws.write_some(
-            const_buffer("Hello", 5));
+            capy::const_buffer("Hello", 5));
         if(ec)
             co_return;
         BOOST_TEST(ws.data() == "Hello");
@@ -123,24 +97,23 @@ void test_write_stream()
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/task.hpp>
 
-using namespace boost::capy;
-using namespace boost::capy::test;
+namespace capy = boost::capy;
 
 void test_stream_pair()
 {
-    fuse f;
+    capy::test::fuse f;
 
-    auto r = f.armed([&](fuse&) -> task<void> {
-        auto [a, b] = make_stream_pair(f);
+    auto r = f.armed([&](capy::test::fuse&) -> capy::task<void> {
+        auto [a, b] = capy::test::make_stream_pair(f);
 
         auto [ec, n] = co_await a.write_some(
-            const_buffer("hello", 5));
+            capy::const_buffer("hello", 5));
         if(ec)
             co_return;
 
         char buf[32];
         auto [ec2, n2] = co_await b.read_some(
-            mutable_buffer(buf, sizeof(buf)));
+            capy::mutable_buffer(buf, sizeof(buf)));
         if(ec2)
             co_return;
         BOOST_TEST(std::string_view(buf, n2) == "hello");
@@ -156,12 +129,11 @@ void test_stream_pair()
 #include <boost/capy/test/fuse.hpp>
 #include <boost/capy/test/read_stream.hpp>
 
-using namespace boost::capy;
-using namespace boost::capy::test;
+namespace capy = boost::capy;
 
 // Function under test: read until '\n' or EOF
-template<ReadStream S>
-task<std::pair<std::error_code, std::string>>
+template<capy::ReadStream S>
+capy::task<std::pair<std::error_code, std::string>>
 read_line(S& stream)
 {
     std::string line;
@@ -169,7 +141,7 @@ read_line(S& stream)
     for(;;)
     {
         auto [ec, n] = co_await stream.read_some(
-            mutable_buffer(&ch, 1));
+            capy::mutable_buffer(&ch, 1));
         if(ec)
             co_return {ec, std::move(line)};
         if(ch == '\n')
@@ -181,9 +153,9 @@ read_line(S& stream)
 
 void test_read_line()
 {
-    fuse f;
-    auto r = f.armed([&](fuse&) -> task<void> {
-        read_stream rs(f);
+    capy::test::fuse f;
+    auto r = f.armed([&](capy::test::fuse&) -> capy::task<void> {
+        capy::test::read_stream rs(f);
         rs.provide("hello\n");
 
         auto [ec, line] = co_await read_line(rs);
@@ -208,14 +180,14 @@ struct mock_streams_test
     {
         // tag::read_stream_chunked[]
         // At most 4 bytes per read_some call
-        fuse f;
-        read_stream rs(f, 4);
+        capy::test::fuse f;
+        capy::test::read_stream rs(f, 4);
         rs.provide("Hello, World!");
 
-        auto r = f.armed([&](fuse&) -> task<void> {
+        auto r = f.armed([&](capy::test::fuse&) -> capy::task<void> {
             char buf[32];
             auto [ec, n] = co_await rs.read_some(
-                mutable_buffer(buf, sizeof(buf)));
+                capy::mutable_buffer(buf, sizeof(buf)));
             if(ec)
                 co_return;
             BOOST_TEST(n == 4);  // "Hell"
@@ -228,22 +200,22 @@ struct mock_streams_test
     testReadStreamEof()
     {
         // tag::read_stream_eof[]
-        fuse f;
-        read_stream rs(f);
+        capy::test::fuse f;
+        capy::test::read_stream rs(f);
         rs.provide("hi");
 
-        auto r = f.inert([&](fuse&) -> task<void> {
+        auto r = f.inert([&](capy::test::fuse&) -> capy::task<void> {
             char buf[8];
             // First read: consumes "hi"
             auto [ec, n] = co_await rs.read_some(
-                mutable_buffer(buf, sizeof(buf)));
+                capy::mutable_buffer(buf, sizeof(buf)));
             BOOST_TEST(!ec);
             BOOST_TEST(std::string_view(buf, n) == "hi");
 
             // Second read: EOF
             auto [ec2, n2] = co_await rs.read_some(
-                mutable_buffer(buf, sizeof(buf)));
-            BOOST_TEST(ec2 == cond::eof);
+                capy::mutable_buffer(buf, sizeof(buf)));
+            BOOST_TEST(ec2 == capy::cond::eof);
             BOOST_TEST(n2 == 0);
         });
         BOOST_TEST(r.success);
@@ -260,12 +232,12 @@ struct mock_streams_test
     testWriteStreamChunked()
     {
         // tag::write_stream_chunked[]
-        fuse f;
-        write_stream ws(f, 4);  // accept at most 4 bytes per call
+        capy::test::fuse f;
+        capy::test::write_stream ws(f, 4);  // accept at most 4 bytes per call
 
-        auto r = f.inert([&](fuse&) -> task<void> {
+        auto r = f.inert([&](capy::test::fuse&) -> capy::task<void> {
             auto [ec, n] = co_await ws.write_some(
-                const_buffer("Hello", 5));
+                capy::const_buffer("Hello", 5));
             BOOST_TEST(!ec);
             BOOST_TEST(n == 4);  // only "Hell" was accepted
         });
@@ -277,14 +249,14 @@ struct mock_streams_test
     testWriteStreamExpect()
     {
         // tag::write_stream_expect[]
-        fuse f;
-        write_stream ws(f);
+        capy::test::fuse f;
+        capy::test::write_stream ws(f);
         ws.expect("Hello World");
 
-        auto r = f.inert([&](fuse&) -> task<void> {
+        auto r = f.inert([&](capy::test::fuse&) -> capy::task<void> {
             // Writing matching data succeeds
             auto [ec, n] = co_await ws.write_some(
-                const_buffer("Hello World", 11));
+                capy::const_buffer("Hello World", 11));
             BOOST_TEST(!ec);
         });
         BOOST_TEST(r.success);

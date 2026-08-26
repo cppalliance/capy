@@ -15,31 +15,7 @@
 // suppressions and namespaces around them are scaffolding. Each region gets
 // its own namespace so that examples which reuse a name still compile.
 
-// Examples leave results unused; the reference explains them in prose.
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-value"
-#pragma GCC diagnostic ignored "-Wunused-result"
-#pragma GCC diagnostic ignored "-Wunused-function"
-// gcc 15 with sanitizers misattributes coroutine frame delete paths
-#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
-#endif
-#if defined(__clang__)
-#pragma clang diagnostic ignored "-Wunused-lambda-capture"
-#pragma clang diagnostic ignored "-Wunused-private-field"
-#endif
-#if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
-#endif
+#include "../doc_warnings.hpp"
 
 #include <boost/capy.hpp>
 
@@ -51,7 +27,6 @@
 #include <vector>
 
 namespace capy = boost::capy;
-using namespace boost::capy;
 
 namespace {
 
@@ -59,13 +34,13 @@ namespace ex_1 {
 // tag::example_1[]
 class E
 {
-    execution_context& ctx_;
+    capy::execution_context& ctx_;
     std::thread::id home_ = std::this_thread::get_id();
 
 public:
-    explicit E(execution_context& ctx) noexcept : ctx_(ctx) {}
+    explicit E(capy::execution_context& ctx) noexcept : ctx_(ctx) {}
 
-    execution_context& context() const noexcept { return ctx_; }
+    capy::execution_context& context() const noexcept { return ctx_; }
     void on_work_started() const noexcept {}
     void on_work_finished() const noexcept {}
 
@@ -75,7 +50,7 @@ public:
     }
 
     std::coroutine_handle<> dispatch(
-        continuation& c ) const
+        capy::continuation& c ) const
     {
         if( std::this_thread::get_id() == home_ )
             return c.h;            // symmetric transfer
@@ -83,13 +58,13 @@ public:
         return std::noop_coroutine();
     }
 
-    void post( continuation& ) const
+    void post( capy::continuation& ) const
     {
         // enqueue for later execution on this executor's context
     }
 };
 
-static_assert( Executor<E> );
+static_assert( capy::Executor<E> );
 // end::example_1[]
 } // namespace ex_1
 
@@ -98,14 +73,14 @@ namespace ex_2 {
 class E
 {
 public:
-    execution_context& context() const noexcept;
+    capy::execution_context& context() const noexcept;
 
     void on_work_started() const noexcept;
     void on_work_finished() const noexcept;
 
     std::coroutine_handle<> dispatch(
-        continuation& c ) const;
-    void post( continuation& c ) const;
+        capy::continuation& c ) const;
+    void post( capy::continuation& c ) const;
 
     bool operator==( E const& ) const noexcept;
 };

@@ -11,16 +11,10 @@
 // documentation by doc/addons/extensions/reference-snippets.lua. The tagged
 // region is what the reference renders; scaffolding stays outside the tags.
 
-// Examples deliberately leave results unused; the reference explains the
-// values in prose instead.
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-#pragma GCC diagnostic ignored "-Wunused-function"
-#endif
+#include "../doc_warnings.hpp"
+
+// This example defines a helper that nothing calls; MSVC reports the removal.
 #if defined(_MSC_VER)
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4101) // unreferenced local variable
 #pragma warning(disable: 4505) // unreferenced local function removed
 #endif
 
@@ -31,17 +25,16 @@ namespace capy = boost::capy;
 
 namespace {
 
-using namespace boost::capy;
 
 // tag::work_guard[]
 void keep_alive_while_setting_up()
 {
-    thread_pool pool(1);
+    capy::thread_pool pool(1);
 
     // Keep the pool from completing while we set things up. Note
     // make_work_guard() takes the Executor from get_executor(), not
     // the thread_pool context itself.
-    auto guard = make_work_guard(pool.get_executor());
+    auto guard = capy::make_work_guard(pool.get_executor());
 
     // ... post work to pool ...
 

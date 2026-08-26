@@ -44,7 +44,7 @@ rvalue-qualified:
 .Does not compile
 [source,cpp,role=pseudocode]
 ----
-auto wrapper = run_async(pool.get_executor());  // Don't do this
+auto wrapper = capy::run_async(pool.get_executor());  // Don't do this
 wrapper(compute());  // Error: operator() requires an rvalue
 ----
 

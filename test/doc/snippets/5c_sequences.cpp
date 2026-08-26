@@ -10,32 +10,7 @@
 
 // Compiled fragments shown in pages/5.buffers/5c.sequences.adoc.
 
-// Fragments deliberately leave results and bindings unused; the pages
-// explain the values in prose instead.
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-value"
-#pragma GCC diagnostic ignored "-Wunused-result"
-#pragma GCC diagnostic ignored "-Wunused-function"
-// gcc 15 with sanitizers misattributes coroutine frame delete paths
-#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
-#endif
-#if defined(__clang__)
-#pragma clang diagnostic ignored "-Wunused-lambda-capture"
-#pragma clang diagnostic ignored "-Wunused-private-field"
-#endif
-#if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
-#endif
+#include "../doc_warnings.hpp"
 
 #include <boost/capy/buffers.hpp>
 // tag::buffer_slice_include[]
@@ -64,58 +39,58 @@
 // comment explains the loop body instead. The slice fragment discards
 // io_result values the same way.
 
+namespace capy = boost::capy;
+
 namespace {
 
-using namespace boost::capy;
-
-static_assert(ConstBufferSequence<const_buffer>);
-static_assert(ConstBufferSequence<std::vector<const_buffer>>);
-static_assert(!ConstBufferSequence<int>);
-static_assert(MutableBufferSequence<mutable_buffer>);
-static_assert(!MutableBufferSequence<const_buffer>);
+static_assert(capy::ConstBufferSequence<capy::const_buffer>);
+static_assert(capy::ConstBufferSequence<std::vector<capy::const_buffer>>);
+static_assert(!capy::ConstBufferSequence<int>);
+static_assert(capy::MutableBufferSequence<capy::mutable_buffer>);
+static_assert(!capy::MutableBufferSequence<capy::const_buffer>);
 
 // tag::send_signature[]
-template<ConstBufferSequence Buffers>
+template<capy::ConstBufferSequence Buffers>
 void send(Buffers const& bufs);
 // end::send_signature[]
 
 // Logs the element count of every call so all four calls are observable.
 std::vector<std::size_t> send_lengths;
 
-template<ConstBufferSequence Buffers>
+template<capy::ConstBufferSequence Buffers>
 void send(Buffers const& bufs)
 {
-    send_lengths.push_back(buffer_length(bufs));
+    send_lengths.push_back(capy::buffer_length(bufs));
 }
 
 // The custom type used by the heterogeneous-composition fragment.
 struct chained_buffers
 {
-    std::array<const_buffer, 3> parts;
+    std::array<capy::const_buffer, 3> parts;
     auto begin() const noexcept { return parts.begin(); }
     auto end() const noexcept { return parts.end(); }
 };
 
 // tag::iterate[]
-template<ConstBufferSequence Buffers>
+template<capy::ConstBufferSequence Buffers>
 void process(Buffers const& bufs)
 {
-    for (auto it = begin(bufs); it != end(bufs); ++it)
+    for (auto it = capy::begin(bufs); it != capy::end(bufs); ++it)
     {
-        const_buffer buf = *it;
+        capy::const_buffer buf = *it;
         // Process buf.data(), buf.size()
     }
 }
 // end::iterate[]
 
-using Stream = test::stream;
+using Stream = capy::test::stream;
 
 // tag::read_all[]
-template<MutableBufferSequence Buffers>
-task<std::size_t> read_all(Stream& stream, Buffers buffers)
+template<capy::MutableBufferSequence Buffers>
+capy::task<std::size_t> read_all(Stream& stream, Buffers buffers)
 {
-    consuming_buffers consuming(buffers);
-    std::size_t const total_size = buffer_size(buffers);
+    capy::consuming_buffers consuming(buffers);
+    std::size_t const total_size = capy::buffer_size(buffers);
     std::size_t total = 0;
 
     while (total < total_size)
@@ -131,16 +106,18 @@ task<std::size_t> read_all(Stream& stream, Buffers buffers)
 }
 // end::read_all[]
 
-task<> send_sliced(
+capy::task<> send_sliced(
     Stream& stream,
-    std::array<const_buffer, 2> const& bufs)
+    std::array<capy::const_buffer, 2> const& bufs)
 {
     // tag::buffer_slice[]
-    co_await write(stream, buffer_slice(bufs, 0, 16384));  // send only the first 16 KB
-    auto rest = buffer_slice(bufs, 16384);                 // everything after the first 16 KB
-    co_await write(stream, rest);
+    // send only the first 16 KB
+    co_await capy::write(stream, capy::buffer_slice(bufs, 0, 16384));
+    // everything after the first 16 KB
+    auto rest = capy::buffer_slice(bufs, 16384);
+    co_await capy::write(stream, rest);
     // end::buffer_slice[]
-    BOOST_TEST(buffer_size(rest) == buffer_size(bufs) - 16384);
+    BOOST_TEST(capy::buffer_size(rest) == capy::buffer_size(bufs) - 16384);
 }
 
 struct sequences_test
@@ -149,41 +126,43 @@ struct sequences_test
     {
         // tag::concept_models[]
         // Single buffers
-        const_buffer cb;                    // ConstBufferSequence
-        mutable_buffer mb;                  // MutableBufferSequence (and ConstBufferSequence)
+        capy::const_buffer cb;    // ConstBufferSequence
+        capy::mutable_buffer mb;  // MutableBufferSequence (and ConstBufferSequence)
 
         // Standard containers of buffers
-        std::vector<const_buffer> v;        // ConstBufferSequence
-        std::array<mutable_buffer, 3> a;    // MutableBufferSequence
+        std::vector<capy::const_buffer> v;        // ConstBufferSequence
+        std::array<capy::mutable_buffer, 3> a;    // MutableBufferSequence
 
         // String types (wrap with make_buffer to get a single buffer)
         std::string str;                    // make_buffer(str) -> mutable_buffer
         std::string_view sv;                // make_buffer(sv) -> const_buffer
         // end::concept_models[]
-        static_assert(ConstBufferSequence<decltype(cb)>);
-        static_assert(MutableBufferSequence<decltype(mb)>);
-        static_assert(ConstBufferSequence<decltype(v)>);
-        static_assert(MutableBufferSequence<decltype(a)>);
-        static_assert(!ConstBufferSequence<decltype(str)>);
-        static_assert(MutableBufferSequence<decltype(make_buffer(str))>);
-        static_assert(ConstBufferSequence<decltype(make_buffer(sv))>);
-        BOOST_TEST(buffer_size(cb) == 0);
+        static_assert(capy::ConstBufferSequence<decltype(cb)>);
+        static_assert(capy::MutableBufferSequence<decltype(mb)>);
+        static_assert(capy::ConstBufferSequence<decltype(v)>);
+        static_assert(capy::MutableBufferSequence<decltype(a)>);
+        static_assert(!capy::ConstBufferSequence<decltype(str)>);
+        static_assert(
+            capy::MutableBufferSequence<decltype(capy::make_buffer(str))>);
+        static_assert(
+            capy::ConstBufferSequence<decltype(capy::make_buffer(sv))>);
+        BOOST_TEST(capy::buffer_size(cb) == 0);
         BOOST_TEST(mb.size() == 0);
-        BOOST_TEST(buffer_size(v) == 0);
-        BOOST_TEST(buffer_size(a) == 0);
-        BOOST_TEST(make_buffer(str).size() == 0);
-        BOOST_TEST(make_buffer(sv).size() == 0);
+        BOOST_TEST(capy::buffer_size(v) == 0);
+        BOOST_TEST(capy::buffer_size(a) == 0);
+        BOOST_TEST(capy::make_buffer(str).size() == 0);
+        BOOST_TEST(capy::make_buffer(sv).size() == 0);
     }
 
     void testHeterogeneous()
     {
-        const_buffer buf1, buf2;
+        capy::const_buffer buf1, buf2;
         chained_buffers my_custom_buffer_sequence{};
         send_lengths.clear();
         // tag::send_calls[]
         // All of these work:
-        send(make_buffer("Hello"));                    // string literal
-        send(make_buffer(std::string_view{"Hello"}));  // string_view
+        send(capy::make_buffer("Hello"));                    // string literal
+        send(capy::make_buffer(std::string_view{"Hello"}));  // string_view
         send(std::array{buf1, buf2});                  // array of buffers
         send(my_custom_buffer_sequence);               // custom type
         // end::send_calls[]
@@ -194,22 +173,23 @@ struct sequences_test
     void testIterate()
     {
         char data[4] = {};
-        process(make_buffer(data));
-        process(std::array{const_buffer(data, 2), const_buffer(data + 2, 2)});
+        process(capy::make_buffer(data));
+        process(std::array{
+            capy::const_buffer(data, 2), capy::const_buffer(data + 2, 2)});
     }
 
     void testReadAll()
     {
-        auto [a, b] = test::make_stream_pair();
+        auto [a, b] = capy::test::make_stream_pair();
         b.provide("abcdefghijklmnopqrst");  // 20 bytes readable from a
         a.set_max_read_size(7);             // force several partial reads
 
         std::vector<char> head(8), tail(12);
-        std::array<mutable_buffer, 2> bufs{
-            make_buffer(head), make_buffer(tail)};
+        std::array<capy::mutable_buffer, 2> bufs{
+            capy::make_buffer(head), capy::make_buffer(tail)};
 
         std::size_t got = 0;
-        test::run_blocking([&](std::size_t n) { got = n; })(
+        capy::test::run_blocking([&](std::size_t n) { got = n; })(
             read_all(a, bufs));
 
         BOOST_TEST(got == 20);
@@ -219,13 +199,13 @@ struct sequences_test
 
     void testBufferSlice()
     {
-        auto [a, b] = test::make_stream_pair();
+        auto [a, b] = capy::test::make_stream_pair();
         std::string part1(10000, 'x');
         std::string part2(10000, 'y');
-        std::array<const_buffer, 2> bufs{
-            make_buffer(part1), make_buffer(part2)};
+        std::array<capy::const_buffer, 2> bufs{
+            capy::make_buffer(part1), capy::make_buffer(part2)};
 
-        test::run_blocking()(send_sliced(a, bufs));
+        capy::test::run_blocking()(send_sliced(a, bufs));
 
         BOOST_TEST(b.data() == part1 + part2);
     }

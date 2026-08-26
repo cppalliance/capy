@@ -281,7 +281,7 @@ Conversion always happens on the stack; the implementation never allocates. A fi
 .Pseudocode - internal implementation
 [source,cpp,role=pseudocode]
 ----
-template<ConstBufferSequence Buffers>
+template<capy::ConstBufferSequence Buffers>
 auto platform_write(Buffers const& buffers)
 {
     iovec iovecs[16];  // fixed on-frame window, never heap-allocated
