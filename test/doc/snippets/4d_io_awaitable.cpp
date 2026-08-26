@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -91,24 +92,7 @@ struct io_awaiter_signature
     // end::two_arg_await_suspend[]
 };
 
-// The real definition lives in <boost/capy/concept/io_awaitable.hpp>;
-// the sketch is checked below against types that satisfy (and fail)
-// the real concept.
-namespace concept_sketch {
-
-// tag::io_awaitable_concept[]
-template<typename A>
-concept IoAwaitable =
-    requires(A a, std::coroutine_handle<> h, io_env const* env) {
-        a.await_suspend(h, env);
-    };
-// end::io_awaitable_concept[]
-
-} // namespace concept_sketch
-
-static_assert(concept_sketch::IoAwaitable<task<int>>);
 static_assert(capy::IoAwaitable<task<int>>);
-static_assert(!concept_sketch::IoAwaitable<std_awaiter_void>);
 static_assert(!capy::IoAwaitable<std_awaiter_void>);
 
 struct caller_promise

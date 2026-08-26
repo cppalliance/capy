@@ -9,7 +9,7 @@ cpp:ReadStream[] is the fundamental partial-read primitive among Capy's stream c
 
 [source,cpp]
 ----
-include::example$snippets/9c_read_stream.cpp[tag=concept_definition,indent=0]
+include::example$include/boost/capy/concept/read_stream.hpp[tag=read_stream_concept,indent=0]
 ----
 
 The `requires` clause checks `read_some` against a single representative buffer, cpp:mutable_buffer_archetype[], because a {cpp} concept cannot quantify over "every buffer sequence." The contract is stronger than what the compiler verifies: a cpp:ReadStream[] must accept *any* cpp:MutableBufferSequence[]—a single buffer or a range of them—and the archetype stands in for that universally-quantified requirement.

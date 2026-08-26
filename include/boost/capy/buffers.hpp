@@ -235,11 +235,13 @@ public:
 
     @see const_buffer, MutableBufferSequence
 */
+// tag::const_buffer_sequence_concept[]
 template<typename T>
 concept ConstBufferSequence =
     std::is_convertible_v<T, const_buffer> || (
         std::ranges::bidirectional_range<T> &&
         std::is_convertible_v<std::ranges::range_value_t<T>, const_buffer>);
+// end::const_buffer_sequence_concept[]
 
 /** Requires a type to convert to `mutable_buffer`, or be a range of such buffers.
 
@@ -258,11 +260,13 @@ concept ConstBufferSequence =
 
     @see mutable_buffer, ConstBufferSequence
 */
+// tag::mutable_buffer_sequence_concept[]
 template<typename T>
 concept MutableBufferSequence =
     std::is_convertible_v<T, mutable_buffer> || (
         std::ranges::bidirectional_range<T> &&
         std::is_convertible_v<std::ranges::range_value_t<T>, mutable_buffer>);
+// end::mutable_buffer_sequence_concept[]
 
 /** Return an iterator to the first buffer in a sequence.
 

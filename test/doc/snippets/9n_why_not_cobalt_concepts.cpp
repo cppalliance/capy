@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -37,8 +38,6 @@
 #endif
 
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/concept/buffer_archetype.hpp>
-#include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/concept/io_runnable.hpp>
 #include <boost/capy/concept/write_stream.hpp>
@@ -63,46 +62,9 @@ namespace {
 capy::task<> my_algo(capy::any_write_stream& stream);
 // end::capy_signature[]
 
-// The concept definitions the page reproduces must stay in sync with
-// the shipped ones; local mirrors compile them and the static_asserts
-// below compare them against the real concepts.
-namespace task_requirements {
-
-using boost::capy::io_env;
-
-// tag::io_awaitable_concept[]
-template<typename A>
-concept IoAwaitable =
-    requires(A a, std::coroutine_handle<> h, io_env const* env)
-    {
-        a.await_suspend(h, env);
-    };
-// end::io_awaitable_concept[]
-
-// tag::io_runnable_concept[]
-template<typename T>
-concept IoRunnable =
-    IoAwaitable<T> &&
-    requires { typename T::promise_type; } &&
-    requires(T& t, T const& ct, typename T::promise_type const& cp,
-             typename T::promise_type& p)
-    {
-        { ct.handle() } noexcept
-            -> std::same_as<std::coroutine_handle<typename T::promise_type>>;
-        { cp.exception() } noexcept -> std::same_as<std::exception_ptr>;
-        { t.release() } noexcept;
-        { p.set_continuation(std::coroutine_handle<>{}) } noexcept;
-        { p.set_environment(static_cast<io_env const*>(nullptr)) } noexcept;
-    } &&
-    (std::is_void_v<decltype(std::declval<T&>().await_resume())> ||
-     requires(typename T::promise_type& p) { p.result(); });
-// end::io_runnable_concept[]
-
-static_assert(IoAwaitable<capy::task<>> == capy::IoAwaitable<capy::task<>>);
-static_assert(IoRunnable<capy::task<>> == capy::IoRunnable<capy::task<>>);
-static_assert(IoRunnable<capy::task<int>> == capy::IoRunnable<capy::task<int>>);
-
-} // namespace task_requirements
+static_assert(capy::IoAwaitable<capy::task<>>);
+static_assert(capy::IoRunnable<capy::task<>>);
+static_assert(capy::IoRunnable<capy::task<int>>);
 
 namespace context_propagation {
 
@@ -117,25 +79,6 @@ struct child_operation
 };
 
 } // namespace context_propagation
-
-namespace concept_short {
-
-using boost::capy::const_buffer_archetype;
-using boost::capy::IoAwaitable;
-
-// tag::write_stream_concept_short[]
-template<typename T>
-concept WriteStream =
-    requires(T& stream, const_buffer_archetype buffers)
-    {
-        { stream.write_some(buffers) } -> IoAwaitable;
-        // ...
-    };
-// end::write_stream_concept_short[]
-
-static_assert(WriteStream<capy::any_write_stream>);
-
-} // namespace concept_short
 
 // tag::semantics_quote[]
 // From capy/concept/write_stream.hpp
@@ -246,28 +189,6 @@ any_write_stream::any_write_stream(S s)
 
 } // namespace awaitable_storage
 
-namespace concept_full {
-
-using boost::capy::awaitable_decomposes_to;
-using boost::capy::const_buffer_archetype;
-using boost::capy::IoAwaitable;
-
-// tag::write_stream_concept[]
-template<typename T>
-concept WriteStream =
-    requires(T& stream, const_buffer_archetype buffers)
-    {
-        { stream.write_some(buffers) } -> IoAwaitable;
-        requires awaitable_decomposes_to<
-            decltype(stream.write_some(buffers)),
-            std::error_code, std::size_t>;
-    };
-// end::write_stream_concept[]
-
-static_assert(WriteStream<capy::any_write_stream> ==
-    capy::WriteStream<capy::any_write_stream>);
-static_assert(WriteStream<capy::any_write_stream>);
-
-} // namespace concept_full
+static_assert(capy::WriteStream<capy::any_write_stream>);
 
 } // namespace

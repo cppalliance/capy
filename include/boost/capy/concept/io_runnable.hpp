@@ -86,6 +86,7 @@ namespace capy {
 
     @see IoAwaitable, run, run_async
 */
+// tag::io_runnable_concept[]
 template<typename T>
 concept IoRunnable =
     IoAwaitable<T> &&
@@ -102,6 +103,7 @@ concept IoRunnable =
      requires(typename T::promise_type& p) {
          p.result();
      });
+// end::io_runnable_concept[]
 
 } // namespace capy
 } // namespace boost

@@ -41,7 +41,7 @@ cpp:IoRunnable[] refines cpp:IoAwaitable[] with operations needed to start a tas
 
 [source,cpp]
 ----
-include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=io_runnable_concept]
+include::example$include/boost/capy/concept/io_runnable.hpp[tag=io_runnable_concept]
 ----
 
 Context injection (cpp:IoRunnable::set_environment[set_environment], cpp:IoRunnable::set_continuation[set_continuation]) consists of `noexcept` requirements that cpp:IoRunnable[] places on `T::promise_type`; launcher functions invoke them through the typed handle returned by cpp:IoRunnable::handle[handle()] before resuming the frame.
@@ -215,7 +215,7 @@ Capy's cpp:WriteStream[] concept requires `write_some` to accept any cpp:ConstBu
 
 [source,cpp]
 ----
-include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=write_stream_concept_short]
+include::example$include/boost/capy/concept/write_stream.hpp[tag=write_stream_concept]
 ----
 
 The type-erased wrapper cpp:any_write_stream[] also models the cpp:WriteStream[] concept. Its `write_some` is a template that accepts any cpp:ConstBufferSequence[]:
@@ -438,7 +438,7 @@ Capy separates the abstraction from the wrapper. cpp:WriteStream[] is a {cpp}20 
 
 [source,cpp]
 ----
-include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=write_stream_concept]
+include::example$include/boost/capy/concept/write_stream.hpp[tag=write_stream_concept]
 ----
 
 cpp:any_write_stream[] is a type-erased wrapper that satisfies this concept. It is one possible reification, not the only one. Users can:

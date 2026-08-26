@@ -104,6 +104,7 @@ namespace capy {
 
     @see IoAwaitable, MutableBufferSequence, awaitable_decomposes_to
 */
+// tag::read_stream_concept[]
 template<typename T>
 concept ReadStream =
     requires(T& stream, mutable_buffer_archetype buffers)
@@ -113,6 +114,7 @@ concept ReadStream =
             decltype(stream.read_some(buffers)),
             std::error_code, std::size_t>;
     };
+// end::read_stream_concept[]
 
 } // namespace capy
 } // namespace boost

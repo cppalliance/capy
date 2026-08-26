@@ -7,7 +7,7 @@ A type satisfies cpp:ReadStream[] if it provides partial read operations via `re
 
 [source,cpp]
 ----
-include::example$snippets/6b_streams.cpp[tag=read_stream_concept]
+include::example$include/boost/capy/concept/read_stream.hpp[tag=read_stream_concept]
 ----
 
 The `requires` clause names a single representative buffer (cpp:mutable_buffer_archetype[]) because a {cpp} concept cannot say "works with every buffer sequence." The real contract is that `read_some` accepts *any* cpp:MutableBufferSequence[]—one buffer or a range; the archetype only samples that requirement.
@@ -40,7 +40,7 @@ A type satisfies cpp:WriteStream[] if it provides partial write operations via `
 
 [source,cpp]
 ----
-include::example$snippets/6b_streams.cpp[tag=write_stream_concept]
+include::example$include/boost/capy/concept/write_stream.hpp[tag=write_stream_concept]
 ----
 
 As with cpp:ReadStream[], the cpp:const_buffer_archetype[] is only a representative: the real contract is that `write_some` accepts *any* cpp:ConstBufferSequence[], which a {cpp} concept cannot fully express.

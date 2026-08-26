@@ -113,6 +113,7 @@ namespace capy {
 
     @see IoAwaitable, ConstBufferSequence, awaitable_decomposes_to
 */
+// tag::write_stream_concept[]
 template<typename T>
 concept WriteStream =
     requires(T& stream, const_buffer_archetype buffers)
@@ -122,6 +123,7 @@ concept WriteStream =
             decltype(stream.write_some(buffers)),
             std::error_code, std::size_t>;
     };
+// end::write_stream_concept[]
 
 } // namespace capy
 } // namespace boost

@@ -140,6 +140,7 @@ class execution_context;
 
     @see ExecutionContext, execution_context
 */
+// tag::executor_concept[]
 template<class E>
 concept Executor =
     std::is_nothrow_copy_constructible_v<E> &&
@@ -157,6 +158,7 @@ concept Executor =
         { ce.dispatch(c) } -> std::same_as<std::coroutine_handle<>>;
         { ce.post(c) };
     };
+// end::executor_concept[]
 
 } // capy
 } // boost

@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Christian Mazakas
 # Copyright (c) 2023 Alan de Freitas
+# Copyright (c) 2026 Michael Vandeberg
 #
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -248,6 +249,21 @@ jobs:
         continue-on-error: true
         working-directory: boost-root/libs/capy/doc
         run: node lint/doc-lint.mjs
+
+      # BLOCKING, and deliberately outside the baseline/comparator posture above:
+      # this is not a style rule with a backlog to burn down, it is a structural
+      # check that every `include::` still resolves. Pages take code straight from
+      # the compiled snippets and, since #381, from the public headers, so an
+      # include naming a tag that no longer exists renders an EMPTY block rather
+      # than failing. Asciidoctor exits 0 on that (warning only) and the Antora
+      # leg above only asserts that build/site exists, so nothing else here would
+      # catch a marker deleted during ordinary refactoring. It stands at zero
+      # violations, so there is nothing to grandfather.
+      - name: "Lint: include tags resolve"
+        if: always()
+        continue-on-error: false
+        working-directory: boost-root/libs/capy/doc
+        run: node lint/check-include-tags.mjs
 
       - name: "Lint: accessibility (pa11y-ci)"
         if: always()

@@ -111,14 +111,14 @@ Treating a single buffer as a one-element sequence is deliberate. It lets one co
 
 [source,cpp]
 ----
-include::example$snippets/5c_sequences.cpp[tag=const_buffer_sequence_concept,indent=0]
+include::example$include/boost/capy/buffers.hpp[tag=const_buffer_sequence_concept,indent=0]
 ----
 
 A type satisfies cpp:ConstBufferSequence[] if it converts to cpp:const_buffer[] directly, or if it is a bidirectional range whose elements convert to cpp:const_buffer[].
 
 [source,cpp]
 ----
-include::example$snippets/5c_sequences.cpp[tag=mutable_buffer_sequence_concept,indent=0]
+include::example$include/boost/capy/buffers.hpp[tag=mutable_buffer_sequence_concept,indent=0]
 ----
 
 cpp:MutableBufferSequence[] follows the same pattern for cpp:mutable_buffer[].

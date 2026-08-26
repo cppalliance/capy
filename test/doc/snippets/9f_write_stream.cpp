@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -37,7 +38,6 @@
 #endif
 
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/concept/buffer_archetype.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/cond.hpp>
@@ -61,27 +61,7 @@ namespace {
 
 using namespace boost::capy;
 
-// The real definition lives in <boost/capy/concept/write_stream.hpp>;
-// the sketch is checked below against the real concept.
-namespace concept_sketch {
-
-// tag::write_stream_concept[]
-template<typename T>
-concept WriteStream =
-    requires(T& stream, const_buffer_archetype buffers)
-    {
-        { stream.write_some(buffers) } -> IoAwaitable;
-        requires awaitable_decomposes_to<
-            decltype(stream.write_some(buffers)),
-            std::error_code, std::size_t>;
-    };
-// end::write_stream_concept[]
-
-} // namespace concept_sketch
-
-static_assert(concept_sketch::WriteStream<test::write_stream>);
 static_assert(capy::WriteStream<test::write_stream>);
-static_assert(!concept_sketch::WriteStream<test::read_stream>);
 static_assert(!capy::WriteStream<test::read_stream>);
 
 // The real algorithms live in <boost/capy/write.hpp> and

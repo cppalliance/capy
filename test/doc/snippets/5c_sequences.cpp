@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -52,7 +53,6 @@
 
 #include <array>
 #include <cstddef>
-#include <ranges>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -68,38 +68,11 @@ namespace {
 
 using namespace boost::capy;
 
-// The page's concept definitions; the sketch namespace keeps them from
-// clashing with the real ones, and the asserts below prove they match.
-namespace concept_sketch {
-
-// tag::const_buffer_sequence_concept[]
-template<typename T>
-concept ConstBufferSequence =
-    std::is_convertible_v<T, const_buffer> || (
-        std::ranges::bidirectional_range<T> &&
-        std::is_convertible_v<std::ranges::range_value_t<T>, const_buffer>);
-// end::const_buffer_sequence_concept[]
-
-// tag::mutable_buffer_sequence_concept[]
-template<typename T>
-concept MutableBufferSequence =
-    std::is_convertible_v<T, mutable_buffer> || (
-        std::ranges::bidirectional_range<T> &&
-        std::is_convertible_v<std::ranges::range_value_t<T>, mutable_buffer>);
-// end::mutable_buffer_sequence_concept[]
-
-} // namespace concept_sketch
-
-static_assert(concept_sketch::ConstBufferSequence<const_buffer> ==
-    ConstBufferSequence<const_buffer>);
-static_assert(concept_sketch::ConstBufferSequence<std::vector<const_buffer>> ==
-    ConstBufferSequence<std::vector<const_buffer>>);
-static_assert(concept_sketch::ConstBufferSequence<int> ==
-    ConstBufferSequence<int>);
-static_assert(concept_sketch::MutableBufferSequence<mutable_buffer> ==
-    MutableBufferSequence<mutable_buffer>);
-static_assert(concept_sketch::MutableBufferSequence<const_buffer> ==
-    MutableBufferSequence<const_buffer>);
+static_assert(ConstBufferSequence<const_buffer>);
+static_assert(ConstBufferSequence<std::vector<const_buffer>>);
+static_assert(!ConstBufferSequence<int>);
+static_assert(MutableBufferSequence<mutable_buffer>);
+static_assert(!MutableBufferSequence<const_buffer>);
 
 // tag::send_signature[]
 template<ConstBufferSequence Buffers>

@@ -9,7 +9,7 @@ cpp:WriteStream[] is the fundamental partial-write primitive among Capy's stream
 
 [source,cpp]
 ----
-include::example$snippets/9f_write_stream.cpp[tag=write_stream_concept]
+include::example$include/boost/capy/concept/write_stream.hpp[tag=write_stream_concept]
 ----
 
 The `requires` clause checks `write_some` against a single representative buffer, cpp:const_buffer_archetype[], because a {cpp} concept cannot quantify over "every buffer sequence." The contract is stronger than what the compiler verifies: a cpp:WriteStream[] must accept *any* cpp:ConstBufferSequence[]—a single buffer or a range of them—and the archetype stands in for that universally-quantified requirement.

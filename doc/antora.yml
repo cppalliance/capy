@@ -1,5 +1,6 @@
 #
 # Copyright (c) 2025 Mohammad Nejati
+# Copyright (c) 2026 Michael Vandeberg
 #
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -28,6 +29,16 @@ ext:
         into: modules/ROOT/examples/snippets
       - dir: test/doc/programs
         into: modules/ROOT/examples/programs
+      # Public headers carrying `tag::`/`end::` markers, so pages can include a
+      # definition straight from the library instead of keeping a copy that
+      # drifts. Scanned under their real path, so an `example$include/...`
+      # target in a page reads as the header it actually is.
+      - dir: include
+        files:
+          - boost/capy/concept/*.hpp
+          - boost/capy/buffers.hpp
+          - boost/capy/ex/frame_allocator.hpp
+        into: modules/ROOT/examples/include
   cpp-reference:
     config: doc/mrdocs.yml
   cpp-tagfiles:
