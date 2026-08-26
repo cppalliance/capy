@@ -1,5 +1,6 @@
 #
 # Copyright (c) 2026 Steve Gerbino
+# Copyright (c) 2026 Michael Vandeberg
 #
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -76,7 +77,7 @@ else()
         "[reference-examples] not compiled: they are never executed, and under "
         "coverage they only add never-entered template instantiations")
 endif()
-set(PFILES ${SNIPPETS} ${REFERENCE_SNIPPETS} CMakeLists.txt Jamfile)
+set(PFILES ${SNIPPETS} ${REFERENCE_SNIPPETS} doc_warnings.hpp CMakeLists.txt Jamfile)
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} PREFIX "" FILES ${PFILES})
 
 add_executable(boost_capy_doc_tests ${PFILES})

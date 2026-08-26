@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -12,32 +13,7 @@
 // page's protocol.hpp and http_client.hpp live next to this file.
 
 
-// Fragments deliberately leave results and bindings unused; the pages
-// explain the values in prose instead.
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-value"
-#pragma GCC diagnostic ignored "-Wunused-result"
-#pragma GCC diagnostic ignored "-Wunused-function"
-// gcc 15 with sanitizers misattributes coroutine frame delete paths
-#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
-#endif
-#if defined(__clang__)
-#pragma clang diagnostic ignored "-Wunused-lambda-capture"
-#pragma clang diagnostic ignored "-Wunused-private-field"
-#endif
-#if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
-#endif
+#include "../doc_warnings.hpp"
 
 // The user_code fragment deliberately omits the headers field in a
 // designated initializer; the default is part of the lesson.
@@ -71,21 +47,23 @@
 
 #include "test_suite.hpp"
 
+namespace capy = boost::capy;
+
 // tag::protocol_impl[]
 
-task<> handle_protocol(any_stream& stream)
+capy::task<> handle_protocol(capy::any_stream& stream)
 {
     char buf[1024];
 
     for (;;)
     {
-        auto [ec, n] = co_await stream.read_some(make_buffer(buf));
+        auto [ec, n] = co_await stream.read_some(capy::make_buffer(buf));
         if (ec)
             co_return;
 
         // Process and respond...
         std::string response(buf, n);
-        co_await write(stream, make_buffer(response));
+        co_await capy::write(stream, capy::make_buffer(response));
     }
 }
 // end::protocol_impl[]
@@ -99,18 +77,18 @@ namespace tcp {
 
 class socket
 {
-    std::pair<test::stream, test::stream> loop_ =
-        test::make_stream_pair();
-    test::fuse f_;
-    test::write_stream sink_{f_};
+    std::pair<capy::test::stream, capy::test::stream> loop_ =
+        capy::test::make_stream_pair();
+    capy::test::fuse f_;
+    capy::test::write_stream sink_{f_};
 
 public:
-    auto read_some(MutableBufferSequence auto b)
+    auto read_some(capy::MutableBufferSequence auto b)
     {
         return loop_.first.read_some(b);
     }
 
-    auto write_some(ConstBufferSequence auto b)
+    auto write_some(capy::ConstBufferSequence auto b)
     {
         return sink_.write_some(b);
     }
@@ -122,11 +100,11 @@ namespace tls {
 
 class stream
 {
-    test::fuse f_;
-    test::write_stream sink_{f_};
+    capy::test::fuse f_;
+    capy::test::write_stream sink_{f_};
 
 public:
-    auto write_some(ConstBufferSequence auto b)
+    auto write_some(capy::ConstBufferSequence auto b)
     {
         return sink_.write_some(b);
     }
@@ -142,20 +120,20 @@ struct message
 
 // tag::send_message[]
 // Your library code
-task<> send_message(any_write_stream& stream, message const& msg)
+capy::task<> send_message(capy::any_write_stream& stream, message const& msg)
 {
-    co_await write(stream, make_buffer(msg.header));
-    co_await write(stream, make_buffer(msg.body));
+    co_await capy::write(stream, capy::make_buffer(msg.header));
+    co_await capy::write(stream, capy::make_buffer(msg.body));
 }
 // end::send_message[]
 
-task<> use_transports(message const& msg)
+capy::task<> use_transports(message const& msg)
 {
     {
         // tag::callers[]
         // TCP socket
         tcp::socket socket;
-        any_write_stream stream{&socket};  // references socket
+        capy::any_write_stream stream{&socket};  // references socket
         co_await send_message(stream, msg);
         // end::callers[]
     }
@@ -164,17 +142,17 @@ task<> use_transports(message const& msg)
 
         // TLS stream
         tls::stream tls;
-        any_write_stream stream{&tls};  // references tls
+        capy::any_write_stream stream{&tls};  // references tls
         co_await send_message(stream, msg);
         // end::callers[]
     }
     {
-        test::fuse f;
+        capy::test::fuse f;
         // tag::callers[]
 
         // Test mock
-        test::write_stream mock(f);
-        any_write_stream stream{&mock};  // references mock
+        capy::test::write_stream mock(f);
+        capy::any_write_stream stream{&mock};  // references mock
         co_await send_message(stream, msg);
         // end::callers[]
         BOOST_TEST(mock.data() == msg.header + msg.body);
@@ -191,7 +169,7 @@ namespace before_after_6f {
 // tag::templates_before[]
 // Old approach: template propagates everywhere
 template<typename Stream>
-task<> handle_protocol(Stream& stream);
+capy::task<> handle_protocol(Stream& stream);
 
 // Every caller instantiates for their stream type
 // Changes force recompilation of all callers
@@ -199,7 +177,7 @@ task<> handle_protocol(Stream& stream);
 
 // tag::type_erasure_after[]
 // New approach: concrete signature
-task<> handle_protocol(any_stream& stream);
+capy::task<> handle_protocol(capy::any_stream& stream);
 
 // Implementation compiles once
 // Callers only depend on the signature
@@ -211,22 +189,22 @@ namespace guidelines_6f {
 
 // tag::accept_type_erased[]
 // Good: accepts any stream
-task<> process(any_stream& stream);
+capy::task<> process(capy::any_stream& stream);
 
 // Avoid: forces specific type
-task<> process(tcp::socket& socket);
+capy::task<> process(tcp::socket& socket);
 // end::accept_type_erased[]
 
 // Definition so the callers below link.
-task<> process(any_stream&)
+capy::task<> process(capy::any_stream&)
 {
     co_return;
 }
 
 // tag::wrap_call_site[]
-task<> caller(tcp::socket& socket)
+capy::task<> caller(tcp::socket& socket)
 {
-    any_stream stream{&socket};  // Wrap by reference here
+    capy::any_stream stream{&socket};  // Wrap by reference here
     co_await process(stream);    // Call with erased type
 }
 // end::wrap_call_site[]
@@ -241,12 +219,12 @@ tcp::socket create_socket()
     return {};
 }
 
-task<> wrap_if_needed()
+capy::task<> wrap_if_needed()
 {
     // tag::return_concrete_use[]
     // Then caller wraps if needed
     auto socket = create_socket();
-    any_stream stream{&socket};  // reference; socket must outlive stream
+    capy::any_stream stream{&socket};  // reference; socket must outlive stream
     // or: any_stream stream{std::move(socket)};  // wrapper takes ownership
     // end::return_concrete_use[]
     co_await process(stream);
@@ -257,14 +235,14 @@ task<> wrap_if_needed()
 namespace {
 
 // The request literal intentionally leaves `headers` defaulted.
-task<> user_code()
+capy::task<> user_code()
 {
     // tag::user_code[]
     // User code
     tcp::socket socket;
     // ... connect ...
 
-    any_stream conn{&socket};  // references socket
+    capy::any_stream conn{&socket};  // references socket
     http_request req{
         .method = "GET",
         .url = "/api/data"
@@ -273,7 +251,7 @@ task<> user_code()
 
     // Read body through type-erased source
     char storage[4096];
-    mutable_buffer buf(storage, sizeof(storage));
+    capy::mutable_buffer buf(storage, sizeof(storage));
     auto [ec, n] = co_await response.body.read_some(buf);
     // end::user_code[]
     BOOST_TEST(!ec);
@@ -286,11 +264,11 @@ struct isolation_test
     void
     testHandleProtocol()
     {
-        auto [a, b] = test::make_stream_pair();
+        auto [a, b] = capy::test::make_stream_pair();
         b.provide("ping");
         b.close();
-        any_stream stream{&a};
-        test::run_blocking()(handle_protocol(stream));
+        capy::any_stream stream{&a};
+        capy::test::run_blocking()(handle_protocol(stream));
         // The protocol echoes what it read back to the peer.
         BOOST_TEST(b.data() == "ping");
     }
@@ -298,10 +276,10 @@ struct isolation_test
     void
     testSendMessage()
     {
-        test::fuse f;
-        test::write_stream mock(f);
-        any_write_stream stream{&mock};
-        test::run_blocking()(
+        capy::test::fuse f;
+        capy::test::write_stream mock(f);
+        capy::any_write_stream stream{&mock};
+        capy::test::run_blocking()(
             send_message(stream, {"HDR", "BODY"}));
         BOOST_TEST(mock.data() == "HDRBODY");
     }
@@ -309,7 +287,7 @@ struct isolation_test
     void
     testTransports()
     {
-        test::run_blocking()(
+        capy::test::run_blocking()(
             use_transports({"HDR", "BODY"}));
     }
 
@@ -317,14 +295,14 @@ struct isolation_test
     testGuidelines()
     {
         tcp::socket socket;
-        test::run_blocking()(guidelines_6f::caller(socket));
-        test::run_blocking()(guidelines_6f::wrap_if_needed());
+        capy::test::run_blocking()(guidelines_6f::caller(socket));
+        capy::test::run_blocking()(guidelines_6f::wrap_if_needed());
     }
 
     void
     testUserCode()
     {
-        test::run_blocking()(user_code());
+        capy::test::run_blocking()(user_code());
     }
 
     void
@@ -342,12 +320,12 @@ struct isolation_test
 
 // Definition so the user-code fragment links; a real client would parse
 // an HTTP response off the wire.
-task<http_response> send_request(any_stream&, http_request const&)
+capy::task<http_response> send_request(capy::any_stream&, http_request const&)
 {
-    test::fuse f;
-    test::read_stream body(f);
+    capy::test::fuse f;
+    capy::test::read_stream body(f);
     body.provide("{}");
-    co_return http_response{200, {}, any_read_stream(std::move(body))};
+    co_return http_response{200, {}, capy::any_read_stream(std::move(body))};
 }
 
 TEST_SUITE(isolation_test, "boost.capy.doc.6f_isolation");

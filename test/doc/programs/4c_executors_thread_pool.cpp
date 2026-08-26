@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -16,9 +17,9 @@
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
-task<void> my_task()
+capy::task<void> my_task()
 {
     co_return;
 }
@@ -27,13 +28,13 @@ task<void> my_task()
 int main()
 {
     // Create pool with 4 threads
-    thread_pool pool(4);
+    capy::thread_pool pool(4);
 
     // Get an executor for this pool
     auto ex = pool.get_executor();
 
     // Start work on the pool
-    run_async(ex)(my_task());
+    capy::run_async(ex)(my_task());
 
     pool.join();  // wait for outstanding work to complete
 }

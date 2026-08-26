@@ -84,6 +84,16 @@ The Antora pipeline provides two mechanisms; use them instead of hand-authoring:
   maintainer ruled that B4 binds them anyway: describing what a class *is* is not a licensed
   house style, it is the defect B4 exists to catch. Treat both audits' B4 dispositions on class
   briefs as superseded; this is what authorizes re-opening that finding set.)*
+- **B5. Doc code uses the namespace alias, never a using-directive.** Every file under
+  `test/doc/`, and every code block authored inline in a `.adoc` page, spells library names
+  against `namespace capy = boost::capy;` — `capy::task`, `capy::test::fuse`,
+  `capy::this_coro::executor` — even on a page that never declares the alias itself. A reader
+  should be able to tell which names in an example come from Capy without knowing the library.
+  The exception: a block that verbatim-quotes library-internal source keeps that source's own
+  unqualified spelling. `using namespace boost::capy;` is not used in doc code. Warning
+  suppressions live in `test/doc/doc_warnings.hpp`, included once per file outside every tag; a
+  warning that fires in one fragment stays in that fragment with a comment saying why. B5 is
+  enforced by review only — no script checks it.
 
 ## Part C — Wording (pragmatic Simplified Technical English)
 
@@ -228,7 +238,7 @@ Not every rule is machine-checkable. Each rule sits in one of three tiers:
 |---|---|
 | **Gate** | A1, A6, A7, B2, B3, C2, C4, C9, C10, D2 |
 | **Warning** | A2, B1, C1, C3, C5, C6, D4, D5, E1 |
-| **Review** | A3, A4, A5, B4, C7, C8, C11, D1, D3, E2, E3, E4 |
+| **Review** | A3, A4, A5, B4, B5, C7, C8, C11, D1, D3, E2, E3, E4 |
 
 The accuracy gates (B2, B3, D2 correctness) are enforced by the snippet-compile job, not by
 Vale — that job is what makes examples unable to drift.
@@ -294,7 +304,8 @@ max: 25
 - **F2.** The snippet-compile job is the accuracy gate; keep every example sourced from a
   compiled file (Part B2).
 - **F3.** Doc PR checklist: mode declared (A1)? no hand-typed signatures (B1)? example
-  compiled (B2)? terminology clean (`vale`)? rationale present (D3)?
+  compiled (B2)? namespace alias, not a using-directive (B5)? terminology clean (`vale`)?
+  rationale present (D3)?
 
 ### F4 — A check is not adopted until a planted violation has failed it
 

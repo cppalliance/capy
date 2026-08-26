@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -12,16 +13,16 @@
 // tag::full[]
 #include <boost/capy.hpp>
 
-using namespace boost::capy;
+namespace capy = boost::capy;
 
-task<> echo(any_stream& stream)
+capy::task<> echo(capy::any_stream& stream)
 {
     char buf[1024];
     for(;;)
     {
-        auto [ec, n] = co_await stream.read_some(make_buffer(buf));
+        auto [ec, n] = co_await stream.read_some(capy::make_buffer(buf));
 
-        auto [wec, wn] = co_await write(stream, const_buffer(buf, n));
+        auto [wec, wn] = co_await capy::write(stream, capy::const_buffer(buf, n));
 
         if(ec)
             co_return;
@@ -38,7 +39,7 @@ int main()
     //
     //   corosio::io_context ioc;
     //   corosio::tcp_socket stream = /* from an acceptor or connect */;
-    //   run_async(ioc.get_executor())(echo(stream));
+    //   capy::run_async(ioc.get_executor())(echo(stream));
     //   ioc.run();
 }
 // end::full[]

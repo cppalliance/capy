@@ -15,31 +15,7 @@
 // suppressions and namespaces around them are scaffolding. Each region gets
 // its own namespace so that examples which reuse a name still compile.
 
-// Examples leave results unused; the reference explains them in prose.
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-value"
-#pragma GCC diagnostic ignored "-Wunused-result"
-#pragma GCC diagnostic ignored "-Wunused-function"
-// gcc 15 with sanitizers misattributes coroutine frame delete paths
-#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
-#endif
-#if defined(__clang__)
-#pragma clang diagnostic ignored "-Wunused-lambda-capture"
-#pragma clang diagnostic ignored "-Wunused-private-field"
-#endif
-#if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
-#endif
+#include "../doc_warnings.hpp"
 
 #include <boost/capy.hpp>
 
@@ -51,22 +27,21 @@
 #include <vector>
 
 namespace capy = boost::capy;
-using namespace boost::capy;
 
 namespace {
 namespace ex_1 {
 // tag::example_1[]
-task<void> my_task() { co_return; }
+capy::task<void> my_task() { co_return; }
 
-void start_task( any_executor ex )
+void start_task( capy::any_executor ex )
 {
-    run_async(ex)(my_task());
+    capy::run_async(ex)(my_task());
 }
 // end::example_1[]
 } // namespace ex_1
 namespace ex_2 {
 // tag::example_2[]
-task<int> compute_value() { co_return 42; }
+capy::task<int> compute_value() { co_return 42; }
 
 template<class... Fs>
 struct overloaded : Fs... { using Fs::operator()...; };
@@ -80,9 +55,9 @@ int last_result = 0;
 int last_result2 = 0;
 bool last_failed = false;
 
-void run_with_result_handler_demo( any_executor ex )
+void run_with_result_handler_demo( capy::any_executor ex )
 {
-    run_async(ex, [](int result) {
+    capy::run_async(ex, [](int result) {
         last_result = result;   // the successful value arrives here
     })(compute_value());
 
@@ -91,13 +66,13 @@ void run_with_result_handler_demo( any_executor ex )
         [](int result) { last_result2 = result; },      // the successful value arrives here
         [](std::exception_ptr) { last_failed = true; }  // the failure arrives here
     };
-    run_async(ex, handle_result_or_exception)(compute_value());
+    capy::run_async(ex, handle_result_or_exception)(compute_value());
 }
 // end::example_2[]
 } // namespace ex_2
 namespace ex_3 {
 // tag::example_3[]
-task<int> compute_value() { co_return 42; }
+capy::task<int> compute_value() { co_return 42; }
 
 // The handlers may run after this function returns, on whichever thread
 // the executor schedules them, so the state they write must outlive
@@ -105,9 +80,9 @@ task<int> compute_value() { co_return 42; }
 int separate_handlers_result = 0;
 std::string separate_handlers_error;
 
-void run_with_separate_handlers_demo( any_executor ex )
+void run_with_separate_handlers_demo( capy::any_executor ex )
 {
-    run_async(ex,
+    capy::run_async(ex,
         [](int result) {
             separate_handlers_result = result;   // the successful value arrives here
         },
@@ -123,12 +98,12 @@ void run_with_separate_handlers_demo( any_executor ex )
 } // namespace ex_3
 namespace ex_4 {
 // tag::example_4[]
-task<void> cancellable_task() { co_return; }
+capy::task<void> cancellable_task() { co_return; }
 
-void run_with_cancellation( any_executor ex )
+void run_with_cancellation( capy::any_executor ex )
 {
     std::stop_source source;
-    run_async(ex, source.get_token())(cancellable_task());
+    capy::run_async(ex, source.get_token())(cancellable_task());
     // Later: source.request_stop();
 }
 // end::example_4[]

@@ -10,32 +10,7 @@
 
 // Compiled fragments shown in pages/6.streams/6b.streams.adoc.
 
-// Fragments deliberately leave results and bindings unused; the pages
-// explain the values in prose instead.
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-value"
-#pragma GCC diagnostic ignored "-Wunused-result"
-#pragma GCC diagnostic ignored "-Wunused-function"
-// gcc 15 with sanitizers misattributes coroutine frame delete paths
-#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
-#endif
-#if defined(__clang__)
-#pragma clang diagnostic ignored "-Wunused-lambda-capture"
-#pragma clang diagnostic ignored "-Wunused-private-field"
-#endif
-#if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
-#endif
+#include "../doc_warnings.hpp"
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
@@ -69,16 +44,15 @@ namespace capy = boost::capy;
 
 namespace {
 
-using namespace boost::capy;
 
 static_assert(capy::ReadStream<capy::test::stream>);
 static_assert(capy::WriteStream<capy::test::stream>);
 
-task<> partial_read(test::stream& stream)
+capy::task<> partial_read(capy::test::stream& stream)
 {
     // tag::read_partial[]
     char buf[1024];
-    auto [ec, n] = co_await stream.read_some(make_buffer(buf));
+    auto [ec, n] = co_await stream.read_some(capy::make_buffer(buf));
     // n might be 1, might be 500, might be 1024
     // if !ec, then n >= 1
     // end::read_partial[]
@@ -87,14 +61,14 @@ task<> partial_read(test::stream& stream)
 }
 
 // tag::dump_stream[]
-template<ReadStream Stream>
-task<> dump_stream(Stream& stream)
+template<capy::ReadStream Stream>
+capy::task<> dump_stream(Stream& stream)
 {
     char buf[256];
 
     for (;;)
     {
-        auto [ec, n] = co_await stream.read_some(make_buffer(buf));
+        auto [ec, n] = co_await stream.read_some(capy::make_buffer(buf));
 
         std::cout.write(buf, n);
 
@@ -104,10 +78,11 @@ task<> dump_stream(Stream& stream)
 }
 // end::dump_stream[]
 
-task<> partial_write(test::stream& stream, std::string const& large_data)
+capy::task<> partial_write(
+    capy::test::stream& stream, std::string const& large_data)
 {
     // tag::write_partial[]
-    auto [ec, n] = co_await stream.write_some(make_buffer(large_data));
+    auto [ec, n] = co_await stream.write_some(capy::make_buffer(large_data));
     // n might be less than large_data.size()
     // end::write_partial[]
     BOOST_TEST(! ec);
@@ -123,11 +98,11 @@ class any_read_stream
 public:
     // tag::any_read_stream_ctors[]
     // Owning: takes ownership of a moved-in stream
-    template<ReadStream S>
+    template<capy::ReadStream S>
     any_read_stream(S stream);
 
     // Reference: wraps by pointer without ownership
-    template<ReadStream S>
+    template<capy::ReadStream S>
     any_read_stream(S* stream);
     // end::any_read_stream_ctors[]
 };
@@ -136,10 +111,10 @@ class any_write_stream
 {
 public:
     // tag::any_write_stream_ctors[]
-    template<WriteStream S>
+    template<capy::WriteStream S>
     any_write_stream(S stream);   // owning
 
-    template<WriteStream S>
+    template<capy::WriteStream S>
     any_write_stream(S* stream);  // reference
     // end::any_write_stream_ctors[]
 };
@@ -149,11 +124,11 @@ class any_stream
 public:
     // tag::any_stream_ctors[]
     template<class S>
-        requires ReadStream<S> && WriteStream<S>
+        requires capy::ReadStream<S> && capy::WriteStream<S>
     any_stream(S stream);   // owning
 
     template<class S>
-        requires ReadStream<S> && WriteStream<S>
+        requires capy::ReadStream<S> && capy::WriteStream<S>
     any_stream(S* stream);  // reference
     // end::any_stream_ctors[]
 };
@@ -161,11 +136,11 @@ public:
 } // namespace synopsis
 
 // Scaffolding target for the wrapper_usage fragment.
-void process_stream(any_stream& stream)
+void process_stream(capy::any_stream& stream)
 {
-    test::run_blocking()([](any_stream& s) -> task<>
+    capy::test::run_blocking()([](capy::any_stream& s) -> capy::task<>
     {
-        auto [ec, n] = co_await s.write_some(const_buffer("ok", 2));
+        auto [ec, n] = co_await s.write_some(capy::const_buffer("ok", 2));
         BOOST_TEST(! ec);
         BOOST_TEST(n == 2);
     }(stream));
@@ -173,18 +148,19 @@ void process_stream(any_stream& stream)
 
 // tag::echo_server[]
 // echo.hpp - Header only declares the signature
-task<> handle_connection(any_stream& stream);
+capy::task<> handle_connection(capy::any_stream& stream);
 
 // echo.cpp - Implementation in separate translation unit
-task<> handle_connection(any_stream& stream)
+capy::task<> handle_connection(capy::any_stream& stream)
 {
     char buf[1024];
 
     for (;;)
     {
-        auto [ec, n] = co_await stream.read_some(make_buffer(buf));
+        auto [ec, n] = co_await stream.read_some(capy::make_buffer(buf));
 
-        auto [wec, wn] = co_await write(stream, const_buffer(buf, n));
+        auto [wec, wn] = co_await capy::write(
+            stream, capy::const_buffer(buf, n));
 
         if (ec)
             break;
@@ -200,22 +176,22 @@ struct streams_test
     void
     testPartialRead()
     {
-        auto [a, b] = test::make_stream_pair();
+        auto [a, b] = capy::test::make_stream_pair();
         b.provide("hello");
-        test::run_blocking()(partial_read(a));
+        capy::test::run_blocking()(partial_read(a));
     }
 
     void
     testDumpStream()
     {
-        auto [a, b] = test::make_stream_pair();
+        auto [a, b] = capy::test::make_stream_pair();
         b.provide("dumped");
         b.close();
 
         // Capture std::cout so the fragment's output is observable.
         std::ostringstream out;
         auto* old = std::cout.rdbuf(out.rdbuf());
-        test::run_blocking()(dump_stream(a));
+        capy::test::run_blocking()(dump_stream(a));
         std::cout.rdbuf(old);
         BOOST_TEST(out.str() == "dumped");
     }
@@ -223,9 +199,9 @@ struct streams_test
     void
     testPartialWrite()
     {
-        auto [a, b] = test::make_stream_pair();
+        auto [a, b] = capy::test::make_stream_pair();
         std::string large_data(64, 'x');
-        test::run_blocking()(partial_write(a, large_data));
+        capy::test::run_blocking()(partial_write(a, large_data));
         BOOST_TEST(b.data() == large_data);
     }
 
@@ -233,12 +209,14 @@ struct streams_test
     testWrapperUsage()
     {
         // tag::wrapper_usage[]
-        void process_stream(any_stream& stream);
+        void process_stream(capy::any_stream& stream);
 
-        auto [client, server] = test::make_stream_pair();
+        auto [client, server] = capy::test::make_stream_pair();
 
-        any_stream wrapped{&client};  // Type erasure, references the existing stream
-        process_stream(wrapped);      // process_stream doesn't know about test::stream
+        // Type erasure, references the existing stream
+        capy::any_stream wrapped{&client};
+        // process_stream doesn't know about test::stream
+        process_stream(wrapped);
         // end::wrapper_usage[]
         BOOST_TEST(server.data() == "ok");
     }
@@ -246,11 +224,11 @@ struct streams_test
     void
     testEchoServer()
     {
-        auto [a, b] = test::make_stream_pair();
+        auto [a, b] = capy::test::make_stream_pair();
         b.provide("echo!");
         b.close();
-        any_stream stream{&a};
-        test::run_blocking()(handle_connection(stream));
+        capy::any_stream stream{&a};
+        capy::test::run_blocking()(handle_connection(stream));
         BOOST_TEST(b.data() == "echo!");
     }
 

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -9,32 +10,7 @@
 
 // Compiled fragments shown in pages/4.coroutines/4g.allocators.adoc.
 
-// Fragments deliberately leave results and bindings unused; the pages
-// explain the values in prose instead.
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-value"
-#pragma GCC diagnostic ignored "-Wunused-result"
-#pragma GCC diagnostic ignored "-Wunused-function"
-// gcc 15 with sanitizers misattributes coroutine frame delete paths
-#pragma GCC diagnostic ignored "-Wmismatched-new-delete"
-#endif
-#if defined(__clang__)
-#pragma clang diagnostic ignored "-Wunused-lambda-capture"
-#pragma clang diagnostic ignored "-Wunused-private-field"
-#endif
-#if defined(_MSC_VER)
-#pragma warning(disable: 4834) // discarding [[nodiscard]] return value
-#pragma warning(disable: 4189) // local variable initialized but not referenced
-#pragma warning(disable: 4100) // unreferenced formal parameter
-#pragma warning(disable: 4101) // unreferenced local variable
-#pragma warning(disable: 4456) // declaration hides previous local declaration
-#pragma warning(disable: 4457) // declaration hides function parameter
-#pragma warning(disable: 4458) // declaration hides class member
-#pragma warning(disable: 4459) // declaration hides global declaration
-#endif
+#include "../doc_warnings.hpp"
 
 #include <boost/capy/ex/any_executor.hpp>
 #include <boost/capy/ex/frame_alloc_mixin.hpp>
@@ -60,11 +36,10 @@ namespace capy = boost::capy;
 
 namespace {
 
-using namespace boost::capy;
 
 std::atomic<int> tasks_completed{0};
 
-task<> my_task()
+capy::task<> my_task()
 {
     ++tasks_completed;
     co_return;
@@ -94,7 +69,7 @@ resumable clobber_tls(bool& resumed)
 {
     resumed = true;
     // Simulate another chain's await_resume overwriting TLS
-    set_current_frame_allocator(nullptr);
+    capy::set_current_frame_allocator(nullptr);
     co_return;
 }
 
@@ -123,12 +98,12 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
 } // namespace library_sketch
 
-task<int> compute()
+capy::task<int> compute()
 {
     co_return 42;
 }
 
-task<> halo_demo(std::vector<task<int>>& tasks, int& out)
+capy::task<> halo_demo(std::vector<capy::task<int>>& tasks, int& out)
 {
     // tag::halo_patterns[]
     // HALO can apply: task is awaited immediately
@@ -145,7 +120,7 @@ struct item {};
 
 int items_processed = 0;
 
-task<> process(item const&)
+capy::task<> process(item const&)
 {
     ++items_processed;
     co_return;
@@ -153,7 +128,7 @@ task<> process(item const&)
 
 // Bound to a blocking (inline) executor in the test so every frame is
 // released before the stack buffer backing the resource goes away.
-any_executor executor;
+capy::any_executor executor;
 
 // tag::batch_allocator[]
 void process_batch(std::vector<item> const& items)
@@ -164,7 +139,7 @@ void process_batch(std::vector<item> const& items)
 
     for (auto const& item : items)
     {
-        run_async(executor, &resource)(process(item));
+        capy::run_async(executor, &resource)(process(item));
     }
     // All frames deallocated when resource goes out of scope
 }
@@ -230,20 +205,20 @@ struct stream
     int reads = 0;
     int writes = 0;
 
-    task<io_step> read_some(char*)
+    capy::task<io_step> read_some(char*)
     {
         ++reads;
         co_return io_step{};
     }
 
-    task<io_step> write_some(char const*)
+    capy::task<io_step> write_some(char const*)
     {
         ++writes;
         co_return io_step{};
     }
 };
 
-task<> do_work(char*, std::size_t)
+capy::task<> do_work(char*, std::size_t)
 {
     co_return;
 }
@@ -256,7 +231,7 @@ namespace scope_bad {
 
 // tag::frame_scope_bad[]
 // BAD: buf lives in frame across all subsequent co_awaits
-task<> process(stream& s)
+capy::task<> process(stream& s)
 {
     char reply[] = "ok";
     char buf[4096];
@@ -272,7 +247,7 @@ namespace scope_good {
 
 // tag::frame_scope_good[]
 // GOOD: braces end buf's lifetime before next suspend
-task<> process(stream& s)
+capy::task<> process(stream& s)
 {
     char reply[] = "ok";
     {
@@ -290,7 +265,7 @@ namespace overlap_bad {
 
 // tag::pipeline_overlap_bad[]
 // BAD: both arrays in frame simultaneously (8K)
-task<> pipeline(stream& in, stream& out)
+capy::task<> pipeline(stream& in, stream& out)
 {
     char read_buf[4096];
     auto [ec1, n] = co_await in.read_some(read_buf);
@@ -307,7 +282,7 @@ namespace overlap_good {
 
 // tag::pipeline_overlap_good[]
 // GOOD: non-overlapping scopes allow frame reuse (4K)
-task<> pipeline(stream& in, stream& out)
+capy::task<> pipeline(stream& in, stream& out)
 {
     std::size_t n;
     {
@@ -330,11 +305,11 @@ struct allocators_test
     void
     testTwoCallSyntax()
     {
-        thread_pool pool(1);
+        capy::thread_pool pool(1);
         auto executor = pool.get_executor();
         int const before = tasks_completed.load();
         // tag::two_call[]
-        run_async(executor)(my_task());
+        capy::run_async(executor)(my_task());
         //        ↑         ↑
         //        1. Sets    2. Task allocated
         //        TLS        using TLS allocator
@@ -348,7 +323,7 @@ struct allocators_test
     {
         // The sentinel proves TLS survives a resume that clobbers it
         std::pmr::monotonic_buffer_resource sentinel;
-        set_current_frame_allocator(&sentinel);
+        capy::set_current_frame_allocator(&sentinel);
         bool resumed = false;
         auto r = clobber_tls(resumed);
         std::coroutine_handle<> h = r.handle;
@@ -357,22 +332,22 @@ struct allocators_test
         capy::safe_resume(h);   // saves and restores TLS around h.resume()
         // end::safe_resume[]
         BOOST_TEST(resumed);
-        BOOST_TEST(get_current_frame_allocator() == &sentinel);
-        set_current_frame_allocator(nullptr);
+        BOOST_TEST(capy::get_current_frame_allocator() == &sentinel);
+        capy::set_current_frame_allocator(nullptr);
         r.handle.destroy();
     }
 
     void
     testRunAsyncPmrAllocator()
     {
-        thread_pool pool(1);
+        capy::thread_pool pool(1);
         auto executor = pool.get_executor();
         int const before = tasks_completed.load();
         // tag::run_async_pmr_alloc[]
         std::pmr::monotonic_buffer_resource resource;
         std::pmr::polymorphic_allocator<std::byte> alloc(&resource);
 
-        run_async(executor, alloc)(my_task());
+        capy::run_async(executor, alloc)(my_task());
         // end::run_async_pmr_alloc[]
         pool.join();
         BOOST_TEST(tasks_completed.load() == before + 1);
@@ -381,12 +356,12 @@ struct allocators_test
     void
     testRunAsyncMemoryResource()
     {
-        thread_pool pool(1);
+        capy::thread_pool pool(1);
         auto executor = pool.get_executor();
         int const before = tasks_completed.load();
         // tag::run_async_memory_resource[]
         std::pmr::monotonic_buffer_resource resource;
-        run_async(executor, &resource)(my_task());
+        capy::run_async(executor, &resource)(my_task());
         // end::run_async_memory_resource[]
         pool.join();
         BOOST_TEST(tasks_completed.load() == before + 1);
@@ -404,8 +379,8 @@ struct allocators_test
 
         auto run_once = [&]
         {
-            thread_pool pool(1);
-            run_async(pool.get_executor(), &pooling)(my_task());
+            capy::thread_pool pool(1);
+            capy::run_async(pool.get_executor(), &pooling)(my_task());
             pool.join();   // task done: its frames are back in the pool
         };
 
@@ -427,9 +402,9 @@ struct allocators_test
     void
     testHaloPatterns()
     {
-        std::vector<task<int>> tasks;
+        std::vector<capy::task<int>> tasks;
         int out = 0;
-        test::run_blocking()(halo_demo(tasks, out));
+        capy::test::run_blocking()(halo_demo(tasks, out));
         BOOST_TEST(out == 42);
         BOOST_TEST(tasks.size() == 1u);
         // The escaped task is destroyed unawaited when the vector dies
@@ -438,21 +413,21 @@ struct allocators_test
     void
     testBatchAllocator()
     {
-        test::blocking_context ctx;
+        capy::test::blocking_context ctx;
         executor = ctx.get_executor();
         std::vector<item> items(3);
         int const before = items_processed;
         process_batch(items);
         BOOST_TEST(items_processed == before + 3);
-        executor = any_executor();
+        executor = capy::any_executor();
     }
 
     void
     testFrameScope()
     {
         stream s;
-        test::run_blocking()(scope_bad::process(s));
-        test::run_blocking()(scope_good::process(s));
+        capy::test::run_blocking()(scope_bad::process(s));
+        capy::test::run_blocking()(scope_good::process(s));
         BOOST_TEST(s.reads == 2);
         BOOST_TEST(s.writes == 2);
     }
@@ -462,8 +437,8 @@ struct allocators_test
     {
         stream in;
         stream out;
-        test::run_blocking()(overlap_bad::pipeline(in, out));
-        test::run_blocking()(overlap_good::pipeline(in, out));
+        capy::test::run_blocking()(overlap_bad::pipeline(in, out));
+        capy::test::run_blocking()(overlap_good::pipeline(in, out));
         BOOST_TEST(in.reads == 2);
         BOOST_TEST(out.writes == 2);
     }
