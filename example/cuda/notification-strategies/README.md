@@ -21,10 +21,44 @@ Each awaitable captures the executor and posts the continuation through
 it, so the coroutine always resumes on a worker thread, never on a CUDA
 or service thread.
 
-The callback mechanism is the only one that cannot report a stream error
-through its host function; `cudaLaunchHostFunc` does not pass completion
-status to the callback, so `callback_awaitable` always resumes with
-success — this is an inherent limitation of the API.
+The callback mechanism is the only one that cannot observe a stream
+error from inside its notification: `cudaLaunchHostFunc` passes no
+completion status to the host function (unlike the deprecated
+`cudaStreamAddCallback`, whose callback received a `cudaError_t`).
+`callback_awaitable` compensates by calling `cudaStreamQuery` in
+`await_resume`, after the coroutine is back on a worker thread where
+CUDA calls are permitted, and reports the stream's sticky error from
+there. Polling and deferred synchronization get the status for free from
+`cudaEventQuery` and `cudaStreamSynchronize`.
+
+### Fault probe
+
+`--fault <mechanism>` launches a kernel that writes through a null
+pointer (a sticky `cudaErrorIllegalAddress`) and awaits the stream via
+one mechanism. The context is dead afterwards, so each mechanism is
+probed in its own process; a watchdog reports a coroutine that never
+resumes.
+
+```
+for m in callback poll deferred-sync; do
+    ./build-cuda/example/cuda/notification-strategies/capy_example_cuda_notification_strategies --fault $m
+done
+```
+
+Observed on an RTX 4060 (CUDA 13.3, clang 22):
+
+```
+callback: resumed with error: an illegal memory access was encountered
+poll: resumed with error: an illegal memory access was encountered
+deferred-sync: resumed with error: an illegal memory access was encountered
+```
+
+Before the `cudaStreamQuery` in `await_resume`, the callback line read
+`resumed with success despite the fault`. On this driver the host
+function still fires after a sticky error, contrary to the
+`cudaLaunchHostFunc` documentation's statement that it "will not be
+called in the event of an error in the CUDA context"; the watchdog path
+exists for drivers where it does not.
 
 ### Service lifetime
 

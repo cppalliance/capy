@@ -301,6 +301,10 @@ public:
     continuation through the captured executor instead. One operation is
     in flight at a time, so the resume context is a member rather than a
     per-operation allocation.
+
+    The host function receives no completion status, so `await_resume`
+    queries the stream after resumption to report a fault that occurred
+    before the callback ran.
 */
 struct callback_awaitable
 {
@@ -345,9 +349,18 @@ struct callback_awaitable
         return std::noop_coroutine();
     }
 
+    // cudaLaunchHostFunc hands the host function no completion status,
+    // so a stream fault is invisible from inside on_complete. Back on the
+    // worker thread, CUDA calls are permitted again and cudaStreamQuery
+    // exposes the stream's sticky error.
     std::error_code await_resume() const noexcept
     {
-        return ec_;
+        if(ec_)
+            return ec_;
+        auto s = cudaStreamQuery(stream);
+        if(s == cudaSuccess || s == cudaErrorNotReady)
+            return {};
+        return make_cuda_error(s);
     }
 };
 
