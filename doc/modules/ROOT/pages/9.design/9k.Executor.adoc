@@ -9,7 +9,7 @@ The cpp:Executor[] concept exists to answer one question: when a coroutine is re
 
 [source,cpp]
 ----
-include::example$snippets/9k_executor.cpp[tag=executor_concept]
+include::example$include/boost/capy/concept/executor.hpp[tag=executor_concept]
 ----
 
 An cpp:Executor[] provides exactly two scheduling operations:

@@ -238,7 +238,7 @@ cpp:safe_resume[]'s implementation:
 
 [source,cpp]
 ----
-include::example$snippets/9k_executor.cpp[tag=safe_resume]
+include::example$include/boost/capy/ex/frame_allocator.hpp[tag=safe_resume]
 ----
 
 The cost is two TLS accesses (one read, one write) per `.resume()` call, negligible compared to the cost of resuming a coroutine.

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -38,8 +39,6 @@
 
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/concept/const_buffer_sequence.hpp>
-#include <boost/capy/concept/mutable_buffer_sequence.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 // tag::any_read_stream_include[]
@@ -72,39 +71,8 @@ namespace {
 
 using namespace boost::capy;
 
-namespace definition {
-
-// tag::read_stream_concept[]
-template<typename T>
-concept ReadStream =
-    requires(T& stream, mutable_buffer_archetype buffers)
-    {
-        { stream.read_some(buffers) } -> IoAwaitable;
-        requires awaitable_decomposes_to<
-            decltype(stream.read_some(buffers)),
-            std::error_code, std::size_t>;
-    };
-// end::read_stream_concept[]
-
-// tag::write_stream_concept[]
-template<typename T>
-concept WriteStream =
-    requires(T& stream, const_buffer_archetype buffers)
-    {
-        { stream.write_some(buffers) } -> IoAwaitable;
-        requires awaitable_decomposes_to<
-            decltype(stream.write_some(buffers)),
-            std::error_code, std::size_t>;
-    };
-// end::write_stream_concept[]
-
-// The page's definitions must match the library's.
-static_assert(definition::ReadStream<capy::test::stream>);
 static_assert(capy::ReadStream<capy::test::stream>);
-static_assert(definition::WriteStream<capy::test::stream>);
 static_assert(capy::WriteStream<capy::test::stream>);
-
-} // namespace definition
 
 task<> partial_read(test::stream& stream)
 {

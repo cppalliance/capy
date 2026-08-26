@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -62,25 +63,7 @@ namespace {
 
 using namespace boost::capy;
 
-namespace definition {
-
-// tag::concept_definition[]
-template<typename T>
-concept ReadStream =
-    requires(T& stream, mutable_buffer_archetype buffers)
-    {
-        { stream.read_some(buffers) } -> IoAwaitable;
-        requires awaitable_decomposes_to<
-            decltype(stream.read_some(buffers)),
-            std::error_code, std::size_t>;
-    };
-// end::concept_definition[]
-
-// The page's definition must match the library's.
-static_assert(definition::ReadStream<capy::test::read_stream>);
 static_assert(capy::ReadStream<capy::test::read_stream>);
-
-} // namespace definition
 
 namespace composed {
 

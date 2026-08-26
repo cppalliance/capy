@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -40,7 +41,6 @@
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 
@@ -58,40 +58,9 @@ namespace {
 
 using namespace boost::capy;
 
-// The page shows the concept exactly as defined in
-// <boost/capy/concept/executor.hpp>; compiling a copy keeps the page
-// in sync with the real definition.
-namespace concept_def {
-
-// tag::executor_concept[]
-template<class E>
-concept Executor =
-    std::is_nothrow_copy_constructible_v<E> &&
-    std::is_nothrow_move_constructible_v<E> &&
-    requires(E& e, E const& ce, E const& ce2,
-             continuation c)
-    {
-        { ce == ce2 } noexcept -> std::convertible_to<bool>;
-        { ce.context() } noexcept;
-        requires std::is_lvalue_reference_v<
-            decltype(ce.context())> &&
-            std::derived_from<
-                std::remove_reference_t<
-                    decltype(ce.context())>,
-                execution_context>;
-        { ce.on_work_started() } noexcept;
-        { ce.on_work_finished() } noexcept;
-
-        { ce.dispatch(c) } -> std::same_as<std::coroutine_handle<>>;
-        { ce.post(c) };
-    };
-// end::executor_concept[]
-
-} // namespace concept_def
-
-static_assert(concept_def::Executor<thread_pool::executor_type>);
-static_assert(concept_def::Executor<executor_ref>);
-static_assert(!concept_def::Executor<int>);
+static_assert(capy::Executor<thread_pool::executor_type>);
+static_assert(capy::Executor<executor_ref>);
+static_assert(!capy::Executor<int>);
 
 // Scaffolding context so the conforming dispatch shown on the page
 // compiles.
@@ -214,20 +183,6 @@ struct io_awaitable_sketch
         // end::dispatch_at_completion[]
     }
 };
-
-namespace safe_resume_def {
-
-// tag::safe_resume[]
-inline void
-safe_resume(std::coroutine_handle<> h) noexcept
-{
-    auto* saved = get_current_frame_allocator();
-    h.resume();
-    set_current_frame_allocator(saved);
-}
-// end::safe_resume[]
-
-} // namespace safe_resume_def
 
 // Declarations are enough for the concept check; the definitions are
 // a real implementation's concern.
