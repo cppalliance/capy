@@ -11,7 +11,10 @@ What is validated:
 - `cuda_stream_awaiter`: the io_env-less baseline. Asserted to be a
   standard awaitable but **not** an `IoAwaitable`.
 - `cuda_stream`: `memcpy_h2d` / `memcpy_d2h` / `synchronize` return
-  `IoAwaitable`s.
+  `IoAwaitable`s. Because `cudaLaunchHostFunc` passes no status to its
+  host function, `await_resume` calls `cudaStreamQuery` after
+  resumption so a stream fault surfaces as an error instead of success
+  (see the `--fault` probe in `../notification-strategies`).
 - NCCL interop: `ncclAllReduce` on `cuda_stream::native_handle()`
   followed by `co_await synchronize()`. Built only when NCCL is found at
   configure time.

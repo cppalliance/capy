@@ -58,6 +58,19 @@ inline std::error_code make_cuda_error(cudaError_t e) noexcept
     return std::error_code(static_cast<int>(e), cuda_category());
 }
 
+/// Return the stream's sticky error, or success if it is idle or busy.
+///
+/// `cudaLaunchHostFunc` passes no completion status to its host function,
+/// so a callback-based awaitable queries the stream after resumption,
+/// back on a worker thread where CUDA calls are permitted.
+inline std::error_code stream_error(cudaStream_t s) noexcept
+{
+    auto st = cudaStreamQuery(s);
+    if(st == cudaSuccess || st == cudaErrorNotReady)
+        return {};
+    return make_cuda_error(st);
+}
+
 /// A minimal hand-rolled CUDA-completion awaitable (no executor
 /// affinity, cancellation, or frame allocator). Resumes on the CUDA
 /// driver callback thread.
@@ -153,9 +166,11 @@ class cuda_stream
 
         void await_resume()
         {
+            if(! self->error_)
+                self->error_ = stream_error(self->stream_);
             if(self->error_)
-                throw std::system_error(self->error_);
-            self->error_ = {};
+                throw std::system_error(
+                    std::exchange(self->error_, {}));
         }
     };
 
@@ -185,9 +200,11 @@ class cuda_stream
 
         void await_resume()
         {
+            if(! self->error_)
+                self->error_ = stream_error(self->stream_);
             if(self->error_)
-                throw std::system_error(self->error_);
-            self->error_ = {};
+                throw std::system_error(
+                    std::exchange(self->error_, {}));
         }
     };
 
@@ -331,12 +348,10 @@ public:
             io_result<std::size_t>
             await_resume()
             {
+                if(! self->error_)
+                    self->error_ = stream_error(self->stream_);
                 if(self->error_)
-                {
-                    auto ec = self->error_;
-                    self->error_ = {};
-                    return {ec, 0};
-                }
+                    return {std::exchange(self->error_, {}), 0};
                 auto n = buf.size();
                 self->offset_ += n;
                 return {std::error_code(), n};

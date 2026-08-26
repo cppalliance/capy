@@ -22,9 +22,12 @@
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 
+#include <chrono>
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 #include <latch>
+#include <semaphore>
 #include <system_error>
 #include <type_traits>
 #include <vector>
@@ -53,12 +56,35 @@ fill_kernel(int* p, int n, int v)
         p[i] = v;
 }
 
+// Writes through a null pointer: a sticky cudaErrorIllegalAddress that
+// poisons the context. Used by --fault to see which mechanisms still
+// deliver the error to the awaiting coroutine.
+__global__ void
+fault_kernel(int* p)
+{
+    p[threadIdx.x] = 1;
+}
+
 enum class notify
 {
     callback,
     poll,
     deferred_sync
 };
+
+bool
+parse_notify(char const* s, notify& out) noexcept
+{
+    if(std::strcmp(s, "callback") == 0)
+        out = notify::callback;
+    else if(std::strcmp(s, "poll") == 0)
+        out = notify::poll;
+    else if(std::strcmp(s, "deferred-sync") == 0)
+        out = notify::deferred_sync;
+    else
+        return false;
+    return true;
+}
 
 char const*
 name_of(notify how) noexcept
@@ -149,11 +175,81 @@ run_one(capy::thread_pool& pool,
     return result;
 }
 
+// Launch a faulting kernel and await the stream via `how`. Returns the
+// error the mechanism reported, or success if it reported none.
+capy::task<std::error_code>
+run_fault(ex::cuda_stream& stream,
+          ex::cuda_event& event,
+          notify how,
+          ex::poll_service& poll_svc,
+          ex::sync_service& sync_svc)
+{
+    auto s = stream.native_handle();
+    fault_kernel<<<1, 32, 0, s>>>(nullptr);
+    event.record(s);
+    co_return co_await wait(stream, event, how, poll_svc, sync_svc);
+}
+
+// The faulted context is dead afterwards, so each mechanism is probed
+// in its own process. A mechanism whose coroutine never resumes is
+// reported as such after the watchdog expires; the process is then
+// exited without teardown because the coroutine is still suspended.
+int
+fault_main(notify how)
+{
+    capy::thread_pool pool(4);
+    ex::poll_service poll_svc;
+    ex::sync_service sync_svc;
+    ex::cuda_stream stream;
+    ex::cuda_event event;
+
+    std::error_code ec;
+    std::binary_semaphore done{0};
+    capy::run_async(pool.get_executor(),
+        [&](std::error_code e) { ec = e; done.release(); })(
+            run_fault(stream, event, how, poll_svc, sync_svc));
+
+    std::cout << name_of(how) << ": ";
+    if(! done.try_acquire_for(std::chrono::seconds(3)))
+    {
+        std::cout << "coroutine never resumed (watchdog expired)\n";
+        std::cout.flush();
+        std::_Exit(EXIT_FAILURE);
+    }
+    if(! ec)
+    {
+        std::cout << "resumed with success despite the fault\n";
+        std::cout.flush();
+        std::_Exit(EXIT_FAILURE);
+    }
+    std::cout << "resumed with error: " << ec.message() << "\n";
+    std::cout.flush();
+    std::_Exit(EXIT_SUCCESS);
+}
+
 } // namespace
 
 int
-main()
+main(int argc, char** argv)
 {
+    if(argc == 3 && std::strcmp(argv[1], "--fault") == 0)
+    {
+        notify how;
+        if(! parse_notify(argv[2], how))
+        {
+            std::cerr << "usage: " << argv[0]
+                      << " [--fault callback|poll|deferred-sync]\n";
+            return EXIT_FAILURE;
+        }
+        return fault_main(how);
+    }
+    if(argc != 1)
+    {
+        std::cerr << "usage: " << argv[0]
+                  << " [--fault callback|poll|deferred-sync]\n";
+        return EXIT_FAILURE;
+    }
+
     int device_count = 0;
     if(cudaGetDeviceCount(&device_count) != cudaSuccess || device_count == 0)
     {
