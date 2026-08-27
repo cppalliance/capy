@@ -25,6 +25,7 @@ add_subdirectory(when-any-cancellation)
 if(BOOST_CAPY_BUILD_P2300_EXAMPLES)
     add_subdirectory(sender-bridge)
     add_subdirectory(awaitable-sender)
+    add_subdirectory(any-sender-size)
 endif()
 
 if(BOOST_CAPY_BUILD_CUDA_EXAMPLES)
