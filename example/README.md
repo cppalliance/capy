@@ -40,6 +40,12 @@ A complete echo server using Corosio for real network I/O. Requires Corosio.
 
 Data transformation through a pipeline of sources and sinks.
 
+### any-sender-size/
+
+Measures the `exec::any_sender` operation state and the heap allocation its
+`connect` performs, against the concrete operation state for the same
+pipeline. Requires stdexec (`BOOST_CAPY_BUILD_P2300_EXAMPLES=ON`).
+
 ## Building
 
 ### CMake
