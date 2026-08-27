@@ -11,18 +11,18 @@ built but not run (P4251R0):
    When the CUDA stream signals completion, the coroutine resumes on the
    capy executor with the kernel's result.
 
-2. **Scene 2 (Direction 2).** `boost::capy::test::stream::read_some` is
+2. **Scene 2 (Direction 2).** A read over `boost::capy::test::stream` is
    exposed as a stdexec sender via `boost::capy::as_sender`, composed with
    `stdexec::upon_error`, and driven by `stdexec::sync_wait`. Two runs: a
    happy-path read, and a peer-close that exercises the `upon_error` arm.
 
-   The example wraps `read_some` (a raw IoAwaitable) rather than
-   `boost::capy::read` (a `task<io_result<size_t>>`). The bridge's `start()`
-   does not perform symmetric transfer to a wrapped task's own coroutine
-   handle, so wrapping a task in `as_sender` hangs. Wrapping a raw
-   IoAwaitable works because its `await_suspend` is either ready-with-data
-   or returns `noop_coroutine()` after stashing the continuation for the
-   peer to resume.
+   `read_some` returns `io_result<size_t>`, which `as_sender` rejects at
+   compile time: sender completion channels are exclusive, so routing the
+   error through `set_error` would drop the byte count of a partial read.
+   The scene therefore wraps the read in a `task<std::error_code>`
+   (`read_into`) that moves the count out through a side channel and
+   returns only the error code. On the error path the count still reaches
+   the caller while `upon_error` sees the error.
 
 3. **Scene 3 (P4251R0), built but not run.** `handle_request` shows the
    inference-handler shape: a type-erased `any_read_stream` read, GPU
@@ -34,9 +34,11 @@ built but not run (P4251R0):
    kernel and hopping `continues_on(cpu)` before the host-only bridge, and
    takes a CPU scheduler the paper's signature omits.
 
-The bridge headers (`awaitable_sender.hpp`, `sender_awaitable.hpp`) are
-copied verbatim from `bench/stdexec/`; the bridge in the bench was already
-written against NVIDIA/stdexec.
+`as_sender` comes from the canonical bridge in `example/awaitable-sender`,
+included by relative path. `sender_awaitable.hpp` (the `await_sender`
+direction) is a local copy of `bench/stdexec/sender_awaitable.hpp`, kept
+here because the canonical `example/sender-bridge` copy targets
+beman.execution and this example needs NVIDIA/stdexec for nvexec.
 
 ## Prerequisites
 
