@@ -180,7 +180,7 @@ auto exec_accept(Stream& stream, cell_result& out)
 }
 
 // -----------------------------------------------------------
-// Table 3: exec::task - Column B (awaitable via as_sender)
+// Table 3: exec::task - Column B (awaitable via as_sender_lossy)
 //
 // exec::task's promise env carries only get_start_scheduler
 // (type-erased __any_scheduler), which does not propagate
@@ -197,7 +197,7 @@ auto exec_session_ioaw(
     char buf[64];
     for (int i = 0; i < INNER_LOOPS; ++i)
         (void)co_await stdexec::write_env(
-            capy::as_sender(
+            capy::as_sender_lossy(
                 stream.read_some(
                     capy::mutable_buffer(buf, sizeof(buf)))),
             stdexec::prop{capy::get_io_executor, ex});
@@ -361,7 +361,7 @@ int main()
             after - before};
     }
 
-    // Col B: Awaitable (via as_sender bridge)
+    // Col B: Awaitable (via as_sender_lossy bridge)
 
     // Native - ioaw_read_stream
     {
@@ -378,7 +378,7 @@ int main()
             exec::repeat_until(
                 stdexec::let_value(stdexec::just(), [&]() {
                     return stdexec::write_env(
-                        capy::as_sender(stream.read_some(
+                        capy::as_sender_lossy(stream.read_some(
                             capy::mutable_buffer(buf, sizeof(buf)))),
                         stdexec::prop{capy::get_io_executor, adapter});
                 })
@@ -407,7 +407,7 @@ int main()
             exec::repeat_until(
                 stdexec::let_value(stdexec::just(), [&]() {
                     return stdexec::write_env(
-                        capy::as_sender(
+                        capy::as_sender_lossy(
                             static_cast<ioaw_io_read_stream&>(
                                 stream).read_some(
                                     capy::mutable_buffer(
@@ -440,7 +440,7 @@ int main()
             exec::repeat_until(
                 stdexec::let_value(stdexec::just(), [&]() {
                     return stdexec::write_env(
-                        capy::as_sender(stream.read_some(
+                        capy::as_sender_lossy(stream.read_some(
                             capy::mutable_buffer(buf, sizeof(buf)))),
                         stdexec::prop{capy::get_io_executor, adapter});
                 })
@@ -469,7 +469,7 @@ int main()
             exec::repeat_until(
                 stdexec::let_value(stdexec::just(), [&]() {
                     return stdexec::write_env(
-                        capy::as_sender(stream.read_some(
+                        capy::as_sender_lossy(stream.read_some(
                             capy::mutable_buffer(buf, sizeof(buf)))),
                         stdexec::prop{capy::get_io_executor, adapter});
                 })
@@ -658,7 +658,7 @@ int main()
         pool.request_stop();
     }
 
-    // Col B: Awaitable (via as_sender bridge)
+    // Col B: Awaitable (via as_sender_lossy bridge)
 
     // Native - ioaw_read_stream
     {

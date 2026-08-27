@@ -149,7 +149,7 @@ struct pool_schedule_sender
 
 // Scheduler wrapper that delegates schedule() to exec::static_thread_pool
 // but answers boost::capy's get_io_executor_t query. Required by the
-// capy::as_sender bridge in awaitable_sender.hpp, which queries the
+// capy::as_sender_lossy bridge in awaitable_sender.hpp, which queries the
 // receiver-env scheduler for the capy executor at instantiation time.
 struct pool_scheduler
 {
