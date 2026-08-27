@@ -1,10 +1,11 @@
 # CUDA data-movement example (P4251R0)
 
 Validation that the CUDA data-movement listings from
-P4251R0 "IoAwaitables for GPU Data Movement" are type-correct against the
+P4251R0 "Coroutine Completion for GPU Data Movement: Convergent Findings"
+are type-correct against the
 real `boost::capy` API and CUDA. The paper flags this code as AI-generated
 and unverified; this target proves it compiles. Nothing here is executed
-at runtime.
+at runtime; `example/cuda/batched-write` runs the batched `write_some`.
 
 What is validated:
 

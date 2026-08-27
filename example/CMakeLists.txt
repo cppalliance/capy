@@ -29,6 +29,7 @@ if(BOOST_CAPY_BUILD_P2300_EXAMPLES)
 endif()
 
 if(BOOST_CAPY_BUILD_CUDA_EXAMPLES)
+    add_subdirectory(cuda/batched-write)
     add_subdirectory(cuda/datamovement)
     add_subdirectory(cuda/notification-strategies)
     add_subdirectory(cuda/pipeline)

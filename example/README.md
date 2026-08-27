@@ -46,6 +46,12 @@ Measures the `exec::any_sender` operation state and the heap allocation its
 `connect` performs, against the concrete operation state for the same
 pipeline. Requires stdexec (`BOOST_CAPY_BUILD_P2300_EXAMPLES=ON`).
 
+### cuda/batched-write/
+
+Runs the batched `write_some` of the CUDA device stream: three buffers, one
+await, device holds the concatenation. Requires CUDA
+(`BOOST_CAPY_BUILD_CUDA_EXAMPLES=ON`).
+
 ## Building
 
 ### CMake
