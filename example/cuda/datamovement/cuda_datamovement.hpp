@@ -271,9 +271,12 @@ public:
 /// GPU device memory exposed as a WriteStream.
 ///
 /// Reshapes the `cuda_stream` memcpy pattern to satisfy `WriteStream`, so device
-/// memory can hide behind `any_write_stream`. Because `cudaMemcpyAsync`
-/// transfers the whole buffer in one operation, `write_some` never
-/// performs a partial write. Errors are delivered via `io_result`
+/// memory can hide behind `any_write_stream`. A buffer sequence is one
+/// batch: every buffer is enqueued as its own `cudaMemcpyAsync` and a
+/// single host function follows the last, so the stream keeps its queue
+/// depth and the coroutine suspends once per `write_some`. Because
+/// `cudaMemcpyAsync` transfers each buffer in one operation, `write_some`
+/// never performs a partial write. Errors are delivered via `io_result`
 /// rather than exceptions. Does not own `stream_`; the caller is
 /// responsible for the stream's lifetime.
 class cuda_device_stream
@@ -312,7 +315,8 @@ public:
         struct awaitable
         {
             cuda_device_stream* self;
-            const_buffer buf;
+            Buffers buffers;
+            std::size_t total = 0;
 
             bool await_ready() const noexcept
             {
@@ -322,20 +326,27 @@ public:
             std::coroutine_handle<>
             await_suspend(std::coroutine_handle<> h, io_env const* env)
             {
-                auto n = buf.size();
-                auto err = cudaMemcpyAsync(
-                    self->d_ptr_ + self->offset_,
-                    buf.data(), n,
-                    cudaMemcpyHostToDevice,
-                    self->stream_);
-                if(err != cudaSuccess)
+                // Enqueue the whole sequence before the host function so
+                // the stream runs the batch back to back.
+                auto const end = capy::end(buffers);
+                for(auto it = capy::begin(buffers); it != end; ++it)
                 {
-                    self->error_ = make_cuda_error(err);
-                    return h;
+                    const_buffer b = *it;
+                    auto err = cudaMemcpyAsync(
+                        self->d_ptr_ + self->offset_ + total,
+                        b.data(), b.size(),
+                        cudaMemcpyHostToDevice,
+                        self->stream_);
+                    if(err != cudaSuccess)
+                    {
+                        self->error_ = make_cuda_error(err);
+                        return h;
+                    }
+                    total += b.size();
                 }
                 self->cont_.h = h;
                 self->ctx_ = resume_ctx{env->executor, &self->cont_};
-                err = cudaLaunchHostFunc(
+                auto err = cudaLaunchHostFunc(
                     self->stream_, &on_complete, &self->ctx_);
                 if(err != cudaSuccess)
                 {
@@ -352,12 +363,11 @@ public:
                     self->error_ = stream_error(self->stream_);
                 if(self->error_)
                     return {std::exchange(self->error_, {}), 0};
-                auto n = buf.size();
-                self->offset_ += n;
-                return {std::error_code(), n};
+                self->offset_ += total;
+                return {std::error_code(), total};
             }
         };
-        return awaitable{this, *capy::begin(buffers)};
+        return awaitable{this, std::move(buffers)};
     }
 };
 
