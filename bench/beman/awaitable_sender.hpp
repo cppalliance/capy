@@ -31,7 +31,7 @@ namespace boost::capy {
 // Query CPO for obtaining a Capy-compatible executor
 // from a P2300 environment. The returned object must
 // satisfy Capy's Executor concept. Environments that
-// host IoAwaitables via the as_sender bridge must
+// host IoAwaitables via the as_sender_lossy bridge must
 // answer this query.
 struct get_io_executor_t
 {
@@ -339,7 +339,7 @@ struct awaitable_sender
     // Bypass beman's sender_awaitable when co_awaited
     // from a bex::task. Adapts the IoAwaitable's 2-arg
     // await_suspend to standard 1-arg protocol, avoiding
-    // the double bridge (as_sender + sender_awaitable).
+    // the double bridge (as_sender_lossy + sender_awaitable).
     template<class Promise>
     auto as_awaitable(Promise& promise) &&
     {
@@ -414,8 +414,14 @@ struct awaitable_sender
     @return A sender whose completion channels reflect
         the awaitable's result type.
 */
+// Benchmark-only bridge. Unlike the canonical as_sender in
+// example/awaitable-sender, this one accepts a compound io_result and
+// splits it at runtime: set_value(n) on success, set_error(ec) on
+// failure, dropping the byte count that accompanied the error. The
+// benchmark keeps it to measure the bridge without the task<error_code>
+// wrapper the canonical bridge requires; do not copy it into examples.
 template<class IoAw>
-auto as_sender(IoAw&& aw)
+auto as_sender_lossy(IoAw&& aw)
 {
     return awaitable_sender<std::decay_t<IoAw>>{
         std::forward<IoAw>(aw)};

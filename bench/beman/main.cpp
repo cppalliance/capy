@@ -195,10 +195,10 @@ auto bex_accept(
 }
 
 // ===================================================================
-// Table 2: bex::task — Column B (awaitable via as_sender bridge)
+// Table 2: bex::task — Column B (awaitable via as_sender_lossy bridge)
 //
 // The stream returns an IoAwaitable. bex::task consumes it by
-// wrapping in as_sender which bridges the awaitable to a sender.
+// wrapping in as_sender_lossy which bridges the awaitable to a sender.
 // ===================================================================
 
 template <class Stream>
@@ -209,7 +209,7 @@ auto bex_session_ioaw(
 {
     char buf[64];
     for (int i = 0; i < INNER_LOOPS; ++i)
-        (void)co_await capy::as_sender(
+        (void)co_await capy::as_sender_lossy(
             stream.read_some(
                 capy::mutable_buffer(buf, sizeof(buf))));
 }
@@ -341,7 +341,7 @@ int main()
             after - before};
     }
 
-    // Col B: Awaitable (via as_sender bridge)
+    // Col B: Awaitable (via as_sender_lossy bridge)
 
 
     // Native — ioaw_read_stream
@@ -357,7 +357,7 @@ int main()
         bex::sync_wait(bex::starts_on(sched,
             repeat_until(
                 bex::let_value(bex::just(), [&]() {
-                    return capy::as_sender(stream.read_some(
+                    return capy::as_sender_lossy(stream.read_some(
                         capy::mutable_buffer(buf, sizeof(buf))));
                 }),
                 [&count]() { return --count == 0; })));
@@ -385,7 +385,7 @@ int main()
         bex::sync_wait(bex::starts_on(sched,
             repeat_until(
                 bex::let_value(bex::just(), [&]() {
-                    return capy::as_sender(
+                    return capy::as_sender_lossy(
                         static_cast<ioaw_io_read_stream&>(
                             stream).read_some(
                                 capy::mutable_buffer(
@@ -417,7 +417,7 @@ int main()
         bex::sync_wait(bex::starts_on(sched,
             repeat_until(
                 bex::let_value(bex::just(), [&]() {
-                    return capy::as_sender(stream.read_some(
+                    return capy::as_sender_lossy(stream.read_some(
                         capy::mutable_buffer(buf, sizeof(buf))));
                 }),
                 [&count]() { return --count == 0; })));
@@ -474,7 +474,7 @@ int main()
         bex::sync_wait(bex::starts_on(sched,
             repeat_until(
                 bex::let_value(bex::just(), [&]() {
-                    return capy::as_sender(stream.read_some(
+                    return capy::as_sender_lossy(stream.read_some(
                         capy::mutable_buffer(buf, sizeof(buf))));
                 }),
                 [&count]() { return --count == 0; })));
@@ -638,7 +638,7 @@ int main()
         pool.join();
     }
 
-    // Col B: Awaitable (via as_sender bridge)
+    // Col B: Awaitable (via as_sender_lossy bridge)
 
     // Native — ioaw_read_stream
     {
