@@ -12,14 +12,14 @@
 // terminal action is a real CUDA __global__ kernel scheduled on
 // nvexec::stream_scheduler.
 //
-// Scene 2 (Direction 2): a capy IoAwaitable (capy::read over a
-// deterministic in-process stream pair) is exposed as a stdexec
-// sender, then composed with stdexec::upon_error, and consumed
-// via stdexec::sync_wait. Both the happy path and an injected-eof
-// path are exercised.
+// Scene 2 (Direction 2): a read over a deterministic in-process
+// stream pair is exposed as a stdexec sender through the canonical
+// as_sender bridge (example/awaitable-sender), composed with
+// stdexec::upon_error, and consumed via stdexec::sync_wait. Both the
+// happy path and an injected-eof path are exercised.
 //
 
-#include "awaitable_sender.hpp"
+#include "../../awaitable-sender/awaitable_sender.hpp"
 #include "sender_awaitable.hpp"
 
 #include <boost/capy.hpp>
@@ -212,14 +212,26 @@ run_scene1(capy::thread_pool& pool, float& out)
         std::rethrow_exception(err);
 }
 
-// Scene 2: capy::read exposed as a stdexec sender, composed with
+// Scene 2: a stream read exposed as a stdexec sender, composed with
 // stdexec::upon_error, driven by sync_wait. write_env injects the
 // capy executor that the as_sender bridge needs to drive the
 // underlying IoAwaitable.
-// stream::read_some returns a raw IoAwaitable, which the bridge
-// expects. (capy::read returns a task<io_result<size_t>>, and the
-// bridge's start() does not perform symmetric transfer to the
-// task's own handle, so wrapping a task hangs.)
+//
+// read_some returns io_result<size_t>, which as_sender rejects at
+// compile time: sender completion channels are exclusive, so routing
+// the error through set_error would drop the byte count of a partial
+// read. The sanctioned route is a task<error_code> wrapper that moves
+// the count out through a side channel and hands the bridge only the
+// error code.
+capy::task<std::error_code>
+read_into(capy::test::stream& s, capy::mutable_buffer buf,
+    std::size_t& n_out)
+{
+    auto [ec, n] = co_await s.read_some(buf);
+    n_out = n;
+    co_return ec;
+}
+
 void
 scene2_happy_path(capy::thread_pool& pool)
 {
@@ -229,11 +241,12 @@ scene2_happy_path(capy::thread_pool& pool)
     b.provide(payload);
 
     char buf[64];
+    std::size_t n = 0;
     auto sndr = ex::write_env(
         capy::as_sender(
-            a.read_some(capy::mutable_buffer(buf, sizeof buf))),
+            read_into(a, capy::mutable_buffer(buf, sizeof buf), n)),
         ex::prop{capy::get_io_executor, pool.get_executor()})
-        | ex::upon_error([](auto e) noexcept -> std::size_t {
+        | ex::upon_error([](auto e) noexcept {
             if constexpr (std::is_same_v<
                 std::decay_t<decltype(e)>, std::error_code>)
             {
@@ -246,7 +259,6 @@ scene2_happy_path(capy::thread_pool& pool)
 
     auto result = ex::sync_wait(std::move(sndr));
     assert(result.has_value());
-    auto const [n] = *result;
     assert(n == payload.size());
     assert(std::string_view(buf, n) == payload);
 
@@ -262,27 +274,28 @@ scene2_error_path(capy::thread_pool& pool)
     b.close();
 
     char buf[64];
+    std::size_t n = 0;
     bool fired = false;
     std::error_code observed;
 
     auto sndr = ex::write_env(
         capy::as_sender(
-            a.read_some(capy::mutable_buffer(buf, sizeof buf))),
+            read_into(a, capy::mutable_buffer(buf, sizeof buf), n)),
         ex::prop{capy::get_io_executor, pool.get_executor()})
-        | ex::upon_error([&](auto e) noexcept -> std::size_t {
+        | ex::upon_error([&](auto e) noexcept {
             if constexpr (std::is_same_v<
                 std::decay_t<decltype(e)>, std::error_code>)
             {
                 fired = true;
                 observed = e;
             }
-            return 0;
         });
 
     auto result = ex::sync_wait(std::move(sndr));
     assert(result.has_value());
-    auto const [n] = *result;
 
+    // The error travelled on the error channel and the byte count
+    // still reached the caller through the wrapper's side channel.
     assert(fired);
     assert(observed);
     std::cout
