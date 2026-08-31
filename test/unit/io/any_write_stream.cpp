@@ -57,6 +57,29 @@ struct pending_write_stream
         { return pending_write_awaitable{counter_}; }
 };
 
+// Reports readiness without consulting the io_env, like a stream
+// whose data is already in user-space memory.
+struct ready_write_awaitable
+{
+    int* suspended_;
+    bool await_ready() const noexcept { return true; }
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<>, io_env const*)
+    {
+        ++(*suspended_);
+        return std::noop_coroutine();
+    }
+    io_result<std::size_t> await_resume()
+        { return {std::error_code(), 7}; }
+};
+
+struct ready_write_stream
+{
+    int* suspended_;
+    ready_write_awaitable write_some(
+        ConstBufferSequence auto)
+        { return ready_write_awaitable{suspended_}; }
+};
+
 // Move constructor throws so owning construction fails after storage
 // is allocated but before the stream is constructed.
 struct throwing_move_write_stream
@@ -438,10 +461,29 @@ public:
     }
 
     void
+    testReadyStreamSkipsSuspension()
+    {
+        // A concrete awaitable that reports readiness completes the
+        // erased write without suspending the coroutine: the wrapper
+        // forwards await_ready and never calls await_suspend.
+        int suspended = 0;
+        ready_write_stream rs{&suspended};
+        any_write_stream aws(&rs);
+
+        char const data[] = "x";
+        auto aw = aws.write_some(const_buffer(data, 1));
+        BOOST_TEST(aw.await_ready());
+        auto [ec, n] = aw.await_resume();
+        BOOST_TEST(!ec);
+        BOOST_TEST_EQ(n, 7u);
+        BOOST_TEST_EQ(suspended, 0);
+    }
+
+    void
     testDestroyWithActiveAwaitable()
     {
-        // Flat vtable, construct-in-await_suspend variant:
-        // await_suspend constructs the inner awaitable.
+        // await_ready constructs the inner awaitable; a pending
+        // stream then suspends through await_suspend.
         int destroyed = 0;
         pending_write_stream ps{&destroyed};
         {
@@ -496,6 +538,7 @@ public:
         testWriteSomeManyBuffers();
         testTrichotomySuccess();
         testTrichotomyError();
+        testReadyStreamSkipsSuspension();
         testDestroyWithActiveAwaitable();
         testMoveAssignWithActiveAwaitable();
         testMoveAssignOwning();

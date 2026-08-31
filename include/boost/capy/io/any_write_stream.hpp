@@ -400,23 +400,25 @@ any_write_stream::write_some(CB buffers)
         }
 
         bool
-        await_ready() const noexcept
+        await_ready()
         {
-            return ba_.to_span().empty();
-        }
+            // An empty write never touches the underlying stream
+            if(ba_.to_span().empty())
+                return true;
 
-        std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const* env)
-        {
             self_->vt_->construct_awaitable(
                 self_->stream_,
                 self_->cached_awaitable_,
                 ba_.to_span());
             self_->awaitable_active_ = true;
 
-            if(self_->vt_->await_ready(self_->cached_awaitable_))
-                return h;
+            return self_->vt_->await_ready(
+                self_->cached_awaitable_);
+        }
 
+        std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<> h, io_env const* env)
+        {
             return self_->vt_->await_suspend(
                 self_->cached_awaitable_, h, env);
         }
