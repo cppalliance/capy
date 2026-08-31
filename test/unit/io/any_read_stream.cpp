@@ -57,6 +57,29 @@ struct pending_read_stream
         { return pending_read_awaitable{counter_}; }
 };
 
+// Reports readiness without consulting the io_env, like a stream
+// whose data is already in user-space memory.
+struct ready_read_awaitable
+{
+    int* suspended_;
+    bool await_ready() const noexcept { return true; }
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<>, io_env const*)
+    {
+        ++(*suspended_);
+        return std::noop_coroutine();
+    }
+    io_result<std::size_t> await_resume()
+        { return {std::error_code(), 7}; }
+};
+
+struct ready_read_stream
+{
+    int* suspended_;
+    ready_read_awaitable read_some(
+        MutableBufferSequence auto)
+        { return ready_read_awaitable{suspended_}; }
+};
+
 // Reports not-ready, then resumes the awaiting coroutine from
 // await_suspend. This exercises the type-erased await_suspend
 // thunk, which the always-ready test mocks never reach.
@@ -498,6 +521,25 @@ public:
     }
 
     void
+    testReadyStreamSkipsSuspension()
+    {
+        // A concrete awaitable that reports readiness completes the
+        // erased read without suspending the coroutine: the wrapper
+        // forwards await_ready and never calls await_suspend.
+        int suspended = 0;
+        ready_read_stream rs{&suspended};
+        any_read_stream ars(&rs);
+
+        char buf[8];
+        auto aw = ars.read_some(mutable_buffer(buf, sizeof(buf)));
+        BOOST_TEST(aw.await_ready());
+        auto [ec, n] = aw.await_resume();
+        BOOST_TEST(!ec);
+        BOOST_TEST_EQ(n, 7u);
+        BOOST_TEST_EQ(suspended, 0);
+    }
+
+    void
     testDestroyWithActiveAwaitable()
     {
         // Verify destructor cleans up an in-flight awaitable.
@@ -598,6 +640,7 @@ public:
         testTrichotomyEofAfterDrain();
         testTrichotomyEmptyBufferExhausted();
         testReadSomeManyBuffers();
+        testReadyStreamSkipsSuspension();
         testDestroyWithActiveAwaitable();
         testMoveAssignWithActiveAwaitable();
         testMoveAssignOwning();
