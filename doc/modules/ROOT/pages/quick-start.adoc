@@ -10,7 +10,24 @@
 = Quick Start
 :page-mode: tutorial
 
-NOTE: Capy requires {cpp}20 with coroutine support.
+== Requirements
+
+=== Assumed Knowledge
+
+* {cpp}20 coroutines, concepts, and ranges
+* Basic concurrent programming
+
+=== Compiler Support
+
+* GCC 12+
+* Clang 17+
+* Apple-Clang (macOS 14+)
+* MSVC 14.34+
+* MinGW
+
+=== Dependencies
+
+None. Capy is self-contained and does not require Boost.
 
 == Minimal Example
 
@@ -38,7 +55,9 @@ g++ -std=c++20 -I/path/to/capy/include -o hello_coro hello_coro.cpp \
     /path/to/capy/build/libboost_capy.a -pthread
 ----
 
-Then run it:
+NOTE: If your prorgam is build with CMake, link it against `Boost::capy`.
+
+Then run the compiled program:
 
 [source,bash,role=external]
 ----

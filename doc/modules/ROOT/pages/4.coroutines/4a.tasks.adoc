@@ -17,6 +17,17 @@ include::example$snippets/4a_tasks.cpp[tag=include_task]
 include::example$snippets/4a_tasks.cpp[tag=include_umbrella]
 ----
 
+Unless otherwise specified, all code examples in this documentation assume the following:
+
+[source,cpp]
+----
+include::example$snippets/index_page.cpp[tag=convention]
+----
+
+The examples deliberately leave some results and bindings unused, so the
+surrounding prose can explain them. Do not build them with `-Wall` or
+`-Werror`.
+
 ====
 
 == Overview

@@ -18,6 +18,7 @@ asciidoc:
     table-caption: false
     page-toc: ''
     toclevels: 2
+    icons: font
 nav:
   - modules/ROOT/nav.adoc
 ext:

@@ -15,20 +15,23 @@
 
 namespace capy = boost::capy;
 
-capy::task<> echo(capy::any_stream& stream)
+capy::task<void> echo(capy::any_stream& stream)   // <.>
 {
     char buf[1024];
     for(;;)
     {
-        auto [ec, n] = co_await stream.read_some(capy::make_buffer(buf));
+        auto [ec, n] = co_await stream.read_some(capy::make_buffer(buf));   // <.>
 
-        auto [wec, wn] = co_await capy::write(stream, capy::const_buffer(buf, n));
-
-        if(ec)
-            co_return;
+        auto [wec, _] = co_await capy::write(stream, capy::const_buffer(buf, n));
 
         if(wec)
+            throw std::system_error(wec);         // <.>
+
+        if(ec == capy::cond::eof)                 // <.>
             co_return;
+
+        if(ec)
+            throw std::system_error(ec);
     }
 }
 
