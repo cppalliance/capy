@@ -1,32 +1,34 @@
 = Capy
 :page-mode: explanation
 
-Capy is a C++20, compiled library providing abstractions, vocabulary types and idioms necessary
+Capy is a compiled C++20 library providing abstractions, vocabulary types, and idioms necessary
 to write programs with event-driven control flows
 -- such as I/O -- in a way that makes them efficient and manageable: structured and hard to get wrong.
 
 Coroutines are used to represent the control flow. The program logic is described in a sequential way,
 familiar to programmers,
-even though "continutions" are being registered in the execution environment behind the scenes.
+even though there are tasks being pushed to task queues behind the scenes.
 
-I/O operations ar represented via a concept of a _stream_ which consumes and populates _buffer sequences_.
-You also get type-erased wrappers for streams, so that the programs can compile fast, without triggering
-many template instantiations.
+I/O operations are represented via the concept of a _stream_ which consumes and populates _buffer sequences_.
+You also get type-erased wrappers for streams, so that programs can compile quickly, without triggering
+excessive template instantiations.
 
 It offers a number of task synchronization mechanisms, ranging from low-level, like async mutexes and events,
-to high-level, like _strands_, `when_all`/`when_any` "joins", and resume-on-the-same-executor guarantee.
+to high-level, like _strands_, `when_all`/`when_any` "joins", and the resume-on-the-same-executor guarantee.
 
 Libraries that want to provide concrete I/O implementations -- like those based on `epoll` or `io_uring` --
-can plug to Capy's system via the `IoAwaitable`-protocol, which describes how the tasks can be scheduled, stopped
-and have their memory allocated.
+can plug into Capy's system via the `IoAwaitable` protocol, which describes how tasks can be scheduled, 
+cancelled, and allocated in memory.
 
 You also get the testing tools that allow you to test your asynchronous flows in a deterministic way.
 
 
 == What Capy is Not
 
-While capy offers interfaces for dealing with I/O, it does not process I/O itself. For that, you will neet
-to use Capy in tandem with a Capy-conformant library. This can be either your home-grown one, or Corosio.
+While Capy offers algorithms and interfaces for dealing with I/O, 
+it does not itself provide any I/O backend (like a wrapper over `epoll` or `io_uring`).
+For that, you will need to use Capy in tandem with a Capy-conformant library. 
+This can be either your home-grown one or Corosio.
 
 
 
@@ -36,10 +38,10 @@ to use Capy in tandem with a Capy-conformant library. This can be either your ho
 ----
 include::example$programs/index_page_echo.cpp[tag=full]
 ----
-<.> The cpp:task[task<>] return type defines a coroutine that sarts suspended. `any_stream` is a type-erased wrapper that works with any concrete stream implementation.
+<.> The cpp:task[task<>] return type defines a coroutine that starts suspended. `any_stream` is a type-erased wrapper that works with any concrete stream implementation.
 <.> Each `co_await` suspends until the I/O operation completes.
-<.> You can signal failures by throwing an exception, but also by returning a `std::error_code`.
-<.> Status `cond::eof` indicates reaching the end of stream.
+<.> You can signal failures by throwing an exception, or by returning a `std::error_code`.
+<.> The condition `cond::eof` indicates reaching the end of the stream.
 
 
 == Next Steps
