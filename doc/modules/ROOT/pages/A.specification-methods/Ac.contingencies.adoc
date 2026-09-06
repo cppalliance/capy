@@ -32,8 +32,8 @@ NOTE: Reaching the end of stream is also a contingency
       (which can be interpreted as preventing an infinite read
       from proceeding).
 
-NOTE: The stream operations can still throw exceptions to indicate conditions
-      unrelated to stream state that prevent these operations from satisfying
+NOTE: The stream operations can still throw exceptions to indicate conditions,
+      unrelated to stream state, that prevent these operations from satisfying
       their postconditions, such as failures to grow a buffer, or 
       failure to allocate a coroutine frame.
 

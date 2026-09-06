@@ -10,6 +10,11 @@ That restriction buys a guarantee the hybrid libraries cannot make: *a coroutine
 include::example$snippets/why_capy.cpp[tag=invariant]
 ----
 
+[NOTE]
+====
+See xref:4.coroutines/4c.executors.adoc#the-same-executor-invariant[the same-executor invariant] for the rationale and xref:4.coroutines/4d.io-awaitable.adoc#bridging-a-foreign-awaitable[bridging a foreign awaitable] for the escape hatch.
+====
+
 == What Capy Is Not
 
 Capy is not a networking library. It has no sockets, no acceptors, no DNS, no TLS, and no platform event loop. Those belong to Corosio, which is built on Capy.
