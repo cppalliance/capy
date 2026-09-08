@@ -12,24 +12,41 @@
 #define BOOST_CAPY_CONCEPT_IO_AWAITABLE_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <coroutine>
 #include <boost/capy/ex/io_env.hpp>
+#include <concepts>
+#include <coroutine>
 #include <ranges>
+#include <type_traits>
 
 namespace boost {
 namespace capy {
 
-namespace detail {
+/** Requires a valid `await_suspend` return type.
 
-    template <typename T>
-    constexpr bool is_coroutine_handle = false;
+    In a `co_await` expression the language accepts exactly three
+    return types from `await_suspend`: `void`, `bool`, and
+    `std::coroutine_handle<P>` for any promise type `P`. This concept
+    expresses that rule so that @ref IoAwaitable can reject a malformed
+    awaitable at constraint-checking time rather than deep inside the
+    coroutine machinery.
 
-    template <typename T>
-    constexpr bool is_coroutine_handle<std::coroutine_handle<T>> = true; 
+    See the description of `await_suspend` in @ref IoAwaitable for the
+    meaning attached to each return type.
 
-    template <typename T>
-    concept await_suspend_valid_result = std::same_as<T, void> || std::same_as<T, bool> || is_coroutine_handle<T>;
-}
+    @tparam T The return type of `await_suspend`.
+
+    @see @ref IoAwaitable
+*/
+template<typename T>
+concept AwaitSuspendResult =
+    std::same_as<T, void> ||
+    std::same_as<T, bool> ||
+    std::same_as<T, std::coroutine_handle<>> ||
+    requires(T h)
+    {
+        requires std::same_as<T, std::coroutine_handle<
+            std::remove_reference_t<decltype(h.promise())>>>;
+    };
 
 /** Describes types that can be `co_await`-ed in Capy-coroutines and 
     that can be passed the information about the execution environment.
@@ -121,7 +138,7 @@ namespace detail {
     General-purpose class templates that model `IoAwaitable`: @ref task, @ref quitter, @ref immediate.
 
 
-    @see @ref IoRunnable, @ref io_env, @ref executor_ref
+    @see @ref AwaitSuspendResult, @ref IoRunnable, @ref io_env, @ref executor_ref
 */
 template<typename A>
 concept IoAwaitable = std::move_constructible<A> &&
@@ -131,7 +148,7 @@ concept IoAwaitable = std::move_constructible<A> &&
         io_env const* env)
     {
         { a.await_ready() } -> std::same_as<bool>;
-        { a.await_suspend(h, env) } -> detail::await_suspend_valid_result;   
+        { a.await_suspend(h, env) } -> AwaitSuspendResult;
         a.await_resume();
     };
 
