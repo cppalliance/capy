@@ -5,7 +5,7 @@ Both Capy and Cobalt allow you to write a non-template coroutine algorithm that 
 
 [source,cpp]
 ----
-include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=capy_signature]
+include::example$snippets/9o_why_not_cobalt_concepts.cpp[tag=capy_signature]
 ----
 
 [source,cpp,role=external]
@@ -121,7 +121,7 @@ Capy's cpp:IoAwaitable[] protocol passes the execution environment as an explici
 
 [source,cpp]
 ----
-include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=await_suspend_env,indent=0]
+include::example$snippets/9o_why_not_cobalt_concepts.cpp[tag=await_suspend_env,indent=0]
 ----
 
 The executor and stop token flow forward structurally through the call chain via cpp:io_env[]. If a task's machinery does not provide them, the code does not compile. There is no fallback.
@@ -222,7 +222,7 @@ The type-erased wrapper cpp:any_write_stream[] also models the cpp:WriteStream[]
 
 [source,cpp]
 ----
-include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=any_write_some_template]
+include::example$snippets/9o_why_not_cobalt_concepts.cpp[tag=any_write_some_template]
 ----
 
 Type erasure does not narrow the interface.
@@ -273,14 +273,14 @@ Capy's cpp:WriteStream[] concept includes semantic requirements in the concept's
 
 [source,cpp]
 ----
-include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=semantics_quote]
+include::example$snippets/9o_why_not_cobalt_concepts.cpp[tag=semantics_quote]
 ----
 
 The concept also includes a coroutine-specific warning about buffer lifetime:
 
 [source,cpp]
 ----
-include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=lifetime_warning]
+include::example$snippets/9o_why_not_cobalt_concepts.cpp[tag=lifetime_warning]
 ----
 
 [cols="1,1,1"]
@@ -402,7 +402,7 @@ Capy's cpp:any_write_stream[] constructor preallocates storage sized exactly to 
 
 [source,cpp]
 ----
-include::example$snippets/9n_why_not_cobalt_concepts.cpp[tag=ctor_prealloc]
+include::example$snippets/9o_why_not_cobalt_concepts.cpp[tag=ctor_prealloc]
 ----
 
 After construction, each `co_await stream.write_some(buf)` reuses this preallocated storage. There is no per-operation allocation and no fixed-size buffer in the coroutine frame.

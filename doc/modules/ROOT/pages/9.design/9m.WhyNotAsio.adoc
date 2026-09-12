@@ -1,25 +1,5 @@
-= Why Capy?
+= Capy and Boost.Asio: A Comparison
 :page-mode: explanation
-
-Capy makes `co_await` the only way to do asynchronous work. There are no callbacks, no futures, and no sender/receiver layer to reconcile.
-
-That restriction buys a guarantee the hybrid libraries cannot make: *a coroutine always resumes on the executor it was started with.* State you touch between two suspension points needs no mutex, because nothing else can run there. An awaitable that could resume you on any thread is rejected at compile time.
-
-[source,cpp]
-----
-include::example$snippets/why_capy.cpp[tag=invariant]
-----
-
-[NOTE]
-====
-See xref:4.coroutines/4d.executors.adoc#the-same-executor-invariant[the same-executor invariant] for the rationale and xref:4.coroutines/4e.io-awaitable.adoc#bridging-a-foreign-awaitable[bridging a foreign awaitable] for the escape hatch.
-====
-
-== What Capy Is Not
-
-Capy is not a networking library. It has no sockets, no acceptors, no DNS, no TLS, and no platform event loop. Those belong to Corosio, which is built on Capy.
-
-Capy is the execution model and the byte-stream layer beneath them. It also stands alone for work that never touches the network: HTTP parsing, protocol state machines, serialization.
 
 == Where Capy Advances Beyond Asio
 
@@ -325,7 +305,3 @@ Meanwhile, the {cpp} standards committee has produced `std::execution`—a sende
 Boost has always been where the practical meets the principled. Where real-world feedback shapes design. Where code ships before papers standardize. Capy continues this tradition.
 
 This library advances beyond Asio in the domains where they overlap. Not by abandoning what works, but by building on it. Not by chasing theoretical purity, but by solving the problems that have frustrated {cpp} developers for years. Those problems are template explosion, compile-time costs, error message novels, ergonomic concurrency, and more.
-
-Capy is already the foundation for work that does not look alike. CERN's traccc project uses Capy without Corosio for GPU reconstruction pipelines. The Http parser is built entirely on Capy's byte streams. Corosio, Websocket, Beast2 and Burl build the networking stack on top of it.
-
-Capy has no external dependencies and does not require Boost.

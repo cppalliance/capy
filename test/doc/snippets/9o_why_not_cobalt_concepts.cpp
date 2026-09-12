@@ -8,7 +8,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Compiled fragments shown in pages/9.design/9n.WhyNotCobaltConcepts.adoc.
+// Compiled fragments shown in pages/9.design/9o.WhyNotCobaltConcepts.adoc.
 
 #include "../doc_warnings.hpp"
 

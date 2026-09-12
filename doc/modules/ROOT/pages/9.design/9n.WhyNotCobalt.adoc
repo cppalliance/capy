@@ -78,7 +78,7 @@ Templates can achieve this by type-erasing every customization point. The cost m
 
 == Stream Concepts
 
-Capy defines three coroutine-only stream concepts. Cobalt inherits Asio's `AsyncReadStream` and `AsyncWriteStream`, which are hybrid concepts supporting callbacks, futures, and coroutines. Cobalt's `cobalt::io` wrappers simplify the API, but still include full Asio headers. See xref:9.design/9n.WhyNotCobaltConcepts.adoc[Write Stream Design] for a detailed comparison of the two approaches.
+Capy defines three coroutine-only stream concepts. Cobalt inherits Asio's `AsyncReadStream` and `AsyncWriteStream`, which are hybrid concepts supporting callbacks, futures, and coroutines. Cobalt's `cobalt::io` wrappers simplify the API, but still include full Asio headers. See xref:9.design/9o.WhyNotCobaltConcepts.adoc[Write Stream Design] for a detailed comparison of the two approaches.
 
 Capy's concepts form a small, flat set: cpp:ReadStream[] and cpp:WriteStream[] each define a single partial-transfer primitive (`read_some`, `write_some`); cpp:Stream[] requires both. There is no further refinement.
 
@@ -222,7 +222,7 @@ Capy introduces the https://wg21.link/P4003[IoAwaitable protocol] and uses it fo
 
 [source,cpp]
 ----
-include::example$snippets/9m_why_not_cobalt.cpp[tag=await_suspend_env,indent=0]
+include::example$snippets/9n_why_not_cobalt.cpp[tag=await_suspend_env,indent=0]
 ----
 
 No thread-local state. No ambient context. The executor and stop token flow forward through the call chain via the cpp:io_env[] parameter.

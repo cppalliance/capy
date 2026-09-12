@@ -8,7 +8,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Compiled fragments shown in pages/9.design/9o.WhyNotTMC.adoc.
+// Compiled fragments shown in pages/9.design/9p.WhyNotTMC.adoc.
 
 #include "../doc_warnings.hpp"
 
@@ -113,4 +113,4 @@ struct why_not_tmc_test
 
 } // namespace
 
-TEST_SUITE(why_not_tmc_test, "boost.capy.doc.9o_why_not_tmc");
+TEST_SUITE(why_not_tmc_test, "boost.capy.doc.9p_why_not_tmc");

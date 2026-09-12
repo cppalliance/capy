@@ -141,7 +141,7 @@ HALO (Heap Allocation Lowering Optimization) lets compilers eliminate coroutine 
 
 [source,cpp]
 ----
-include::example$snippets/9o_why_not_tmc.cpp[tag=arena,indent=0]
+include::example$snippets/9p_why_not_tmc.cpp[tag=arena,indent=0]
 ----
 
 *TMC provides:*
@@ -160,7 +160,7 @@ When you write `co_await something`, what happens?
 
 [source,cpp]
 ----
-include::example$snippets/9o_why_not_tmc.cpp[tags=std_suspend_void;std_suspend_bool;std_suspend_handle,indent=0]
+include::example$snippets/9p_why_not_tmc.cpp[tags=std_suspend_void;std_suspend_bool;std_suspend_handle,indent=0]
 ----
 
 The awaitable receives a handle to resume. That's all. No information about where to resume, no cancellation mechanism.
@@ -169,7 +169,7 @@ The awaitable receives a handle to resume. That's all. No information about wher
 
 [source,cpp]
 ----
-include::example$snippets/9o_why_not_tmc.cpp[tag=await_suspend_env,indent=0]
+include::example$snippets/9p_why_not_tmc.cpp[tag=await_suspend_env,indent=0]
 ----
 
 The awaitable receives:
@@ -203,7 +203,7 @@ What happens when you `co_await` an awaitable that doesn't implement the extende
 
 [source,cpp]
 ----
-include::example$snippets/9o_why_not_tmc.cpp[tag=strict_static_assert,indent=0]
+include::example$snippets/9p_why_not_tmc.cpp[tag=strict_static_assert,indent=0]
 ----
 
 *TMC:* Wrap in a trampoline that captures current context.
