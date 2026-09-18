@@ -8,27 +8,6 @@ cpp:task[task<T>] is declared in:
 include::example$snippets/4b_tasks.cpp[tag=include_task]
 ----
 
-[NOTE]
-====
-*How this manual names headers.* Each page gives the specific header for what it introduces, so you can include only what you use. The runnable examples instead include the umbrella header, which pulls in everything:
-
-[source,cpp]
-----
-include::example$snippets/4b_tasks.cpp[tag=include_umbrella]
-----
-
-Unless otherwise specified, all code examples in this documentation assume the following:
-
-[source,cpp]
-----
-include::example$snippets/index_page.cpp[tag=convention]
-----
-
-The examples deliberately leave some results and bindings unused, so the
-surrounding prose can explain them. Do not build them with `-Wall` or
-`-Werror`.
-
-====
 
 == Overview
 

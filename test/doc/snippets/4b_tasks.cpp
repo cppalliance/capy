@@ -31,9 +31,7 @@
 // The page's first fragment introduces the umbrella include and the
 // namespace alias that later fragments rely on for capy:: qualification.
 // tag::declaring[]
-// tag::include_umbrella[]
 #include <boost/capy.hpp>
-// end::include_umbrella[]
 namespace capy = boost::capy;
 // end::declaring[]
 

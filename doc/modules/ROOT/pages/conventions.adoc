@@ -1,0 +1,38 @@
+//
+// Copyright (c) 2026 Andrzej Krzemieński (akrzemi1@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Conventions
+:page-mode: explanation
+
+While each tool in this library comes with its own header file, there is also an aggregate header:
+
+[source,cpp]
+----
+include::example$snippets/conventions.cpp[tag=include_umbrella]
+----
+
+While we do not recommend using it in production code, 
+it is very convenient for learning the library and for small experiments. 
+
+All declarations reside in namespace `boost::capy`. For brevity, unless otherwise specified,
+the source code examples in this documentation assume the following:
+
+[source,cpp]
+----
+include::example$snippets/conventions.cpp[tag=convention]
+----
+
+The examples deliberately leave some operation results and structured bindings unused,
+so that the surrounding prose can explain them. Do not build them with `-Wall` or
+`-Werror`.
+
+The library is targeting two kinds of audience:
+
+ * Regular users, who build their applications by composing building blocks offered by this library.
+ * I/O Specialists, who extend this framework by providing their own I/O backends.

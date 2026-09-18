@@ -3,13 +3,11 @@
   "note": "Snapshot of current violations (Task 2, Style Guide Part F.0). Non-blocking: this records the backlog so a future comparator can flag NEW findings without failing on the ones already known about. Fingerprints are line-insensitive: the `#N` component is the Nth occurrence of that (file, message) pair, NOT a line number, so inserting text above a finding does not rename it.",
   "checks": {
     "vale_adoc": {
-      "count": 89,
+      "count": 87,
       "skipped": false,
       "fingerprints": [
         "modules/ROOT/pages/2.cpp20-coroutines/2a.foundations.adoc:#1:Google.OxfordComma",
         "modules/ROOT/pages/2.cpp20-coroutines/2d.advanced.adoc:#1:Vale.Spelling",
-        "modules/ROOT/pages/3.concurrency/3b.synchronization.adoc:#1:Google.Colons",
-        "modules/ROOT/pages/3.concurrency/3c.advanced.adoc:#1:Vale.Spelling",
         "modules/ROOT/pages/4.coroutines/4.intro.adoc:#1:Google.OxfordComma",
         "modules/ROOT/pages/4.coroutines/4b.tasks.adoc:#1:Vale.Spelling",
         "modules/ROOT/pages/4.coroutines/4b.tasks.adoc:#2:Vale.Spelling",
@@ -464,7 +462,7 @@
       ]
     },
     "doc_lint": {
-      "count": 5,
+      "count": 4,
       "skipped": false,
       "byRule": {
         "A1": 0,
@@ -472,11 +470,10 @@
         "B2": 0,
         "SHAPE": 0,
         "ANCHOR": 0,
-        "D2": 5
+        "D2": 4
       },
       "fingerprints": [
         "D2:2.cpp20-coroutines/2.intro.adoc:#1:tutorial/concept page has no include::example$",
-        "D2:3.concurrency/3.intro.adoc:#1:tutorial/concept page has no include::example$",
         "D2:4.coroutines/4.intro.adoc:#1:tutorial/concept page has no include::example$",
         "D2:6.streams/6.intro.adoc:#1:tutorial/concept page has no include::example$",
         "D2:7.testing/7.intro.adoc:#1:tutorial/concept page has no include::example$"

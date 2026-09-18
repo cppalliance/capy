@@ -104,6 +104,7 @@ include::example$snippets/quick_start.cpp[tag=errors,indent=0]
 
 == Next Steps
 
+* xref:2.cpp20-coroutines/2.intro.adoc[Introduction To {cpp}20 Coroutines] — If you need to refresh the C++ coroutines basics
 * xref:4.coroutines/4b.tasks.adoc[Tasks] — Learn how lazy tasks work
 * xref:4.coroutines/4c.launching.adoc[Starting Tasks] — Understand cpp:run_async[] in detail
 * xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] — Control where coroutines execute

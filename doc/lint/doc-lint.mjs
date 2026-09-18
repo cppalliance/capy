@@ -88,7 +88,7 @@ const VALID_MODES = new Set(['tutorial', 'how-to', 'reference', 'explanation']);
 // Directories whose pages are concept/tutorial material for D2's heuristic.
 // Deliberately NOT keyed off :page-mode: — see the D2 comment above.
 const CONCEPT_DIRS = [
-  '2.cpp20-coroutines', '3.concurrency', '4.coroutines',
+  '2.cpp20-coroutines', '4.coroutines',
   '5.buffers', '6.streams', '7.testing',
 ];
 const TUTORIAL_FILES = new Set(['quick-start.adoc']);
