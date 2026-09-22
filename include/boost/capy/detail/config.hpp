@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2023 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -27,11 +28,25 @@
    corresponding _WORKAROUND_GUARD macro is 1, which makes
    BOOST_CAPY_WORKAROUND evaluate to 0 on that compiler.
 
+   BOOST_CAPY_MSVC is _MSC_VER on Microsoft's compiler only. Clang
+   targeting Windows (clang-cl, and clang++ with an MSVC target)
+   also defines _MSC_VER for ABI compatibility but does not share
+   MSVC's codegen bugs, so an MSVC bug workaround tests
+   BOOST_CAPY_MSVC rather than _MSC_VER.
+
    Usage:
-     #if BOOST_CAPY_WORKAROUND(_MSC_VER, >= 1)      // any MSVC
-     #if BOOST_CAPY_WORKAROUND(_MSC_VER, <= 1900)    // MSVC 14.0 and earlier
-     #if BOOST_CAPY_WORKAROUND(__GNUC__, < 12)        // GCC before 12
+     #if BOOST_CAPY_WORKAROUND(BOOST_CAPY_MSVC, >= 1)    // any MSVC, not Clang
+     #if BOOST_CAPY_WORKAROUND(BOOST_CAPY_MSVC, < 1950)  // MSVC before 19.50
+     #if BOOST_CAPY_WORKAROUND(_MSC_VER, <= 1900)        // MSVC 14.0 and earlier
+     #if BOOST_CAPY_WORKAROUND(__GNUC__, < 12)           // GCC before 12
 */
+
+#if defined(_MSC_VER) && !defined(__clang__)
+# define BOOST_CAPY_MSVC _MSC_VER
+# define BOOST_CAPY_MSVC_WORKAROUND_GUARD 0
+#else
+# define BOOST_CAPY_MSVC_WORKAROUND_GUARD 1
+#endif
 
 #ifndef _MSC_VER
 # define _MSC_VER_WORKAROUND_GUARD 1
@@ -54,6 +69,29 @@
 #define BOOST_CAPY_WORKAROUND(symbol, test)        \
     ((symbol ## _WORKAROUND_GUARD + 0 == 0) &&     \
      (symbol != 0) && (1 % (( (symbol test) ) + 1)))
+
+/* Selects the void-returning symmetric_transfer on MSVC toolsets
+   whose real symmetric transfer is miscompiled. Two unrelated
+   defects, both described on detail::symmetric_transfer
+   in detail/await_suspend_helper.hpp:
+
+   - MSVC 19.34 through 19.44, every target: the returned handle
+     is stored on the coroutine frame.
+   - MSVC 19.50 and later, ARM64 and ARM64EC, release builds: a
+     try region spanning the suspend point loses its handler.
+
+   Not a configuration option: translation units that disagree on it
+   get different definitions of symmetric_transfer. To check whether
+   a newer toolset still needs it, edit this gate locally; the
+   regression tests pass trivially while the workaround is on.
+*/
+#if BOOST_CAPY_WORKAROUND(BOOST_CAPY_MSVC, < 1950) || \
+    (defined(BOOST_CAPY_MSVC) && \
+     (defined(_M_ARM64) || defined(_M_ARM64EC)))
+# define BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND 1
+#else
+# define BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND 0
+#endif
 
 // MSVC warning suppression helpers.
 // On MSVC these expand to __pragma(); elsewhere they are empty.

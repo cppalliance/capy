@@ -59,7 +59,7 @@ current_frame_allocator_ref() noexcept;
 // MSVC may keep an inlined thread_local's address in a coroutine
 // frame across a suspension, so a resumption on another thread
 // would write the first thread's slot.
-#if BOOST_CAPY_WORKAROUND(_MSC_VER, >= 1) && !defined(__clang__)
+#if BOOST_CAPY_WORKAROUND(BOOST_CAPY_MSVC, >= 1)
 BOOST_CAPY_NOINLINE
 #endif
 inline std::pmr::memory_resource*&
