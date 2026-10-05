@@ -1277,9 +1277,100 @@ struct task_test
         BOOST_TEST_EQ(result, 7);
     }
 
+    // Suspends by parking the handle and returning noop_coroutine, so
+    // the coroutine resumes later from whatever stack calls resume(),
+    // rather than being transferred into inline. This is the shape of
+    // an async read that completes on the io_context thread.
+    struct parking_awaitable
+    {
+        std::coroutine_handle<>& slot;
+
+        bool await_ready() const noexcept { return false; }
+
+        std::coroutine_handle<>
+        await_suspend(
+            std::coroutine_handle<> h, io_env const*) const noexcept
+        {
+            slot = h;
+            return std::noop_coroutine();
+        }
+
+        // Returning a value the body tests before throwing mirrors
+        // `auto [ec, n] = co_await sock.read_some(buf); if(ec) throw;`.
+        bool await_resume() const noexcept { return true; }
+    };
+
+    // The body whose catch must run. Kept as a coroutine taking
+    // references rather than a capturing lambda so the shape matches
+    // the corosio session function this reproduces.
+    static task<void>
+    deferred_throw_session(
+        std::coroutine_handle<>& slot,
+        bool& caught)
+    {
+        try
+        {
+            if(co_await parking_awaitable{slot})
+                throw_test_exception("deferred resume");
+        }
+        catch(test_exception const&)
+        {
+            caught = true;
+        }
+    }
+
+    // Regression test for an MSVC 14.51 ARM64 release codegen bug.
+    //
+    // When a co_await whose await_suspend returns a coroutine_handle
+    // suspends, and the coroutine is later resumed from a different
+    // call stack, a throw in the same try block was not caught by the
+    // catch beside it. The exception escaped to the promise's
+    // unhandled_exception and reached run_async's error handler; in
+    // corosio's 3a_echo_server documentation test it terminated the
+    // process.
+    //
+    // detail::symmetric_transfer hides the bug wherever its workaround
+    // is enabled, because it resumes on the current stack and returns
+    // void instead of performing a real symmetric transfer. So this
+    // test passes on every compiler the workaround covers, and is only
+    // meaningful where it does not.
+    //
+    // The escape is checked through run_async's error handler rather
+    // than allowed to propagate: an uncaught exception here would
+    // terminate the whole test binary and hide every other result.
+    void
+    testCatchAfterDeferredResume()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+
+        std::coroutine_handle<> parked;
+        bool caught = false;
+        bool escaped = false;
+        bool completed = false;
+
+        run_async(ex,
+            [&]() { completed = true; },
+            [&](std::exception_ptr) { escaped = true; })(
+                deferred_throw_session(parked, caught));
+
+        // The awaitable parked the handle and nothing has thrown yet.
+        BOOST_TEST(static_cast<bool>(parked));
+        BOOST_TEST(!caught);
+
+        // Resume from here, not from inside await_suspend: arriving on
+        // an unrelated call stack is what the bug needs.
+        parked.resume();
+
+        BOOST_TEST(caught);
+        BOOST_TEST(!escaped);
+        BOOST_TEST(completed);
+    }
+
     void
     run()
     {
+        testCatchAfterDeferredResume();
         testBoolSuspendAwaitable();
         testReturnValue();
         testException();
