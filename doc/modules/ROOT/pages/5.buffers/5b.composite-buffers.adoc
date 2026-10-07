@@ -99,66 +99,25 @@ include::example$snippets/5b_composite_buffers.cpp[tag=test_const_buffer,indent=
 These concepts are present in header `<boost/capy/buffers.hpp>`. 
 
 
-=== Iterating Buffer Sequences
+=== Navigating Buffer Sequences
 
-Use `begin()` and `end()` from `<boost/capy/buffers.hpp>`:
+Header `<boost/capy/buffers.hpp>` also provides a couple of function objects for navigating buffer sequences.
+
+In order to iterate over contiguous buffers themselves (as opposed to bytes)
+use cpp:begin[capy::begin] and cpp:end[capy::end]:
 
 [source,cpp]
 ----
 include::example$snippets/5b_composite_buffers.cpp[tag=iterate,indent=0]
 ----
 
-These handle both single buffers, returning pointer-to-self, and ranges, returning standard iterators:
+These functions treat single contiguous buffers as a one-element range of contiguous buffers:
+
 
 [source,cpp]
 ----
 include::example$snippets/5b_composite_buffers.cpp[tag=begin_end_uniform,indent=0]
 ----
-
-=== buffer_slice
-
-
-cpp:buffer_slice[] returns a byte sub-range of a buffer sequence, as a value:
-
-[source,cpp]
-----
-include::example$snippets/5b_composite_buffers.cpp[tag=buffer_slice_include]
-
-include::example$snippets/5b_composite_buffers.cpp[tag=buffer_slice,indent=0]
-----
-
-cpp:buffer_slice[]`(seq, offset, length)` returns a value that is itself a buffer sequence, so you can pass it to any operation expecting one. Both `offset` and `length` are optional, which makes it a general byte sub-range primitive. Except in the single-buffer case the result borrows `seq`, so the sequence must outlive the slice.
-
-Capy creates and manages buffer handles on your behalf. Those are the sub-range a cpp:buffer_slice[] produces, and the descriptors a xref:glossary.adoc#type-erased[type-erased] stream passes to the OS. Each is valid only for the window its API documents.
-
-
-=== consuming_buffers
-
-When transferring data incrementally, cpp:consuming_buffers[] is a cursor that tracks progress:
-
-[source,cpp]
-----
-include::example$snippets/5b_composite_buffers.cpp[tag=consuming_buffers_include]
-
-include::example$snippets/5b_composite_buffers.cpp[tag=read_all,indent=0]
-----
-
-The cursor borrows the underlying sequence and provides:
-
-* cpp:consuming_buffers::data[data]`()` -- buffer sequence view of the remaining bytes
-* cpp:consuming_buffers::consume[consume]`(n)` -- advance past `n` transferred bytes, in place
-
-[NOTE]
-====
-`read_all` takes its stream by reference and its buffers by value. Both are safe
-here, because the caller owns the stream and awaits the task immediately.
-
-A coroutine reads its parameters when its body runs, not when the call is
-written. A task that is stored and awaited later outlives its call expression,
-so a reference parameter can dangle by then. That is why the fan-out example on
-xref:4.coroutines/4g.composition.adoc[Concurrent Composition] takes its item by
-value: it collects its tasks first, then awaits them together.
-====
 
 == Rationale
 

@@ -20,13 +20,6 @@
 // tag::make_buffer_include[]
 #include <boost/capy/buffers/make_buffer.hpp>
 // end::make_buffer_include[]
-// tag::buffer_slice_include[]
-#include <boost/capy/buffers/buffer_slice.hpp>
-// end::buffer_slice_include[]
-// tag::consuming_buffers_include[]
-#include <boost/capy/buffers/consuming_buffers.hpp>
-// end::consuming_buffers_include[]
-
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/concept/write_stream.hpp>
@@ -202,43 +195,6 @@ void process(Buffers const& bufs)
 }
 // end::iterate[]
 
-using Stream = capy::test::stream;
-
-// tag::read_all[]
-template<capy::MutableBufferSequence Buffers>
-capy::task<std::size_t> read_all(Stream& stream, Buffers buffers)
-{
-    capy::consuming_buffers consuming(buffers);
-    std::size_t const total_size = capy::buffer_size(buffers);
-    std::size_t total = 0;
-
-    while (total < total_size)
-    {
-        auto [ec, n] = co_await stream.read_some(consuming.data());
-        consuming.consume(n);
-        total += n;
-        if (ec)
-            break;
-    }
-
-    co_return total;
-}
-// end::read_all[]
-
-capy::task<> send_sliced(
-    Stream& stream,
-    std::array<capy::const_buffer, 2> const& bufs)
-{
-    // tag::buffer_slice[]
-    // send only the first 16 KB
-    co_await capy::write(stream, capy::buffer_slice(bufs, 0, 16384));
-    // everything after the first 16 KB
-    auto rest = capy::buffer_slice(bufs, 16384);
-    co_await capy::write(stream, rest);
-    // end::buffer_slice[]
-    BOOST_TEST(capy::buffer_size(rest) == capy::buffer_size(bufs) - 16384);
-}
-
 struct composite_buffers_test
 {
     void
@@ -404,12 +360,14 @@ struct composite_buffers_test
     {
         // tag::begin_end_uniform[]
         capy::const_buffer single;
-        auto it = capy::begin(single);  // Returns pointer to single
-        auto e = capy::end(single);     // Returns pointer past single
+        auto it = capy::begin(single);  // Returns pointer to `single`
+        auto e = capy::end(single);     // Returns pointer past `single`
+        assert(std::distance(it, e) == 1);
 
         std::array<capy::const_buffer, 3> multi;
         auto it2 = capy::begin(multi);  // Returns multi.begin()
         auto e2 = capy::end(multi);     // Returns multi.end()
+        assert(std::distance(it2, e2) == 3);
         // end::begin_end_uniform[]
         BOOST_TEST(it == &single);
         BOOST_TEST(e == &single + 1);
@@ -477,40 +435,6 @@ struct composite_buffers_test
     }
 
     void
-    testReadAll()
-    {
-        auto [a, b] = capy::test::make_stream_pair();
-        b.provide("abcdefghijklmnopqrst");  // 20 bytes readable from a
-        a.set_max_read_size(7);             // force several partial reads
-
-        std::vector<char> head(8), tail(12);
-        std::array<capy::mutable_buffer, 2> bufs{
-            capy::make_buffer(head), capy::make_buffer(tail)};
-
-        std::size_t got = 0;
-        capy::test::run_blocking([&](std::size_t n) { got = n; })(
-            read_all(a, bufs));
-
-        BOOST_TEST(got == 20);
-        BOOST_TEST(std::string(head.begin(), head.end()) == "abcdefgh");
-        BOOST_TEST(std::string(tail.begin(), tail.end()) == "ijklmnopqrst");
-    }
-
-    void
-    testBufferSlice()
-    {
-        auto [a, b] = capy::test::make_stream_pair();
-        std::string part1(10000, 'x');
-        std::string part2(10000, 'y');
-        std::array<capy::const_buffer, 2> bufs{
-            capy::make_buffer(part1), capy::make_buffer(part2)};
-
-        capy::test::run_blocking()(send_sliced(a, bufs));
-
-        BOOST_TEST(b.data() == part1 + part2);
-    }
-
-    void
     run()
     {
         testManualCombine();
@@ -524,8 +448,6 @@ struct composite_buffers_test
         testModels();
         testHeterogeneous();
         testIterate();
-        testReadAll();
-        testBufferSlice();
     }
 };
 

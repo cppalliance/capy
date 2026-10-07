@@ -11,7 +11,7 @@
 :page-mode: explanation
 :page-aliases: 5.buffers/5e.algorithms.adoc
 
-== Measuring
+== Counting Bytes
 
 cpp:buffer_size[] returns the total number of *bytes* across every buffer in a sequence:
 
@@ -20,29 +20,62 @@ cpp:buffer_size[] returns the total number of *bytes* across every buffer in a s
 include::example$snippets/5d_buffer_algo.cpp[tag=buffer_size_example,indent=0]
 ----
 
-cpp:buffer_length[] returns the *number of buffers* in the sequence:
+
+cpp:buffer_empty[] reports whether a sequence carries no data, 
+either because it holds no buffers or because every buffer has size zero.
+It is a shorthand for `buffer_size(bufseq) == 0`.
+
+Capy allows passing zero-size buffers to read and write operations. 
+This is to cover the situations where the size of the buffer is determined dynamically,
+based on incoming messages. A protocol may require that a sender first communicates the size of a
+message, and then the bytes of the message. 
+In such protocols, having nothing to send may be correctly
+represented by sending number zero, followed by no bytes. 
+This would translate into later using a zero-size buffer. 
+
+
+== buffer_slice
+
+cpp:buffer_slice[] returns a byte sub-range of a buffer sequence, as a value:
 
 [source,cpp]
 ----
-include::example$snippets/5d_buffer_algo.cpp[tag=buffer_length_example,indent=0]
+include::example$snippets/5d_buffer_algo.cpp[tag=buffer_slice_include]
+
+include::example$snippets/5d_buffer_algo.cpp[tag=buffer_slice,indent=0]
 ----
 
-[IMPORTANT]
-====
-These two names are easy to confuse, so read them as answering different questions:
+cpp:buffer_slice[]`(seq, offset, length)` returns a value that is itself a buffer sequence, so you can pass it to any operation expecting one. Both `offset` and `length` are optional, which makes it a general byte sub-range primitive. Except in the single-buffer case the result borrows `seq`, so the sequence must outlive the slice.
 
-* cpp:buffer_size[] -- how many bytes of data? This is what I/O operations care about.
-* cpp:buffer_length[] -- how many buffers hold it? This is the element count of the sequence, the analogue of `std::ranges::size`.
+Capy creates and manages buffer handles on your behalf. Those are the sub-range a cpp:buffer_slice[] produces, and the descriptors a type-erased stream passes to the OS. Each is valid only for the window its API documents.
 
-A three-buffer sequence of 100 bytes each has a cpp:buffer_size[] of 300 and a cpp:buffer_length[] of 3. You want cpp:buffer_size[] far more often.
-====
+== consuming_buffers
 
-cpp:buffer_empty[] reports whether a sequence carries no data, either because it holds no buffers or because every buffer has size zero:
+When transferring data incrementally, cpp:consuming_buffers[] is a cursor that tracks progress:
 
 [source,cpp]
 ----
-include::example$snippets/5d_buffer_algo.cpp[tag=buffer_empty_example,indent=0]
+include::example$snippets/5d_buffer_algo.cpp[tag=consuming_buffers_include]
+
+include::example$snippets/5d_buffer_algo.cpp[tag=read_all,indent=0]
 ----
+
+The cursor borrows the underlying sequence and provides:
+
+* cpp:consuming_buffers::data[data]`()` -- buffer sequence view of the remaining bytes
+* cpp:consuming_buffers::consume[consume]`(n)` -- advance past `n` transferred bytes, in place
+
+[NOTE]
+====
+`read_all` takes its stream by reference and its buffers by value. Both are safe
+here, because the caller owns the stream and awaits the task immediately.
+
+A coroutine reads its parameters when its body runs, not when the call is
+written. A task that is stored and awaited later outlives its call expression,
+so a reference parameter can dangle by then. That is why the fan-out example on
+xref:4.coroutines/4g.composition.adoc[Concurrent Composition] takes its item by
+value: it collects its tasks first, then awaits them together.
+====
 
 == Copying
 
@@ -71,7 +104,7 @@ The algorithm fills target buffers in order, reading from source buffers as need
 
 == Partial Transfer Loops
 
-Real transfers move some of the bytes, not all of them. Drive the loop with a cpp:consuming_buffers[] cursor, described on xref:5.buffers/5b.composite-buffers.adoc#_consuming_buffers[consuming_buffers].
+Real transfers move some of the bytes, not all of them. Drive the loop with a cpp:consuming_buffers[] cursor, described in <<_consuming_buffers>>.
 
 [source,cpp]
 ----
