@@ -1,5 +1,6 @@
 #
 # Copyright (c) 2025 Mohammad Nejati
+# Copyright (c) 2026 Michael Vandeberg
 #
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -13,4 +14,5 @@ if(NOT TARGET tests)
 endif()
 
 add_subdirectory(unit)
+add_subdirectory(no_rtti)
 add_subdirectory(doc)

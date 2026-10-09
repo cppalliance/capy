@@ -333,6 +333,21 @@ struct executor_ref_test
         BOOST_TEST_EQ(
             cex2.target<thread_pool::executor_type>(),
             nullptr);
+
+        // Empty: both overloads return nullptr
+        executor_ref empty;
+        executor_ref const& cempty = empty;
+        BOOST_TEST_EQ(
+            empty.target<thread_pool::executor_type>(),
+            nullptr);
+        BOOST_TEST_EQ(
+            cempty.target<thread_pool::executor_type>(),
+            nullptr);
+
+        static_assert(noexcept(
+            empty.target<thread_pool::executor_type>()));
+        static_assert(noexcept(
+            cempty.target<thread_pool::executor_type>()));
     }
 
     void

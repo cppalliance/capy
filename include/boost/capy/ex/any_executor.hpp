@@ -13,11 +13,11 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/continuation.hpp>
+#include <boost/capy/detail/type_id.hpp>
 #include <concepts>
 #include <coroutine>
 #include <memory>
 #include <type_traits>
-#include <typeinfo>
 
 namespace boost {
 namespace capy {
@@ -54,10 +54,10 @@ struct is_strand_type<strand<E>> : std::true_type {};
     @par Default State
 
     A default-constructed `any_executor` holds no executor.
-    `operator bool()`, `operator==`, and `target_type()` report the
-    empty state. `context()`, `on_work_started()`, `on_work_finished()`,
-    `dispatch()`, and `post()` are undefined behavior until an
-    executor is assigned.
+    `operator bool()`, `operator==`, and `target()` report the
+    empty state. `context()`, `on_work_started()`,
+    `on_work_finished()`, `dispatch()`, and `post()` are undefined
+    behavior until an executor is assigned.
 
     @par Thread Safety
 
@@ -92,7 +92,8 @@ class any_executor
         virtual std::coroutine_handle<> dispatch(continuation&) const = 0;
         virtual void post(continuation&) const = 0;
         virtual bool equals(impl_base const*) const noexcept = 0;
-        virtual std::type_info const& target_type() const noexcept = 0;
+        virtual detail::type_info const& target_type() const noexcept = 0;
+        virtual void const* target_ptr() const noexcept = 0;
     };
 
     template<class Ex>
@@ -138,9 +139,14 @@ class any_executor
             return ex_ == static_cast<impl const*>(other)->ex_;
         }
 
-        std::type_info const& target_type() const noexcept override
+        detail::type_info const& target_type() const noexcept override
         {
-            return typeid(Ex);
+            return detail::type_id<Ex>();
+        }
+
+        void const* target_ptr() const noexcept override
+        {
+            return &ex_;
         }
     };
 
@@ -300,16 +306,41 @@ public:
         return p_->equals(other.p_.get());
     }
 
-    /** Returns the type_info of the wrapped executor.
+    /** Return a pointer to the wrapped executor if it matches
+        the requested type.
 
-        @return The `std::type_info` of the stored executor type,
-                or `typeid(void)` if empty.
+        Analogous to `std::any_cast<Ex>(&a)`. Top-level cv-qualifiers
+        on `Ex` are ignored when matching.
+
+        Copies of an `any_executor` share one stored executor, so
+        every copy returns the same address. A modification made
+        through the non-const overload is visible to all of them.
+        Such modifications are not synchronized with concurrent use
+        of any copy.
+
+        @tparam Ex The executor type to retrieve.
+
+        @return A pointer to the stored executor, or `nullptr` if
+                this instance is empty or holds a different type.
     */
-    std::type_info const& target_type() const noexcept
+    template<class Ex>
+    Ex const* target() const noexcept
     {
-        if(!p_)
-            return typeid(void);
-        return p_->target_type();
+        if(!p_ || p_->target_type() != detail::type_id<Ex>())
+            return nullptr;
+        // Casting from void const* avoids naming impl<Ex>, which would
+        // instantiate its overrides and reject non-executor types
+        return static_cast<Ex const*>(p_->target_ptr());
+    }
+
+    /// @copydoc target() const
+    template<class Ex>
+    Ex* target() noexcept
+    {
+        if(!p_ || p_->target_type() != detail::type_id<Ex>())
+            return nullptr;
+        return const_cast<Ex*>(
+            static_cast<Ex const*>(p_->target_ptr()));
     }
 };
 

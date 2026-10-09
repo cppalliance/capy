@@ -108,10 +108,10 @@ class executor_ref
 public:
     /** Construct a default instance.
 
-        Constructs an empty `executor_ref`. `operator bool()` and
-        `operator==()` report the empty state; `context()`,
-        `on_work_started()`, `on_work_finished()`, `dispatch()`,
-        `post()`, and `target()` are undefined behavior until an
+        Constructs an empty `executor_ref`. `operator bool()`,
+        `operator==()`, and `target()` report the empty state;
+        `context()`, `on_work_started()`, `on_work_finished()`,
+        `dispatch()`, and `post()` are undefined behavior until an
         executor is assigned.
     */
     executor_ref() = default;
@@ -265,21 +265,22 @@ public:
         @tparam Executor The executor type to retrieve.
 
         @return A pointer to the underlying executor, or
-            `nullptr` if the type does not match.
+            `nullptr` if this reference is empty or the type
+            does not match.
     */
     template< typename Executor >
-    const Executor* target() const
+    const Executor* target() const noexcept
     {
-        if ( *vt_->type_id == detail::type_id< Executor >() )
+        if ( vt_ && *vt_->type_id == detail::type_id< Executor >() )
            return static_cast< Executor const* >( ex_ );
         return nullptr;
     }
 
     /// @copydoc target() const
     template< typename Executor>
-    Executor* target()
+    Executor* target() noexcept
     {
-        if ( *vt_->type_id == detail::type_id< Executor >() )
+        if ( vt_ && *vt_->type_id == detail::type_id< Executor >() )
            return const_cast< Executor* >(
                static_cast< Executor const* >( ex_ ));
         return nullptr;
