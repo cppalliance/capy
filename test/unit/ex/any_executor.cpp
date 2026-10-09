@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -267,6 +268,9 @@ struct any_executor_test
         // Empty executor
         {
             any_executor ex;
+            BOOST_TEST(ex.target_type() == detail::type_id<void>());
+            // With RTTI on, detail::type_info is std::type_info, so
+            // existing typeid comparisons still compile.
             BOOST_TEST(ex.target_type() == typeid(void));
         }
 
@@ -274,7 +278,96 @@ struct any_executor_test
         {
             thread_pool pool(1);
             any_executor ex(pool.get_executor());
+            BOOST_TEST(ex.target_type() ==
+                detail::type_id<thread_pool::executor_type>());
             BOOST_TEST(ex.target_type() == typeid(thread_pool::executor_type));
+        }
+    }
+
+    void
+    testTarget()
+    {
+        // Empty: both overloads return nullptr
+        {
+            any_executor ex;
+            any_executor const& cex = ex;
+            BOOST_TEST(ex.target<counting_executor>() == nullptr);
+            BOOST_TEST(cex.target<counting_executor>() == nullptr);
+        }
+
+        // Matching type: points at the stored copy, not the original
+        {
+            counting_context ctx;
+            counting_executor under(ctx);
+            any_executor ex(under);
+            any_executor const& cex = ex;
+
+            counting_executor* p = ex.target<counting_executor>();
+            counting_executor const* cp = cex.target<counting_executor>();
+            BOOST_TEST(p != nullptr);
+            BOOST_TEST(p == cp);
+            BOOST_TEST(p != &under);
+            BOOST_TEST(*p == under);
+        }
+
+        // cv-qualified request finds the same object
+        {
+            counting_context ctx;
+            any_executor ex(counting_executor{ctx});
+            counting_executor const* p =
+                ex.target<counting_executor const>();
+            BOOST_TEST(p != nullptr);
+            BOOST_TEST(p == ex.target<counting_executor>());
+        }
+
+        // Mismatched type returns nullptr
+        {
+            thread_pool pool(1);
+            any_executor ex(pool.get_executor());
+            BOOST_TEST(ex.target<counting_executor>() == nullptr);
+            BOOST_TEST(ex.target<thread_pool::executor_type>() != nullptr);
+        }
+
+        // A non-executor type compiles and returns nullptr
+        {
+            thread_pool pool(1);
+            any_executor ex(pool.get_executor());
+            any_executor const& cex = ex;
+            BOOST_TEST(ex.target<int>() == nullptr);
+            BOOST_TEST(cex.target<int>() == nullptr);
+        }
+
+        // Same type, different contexts: target() tells them apart,
+        // which target_type() alone cannot
+        {
+            thread_pool pool1(1);
+            thread_pool pool2(1);
+            any_executor ex1(pool1.get_executor());
+            any_executor ex2(pool2.get_executor());
+            BOOST_TEST(ex1.target_type() == ex2.target_type());
+            BOOST_TEST(*ex1.target<thread_pool::executor_type>() ==
+                pool1.get_executor());
+            BOOST_TEST(*ex2.target<thread_pool::executor_type>() ==
+                pool2.get_executor());
+        }
+
+        // Copies share one stored executor
+        {
+            counting_context ctx;
+            any_executor ex1(counting_executor{ctx});
+            any_executor ex2 = ex1;
+            BOOST_TEST(ex1.target<counting_executor>() ==
+                ex2.target<counting_executor>());
+        }
+
+        // Copies share: a write through one is seen by all
+        {
+            counting_context ctx1;
+            counting_context ctx2;
+            any_executor ex1(counting_executor{ctx1});
+            any_executor ex2 = ex1;
+            ex1.target<counting_executor>()->ctx_ = &ctx2;
+            BOOST_TEST(&ex2.context() == &ctx2);
         }
     }
 
@@ -407,6 +500,7 @@ struct any_executor_test
         testEquality();
         testWorkTracking();
         testTargetType();
+        testTarget();
         testContext();
         testDispatch();
         testPost();

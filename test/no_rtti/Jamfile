@@ -1,0 +1,26 @@
+#
+# Copyright (c) 2026 Michael Vandeberg
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/capy
+#
+
+import ac ;
+import testing ;
+
+project
+    : requirements
+      $(c20-requires)
+      <library>/boost/capy//boost_capy
+      <source>../../extra/test_suite/test_main.cpp
+      <source>../../extra/test_suite/test_suite.cpp
+      <include>../../extra/test_suite
+      <rtti>off
+      <warnings>extra
+      <warnings-as-errors>on
+      <target-os>darwin,<undefined-sanitizer>norecover:<link>static
+    ;
+
+run any_executor.cpp : target-name no_rtti_any_executor ;
