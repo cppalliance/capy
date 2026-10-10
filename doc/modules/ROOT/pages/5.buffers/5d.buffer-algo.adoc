@@ -35,7 +35,7 @@ This would translate into later using a zero-size buffer.
 
 [CAUTION]
 ====
-These two functions have similar names but return different values:
+The following two functions have similar names but return different values:
 
  * cpp:buffer_size[] -- number of bytes across the entire buffer sequence,
  * cpp:buffer_length[] -- number of contiguous buffers in the sequence.

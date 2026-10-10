@@ -11,9 +11,9 @@
 = Composite Buffers
 :page-mode: explanation
 
-In real protocols often a message to be transmitted is composed of a couple of chunks prepared separately
+In real protocols, a message to be transmitted is often composed of a couple of chunks prepared separately
 in separate contiguous regions of storage. For instance, you may separately get message headers, the payload, 
-and the message checksum. Trying to get them into a single contiguous storage would require the user to do
+and the message checksum. Trying to get them into a single contiguous region would require the user to do
 unnecessary copying.
 
 In order to address this use case, all read and write operations in Capy allow you to provide ranges 
@@ -61,7 +61,7 @@ Treating a single contiguous buffer as a one-element sequence is intentional, to
 Internally, it is treated as a single-element range.
 
 While a structure looks two-dimensional, the bytes across all contiguous buffers 
-are interpretted and transmitted as a single sequence: first the bytes from the first contiguous buffer,
+are interpreted and transmitted as a single sequence: first the bytes from the first contiguous buffer,
 then the bytes from the second contiguous buffer, and so on.  
 
 The mechanism for handling ranges of buffers assumes that the number of elements will be around four.
@@ -88,7 +88,7 @@ Concept cpp:ConstBufferSequence[] tests if the type models a const buffer sequen
 suitable for write algorithms. It can be one of:
 
  * cpp:const_buffer[],
- * cpp:mutable_buffer[] (with caveat that its data has determinate values),
+ * cpp:mutable_buffer[] (with the caveat that its data has determinate values),
  * a bidirectional range of either cpp:const_buffer[] or cpp:mutable_buffer[].
 
 [source,cpp]
@@ -103,7 +103,7 @@ These concepts are present in header `<boost/capy/buffers.hpp>`.
 
 Header `<boost/capy/buffers.hpp>` also provides a couple of function objects for navigating buffer sequences.
 
-In order to iterate over contiguous buffers themselves (as opposed to bytes)
+In order to iterate over contiguous buffers themselves (as opposed to bytes),
 use cpp:begin[capy::begin] and cpp:end[capy::end]:
 
 [source,cpp]
@@ -119,7 +119,7 @@ These functions treat single contiguous buffers as a one-element range of contig
 include::example$snippets/5b_composite_buffers.cpp[tag=begin_end_uniform,indent=0]
 ----
 
-Function cpp:buffer_length[] tells how many coniguous buffers are present in the buffer
+Function cpp:buffer_length[] says how many contiguous buffers are present in the buffer
 sequence. It is equivalent to
 
 [source,cpp]
