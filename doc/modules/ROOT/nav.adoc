@@ -16,6 +16,7 @@
 ** xref:5.buffers/5b.composite-buffers.adoc[Composite Buffers]
 ** xref:5.buffers/5c.system-io-integration.adoc[System I/O Integration]
 ** xref:5.buffers/5d.buffer-algo.adoc[Buffer Algorithms]
+** xref:5.buffers/5e.rationale.adoc[Rationale]
 * xref:6.streams/6.intro.adoc[Streams]
 ** xref:6.streams/6a.concepts.adoc[Stream Concepts]
 ** xref:6.streams/6b.wrappers.adoc[Type-Erased Wrappers]

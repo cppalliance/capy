@@ -11,9 +11,9 @@
 = Composite Buffers
 :page-mode: explanation
 
-In real protocols often a message to be transmitted is composed of a couple of chunks prepared separately
+In real protocols, a message to be transmitted is often composed of a couple of chunks prepared separately
 in separate contiguous regions of storage. For instance, you may separately get message headers, the payload, 
-and the message checksum. Trying to get them into a single contiguous storage would require the user to do
+and the message checksum. Trying to get them into a single contiguous region would require the user to do
 unnecessary copying.
 
 In order to address this use case, all read and write operations in Capy allow you to provide ranges 
@@ -61,7 +61,7 @@ Treating a single contiguous buffer as a one-element sequence is intentional, to
 Internally, it is treated as a single-element range.
 
 While a structure looks two-dimensional, the bytes across all contiguous buffers 
-are interpretted and transmitted as a single sequence: first the bytes from the first contiguous buffer,
+are interpreted and transmitted as a single sequence: first the bytes from the first contiguous buffer,
 then the bytes from the second contiguous buffer, and so on.  
 
 The mechanism for handling ranges of buffers assumes that the number of elements will be around four.
@@ -88,7 +88,7 @@ Concept cpp:ConstBufferSequence[] tests if the type models a const buffer sequen
 suitable for write algorithms. It can be one of:
 
  * cpp:const_buffer[],
- * cpp:mutable_buffer[] (with caveat that its data has determinate values),
+ * cpp:mutable_buffer[] (with the caveat that its data has determinate values),
  * a bidirectional range of either cpp:const_buffer[] or cpp:mutable_buffer[].
 
 [source,cpp]
@@ -99,100 +99,30 @@ include::example$snippets/5b_composite_buffers.cpp[tag=test_const_buffer,indent=
 These concepts are present in header `<boost/capy/buffers.hpp>`. 
 
 
-=== Iterating Buffer Sequences
+=== Navigating Buffer Sequences
 
-Use `begin()` and `end()` from `<boost/capy/buffers.hpp>`:
+Header `<boost/capy/buffers.hpp>` also provides a couple of function objects for navigating buffer sequences.
+
+In order to iterate over contiguous buffers themselves (as opposed to bytes),
+use cpp:begin[capy::begin] and cpp:end[capy::end]:
 
 [source,cpp]
 ----
 include::example$snippets/5b_composite_buffers.cpp[tag=iterate,indent=0]
 ----
 
-These handle both single buffers, returning pointer-to-self, and ranges, returning standard iterators:
+These functions treat single contiguous buffers as a one-element range of contiguous buffers:
+
 
 [source,cpp]
 ----
 include::example$snippets/5b_composite_buffers.cpp[tag=begin_end_uniform,indent=0]
 ----
 
-=== buffer_slice
-
-
-cpp:buffer_slice[] returns a byte sub-range of a buffer sequence, as a value:
+Function cpp:buffer_length[] says how many contiguous buffers are present in the buffer
+sequence. It is equivalent to
 
 [source,cpp]
 ----
-include::example$snippets/5b_composite_buffers.cpp[tag=buffer_slice_include]
-
-include::example$snippets/5b_composite_buffers.cpp[tag=buffer_slice,indent=0]
+include::example$snippets/5b_composite_buffers.cpp[tag=length_equivalent,indent=0]
 ----
-
-cpp:buffer_slice[]`(seq, offset, length)` returns a value that is itself a buffer sequence, so you can pass it to any operation expecting one. Both `offset` and `length` are optional, which makes it a general byte sub-range primitive. Except in the single-buffer case the result borrows `seq`, so the sequence must outlive the slice.
-
-Capy creates and manages buffer handles on your behalf. Those are the sub-range a cpp:buffer_slice[] produces, and the descriptors a type-erased stream passes to the OS. Each is valid only for the window its API documents.
-
-
-=== consuming_buffers
-
-When transferring data incrementally, cpp:consuming_buffers[] is a cursor that tracks progress:
-
-[source,cpp]
-----
-include::example$snippets/5b_composite_buffers.cpp[tag=consuming_buffers_include]
-
-include::example$snippets/5b_composite_buffers.cpp[tag=read_all,indent=0]
-----
-
-The cursor borrows the underlying sequence and provides:
-
-* cpp:consuming_buffers::data[data]`()` -- buffer sequence view of the remaining bytes
-* cpp:consuming_buffers::consume[consume]`(n)` -- advance past `n` transferred bytes, in place
-
-[NOTE]
-====
-`read_all` takes its stream by reference and its buffers by value. Both are safe
-here, because the caller owns the stream and awaits the task immediately.
-
-A coroutine reads its parameters when its body runs, not when the call is
-written. A task that is stored and awaited later outlives its call expression,
-so a reference parameter can dangle by then. That is why the fan-out example on
-xref:4.coroutines/4g.composition.adoc[Concurrent Composition] takes its item by
-value: it collects its tasks first, then awaits them together.
-====
-
-== Rationale
-
-
-=== Why `void*` rather than `std::byte`?
-
-Two concrete forces decide it:
-
-* *The platform types already use it.* The OS structures Capy maps onto are `void*` or `char*`: `iovec`'s `iov_base`, `WSABUF`'s `buf`. The pointer field never needs reinterpreting.
-* *Callers supply many element types.* Data arrives as `char[]`, `unsigned char[]`, `std::byte[]`, `std::string`, and more. One neutral pointer erases all of them to a single representation. `std::span<std::byte>` would make every caller reinterpret first, and `std::span<void>` is ill-formed.
-
-This is an argument from layout and from caller convenience, not from semantics. "Raw memory" describes `std::byte` just as well as it describes `void*`.
-
-
-
-=== Why concepts rather than one span type?
-
-`std::span<std::span<std::byte>>` is the reflexive answer for multiple buffers, and it works. The problem is composition. Joining a two-buffer header to a three-buffer body means building a new five-element array, so every composition allocates:
-
-[source,cpp]
-----
-include::example$snippets/5b_composite_buffers.cpp[tag=span_combine,indent=0]
-----
-
-A concept accepts the composite directly, with no allocation and no overload per shape.
-
-At type-erasure boundaries the tradeoff reverses. Virtual functions need concrete types, so Capy converts to concrete descriptors internally and keeps concepts at the user-facing edge.
-
-
-=== Why Bidirectional?
-
-The concepts require bidirectional ranges, not merely forward ranges, for two reasons:
-
-1. Some algorithms traverse buffers backwards
-2. The slice views from cpp:buffer_slice[] and cpp:consuming_buffers::data[]`()` must adjust the first and last buffers' bounds
-
-If your custom sequence offers only forward iteration, wrap it in a type that provides bidirectional access.
