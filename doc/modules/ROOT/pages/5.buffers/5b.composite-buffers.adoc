@@ -119,39 +119,10 @@ These functions treat single contiguous buffers as a one-element range of contig
 include::example$snippets/5b_composite_buffers.cpp[tag=begin_end_uniform,indent=0]
 ----
 
-== Rationale
-
-
-=== Why `void*` rather than `std::byte`?
-
-Two concrete forces decide it:
-
-* *The platform types already use it.* The OS structures Capy maps onto are `void*` or `char*`: `iovec`'s `iov_base`, `WSABUF`'s `buf`. The pointer field never needs reinterpreting.
-* *Callers supply many element types.* Data arrives as `char[]`, `unsigned char[]`, `std::byte[]`, `std::string`, and more. One neutral pointer erases all of them to a single representation. `std::span<std::byte>` would make every caller reinterpret first, and `std::span<void>` is ill-formed.
-
-This is an argument from layout and from caller convenience, not from semantics. "Raw memory" describes `std::byte` just as well as it describes `void*`.
-
-
-
-=== Why concepts rather than one span type?
-
-`std::span<std::span<std::byte>>` is the reflexive answer for multiple buffers, and it works. The problem is composition. Joining a two-buffer header to a three-buffer body means building a new five-element array, so every composition allocates:
+Function cpp:buffer_length[] tells how many coniguous buffers are present in the buffer
+sequence. It is equivalent to
 
 [source,cpp]
 ----
-include::example$snippets/5b_composite_buffers.cpp[tag=span_combine,indent=0]
+include::example$snippets/5b_composite_buffers.cpp[tag=length_equivalent,indent=0]
 ----
-
-A concept accepts the composite directly, with no allocation and no overload per shape.
-
-At type-erasure boundaries the tradeoff reverses. Virtual functions need concrete types, so Capy converts to concrete descriptors internally and keeps concepts at the user-facing edge.
-
-
-=== Why Bidirectional?
-
-The concepts require bidirectional ranges, not merely forward ranges, for two reasons:
-
-1. Some algorithms traverse buffers backwards
-2. The slice views from cpp:buffer_slice[] and cpp:consuming_buffers::data[]`()` must adjust the first and last buffers' bounds
-
-If your custom sequence offers only forward iteration, wrap it in a type that provides bidirectional access.

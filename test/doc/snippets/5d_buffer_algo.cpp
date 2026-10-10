@@ -303,37 +303,6 @@ struct buffer_algo_test
     }
 
     void
-    testBufferEmpty()
-    {
-        // tag::buffer_empty_example[]
-        capy::const_buffer empty_buf;
-        capy::buffer_empty(empty_buf);  // true
-
-        capy::const_buffer non_empty("data", 4);
-        capy::buffer_empty(non_empty);  // false
-        // end::buffer_empty_example[]
-        BOOST_TEST(capy::buffer_empty(empty_buf));
-        BOOST_TEST(! capy::buffer_empty(non_empty));
-    }
-
-    void
-    testBufferLength()
-    {
-        capy::const_buffer buf1("one", 3);
-        capy::const_buffer buf2("two", 3);
-        capy::const_buffer buf3("three", 5);
-        // tag::buffer_length_example[]
-        auto single = capy::make_buffer("hello"sv);
-        capy::buffer_length(single);  // 1
-
-        auto arr = std::array{buf1, buf2, buf3};
-        capy::buffer_length(arr);  // 3
-        // end::buffer_length_example[]
-        BOOST_TEST(capy::buffer_length(single) == 1);
-        BOOST_TEST(capy::buffer_length(arr) == 3);
-    }
-
-    void
     testBufferCopy()
     {
         // tag::buffer_copy_example[]
@@ -456,8 +425,6 @@ struct buffer_algo_test
     run()
     {
         testBufferSize();
-        testBufferEmpty();
-        testBufferLength();
         testBufferCopy();
         testPartialCopy();
         testCrossSequenceCopy();

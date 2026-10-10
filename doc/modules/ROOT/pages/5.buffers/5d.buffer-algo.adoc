@@ -30,8 +30,18 @@ This is to cover the situations where the size of the buffer is determined dynam
 based on incoming messages. A protocol may require that a sender first communicates the size of a
 message, and then the bytes of the message. 
 In such protocols, having nothing to send may be correctly
-represented by sending number zero, followed by no bytes. 
+represented by sending the number zero, followed by no bytes. 
 This would translate into later using a zero-size buffer. 
+
+[CAUTION]
+====
+These two functions have similar names but return different values:
+
+ * cpp:buffer_size[] -- number of bytes across the entire buffer sequence,
+ * cpp:buffer_length[] -- number of contiguous buffers in the sequence.
+
+A three-buffer sequence of 100 bytes each has a cpp:buffer_size[] of 300 and a cpp:buffer_length[] of 3.
+====
 
 
 == buffer_slice

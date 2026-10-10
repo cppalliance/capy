@@ -1,0 +1,41 @@
+//
+// Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
+// Copyright (c) 2026 Andrzej Krzemieński (akrzemi1@gmail.com)
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+= Rationale
+:page-mode: explanation
+
+== Why `void*` rather than `std::byte`?
+
+Two concrete forces decide it:
+
+* *The platform types already use it.* The OS structures Capy maps onto are `void*` or `char*`: `iovec`'s `iov_base`, `WSABUF`'s `buf`. The pointer field never needs reinterpreting.
+* *Callers supply many element types.* Data arrives as `char[]`, `unsigned char[]`, `std::byte[]`, `std::string`, and more. One neutral pointer erases all of them to a single representation. `std::span<std::byte>` would make every caller reinterpret first, and `std::span<void>` is ill-formed.
+
+This is an argument from layout and from caller convenience, not from semantics. "Raw memory" describes `std::byte` just as well as it describes `void*`.
+
+== Why concepts rather than one span type?
+
+`std::span<std::span<std::byte>>` is the reflexive answer for multiple buffers, and it works. The problem is composition. Joining a two-buffer header to a three-buffer body means building a new five-element array, so every composition allocates:
+
+[source,cpp]
+----
+include::example$snippets/5e_rationale.cpp[tag=span_combine,indent=0]
+----
+
+A concept accepts the composite directly, with no allocation and no overload per shape.
+
+At type-erasure boundaries the tradeoff reverses. Virtual functions need concrete types, so Capy converts to concrete descriptors internally and keeps concepts at the user-facing edge.
+
+== Why Bidirectional?
+
+The concepts require bidirectional ranges, not merely forward ranges, for two reasons:
+
+1. Some algorithms traverse buffers backwards
+2. The slice views from cpp:buffer_slice[] and cpp:consuming_buffers::data[]`()` must adjust the first and last buffers' bounds

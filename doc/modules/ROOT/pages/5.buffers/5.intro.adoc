@@ -31,3 +31,6 @@ designed with the following criteria in mind:
   how a sequence maps onto the structures that native I/O systems expect.
 * xref:5.buffers/5d.buffer-algo.adoc[Buffer Algorithms] -- counting bytes,
   slicing, copying, and consuming those sequences.
+* xref:5.buffers/5e.rationale.adoc[Rationale] -- why the handles use `void*`,
+  why sequences are concepts, and why those concepts require bidirectional
+  iteration.
