@@ -12,6 +12,7 @@
 #define BOOST_CAPY_DETAIL_AWAIT_SUSPEND_HELPER_HPP
 
 #include <coroutine>
+#include <boost/capy/detail/config.hpp>
 #include <boost/capy/ex/io_env.hpp>
 
 #include <type_traits>
@@ -40,19 +41,62 @@ namespace detail {
         frame before the runtime reads `__$ReturnUdt$` (e.g.
         `boundary_trampoline` final_suspend).
 
-    On MSVC this function calls `h.resume()` on the current stack
-    and returns `void`, causing unconditional suspension. The
-    trade-off is O(n) stack growth instead of O(1) tail-calls.
+    On affected compilers this function calls `h.resume()` on the
+    current stack and returns `void`, causing unconditional
+    suspension. The trade-off is O(n) stack growth instead of
+    O(1) tail-calls.
 
-    On other compilers the handle is returned directly for proper
-    symmetric transfer.
+    On x64 the workaround applies to MSVC 19.34 through 19.44 and
+    self-retires on MSVC 19.50 (VS 2026 / 18.0). Measured on
+    19.44 the caller builds the hidden return slot at
+    `__coro_frame_ptr$ + 0xC0`, on the coroutine frame; on 19.51
+    it is an `rsp`-relative stack temporary, so destroying the
+    frame no longer invalidates it.
+
+    Do not widen this gate on the basis of Developer Community
+    ticket 10251975, tagged "Fixed in VS 2022 17.9 Preview 2";
+    19.39 reproduces the fault identically to 19.34.
+
+    On ARM64 the workaround does not retire at 19.50, because
+    that target has a second, unrelated defect. With a real
+    symmetric transfer, MSVC 19.51 release loses the handler for
+    a `try` region that spans the suspend point: after the
+    coroutine is resumed from another call stack, a `throw`
+    inside that region is not caught by the `catch` beside it and
+    escapes to the promise's `unhandled_exception`. A `catch(...)`
+    misses it too, so the region is not found at all rather than
+    the handler failing to match. Debug builds are unaffected, as
+    is x64 at the same toolset. `testCatchAfterDeferredResume` in
+    test/unit/task.cpp covers this.
+
+    `_M_ARM64EC` is included conservatively. It generates ARM64
+    code and has not been tested here; keeping the workaround on
+    is the safe direction, since it costs stack depth rather than
+    correctness.
+
+    The gate deliberately excludes Clang. Both `clang-cl` and
+    `clang++` targeting Windows define `_MSC_VER` for ABI
+    compatibility, but generate a correct tail-call.
+
+    Note that a probe which merely poisons the destroyed frame
+    cannot validate this gate. Routing the return through this
+    function moves the frame write to after `destroy()`, which
+    repairs the poison pattern and hides the defect. The
+    regression test in
+    test/unit/detail/await_suspend_helper.cpp unmaps the frame
+    instead, so any post-destroy access faults.
+
+    On unaffected compilers the handle is returned directly for
+    proper symmetric transfer.
 
     Callers must use `auto` return type on their `await_suspend`
     so the return type adapts per platform.
 
     @param h The coroutine handle to transfer to.
 */
-#if BOOST_CAPY_WORKAROUND(_MSC_VER, >= 1)
+#if (BOOST_CAPY_WORKAROUND(_MSC_VER, < 1950) || \
+     defined(_M_ARM64) || defined(_M_ARM64EC)) && \
+    !defined(__clang__)
 inline void symmetric_transfer(std::coroutine_handle<> h) noexcept
 {
     // safe_resume is not needed here: the calling coroutine is
