@@ -33,7 +33,7 @@ target_link_libraries(custom_executor PRIVATE Boost::capy)
 include::example$custom-executor/custom_executor.cpp[tag=inherit]
 ----
 
-The destructor must call `shutdown()` then `destroy()` to clean up coroutine state.
+The destructor must call `shutdown()`, give up any work still queued with cpp:abandon[], then call `destroy()`. Destroying a service can post more work, and unwinding an abandoned chain can create a service, so the destructor repeats `destroy()` and the drain until a drain finds nothing. The queue holds copies of each cpp:continuation[], so the owner that cpp:abandon[] needs travels with the handle.
 
 === The Executor Concept
 
@@ -57,7 +57,7 @@ include::example$custom-executor/custom_executor.cpp[tag=concept_check]
 include::example$custom-executor/custom_executor.cpp[tag=dispatch,indent=0]
 ----
 
-`dispatch` takes a `continuation&` and checks whether the caller is already running on the loop's thread. If so, it returns `c.h` directly for inline resumption via symmetric transfer. Otherwise it enqueues `c.h` and returns `noop_coroutine` so the caller continues without blocking.
+`dispatch` takes a `continuation&` and checks whether the caller is already running on the loop's thread. If so, it returns `c.h` directly for inline resumption via symmetric transfer. Otherwise it enqueues a copy of `c` and returns `noop_coroutine` so the caller continues without blocking.
 
 `post` always enqueues, even if already on the right thread.
 

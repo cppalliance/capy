@@ -30,14 +30,19 @@ struct vtable
 
 === Construct in await_ready (any_read_stream)
 
-When there is no outer short-circuit, constructing in `await_ready` lets immediate completions skip `await_suspend` entirely:
+When there is no outer short-circuit, constructing in `await_ready` lets immediate completions skip `await_suspend` entirely. A chain unwound while suspended never reaches `await_resume`, so the outer awaitable's destructor destroys the inner one; `owns_` marks the outer awaitable that constructed it, since another may be created on the same stream without being awaited:
 
 .Design sketch
 [source,cpp,role=pseudocode]
 ----
+~awaitable() {
+    if(owns_ && awaitable_active_)       // unwound while suspended
+        vt_->destroy_awaitable(cached_awaitable_);
+}
+
 bool await_ready() {
     vt_->construct_awaitable(stream_, cached_awaitable_, buffers);
-    awaitable_active_ = true;
+    awaitable_active_ = owns_ = true;
     return vt_->await_ready(cached_awaitable_);   // true → no suspend
 }
 
@@ -48,36 +53,32 @@ std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* e
 io_result<size_t> await_resume() {
     auto r = vt_->await_resume(cached_awaitable_);
     vt_->destroy_awaitable(cached_awaitable_);
-    awaitable_active_ = false;
+    awaitable_active_ = owns_ = false;
     return r;
 }
 ----
 
-=== Construct in await_suspend (any_write_stream)
+=== Short-circuit before constructing (any_write_stream)
 
-When the outer awaitable has a short-circuit (empty buffers), construction is deferred to `await_suspend` so the inner awaitable is never created on the fast path:
+When the outer awaitable has a short-circuit (empty buffers), `await_ready` checks it first, so the inner awaitable is never created on the fast path. Otherwise construction proceeds as above:
 
 .Design sketch
 [source,cpp,role=pseudocode]
 ----
-bool await_ready() const noexcept {
-    return buffers_.empty();             // short-circuit, no construct
-}
-
-std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env) {
+bool await_ready() {
+    if(buffers_.empty())
+        return true;                     // short-circuit, no construct
     vt_->construct_awaitable(stream_, cached_awaitable_, buffers);
-    awaitable_active_ = true;
-    if(vt_->await_ready(cached_awaitable_))
-        return h;                        // immediate → resume caller
-    return vt_->await_suspend(cached_awaitable_, h, env);
+    awaitable_active_ = owns_ = true;
+    return vt_->await_ready(cached_awaitable_);
 }
 
 io_result<size_t> await_resume() {
-    if(!awaitable_active_)
-        return {std::error_code(), 0};                  // short-circuited
+    if(!owns_)
+        return {std::error_code(), 0};   // short-circuited
     auto r = vt_->await_resume(cached_awaitable_);
     vt_->destroy_awaitable(cached_awaitable_);
-    awaitable_active_ = false;
+    awaitable_active_ = owns_ = false;
     return r;
 }
 ----

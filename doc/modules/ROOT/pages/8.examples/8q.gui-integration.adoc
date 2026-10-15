@@ -36,7 +36,7 @@ The program links no GUI library. It uses a stand-in instead.
 include::example$gui-integration/gui_integration.cpp[tag=gui_app]
 ----
 
-`gui_app` records the thread it is constructed on, holds a queue of coroutine handles, and exposes `post_to_gui_thread`. That last operation is the one primitive every toolkit already provides. Qt names it `QMetaObject::invokeMethod`, GTK `g_idle_add`, wxWidgets `wxEvtHandler::CallAfter`, Win32 `PostMessage`.
+`gui_app` records the thread it is constructed on, holds a queue of continuations, and exposes `post_to_gui_thread`. That last operation is the one primitive every toolkit already provides. Qt names it `QMetaObject::invokeMethod`, GTK `g_idle_add`, wxWidgets `wxEvtHandler::CallAfter`, Win32 `PostMessage`.
 
 === The Event Loop
 
@@ -158,7 +158,7 @@ The completion handler runs on the GUI thread, because the task completed there.
 
 The stand-in exists to prove the contract, not to model a toolkit. Five pieces change when the toolkit is real, and the rest does not:
 
-* `post_to_gui_thread` forwards to the toolkit's own post operation, and the receiving side calls cpp:safe_resume[] on the handle.
+* `post_to_gui_thread` forwards to the toolkit's own post operation, and the receiving side calls cpp:safe_resume[] on the handle. Work still queued when the loop is torn down is given up with cpp:abandon[], so its chain unwinds instead of leaking.
 * `gui_app::run` disappears. The toolkit already owns a loop, such as `QApplication::exec`, `g_main_loop_run`, or `wxApp::OnRun`.
 * `gui_app::quit` forwards to the toolkit's own quit, such as `QCoreApplication::quit`, `g_main_loop_quit`, or `wxAppConsole::ExitMainLoop`.
 * `label` becomes a real widget. Its thread check is the part the toolkit does not do for you.

@@ -54,7 +54,8 @@ struct frame_cb {
 
 Three pointers. Twenty-four bytes on a 64-bit platform. The `resume`
 pointer holds the sender's completion callback. The `destroy` pointer
-is a no-op - the sender owns its own lifetime. The `data` pointer
+is reached only when the awaitable's segment is given up: it destroys
+the awaitable and completes the receiver stopped. The `data` pointer
 points back to the operation state.
 
 `std::coroutine_handle<>::from_address(&cb)` produces a handle that,
@@ -83,7 +84,7 @@ Here is what happens, step by step:
      inline.
 
   3. Otherwise, the `frame_cb` is filled in: `resume` points to the
-     completion callback, `destroy` is a no-op, `data` points to the
+     completion callback, `destroy` gives the operation up, `data` points to the
      operation state. A `coroutine_handle<>` is manufactured from the
      `frame_cb`'s address. `await_suspend(handle, &env)` is called on
      the awaitable.

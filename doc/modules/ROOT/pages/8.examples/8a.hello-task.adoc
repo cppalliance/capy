@@ -46,7 +46,7 @@ include::example$hello-task/hello_task.cpp[tag=pool,indent=0]
 
 cpp:thread_pool[] provides an execution context with worker threads. By default, it creates one thread per CPU core.
 
-Call `pool.join()` before the pool is destroyed to wait for all outstanding work to finish. The destructor does *not* wait for queued work: `~thread_pool` calls `stop()`, which abandons any work that has not yet started, then joins the worker threads. Without the explicit `pool.join()`, `main` could destroy the pool and exit before `say_hello` ever runs, so `"Hello from Capy!"` might never print.
+Call `pool.join()` before the pool is destroyed to wait for all outstanding work to finish. The destructor does *not* wait for queued work: `~thread_pool` calls `stop()` and joins the worker threads, then gives up any work that has not yet started. Without the explicit `pool.join()`, `main` could destroy the pool and exit before `say_hello` ever runs, so `"Hello from Capy!"` might never print.
 
 === Starting the Task
 

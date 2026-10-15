@@ -171,7 +171,9 @@ Executors have specific thread safety guarantees:
 
 == Executor Validity
 
-An executor becomes invalid when its execution context shuts down:
+An executor stays valid until its execution context is destroyed. Once
+the context has begun shutting down it runs no more work: `dispatch`
+and `post` give the coroutine to `abandon` instead of resuming it.
 
 [source,cpp]
 ----
@@ -182,8 +184,8 @@ auto ex = pool.get_executor();
 // WARNING: Calling ex.dispatch() after pool destruction is undefined behavior
 ----
 
-The copy constructor and `context()` remain valid until the context is
-destroyed, but work submission functions become undefined.
+Calling any member after the context is destroyed is undefined
+behavior.
 
 == When NOT to Use Executors Directly
 

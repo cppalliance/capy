@@ -230,9 +230,10 @@ strand_impl::~strand_impl()
 }
 ```
 
-`~strand_queue` (already implemented) destroys any pending wrappers
-without resuming them. That covers the case where work was queued but
-the inner executor never invoked the invoker before context teardown.
+`strand_queue::abandon_batch` gives any pending continuations to
+`abandon` without resuming them. That covers the case where work was
+queued but the inner executor never invoked the invoker before context
+teardown.
 
 ### Shutdown
 
@@ -279,10 +280,9 @@ freed.
    service state, which may have been freed.
 
 4. **Service shutdown with invoker queued but never invoked.** The
-   inner executor's destructor drops the queued continuation; the
-   coroutine handle is never destroyed; the promise's `shared_ptr`
-   never releases; impl and frame leak. Pre-existing behavior, not
-   introduced by this design.
+   inner context abandons the queued continuation, destroying the
+   invoker frame; its `shared_ptr` releases the impl, whose destructor
+   abandons what is still pending.
 
 5. **Service shutdown with invoker mid-execution.** The invoker accesses
    the service only via the trailer in `operator delete` (cache-slot

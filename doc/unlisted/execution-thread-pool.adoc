@@ -137,8 +137,8 @@ The destructor calls `stop()` then `join()`:
 {
     thread_pool pool(4);
     run_async(pool.get_executor())(long_running_task());
-    // Destructor: stop() -> join() -> shutdown services -> destroy services
-    // Queued work that hasn't started is abandoned
+    // Destructor: stop() -> join() -> shutdown services
+    //   -> abandon queued work -> destroy services
 }
 ----
 
@@ -149,11 +149,13 @@ before the pool goes out of scope.
 
 When a pool is destroyed:
 
-1. Workers are signaled to stop (pending work is abandoned)
+1. Workers are signaled to stop
 2. Worker threads are joined
 3. Services are shut down (in reverse order of creation)
-4. Services are destroyed
-5. Remaining queued work items are destroyed
+4. Remaining queued work items are abandoned (see cpp:abandon[]),
+   while the services still exist
+5. Services are destroyed, and anything their destructors post is
+   abandoned in turn
 
 == Executor Operations
 

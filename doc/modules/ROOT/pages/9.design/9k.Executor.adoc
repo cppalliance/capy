@@ -126,7 +126,7 @@ Corosio confirms this in practice: its entire I/O layer -- sockets, acceptors, t
 
 == Why `continuation`, Not Raw `coroutine_handle<>`
 
-The executor accepts cpp:continuation[]`&` rather than `std::coroutine_handle<>`. A cpp:continuation[] wraps the handle with a pointer-sized cpp:continuation::reserved[reserved] slot that the executor commandeers as its queue link, enabling zero-allocation queuing:
+The executor accepts cpp:continuation[]`&` rather than `std::coroutine_handle<>`. A cpp:continuation[] wraps the handle with a pointer-sized cpp:continuation::reserved[reserved] slot that the executor commandeers as its queue link, enabling zero-allocation queuing, and the cpp:continuation::owner[owner] that cpp:abandon[] uses to unwind the chain when the coroutine is given up instead of resumed:
 
 [source,cpp]
 ----
@@ -174,12 +174,14 @@ These operations are public, not private with friendship. The reason is extensib
 
 === Executor Validity
 
-An executor becomes invalid when its context's cpp:execution_context::shutdown[shutdown()] returns. After shutdown:
+Once a context's cpp:execution_context::shutdown[shutdown()] has begun, it runs no more work. Its executors stay valid until the context is destroyed:
 
-- cpp:Executor::dispatch[dispatch], cpp:Executor::post[post], cpp:Executor::on_work_started[on_work_started], cpp:Executor::on_work_finished[on_work_finished]: undefined behavior.
-- Copy, comparison, cpp:Executor::context[context()]: valid until the context is destroyed.
+- cpp:Executor::dispatch[dispatch] and cpp:Executor::post[post] never run the coroutine they are given. The executor passes the continuation to cpp:abandon[], at once or no later than the context's destruction, so the chain is unwound by its owner.
+- cpp:Executor::on_work_started[on_work_started], cpp:Executor::on_work_finished[on_work_finished], copy, comparison and cpp:Executor::context[context()] remain valid.
 
-This two-phase model exists because shutdown drains outstanding work. During the drain, executors must still be copyable (they are stored in pending operations) and comparable (for same-executor checks). Only the work-submission operations become invalid, because the context has stopped accepting new work.
+Calling any member after the context is destroyed is undefined behavior.
+
+This model exists because teardown races with work that is still in flight. A coroutine finishing on another thread may post to a context that is shutting down; refusing the post would leave its chain suspended forever, while abandoning it unwinds the chain the same way as work that was already queued.
 
 == Why `context()` Returns `execution_context&`
 
