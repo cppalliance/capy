@@ -11,6 +11,7 @@
 ** xref:4.coroutines/4g.composition.adoc[Concurrent Composition]
 ** xref:4.coroutines/4h.allocators.adoc[Frame Allocators]
 ** xref:4.coroutines/4i.lambda-captures.adoc[Lambda Coroutine Captures]
+** xref:4.coroutines/4j.lifetimes.adoc[Lifetime and Ownership]
 * xref:5.buffers/5.intro.adoc[Buffer Sequences]
 ** xref:5.buffers/5a.contiguous-buffers.adoc[Contiguous Buffers]
 ** xref:5.buffers/5b.composite-buffers.adoc[Composite Buffers]

@@ -142,7 +142,7 @@ void process_batch(std::vector<item> const& items)
     {
         capy::run_async(executor, &resource)(process(item));
     }
-    // All frames deallocated when resource goes out of scope
+    // The resource is released here, so every task must have finished
 }
 // end::batch_allocator[]
 

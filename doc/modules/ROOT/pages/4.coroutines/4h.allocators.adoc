@@ -112,6 +112,13 @@ When starting many short-lived tasks together, a monotonic buffer resource can b
 include::example$snippets/4h_allocators.cpp[tag=batch_allocator]
 ----
 
+The resource must outlive every task started with it, including the unwind of
+any that are abandoned. This function returns only after its tasks have
+finished when the executor runs each one to completion before `run_async`
+returns. With an executor that queues the work, keep the resource alive until
+the tasks have finished. See
+xref:4.coroutines/4j.lifetimes.adoc#_shutdown_ordering[Shutdown Ordering].
+
 === Scope Variables to Reduce Frame Size
 
 Clang decides frame layout after optimization, so declaration scope controls what it keeps. A variable whose scope spans a `co_await` stays in the frame until that scope ends.
