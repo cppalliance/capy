@@ -43,8 +43,9 @@ namespace capy {
         resources owned by the context.
     @li The context remains valid while any executor referencing it
         exists and may be used.
-    @li Destroying the context abandons work submitted via associated
-        executors that has not started running.
+    @li Destroying the context discards work submitted via associated
+        executors that has not started running, destroying the
+        coroutines it would have resumed.
 
     @par Conforming Signatures
 

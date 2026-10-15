@@ -101,7 +101,7 @@ public:
         if(stop_task_)
             return stop_task_->await_suspend(h, env);
         env_ = env;
-        cont_ = continuation{h};
+        cont_ = continuation{h, nullptr, env->owner};
         env_->executor.post(cont_);
         return std::noop_coroutine();
     }
@@ -163,7 +163,7 @@ public:
         io_env const* env)
     {
         env_ = env;
-        cont_ = continuation{h};
+        cont_ = continuation{h, nullptr, env->owner};
         env_->executor.post(cont_);
         return std::noop_coroutine();
     }

@@ -13,7 +13,10 @@
 
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
+
+#include <utility>
 
 namespace boost {
 namespace capy {
@@ -63,6 +66,25 @@ public:
         tail_ = &c;
     }
 
+    /// Return the first pending continuation, or null if empty.
+    continuation*
+    front() const noexcept
+    {
+        return head_;
+    }
+
+    /** Remove the first pending continuation.
+
+        @pre The queue is not empty.
+    */
+    void
+    pop_front() noexcept
+    {
+        head_ = static_cast<continuation*>(head_->reserved);
+        if(!head_)
+            tail_ = nullptr;
+    }
+
     /** Batch of taken items for thread-safe dispatch. */
     struct taken_batch
     {
@@ -105,6 +127,28 @@ public:
             continuation* c = batch.head;
             batch.head = static_cast<continuation*>(c->reserved);
             safe_resume(c->h);
+        }
+        batch.tail = nullptr;
+    }
+
+    /** Abandon each coroutine in a taken batch without resuming it.
+
+        Used when the strand can no longer run them. Advances past
+        each node first, since the node may live in a frame the
+        abandon destroys.
+
+        @param batch The batch to abandon.
+    */
+    static
+    void
+    abandon_batch(taken_batch& batch) noexcept
+    {
+        while(batch.head)
+        {
+            continuation* c = batch.head;
+            batch.head = static_cast<continuation*>(c->reserved);
+            if(c->h)
+                capy::abandon(*c);
         }
         batch.tail = nullptr;
     }

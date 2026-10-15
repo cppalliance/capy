@@ -10,17 +10,24 @@
 // Test that header file is self-contained.
 #include <boost/capy/task.hpp>
 
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/run.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 
+#include "death_test.hpp"
 #include "test_helpers.hpp"
+
+#include <cstdlib>
 
 #include <atomic>
 #include <chrono>
+#include <memory>
 #include <semaphore>
 #include <thread>
+#include <memory_resource>
 #include <queue>
 #include <stdexcept>
 #include <string>
@@ -91,8 +98,86 @@ struct tracking_executor
 
 static_assert(Executor<tracking_executor>);
 
+namespace {
+
+// Parks at the bottom of a chain `depth` frames above the leaf.
+task<void>
+nest_chain(
+    int depth, parked* slot, int* down, destroy_count_t)
+{
+    if(depth == 0)
+        co_await park_awaitable{slot};
+    else
+        co_await nest_chain(depth - 1, slot, down, destroy_count_t(*down));
+}
+
+} // namespace
+
 struct task_test
 {
+    // Assigning over a task that is not awaited destroys the frame
+    // it held.
+    void testMoveAssignDestroysHeldFrame()
+    {
+        int a_down = 0, b_down = 0;
+        auto body = [](destroy_count_t) -> task<void> { co_return; };
+        {
+            auto t = body(destroy_count_t(a_down));
+            t = body(destroy_count_t(b_down));
+            BOOST_TEST_EQ(a_down, 1);
+            BOOST_TEST_EQ(b_down, 0);
+        }
+        BOOST_TEST_EQ(b_down, 1);
+    }
+
+#if !defined(_WIN32)
+    void testDestroyLentTaskTerminates()
+    {
+        BOOST_TEST(terminates([] {
+            parked slot;
+            int n = 0;
+            test_executor ex(n);
+            io_env env{executor_ref(ex), {}, nullptr};
+            auto t = [](parked* s) -> task<void> {
+                co_await park_awaitable{s};
+            }(&slot);
+            lend(t, env);
+            // destructor runs with the frame lent and suspended
+        }));
+    }
+
+    void testMoveAssignOverLentTaskTerminates()
+    {
+        BOOST_TEST(terminates([] {
+            parked slot;
+            int n = 0;
+            test_executor ex(n);
+            io_env env{executor_ref(ex), {}, nullptr};
+            auto body = [](parked* s) -> task<void> {
+                co_await park_awaitable{s};
+            };
+            auto t = body(&slot);
+            lend(t, env);
+            t = body(&slot);
+            std::_Exit(0); // must not be reached
+        }));
+    }
+
+    void testDestroyUnstartedOrFinishedTaskIsFine()
+    {
+        BOOST_TEST(exits_cleanly([] {
+            auto body = []() -> task<void> { co_return; };
+            { auto t = body(); }               // never started
+            int n = 0;
+            test_executor ex(n);
+            io_env env{executor_ref(ex), {}, nullptr};
+            auto t = body();
+            lend(t, env);                     // runs to final_suspend
+            return t.handle().done();
+        }));                                   // finished frame destroyed
+    }
+#endif
+
     static task<int>
     returns_int()
     {
@@ -1217,6 +1302,286 @@ struct task_test
         BOOST_TEST(td2 == true);
     }
 
+    // Destroying a coroutine that a parent awaits destroys the parent
+    // too, and the parent's task must not destroy it a second time.
+    void testDestroyAwaitedChild()
+    {
+        int child_down = 0, parent_down = 0, handler_down = 0;
+        {
+            auto child = [](destroy_count_t) -> capy::task<void>
+            {
+                co_await self_destroy_awaitable{};
+            };
+            auto parent = [&](destroy_count_t) -> capy::task<void>
+            {
+                co_await child(destroy_count_t(child_down));
+            };
+            int dispatch_count = 0;
+            test_executor ex(dispatch_count);
+            run_async(ex,
+                [t = destroy_count_t(handler_down)] { BOOST_TEST(false); },
+                [](std::exception_ptr) { BOOST_TEST(false); })(
+                parent(destroy_count_t(parent_down)));
+        }
+        BOOST_TEST_EQ(child_down, 1);
+        BOOST_TEST_EQ(parent_down, 1);
+        BOOST_TEST_EQ(handler_down, 1);
+    }
+
+    // The trampoline of run_async(ex, alloc) holds the allocator that
+    // frames below it deallocate through, so teardown from below must
+    // free each frame before destroying its parent.
+    void testTeardownFreesChildBeforeAllocatorOwner()
+    {
+        alloc_counts st;
+        int child_down = 0, parent_down = 0;
+        parked slot;
+        auto child = [](parked* s, destroy_count_t) -> task<void>
+        {
+            co_await park_awaitable{s};
+        };
+        auto parent = [&](parked* s, destroy_count_t)
+            -> task<void>
+        {
+            co_await child(s, destroy_count_t(child_down));
+        };
+        int n = 0;
+        test_executor ex(n);
+        run_async(ex, counting_allocator<std::byte>(st))(
+            parent(&slot, destroy_count_t(parent_down)));
+        BOOST_TEST(slot);
+        capy::abandon(slot);
+        BOOST_TEST_EQ(child_down, 1);
+        BOOST_TEST_EQ(parent_down, 1);
+        BOOST_TEST(st.allocs > 0);
+        BOOST_TEST(st.balanced());
+    }
+
+    // Every frame of a torn-down chain is freed before the frame that
+    // owns the chain's memory resource is destroyed.
+    void testTeardownFreesFramesBeforeResourceOwner()
+    {
+        lease_resource mr;
+        int leaf_down = 0, mid_down = 0, owner_down = 0;
+        parked slot;
+        std::queue<continuation> q;
+        queuing_executor ex(q);
+        auto leaf = [](parked* s, destroy_count_t)
+            -> task<void>
+        {
+            co_await park_awaitable{s};
+        };
+        auto mid = [&](destroy_count_t) -> task<void>
+        {
+            co_await leaf(&slot, destroy_count_t(leaf_down));
+        };
+        auto owner = [&](destroy_count_t) -> task<void>
+        {
+            lease l(mr);
+            co_await capy::run(&mr)(mid(destroy_count_t(mid_down)));
+        };
+        run_async(ex)(owner(destroy_count_t(owner_down)));
+        pump(q);
+        BOOST_TEST(slot);
+
+        capy::abandon(slot);
+        pump(q);
+        BOOST_TEST_EQ(leaf_down, 1);
+        BOOST_TEST_EQ(mid_down, 1);
+        BOOST_TEST_EQ(owner_down, 1);
+        BOOST_TEST(mr.allocs.load() > 0);
+        BOOST_TEST(mr.balanced());
+    }
+
+    // Every frame of a torn-down chain is freed before run_async's
+    // handlers are destroyed with the launch that owns the resource;
+    // only that launch's own frame is freed after them.
+    void testTeardownFreesFramesBeforeLaunch()
+    {
+        lease_resource mr;
+        int leaf_down = 0, root_down = 0;
+        parked slot;
+        std::queue<continuation> q;
+        queuing_executor ex(q);
+        auto leaf = [](parked* s, destroy_count_t)
+            -> task<void>
+        {
+            co_await park_awaitable{s};
+        };
+        auto root = [&](destroy_count_t) -> task<void>
+        {
+            co_await leaf(&slot, destroy_count_t(leaf_down));
+        };
+        run_async(ex, &mr,
+            [l = lease(mr)] { BOOST_TEST(false); },
+            [](std::exception_ptr) { BOOST_TEST(false); })(
+            root(destroy_count_t(root_down)));
+        pump(q);
+        BOOST_TEST(slot);
+
+        capy::abandon(slot);
+        pump(q);
+        BOOST_TEST_EQ(leaf_down, 1);
+        BOOST_TEST_EQ(root_down, 1);
+        BOOST_TEST(mr.allocs.load() > 1);
+        BOOST_TEST_EQ(mr.allocs.load(), mr.deallocs.load());
+        BOOST_TEST_EQ(mr.late.load(), 1);
+    }
+
+    // A chain comes down innermost first: each frame's locals, then its
+    // parameters, before the frame that awaited it, and the completion
+    // handlers last.
+    void testTeardownDestroysInnermostFirst()
+    {
+        std::vector<std::string> log;
+        struct note
+        {
+            std::vector<std::string>* log;
+            char const* what;
+
+            note(std::vector<std::string>& l, char const* w) noexcept
+                : log(&l)
+                , what(w)
+            {
+            }
+
+            note(note&& o) noexcept
+                : log(std::exchange(o.log, nullptr))
+                , what(o.what)
+            {
+            }
+
+            ~note()
+            {
+                if(log)
+                    log->push_back(what);
+            }
+        };
+        parked slot;
+        {
+            auto leaf = [&](note) -> task<void>
+            {
+                note local(log, "leaf local");
+                co_await park_awaitable{&slot};
+            };
+            auto mid = [&](note) -> task<void>
+            {
+                note local(log, "mid local");
+                co_await leaf(note(log, "leaf param"));
+            };
+            auto root = [&](note) -> task<void>
+            {
+                note local(log, "root local");
+                co_await mid(note(log, "mid param"));
+            };
+            std::queue<continuation> q;
+            queuing_executor ex(q);
+            run_async(ex,
+                [n = note(log, "handler")] { BOOST_TEST(false); },
+                [](std::exception_ptr) { BOOST_TEST(false); })(
+                root(note(log, "root param")));
+            pump(q);
+            BOOST_TEST(slot);
+
+            capy::abandon(slot);
+            pump(q);
+        }
+        std::vector<std::string> const expected{
+            "leaf local", "leaf param", "mid local", "mid param",
+            "root local", "root param", "handler"};
+        BOOST_TEST(log == expected);
+    }
+
+    // A long chain is torn down once, every frame freed.
+    void testLongChainTeardown()
+    {
+        constexpr int depth = 100;
+        alloc_counts st;
+        int down = 0;
+        parked slot;
+        {
+            std::queue<continuation> q;
+            queuing_executor ex(q);
+            run_async(ex, counting_allocator<std::byte>(st))(
+                nest_chain(depth, &slot, &down, destroy_count_t(down)));
+            pump(q);
+            BOOST_TEST(slot);
+            BOOST_TEST_EQ(down, 0);
+
+            capy::abandon(slot);
+            pump(q);
+        }
+        BOOST_TEST_EQ(down, depth + 1);
+        BOOST_TEST(st.balanced());
+    }
+
+    // A by-value parameter that owns another frame is destroyed after
+    // the promise but before the frame is freed; freeing that frame must
+    // not destroy the parents of the frame still being torn down.
+    void testTeardownWithFrameOwningParameter()
+    {
+        alloc_counts st;
+        int sub_down = 0, parent_down = 0;
+        parked slot;
+        auto sub = [](destroy_count_t) -> task<void>
+        {
+            co_return;
+        };
+        auto leaf = [](task<void> t, parked* s)
+            -> task<void>
+        {
+            std::ignore = t;
+            co_await park_awaitable{s};
+        };
+        auto parent = [&](parked* s, destroy_count_t)
+            -> task<void>
+        {
+            co_await leaf(sub(destroy_count_t(sub_down)), s);
+        };
+        int n = 0;
+        test_executor ex(n);
+        run_async(ex, counting_allocator<std::byte>(st))(
+            parent(&slot, destroy_count_t(parent_down)));
+        BOOST_TEST(slot);
+        capy::abandon(slot);
+        BOOST_TEST_EQ(sub_down, 1);
+        BOOST_TEST_EQ(parent_down, 1);
+        BOOST_TEST(st.allocs > 0);
+        BOOST_TEST(st.balanced());
+    }
+
+    // Through run(), the parent may belong to another context, so its
+    // destruction is posted to its own executor instead of done inline.
+    void testDestroyAwaitedChildThroughRun()
+    {
+        int child_down = 0, parent_down = 0;
+        std::queue<continuation> q;
+        {
+            int dispatch_count = 0;
+            test_executor ex(dispatch_count);
+            queuing_executor caller(q);
+            auto child = [](destroy_count_t) -> capy::task<void>
+            {
+                co_await self_destroy_awaitable{};
+            };
+            auto parent = [&](destroy_count_t) -> capy::task<void>
+            {
+                co_await capy::run(ex)(child(destroy_count_t(child_down)));
+            };
+            run_async(caller)(parent(destroy_count_t(parent_down)));
+            BOOST_TEST_EQ(q.size(), 1u);
+            auto start = q.front();
+            q.pop();
+            safe_resume(start.h);
+            BOOST_TEST_EQ(child_down, 1);
+            BOOST_TEST_EQ(parent_down, 0);
+            BOOST_TEST(!q.empty());
+            pump(q);
+        }
+        BOOST_TEST_EQ(child_down, 1);
+        BOOST_TEST_EQ(parent_down, 1);
+    }
+
     void testStop()
     {
 
@@ -1280,6 +1645,12 @@ struct task_test
     void
     run()
     {
+        testMoveAssignDestroysHeldFrame();
+#if !defined(_WIN32)
+        testDestroyLentTaskTerminates();
+        testMoveAssignOverLentTaskTerminates();
+        testDestroyUnstartedOrFinishedTaskIsFine();
+#endif
         testBoolSuspendAwaitable();
         testReturnValue();
         testException();
@@ -1321,6 +1692,14 @@ struct task_test
 
         testTearDown();
         testDelete();
+        testDestroyAwaitedChild();
+        testDestroyAwaitedChildThroughRun();
+        testTeardownFreesChildBeforeAllocatorOwner();
+        testTeardownFreesFramesBeforeResourceOwner();
+        testTeardownFreesFramesBeforeLaunch();
+        testTeardownDestroysInnermostFirst();
+        testLongChainTeardown();
+        testTeardownWithFrameOwningParameter();
         testStop();
     }
 };

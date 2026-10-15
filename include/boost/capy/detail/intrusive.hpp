@@ -121,7 +121,7 @@ public:
     remove(T* w) noexcept
     {
         if(!w->linked_)
-            return;
+            return; // LCOV_EXCL_LINE callers remove only linked nodes
         if(w->prev_)
             w->prev_->next_ = w->next_;
         else

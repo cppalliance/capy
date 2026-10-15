@@ -104,6 +104,7 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} PREFIX "" FILES ${PFILES})
 # any_stream example (coroutine-based)
 add_executable(capy_example_any_stream
     any_stream.cpp
+    api/abandon_guard.hpp
     api/capy_streams.cpp
     api/capy_streams.hpp)
 
@@ -118,6 +119,7 @@ target_link_libraries(capy_example_any_stream
 add_executable(capy_example_asio_callbacks
     asio_callbacks.cpp
     api/capy_streams.cpp
+    api/abandon_guard.hpp
     api/capy_streams.hpp
     api/uni_stream.hpp)
 
@@ -132,6 +134,7 @@ target_link_libraries(capy_example_asio_callbacks
 add_executable(capy_example_use_capy
     use_capy_example.cpp
     api/capy_streams.cpp
+    api/abandon_guard.hpp
     api/capy_streams.hpp
     api/use_capy.hpp)
 

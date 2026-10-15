@@ -200,6 +200,10 @@ struct lambda_captures_test
         socket sock;
         int const before = socket_reads;
         iife_param::process(sock);
+        // The snippet's run_async has no handler to signal completion;
+        // run() still drains what is queued before it sees the signal.
+        ctx.signal_done();
+        ctx.run();
         BOOST_TEST(socket_reads == before + 1);
         executor = capy::any_executor();
     }

@@ -14,6 +14,7 @@
 
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/continuation.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -66,6 +67,7 @@ struct continuation
 {
     std::coroutine_handle<> h;
     void* reserved = nullptr;
+    capy::chain_owner* owner = nullptr;
 };
 // end::continuation_struct[]
 

@@ -18,6 +18,9 @@
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <coroutine>
 #include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/detail/abandonable.hpp>
+#include <boost/capy/detail/owned_range.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/frame_alloc_mixin.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -139,13 +142,36 @@ struct when_any_core
     struct stop_callback_fn
     {
         std::stop_source* source_;
-        void operator()() const noexcept { source_->request_stop(); }
+        void operator()() const noexcept
+        {
+            // Stopping can lose the last branch and destroy the join,
+            // with its source, before the request returns; the copy
+            // keeps the stop state alive until then.
+            std::stop_source keep = *source_;
+            keep.request_stop();
+        }
     };
     using stop_callback_t = std::stop_callback<stop_callback_fn>;
     std::optional<stop_callback_t> parent_stop_callback_;
 
     continuation continuation_;
     io_env const* caller_env_ = nullptr;
+
+    // Set when a branch is abandoned before finishing: the parent is
+    // then abandoned rather than resumed.
+    std::atomic<bool> lost_{false};
+
+    /// Drop a share held by a runner that never finished.
+    void lose_branch() noexcept
+    {
+        lost_.store(true, std::memory_order_relaxed);
+        stop_source_.request_stop();
+        if(remaining_count_.fetch_sub(1, std::memory_order_acq_rel) == 1)
+        {
+            auto parent = continuation_;
+            capy::abandon(parent);
+        }
+    }
 
     // Placed last to avoid padding (1-byte atomic followed by 8-byte aligned members)
     std::atomic<bool> has_winner_{false};
@@ -223,14 +249,23 @@ struct when_any_io_state
 // Wrapper coroutine for io_result-aware when_any children.
 // unhandled_exception records the exception but does NOT claim winner status.
 template<typename StateType>
-struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE when_any_io_runner
+struct when_any_io_runner
 {
     struct promise_type
-        : frame_alloc_mixin
+        : detail::process_frame_mixin
     {
         StateType* state_ = nullptr;
         std::size_t index_ = 0;
         io_env env_;
+        // Owns the branch's segment.
+        chain_owner segment_;
+        bool done_ = false;
+
+        ~promise_type()
+        {
+            if(!done_ && state_)
+                state_->core_.lose_branch();
+        }
 
         when_any_io_runner get_return_object() noexcept
         {
@@ -250,15 +285,31 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE when_any_io_runner
                 {
                     auto& core = p_->state_->core_;
                     auto* counter = &core.remaining_count_;
+                    auto* lost = &core.lost_;
                     auto* caller_env = core.caller_env_;
                     auto& cont = core.continuation_;
 
+                    p_->done_ = true;
+                    // Resumed to unwind its abandoned branch: lost, not
+                    // finished. Stop is requested while this branch
+                    // still holds its share.
+                    if(p_->segment_.abandoned())
+                    {
+                        lost->store(true, std::memory_order_relaxed);
+                        core.stop_source_.request_stop();
+                    }
                     h.destroy();
 
                     auto remaining = counter->fetch_sub(1, std::memory_order_acq_rel);
-                    if(remaining == 1)
-                        return detail::symmetric_transfer(caller_env->executor.dispatch(cont));
-                    return detail::symmetric_transfer(std::noop_coroutine());
+                    if(remaining != 1)
+                        return detail::symmetric_transfer(std::noop_coroutine());
+                    if(lost->load(std::memory_order_relaxed))
+                    {
+                        auto parent = cont;
+                        capy::abandon(parent);
+                        return detail::symmetric_transfer(std::noop_coroutine());
+                    }
+                    return detail::symmetric_transfer(caller_env->executor.dispatch(cont));
                 }
                 void await_resume() const noexcept {} // LCOV_EXCL_LINE final_suspend awaiter, never resumed
             };
@@ -334,9 +385,16 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE when_any_io_runner
 // Runner coroutine: only tries to win when the child returns !ec.
 template<std::size_t I, IoAwaitable Awaitable, typename StateType>
 when_any_io_runner<StateType>
-make_when_any_io_runner(Awaitable inner, StateType* state)
+make_when_any_io_runner(Awaitable* inner, StateType* state)
 {
-    auto result = co_await std::move(inner);
+    // Taken from the join's storage only once running, into a local:
+    // a runner destroyed unstarted owns no branch, and one destroyed
+    // unfinished destroys it before its promise reports the loss.
+    Awaitable a(std::move(*inner));
+    auto r = co_await abandonable<Awaitable>{a};
+    if(!r)
+        co_return;
+    auto& result = *r;
 
     if(!std::get<0>(result))
     {
@@ -390,6 +448,7 @@ public:
         std::coroutine_handle<> continuation, io_env const* caller_env)
     {
         state_->core_.continuation_.h = continuation;
+        state_->core_.continuation_.owner = caller_env->owner;
         state_->core_.caller_env_ = caller_env;
 
         if(caller_env->stop_token.stop_possible())
@@ -423,13 +482,15 @@ private:
     void launch_one(executor_ref caller_ex, std::stop_token token)
     {
         auto runner = make_when_any_io_runner<I>(
-            std::move(std::get<I>(*tasks_)), state_);
+            &std::get<I>(*tasks_), state_);
 
         auto h = runner.release();
         h.promise().state_ = state_;
         h.promise().index_ = I;
+        h.promise().segment_.bind(h, caller_ex);
         h.promise().env_ = io_env{caller_ex, token,
-            state_->core_.caller_env_->frame_allocator};
+            state_->core_.caller_env_->frame_allocator,
+            &h.promise().segment_};
 
         state_->runner_handles_[I].h = std::coroutine_handle<>{h};
         caller_ex.post(state_->runner_handles_[I]);
@@ -511,9 +572,16 @@ struct when_any_io_homogeneous_state<std::tuple<>>
 template<IoAwaitable Awaitable, typename StateType>
 when_any_io_runner<StateType>
 make_when_any_io_homogeneous_runner(
-    Awaitable inner, StateType* state, std::size_t index)
+    Awaitable* inner, StateType* state, std::size_t index)
 {
-    auto result = co_await std::move(inner);
+    // Taken from the join's storage only once running, into a local:
+    // a runner destroyed unstarted owns no branch, and one destroyed
+    // unfinished destroys it before its promise reports the loss.
+    Awaitable a(std::move(*inner));
+    auto r = co_await abandonable<Awaitable>{a};
+    if(!r)
+        co_return;
+    auto& result = *r;
 
     if(!std::get<0>(result))
     {
@@ -570,6 +638,7 @@ public:
         std::coroutine_handle<> continuation, io_env const* caller_env)
     {
         state_->core_.continuation_.h = continuation;
+        state_->core_.continuation_.owner = caller_env->owner;
         state_->core_.caller_env_ = caller_env;
 
         if(caller_env->stop_token.stop_possible())
@@ -589,13 +658,14 @@ public:
         for(auto&& a : *range_)
         {
             auto runner = make_when_any_io_homogeneous_runner(
-                std::move(a), state_, index);
+                &a, state_, index);
 
             auto h = runner.release();
             h.promise().state_ = state_;
             h.promise().index_ = index;
+            h.promise().segment_.bind(h, caller_env->executor);
             h.promise().env_ = io_env{caller_env->executor, token,
-                caller_env->frame_allocator};
+                caller_env->frame_allocator, &h.promise().segment_};
 
             state_->runner_handles_[index].h = std::coroutine_handle<>{h};
             ++index;
@@ -694,6 +764,12 @@ public:
     fail and the reported failure is an exception, that child's
     exception is rethrown (which child is unspecified).
 
+    @note If a branch's coroutine is abandoned before it finishes, for
+        example by teardown of its execution context, `when_any`
+        requests stop on the remaining branches, and the awaiting
+        parent is abandoned rather than resumed once the last branch
+        has finished or been abandoned.
+
     @par Example
     @par !example example_1
 
@@ -718,13 +794,13 @@ template<IoAwaitableRange R>
         awaitable_result_t<Awaitable>>;
     using result_type = std::variant<std::error_code,
         std::pair<std::size_t, PayloadT>>;
-    using OwnedRange = std::remove_cvref_t<R>;
+    using OwnedRange = detail::owned_range_t<R>;
 
     auto count = std::ranges::size(awaitables);
     if(count == 0)
         throw std::invalid_argument("when_any requires at least one awaitable");
 
-    OwnedRange owned_awaitables = std::forward<R>(awaitables);
+    OwnedRange owned_awaitables = detail::own_range(std::forward<R>(awaitables));
 
     detail::when_any_io_homogeneous_state<PayloadT> state(count);
 
@@ -813,6 +889,12 @@ template<IoAwaitableRange R>
     If all children fail and the reported failure is an exception,
     that child's exception is rethrown (which child is unspecified).
 
+    @note If a branch's coroutine is abandoned before it finishes, for
+        example by teardown of its execution context, `when_any`
+        requests stop on the remaining branches, and the awaiting
+        parent is abandoned rather than resumed once the last branch
+        has finished or been abandoned.
+
     @par Example
     @par !example example_2
 
@@ -829,14 +911,14 @@ template<IoAwaitableRange R>
 [[nodiscard]] auto when_any(R&& awaitables)
     -> task<std::variant<std::error_code, std::size_t>>
 {
-    using OwnedRange = std::remove_cvref_t<R>;
+    using OwnedRange = detail::owned_range_t<R>;
     using result_type = std::variant<std::error_code, std::size_t>;
 
     auto count = std::ranges::size(awaitables);
     if(count == 0)
         throw std::invalid_argument("when_any requires at least one awaitable");
 
-    OwnedRange owned_awaitables = std::forward<R>(awaitables);
+    OwnedRange owned_awaitables = detail::own_range(std::forward<R>(awaitables));
 
     detail::when_any_io_homogeneous_state<std::tuple<>> state(count);
 
@@ -938,6 +1020,12 @@ template<IoAwaitableRange R>
         benign error (e.g. @c cond::canceled) count as a win, wrap
         the child to translate the error into success. See the
         Concurrent Composition tutorial.
+
+    @note If a branch's coroutine is abandoned before it finishes, for
+        example by teardown of its execution context, `when_any`
+        requests stop on the remaining branches, and the awaiting
+        parent is abandoned rather than resumed once the last branch
+        has finished or been abandoned.
 */
 template<IoAwaitable... As>
     requires (sizeof...(As) > 0)

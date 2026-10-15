@@ -21,6 +21,8 @@
 namespace boost {
 namespace capy {
 
+class chain_owner;
+
 /** Carries the executor, stop token, and frame allocator through a coroutine chain.
 
     This struct bundles the execution context passed through
@@ -54,6 +56,23 @@ struct io_env
         When null, the default allocator is used.
     */
     std::pmr::memory_resource* frame_allocator = nullptr;
+
+    /** The owner of the chain segment running in this environment.
+
+        Set by whatever started the segment (`run_async`, `run` on
+        another executor, a `when_all` or `when_any` branch). An
+        awaitable that parks or queues a coroutine copies it into the
+        @ref continuation it keeps, so a holder can @ref abandon the
+        segment. Null when nothing owns the segment.
+
+        A launcher that starts a task under an environment it builds
+        itself, rather than through `run_async`, `run` or a join, must
+        either own the segment, binding a @ref chain_owner, or ensure
+        nothing awaits the coroutines that could be abandoned. With no
+        owner, @ref abandon destroys only the frame it is given, and any
+        frame awaiting it is left holding a destroyed frame.
+    */
+    chain_owner* owner = nullptr;
 
 };
 

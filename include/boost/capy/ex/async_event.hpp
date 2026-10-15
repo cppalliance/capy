@@ -38,10 +38,12 @@
     claims. Waiters already claimed by a stop callback are skipped.
 
     Because set() pops all waiters, a canceled waiter may have been
-    removed from the list by set() before its await_resume runs.
-    This requires a separate in_list_ flag (unlike async_mutex where
-    active_ served double duty). await_resume only calls remove()
-    when in_list_ is true.
+    removed from the list by set() before its await_resume runs. Each
+    waiter therefore records the list it is linked into, if any: the
+    event's, or set()'s own while set() posts the waiters it claimed.
+    A waiter destroyed or canceled while linked unlinks itself from
+    that list, so a post that tears down one claimed waiter, and with
+    it another, never leaves set() holding a freed node.
 */
 
 namespace boost {
@@ -93,6 +95,9 @@ private:
     bool set_ = false;
     detail::intrusive_list<wait_awaiter> waiters_;
 
+    // Unlink every waiter and move the ones this call claims into into.
+    void claim_all(detail::intrusive_list<wait_awaiter>& into) noexcept;
+
 public:
     /** Suspends the caller until `set()` runs, or resumes it with `error::canceled` on a stop request.
     */
@@ -111,7 +116,7 @@ public:
         std::atomic<bool> claimed_{false};
         bool canceled_ = false;
         bool active_ = false;
-        bool in_list_ = false;
+        detail::intrusive_list<wait_awaiter>* list_ = nullptr;
 
         struct cancel_fn
         {
@@ -159,8 +164,8 @@ public:
         {
             if(active_)
                 stop_cb_().~stop_cb_t();
-            if(in_list_)
-                e_->waiters_.remove(this);
+            if(list_)
+                list_->remove(this);
         }
 
         /** Construct an awaiter for the given event.
@@ -188,7 +193,7 @@ public:
                 std::memory_order_relaxed))
             , canceled_(o.canceled_)
             , active_(std::exchange(o.active_, false))
-            , in_list_(std::exchange(o.in_list_, false))
+            , list_(std::exchange(o.list_, nullptr))
         {
         }
 
@@ -266,9 +271,10 @@ public:
                 return h;
             }
             cont_.h = h;
+            cont_.owner = env->owner;
             ex_ = env->executor;
             e_->waiters_.push_back(this);
-            in_list_ = true;
+            list_ = &e_->waiters_;
             ::new(stop_cb_buf_) stop_cb_t(
                 env->stop_token, cancel_fn{this});
             active_ = true;
@@ -294,10 +300,10 @@ public:
             }
             if(canceled_)
             {
-                if(in_list_)
+                if(list_)
                 {
-                    e_->waiters_.remove(this);
-                    in_list_ = false;
+                    list_->remove(this);
+                    list_ = nullptr;
                 }
                 return {make_error_code(
                     error::canceled)};
@@ -341,6 +347,27 @@ public:
     */
     async_event& operator=(async_event&& other) = delete;
 
+    /** Destroy the event, canceling every coroutine still waiting.
+
+        Each waiter is posted to its executor to resume with
+        `error::canceled`, as if its stop token had been triggered. An
+        executor that can no longer run it abandons it instead, possibly
+        before this destructor returns. Either way the waiter no longer
+        refers to the event.
+    */
+    ~async_event()
+    {
+        while(auto* w = waiters_.pop_front())
+        {
+            w->list_ = nullptr;
+            if(!w->claimed_.exchange(true, std::memory_order_acq_rel))
+            {
+                w->canceled_ = true;
+                w->ex_.post(w->cont_);
+            }
+        }
+    }
+
     /** Returns an awaiter that waits until the event is set.
 
         If the event is already set, completes immediately.
@@ -357,21 +384,21 @@ public:
         All waiting coroutines are resumed. Canceled waiters
         are skipped. Subsequent calls to wait() complete
         immediately until clear() is called.
+
+        @note If posting a waiter's resumption throws, `std::terminate`
+        is called.
     */
-    void set()
+    void set() noexcept
     {
         set_ = true;
-        for(;;)
+        // A post can destroy a waiter on the spot, and with it whatever
+        // owns this event; nothing below touches *this.
+        detail::intrusive_list<wait_awaiter> claimed;
+        claim_all(claimed);
+        while(auto* w = claimed.pop_front())
         {
-            auto* w = waiters_.pop_front();
-            if(!w)
-                break;
-            w->in_list_ = false;
-            if(!w->claimed_.exchange(
-                true, std::memory_order_acq_rel))
-            {
-                w->ex_.post(w->cont_);
-            }
+            w->list_ = nullptr;
+            w->ex_.post(w->cont_);
         }
     }
 
@@ -394,6 +421,21 @@ public:
         return set_;
     }
 };
+
+inline void
+async_event::claim_all(
+    detail::intrusive_list<wait_awaiter>& into) noexcept
+{
+    while(auto* w = waiters_.pop_front())
+    {
+        w->list_ = nullptr;
+        if(!w->claimed_.exchange(true, std::memory_order_acq_rel))
+        {
+            into.push_back(w);
+            w->list_ = &into;
+        }
+    }
+}
 
 } // namespace capy
 } // namespace boost

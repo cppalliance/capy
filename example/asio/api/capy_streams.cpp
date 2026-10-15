@@ -8,6 +8,7 @@
 //
 
 #include "capy_streams.hpp"
+#include "abandon_guard.hpp"
 
 #include <boost/asio/bind_cancellation_slot.hpp>
 #include <boost/asio/cancellation_signal.hpp>
@@ -104,21 +105,30 @@ public:
             capy::io_env const* env)
         {
             cont_.h = h;
+            cont_.owner = env->owner;
             cancel_ = std::make_shared<cancel_state>(env->stop_token);
 
-            self_->socket_.async_read_some(
-                capy::to_asio(buffers_),
-                net::bind_cancellation_slot(
-                    cancel_->signal.slot(),
-                    [this, ex = env->executor](
-                        boost::system::error_code ec,
-                        std::size_t n) mutable
-                    {
-                        std::get<0>(result_) = ec;
-                        std::get<1>(result_) = n;
-                        ex.post(cont_);
-                    }));
-
+            try
+            {
+                self_->socket_.async_read_some(
+                    capy::to_asio(buffers_),
+                    net::bind_cancellation_slot(
+                        cancel_->signal.slot(),
+                        [this, ex = env->executor, g = abandon_guard(cont_)](
+                            boost::system::error_code ec,
+                            std::size_t n) mutable
+                        {
+                            std::get<0>(result_) = ec;
+                            std::get<1>(result_) = n;
+                            ex.post(*g.get());
+                            g.release();
+                        }));
+            }
+            catch(...)
+            {
+                // The handler was destroyed and gave the coroutine up,
+                // so it stays suspended for its owner to unwind.
+            }
             return std::noop_coroutine();
         }
 
@@ -168,21 +178,30 @@ public:
             capy::io_env const* env)
         {
             cont_.h = h;
+            cont_.owner = env->owner;
             cancel_ = std::make_shared<cancel_state>(env->stop_token);
 
-            self_->socket_.async_write_some(
-                capy::to_asio(buffers_),
-                net::bind_cancellation_slot(
-                    cancel_->signal.slot(),
-                    [this, ex = env->executor](
-                        boost::system::error_code ec,
-                        std::size_t n) mutable
-                    {
-                        std::get<0>(result_) = ec;
-                        std::get<1>(result_) = n;
-                        ex.post(cont_);
-                    }));
-
+            try
+            {
+                self_->socket_.async_write_some(
+                    capy::to_asio(buffers_),
+                    net::bind_cancellation_slot(
+                        cancel_->signal.slot(),
+                        [this, ex = env->executor, g = abandon_guard(cont_)](
+                            boost::system::error_code ec,
+                            std::size_t n) mutable
+                        {
+                            std::get<0>(result_) = ec;
+                            std::get<1>(result_) = n;
+                            ex.post(*g.get());
+                            g.release();
+                        }));
+            }
+            catch(...)
+            {
+                // The handler was destroyed and gave the coroutine up,
+                // so it stays suspended for its owner to unwind.
+            }
             return std::noop_coroutine();
         }
 
@@ -213,21 +232,21 @@ static_assert(capy::WriteStream<asio_socket>);
 
 class asio_executor
 {
-    net::io_context::executor_type ex_;
+    net::io_context* ioc_;
     asio_context* ctx_;
 
 public:
     asio_executor(
-        net::io_context::executor_type ex,
+        net::io_context* ioc,
         asio_context* ctx) noexcept
-        : ex_(ex)
+        : ioc_(ioc)
         , ctx_(ctx)
     {
     }
 
     bool operator==(asio_executor const& other) const noexcept
     {
-        return ex_ == other.ex_;
+        return ioc_ == other.ioc_;
     }
 
     asio_context& context() const noexcept
@@ -240,15 +259,24 @@ public:
 
     std::coroutine_handle<> dispatch(capy::continuation& c) const
     {
-        auto h = c.h;
-        net::post(ex_, [h]{ h.resume(); });
+        post(c);
         return std::noop_coroutine();
     }
 
     void post(capy::continuation& c) const
     {
-        auto h = c.h;
-        net::post(ex_, [h]{ h.resume(); });
+        resume_or_abandon r(c);
+        try
+        {
+            net::post(ioc_->get_executor(), std::move(r));
+        }
+        catch(...)
+        {
+            // A handler Asio took and then destroyed has given `c` up,
+            // so the post must not also report it as still held.
+            if(r.release())
+                throw;
+        }
     }
 };
 
@@ -261,12 +289,14 @@ public:
 struct asio_context::impl
 {
     asio_context* self;
-    net::io_context ioc;
+    // Outlives ioc: handlers it destroys give their coroutines up
+    // through this executor.
     asio_executor ex;
+    net::io_context ioc;
 
     explicit impl(asio_context* s)
         : self(s)
-        , ex(ioc.get_executor(), self)
+        , ex(&ioc, self)
     {
     }
 };

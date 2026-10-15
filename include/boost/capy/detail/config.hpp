@@ -139,11 +139,15 @@
 #define BOOST_CAPY_CORO_AWAIT_ELIDABLE
 #endif
 
-// Simpler destroy codegen for coroutines that always run to completion
-#if __has_cpp_attribute(clang::coro_only_destroy_when_complete)
-#define BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE [[clang::coro_only_destroy_when_complete]]
+#if defined(_MSC_VER) && !defined(__clang__)
+# define BOOST_CAPY_NOINLINE __declspec(noinline)
+# define BOOST_CAPY_COLD
+#elif defined(__GNUC__) || defined(__clang__)
+# define BOOST_CAPY_NOINLINE __attribute__((noinline))
+# define BOOST_CAPY_COLD __attribute__((cold))
 #else
-#define BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE
+# define BOOST_CAPY_NOINLINE
+# define BOOST_CAPY_COLD
 #endif
 
 namespace boost::capy::detail {

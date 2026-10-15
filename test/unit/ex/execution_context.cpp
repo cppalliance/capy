@@ -285,6 +285,90 @@ struct execution_context_test
         BOOST_TEST(shutdown_called);
     }
 
+    // A service created after its context shut down starts shut down,
+    // so it never holds work that its context can no longer run.
+    void
+    testServiceAfterShutdownStartsShutDown()
+    {
+        static int shutdowns;
+        shutdowns = 0;
+        struct counted_service : execution_context::service
+        {
+            explicit counted_service(execution_context&) {}
+            void shutdown() override { ++shutdowns; }
+        };
+        bool made_shut_down = false;
+        {
+            closable_test_context ctx;
+            ctx.shutdown();
+            ctx.make_service<tracking_service>(made_shut_down);
+            BOOST_TEST(made_shut_down);
+            ctx.use_service<counted_service>();
+            BOOST_TEST_EQ(shutdowns, 1);
+        }
+        // Not shut down a second time when the context is destroyed.
+        BOOST_TEST_EQ(shutdowns, 1);
+    }
+
+    // A service's destructor still finds the older services, which are
+    // destroyed after it.
+    void
+    testLiveServiceVisibleDuringDestroy()
+    {
+        static execution_context::service* seen;
+        seen = nullptr;
+        struct registry_service : execution_context::service
+        {
+            explicit registry_service(execution_context&) {}
+            void shutdown() override {}
+        };
+        struct client_service : execution_context::service
+        {
+            execution_context* ctx;
+            explicit client_service(execution_context& c) : ctx(&c)
+            {
+                ctx->use_service<registry_service>();
+            }
+            ~client_service()
+            {
+                seen = ctx->find_service<registry_service>();
+            }
+            void shutdown() override {}
+        };
+        {
+            test_io_context ctx;
+            ctx.use_service<client_service>();
+        }
+        BOOST_TEST(seen != nullptr);
+    }
+
+    // A service created while the context destroys its services is
+    // destroyed too, not leaked.
+    void
+    testServiceCreatedDuringDestroy()
+    {
+        static int late_down;
+        late_down = 0;
+        struct late_service : execution_context::service
+        {
+            explicit late_service(execution_context&) {}
+            ~late_service() { ++late_down; }
+            void shutdown() override {}
+        };
+        struct older_service : execution_context::service
+        {
+            execution_context* ctx;
+            explicit older_service(execution_context& c) : ctx(&c) {}
+            ~older_service() { ctx->use_service<late_service>(); }
+            void shutdown() override {}
+        };
+        {
+            test_io_context ctx;
+            ctx.make_service<older_service>();
+        }
+        BOOST_TEST_EQ(late_down, 1);
+    }
+
     void
     testMultipleServices()
     {
@@ -438,6 +522,9 @@ struct execution_context_test
     void
     run()
     {
+        testServiceAfterShutdownStartsShutDown();
+        testServiceCreatedDuringDestroy();
+        testLiveServiceVisibleDuringDestroy();
         testConstruct();
         testHasService();
         testFindService();

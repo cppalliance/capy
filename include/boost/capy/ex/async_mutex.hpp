@@ -138,6 +138,17 @@ public:
 private:
     bool locked_ = false;
     detail::intrusive_list<lock_awaiter> waiters_;
+    // Handed the lock but not yet resumed; the destructor must reach it.
+    lock_awaiter* granted_to_ = nullptr;
+
+    // State of the unlock() in progress, on its own stack: a post can
+    // destroy the granted waiter, re-entering unlock(), or this mutex.
+    struct unlock_scope
+    {
+        bool again = false;
+        bool gone = false;
+    };
+    unlock_scope* unlocking_ = nullptr;
 
 public:
     /** Suspends the caller until the mutex is free, or resumes it with `error::canceled` on a stop request.
@@ -156,6 +167,13 @@ public:
         std::atomic<bool> claimed_{false};
         bool canceled_ = false;
         bool active_ = false;
+
+        // Set by unlock() when it hands the lock to this waiter.
+        bool granted_ = false;
+
+        // Cleared by whoever pops the node, so a waiter outliving
+        // its mutex never reaches through m_.
+        bool in_list_ = false;
 
         struct cancel_fn
         {
@@ -198,6 +216,10 @@ public:
             the stop callback can then reach a destroyed awaiter when the
             coroutine frame is torn down while suspended.
 
+            If the lock was handed to this awaiter and the coroutine is
+            destroyed before it resumes, the lock is released to the next
+            waiter.
+
             @par Preconditions
             Called on the executor thread. The stop callback may fire from
             any thread, so destroying a still-suspended awaiter from
@@ -208,7 +230,14 @@ public:
             if(active_)
             {
                 stop_cb_().~stop_cb_t();
+            }
+            if(in_list_)
                 m_->waiters_.remove(this);
+            // Handed the lock but destroyed before resuming: pass it on.
+            if(granted_)
+            {
+                m_->granted_to_ = nullptr;
+                m_->unlock();
             }
         }
 
@@ -237,6 +266,8 @@ public:
                 std::memory_order_relaxed))
             , canceled_(o.canceled_)
             , active_(std::exchange(o.active_, false))
+            , granted_(std::exchange(o.granted_, false))
+            , in_list_(std::exchange(o.in_list_, false))
         {
         }
 
@@ -324,8 +355,10 @@ public:
                 return h;
             }
             cont_.h = h;
+            cont_.owner = env->owner;
             ex_ = env->executor;
             m_->waiters_.push_back(this);
+            in_list_ = true;
             ::new(stop_cb_buf_) stop_cb_t(
                 env->stop_token, cancel_fn{this});
             active_ = true;
@@ -339,17 +372,23 @@ public:
 
             @return An empty `io_result<>` if the mutex is now held by the
             awaiting coroutine. Otherwise one holding `error::canceled`,
-            which means the stop token won the race and the mutex is not
-            held.
+            which means the stop token won the race or the mutex was
+            destroyed, and the mutex is not held.
         */
         [[nodiscard]] io_result<> await_resume() noexcept
         {
+            if(std::exchange(granted_, false))
+                m_->granted_to_ = nullptr;
             if(active_)
             {
                 stop_cb_().~stop_cb_t();
                 if(canceled_)
                 {
-                    m_->waiters_.remove(this);
+                    if(in_list_)
+                    {
+                        m_->waiters_.remove(this);
+                        in_list_ = false;
+                    }
                     active_ = false;
                     return {make_error_code(
                         error::canceled)};
@@ -522,6 +561,40 @@ public:
     /// Construct an unlocked mutex.
     async_mutex() = default;
 
+    /** Destroy the mutex, canceling every coroutine still waiting.
+
+        Each waiter is posted to its executor to resume with
+        `error::canceled`, as if its stop token had been triggered. An
+        executor that can no longer run it abandons it instead, possibly
+        before this destructor returns. Either way the waiter no longer
+        refers to the mutex.
+
+        A waiter handed the lock but not yet resumed resumes with
+        `error::canceled` instead, holding nothing.
+
+        @pre No coroutine holds the lock.
+    */
+    ~async_mutex()
+    {
+        if(unlocking_)
+            unlocking_->gone = true;
+        // Already posted, so it is only told the lock no longer exists.
+        if(granted_to_)
+        {
+            granted_to_->granted_ = false;
+            granted_to_->canceled_ = true;
+        }
+        while(auto* w = waiters_.pop_front())
+        {
+            w->in_list_ = false;
+            if(!w->claimed_.exchange(true, std::memory_order_acq_rel))
+            {
+                w->canceled_ = true;
+                w->ex_.post(w->cont_);
+            }
+        }
+    }
+
     /** Copy construction is disabled; suspended waiters point into the
         mutex's wait queue.
 
@@ -581,23 +654,49 @@ public:
     */
     void unlock() noexcept
     {
-        for(;;)
+        if(unlocking_)
         {
-            auto* waiter = waiters_.pop_front();
+            // Reached from a granted waiter destroyed by the post below;
+            // that call hands the lock on once the post returns.
+            unlocking_->again = true;
+            return;
+        }
+        unlock_scope scope;
+        unlocking_ = &scope;
+        do
+        {
+            scope.again = false;
+            auto* waiter = grant_next();
             if(!waiter)
-            {
-                locked_ = false;
+                break;
+            waiter->ex_.post(waiter->cont_);
+            if(scope.gone)
                 return;
-            }
+        }
+        while(scope.again);
+        unlocking_ = nullptr;
+    }
+
+private:
+    // Hand the lock to the next unclaimed waiter, or release it.
+    lock_awaiter* grant_next() noexcept
+    {
+        while(auto* waiter = waiters_.pop_front())
+        {
+            waiter->in_list_ = false;
             if(!waiter->claimed_.exchange(
                 true, std::memory_order_acq_rel))
             {
-                waiter->ex_.post(waiter->cont_);
-                return;
+                waiter->granted_ = true;
+                granted_to_ = waiter;
+                return waiter;
             }
         }
+        locked_ = false;
+        return nullptr;
     }
 
+public:
     /** Returns true if the mutex is currently locked.
 
         @return `true` if the mutex is held; otherwise `false`.

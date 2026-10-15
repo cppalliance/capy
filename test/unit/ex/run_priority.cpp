@@ -79,17 +79,6 @@ make_log_coro(std::vector<std::string>& log, std::string msg)
     }(&log, std::move(msg));
 }
 
-inline void
-pump(std::queue<std::coroutine_handle<>>& q)
-{
-    while(!q.empty())
-    {
-        auto h = q.front();
-        q.pop();
-        h.resume();
-    }
-}
-
 } // namespace
 
 struct run_priority_test
@@ -99,7 +88,7 @@ struct run_priority_test
     void
     testForwardCrossing()
     {
-        std::queue<std::coroutine_handle<>> q;
+        std::queue<continuation> q;
         queuing_executor qe(q);
         test::priority_executor_state state;
         test::priority_executor pe(state, qe);
@@ -146,7 +135,7 @@ struct run_priority_test
     void
     testReturnTripParentWrongFrame()
     {
-        std::queue<std::coroutine_handle<>> q;
+        std::queue<continuation> q;
         queuing_executor qe(q);
         test::priority_executor_state state;
         test::priority_executor pe(state, qe);
@@ -195,7 +184,7 @@ struct run_priority_test
     void
     testExitStrandOverPriority()
     {
-        std::queue<std::coroutine_handle<>> q;
+        std::queue<continuation> q;
         queuing_executor qe(q);
         test::priority_executor_state state;
         test::priority_executor pe(state, qe);

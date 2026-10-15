@@ -25,6 +25,7 @@
 #include <stop_token>
 #include <system_error>
 #include <thread>
+#include <memory>
 #include <memory_resource>
 #include <tuple>
 #include <type_traits>
@@ -848,6 +849,95 @@ void test_ensure_sender_lifts()
     CHECK(out.ch == channel::value);
 }
 
+// Holds the continuation of what awaits it, as an I/O object does,
+// until the test gives it up.
+struct held_op
+{
+    capy::continuation* slot_;
+    std::latch* parked_;
+
+    bool await_ready() const noexcept { return false; }
+
+    std::coroutine_handle<> await_suspend(
+        std::coroutine_handle<> h,
+        capy::io_env const* env) noexcept
+    {
+        slot_->h = h;
+        slot_->owner = env->owner;
+        parked_->count_down();
+        return std::noop_coroutine();
+    }
+
+    void await_resume() const noexcept {}
+};
+
+capy::task<void> await_held(capy::continuation* slot, std::latch* parked)
+{
+    co_await held_op{slot, parked};
+}
+
+// An abandoned task delivers no result: the sender completes stopped.
+void test_abandoned_task_completes_stopped()
+{
+    capy::thread_pool pool(1);
+    auto pool_ex = pool.get_executor();
+    capy::continuation held;
+    std::latch parked(1);
+    std::latch done(1);
+    test_outcome out;
+    auto op = ex::connect(
+        capy::as_sender(await_held(&held, &parked)),
+        test_receiver<std::stop_token>{
+            {pool_ex, {}}, &out, &done});
+    ex::start(op);
+    WAIT_OR_DIE(parked);
+    capy::abandon(held);
+    WAIT_OR_DIE(done);
+    CHECK(out.ch == channel::stopped);
+}
+
+// Parks its caller without taking the chain's owner, so giving it up
+// destroys the caller in place.
+struct unowned_held_op
+{
+    capy::continuation* slot_;
+    std::latch* parked_;
+
+    bool await_ready() const noexcept { return false; }
+
+    std::coroutine_handle<> await_suspend(
+        std::coroutine_handle<> h,
+        capy::io_env const*) noexcept
+    {
+        slot_->h = h;
+        parked_->count_down();
+        return std::noop_coroutine();
+    }
+
+    void await_resume() const noexcept {}
+};
+
+// An awaitable given up in place, with no owner to unwind it, still
+// completes the sender stopped.
+void test_unowned_abandon_completes_stopped()
+{
+    capy::thread_pool pool(1);
+    auto pool_ex = pool.get_executor();
+    capy::continuation held;
+    std::latch parked(1);
+    std::latch done(1);
+    test_outcome out;
+    auto op = ex::connect(
+        capy::as_sender(unowned_held_op{&held, &parked}),
+        test_receiver<std::stop_token>{
+            {pool_ex, {}}, &out, &done});
+    ex::start(op);
+    WAIT_OR_DIE(parked);
+    capy::abandon(held);
+    WAIT_OR_DIE(done);
+    CHECK(out.ch == channel::stopped);
+}
+
 // stdexec dispatches the C++26 static-template signature query;
 // pin read_op's deduced signatures so drift in make_sigs is
 // caught at compile time.
@@ -868,6 +958,47 @@ static_assert(std::is_same_v<
 // {
 //     (void)capy::as_sender(compound_op{});
 // }
+
+// Forwards to a pool, but gives up everything posted to it, as a
+// context being torn down does.
+struct abandoning_executor
+{
+    capy::thread_pool::executor_type inner_;
+
+    bool operator==(abandoning_executor const&) const noexcept = default;
+    capy::execution_context& context() const noexcept
+    {
+        return inner_.context();
+    }
+    void on_work_started() const noexcept { inner_.on_work_started(); }
+    void on_work_finished() const noexcept { inner_.on_work_finished(); }
+    std::coroutine_handle<> dispatch(capy::continuation& c) const
+    {
+        return c.h;
+    }
+    void post(capy::continuation& c) const
+    {
+        capy::abandon(c);
+    }
+};
+
+// An op given up after it posted its caller unwinds the caller's chain
+// from its owner, so the launch that started it is torn down too.
+template<class Op>
+void test_posted_op_abandon_unwinds_launch(Op op)
+{
+    capy::thread_pool pool(1);
+    auto alive = std::make_shared<int>();
+    std::weak_ptr<int> seen = alive;
+    capy::run_async(
+        abandoning_executor{pool.get_executor()},
+        [alive = std::move(alive)](auto&&...) {})(
+        [](Op op) -> capy::task<>
+        {
+            std::ignore = co_await std::move(op);
+        }(std::move(op)));
+    CHECK(seen.expired());
+}
 
 int main()
 {
@@ -905,6 +1036,12 @@ int main()
     test_ensure_sender_lifts();
     test_read_op_cancel_std_token();
     test_adaptor_immediate();
+    test_abandoned_task_completes_stopped();
+    test_unowned_abandon_completes_stopped();
+    test_posted_op_abandon_unwinds_launch(capy::read_op::result({}));
+    std::size_t n = 0;
+    test_posted_op_abandon_unwinds_launch(
+        capy::counted_read_op::result({}, 0, &n));
 
     if(failures == 0)
         std::cout << "all tests passed\n";

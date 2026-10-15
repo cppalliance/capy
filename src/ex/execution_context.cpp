@@ -47,13 +47,12 @@ void
 execution_context::
 destroy() noexcept
 {
-    service* p = head_;
-    head_ = nullptr;
-    while(p)
+    // One at a time, so a destructor can still find the services not
+    // yet destroyed, and one it creates is destroyed in turn.
+    while(service* p = head_)
     {
-        service* next = p->next_;
+        head_ = p->next_;
         delete p;
-        p = next;
     }
 }
 
@@ -98,6 +97,13 @@ use_service_impl(factory& f)
     sp->next_ = head_;
     head_ = sp;
 
+    if(shutdown_)
+    {
+        // Created after the context shut down: it starts shut down,
+        // like the services that already were.
+        lock.unlock();
+        sp->shutdown();
+    }
     return *sp;
 }
 
@@ -116,7 +122,7 @@ make_service_impl(factory& f)
     // Unlocked to allow nested service creation from constructor
     service* p = f.create(*this);
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::unique_lock<std::mutex> lock(mutex_);
     if(find_impl(f.t0))
     {
         delete p; // LCOV_EXCL_LINE concurrent same-type registration race
@@ -141,6 +147,13 @@ make_service_impl(factory& f)
     p->next_ = head_;
     head_ = p;
 
+    if(shutdown_)
+    {
+        // Created after the context shut down: it starts shut down,
+        // like the services that already were.
+        lock.unlock();
+        p->shutdown();
+    }
     return *p;
 }
 

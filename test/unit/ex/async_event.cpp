@@ -12,6 +12,8 @@
 
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/capy/ex/abandon.hpp>
+#include <boost/capy/ex/strand.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -21,9 +23,12 @@
 #include <boost/capy/task.hpp>
 #include <boost/capy/when_all.hpp>
 
+#include <cstddef>
+#include <memory>
 #include <queue>
 #include <semaphore>
 #include <stop_token>
+#include <tuple>
 #include <vector>
 
 #include "test_helpers.hpp"
@@ -74,7 +79,7 @@ struct async_event_test
     testSingleWaiter()
     {
         async_event event;
-        std::queue<std::coroutine_handle<>> q;
+        std::queue<continuation> q;
         queuing_executor ex(q);
 
         bool resumed = false;
@@ -97,7 +102,7 @@ struct async_event_test
 
         while(!q.empty())
         {
-            q.front().resume();
+            q.front().h.resume();
             q.pop();
         }
 
@@ -110,7 +115,7 @@ struct async_event_test
     testMultipleWaiters()
     {
         async_event event;
-        std::queue<std::coroutine_handle<>> q;
+        std::queue<continuation> q;
         queuing_executor ex(q);
 
         int count = 0;
@@ -148,7 +153,7 @@ struct async_event_test
 
         while(!q.empty())
         {
-            q.front().resume();
+            q.front().h.resume();
             q.pop();
         }
 
@@ -190,7 +195,7 @@ struct async_event_test
     testSetClearSetSequence()
     {
         async_event event;
-        std::queue<std::coroutine_handle<>> q;
+        std::queue<continuation> q;
         queuing_executor ex(q);
 
         int count = 0;
@@ -213,7 +218,7 @@ struct async_event_test
         event.set();
         while(!q.empty())
         {
-            q.front().resume();
+            q.front().h.resume();
             q.pop();
         }
         BOOST_TEST_EQ(count, 1);
@@ -237,7 +242,7 @@ struct async_event_test
         event.set();
         while(!q.empty())
         {
-            q.front().resume();
+            q.front().h.resume();
             q.pop();
         }
         BOOST_TEST_EQ(count, 2);
@@ -248,7 +253,7 @@ struct async_event_test
     testResumeOrder()
     {
         async_event event;
-        std::queue<std::coroutine_handle<>> q;
+        std::queue<continuation> q;
         queuing_executor ex(q);
 
         std::vector<int> order;
@@ -284,7 +289,7 @@ struct async_event_test
         event.set();
         while(!q.empty())
         {
-            q.front().resume();
+            q.front().h.resume();
             q.pop();
         }
 
@@ -311,7 +316,7 @@ struct async_event_test
     {
         // Stop token cancels a waiting coroutine
         async_event event;
-        std::queue<std::coroutine_handle<>> q;
+        std::queue<continuation> q;
         queuing_executor ex(q);
         std::stop_source ss;
 
@@ -339,7 +344,7 @@ struct async_event_test
 
         while(!q.empty())
         {
-            q.front().resume();
+            q.front().h.resume();
             q.pop();
         }
 
@@ -355,7 +360,7 @@ struct async_event_test
     {
         // Cancel one waiter, set() wakes the rest
         async_event event;
-        std::queue<std::coroutine_handle<>> q;
+        std::queue<continuation> q;
         queuing_executor ex(q);
         std::stop_source ss;
 
@@ -398,7 +403,7 @@ struct async_event_test
         ss.request_stop();
         while(!q.empty())
         {
-            q.front().resume();
+            q.front().h.resume();
             q.pop();
         }
         BOOST_TEST(w1_done);
@@ -409,7 +414,7 @@ struct async_event_test
         event.set();
         while(!q.empty())
         {
-            q.front().resume();
+            q.front().h.resume();
             q.pop();
         }
         BOOST_TEST(w2_done);
@@ -424,7 +429,7 @@ struct async_event_test
     {
         // Pre-signaled token on contended event
         async_event event;
-        std::queue<std::coroutine_handle<>> q;
+        std::queue<continuation> q;
         queuing_executor ex(q);
         std::stop_source ss;
         ss.request_stop();
@@ -491,7 +496,7 @@ struct async_event_test
         // Destroying a coroutine while suspended properly
         // unlinks the awaiter
         async_event event;
-        std::queue<std::coroutine_handle<>> q;
+        std::queue<continuation> q;
         queuing_executor ex(q);
 
         auto t = [](async_event& ev) -> task<void> {
@@ -520,7 +525,7 @@ struct async_event_test
         // set() claims the waiter first, stop callback
         // loses the race -- no double resume
         async_event event;
-        std::queue<std::coroutine_handle<>> q;
+        std::queue<continuation> q;
         queuing_executor ex(q);
         std::stop_source ss;
 
@@ -551,7 +556,7 @@ struct async_event_test
 
         while(!q.empty())
         {
-            q.front().resume();
+            q.front().h.resume();
             q.pop();
         }
 
@@ -735,9 +740,196 @@ struct async_event_test
         BOOST_TEST(finished);
     }
 
+    // A destroyed event can no longer be set, so its waiters resume
+    // with an error instead of disappearing.
+    void testDestroyEventCancelsWaiters()
+    {
+        int down = 0;
+        std::error_code ec;
+        auto ev = std::make_unique<async_event>();
+        auto waiter = [](async_event& e, std::error_code& out,
+            destroy_count_t) -> task<void>
+        {
+            auto [r] = co_await e.wait();
+            out = r;
+        };
+        std::queue<continuation> q;
+        run_async(queuing_executor(q))(waiter(*ev, ec, destroy_count_t(down)));
+        pump(q);
+        ev.reset();
+        BOOST_TEST_EQ(down, 0);
+        BOOST_TEST_EQ(q.size(), 1u);
+        pump(q);
+        BOOST_TEST(ec == make_error_code(error::canceled));
+        BOOST_TEST_EQ(down, 1);
+    }
+
+    // An event owned by a frame that an outer teardown destroys posts
+    // every waiter; each then resumes with an error, or is destroyed
+    // if its execution context is torn down too.
+    void testCascadeCancelsManyWaiters()
+    {
+        constexpr int count = 64;
+        int inner_down = 0, outer_down = 0, server_down = 0;
+        int canceled = 0;
+        parked slot;
+        std::queue<continuation> q;
+        queuing_executor ex(q);
+        auto inner = [&](async_event& e, destroy_count_t) -> task<void>
+        {
+            auto [r] = co_await e.wait();
+            if(r == make_error_code(error::canceled))
+                ++canceled;
+        };
+        auto outer = [&](async_event& e, destroy_count_t) -> task<void>
+        {
+            co_await inner(e, destroy_count_t(inner_down));
+        };
+        auto leaf = [](parked* s) -> task<void>
+        {
+            co_await park_awaitable{s};
+        };
+        auto server = [&](destroy_count_t) -> task<void>
+        {
+            async_event ev;
+            for(int i = 0; i < count; ++i)
+                run_async(ex)(outer(ev, destroy_count_t(outer_down)));
+            co_await leaf(&slot);
+        };
+        run_async(ex)(server(destroy_count_t(server_down)));
+        pump(q);
+        BOOST_TEST(slot);
+
+        capy::abandon(slot);
+        // Run only the posted unwind; the canceled waiters it posts
+        // stay queued.
+        BOOST_TEST_EQ(q.size(), 1u);
+        auto unwind = q.front();
+        q.pop();
+        unwind.h.resume();
+        BOOST_TEST_EQ(server_down, 1);
+        BOOST_TEST_EQ(inner_down, 0);
+        BOOST_TEST_EQ(q.size(), static_cast<std::size_t>(count));
+
+        // Half resume, half are torn down with their context.
+        for(int i = 0; i < count / 2; ++i)
+        {
+            auto c = q.front();
+            q.pop();
+            c.h.resume();
+        }
+        while(!q.empty())
+        {
+            capy::abandon(q.front());
+            q.pop();
+        }
+        BOOST_TEST_EQ(canceled, count / 2);
+        BOOST_TEST_EQ(inner_down, count);
+        BOOST_TEST_EQ(outer_down, count);
+    }
+
+    // Posting a waiter can destroy it on the spot (here, a strand that
+    // can no longer run it); set() must not touch an event that the
+    // destroyed frame owned.
+    void testSetWhenPostDestroysOwner()
+    {
+        std::queue<continuation> q;
+        auto ctx = std::make_unique<closable_test_context>();
+        queuing_executor qe(q);
+        qe.ctx_ = ctx.get();
+        strand<queuing_executor> s{qe};
+        async_event* ev = nullptr;
+        int down = 0;
+        auto waiter = [](async_event*& out, destroy_count_t) -> task<void>
+        {
+            async_event e;
+            out = &e;
+            std::ignore = co_await e.wait();
+        };
+        run_async(s, std::allocator<std::byte>{})(
+            waiter(ev, destroy_count_t(down)));
+        pump(q);
+        BOOST_TEST(ev);
+        ctx->shutdown();
+        ev->set();
+        BOOST_TEST_EQ(down, 1);
+    }
+
+    // The same, with set() called from a destructor inside a teardown.
+    void testSetFromTeardownWhenPostDestroysOwner()
+    {
+        std::queue<continuation> q;
+        auto ctx = std::make_unique<closable_test_context>();
+        queuing_executor qe(q);
+        qe.ctx_ = ctx.get();
+        strand<queuing_executor> s{qe};
+        async_event* ev = nullptr;
+        int down = 0;
+        auto waiter = [](async_event*& out, destroy_count_t) -> task<void>
+        {
+            async_event e;
+            out = &e;
+            std::ignore = co_await e.wait();
+        };
+        run_async(s, std::allocator<std::byte>{})(
+            waiter(ev, destroy_count_t(down)));
+        pump(q);
+
+        struct set_on_exit
+        {
+            async_event** e;
+            ~set_on_exit() { (*e)->set(); }
+        };
+        parked slot;
+        std::queue<continuation> q2;
+        auto notifier = [](async_event** e,
+            parked* sl) -> task<void>
+        {
+            set_on_exit g{e};
+            co_await park_awaitable{sl};
+        };
+        run_async(queuing_executor(q2), std::allocator<std::byte>{})(
+            notifier(&ev, &slot));
+        pump(q2);
+        BOOST_TEST(slot);
+        ctx->shutdown();
+        capy::abandon(slot);
+        pump(q2);
+        BOOST_TEST_EQ(down, 1);
+    }
+
+    // A waiter claimed by its stop request belongs to the executor's
+    // queue: discarding it after the event is gone touches nothing.
+    void testStopClaimedWaiterOutlivesEvent()
+    {
+        auto p = std::make_unique<async_event>();
+        std::queue<continuation> q;
+        std::stop_source ss;
+        int down = 0;
+        auto waiter = [](async_event& x, destroy_count_t) -> task<void>
+        {
+            std::ignore = co_await x.wait();
+        };
+        run_async(queuing_executor(q), ss.get_token())(
+            waiter(*p, destroy_count_t(down)));
+        pump(q);
+        ss.request_stop();
+        BOOST_TEST_EQ(q.size(), 1u);
+        p.reset();
+        capy::abandon(q.front());
+        q.pop();
+        pump(q);
+        BOOST_TEST_EQ(down, 1);
+    }
+
     void
     run()
     {
+        testStopClaimedWaiterOutlivesEvent();
+        testSetWhenPostDestroysOwner();
+        testSetFromTeardownWhenPostDestroysOwner();
+        testDestroyEventCancelsWaiters();
+        testCascadeCancelsManyWaiters();
         testInitialState();
         testSetAndClear();
         testWaitOnSetEvent();

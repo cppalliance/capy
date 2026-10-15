@@ -14,7 +14,9 @@
 #include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <coroutine>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/execution_context.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/task.hpp>
 
@@ -24,11 +26,18 @@
 #include "test_suite.hpp"
 
 #include <chrono>
+#include <cstddef>
 #include <cstring>
+#include <memory_resource>
+#include <iterator>
+#include <new>
+#include <optional>
 #include <queue>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <type_traits>
+#include <utility>
 
 // Valgrind slows execution ~10-20x; scale timing-sensitive
 // durations to avoid false failures.
@@ -162,6 +171,13 @@ test_executor::context() const noexcept
 static_assert(Executor<test_executor>);
 static_assert(ExecutionContext<test_io_context>);
 
+/// A test context whose services the test shuts down directly.
+class closable_test_context : public test_io_context
+{
+public:
+    using execution_context::shutdown;
+};
+
 
 //----------------------------------------------------------
 // Wait Utilities
@@ -242,14 +258,19 @@ thread_name_starts_with(char const* name_prefix)
 
 #endif // BOOST_CAPY_TEST_CAN_GET_THREAD_NAME
 
+/** Gives up its own coroutine as a holder would.
+
+    The awaiting coroutine is abandoned from inside `await_suspend`, so
+    its chain is unwound without ever resuming.
+*/
 struct self_destroy_awaitable
 {
     bool await_ready() {return false;}
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const*)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env)
     {
-        // one wouldn't expect this to happen, but it should not cause UB
-        h.destroy();
+        continuation c{h, nullptr, env->owner};
+        capy::abandon(c);
         return std::noop_coroutine();
     }
     void await_resume() {}
@@ -278,7 +299,7 @@ post_resume(
     io_env const& env,
     std::coroutine_handle<> h) noexcept
 {
-    return resume_via_post{env.executor, continuation{h}};
+    return resume_via_post{env.executor, continuation{h, nullptr, env.owner}};
 }
 
 // test awaitable that must be stopped in order to resume.
@@ -406,6 +427,78 @@ void_throws_exception(char const* msg)
 // Queuing Executor
 //----------------------------------------------------------
 
+/** A sized input range whose iterator holds the element it yields.
+
+    Input iterators may do this: each increment replaces the element,
+    so a reference to one does not outlive the next step.
+*/
+template<class Make>
+class stashing_range
+{
+    Make make_;
+    std::size_t n_;
+
+public:
+    class iterator
+    {
+    public:
+        using value_type =
+            std::invoke_result_t<Make const&, std::size_t>;
+        using difference_type = std::ptrdiff_t;
+
+    private:
+        Make const* make_ = nullptr;
+        std::size_t i_ = 0;
+        std::size_t n_ = 0;
+        mutable std::optional<value_type> stash_;
+
+        void fill()
+        {
+            stash_.reset();
+            if(i_ < n_)
+                stash_.emplace((*make_)(i_));
+        }
+
+    public:
+        iterator(Make const* make, std::size_t i, std::size_t n)
+            : make_(make)
+            , i_(i)
+            , n_(n)
+        {
+            fill();
+        }
+
+        iterator(iterator&&) = default;
+        iterator& operator=(iterator&&) = default;
+
+        value_type& operator*() const { return *stash_; }
+
+        iterator& operator++()
+        {
+            ++i_;
+            fill();
+            return *this;
+        }
+
+        void operator++(int) { ++*this; }
+
+        bool operator==(std::default_sentinel_t) const noexcept
+        {
+            return i_ == n_;
+        }
+    };
+
+    stashing_range(Make make, std::size_t n)
+        : make_(std::move(make))
+        , n_(n)
+    {
+    }
+
+    iterator begin() const { return iterator(&make_, 0, n_); }
+    std::default_sentinel_t end() const noexcept { return {}; }
+    std::size_t size() const noexcept { return n_; }
+};
+
 /** Queuing executor that allows controlled interleaving of tasks.
 
     Unlike test_executor which runs tasks synchronously, this executor
@@ -414,10 +507,10 @@ void_throws_exception(char const* msg)
 */
 struct queuing_executor
 {
-    std::queue<std::coroutine_handle<>>* queue_;
+    std::queue<continuation>* queue_;
     test_io_context* ctx_ = nullptr;
 
-    explicit queuing_executor(std::queue<std::coroutine_handle<>>& q)
+    explicit queuing_executor(std::queue<continuation>& q)
         : queue_(&q)
     {
     }
@@ -437,17 +530,56 @@ struct queuing_executor
 
     std::coroutine_handle<> dispatch(continuation& c) const
     {
-        queue_->push(c.h);
+        queue_->push(c);
         return std::noop_coroutine();
     }
 
     void post(continuation& c) const
     {
-        queue_->push(c.h);
+        queue_->push(c);
     }
 };
 
 static_assert(Executor<queuing_executor>);
+
+/** Executor that queues posts until closed, then abandons them.
+
+    Models a context that has shut down: whatever is posted to it
+    afterwards is given up rather than run.
+*/
+struct closing_executor
+{
+    std::queue<continuation>* q;
+    bool* closed;
+
+    bool operator==(closing_executor const& o) const noexcept
+    {
+        return q == o.q;
+    }
+
+    test_io_context& context() const noexcept
+    {
+        return default_test_io_context();
+    }
+
+    void on_work_started() const noexcept {}
+    void on_work_finished() const noexcept {}
+
+    std::coroutine_handle<> dispatch(continuation& c) const
+    {
+        return c.h;
+    }
+
+    void post(continuation& c) const
+    {
+        if(*closed)
+            capy::abandon(c);
+        else
+            q->push(c);
+    }
+};
+
+static_assert(Executor<closing_executor>);
 
 //----------------------------------------------------------
 // Yield Awaitable
@@ -480,6 +612,218 @@ struct yield_awaitable
     {
     }
 };
+
+/** Counts its own destruction; a frame parameter of this type
+    reports when the frame is destroyed.
+*/
+struct destroy_count_t
+{
+    int* n;
+    explicit destroy_count_t(int& c) : n(&c) {}
+    destroy_count_t(destroy_count_t&& o) noexcept
+        : n(std::exchange(o.n, nullptr)) {}
+    ~destroy_count_t()
+    {
+        if(n)
+            ++*n;
+    }
+};
+
+/** A suspended coroutine as its holder keeps it.
+
+    Its handle, to resume it, and its segment's owner, to
+    @ref abandon it.
+*/
+struct parked : continuation
+{
+    /// Return true while a coroutine is parked here.
+    explicit operator bool() const noexcept
+    {
+        return static_cast<bool>(h);
+    }
+
+    /// Resume the parked coroutine.
+    void resume() const
+    {
+        h.resume();
+    }
+};
+
+/** Parks the awaiting coroutine, handing it to the test.
+
+    The test then plays the holder: resume `*slot`, or abandon it as a
+    context's teardown would.
+*/
+struct park_awaitable
+{
+    parked* slot;
+
+    bool await_ready() const noexcept { return false; }
+
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> h, io_env const* env) noexcept
+    {
+        slot->h = h;
+        slot->owner = env->owner;
+        return std::noop_coroutine();
+    }
+
+    void await_resume() const noexcept {}
+};
+
+/// Counts of a @ref counting_allocator and its copies.
+struct alloc_counts
+{
+    std::atomic<int> allocs{0};
+    std::atomic<int> deallocs{0};
+    std::atomic<int> live{0};
+    std::atomic<int> late{0};
+
+    /// Return true once every allocation is freed, none late.
+    bool balanced() const noexcept
+    {
+        return allocs.load() == deallocs.load() && late.load() == 0;
+    }
+};
+
+/** An allocator whose copies count allocations and frees.
+
+    A free made once every copy is destroyed went through an allocator
+    that no longer exists, as when a frame outlives the frame holding
+    its chain's allocator; it is counted as late.
+*/
+template<class T>
+struct counting_allocator
+{
+    using value_type = T;
+
+    alloc_counts* c;
+
+    ~counting_allocator()
+    {
+        --c->live;
+    }
+
+    explicit counting_allocator(alloc_counts& counts) noexcept
+        : c(&counts)
+    {
+        ++c->live;
+    }
+
+    counting_allocator(counting_allocator const& o) noexcept
+        : c(o.c)
+    {
+        ++c->live;
+    }
+
+    template<class U>
+    counting_allocator(counting_allocator<U> const& o) noexcept
+        : c(o.c)
+    {
+        ++c->live;
+    }
+
+    counting_allocator& operator=(counting_allocator const&) = default;
+
+    T* allocate(std::size_t n)
+    {
+        ++c->allocs;
+        return static_cast<T*>(::operator new(n * sizeof(T)));
+    }
+
+    void deallocate(T* p, std::size_t) noexcept
+    {
+        ++c->deallocs;
+        if(c->live.load() == 0)
+            ++c->late;
+        ::operator delete(p);
+    }
+
+    template<class U>
+    bool operator==(counting_allocator<U> const& o) const noexcept
+    {
+        return c == o.c;
+    }
+};
+
+/** A memory resource that counts frees made after its lease ended.
+
+    A frame that owns a chain's allocator must outlive every frame
+    allocated from it. A @ref lease held in that frame ends when the
+    frame's locals are destroyed; a free counted as late came after.
+*/
+struct lease_resource : std::pmr::memory_resource
+{
+    std::atomic<bool> leased{true};
+    std::atomic<int> allocs{0};
+    std::atomic<int> deallocs{0};
+    std::atomic<int> late{0};
+
+    /// Return true once every allocation is freed, none late.
+    bool balanced() const noexcept
+    {
+        return allocs.load() == deallocs.load() && late.load() == 0;
+    }
+
+protected:
+    // Forwarded through another resource, which the optimizer cannot see
+    // into, so it does not pair the frame's operator delete with the
+    // global operator new.
+    void* do_allocate(std::size_t n, std::size_t a) override
+    {
+        ++allocs;
+        return std::pmr::new_delete_resource()->allocate(n, a);
+    }
+
+    void do_deallocate(void* p, std::size_t n, std::size_t a) override
+    {
+        ++deallocs;
+        if(!leased.load())
+            ++late;
+        std::pmr::new_delete_resource()->deallocate(p, n, a);
+    }
+
+    bool do_is_equal(memory_resource const& o) const noexcept override
+    {
+        return this == &o;
+    }
+};
+
+/// Ends the lease on a @ref lease_resource when destroyed.
+struct lease
+{
+    lease_resource* r;
+
+    explicit lease(lease_resource& res) noexcept
+        : r(&res)
+    {
+    }
+
+    lease(lease&& o) noexcept
+        : r(std::exchange(o.r, nullptr))
+    {
+    }
+
+    lease& operator=(lease&&) = delete;
+
+    ~lease()
+    {
+        if(r)
+            r->leased.store(false);
+    }
+};
+
+/// Resume queued continuations in FIFO order until the queue is empty.
+inline void
+pump(std::queue<continuation>& q)
+{
+    while(!q.empty())
+    {
+        auto c = q.front();
+        q.pop();
+        safe_resume(c.h);
+    }
+}
 
 } // capy
 } // boost

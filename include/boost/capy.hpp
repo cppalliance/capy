@@ -56,6 +56,7 @@
 #include <boost/capy/concept/write_stream.hpp>
 
 // Execution
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/any_executor.hpp>
 #include <boost/capy/ex/async_event.hpp>
 #include <boost/capy/ex/async_mutex.hpp>

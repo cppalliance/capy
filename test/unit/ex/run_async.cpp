@@ -11,6 +11,7 @@
 #include <boost/capy/ex/run_async.hpp>
 
 #include <boost/capy/task.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 
@@ -107,11 +108,11 @@ static_assert(Executor<sync_executor>);
 /// Queuing executor - queues for manual execution.
 struct queue_executor
 {
-    std::queue<std::coroutine_handle<>>* queue_;
+    std::queue<continuation>* queue_;
     test_io_context* ctx_ = nullptr;
     static test_io_context default_ctx_;
 
-    explicit queue_executor(std::queue<std::coroutine_handle<>>& q)
+    explicit queue_executor(std::queue<continuation>& q)
         : queue_(&q)
     {
     }
@@ -131,13 +132,13 @@ struct queue_executor
 
     std::coroutine_handle<> dispatch(continuation& c) const
     {
-        queue_->push(c.h);
+        queue_->push(c);
         return std::noop_coroutine();
     }
 
     void post(continuation& c) const
     {
-        queue_->push(c.h);
+        queue_->push(c);
     }
 };
 
@@ -159,8 +160,99 @@ using test::custom_task;
 // run_async Tests
 //----------------------------------------------------------
 
+// Counts outstanding work; dispatch and post always throw.
+struct refusing_executor
+{
+    int* work_;
+
+    bool operator==(refusing_executor const& other) const noexcept
+    {
+        return work_ == other.work_;
+    }
+
+    test_io_context& context() const noexcept
+    {
+        return default_test_io_context();
+    }
+
+    void on_work_started() const noexcept { ++*work_; }
+    void on_work_finished() const noexcept { --*work_; }
+
+    std::coroutine_handle<> dispatch(continuation&) const
+    {
+        throw_test_exception("dispatch");
+    }
+
+    void post(continuation&) const
+    {
+        throw_test_exception("post");
+    }
+};
+
+task<>
+make_throwing_task()
+{
+    throw_test_exception("argument");
+}
+
 struct run_async_test
 {
+    // A task drained before it starts tears down like a parked one:
+    // the completion handlers are destroyed without being called, and
+    // its frame is freed.
+    void testTaskDrainedBeforeStart()
+    {
+        alloc_counts st;
+        int task_down = 0, handler_down = 0;
+        {
+            std::queue<continuation> q;
+            queuing_executor ex(q);
+            auto probe = [](destroy_count_t) -> task<void> { co_return; };
+            run_async(ex, counting_allocator<std::byte>(st),
+                [d = destroy_count_t(handler_down)] { BOOST_TEST(false); },
+                [](std::exception_ptr) { BOOST_TEST(false); })(
+                probe(destroy_count_t(task_down)));
+            BOOST_TEST_EQ(q.size(), 1u);
+            auto h = q.front();
+            q.pop();
+            capy::abandon(h);
+            pump(q);
+        }
+        BOOST_TEST_EQ(task_down, 1);
+        BOOST_TEST_EQ(handler_down, 1);
+        BOOST_TEST(st.balanced());
+    }
+
+    // The same through a memory_resource the caller owns: the task's
+    // frame is freed before the handlers, which go with the launch.
+    void testTaskDrainedBeforeStartWithResource()
+    {
+        int task_down = 0, handler_down = 0;
+        lease_resource mr;
+        {
+            std::queue<continuation> q;
+            queuing_executor ex(q);
+            auto probe = [](destroy_count_t) -> task<void> { co_return; };
+            run_async(ex, &mr,
+                [d = destroy_count_t(handler_down), l = lease(mr)]
+                {
+                    BOOST_TEST(false);
+                },
+                [](std::exception_ptr) { BOOST_TEST(false); })(
+                probe(destroy_count_t(task_down)));
+            BOOST_TEST_EQ(q.size(), 1u);
+            auto h = q.front();
+            q.pop();
+            capy::abandon(h);
+            pump(q);
+        }
+        BOOST_TEST_EQ(task_down, 1);
+        BOOST_TEST_EQ(handler_down, 1);
+        BOOST_TEST(mr.allocs.load() > 1);
+        BOOST_TEST_EQ(mr.allocs.load(), mr.deallocs.load());
+        BOOST_TEST_EQ(mr.late.load(), 1); // the launch's own frame
+    }
+
     //----------------------------------------------------------
     // Basic Functionality
     //----------------------------------------------------------
@@ -450,7 +542,7 @@ struct run_async_test
         // Three tasks on the same executor: one with a scoped stop token,
         // two with the default (empty) token. Cancelling the scoped token
         // should only affect that task, not the others.
-        std::queue<std::coroutine_handle<>> queue;
+        std::queue<continuation> queue;
         queue_executor d(queue);
 
         bool default_1_stopped = true;
@@ -474,7 +566,7 @@ struct run_async_test
 
         while(!queue.empty())
         {
-            auto h = queue.front();
+            auto h = queue.front().h;
             queue.pop();
             h.resume();
         }
@@ -593,7 +685,7 @@ struct run_async_test
     void
     testAsyncDispatcherBasic()
     {
-        std::queue<std::coroutine_handle<>> queue;
+        std::queue<continuation> queue;
         queue_executor d(queue);
         int result = 0;
 
@@ -606,7 +698,7 @@ struct run_async_test
         // Execute the queued work
         while(!queue.empty())
         {
-            auto h = queue.front();
+            auto h = queue.front().h;
             queue.pop();
             h.resume();
         }
@@ -617,7 +709,7 @@ struct run_async_test
     void
     testAsyncDispatcherMultiple()
     {
-        std::queue<std::coroutine_handle<>> queue;
+        std::queue<continuation> queue;
         queue_executor d(queue);
         int sum = 0;
 
@@ -631,7 +723,7 @@ struct run_async_test
         // Execute all
         while(!queue.empty())
         {
-            auto h = queue.front();
+            auto h = queue.front().h;
             queue.pop();
             h.resume();
         }
@@ -777,11 +869,40 @@ struct run_async_test
 
     //----------------------------------------------------------
 
+    // A dispatch that throws gives the task back destroyed, leaving no
+    // work outstanding.
+    void
+    testDispatchThrows()
+    {
+        int work = 0;
+        int down = 0;
+        auto t = [](destroy_count_t) -> task<> { co_return; }(
+            destroy_count_t(down));
+        BOOST_TEST_THROWS(
+            run_async(refusing_executor{&work})(std::move(t)),
+            test_exception);
+        BOOST_TEST_EQ(work, 0);
+        BOOST_TEST_EQ(down, 1);
+    }
+
+    // A task argument that throws leaves no work outstanding.
+    void
+    testTaskArgumentThrows()
+    {
+        int work = 0;
+        BOOST_TEST_THROWS(
+            run_async(refusing_executor{&work})(make_throwing_task()),
+            test_exception);
+        BOOST_TEST_EQ(work, 0);
+    }
+
     void
     run()
     {
         // Basic Functionality
         testNoHandlers();
+        testDispatchThrows();
+        testTaskArgumentThrows();
         testValueAllocator();
         testValueAllocatorException();
         testResultHandler();
@@ -826,6 +947,8 @@ struct run_async_test
         // Custom Task Type
         testCustomTaskType();
         testCustomTaskTypeVoid();
+        testTaskDrainedBeforeStart();
+        testTaskDrainedBeforeStartWithResource();
     }
 };
 

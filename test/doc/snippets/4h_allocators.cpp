@@ -126,8 +126,9 @@ capy::task<> process(item const&)
     co_return;
 }
 
-// Bound to a blocking (inline) executor in the test so every frame is
-// released before the stack buffer backing the resource goes away.
+// Bound to a blocking executor in the test, and process_batch is called
+// from inside its loop, so every frame runs inline and is released before
+// the stack buffer backing the resource goes away.
 capy::any_executor executor;
 
 // tag::batch_allocator[]
@@ -144,6 +145,12 @@ void process_batch(std::vector<item> const& items)
     // All frames deallocated when resource goes out of scope
 }
 // end::batch_allocator[]
+
+capy::task<> batch_inline(std::vector<item> const& items)
+{
+    process_batch(items);
+    co_return;
+}
 
 // tag::recycling_observe_resource[]
 // A memory resource that pools freed blocks by size. When a coroutine
@@ -417,7 +424,9 @@ struct allocators_test
         executor = ctx.get_executor();
         std::vector<item> items(3);
         int const before = items_processed;
-        process_batch(items);
+        capy::run_async(executor, [&] { ctx.signal_done(); })(
+            batch_inline(items));
+        ctx.run();
         BOOST_TEST(items_processed == before + 3);
         executor = capy::any_executor();
     }

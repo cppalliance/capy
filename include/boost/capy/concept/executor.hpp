@@ -123,11 +123,36 @@ class execution_context;
 
     @par Executor Validity
 
-    An executor becomes invalid when the first call to
-    `ctx.shutdown()` returns. Calling `dispatch`, `post`,
-    `on_work_started`, or `on_work_finished` on an invalid executor
-    is undefined behavior. Copy, comparison, and `context()` remain
-    valid until the context is destroyed.
+    Once `ctx.shutdown()` has begun, the context runs no more work.
+    `dispatch` and `post` remain valid until the context is destroyed,
+    but never run the coroutine they are given: the executor passes
+    the continuation to @ref abandon, either at once or no later than
+    the context's destruction, as a context does with the coroutines
+    it holds. An executor takes a continuation off its queue before it
+    resumes or abandons it. A queued copy keeps the continuation's
+    `owner`, which @ref abandon needs. An abandon made inside `post` may
+    unwind the chain before `post` returns, so it is the executor's last
+    touch of the continuation, and of the executor object itself, which
+    may live in a frame the unwind destroys. A `post` that throws has
+    neither queued nor abandoned the continuation; the caller still
+    holds it. Copy, comparison, `context()`,
+    `on_work_started`, and `on_work_finished` also remain valid until
+    the context is destroyed. Calling any member after the context is
+    destroyed is undefined behavior.
+
+    @par Throwing `post` or `dispatch`
+
+    An exception from `post` or `dispatch` reaches the caller only
+    where nothing has started yet: @ref run_async rethrows it after
+    destroying the unstarted task. Everywhere else the library calls
+    them where an exception cannot propagate, and `std::terminate` is
+    called: while a @ref task is suspending, which includes
+    @ref when_all and @ref when_any starting their children and
+    @ref run moving to its executor; when @ref abandon posts an
+    unwind; when a join or a @ref run boundary resumes the
+    coroutine awaiting it; and when @ref async_mutex, @ref async_event
+    or @ref async_waker resumes a waiter, whether from an unlock, a
+    set, a wake, a stop request or its own destruction.
 
     @par Thread Safety
     Distinct objects: Safe.

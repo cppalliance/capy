@@ -31,7 +31,7 @@ namespace capy = boost::capy;
 class run_loop : public capy::execution_context
 {
 // end::inherit[]
-    std::queue<std::coroutine_handle<>> queue_;
+    std::queue<capy::continuation> queue_;
     std::thread::id owner_;
 
 public:
@@ -46,8 +46,31 @@ public:
 
     ~run_loop()
     {
+        // Once torn down, the loop runs nothing, not even inline.
+        owner_ = {};
+        // Nothing will run these now: give them up, so their chains
+        // are unwound. An unwind posted here is given up in turn.
+        auto drain = [this]
+        {
+            bool any = false;
+            while (!queue_.empty())
+            {
+                auto c = queue_.front();
+                queue_.pop();
+                any = true;
+                capy::abandon(c);
+            }
+            return any;
+        };
         shutdown();
-        destroy();
+        drain();
+        // A service's destructor may post too: repeat until nothing
+        // is left of either.
+        do
+        {
+            destroy();
+        }
+        while (drain());
     }
 
     run_loop(run_loop const&) = delete;
@@ -59,15 +82,16 @@ public:
         owner_ = std::this_thread::get_id();
         while (!queue_.empty())
         {
-            auto h = queue_.front();
+            auto c = queue_.front();
             queue_.pop();
-            capy::safe_resume(h);
+            capy::safe_resume(c.h);
         }
     }
 
-    void enqueue(std::coroutine_handle<> h)
+    // A copy keeps the owner, which abandon needs.
+    void enqueue(capy::continuation const& c)
     {
-        queue_.push(h);
+        queue_.push(c);
     }
 
     bool is_running_on_this_thread() const noexcept
@@ -107,14 +131,14 @@ public:
     {
         if (loop_->is_running_on_this_thread())
             return c.h;        // resume inline
-        loop_->enqueue(c.h);
+        loop_->enqueue(c);
         return std::noop_coroutine();  // defer
     }
     // end::dispatch[]
 
     void post(capy::continuation& c) const
     {
-        loop_->enqueue(c.h);
+        loop_->enqueue(c);
     }
 
     bool operator==(executor_type const& other) const noexcept

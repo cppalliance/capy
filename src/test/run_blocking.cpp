@@ -9,22 +9,34 @@
 
 #include <boost/capy/test/run_blocking.hpp>
 
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <condition_variable>
 #include <mutex>
 #include <queue>
+#include <system_error>
+#include <utility>
 
 namespace boost {
 namespace capy {
 namespace test {
 
+namespace {
+
+// The context whose run() is on this thread's stack. Only there is it
+// safe to resume dispatched work inline.
+thread_local blocking_context const* running_ = nullptr;
+
+} // namespace
+
 struct blocking_context::impl
 {
     std::mutex mtx;
     std::condition_variable cv;
-    std::queue<std::coroutine_handle<>> queue;
+    std::queue<continuation> queue;
     std::exception_ptr ep;
     bool done = false;
+    bool abandoned = false;
 };
 
 blocking_context::blocking_context()
@@ -34,6 +46,36 @@ blocking_context::blocking_context()
 
 blocking_context::~blocking_context()
 {
+    // Nothing will run these now; abandon them as their holder. The
+    // services may post while they shut down or are destroyed, so the
+    // queue outlives both. Each is taken under the lock, as other
+    // threads may still post, and abandoned outside it.
+    auto drain = [this]
+    {
+        bool any = false;
+        for(;;)
+        {
+            continuation c;
+            {
+                std::lock_guard<std::mutex> lock(impl_->mtx);
+                if(impl_->queue.empty())
+                    return any;
+                c = impl_->queue.front();
+                impl_->queue.pop();
+            }
+            any = true;
+            capy::abandon(c);
+        }
+    };
+    shutdown();
+    drain();
+    // A frame the drain unwinds can create a service, whose destructor
+    // can post again: repeat until nothing is left of either.
+    do
+    {
+        destroy();
+    }
+    while(drain());
     delete impl_;
 }
 
@@ -62,11 +104,35 @@ blocking_context::signal_done(
 }
 
 void
+blocking_context::signal_abandoned() noexcept
+{
+    std::lock_guard<std::mutex> lock(impl_->mtx);
+    impl_->abandoned = true;
+    impl_->done = true;
+    impl_->cv.notify_one();
+}
+
+void
 blocking_context::run()
 {
+    struct scoped_running
+    {
+        blocking_context const* prev_;
+
+        explicit scoped_running(blocking_context const* ctx) noexcept
+            : prev_(std::exchange(running_, ctx))
+        {
+        }
+
+        ~scoped_running()
+        {
+            running_ = prev_;
+        }
+    } guard(this);
+
     for(;;)
     {
-        std::coroutine_handle<> h;
+        continuation c;
         {
             std::unique_lock<std::mutex> lock(impl_->mtx);
             impl_->cv.wait(lock, [&] {
@@ -74,21 +140,23 @@ blocking_context::run()
             });
             if(impl_->done && impl_->queue.empty())
                 break;
-            h = impl_->queue.front();
+            c = impl_->queue.front();
             impl_->queue.pop();
         }
-        safe_resume(h);
+        safe_resume(c.h);
     }
     if(impl_->ep)
         std::rethrow_exception(impl_->ep);
+    if(impl_->abandoned)
+        throw std::system_error(error::canceled, "task abandoned");
 }
 
 void
 blocking_context::enqueue(
-    std::coroutine_handle<> h)
+    continuation const& c)
 {
     std::lock_guard<std::mutex> lock(impl_->mtx);
-    impl_->queue.push(h);
+    impl_->queue.push(c);
     impl_->cv.notify_one();
 }
 
@@ -121,14 +189,17 @@ std::coroutine_handle<>
 blocking_executor::dispatch(
     continuation& c) const
 {
-    return c.h;
+    if(running_ == ctx_)
+        return c.h;
+    ctx_->enqueue(c);
+    return std::noop_coroutine();
 }
 
 void
 blocking_executor::post(
     continuation& c) const
 {
-    ctx_->enqueue(c.h);
+    ctx_->enqueue(c);
 }
 
 } // namespace test

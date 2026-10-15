@@ -107,6 +107,13 @@ concept AwaitSuspendResult =
     @li Returning @c std::noop_coroutine() is equivalent to using the @c void return type, returning @c true in the @c bool return type signature.
 
 
+    _Teardown_: An awaitable that holds the coroutine for later, rather than
+    resuming it before returning, keeps it as a @ref continuation whose `owner`
+    is `env->owner`. If the awaitable or whatever holds the coroutine for it is
+    torn down first, it passes that continuation to @ref abandon, which unwinds
+    the chain from its owner. A continuation without an owner is destroyed
+    alone, leaving the frames above it holding a destroyed frame.
+
     _Lifetime_: The object of type @ref io_env pointed to by `env` remains valid 
     for the duration of the async operation represented by `A`. This is guarantee is maintained
     by @ref run, @ref run_async and the other functions that "start a task".

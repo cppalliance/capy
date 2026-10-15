@@ -15,12 +15,14 @@
 #include <boost/capy/detail/run.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_runnable.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <coroutine>
 #include <boost/capy/ex/frame_alloc_mixin.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
 
+#include <exception>
 #include <memory_resource>
 #include <stop_token>
 #include <type_traits>
@@ -35,27 +37,17 @@
 
         co_await run(ex, alloc)(my_task());
 
-    The evaluation order is:
-        1. run(ex, alloc) creates a temporary wrapper
-        2. my_task() allocates its coroutine frame using TLS
-        3. operator() returns an awaitable
-        4. Wrapper temporary is DESTROYED
-        5. co_await suspends caller, resumes task
-        6. Task body executes (wrapper is already dead!)
+    The wrapper run(ex, alloc) returns is a temporary holding the
+    frame_memory_resource my_task()'s frame is allocated from, so it must
+    live until that frame is freed: the awaitable is awaited in the
+    full-expression that made the wrapper, and the temporary lives until
+    the co_await completes. Keeping the awaitable and awaiting it later
+    frees the task's frame through a dead resource.
 
-    Problem: The wrapper's frame_memory_resource dies before the task
-    body runs. When initial_suspend::await_resume() restores TLS from
-    the saved pointer, it would point to dead memory.
-
-    Solution: Store a COPY of the allocator in the awaitable (not just
-    the wrapper). The co_await mechanism extends the awaitable's lifetime
-    until the await completes. In await_suspend, we overwrite the promise's
-    saved frame_allocator pointer to point to the awaitable's resource.
-
-    This works because standard allocator copies are equivalent - memory
-    allocated with one copy can be deallocated with another copy. The
-    task's own frame uses the footer-stored pointer (safe), while nested
-    task creation uses TLS pointing to the awaitable's resource (also safe).
+    The awaitable also holds a copy of the allocator. In await_suspend it
+    overwrites the promise's saved frame_allocator pointer with the
+    awaitable's resource, so tasks the inner task creates allocate from
+    it through TLS.
 */
 
 namespace boost::capy::detail {
@@ -65,18 +57,52 @@ namespace boost::capy::detail {
     Sits between the inner task and the parent when executors
     diverge. The inner task's `final_suspend` resumes this
     trampoline via symmetric transfer. The trampoline's own
-    `final_suspend` dispatches the parent through the caller's
-    executor to restore the correct execution context.
+    `final_suspend` posts the parent through the caller's executor to
+    restore the correct execution context.
 
-    The trampoline never touches the task's result.
+    It also owns the inner task's segment. Abandoning that segment
+    resumes the trampoline on the inner executor, or has a closed
+    executor destroy it: either way it destroys the inner task, which
+    unwinds the segment, then abandons the caller's segment, which
+    unwinds the parent on its own executor. The caller's execution
+    context must outlive that.
 */
-struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE boundary_trampoline
+struct boundary_trampoline
 {
     struct promise_type
-        : frame_alloc_mixin
+        : detail::process_frame_mixin
     {
         executor_ref caller_ex_;
         continuation parent_;
+        chain_owner segment_;
+        // The awaitable's trampoline object until the inner task
+        // completes or is unwound; null afterward.
+        boundary_trampoline* owner_ = nullptr;
+        // Destroys the inner task the awaitable owns.
+        void (*destroy_inner_)(void*) noexcept = nullptr;
+        void* awaitable_ = nullptr;
+
+        // Unwind the inner segment, then hand the parent to its own
+        // segment's owner. The last touch of this frame: abandoning the
+        // parent can destroy the awaitable, and this frame with it.
+        void unwind() noexcept
+        {
+            destroy_inner_(awaitable_);
+            owner_ = nullptr;
+            auto parent = parent_;
+            capy::abandon(parent);
+        }
+
+        ~promise_type()
+        {
+            // Linked only when a closed executor destroyed this frame
+            // instead of resuming it to unwind.
+            if(owner_)
+            {
+                owner_->h_ = nullptr;
+                unwind();
+            }
+        }
 
         boundary_trampoline get_return_object() noexcept
         {
@@ -96,7 +122,18 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE boundary_trampoline
                 auto await_suspend(
                     std::coroutine_handle<>) noexcept
                 {
-                    p_->caller_ex_.post(p_->parent_);
+                    // Nothing here touches p_ after the post or the
+                    // unwind: either can destroy this frame.
+                    if(p_->segment_.abandoned())
+                    {
+                        p_->unwind();
+                    }
+                    else
+                    {
+                        p_->owner_ = nullptr;
+                        auto ex = p_->caller_ex_;
+                        ex.post(p_->parent_);
+                    }
                     return detail::symmetric_transfer(
                         std::noop_coroutine());
                 }
@@ -116,7 +153,11 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE boundary_trampoline
 
     ~boundary_trampoline()
     {
-        if(h_) h_.destroy();
+        if(h_)
+        {
+            h_.promise().owner_ = nullptr;
+            h_.destroy();
+        }
     }
 
     boundary_trampoline(boundary_trampoline const&) = delete;
@@ -129,7 +170,11 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE boundary_trampoline
     {
         if(this != &o)
         {
-            if(h_) h_.destroy();
+            if(h_)
+            {
+                h_.promise().owner_ = nullptr;
+                h_.destroy();
+            }
             h_ = std::exchange(o.h_, nullptr);
         }
         return *this;
@@ -171,9 +216,32 @@ struct [[nodiscard]] run_awaitable_ex
     frame_memory_resource<Alloc> resource_;
     std::conditional_t<InheritStopToken, std::monostate, std::stop_token> st_;
     io_env env_;
+    executor_ref caller_ex_;
     boundary_trampoline tr_;
     continuation task_cont_;
+    bool holds_work_ = false;
     Task inner_;  // Last: destroyed first, while env_ is still valid
+
+    ~run_awaitable_ex()
+    {
+        // Only a parent destroyed from above leaves the trampoline
+        // still linked: the inner task is still running.
+        if(tr_.h_ && tr_.h_.promise().owner_)
+            std::terminate(); // LCOV_EXCL_LINE reached only in a death test's child process
+        // A parent unwound instead of resumed never reaches
+        // await_resume.
+        if(holds_work_)
+            caller_ex_.on_work_finished();
+    }
+
+    // Called by the trampoline to unwind the inner segment.
+    static void destroy_inner(void* p) noexcept
+    {
+        auto& self = *static_cast<run_awaitable_ex*>(p);
+        auto h = self.inner_.handle();
+        self.inner_.release();
+        h.destroy();
+    }
 
     // void allocator, inherit stop token
     run_awaitable_ex(Ex ex, Task inner)
@@ -220,19 +288,34 @@ struct [[nodiscard]] run_awaitable_ex
 
     decltype(auto) await_resume()
     {
+        if(std::exchange(holds_work_, false))
+            caller_ex_.on_work_finished();
         return inner_.await_resume();
     }
 
     std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const* caller_env)
     {
         tr_ = make_boundary_trampoline();
-        tr_.h_.promise().caller_ex_ = caller_env->executor;
-        tr_.h_.promise().parent_.h = cont;
+        auto& tp = tr_.h_.promise();
+        tp.owner_ = &tr_;
+        tp.caller_ex_ = caller_env->executor;
+        tp.parent_.h = cont;
+        tp.parent_.owner = caller_env->owner;
+        tp.destroy_inner_ = &run_awaitable_ex::destroy_inner;
+        tp.awaitable_ = this;
+        tp.segment_.bind(tr_.h_, ex_);
+        caller_ex_ = caller_env->executor;
+        // Released once the parent resumes or is unwound. Not on the
+        // post back: the parent's chain may own the executor object and
+        // can be gone by the time post returns.
+        caller_ex_.on_work_started();
+        holds_work_ = true;
 
         auto h = inner_.handle();
         auto& p = h.promise();
         p.set_continuation(tr_.h_);
 
+        env_.owner = &tp.segment_;
         env_.executor = ex_;
         if constexpr (InheritStopToken)
             env_.stop_token = caller_env->stop_token;
@@ -246,7 +329,22 @@ struct [[nodiscard]] run_awaitable_ex
 
         p.set_environment(&env_);
         task_cont_.h = h;
-        ex_.post(task_cont_);
+        task_cont_.owner = &tp.segment_;
+        try
+        {
+            ex_.post(task_cont_);
+        }
+        catch(...)
+        {
+            // The parent resumes with the exception: nothing may still
+            // treat the task as lent or hold work for the parent.
+            p.set_continuation(std::noop_coroutine());
+            task_cont_.h = nullptr;
+            tr_ = boundary_trampoline();
+            holds_work_ = false;
+            caller_ex_.on_work_finished();
+            throw;
+        }
         return std::noop_coroutine();
     }
 
@@ -276,7 +374,20 @@ struct [[nodiscard]] run_awaitable
     frame_memory_resource<Alloc> resource_;
     std::conditional_t<InheritStopToken, std::monostate, std::stop_token> st_;
     io_env env_;
+    // Set while the parent is suspended awaiting the inner task.
+    bool lent_ = false;
     Task inner_;  // Last: destroyed first, while env_ is still valid
+
+    ~run_awaitable()
+    {
+        // Only the unwind of an abandoned chain destroys an inner task
+        // still awaited; checked here so it terminates whatever the
+        // task type does when destroyed while lent.
+        auto h = inner_.handle();
+        if(lent_ && h && !h.done() &&
+            !(env_.owner && env_.owner->abandoned()))
+            std::terminate(); // LCOV_EXCL_LINE reached only in a death test's child process
+    }
 
     // void allocator, inherit stop token
     explicit run_awaitable(Task inner)
@@ -319,6 +430,7 @@ struct [[nodiscard]] run_awaitable
 
     decltype(auto) await_resume()
     {
+        lent_ = false;
         return inner_.await_resume();
     }
 
@@ -327,7 +439,9 @@ struct [[nodiscard]] run_awaitable
         auto h = inner_.handle();
         auto& p = h.promise();
         p.set_continuation(cont);
+        lent_ = true;
 
+        env_.owner = caller_env->owner;
         env_.executor = caller_env->executor;
         if constexpr (InheritStopToken)
             env_.stop_token = caller_env->stop_token;
@@ -366,6 +480,10 @@ class [[nodiscard]] run_wrapper_ex
     frame_memory_resource<Alloc> resource_;
     Alloc alloc_;  // Copy to pass to awaitable
 
+    std::pmr::memory_resource* saved_tls_ =
+        get_current_frame_allocator();
+    bool restored_ = false;
+
 public:
     run_wrapper_ex(Ex ex, Alloc alloc)
         requires InheritStopToken
@@ -386,6 +504,15 @@ public:
         set_current_frame_allocator(&resource_);
     }
 
+    // Restores the caller's allocator when evaluating the task argument
+    // threw. Not afterwards: a wrapper destroyed with a torn-down parent
+    // frame must not touch the tearing thread's allocator.
+    ~run_wrapper_ex()
+    {
+        if(!restored_)
+            set_current_frame_allocator(saved_tls_);
+    }
+
     // Non-copyable, non-movable (must be used immediately)
     run_wrapper_ex(run_wrapper_ex const&) = delete;
     run_wrapper_ex(run_wrapper_ex&&) = delete;
@@ -395,6 +522,9 @@ public:
     template<IoRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
+        // The task's frame is made; the caller's own frames are not.
+        set_current_frame_allocator(saved_tls_);
+        restored_ = true;
         if constexpr (InheritStopToken)
             return run_awaitable_ex<Task, Ex, true, Alloc>{
                 std::move(ex_), std::move(alloc_), std::move(t)};
@@ -411,6 +541,10 @@ class [[nodiscard]] run_wrapper_ex<Ex, InheritStopToken, std::pmr::memory_resour
     Ex ex_;
     std::conditional_t<InheritStopToken, std::monostate, std::stop_token> st_;
     std::pmr::memory_resource* mr_;
+
+    std::pmr::memory_resource* saved_tls_ =
+        get_current_frame_allocator();
+    bool restored_ = false;
 
 public:
     run_wrapper_ex(Ex ex, std::pmr::memory_resource* mr)
@@ -430,6 +564,15 @@ public:
         set_current_frame_allocator(mr_);
     }
 
+    // Restores the caller's allocator when evaluating the task argument
+    // threw. Not afterwards: a wrapper destroyed with a torn-down parent
+    // frame must not touch the tearing thread's allocator.
+    ~run_wrapper_ex()
+    {
+        if(!restored_)
+            set_current_frame_allocator(saved_tls_);
+    }
+
     // Non-copyable, non-movable (must be used immediately)
     run_wrapper_ex(run_wrapper_ex const&) = delete;
     run_wrapper_ex(run_wrapper_ex&&) = delete;
@@ -439,6 +582,9 @@ public:
     template<IoRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
+        // The task's frame is made; the caller's own frames are not.
+        set_current_frame_allocator(saved_tls_);
+        restored_ = true;
         if constexpr (InheritStopToken)
             return run_awaitable_ex<Task, Ex, true, std::pmr::memory_resource*>{
                 std::move(ex_), mr_, std::move(t)};
@@ -499,6 +645,10 @@ class [[nodiscard]] run_wrapper
     frame_memory_resource<Alloc> resource_;
     Alloc alloc_;  // Copy to pass to awaitable
 
+    std::pmr::memory_resource* saved_tls_ =
+        get_current_frame_allocator();
+    bool restored_ = false;
+
 public:
     explicit run_wrapper(Alloc alloc)
         requires InheritStopToken
@@ -517,6 +667,15 @@ public:
         set_current_frame_allocator(&resource_);
     }
 
+    // Restores the caller's allocator when evaluating the task argument
+    // threw. Not afterwards: a wrapper destroyed with a torn-down parent
+    // frame must not touch the tearing thread's allocator.
+    ~run_wrapper()
+    {
+        if(!restored_)
+            set_current_frame_allocator(saved_tls_);
+    }
+
     // Non-copyable, non-movable (must be used immediately)
     run_wrapper(run_wrapper const&) = delete;
     run_wrapper(run_wrapper&&) = delete;
@@ -526,6 +685,9 @@ public:
     template<IoRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
+        // The task's frame is made; the caller's own frames are not.
+        set_current_frame_allocator(saved_tls_);
+        restored_ = true;
         if constexpr (InheritStopToken)
             return run_awaitable<Task, true, Alloc>{
                 std::move(alloc_), std::move(t)};
@@ -541,6 +703,10 @@ class [[nodiscard]] run_wrapper<InheritStopToken, std::pmr::memory_resource*>
 {
     std::conditional_t<InheritStopToken, std::monostate, std::stop_token> st_;
     std::pmr::memory_resource* mr_;
+
+    std::pmr::memory_resource* saved_tls_ =
+        get_current_frame_allocator();
+    bool restored_ = false;
 
 public:
     explicit run_wrapper(std::pmr::memory_resource* mr)
@@ -558,6 +724,15 @@ public:
         set_current_frame_allocator(mr_);
     }
 
+    // Restores the caller's allocator when evaluating the task argument
+    // threw. Not afterwards: a wrapper destroyed with a torn-down parent
+    // frame must not touch the tearing thread's allocator.
+    ~run_wrapper()
+    {
+        if(!restored_)
+            set_current_frame_allocator(saved_tls_);
+    }
+
     // Non-copyable, non-movable (must be used immediately)
     run_wrapper(run_wrapper const&) = delete;
     run_wrapper(run_wrapper&&) = delete;
@@ -567,6 +742,9 @@ public:
     template<IoRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
+        // The task's frame is made; the caller's own frames are not.
+        set_current_frame_allocator(saved_tls_);
+        restored_ = true;
         if constexpr (InheritStopToken)
             return run_awaitable<Task, true, std::pmr::memory_resource*>{
                 mr_, std::move(t)};
@@ -610,6 +788,16 @@ namespace boost::capy {
     Returns a wrapper that accepts a task and produces an awaitable.
     When co_awaited, the task runs on the specified executor.
 
+    If the inner task is abandoned before it completes, for example
+    because its execution context is torn down, the caller's chain is
+    abandoned too: it is unwound by its owner, on the owner's executor,
+    without the caller resuming. The awaitable holds work on the
+    caller's executor until the caller resumes or is unwound.
+
+    @par Preconditions
+    The caller's execution context outlives the inner task and the
+    unwind of the caller's chain. This is not detected.
+
     @par Example
     @par !example example_2
 
@@ -634,6 +822,8 @@ run(Ex ex)
     @param st The stop token for cooperative cancellation.
 
     @return A wrapper that accepts a task for execution.
+
+    @see run(Ex), which describes teardown and its precondition.
 */
 template<Executor Ex>
 [[nodiscard]] auto
@@ -649,6 +839,8 @@ run(Ex ex, std::stop_token st)
     @param mr The memory resource for frame allocation.
 
     @return A wrapper that accepts a task for execution.
+
+    @see run(Ex), which describes teardown and its precondition.
 */
 template<Executor Ex>
 [[nodiscard]] auto
@@ -660,10 +852,16 @@ run(Ex ex, std::pmr::memory_resource* mr)
 
 /** Bind a task to an executor with a standard allocator.
 
+    Await the awaitable in the expression that creates it, as in
+    `co_await run(ex, alloc)(task())`: the task's frame is allocated from
+    memory the wrapper holds until the end of that expression.
+
     @param ex The executor on which the task should run.
     @param alloc The allocator for frame allocation.
 
     @return A wrapper that accepts a task for execution.
+
+    @see run(Ex), which describes teardown and its precondition.
 */
 template<Executor Ex, detail::Allocator Alloc>
 [[nodiscard]] auto
@@ -680,6 +878,8 @@ run(Ex ex, Alloc alloc)
     @param mr The memory resource for frame allocation.
 
     @return A wrapper that accepts a task for execution.
+
+    @see run(Ex), which describes teardown and its precondition.
 */
 template<Executor Ex>
 [[nodiscard]] auto
@@ -691,11 +891,17 @@ run(Ex ex, std::stop_token st, std::pmr::memory_resource* mr)
 
 /** Bind a task to an executor with stop token and standard allocator.
 
+    Await the awaitable in the expression that creates it, as in
+    `co_await run(ex, alloc)(task())`: the task's frame is allocated from
+    memory the wrapper holds until the end of that expression.
+
     @param ex The executor on which the task should run.
     @param st The stop token for cooperative cancellation.
     @param alloc The allocator for frame allocation.
 
     @return A wrapper that accepts a task for execution.
+
+    @see run(Ex), which describes teardown and its precondition.
 */
 template<Executor Ex, detail::Allocator Alloc>
 [[nodiscard]] auto
@@ -749,6 +955,10 @@ run(std::pmr::memory_resource* mr)
 // documentation. Keep the `@param`.
 /** Run a task with a custom standard allocator.
 
+    Await the awaitable in the expression that creates it, as in
+    `co_await run(alloc)(task())`: the task's frame is allocated from
+    memory the wrapper holds until the end of that expression.
+
     The task inherits the caller's executor. The allocator is used
     for nested frame allocations.
 
@@ -780,6 +990,10 @@ run(std::stop_token st, std::pmr::memory_resource* mr)
 }
 
 /** Run a task with stop token and standard allocator.
+
+    Await the awaitable in the expression that creates it, as in
+    `co_await run(alloc)(task())`: the task's frame is allocated from
+    memory the wrapper holds until the end of that expression.
 
     The task inherits the caller's executor.
 

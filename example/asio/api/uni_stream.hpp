@@ -16,10 +16,12 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/post.hpp>
 
+#include "abandon_guard.hpp"
 #include "capy_streams.hpp"
 
 #include <boost/capy/buffers/asio.hpp>
 #include <boost/capy/io/any_stream.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 
@@ -57,15 +59,24 @@ public:
 
     std::coroutine_handle<> dispatch(capy::continuation& c) const
     {
-        auto h = c.h;
-        net::post(ex_, [h]{ h.resume(); });
+        post(c);
         return std::noop_coroutine();
     }
 
     void post(capy::continuation& c) const
     {
-        auto h = c.h;
-        net::post(ex_, [h]{ h.resume(); });
+        resume_or_abandon r(c);
+        try
+        {
+            net::post(ex_, std::move(r));
+        }
+        catch(...)
+        {
+            // A handler Asio took and then destroyed has given `c` up,
+            // so the post must not also report it as still held.
+            if(r.release())
+                throw;
+        }
     }
 };
 

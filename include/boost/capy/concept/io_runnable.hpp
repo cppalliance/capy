@@ -79,6 +79,19 @@ namespace capy {
         and allocator through the coroutine chain.
     @li The pointed-to `io_env` must outlive the coroutine.
 
+    @par Requirements
+
+    A type awaited through @ref run or the combinators must also take
+    part in the ownership protocol:
+
+    @li The object owns the frame, and destroying the object destroys
+        it; a destroyed frame never destroys its continuation. A chain
+        given up with @ref abandon is unwound from its owner downward,
+        each object destroying the frame it owns.
+    @li Destroying the object, or assigning over it, while the frame is
+        lent to an awaiting chain calls `std::terminate`, unless the
+        chain's owner (`environment()->owner`) has been abandoned.
+
     @par Conforming Signatures
 
     @par !example example

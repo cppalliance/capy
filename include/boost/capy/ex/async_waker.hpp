@@ -22,6 +22,7 @@
 #include <coroutine>
 #include <new>
 #include <stop_token>
+#include <thread>
 #include <utility>
 
 /*  async_waker implementation notes
@@ -33,9 +34,10 @@
     waker has to dereference the waiter, and nothing would pin the
     waiter's frame between reading the pointer and claiming it.
 
-    So the three-state st_ atomic is the single arbiter:
+    So the st_ atomic is the single arbiter:
 
-        empty --arm-->  armed --wake/cancel CAS--> empty
+        empty --arm--> arming --publish--> armed --wake/cancel CAS--> empty
+                       arming --stop already requested--> empty
         empty --wake--> token --wait consumes--> empty
 
     Whoever wins the armed->empty CAS owns the resume and may
@@ -45,17 +47,18 @@
     callback wins, a concurrent wake retries, finds empty, and
     latches a token -- a racing wakeup is deferred, never lost.
 
-    Serialized resumption is required: await_suspend keeps
-    writing after the publishing armed-CAS (the stop_cb
-    placement-new and active_ = true), so a wake/cancel winner
-    can post the continuation while that tail is still running.
-    The posted resume must be ordered after await_suspend's
-    return, which holds on a single-threaded executor (the one
-    thread is still inside await_suspend) and on a strand (the
-    resume is a later turn, synchronized with the current one).
-    A raw multi-threaded executor lets another worker run
-    await_resume against those in-flight writes. async_event and
-    async_mutex make the same assumption; it is stated explicitly
+    The stop callback is registered before the waiter enters the
+    arming state, and a wake() winner destroys it before posting.
+    While arming, nothing can claim the waiter: wake(), the stop
+    callback and the destructor wait the few instructions it takes.
+    So the waiter settles a stop requested during registration
+    itself, its last touch of the waker is the publishing store,
+    and the waker can die right after the wake() that claimed it.
+
+    Serialized resumption is still required: the executor must not
+    run the waiter's continuations concurrently, since a winner can
+    post the waiter before its await_suspend has returned. async_event
+    and async_mutex make the same assumption; it is stated explicitly
     here because wake() invites foreign threads into the picture.
 */
 
@@ -109,12 +112,33 @@ public:
     class wait_awaiter;
 
 private:
-    static constexpr int state_empty = 0; // no token, no waiter
-    static constexpr int state_token = 1; // latched wakeup
-    static constexpr int state_armed = 2; // waiter suspended
+    static constexpr int state_empty  = 0; // no token, no waiter
+    static constexpr int state_token  = 1; // latched wakeup
+    static constexpr int state_armed  = 2; // waiter suspended
+    static constexpr int state_arming = 3; // waiter publishing itself
 
     std::atomic<int> st_{state_empty};
     wait_awaiter* waiter_ = nullptr;
+
+    // Take the armed waiter, waiting out one still publishing itself.
+    bool claim_armed() noexcept
+    {
+        int expected = state_armed;
+        for(;;)
+        {
+            if(st_.compare_exchange_weak(
+                expected, state_empty,
+                std::memory_order_acq_rel,
+                std::memory_order_acquire))
+                return true;
+            if(expected == state_armed)
+                continue; // LCOV_EXCL_LINE spurious weak CAS failure
+            if(expected != state_arming)
+                return false;
+            std::this_thread::yield(); // LCOV_EXCL_LINE race with a waiter still publishing itself
+            expected = state_armed; // LCOV_EXCL_LINE race with a waiter still publishing itself
+        }
+    }
 
 public:
     /** Suspends the caller until `wake()` runs, or resumes it with `error::canceled` on a stop request.
@@ -134,19 +158,23 @@ public:
         bool active_ = false;
         bool published_ = false;
 
+        // Set by whoever wins the armed->empty transition, before it
+        // posts. A claimed waiter belongs to the executor's queue and
+        // may be discarded after the waker is gone, so its destructor
+        // must not touch the waker.
+        std::atomic<bool> claimed_{false};
+
         struct cancel_fn
         {
             wait_awaiter* self_;
 
             void operator()() const noexcept
             {
-                int expected = state_armed;
-                if(self_->waker_->st_.compare_exchange_strong(
-                    expected, state_empty,
-                    std::memory_order_acq_rel,
-                    std::memory_order_acquire))
+                if(self_->waker_->claim_armed())
                 {
                     self_->canceled_ = true;
+                    self_->claimed_.store(
+                        true, std::memory_order_release);
                     self_->ex_.post(self_->cont_);
                 }
             }
@@ -182,7 +210,8 @@ public:
         {
             if(active_)
                 stop_cb_().~stop_cb_t();
-            if(published_)
+            if(published_ &&
+                !claimed_.load(std::memory_order_acquire))
             {
                 // Destroyed while still armed (frame torn down
                 // without resuming): deregister so a later
@@ -219,6 +248,7 @@ public:
             , canceled_(o.canceled_)
             , active_(std::exchange(o.active_, false))
             , published_(std::exchange(o.published_, false))
+            , claimed_(o.claimed_.load(std::memory_order_relaxed))
         {
         }
 
@@ -282,12 +312,15 @@ public:
                 `await_ready` looked, so the token is consumed here instead
                 and the wait succeeds.
 
-            @li Otherwise the slot moves to the armed state, publishing this
-                awaiter to the waker, and a stop callback is registered on
-                `env->stop_token`. Whichever of `wake()` and that callback
-                wins the armed-to-empty transition posts `h` through
-                `env->executor`. The loser does nothing, and a losing
-                `wake()` re-latches its token for the next `wait()`.
+            @li Otherwise a stop callback is registered on
+                `env->stop_token` and the slot moves to the armed state,
+                publishing this awaiter to the waker. A stop requested
+                while the callback registered completes the wait canceled
+                instead. Whichever of `wake()` and that callback wins the
+                armed-to-empty transition posts `h` through
+                `env->executor`; a winning `wake()` first deregisters the
+                callback. The loser does nothing, and a losing `wake()`
+                re-latches its token for the next `wait()`.
 
             @param h The awaiting coroutine, resumed when the waker fires
             or the wait is canceled.
@@ -312,12 +345,20 @@ public:
                 return h;
             }
             cont_.h = h;
+            cont_.owner = env->owner;
             ex_ = env->executor;
             waker_->waiter_ = this;
 
+            // Registered before publishing, so the wake() that claims
+            // this waiter can deregister it before posting.
+            ::new(stop_cb_buf_) stop_cb_t(
+                env->stop_token, cancel_fn{this});
+            active_ = true;
+            published_ = true;
+
             int expected = state_empty;
             if(!waker_->st_.compare_exchange_strong(
-                expected, state_armed,
+                expected, state_arming,
                 std::memory_order_acq_rel,
                 std::memory_order_acquire))
             {
@@ -327,15 +368,26 @@ public:
 
                 // A wake latched between await_ready and here;
                 // consume it and resume inline.
+                published_ = false;
+                stop_cb_().~stop_cb_t();
+                active_ = false;
                 waker_->st_.store(
                     state_empty, std::memory_order_release);
                 return h;
             }
-            published_ = true;
 
-            ::new(stop_cb_buf_) stop_cb_t(
-                env->stop_token, cancel_fn{this});
-            active_ = true;
+            // While arming nothing else can claim this waiter, so a stop
+            // requested as the callback registered is settled here, and
+            // the waker is not touched again once the waiter is armed.
+            if(env->stop_token.stop_requested())
+            {
+                published_ = false;
+                waker_->st_.store(
+                    state_empty, std::memory_order_release);
+                canceled_ = true;
+                return h;
+            }
+            waker_->st_.store(state_armed, std::memory_order_release);
             return std::noop_coroutine();
         }
 
@@ -347,7 +399,8 @@ public:
 
             @return An empty `io_result<>` if the wait was woken, whether by
             `wake()` or by a token consumed inline. Otherwise one holding
-            `error::canceled`, which means the stop token won the race.
+            `error::canceled`, which means the stop token won the race or
+            the waker was destroyed.
         */
         [[nodiscard]] io_result<> await_resume() noexcept
         {
@@ -365,6 +418,35 @@ public:
 
     /// Construct with no token latched.
     async_waker() = default;
+
+    /** Destroy the waker, canceling a coroutine still waiting.
+
+        The waiter is posted to its executor to resume with
+        `error::canceled`, as if its stop token had been triggered. An
+        executor that can no longer run it abandons it instead, possibly
+        before this destructor returns. Either way the waiter no longer
+        refers to the waker.
+
+        @pre No `wake()` call is in progress or made afterward.
+    */
+    ~async_waker()
+    {
+        if(claim_armed())
+        {
+            auto* w = waiter_;
+            // The stop callback reaches into the waker; deregistering
+            // it waits out one already running.
+            if(w->active_)
+            {
+                using cb_t = wait_awaiter::stop_cb_t;
+                w->stop_cb_().~cb_t();
+                w->active_ = false;
+            }
+            w->canceled_ = true;
+            w->claimed_.store(true, std::memory_order_release);
+            w->ex_.post(w->cont_);
+        }
+    }
 
     /** Copy construction is disabled; an armed waiter points into the
         waker.
@@ -403,7 +485,8 @@ public:
         fires.
 
         @par Preconditions
-        No other coroutine is currently waiting on this object.
+        No other coroutine is currently waiting on this object; a
+        coroutine woken or canceled but not yet resumed still is.
 
         @return An awaitable that await-returns `io_result<>`;
             empty on wakeup, `error::canceled` if the stop
@@ -419,7 +502,9 @@ public:
         Callable from any thread. The waiter's resumption is
         posted through its executor; this call never resumes a
         coroutine inline. Multiple calls without an intervening
-        `wait()` collapse into a single token.
+        `wait()` collapse into a single token. It may wait briefly
+        for a waiter that is still suspending, or for a stop callback
+        of the waiter that is running on another thread.
     */
     void wake() noexcept
     {
@@ -437,6 +522,13 @@ public:
                     return;
                 continue;
             }
+            // The waiter is still publishing itself; it settles in a
+            // few instructions.
+            if(s == state_arming)
+            {
+                std::this_thread::yield();
+                continue;
+            }
             // armed: winning this CAS claims the waiter, whose
             // frame is pinned until we post its resumption.
             if(st_.compare_exchange_weak(
@@ -445,6 +537,13 @@ public:
                 std::memory_order_acquire))
             {
                 auto* w = waiter_;
+                // Nothing may reach this waker once the waiter is
+                // posted; this waits out a stop callback already
+                // running, which then finds the slot empty.
+                using cb_t = wait_awaiter::stop_cb_t;
+                w->stop_cb_().~cb_t();
+                w->active_ = false;
+                w->claimed_.store(true, std::memory_order_release);
                 w->ex_.post(w->cont_);
                 return;
             }

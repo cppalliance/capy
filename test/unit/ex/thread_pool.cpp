@@ -16,11 +16,17 @@
 #include <boost/capy/ex/run.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/work_guard.hpp>
+#include <boost/capy/task.hpp>
 
 #include "test_helpers.hpp"
 
 #include <array>
 #include <atomic>
+#include <chrono>
+#include <mutex>
+#include <condition_variable>
+#include <memory>
+#include <semaphore>
 #include <thread>
 #include <vector>
 
@@ -137,6 +143,134 @@ name_checker check_thread_name(name_check_result& result, char const* prefix)
     co_return;
 }
 #endif
+
+// Posts during shutdown, as a primitive owned by a frame that a
+// service's shutdown destroys would.
+struct late_poster : execution_context::service
+{
+    thread_pool::executor_type ex_;
+    continuation* c_;
+
+    late_poster(
+        execution_context&,
+        thread_pool::executor_type ex,
+        continuation& c)
+        : ex_(ex)
+        , c_(&c)
+    {
+    }
+
+    void shutdown() override
+    {
+        ex_.post(*c_);
+    }
+};
+
+// Posts from its destructor, after the pool's services shut down.
+struct dtor_poster : execution_context::service
+{
+    thread_pool::executor_type ex_;
+    continuation* c_;
+
+    dtor_poster(
+        execution_context&,
+        thread_pool::executor_type ex,
+        continuation& c)
+        : ex_(ex)
+        , c_(&c)
+    {
+    }
+
+    ~dtor_poster()
+    {
+        ex_.post(*c_);
+    }
+
+    void shutdown() override {}
+};
+
+// Starts posting from another thread when the pool's services shut
+// down, while the pool drains, and joins that thread when destroyed.
+struct shutdown_poster : execution_context::service
+{
+    thread_pool::executor_type ex_;
+    std::vector<continuation>* cs_;
+    std::thread t_;
+
+    shutdown_poster(
+        execution_context&,
+        thread_pool::executor_type ex,
+        std::vector<continuation>& cs)
+        : ex_(ex)
+        , cs_(&cs)
+    {
+    }
+
+    ~shutdown_poster()
+    {
+        t_.join();
+    }
+
+    void shutdown() override
+    {
+        t_ = std::thread([this]
+        {
+            for(auto& c : *cs_)
+                ex_.post(c);
+        });
+    }
+};
+
+// A second dtor_poster, so one can be created while the first exists.
+struct late_dtor_poster : dtor_poster
+{
+    using dtor_poster::dtor_poster;
+};
+
+// Creates a late_dtor_poster on the pool when destroyed.
+struct poster_maker
+{
+    thread_pool* pool;
+    continuation* c;
+
+    poster_maker(thread_pool& p, continuation& cont) noexcept
+        : pool(&p)
+        , c(&cont)
+    {
+    }
+
+    poster_maker(poster_maker&& o) noexcept
+        : pool(std::exchange(o.pool, nullptr))
+        , c(o.c)
+    {
+    }
+
+    ~poster_maker()
+    {
+        if(pool)
+            pool->make_service<late_dtor_poster>(pool->get_executor(), *c);
+    }
+};
+
+// Parks the awaiting coroutine in a slot and signals that it did.
+struct signal_park
+{
+    capy::parked* slot;
+    std::binary_semaphore* parked;
+
+    bool await_ready() const noexcept { return false; }
+
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> h, io_env const* env) noexcept
+    {
+        slot->h = h;
+        slot->owner = env->owner;
+        parked->release();
+        return std::noop_coroutine();
+    }
+
+    void await_resume() const noexcept {}
+};
 
 } // namespace
 
@@ -728,6 +862,287 @@ struct thread_pool_test
         worker.join();
     }
 
+    // A first post racing join() either starts threads join() then
+    // joins, or starts none; the destructor never meets a running one.
+    // A thread left running fails the test by terminating the process.
+    void
+    testJoinRacesFirstPost()
+    {
+        for(int i = 0; i < 200; ++i)
+        {
+            continuation c{std::noop_coroutine()};
+            thread_pool pool(4);
+            std::atomic<bool> go{false};
+            std::thread t([&]{
+                while(!go.load())
+                {
+                }
+                pool.get_executor().post(c);
+            });
+            go.store(true);
+            pool.join();
+            t.join();
+        }
+    }
+
+    // A stop() on another thread is done with the pool before the join()
+    // it releases can return and let the pool be destroyed. Touching the
+    // destroyed pool shows only under a sanitizer.
+    void
+    testStopRacesJoinAndDestroy()
+    {
+        for(int i = 0; i < 300; ++i)
+        {
+            std::thread t;
+            {
+                auto pool = std::make_unique<thread_pool>(1);
+                auto ex = pool->get_executor();
+                ex.on_work_started();
+                std::atomic<bool> go{false};
+                t = std::thread([p = pool.get(), &go]{
+                    while(!go.load())
+                    {
+                    }
+                    p->stop();
+                });
+                go.store(true);
+                pool->join();
+                pool.reset();
+            }
+            t.join();
+        }
+    }
+
+    // join() waiting on counted work must not stop the first post from
+    // starting the threads that work needs. Nothing shows when join()
+    // is entered, so only iterations where it is already waiting when
+    // the post arrives exercise that.
+    void
+    testJoinWaitingThenFirstPost()
+    {
+        for(int i = 0; i < 20; ++i)
+        {
+            thread_pool pool(2);
+            auto ex = pool.get_executor();
+            auto guard = std::make_unique<
+                work_guard<thread_pool::executor_type>>(ex);
+            std::atomic<bool> joining{false};
+            std::mutex m;
+            std::condition_variable cv;
+            bool joined = false;
+            std::thread j([&]{
+                joining.store(true);
+                pool.join();
+                std::lock_guard<std::mutex> lk(m);
+                joined = true;
+                cv.notify_all();
+            });
+            while(!joining.load())
+                std::this_thread::yield();
+            std::atomic<bool> ran{false};
+            auto t = [](std::atomic<bool>& r) -> task<void>
+            {
+                r.store(true);
+                co_return;
+            };
+            run_async(ex)(t(ran));
+            guard.reset();
+            bool ok;
+            {
+                // Only a watchdog: a broken pool never returns from join().
+                std::unique_lock<std::mutex> lk(m);
+                ok = cv.wait_for(lk, std::chrono::seconds(30),
+                    [&]{ return joined; });
+            }
+            BOOST_TEST(ok);
+            BOOST_TEST(ran.load());
+            if(!ok)
+                pool.stop();
+            j.join();
+        }
+    }
+
+    // The last work count released from a foreign thread is done with
+    // the pool before join() can see it reach zero. Touching the
+    // destroyed pool shows only under a sanitizer.
+    void
+    testForeignWorkFinishedRacesJoin()
+    {
+        for(int i = 0; i < 500; ++i)
+        {
+            std::thread t;
+            {
+                auto pool = std::make_unique<thread_pool>(1);
+                auto ex = pool->get_executor();
+                ex.on_work_started();
+                std::atomic<bool> go{false};
+                t = std::thread([ex, &go]{
+                    while(!go.load())
+                    {
+                    }
+                    ex.on_work_finished();
+                });
+                go.store(true);
+                pool->join();
+                pool.reset();
+            }
+            t.join();
+        }
+    }
+
+    // A chain whose root runs on a live pool, torn down from another
+    // thread, comes down once with every frame freed, and the pool's
+    // work is released so join() returns.
+    void
+    testTeardownFromAnotherThreadWithLiveRoot()
+    {
+        alloc_counts st;
+        int child_down = 0, parent_down = 0, handler_down = 0;
+        parked slot;
+        std::binary_semaphore parked{0};
+        thread_pool pool(1);
+        auto child = [&](destroy_count_t) -> task<void>
+        {
+            co_await signal_park{&slot, &parked};
+        };
+        auto parent = [&](destroy_count_t) -> task<void>
+        {
+            co_await child(destroy_count_t(child_down));
+        };
+        run_async(pool.get_executor(), counting_allocator<std::byte>(st),
+            [d = destroy_count_t(handler_down)] { BOOST_TEST(false); },
+            [](std::exception_ptr) { BOOST_TEST(false); })(
+            parent(destroy_count_t(parent_down)));
+        // Bounds a hang, not a timing assertion.
+        if(!BOOST_TEST(parked.try_acquire_for(std::chrono::seconds(30))))
+            return;
+
+        capy::abandon(slot);
+        pool.join();
+        BOOST_TEST_EQ(child_down, 1);
+        BOOST_TEST_EQ(parent_down, 1);
+        BOOST_TEST_EQ(handler_down, 1);
+        BOOST_TEST(st.allocs.load() > 0);
+        BOOST_TEST(st.balanced());
+    }
+
+    // A frame destroyed by the pool's last drain may create a service
+    // whose destructor posts again; that work is destroyed too.
+    void
+    testServiceCreatedByLastDrainDestroyed()
+    {
+        int down = 0;
+        auto probe = [](destroy_count_t) -> task<void> { co_return; };
+        auto maker = [](poster_maker) -> task<void> { co_return; };
+        auto p = probe(destroy_count_t(down));
+        continuation probe_c{p.handle()};
+        p.release();
+        continuation maker_c;
+        {
+            thread_pool pool(1);
+            auto m = maker(poster_maker(pool, probe_c));
+            maker_c.h = m.handle();
+            m.release();
+            pool.make_service<dtor_poster>(pool.get_executor(), maker_c);
+        }
+        BOOST_TEST_EQ(down, 1);
+    }
+
+    // A started chain whose leaf is queued when the pool is destroyed
+    // comes down there, on another thread than its child was made on,
+    // with every frame freed.
+    void
+    testDestroyDrainsParentedChain()
+    {
+        alloc_counts st;
+        int child_down = 0, parent_down = 0, handler_down = 0;
+        parked slot;
+        std::binary_semaphore parked{0};
+        continuation c;
+        {
+            thread_pool pool(1);
+            auto child = [&](destroy_count_t) -> task<void>
+            {
+                co_await signal_park{&slot, &parked};
+            };
+            auto parent = [&](destroy_count_t) -> task<void>
+            {
+                co_await child(destroy_count_t(child_down));
+            };
+            run_async(pool.get_executor(), counting_allocator<std::byte>(st),
+                [d = destroy_count_t(handler_down)] { BOOST_TEST(false); },
+                [](std::exception_ptr) { BOOST_TEST(false); })(
+                parent(destroy_count_t(parent_down)));
+            // Bounds a hang, not a timing assertion.
+            if(!BOOST_TEST(parked.try_acquire_for(std::chrono::seconds(30))))
+                return;
+            c = slot;
+            pool.make_service<late_poster>(pool.get_executor(), c);
+        }
+        BOOST_TEST_EQ(child_down, 1);
+        BOOST_TEST_EQ(parent_down, 1);
+        BOOST_TEST_EQ(handler_down, 1);
+        BOOST_TEST(st.allocs > 0);
+        BOOST_TEST(st.balanced());
+    }
+
+    // Work posted while the pool's services shut down is destroyed with
+    // the pool rather than left queued.
+    void
+    testPostDuringShutdownDestroyed()
+    {
+        int down = 0;
+        auto probe = [](destroy_count_t) -> task<void> { co_return; };
+        auto t = probe(destroy_count_t(down));
+        continuation c{t.handle()};
+        t.release();
+        {
+            thread_pool pool(1);
+            pool.make_service<late_poster>(pool.get_executor(), c);
+        }
+        BOOST_TEST_EQ(down, 1);
+    }
+
+    // Work posted while the pool's services are destroyed is destroyed
+    // with the pool.
+    void
+    testPostFromServiceDestructorDestroyed()
+    {
+        int down = 0;
+        auto probe = [](destroy_count_t) -> task<void> { co_return; };
+        auto t = probe(destroy_count_t(down));
+        continuation c{t.handle()};
+        t.release();
+        {
+            thread_pool pool(1);
+            pool.make_service<dtor_poster>(pool.get_executor(), c);
+        }
+        BOOST_TEST_EQ(down, 1);
+    }
+
+    // Work posted from another thread while the pool drains is neither
+    // lost nor torn from the queue.
+    void
+    testPostDuringDrain()
+    {
+        constexpr int n = 2000;
+        int down = 0;
+        auto probe = [](destroy_count_t) -> task<void> { co_return; };
+        std::vector<continuation> cs;
+        cs.reserve(n);
+        for(int i = 0; i < n; ++i)
+        {
+            auto t = probe(destroy_count_t(down));
+            cs.push_back(continuation{t.handle()});
+            t.release();
+        }
+        {
+            thread_pool pool(1);
+            pool.make_service<shutdown_poster>(pool.get_executor(), cs);
+        }
+        BOOST_TEST_EQ(down, n);
+    }
+
     void
     run()
     {
@@ -758,6 +1173,16 @@ struct thread_pool_test
         testWorkGuardKeepsPoolAlive();
         testJoinWithRunAsync();
         testForeignPostAfterJoin();
+        testPostDuringShutdownDestroyed();
+        testPostFromServiceDestructorDestroyed();
+        testPostDuringDrain();
+        testDestroyDrainsParentedChain();
+        testServiceCreatedByLastDrainDestroyed();
+        testTeardownFromAnotherThreadWithLiveRoot();
+        testJoinRacesFirstPost();
+        testJoinWaitingThenFirstPost();
+        testStopRacesJoinAndDestroy();
+        testForeignWorkFinishedRacesJoin();
     }
 };
 

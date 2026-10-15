@@ -116,6 +116,30 @@ struct frame_alloc_mixin
     }
 };
 
+namespace detail {
+
+// For capy's own frames whose teardown can release the chain that owns
+// the frame allocator: they are never allocated from it, so freeing them
+// afterwards never reaches a resource that died with that chain.
+struct process_frame_mixin
+{
+    static void* operator new(std::size_t size)
+    {
+        return static_cast<recycling_memory_resource*>(
+            get_recycling_memory_resource())
+                ->allocate_fast(size, alignof(std::max_align_t));
+    }
+
+    static void operator delete(void* ptr, std::size_t size) noexcept
+    {
+        static_cast<recycling_memory_resource*>(
+            get_recycling_memory_resource())
+                ->deallocate_fast(ptr, size, alignof(std::max_align_t));
+    }
+};
+
+} // namespace detail
+
 } // namespace capy
 } // namespace boost
 

@@ -13,6 +13,9 @@
 
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/capy/ex/async_event.hpp>
+#include <boost/capy/ex/abandon.hpp>
+#include <boost/capy/ex/run.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 #include <boost/capy/io_task.hpp>
@@ -21,6 +24,7 @@
 #include "test_helpers.hpp"
 #include "test_suite.hpp"
 
+#include <ranges>
 #include <atomic>
 #include <queue>
 #include <stdexcept>
@@ -28,6 +32,7 @@
 #include <system_error>
 #include <type_traits>
 #include <variant>
+#include <vector>
 
 namespace boost {
 namespace capy {
@@ -103,17 +108,18 @@ struct immediate_io_awaitable
 
 int g_throwing_move_count = 0;
 
-// A payload whose move constructor throws on the second and later moves.
-// The io_result constructor performs the first move; the extract and
-// emplace into when_any's result variant are the second/third moves,
-// inside when_any's try/catch — exercising the winner-exception path.
+// A payload whose move constructor throws on the third and later moves.
+// The io_result constructor performs the first move and the branch
+// taking the awaited result the second; the extract into when_any's
+// result variant is the third, inside when_any's try/catch, exercising
+// the winner-exception path.
 struct throwing_move_payload
 {
     int v;
     explicit throwing_move_payload(int x) noexcept : v(x) {}
     throwing_move_payload(throwing_move_payload&& o) : v(o.v)
     {
-        if(++g_throwing_move_count >= 2)
+        if(++g_throwing_move_count >= 3)
             throw std::runtime_error("payload move");
     }
     throwing_move_payload&
@@ -213,6 +219,62 @@ struct when_any_vector_test
             },
             [](std::exception_ptr) {})(
             when_any(std::move(tasks)));
+
+        BOOST_TEST(completed);
+    }
+
+    // A range whose iterator holds the element it yields: each
+    // element is taken before the next step replaces it.
+    void
+    testStashingRange()
+    {
+        int dc = 0;
+        test_executor ex(dc);
+        bool completed = false;
+
+        stashing_range tasks([](std::size_t i)
+            {
+                return io_success_size((i + 1) * 10);
+            }, 3);
+        static_assert(!std::ranges::forward_range<decltype(tasks)>);
+
+        run_async(ex,
+            [&](std::variant<std::error_code, std::pair<std::size_t, size_t>> v) {
+                completed = true;
+                BOOST_TEST_EQ(v.index(), 1u);
+                auto [idx, val] = std::get<1>(v);
+                BOOST_TEST_EQ(val, (idx + 1) * 10);
+            },
+            [](std::exception_ptr) {})(
+            when_any(tasks));
+
+        BOOST_TEST(completed);
+    }
+
+    // A view yielding its awaitables by value: each lives only for its
+    // step of the iteration.
+    void
+    testPrvalueRange()
+    {
+        int dc = 0;
+        test_executor ex(dc);
+        bool completed = false;
+
+        auto tasks = std::views::iota(1, 4) |
+            std::views::transform([](int i)
+            {
+                return io_success_size(static_cast<size_t>(i * 10));
+            });
+
+        run_async(ex,
+            [&](std::variant<std::error_code, std::pair<std::size_t, size_t>> v) {
+                completed = true;
+                BOOST_TEST_EQ(v.index(), 1u);
+                auto [idx, val] = std::get<1>(v);
+                BOOST_TEST_EQ(val, (idx + 1) * 10);
+            },
+            [](std::exception_ptr) {})(
+            when_any(tasks));
 
         BOOST_TEST(completed);
     }
@@ -478,7 +540,7 @@ struct when_any_vector_test
     void
     testLongLivedTasksCancelled()
     {
-        std::queue<std::coroutine_handle<>> work_queue;
+        std::queue<continuation> work_queue;
         queuing_executor ex(work_queue);
 
         std::atomic<int> cancelled_count{0};
@@ -519,11 +581,7 @@ struct when_any_vector_test
             [](std::exception_ptr) {})(
             when_any(std::move(tasks)));
 
-        while (!work_queue.empty()) {
-            auto h = work_queue.front();
-            work_queue.pop();
-            h.resume();
-        }
+        pump(work_queue);
 
         BOOST_TEST(when_any_completed);
         BOOST_TEST_EQ(completed_normally_count.load(), 1);
@@ -595,6 +653,8 @@ struct when_any_vector_test
     {
         testSingleTaskSuccess();
         testMultipleTasksFirstSuccessWins();
+        testPrvalueRange();
+        testStashingRange();
         testEmptyVectorThrows();
         testVoidTasksSuccess();
         testVoidTasksAllThrow();
@@ -1018,9 +1078,387 @@ struct when_any_io_result_test
         BOOST_TEST(threw);
     }
 
+    // Runners destroyed before they start count as lost branches: the
+    // parent goes with the last of them.
+    void testRunnersDestroyedBeforeStartDestroyParent()
+    {
+        int a_down = 0, b_down = 0, parent_down = 0;
+        std::queue<continuation> q;
+        auto branch = [](destroy_count_t) -> task<io_result<>>
+        {
+            co_return io_result<>{};
+        };
+        auto parent = [&](destroy_count_t) -> task<void>
+        {
+            std::ignore = co_await when_any(
+                branch(destroy_count_t(a_down)),
+                branch(destroy_count_t(b_down)));
+        };
+        run_async(queuing_executor(q))(parent(destroy_count_t(parent_down)));
+        BOOST_TEST_EQ(q.size(), 1u);
+        auto start = q.front();
+        q.pop();
+        safe_resume(start.h);     // parent posts both runners
+        BOOST_TEST_EQ(q.size(), 2u);
+        auto ra = q.front();
+        q.pop();
+        auto rb = q.front();
+        q.pop();
+
+        // An unstarted runner owns no branch: the branches stay with the
+        // join until it is unwound.
+        capy::abandon(ra);
+        pump(q);
+        BOOST_TEST_EQ(a_down, 0);
+        BOOST_TEST_EQ(b_down, 0);
+        BOOST_TEST_EQ(parent_down, 0);
+
+        capy::abandon(rb);
+        pump(q);
+        BOOST_TEST_EQ(a_down, 1);
+        BOOST_TEST_EQ(b_down, 1);
+        BOOST_TEST_EQ(parent_down, 1);
+    }
+
+    // Branch tasks lost under run(mr) are freed before the frame that
+    // owns the resource is destroyed.
+    void testLostTaskBranchesFreedBeforeResourceOwner()
+    {
+        lease_resource mr;
+        int a_down = 0, b_down = 0, owner_down = 0, n = 0;
+        parked sa, sb;
+        test_executor ex(n);
+        auto branch = [](parked* s, destroy_count_t)
+            -> task<io_result<>>
+        {
+            co_await park_awaitable{s};
+            co_return io_result<>{};
+        };
+        auto join = [&]() -> task<void>
+        {
+            std::ignore = co_await when_any(
+                branch(&sa, destroy_count_t(a_down)),
+                branch(&sb, destroy_count_t(b_down)));
+        };
+        auto owner = [&](destroy_count_t) -> task<void>
+        {
+            lease l(mr);
+            co_await capy::run(&mr)(join());
+        };
+        run_async(ex)(owner(destroy_count_t(owner_down)));
+        BOOST_TEST(sa && sb);
+        capy::abandon(sa);
+        capy::abandon(sb);
+        BOOST_TEST_EQ(a_down, 1);
+        BOOST_TEST_EQ(b_down, 1);
+        BOOST_TEST_EQ(owner_down, 1);
+        BOOST_TEST(mr.allocs.load() > 0);
+        BOOST_TEST(mr.balanced());
+    }
+
+    // The range overload tears down like the variadic one: no branch
+    // destroys a sibling, and the parent goes with the last branch.
+    void testRangeTeardownOfAllBranchesDestroysParent()
+    {
+        constexpr int count = 3;
+        int down[count] = {}, parent_down = 0;
+        parked slots[count];
+        auto branch = [](parked* s, destroy_count_t)
+            -> task<io_result<>>
+        {
+            co_await park_awaitable{s};
+            co_return io_result<>{};
+        };
+        auto parent = [&](destroy_count_t) -> task<void>
+        {
+            std::vector<task<io_result<>>> tasks;
+            for(int i = 0; i < count; ++i)
+                tasks.push_back(
+                    branch(&slots[i], destroy_count_t(down[i])));
+            std::ignore = co_await when_any(std::move(tasks));
+        };
+        int n = 0;
+        test_executor ex(n);
+        run_async(ex)(parent(destroy_count_t(parent_down)));
+        for(int i = 0; i < count; ++i)
+        {
+            BOOST_TEST(slots[i]);
+            capy::abandon(slots[i]);
+            for(int j = 0; j < count; ++j)
+                BOOST_TEST_EQ(down[j], j <= i ? 1 : 0);
+            BOOST_TEST_EQ(parent_down, i == count - 1 ? 1 : 0);
+        }
+    }
+
+    // A winner does not resume the parent while a sibling is still out;
+    // losing that sibling destroys the parent instead.
+    void testWinnerThenLostDestroysParent()
+    {
+        int parent_down = 0;
+        bool resumed = false;
+        parked sa, sb;
+        auto branch = [](parked* s) -> task<io_result<>>
+        {
+            co_await park_awaitable{s};
+            co_return io_result<>{};
+        };
+        auto parent = [&](destroy_count_t) -> task<void>
+        {
+            std::ignore = co_await when_any(branch(&sa), branch(&sb));
+            resumed = true;
+        };
+        int n = 0;
+        test_executor ex(n);
+        run_async(ex)(parent(destroy_count_t(parent_down)));
+        sa.resume();
+        BOOST_TEST(!resumed);
+        BOOST_TEST_EQ(parent_down, 0);
+        capy::abandon(sb);
+        BOOST_TEST(!resumed);
+        BOOST_TEST_EQ(parent_down, 1);
+    }
+
+    // Both branches torn down from below: the combinator and the
+    // parent go with the last one.
+    void testTeardownOfAllBranchesDestroysParent()
+    {
+        int a_down = 0, b_down = 0, parent_down = 0;
+        parked sa, sb;
+        auto branch = [](parked* s, destroy_count_t)
+            -> task<io_result<>>
+        {
+            co_await park_awaitable{s};
+            co_return io_result<>{};
+        };
+        auto parent = [&](destroy_count_t) -> task<void>
+        {
+            std::ignore = co_await when_any(
+                branch(&sa, destroy_count_t(a_down)),
+                branch(&sb, destroy_count_t(b_down)));
+        };
+        int n = 0;
+        test_executor ex(n);
+        run_async(ex)(parent(destroy_count_t(parent_down)));
+        BOOST_TEST(sa && sb);
+        capy::abandon(sa);
+        BOOST_TEST_EQ(a_down, 1);
+        BOOST_TEST_EQ(parent_down, 0); // b still holds a share
+        capy::abandon(sb);
+        BOOST_TEST_EQ(b_down, 1);
+        BOOST_TEST_EQ(parent_down, 1);
+    }
+
+    // A branch that finishes after a sibling was lost destroys the
+    // parent instead of resuming it.
+    void testLostBranchParentIsDestroyedNotResumed()
+    {
+        int parent_down = 0;
+        bool resumed = false;
+        parked sa, sb;
+        auto park = [](parked* s) -> task<io_result<>>
+        {
+            co_await park_awaitable{s};
+            co_return io_result<>{};
+        };
+        auto failing = [](parked* s) -> task<io_result<>>
+        {
+            co_await park_awaitable{s};
+            co_return io_result<>{make_error_code(error::canceled)};
+        };
+        auto parent = [&](destroy_count_t) -> task<void>
+        {
+            std::ignore = co_await when_any(park(&sa), failing(&sb));
+            resumed = true;
+        };
+        int n = 0;
+        test_executor ex(n);
+        run_async(ex)(parent(destroy_count_t(parent_down)));
+        capy::abandon(sa);
+        sb.resume();
+        BOOST_TEST(!resumed);
+        BOOST_TEST_EQ(parent_down, 1);
+    }
+
+    // A branch that would win after its sibling was lost does not
+    // resume the parent: the parent goes with the join instead.
+    void testSuccessAfterLossDestroysParent()
+    {
+        int parent_down = 0;
+        bool resumed = false;
+        parked sa, sb;
+        auto branch = [](parked* s) -> task<io_result<>>
+        {
+            co_await park_awaitable{s};
+            co_return io_result<>{};
+        };
+        auto parent = [&](destroy_count_t) -> task<void>
+        {
+            std::ignore = co_await when_any(branch(&sa), branch(&sb));
+            resumed = true;
+        };
+        int n = 0;
+        test_executor ex(n);
+        run_async(ex)(parent(destroy_count_t(parent_down)));
+        capy::abandon(sa);
+        BOOST_TEST_EQ(parent_down, 0);
+        sb.resume();
+        BOOST_TEST(!resumed);
+        BOOST_TEST_EQ(parent_down, 1);
+    }
+
+    // Parks the when_any runner itself, so tearing it down enters
+    // through the runner's promise rather than through a branch task.
+    struct park_io_awaitable : park_awaitable
+    {
+        io_result<> await_resume() const noexcept { return {}; }
+    };
+
+    // Losing every branch under run_async(ex, alloc) frees the runner
+    // frames before the trampoline holding their allocator.
+    void testLostBranchesFreeBeforeAllocatorOwner()
+    {
+        alloc_counts st;
+        int parent_down = 0;
+        parked sa, sb;
+        auto parent = [](parked* a,
+            parked* b, destroy_count_t) -> task<void>
+        {
+            std::ignore = co_await when_any(
+                park_io_awaitable{{a}}, park_io_awaitable{{b}});
+        };
+        int n = 0;
+        test_executor ex(n);
+        run_async(ex, counting_allocator<std::byte>(st))(
+            parent(&sa, &sb, destroy_count_t(parent_down)));
+        capy::abandon(sa);
+        capy::abandon(sb);
+        BOOST_TEST_EQ(parent_down, 1);
+        BOOST_TEST(st.allocs > 0);
+        BOOST_TEST(st.balanced());
+    }
+
+    // A stop that loses the last branch while the join is still
+    // stopping its branches leaves the join's stop state alive until
+    // that request returns. Freeing it early shows only under a
+    // sanitizer, and only libstdc++'s callback order makes it reachable.
+    void testStopLosingLastBranch()
+    {
+        std::queue<continuation> q;
+        bool closed = false;
+        int parent_down = 0;
+        async_event ev;
+        std::stop_source src;
+        auto branch = [&]() -> task<io_result<>>
+        {
+            auto tok = (co_await this_coro::environment)->stop_token;
+            // Registered before the wait's, so libstdc++ runs it
+            // after the wait's and relocks the stop state between.
+            std::stop_callback extra(tok, [] {});
+            auto [ec] = co_await ev.wait();
+            co_return io_result<>{ec};
+        };
+        auto parent = [&](destroy_count_t) -> task<void>
+        {
+            std::ignore = co_await when_any(branch(), branch());
+        };
+        run_async(closing_executor{&q, &closed}, src.get_token())(
+            parent(destroy_count_t(parent_down)));
+        pump(q);
+        BOOST_TEST_EQ(parent_down, 0);
+        closed = true;
+        src.request_stop();
+        BOOST_TEST_EQ(parent_down, 1);
+    }
+
+    // Runners abandoned before they start free their branches before
+    // the last loss unwinds the frame that owns the branches' memory.
+    void testUnstartedRunnersFreeBeforeResourceOwner()
+    {
+        for(bool range : {false, true})
+        {
+            lease_resource mr;
+            std::queue<continuation> q;
+            bool closed = false;
+            int owner_down = 0;
+            auto branch = []() -> task<io_result<>>
+            {
+                co_return io_result<>{};
+            };
+            auto join = [&]() -> task<void>
+            {
+                if(range)
+                {
+                    std::vector<task<io_result<>>> tasks;
+                    tasks.push_back(branch());
+                    tasks.push_back(branch());
+                    std::ignore = co_await when_any(std::move(tasks));
+                }
+                else
+                {
+                    std::ignore = co_await when_any(branch(), branch());
+                }
+            };
+            auto owner = [&](destroy_count_t) -> task<void>
+            {
+                lease l(mr);
+                co_await capy::run(&mr)(join());
+            };
+            run_async(closing_executor{&q, &closed})(
+                owner(destroy_count_t(owner_down)));
+            BOOST_TEST_EQ(q.size(), 2u);    // both runners posted
+            closed = true;
+            while(!q.empty())
+            {
+                auto c = q.front();
+                q.pop();
+                capy::abandon(c);
+            }
+            BOOST_TEST_EQ(owner_down, 1);
+            BOOST_TEST(mr.balanced());
+        }
+    }
+
+    // Losing a branch asks the others to stop.
+    void testLostBranchRequestsStop()
+    {
+        parked sa, sb;
+        std::stop_token seen;
+        auto branch = [](parked* s, std::stop_token* out)
+            -> task<io_result<>>
+        {
+            if(out)
+                *out = (co_await this_coro::environment)->stop_token;
+            co_await park_awaitable{s};
+            co_return io_result<>{};
+        };
+        auto parent = [&]() -> task<void>
+        {
+            std::ignore = co_await when_any(
+                branch(&sa, nullptr), branch(&sb, &seen));
+        };
+        int n = 0;
+        test_executor ex(n);
+        run_async(ex)(parent());
+        BOOST_TEST(!seen.stop_requested());
+        capy::abandon(sa);
+        BOOST_TEST(seen.stop_requested());
+        capy::abandon(sb);
+    }
+
     void
     run()
     {
+        testTeardownOfAllBranchesDestroysParent();
+        testLostBranchParentIsDestroyedNotResumed();
+        testSuccessAfterLossDestroysParent();
+        testLostBranchRequestsStop();
+        testUnstartedRunnersFreeBeforeResourceOwner();
+        testStopLosingLastBranch();
+        testRunnersDestroyedBeforeStartDestroyParent();
+        testLostTaskBranchesFreedBeforeResourceOwner();
+        testRangeTeardownOfAllBranchesDestroysParent();
+        testWinnerThenLostDestroysParent();
+        testLostBranchesFreeBeforeAllocatorOwner();
         testWinnerPayloadMoveThrows();
         testStopAlreadyRequested();
         testFirstSuccessWins();

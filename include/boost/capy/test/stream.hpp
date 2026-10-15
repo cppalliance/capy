@@ -75,7 +75,9 @@ class stream
     {
         std::string buf;
         std::size_t max_read_size = std::size_t(-1);
-        continuation pending_cont_;
+        // The parked read's own continuation: an executor may queue it
+        // in place, so it is never copied or changed once posted.
+        continuation* pending_cont_ = nullptr;
         executor_ref pending_ex;
         // Points at the suspended reader's claim flag (owned by the
         // read awaitable). Lets a peer wake coordinate with a stop
@@ -100,17 +102,16 @@ class stream
         // stop callback; the loser of the race skips the post.
         static void wake(half& side)
         {
-            if(! side.pending_cont_.h)
+            auto* c = std::exchange(side.pending_cont_, nullptr);
+            if(! c)
                 return;
-            if(! side.pending_claimed ||
-                ! side.pending_claimed->exchange(
-                    true, std::memory_order_acq_rel))
+            auto ex = std::exchange(side.pending_ex, {});
+            auto* claimed = std::exchange(side.pending_claimed, nullptr);
+            if(! claimed ||
+                ! claimed->exchange(true, std::memory_order_acq_rel))
             {
-                side.pending_ex.post(side.pending_cont_);
+                ex.post(*c);
             }
-            side.pending_cont_.h = {};
-            side.pending_ex = {};
-            side.pending_claimed = nullptr;
         }
 
         // Set closed and resume any suspended readers
@@ -315,7 +316,7 @@ public:
                 // peer wake does not dereference a freed claim flag.
                 if(side_ && side_->pending_claimed == &claimed_)
                 {
-                    side_->pending_cont_.h = {};
+                    side_->pending_cont_ = nullptr;
                     side_->pending_ex = {};
                     side_->pending_claimed = nullptr;
                 }
@@ -335,23 +336,25 @@ public:
                     !side.buf.empty();
             }
 
-            std::coroutine_handle<> await_suspend(
+            bool await_suspend(
                 std::coroutine_handle<> h,
                 io_env const* env) noexcept
             {
-                // Park the continuation, then register the stop callback.
-                // If stop is already requested, the callback fires inline
-                // during construction: it claims the resume and posts the
-                // continuation through the executor (never a symmetric
-                // self-transfer, which would leak this frame under
-                // run_async). The parked read is then resumed with
-                // error::canceled by the run loop.
+                // A callback registered after stop was requested would
+                // fire inline and post this coroutine, which could then be
+                // resumed and finished before the registration returns.
+                if(env->stop_token.stop_requested())
+                {
+                    canceled_ = true;
+                    return false;
+                }
                 auto& side = self_->state_->sides[
                     self_->index_];
                 cont_.h = h;
+                cont_.owner = env->owner;
                 ex_ = env->executor;
                 side_ = &side;
-                side.pending_cont_.h = h;
+                side.pending_cont_ = &cont_;
                 side.pending_ex = env->executor;
                 side.pending_claimed = &claimed_;
 
@@ -359,7 +362,7 @@ public:
                     env->stop_token, cancel_fn{this});
                 stop_cb_active_ = true;
 
-                return std::noop_coroutine();
+                return true;
             }
 
             [[nodiscard]] io_result<std::size_t>
@@ -380,7 +383,7 @@ public:
                     // untouched; unlink if a peer wake has not already.
                     if(side_ && side_->pending_claimed == &claimed_)
                     {
-                        side_->pending_cont_.h = {};
+                        side_->pending_cont_ = nullptr;
                         side_->pending_ex = {};
                         side_->pending_claimed = nullptr;
                     }

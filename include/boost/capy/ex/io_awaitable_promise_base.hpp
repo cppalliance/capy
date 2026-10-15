@@ -12,6 +12,7 @@
 #define BOOST_CAPY_EX_IO_AWAITABLE_PROMISE_BASE_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/frame_alloc_mixin.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -72,10 +73,28 @@ namespace capy {
     @par !example example_3
 
 
+    @par Ownership
+    A coroutine's frame is owned by the object that awaits it, such as
+    the parent's `task`, so a chain is destroyed from its top down, each
+    frame freeing the one it awaits. The suspended coroutine at the
+    bottom is held by whoever will resume it: an operation, queue or
+    primitive. A holder that will never resume it calls @ref abandon,
+    which unwinds the chain's segment from its owner (see
+    @ref chain_owner) rather than destroying the bottom frame.
+    Destroying a frame that is still awaited, other than in that
+    unwind, calls `std::terminate`.
+
     @par Thread Safety
     The environment is stored during `await_suspend` and read during
     `co_await this_coro::environment`. These occur on the same logical
     thread of execution, so no synchronization is required.
+
+    @note A chain waiting on a primitive stored in its own frames owns
+    itself through that primitive; it is freed only by a stop request or
+    by the primitive being signalled. A mutex must outlive every
+    coroutine holding or handed its lock. A cross-thread `wake()` racing
+    the teardown of an armed waker's frame on its executor thread is a
+    precondition violation.
 
     @see this_coro::environment, this_coro::executor,
          this_coro::stop_token, this_coro::frame_allocator
@@ -90,32 +109,6 @@ class io_awaitable_promise_base
     mutable std::coroutine_handle<> cont_{std::noop_coroutine()};
 
 public:
-    /** Destroy the promise, destroying an orphaned continuation.
-
-        A continuation is still stored only when the coroutine never
-        reached `final_suspend`, because @ref continuation consumes the
-        stored handle. Destroying it here is what keeps an abandoned
-        coroutine from leaking the trampoline frame that was waiting on it.
-
-        @par Preconditions
-        No parent coroutine is awaiting this one. A parent's `await_suspend`
-        installs its own handle as the continuation, so destroying such a
-        coroutine directly would destroy the parent from here as well. See
-        @ref task::handle and @ref quitter::handle for the contract.
-    */
-    ~io_awaitable_promise_base()
-    {
-        // Abnormal teardown: destroy an orphaned continuation, e.g.
-        // a run_async trampoline when the task is destroyed before
-        // reaching final_suspend. Callers must not destroy a task
-        // via handle().destroy() while it is being awaited by a
-        // parent coroutine: that puts cont_ under another owner
-        // and would produce a double-destroy from this branch. See
-        // task::handle() / quitter::handle() for the contract.
-        if(cont_ != std::noop_coroutine())
-            cont_.destroy();
-    }
-
     //----------------------------------------------------------
     // Continuation support
     //----------------------------------------------------------

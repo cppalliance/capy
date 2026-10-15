@@ -82,6 +82,7 @@ class poll_service
 {
     std::mutex mtx_;
     std::vector<poll_entry> entries_;
+    std::vector<poll_entry> ready_;
     std::jthread thread_;
 
     void run(std::stop_token st)
@@ -102,11 +103,15 @@ class poll_service
                     *e.ec = (s == cudaSuccess)
                         ? std::error_code{}
                         : make_cuda_error(s);
-                    e.ex.post(*e.cont);
+                    ready_.push_back(e);
                     entries_[i] = entries_.back();
                     entries_.pop_back();
                 }
             }
+            // Outside the lock: a post may unwind the waiter's chain.
+            for(auto& e : ready_)
+                e.ex.post(*e.cont);
+            ready_.clear();
             std::this_thread::yield();
         }
     }
@@ -338,6 +343,7 @@ struct callback_awaitable
     await_suspend(std::coroutine_handle<> h, io_env const* env)
     {
         cont_.h = h;
+        cont_.owner = env->owner;
         ctx_ = resume_ctx{env->executor, &cont_, &ec_};
         auto err = cudaLaunchHostFunc(stream, &on_complete, &ctx_);
         if(err != cudaSuccess)
@@ -399,6 +405,7 @@ public:
     await_suspend(std::coroutine_handle<> h, io_env const* env)
     {
         cont_.h = h;
+        cont_.owner = env->owner;
         svc_.register_wait(poll_entry{event_, env->executor, &cont_, &ec_});
         return std::noop_coroutine();
     }
@@ -442,6 +449,7 @@ public:
         auto ex = env->executor;
         auto stream = stream_;
         cont_.h = h;
+        cont_.owner = env->owner;
         svc_.post([ex, stream, ec = &ec_, cont = &cont_]() mutable
         {
             auto err = cudaStreamSynchronize(stream);

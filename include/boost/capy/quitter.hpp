@@ -465,11 +465,18 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     */
     std::coroutine_handle<promise_type> h_;
 
-    /// Destroy the quitter and its coroutine frame if owned.
+    /** Destroy the quitter and its coroutine frame if owned.
+
+        @par Preconditions
+        The frame is not lent: no parent is suspended awaiting it,
+        unless its chain is being unwound after an @ref abandon.
+        Destroying a lent frame otherwise calls `std::terminate`; end
+        a running chain by requesting stop, or by destroying its
+        execution context.
+    */
     ~quitter()
     {
-        if(h_)
-            h_.destroy();
+        destroy_frame();
     }
 
     /** Return false; quitters are never immediately ready.
@@ -500,6 +507,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     */
     auto await_resume()
     {
+        lent_ = false;
         if(h_.promise().stopped())
             throw detail::stop_requested_exception{};
         if(h_.promise().state_ == promise_type::completion::exception)
@@ -531,17 +539,26 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     {
         h_.promise().set_continuation(cont);
         h_.promise().set_environment(env);
+        lent_ = true;
         return h_;
     }
 
     /** Return the coroutine handle.
 
-        @note Do not call `destroy()` on the returned handle while
-        the quitter is being awaited. The quitter's lifetime is
-        normally managed by `run_async`, `run`, or the awaiting
-        parent. Manually destroying a suspended quitter that another
-        coroutine is awaiting produces undefined behavior. For
-        cooperative cancellation, use `std::stop_token`.
+        @note Do not call `destroy()` on the returned handle while the
+        quitter is being awaited: the awaiting frame still holds it and
+        destroys it again, which has undefined behavior. A holder that
+        gives the coroutine up passes its continuation to @ref abandon
+        instead. (Destroying or
+        move-assigning over the quitter object itself while its frame is
+        lent is a different operation, and calls `std::terminate`.)
+        The quitter's lifetime is normally managed by `run_async`, `run`,
+        or the awaiting parent. For cooperative cancellation, use
+        `std::stop_token`.
+
+        @note The operation, queue or primitive holding a suspended
+        coroutine gives it up by passing the continuation it keeps to
+        @ref abandon. `handle()` belongs to the owning quitter object.
 
         @return The coroutine handle.
     */
@@ -554,8 +571,8 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
         @note The caller may call `destroy()` on the released handle
         only when the quitter has not started or has fully completed.
-        Destroying a suspended quitter that is being awaited produces
-        undefined behavior.
+        Destroying the released handle of a quitter that is being
+        awaited is not supported and has undefined behavior.
 
         @par Postconditions
         `handle()` returns a null handle. Callers needing the
@@ -598,6 +615,10 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         If this quitter already owns a coroutine frame, that frame is
         destroyed first. Self-assignment is a no-op.
 
+        @par Preconditions
+        The frame being replaced is not lent: no parent is suspended
+        awaiting it. Replacing a lent frame calls `std::terminate`.
+
         @par Postconditions
         `other` is empty and must not be awaited.
 
@@ -609,17 +630,35 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     {
         if(this != &other)
         {
-            if(h_)
-                h_.destroy();
+            destroy_frame();
             h_ = std::exchange(other.h_, nullptr);
         }
         return *this;
     }
 
 private:
+    // Set while a parent is suspended awaiting this quitter.
+    bool lent_ = false;
+
     explicit quitter(std::coroutine_handle<promise_type> h)
         : h_(h)
     {
+    }
+
+    void destroy_frame() noexcept
+    {
+        if(!h_)
+            return;
+        if(lent_ && !h_.done())
+        {
+            // Only the unwind of an abandoned chain destroys a frame
+            // that is still awaited.
+            auto* owner = h_.promise().environment()->owner;
+            if(!owner || !owner->abandoned())
+                std::terminate(); // LCOV_EXCL_LINE reached only in a death test's child process
+        }
+        std::exchange(h_, nullptr).destroy();
+        lent_ = false;
     }
 };
 

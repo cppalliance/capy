@@ -15,6 +15,8 @@
 #include <boost/asio/cancellation_signal.hpp>
 #include <boost/asio/deferred.hpp>
 
+#include "abandon_guard.hpp"
+
 #include <coroutine>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -136,19 +138,30 @@ public:
         // post the continuation through the executor rather than resuming
         // inline; this restores the same-executor invariant. cont_ is a
         // member, giving the continuation a stable address until the
-        // executor dequeues and resumes it.
+        // executor dequeues and resumes it. The guard gives the
+        // coroutine up if Asio destroys the handler without running it.
         cont_.h = h;
-        auto handler = [this, ex = env->executor](Args... args) mutable
+        cont_.owner = env->owner;
+        auto handler = [this, ex = env->executor, g = abandon_guard(cont_)](
+            Args... args) mutable
         {
             store_result(std::move(args)...);
-            ex.post(cont_);
+            ex.post(*g.get());
+            g.release();
         };
 
-        std::move(op_)(
-            net::bind_cancellation_slot(
-                cancel_->signal.slot(),
-                std::move(handler)));
-
+        try
+        {
+            std::move(op_)(
+                net::bind_cancellation_slot(
+                    cancel_->signal.slot(),
+                    std::move(handler)));
+        }
+        catch(...)
+        {
+            // The handler was destroyed and gave the coroutine up, so it
+            // stays suspended for its owner to unwind.
+        }
         return std::noop_coroutine();
     }
     // end::await_suspend[]

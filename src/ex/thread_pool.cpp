@@ -11,6 +11,7 @@
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/detail/thread_local_ptr.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/test/thread_name.hpp>
 #include <algorithm>
@@ -30,23 +31,23 @@
     directly. Worker threads wait on a condition_variable until work
     is available or stop is requested.
 
-    Threads are started lazily on first post() via std::call_once to avoid
-    spawning threads for pools that are constructed but never used. Each
-    thread is named with a configurable prefix plus index for debugger
-    visibility.
+    Threads are started lazily on first post(), under mutex_, to avoid
+    spawning threads for pools that are constructed but never used. A
+    stopped pool starts none. Each thread is named
+    with a configurable prefix plus index for debugger visibility.
 
     Work tracking: on_work_started/on_work_finished maintain the atomic
-    outstanding_work_ counter. on_work_started is lock-free; the worker
-    that drives the count to zero takes mutex_ and re-reads the count
-    before deciding to stop, so the count and the stop decision stay
-    consistent even if work is started in between. join() blocks until
-    this counter reaches zero, then signals workers to stop and joins
-    threads.
+    outstanding_work_ counter. on_work_started is lock-free, and so is
+    on_work_finished while the count stays above one. The release that
+    may take it to zero is made under mutex_, so join() can't see zero,
+    return and let the pool be destroyed while that call still uses it.
+    join() blocks until this counter reaches zero, then signals workers
+    to stop and joins threads.
 
     Two shutdown paths:
     - join(): waits for outstanding work to drain, then stops workers.
-    - stop(): immediately signals workers to exit; queued work is abandoned.
-    - Destructor: stop() then join() (abandon + wait for threads).
+    - stop(): immediately signals workers to exit; queued work stays queued.
+    - Destructor: stop() then join(), then queued work is abandoned.
 */
 
 namespace boost {
@@ -103,7 +104,7 @@ class thread_pool::impl
     bool joined_{false};
     std::size_t num_threads_;
     char thread_name_prefix_[13]{};  // 12 chars max + null terminator
-    std::once_flag start_flag_;
+    std::atomic<bool> started_{false};
 
 public:
     ~impl() = default;
@@ -114,19 +115,28 @@ public:
         return current_.get() == this;
     }
 
-    // Destroy abandoned coroutine frames. Must be called
-    // before execution_context::shutdown()/destroy() so
-    // that suspended-frame destructors touching services
-    // (e.g. cancelling registrations) run while those
-    // services are still valid.
-    void
+    // Abandon queued coroutines. Called after the services shut down,
+    // since their shutdown can post more, and again after they are
+    // destroyed, for anything their destructors post. Each is taken
+    // under the lock, as other threads may still post, and abandoned
+    // outside it, as abandoning can post. Returns whether there was
+    // anything to abandon.
+    bool
     drain_abandoned() noexcept
     {
-        while(auto* c = pop())
+        bool any = false;
+        for(;;)
         {
-            auto h = c->h;
-            if(h && h != std::noop_coroutine())
-                h.destroy();
+            continuation* c;
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                c = pop();
+            }
+            if(!c)
+                return any;
+            any = true;
+            if(c->h && c->h != std::noop_coroutine())
+                capy::abandon(*c);
         }
     }
 
@@ -145,14 +155,25 @@ public:
     void
     post(continuation& c)
     {
-        ensure_started();
+        if(!started_.load(std::memory_order_acquire))
         {
-            std::lock_guard<std::mutex> lock(mutex_);
-            push(&c);
-            // Under the lock so the pool cannot drain, join, and
-            // destroy the condition variable mid-signal.
-            work_cv_.notify_one();
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                if(stop_)
+                {
+                    // Stopped before any thread started: nothing will
+                    // run it, and the destructor's drain abandons it.
+                    push(&c);
+                    return;
+                }
+            }
+            ensure_started();
         }
+        std::lock_guard<std::mutex> lock(mutex_);
+        push(&c);
+        // Under the lock so the pool cannot drain, join, and
+        // destroy the condition variable mid-signal.
+        work_cv_.notify_one();
     }
 
     void
@@ -164,20 +185,22 @@ public:
     void
     on_work_finished() noexcept
     {
-        if(outstanding_work_.fetch_sub(
-            1, std::memory_order_acq_rel) == 1)
+        auto n = outstanding_work_.load(std::memory_order_relaxed);
+        while(n > 1)
         {
-            // fetch_sub's result can be stale: a concurrent
-            // on_work_started() may raise the count before we take the
-            // lock, so re-read it here rather than trust the decrement.
-            std::lock_guard<std::mutex> lock(mutex_);
-            if(outstanding_work_.load(
-                std::memory_order_acquire) == 0 && joined_ && !stop_)
-            {
-                stop_ = true;
-                done_cv_.notify_all();
-                work_cv_.notify_all();
-            }
+            if(outstanding_work_.compare_exchange_weak(
+                n, n - 1, std::memory_order_acq_rel))
+                return;
+        }
+        std::lock_guard<std::mutex> lock(mutex_);
+        outstanding_work_.fetch_sub(1, std::memory_order_acq_rel);
+        // Re-read: a concurrent on_work_started() may have raised it.
+        if(outstanding_work_.load(
+            std::memory_order_acquire) == 0 && joined_ && !stop_)
+        {
+            stop_ = true;
+            done_cv_.notify_all();
+            work_cv_.notify_all();
         }
     }
 
@@ -212,10 +235,10 @@ public:
     void
     stop() noexcept
     {
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            stop_ = true;
-        }
+        // Under the lock: the join() this releases may return and let
+        // the pool be destroyed as soon as the lock is free.
+        std::lock_guard<std::mutex> lock(mutex_);
+        stop_ = true;
         work_cv_.notify_all();
         done_cv_.notify_all();
     }
@@ -224,11 +247,16 @@ private:
     void
     ensure_started()
     {
-        std::call_once(start_flag_, [this]{
-            threads_.reserve(num_threads_);
-            for(std::size_t i = 0; i < num_threads_; ++i)
-                threads_.emplace_back([this, i]{ run(i); });
-        });
+        // Under the lock, so join() either sees every thread started
+        // here or makes this start none. A joined pool still starts them:
+        // join() may be waiting on work that needs them.
+        std::lock_guard<std::mutex> lock(mutex_);
+        if(started_.load(std::memory_order_relaxed) || stop_)
+            return;
+        threads_.reserve(num_threads_);
+        for(std::size_t i = 0; i < num_threads_; ++i)
+            threads_.emplace_back([this, i]{ run(i); });
+        started_.store(true, std::memory_order_release);
     }
 
     void
@@ -273,9 +301,15 @@ thread_pool::
 {
     impl_->stop();
     impl_->join();
-    impl_->drain_abandoned();
     shutdown();
-    destroy();
+    impl_->drain_abandoned();
+    // A frame the drain unwinds can create a service, whose destructor
+    // can post again: repeat until nothing is left of either.
+    do
+    {
+        destroy();
+    }
+    while(impl_->drain_abandoned());
     delete impl_;
 }
 

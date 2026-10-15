@@ -82,15 +82,21 @@ struct custom_task
 
     explicit custom_task(std::coroutine_handle<promise_type> h) : h_(h) {}
 
-    ~custom_task() { if(h_) h_.destroy(); }
+    ~custom_task() { destroy(); }
 
     custom_task(custom_task const&) = delete;
     custom_task& operator=(custom_task const&) = delete;
     custom_task(custom_task&& o) noexcept : h_(std::exchange(o.h_, nullptr)) {}
     custom_task& operator=(custom_task&& o) noexcept
     {
-        if(this != &o) { if(h_) h_.destroy(); h_ = std::exchange(o.h_, nullptr); }
+        if(this != &o) { destroy(); h_ = std::exchange(o.h_, nullptr); }
         return *this;
+    }
+
+    void destroy() noexcept
+    {
+        if(h_)
+            std::exchange(h_, nullptr).destroy();
     }
 
     bool await_ready() const noexcept { return false; }

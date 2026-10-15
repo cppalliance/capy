@@ -16,6 +16,7 @@
 #include <boost/capy/detail/run_callbacks.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/io_runnable.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -97,7 +98,7 @@ struct get_promise_awaiter
     @tparam Alloc The allocator type (value type or memory_resource*).
 */
 template<class Ex, class Handlers, class Alloc>
-struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE run_async_trampoline
+struct run_async_trampoline
 {
     using invoke_fn = void(*)(void*, Handlers&);
 
@@ -114,6 +115,17 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE run_async_trampoline
         // Both must reference the same coroutine and be kept in sync.
         std::coroutine_handle<> task_h_;
         continuation task_cont_;
+        // Owns the task's segment: abandoning it resumes this
+        // trampoline, or has it destroyed, to unwind the task.
+        chain_owner owner_;
+
+        ~promise_type()
+        {
+            // Still owned only when a closed executor destroyed this
+            // trampoline instead of resuming it to unwind the task.
+            if(task_h_)
+                task_h_.destroy();
+        }
 
         promise_type(Ex& ex, Handlers& h, Alloc& a) noexcept
             : wg_(std::move(ex))
@@ -211,8 +223,7 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE run_async_trampoline
     This avoids double indirection when the user passes a memory_resource*.
 */
 template<class Ex, class Handlers>
-struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE
-    run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
+struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
 {
     using invoke_fn = void(*)(void*, Handlers&);
 
@@ -229,6 +240,17 @@ struct BOOST_CAPY_CORO_DESTROY_WHEN_COMPLETE
         // Both must reference the same coroutine and be kept in sync.
         std::coroutine_handle<> task_h_;
         continuation task_cont_;
+        // Owns the task's segment: abandoning it resumes this
+        // trampoline, or has it destroyed, to unwind the task.
+        chain_owner owner_;
+
+        ~promise_type()
+        {
+            // Still owned only when a closed executor destroyed this
+            // trampoline instead of resuming it to unwind the task.
+            if(task_h_)
+                task_h_.destroy();
+        }
 
         promise_type(
             Ex& ex, Handlers& h, std::pmr::memory_resource* mr) noexcept
@@ -315,10 +337,13 @@ make_trampoline(Ex, Handlers, Alloc)
     struct frame_guard
     {
         std::coroutine_handle<>& h;
-        ~frame_guard() { h.destroy(); }
+        ~frame_guard() { std::exchange(h, nullptr).destroy(); }
     } guard{p.task_h_};
 
-    p.invoke_(p.task_promise_, p.handlers_);
+    // Resumed with the task unfinished: the segment was abandoned, and
+    // destroying the task unwinds it without calling a handler.
+    if(!p.owner_.abandoned())
+        p.invoke_(p.task_promise_, p.handlers_);
 }
 
 } // namespace detail
@@ -400,7 +425,8 @@ public:
 
         @note When `Alloc` is not `std::pmr::memory_resource*` it must be
         nothrow move constructible (enforced by a `static_assert`), which
-        is what allows this constructor to be `noexcept`.
+        is what allows this constructor to be `noexcept`. If allocating
+        the launch state throws, `std::terminate` is called.
     */
     run_async_wrapper(
         Ex ex,
@@ -427,9 +453,14 @@ public:
         Resets the thread-local frame allocator to the value saved at
         construction. A stale pointer to the trampoline's resource
         therefore does not outlive the execution context that owns it.
+        If no task was started, for example because evaluating the task
+        argument threw, the unused launch state is destroyed, releasing
+        the executor's work.
     */
     ~run_async_wrapper()
     {
+        if(tr_.h_)
+            tr_.h_.destroy();
         set_current_frame_allocator(saved_tls_);
     }
 
@@ -474,6 +505,10 @@ public:
         in its chain. Awaitables may store `io_env const*` without concern
         for dangling references.
 
+        @throws Any exception thrown by the executor's `dispatch`. The
+            task is then destroyed without running, and the executor's
+            work is released.
+
         @tparam Task The IoRunnable type.
 
         @param t The task to execute. Ownership is transferred to the
@@ -495,14 +530,21 @@ public:
 
         // Setup task's continuation to return to run_async_trampoline
         task_promise.set_continuation(tr_.h_);
-        p.env_ = {p.wg_.executor(), st_, p.get_resource()};
+        p.owner_.bind(tr_.h_, p.wg_.executor());
+        p.env_ = {p.wg_.executor(), st_, p.get_resource(), &p.owner_};
         task_promise.set_environment(&p.env_);
 
         // Start task through executor.
         // safe_resume is not needed here: TLS is already saved in the
         // constructor (saved_tls_) and restored in the destructor.
         p.task_cont_.h = task_h;
-        p.wg_.executor().dispatch(p.task_cont_).resume();
+        p.task_cont_.owner = &p.owner_;
+        // If dispatch throws, the destructor destroys the trampoline
+        // and the unstarted task with it.
+        auto next = p.wg_.executor().dispatch(p.task_cont_);
+        // From here the trampoline destroys itself when the task ends.
+        tr_.h_ = nullptr;
+        next.resume();
     }
 };
 
@@ -555,6 +597,8 @@ run_async(Ex ex)
     The handler `h1` is called with the task's result on success. If `h1`
     is also invocable with `std::exception_ptr`, it handles exceptions too.
     Otherwise, an unhandled exception calls `std::terminate`.
+    If the task is abandoned before it completes, as a context's teardown
+    does, no handler is called; the handlers are destroyed with it.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
@@ -593,6 +637,8 @@ run_async(Ex ex, H1 h1)
 
     The handler `h1` is called with the task's result on success.
     The handler `h2` is called with the exception_ptr on failure.
+    If the task is abandoned before it completes, as a context's teardown
+    does, no handler is called; the handlers are destroyed with it.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.

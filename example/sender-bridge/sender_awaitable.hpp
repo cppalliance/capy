@@ -262,7 +262,7 @@ struct [[nodiscard]] sender_awaitable
             beman::execution::connect(
                 std::move(sndr_),
                 receiver_type{
-                    &result_, {h}, env}));
+                    &result_, {h, nullptr, env->owner}, env}));
         op_constructed_ = true;
         beman::execution::start(
             *std::launder(

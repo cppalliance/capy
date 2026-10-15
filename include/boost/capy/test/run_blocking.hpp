@@ -14,11 +14,13 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
+#include <boost/capy/error.hpp>
 #include <boost/capy/ex/run_async.hpp>
 
 #include <coroutine>
 #include <exception>
 #include <stop_token>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 
@@ -32,7 +34,8 @@ class blocking_context;
 
     This executor is used internally by @ref run_blocking to
     execute coroutine tasks on the calling thread. Work submitted
-    via `dispatch()` is returned for symmetric transfer. Work
+    via `dispatch()` from within the context's event loop is
+    returned for symmetric transfer; from elsewhere it is queued. Work
     submitted via `post()` is enqueued and processed by the
     @ref blocking_context event loop.
 
@@ -80,14 +83,17 @@ struct BOOST_CAPY_DECL blocking_executor
     /// Called when work completes (no-op).
     void on_work_finished() const noexcept;
 
-    /** Dispatch work for immediate inline execution.
+    /** Dispatch work, running it inline when already in the loop.
 
-        Returns the handle for symmetric transfer. The caller
-        resumes the coroutine via the returned handle.
+        Called from within the context's event loop, returns the
+        handle for the caller to resume by symmetric transfer.
+        Called from anywhere else, including while the context is
+        shutting down, queues the continuation as @ref post does.
 
         @param c The continuation to execute.
 
-        @return `c.h` for symmetric transfer.
+        @return `c.h` for symmetric transfer, or
+            `std::noop_coroutine()` if the continuation was queued.
     */
     std::coroutine_handle<>
     dispatch(continuation& c) const;
@@ -118,10 +124,13 @@ private:
     This context is created internally by @ref run_blocking.
     Users do not interact with it directly.
 
+    Coroutines still queued when the context is destroyed are
+    passed to @ref abandon rather than resumed.
+
     @par Thread Safety
     The event loop runs on the thread that calls `run()`.
-    `signal_done()` and `enqueue()` are safe to call from
-    any thread.
+    `signal_done()`, `signal_abandoned()`, and `enqueue()` are safe
+    to call from any thread.
 
     @see blocking_executor, run_blocking
 */
@@ -170,6 +179,14 @@ public:
     void
     signal_done(std::exception_ptr ep) noexcept;
 
+    /** Signal that the task was abandoned without a result.
+
+        Wakes the event loop so that @ref run throws
+        `std::system_error` with `error::canceled`.
+    */
+    void
+    signal_abandoned() noexcept;
+
     /** Run the event loop until done.
 
         Blocks the calling thread, processing posted
@@ -184,12 +201,15 @@ public:
     void
     run();
 
-    /** Enqueue a coroutine handle for processing.
+    /** Enqueue a continuation for processing.
 
-        @param h The coroutine handle to enqueue.
+        A copy is queued, so the owner it carries reaches @ref abandon
+        if the context is destroyed first.
+
+        @param c The continuation to enqueue.
     */
     void
-    enqueue(std::coroutine_handle<> h);
+    enqueue(continuation const& c);
 };
 
 /** Wrapper that signals completion after invoking the handler.
@@ -216,6 +236,43 @@ struct blocking_handler_wrapper
     /// The success and error handlers to forward to.
     detail::handler_pair<H1, H2> handlers_;
 
+    /** Destroy the wrapper.
+
+        A wrapper destroyed without being invoked belongs to an
+        abandoned chain, which delivers no result. The context is
+        signalled with `error::canceled`, so its loop neither waits
+        forever nor reports success.
+    */
+    ~blocking_handler_wrapper()
+    {
+        if(ctx_)
+            ctx_->signal_abandoned();
+    }
+
+    /** Construct from a context and handlers.
+
+        @param ctx The context to signal.
+
+        @param handlers The handlers to forward to.
+    */
+    blocking_handler_wrapper(
+        blocking_context* ctx,
+        detail::handler_pair<H1, H2> handlers)
+        : ctx_(ctx)
+        , handlers_(std::move(handlers))
+    {
+    }
+
+    /** Construct by moving, leaving `other` unable to signal.
+
+        @param other The wrapper to move from.
+    */
+    blocking_handler_wrapper(blocking_handler_wrapper&& other) noexcept
+        : ctx_(std::exchange(other.ctx_, nullptr))
+        , handlers_(std::move(other.handlers_))
+    {
+    }
+
     /** Invoke the handler with a non-void result.
 
         @param v The result value to forward to the handler.
@@ -229,10 +286,11 @@ struct blocking_handler_wrapper
         }
         catch(...)
         {
-            ctx_->signal_done(std::current_exception());
+            std::exchange(ctx_, nullptr)->signal_done(
+                std::current_exception());
             return;
         }
-        ctx_->signal_done();
+        std::exchange(ctx_, nullptr)->signal_done();
     }
 
     /** Invoke the handler for a void result. */
@@ -244,10 +302,11 @@ struct blocking_handler_wrapper
         }
         catch(...)
         {
-            ctx_->signal_done(std::current_exception());
+            std::exchange(ctx_, nullptr)->signal_done(
+                std::current_exception());
             return;
         }
-        ctx_->signal_done();
+        std::exchange(ctx_, nullptr)->signal_done();
     }
 
     /** Invoke the handler with an exception.
@@ -262,10 +321,11 @@ struct blocking_handler_wrapper
         }
         catch(...)
         {
-            ctx_->signal_done(std::current_exception());
+            std::exchange(ctx_, nullptr)->signal_done(
+                std::current_exception());
             return;
         }
-        ctx_->signal_done();
+        std::exchange(ctx_, nullptr)->signal_done();
     }
 };
 
@@ -358,6 +418,9 @@ public:
         Creates a blocking_context with a single-threaded
         event loop, starts the task via `run_async`, then
         pumps the loop until the task completes or throws.
+
+        @throws std::system_error with `error::canceled` if the task
+            is abandoned before it completes.
 
         @tparam Task The IoRunnable type.
 

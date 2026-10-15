@@ -364,11 +364,18 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     */
     std::coroutine_handle<promise_type> h_;
 
-    /// Destroy the task and its coroutine frame if owned.
+    /** Destroy the task and its coroutine frame if owned.
+
+        @par Preconditions
+        The frame is not lent: no parent is suspended awaiting it,
+        unless its chain is being unwound after an @ref abandon.
+        Destroying a lent frame otherwise calls `std::terminate`; end
+        a running chain by requesting stop, or by destroying its
+        execution context.
+    */
     ~task()
     {
-        if(h_)
-            h_.destroy();
+        destroy_frame();
     }
 
     /** Report whether the awaited task is already complete.
@@ -399,6 +406,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     [[nodiscard]] auto await_resume()
         requires detail::is_io_result_v<T>
     {
+        lent_ = false;
         if(h_.promise().has_ep_)
             std::rethrow_exception(h_.promise().ep_);
         return std::move(*h_.promise().result_);
@@ -407,6 +415,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     auto await_resume()
         requires (! detail::is_io_result_v<T>)
     {
+        lent_ = false;
         if(h_.promise().has_ep_)
             std::rethrow_exception(h_.promise().ep_);
         if constexpr (! std::is_void_v<T>)
@@ -434,17 +443,27 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     {
         h_.promise().set_continuation(cont);
         h_.promise().set_environment(env);
+        lent_ = true;
         return h_;
     }
 
     /** Return the coroutine handle.
 
         @note Do not call `destroy()` on the returned handle while the
-        task is being awaited. The task's lifetime is normally managed
-        by `run_async`, `run`, or the awaiting parent. Manually
-        destroying a suspended task that another coroutine is awaiting
-        produces undefined behavior. For cooperative cancellation, use
+        task is being awaited: the awaiting frame still holds it and
+        destroys it again, which has undefined behavior. A holder that
+        gives the coroutine up passes its continuation to @ref abandon
+        instead. (Destroying or
+        move-assigning over the task object itself while its frame is
+        lent is a different operation, and calls `std::terminate`.)
+        The task's lifetime is normally managed by `run_async`, `run`,
+        or the awaiting parent. For cooperative cancellation, use
         `std::stop_token`.
+
+        @note The operation, queue or primitive holding a suspended
+        coroutine gives it up with @ref abandon, through the
+        continuation it keeps, never by destroying a handle.
+        `handle()` belongs to the owning task object.
 
         @return The coroutine handle.
     */
@@ -461,8 +480,8 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
         @note The caller may call `destroy()` on the released handle
         only when the task has not started or has fully completed.
-        Destroying a suspended task that is being awaited produces
-        undefined behavior.
+        Destroying the released handle of a task that is being
+        awaited is not supported and has undefined behavior.
 
         @par Postconditions
         `handle()` returns a null handle. Callers needing the
@@ -505,6 +524,10 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         If this task already owns a coroutine frame, that frame is
         destroyed first. Self-assignment is a no-op.
 
+        @par Preconditions
+        The frame being replaced is not lent: no parent is suspended
+        awaiting it. Replacing a lent frame calls `std::terminate`.
+
         @par Postconditions
         `other` is empty and must not be awaited.
 
@@ -516,17 +539,35 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     {
         if(this != &other)
         {
-            if(h_)
-                h_.destroy();
+            destroy_frame();
             h_ = std::exchange(other.h_, nullptr);
         }
         return *this;
     }
 
 private:
+    // Set while a parent is suspended awaiting this task.
+    bool lent_ = false;
+
     explicit task(std::coroutine_handle<promise_type> h)
         : h_(h)
     {
+    }
+
+    void destroy_frame() noexcept
+    {
+        if(!h_)
+            return;
+        if(lent_ && !h_.done())
+        {
+            // Only the unwind of an abandoned chain destroys a frame
+            // that is still awaited.
+            auto* owner = h_.promise().environment()->owner;
+            if(!owner || !owner->abandoned())
+                std::terminate(); // LCOV_EXCL_LINE reached only in a death test's child process
+        }
+        std::exchange(h_, nullptr).destroy();
+        lent_ = false;
     }
 };
 

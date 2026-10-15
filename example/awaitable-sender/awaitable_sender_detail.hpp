@@ -12,6 +12,7 @@
 
 #include <boost/capy/concept/io_awaitable.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
@@ -134,8 +135,8 @@ constexpr bool is_compound_ec_result_v =
 //
 // The first two members match the coroutine frame layout
 // used by MSVC, GCC, and Clang. from_address produces a
-// coroutine_handle whose .resume() calls our function
-// pointer and whose .destroy() is a no-op.
+// coroutine_handle whose .resume() and .destroy() call our
+// function pointers.
 // -------------------------------------------------------
 
 struct frame_cb
@@ -243,11 +244,10 @@ class scheduler_executor
         using receiver_concept = ex::receiver_t;
 
         holder* self_;
-        std::coroutine_handle<> h_;
 
         void set_value() && noexcept
         {
-            auto h = h_;
+            auto h = self_->c_.h;
             delete self_;
             h.resume();
         }
@@ -258,12 +258,19 @@ class scheduler_executor
         template<class E>
         void set_error(E&&) && noexcept
         {
-            delete self_;
+            refuse();
         }
 
         void set_stopped() && noexcept
         {
+            refuse();
+        }
+
+        void refuse() noexcept
+        {
+            auto c = self_->c_;
             delete self_;
+            capy::abandon(c);
         }
     };
 
@@ -275,12 +282,15 @@ class scheduler_executor
             ex::schedule(std::declval<Sched>()),
             std::declval<resume_receiver>()));
 
+        // A copy keeps the owner, which abandon needs.
+        continuation c_;
         op_t op_;
 
-        holder(Sched s, std::coroutine_handle<> h)
-            : op_(ex::connect(
+        holder(Sched s, continuation const& c)
+            : c_(c)
+            , op_(ex::connect(
                 ex::schedule(std::move(s)),
-                resume_receiver{this, h}))
+                resume_receiver{this}))
         {
         }
     };
@@ -311,7 +321,7 @@ public:
     void post(continuation& c) const
     {
         // the holder frees itself from the receiver on completion
-        auto* p = new holder(sched_, c.h);
+        auto* p = new holder(sched_, c);
         ex::start(p->op_);
     }
 
@@ -388,10 +398,13 @@ struct awaitable_op_state
             return std::type_identity<no_scheduler_bridge>{};
     }
 
-    Aw aw_;
+    // Reset to destroy the segment when it is abandoned.
+    std::optional<Aw> aw_;
     Receiver rcvr_;
     io_env env_;
     frame_cb cb_;
+    // The segment's owner, with cb_ as its coroutine.
+    chain_owner owner_;
     // stop_cb_ declared after stop_src_ so it is destroyed first:
     // on_stop holds a reference to stop_src_.
     std::stop_source stop_src_;
@@ -415,7 +428,7 @@ struct awaitable_op_state
     }
 
     awaitable_op_state(Aw aw, Receiver rcvr)
-        : aw_(std::move(aw))
+        : aw_(std::in_place, std::move(aw))
         , rcvr_(std::move(rcvr))
         , cb_{}
         , stop_src_(make_stop_source())
@@ -430,11 +443,26 @@ struct awaitable_op_state
     static void on_resume(frame_cb* p) noexcept
     {
         auto* self = static_cast<awaitable_op_state*>(p->data);
-        self->complete();
+        if(self->owner_.abandoned())
+            self->unwind();
+        else
+            self->complete();
     }
 
-    static void on_destroy(frame_cb*) noexcept
+    // Only giving the segment up destroys it: a closed executor
+    // destroying the posted unwind, or a holder with no owner to post
+    // to destroying it in place.
+    static void on_destroy(frame_cb* p) noexcept
     {
+        static_cast<awaitable_op_state*>(p->data)->unwind();
+    }
+
+    // The segment was given up: destroy its frames, and complete
+    // stopped, since it has no result to deliver.
+    void unwind() noexcept
+    {
+        aw_.reset();
+        ex::set_stopped(std::move(rcvr_));
     }
 
     static constexpr bool nothrow_resume =
@@ -471,7 +499,7 @@ struct awaitable_op_state
             // void and plain-value results carry no error_code, so
             // there is no in-band disposition; token state is the
             // only cancellation signal available for these rows.
-            aw_.await_resume();
+            aw_->await_resume();
             if(env_.stop_token.stop_requested())
                 ex::set_stopped(
                     std::move(rcvr_));
@@ -485,7 +513,7 @@ struct awaitable_op_state
             // completion surfaces as stopped even if the env token
             // never fired, and a successful result survives a stop
             // request that merely landed by completion time.
-            auto result = aw_.await_resume();
+            auto result = aw_->await_resume();
             std::error_code ec;
             if constexpr (std::is_same_v<
                 result_type, std::error_code>)
@@ -507,7 +535,7 @@ struct awaitable_op_state
         }
         else
         {
-            auto result = aw_.await_resume();
+            auto result = aw_->await_resume();
             if(env_.stop_token.stop_requested())
                 ex::set_stopped(
                     std::move(rcvr_));
@@ -567,8 +595,9 @@ struct awaitable_op_state
         }
 
         env_ = io_env{io_ex, st, fa};
+        env_.owner = &owner_;
 
-        if(aw_.await_ready())
+        if(aw_->await_ready())
         {
             complete();
             return;
@@ -580,13 +609,14 @@ struct awaitable_op_state
 
         auto h = std::coroutine_handle<>::from_address(
             static_cast<void*>(&cb_));
+        owner_.bind(h, io_ex);
 
         // Not a real coroutine caller, so symmetric transfer
         // must be driven by hand: any non-noop handle (our own
         // frame on immediate completion, or a wrapped task's
         // handle that still needs to run) has to be resumed
         // explicitly or nothing ever completes.
-        auto resumed = detail::call_await_suspend(&aw_, h, &env_);
+        auto resumed = detail::call_await_suspend(&*aw_, h, &env_);
         if(resumed != std::noop_coroutine())
             resumed.resume();
     }

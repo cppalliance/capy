@@ -153,6 +153,7 @@ class cuda_stream
                 return h;
             }
             self->cont_.h = h;
+            self->cont_.owner = env->owner;
             self->ctx_ = resume_ctx{env->executor, &self->cont_};
             err = cudaLaunchHostFunc(
                 self->stream_, &on_complete, &self->ctx_);
@@ -187,6 +188,7 @@ class cuda_stream
         await_suspend(std::coroutine_handle<> h, io_env const* env)
         {
             self->cont_.h = h;
+            self->cont_.owner = env->owner;
             self->ctx_ = resume_ctx{env->executor, &self->cont_};
             auto err = cudaLaunchHostFunc(
                 self->stream_, &on_complete, &self->ctx_);
@@ -345,6 +347,7 @@ public:
                     total += b.size();
                 }
                 self->cont_.h = h;
+                self->cont_.owner = env->owner;
                 self->ctx_ = resume_ctx{env->executor, &self->cont_};
                 auto err = cudaLaunchHostFunc(
                     self->stream_, &on_complete, &self->ctx_);

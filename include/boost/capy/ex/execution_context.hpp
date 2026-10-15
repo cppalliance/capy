@@ -37,7 +37,11 @@ namespace capy {
     Derived classes such as `io_context` extend this to provide
     execution facilities like event loops and thread pools. Derived
     class destructors must call `shutdown()` and `destroy()` to ensure
-    proper service cleanup before member destruction.
+    proper service cleanup before member destruction. Between the two,
+    a context that queues work abandons what is still queued. Since a
+    service's destructor can post and an unwound chain can create a
+    service, it then repeats `destroy()` and that drain until the
+    drain finds nothing.
 
     @par Service Lifecycle
     Services are created on first use via `use_service()` or explicitly
@@ -449,7 +453,9 @@ protected:
         subsequent calls have no effect.
 
         @par Effects
-        Each service's `shutdown()` member function is invoked once.
+        Each service's `shutdown()` member function is invoked once. A
+        service created after this call has its `shutdown()` invoked as
+        soon as it is created, so it too starts in a stopped state.
 
         @par Postconditions
         @li All services are in a stopped state.
@@ -471,9 +477,15 @@ protected:
 
         @par Preconditions
         @li `shutdown()` was called.
+        @li No service's destructor creates a service of a type
+            already destroyed here; two such destructors that re-create
+            each other never let this return.
 
         @par Effects
-        All services are deleted and removed from the container.
+        All services are deleted and removed from the container. Each
+        is removed just before it is deleted, so a destructor can still
+        find the services not yet destroyed. A service a destructor
+        creates is deleted in turn.
 
         @par Postconditions
         @li The service container is empty.

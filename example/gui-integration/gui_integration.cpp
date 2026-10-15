@@ -69,8 +69,9 @@ class gui_app : public capy::execution_context
     std::thread::id const gui_thread_ = std::this_thread::get_id();
     std::mutex m_;
     std::condition_variable cv_;
-    std::deque<std::coroutine_handle<>> queue_;
+    std::deque<capy::continuation> queue_;
     bool quit_ = false;
+    bool closed_ = false;
 
 public:
     class executor_type;
@@ -82,8 +83,36 @@ public:
 
     ~gui_app()
     {
+        // Once torn down, the app runs nothing, not even inline.
+        closed_ = true;
+        // Nothing will run these now: give them up, so their chains
+        // are unwound. An unwind posted here is given up in turn.
+        auto drain = [this]
+        {
+            bool any = false;
+            for(;;)
+            {
+                capy::continuation c;
+                {
+                    std::lock_guard<std::mutex> lock(m_);
+                    if(queue_.empty())
+                        return any;
+                    c = queue_.front();
+                    queue_.pop_front();
+                }
+                any = true;
+                capy::abandon(c);
+            }
+        };
         shutdown();
-        destroy();
+        drain();
+        // A service's destructor may post too: repeat until nothing
+        // is left of either.
+        do
+        {
+            destroy();
+        }
+        while(drain());
     }
 
     gui_app(gui_app const&) = delete;
@@ -91,11 +120,12 @@ public:
 
     // Run a coroutine on the GUI thread.  Callable from any thread and
     // never blocks the caller.
-    void post_to_gui_thread(std::coroutine_handle<> h)
+    // A copy keeps the owner, which abandon needs.
+    void post_to_gui_thread(capy::continuation const& c)
     {
         {
             std::lock_guard<std::mutex> lock(m_);
-            queue_.push_back(h);
+            queue_.push_back(c);
         }
         cv_.notify_one();
     }
@@ -118,17 +148,17 @@ public:
         check(on_gui_thread(), "run() called off the GUI thread");
         for(;;)
         {
-            std::coroutine_handle<> h;
+            capy::continuation c;
             {
                 std::unique_lock<std::mutex> lock(m_);
                 cv_.wait(lock,
                     [this]{ return !queue_.empty() || quit_; });
                 if(queue_.empty())
                     return;  // quit requested, nothing left to run
-                h = queue_.front();
+                c = queue_.front();
                 queue_.pop_front();
             }
-            capy::safe_resume(h);
+            capy::safe_resume(c.h);
         }
     }
     // end::run[]
@@ -136,6 +166,12 @@ public:
     bool on_gui_thread() const noexcept
     {
         return std::this_thread::get_id() == gui_thread_;
+    }
+
+    // Whether a coroutine may be resumed inline here.
+    bool runs_inline() const noexcept
+    {
+        return on_gui_thread() && !closed_;
     }
 
     executor_type get_executor() noexcept;
@@ -168,15 +204,15 @@ public:
 
     std::coroutine_handle<> dispatch(capy::continuation& c) const
     {
-        if(app_->on_gui_thread())
+        if(app_->runs_inline())
             return c.h;  // resume inline by symmetric transfer
-        app_->post_to_gui_thread(c.h);
+        app_->post_to_gui_thread(c);
         return std::noop_coroutine();
     }
 
     void post(capy::continuation& c) const
     {
-        app_->post_to_gui_thread(c.h);
+        app_->post_to_gui_thread(c);
     }
 
     bool operator==(executor_type const& other) const noexcept
@@ -311,6 +347,7 @@ struct show_dialog
     {
         env_ = env;
         cont_.h = h;
+        cont_.owner = env->owner;
         dialog_.show([this](std::string answer)
         {
             answer_ = std::move(answer);

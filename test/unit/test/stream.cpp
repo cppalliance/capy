@@ -28,11 +28,14 @@
 #include "test/unit/test_helpers.hpp"
 
 #include <array>
+#include <chrono>
 #include <latch>
+#include <semaphore>
 #include <queue>
 #include <stop_token>
 #include <string_view>
 #include <thread>
+#include <tuple>
 
 namespace boost {
 namespace capy {
@@ -681,7 +684,7 @@ public:
         // Driven manually on a queuing executor for deterministic,
         // non-blocking control (mirrors async_mutex's cancellation test).
         auto [a, b] = make_stream_pair();
-        std::queue<std::coroutine_handle<>> q;
+        std::queue<continuation> q;
         queuing_executor ex(q);
         std::stop_source ss;
 
@@ -713,7 +716,7 @@ public:
         ss.request_stop();
         BOOST_TEST(! q.empty());
 
-        q.front().resume();
+        q.front().h.resume();
         q.pop();
 
         BOOST_TEST(reader_done);
@@ -745,13 +748,54 @@ public:
     }
 
     void
+    testReadSomeStopRequestedResumesInline()
+    {
+        // With stop already requested the read never registers a stop
+        // callback: one would fire inside await_suspend and post the
+        // coroutine, which another thread could then resume and finish
+        // while await_suspend still writes to its frame.
+        auto [a, b] = make_stream_pair();
+        std::queue<continuation> q;
+        queuing_executor ex(q);
+        std::stop_source ss;
+        ss.request_stop();
+
+        std::error_code reader_ec;
+        bool reader_done = false;
+
+        auto reader = [](stream& s,
+            std::error_code& out_ec, bool& done) -> task<>
+        {
+            char buf[32] = {};
+            auto [ec, n] = co_await s.read_some(make_buffer(buf));
+            out_ec = ec;
+            std::ignore = n;
+            done = true;
+        }(b, reader_ec, reader_done);
+
+        auto h = reader.handle();
+        reader.release();
+        io_env env;
+        env.executor = executor_ref(ex);
+        env.stop_token = ss.get_token();
+        h.promise().set_environment(&env);
+
+        h.resume();
+        BOOST_TEST(q.empty());
+        BOOST_TEST(reader_done);
+        BOOST_TEST(reader_ec == make_error_code(error::canceled));
+
+        h.destroy();
+    }
+
+    void
     testReadSomeDestroyWhileSuspended()
     {
         // Destroying a coroutine while its read is parked must tear down
         // the stop callback and unlink the pending slot, so a later peer
         // operation does not touch a freed claim flag.
         auto [a, b] = make_stream_pair();
-        std::queue<std::coroutine_handle<>> q;
+        std::queue<continuation> q;
         queuing_executor ex(q);
         std::stop_source ss;
 
@@ -866,6 +910,43 @@ public:
         BOOST_TEST(ran);
     }
 
+    // A peer's write wakes a read parked on an executor that queues
+    // the continuation in place: the queued continuation is left as
+    // posted, and the reader resumes with the data.
+    void
+    testWakeOnInPlaceQueue()
+    {
+        thread_pool pool(1);
+        std::counting_semaphore<2> done(0);
+        auto [a, b] = make_stream_pair();
+        std::size_t got = 0;
+
+        auto reader = [&]() -> task<>
+        {
+            char buf[32] = {};
+            auto [ec, n] = co_await b.read_some(make_buffer(buf));
+            if(!ec)
+                got = n;
+        };
+        auto writer = [&]() -> task<>
+        {
+            std::ignore = co_await a.write_some(make_buffer("hello", 5));
+        };
+
+        // Posted in order to one thread: the reader parks first.
+        run_async(pool.get_executor(),
+            [&]() { done.release(); },
+            [&](std::exception_ptr) { done.release(); })(reader());
+        run_async(pool.get_executor(),
+            [&]() { done.release(); },
+            [&](std::exception_ptr) { done.release(); })(writer());
+
+        // Only a watchdog: a reader that is never woken hangs.
+        for(int i = 0; i < 2; ++i)
+            BOOST_TEST(done.try_acquire_for(std::chrono::seconds(30)));
+        BOOST_TEST_EQ(got, 5u);
+    }
+
     void
     run()
     {
@@ -879,6 +960,7 @@ public:
         testReadSomeEmptyNoData();
         testMaxReadSize();
         testMaxReadSizeMultiple();
+        testWakeOnInPlaceQueue();
 
         // Write operations
         testWriteSome();
@@ -901,6 +983,7 @@ public:
         // Cancellation
         testReadSomeCancellationWhileSuspended();
         testReadSomeStopRequestedBeforeSuspend();
+        testReadSomeStopRequestedResumesInline();
         testReadSomeDestroyWhileSuspended();
         testReadSomeCancellationCrossThread();
         testReadSomeStopWithDataAvailable();

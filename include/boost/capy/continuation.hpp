@@ -17,6 +17,8 @@
 namespace boost {
 namespace capy {
 
+class chain_owner;
+
 /** Pairs a coroutine handle with a scratch slot so executors can queue it without heap allocation.
 
     Wraps a `std::coroutine_handle<>` with a single
@@ -96,6 +98,16 @@ struct continuation
         class description for the full contract.
     */
     void* reserved = nullptr;
+
+    /** The owner of the chain segment the coroutine belongs to.
+
+        Set from the coroutine's @ref io_env when it is parked or
+        queued. A holder that gives the coroutine up passes this
+        continuation to @ref abandon, which unwinds the segment from its
+        owner. Null for a coroutine with no owner, such as an owner's own
+        continuation, which @ref abandon destroys directly.
+    */
+    chain_owner* owner = nullptr;
 };
 
 } // namespace capy

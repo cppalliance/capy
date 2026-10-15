@@ -132,8 +132,9 @@ public:
     /** Request all worker threads to stop.
 
         Signals all threads to exit after finishing their current
-        work item. Queued work that has not started is abandoned.
-        Does not wait for threads to exit.
+        work item. Queued work that has not started stays queued
+        until the pool is destroyed, which abandons it. Does not
+        wait for threads to exit.
 
         If @ref join is blocking on another thread, calling
         `stop()` causes it to stop waiting for outstanding

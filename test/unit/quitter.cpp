@@ -12,6 +12,7 @@
 
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/async_waker.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -24,7 +25,10 @@
 #include <boost/capy/when_all.hpp>
 #include <boost/capy/when_any.hpp>
 
+#include "death_test.hpp"
 #include "test_helpers.hpp"
+
+#include <cstdlib>
 
 #include <atomic>
 #include <latch>
@@ -33,6 +37,7 @@
 #include <string_view>
 #include <system_error>
 #include <thread>
+#include <type_traits>
 #include <variant>
 
 namespace boost {
@@ -45,6 +50,103 @@ static_assert(IoRunnable<quitter<int>>);
 
 struct quitter_test
 {
+    // Assigning over a quitter that is not awaited destroys the frame
+    // it held.
+    void testMoveAssignDestroysHeldFrame()
+    {
+        int a_down = 0, b_down = 0;
+        auto body = [](destroy_count_t) -> quitter<void> { co_return; };
+        {
+            auto t = body(destroy_count_t(a_down));
+            t = body(destroy_count_t(b_down));
+            BOOST_TEST_EQ(a_down, 1);
+            BOOST_TEST_EQ(b_down, 0);
+        }
+        BOOST_TEST_EQ(b_down, 1);
+    }
+
+#if !defined(_WIN32)
+    void testDestroyLentTaskTerminates()
+    {
+        BOOST_TEST(terminates([] {
+            parked slot;
+            int n = 0;
+            test_executor ex(n);
+            io_env env{executor_ref(ex), {}, nullptr};
+            auto t = [](parked* s) -> quitter<void> {
+                co_await park_awaitable{s};
+            }(&slot);
+            lend(t, env);
+            // destructor runs with the frame lent and suspended
+        }));
+    }
+
+    void testMoveAssignOverLentTaskTerminates()
+    {
+        BOOST_TEST(terminates([] {
+            parked slot;
+            int n = 0;
+            test_executor ex(n);
+            io_env env{executor_ref(ex), {}, nullptr};
+            auto body = [](parked* s) -> quitter<void> {
+                co_await park_awaitable{s};
+            };
+            auto t = body(&slot);
+            lend(t, env);
+            t = body(&slot);
+            std::_Exit(0); // must not be reached
+        }));
+    }
+
+    void testDestroyUnstartedOrFinishedTaskIsFine()
+    {
+        BOOST_TEST(exits_cleanly([] {
+            auto body = []() -> quitter<void> { co_return; };
+            { auto t = body(); }               // never started
+            int n = 0;
+            test_executor ex(n);
+            io_env env{executor_ref(ex), {}, nullptr};
+            auto t = body();
+            lend(t, env);                     // runs to final_suspend
+            return t.handle().done();
+        }));                                   // finished frame destroyed
+    }
+#endif
+
+    // A quitter in the middle of a chain comes down with it when the
+    // leaf below it is torn down.
+    void testTeardownThroughQuitter()
+    {
+        alloc_counts st;
+        int leaf_down = 0, mid_down = 0, root_down = 0;
+        parked slot;
+        {
+            auto leaf = [](parked* s, destroy_count_t)
+                -> task<void>
+            {
+                co_await park_awaitable{s};
+            };
+            auto mid = [&](destroy_count_t) -> quitter<void>
+            {
+                co_await leaf(&slot, destroy_count_t(leaf_down));
+            };
+            auto root = [&](destroy_count_t) -> task<void>
+            {
+                co_await mid(destroy_count_t(mid_down));
+            };
+            int n = 0;
+            test_executor ex(n);
+            run_async(ex, counting_allocator<std::byte>(st))(
+                root(destroy_count_t(root_down)));
+            BOOST_TEST(slot);
+            capy::abandon(slot);
+        }
+        BOOST_TEST_EQ(leaf_down, 1);
+        BOOST_TEST_EQ(mid_down, 1);
+        BOOST_TEST_EQ(root_down, 1);
+        BOOST_TEST(st.balanced());
+    }
+
     //----------------------------------------------------------
     // 1. Normal completion — quitter<int> returns a value
     //----------------------------------------------------------
@@ -861,6 +963,13 @@ struct quitter_test
     void
     run()
     {
+        testMoveAssignDestroysHeldFrame();
+#if !defined(_WIN32)
+        testDestroyLentTaskTerminates();
+        testMoveAssignOverLentTaskTerminates();
+        testDestroyUnstartedOrFinishedTaskIsFine();
+#endif
+        testTeardownThroughQuitter();
         testNormalCompletion();
         testVoidCompletion();
         testExceptionPropagation();
