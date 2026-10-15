@@ -10,6 +10,7 @@
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 
 #include <new>
+#include <tuple>
 
 namespace boost {
 namespace capy {
@@ -20,7 +21,34 @@ namespace capy {
 // independent of any instance lifetime.
 recycling_memory_resource::~recycling_memory_resource() = default;
 
-void
+#if (defined(BOOST_CAPY_DYN_LINK) || defined(BOOST_ALL_DYN_LINK)) && \
+    !defined(BOOST_CAPY_STATIC_LINK)
+
+recycling_memory_resource::pool&
+recycling_memory_resource::local() noexcept
+{
+    static thread_local pool p;
+    return p;
+}
+
+bool&
+recycling_memory_resource::thread_armed() noexcept
+{
+    static thread_local bool armed = false;
+    return armed;
+}
+
+#endif
+
+namespace {
+
+// Set once this thread's pool was drained at exit. Another thread_local
+// destroyed later can still free frames; they must not be cached.
+thread_local bool pool_drained = false;
+
+} // namespace
+
+bool
 recycling_memory_resource::arm_thread_cleanup() noexcept
 {
     struct janitor
@@ -34,10 +62,15 @@ recycling_memory_resource::arm_thread_cleanup() noexcept
             for(auto& b : lp.buckets)
                 while(b.count > 0)
                     ::operator delete(b.pop());
+            pool_drained = true;
+            thread_armed() = false;
         }
     };
+    if(pool_drained)
+        return false;
     static thread_local janitor j;
-    (void)j;
+    std::ignore = j;
+    return true;
 }
 
 recycling_memory_resource::pool&
@@ -81,10 +114,13 @@ void*
 recycling_memory_resource::allocate_slow(
     std::size_t rounded, std::size_t idx)
 {
-    arm_thread_cleanup();
+    // Once this thread's pool was drained at exit, take one block and
+    // leave the pool empty: nothing would release a refill.
+    bool const cache = arm_thread_cleanup();
     {
         std::lock_guard<std::mutex> lock(global_mutex());
-        if(auto* p = global().buckets[idx].pop(local().buckets[idx]))
+        auto& b = global().buckets[idx];
+        if(auto* p = cache ? b.pop(local().buckets[idx]) : b.pop())
             return p;
     }
     return ::operator new(rounded);

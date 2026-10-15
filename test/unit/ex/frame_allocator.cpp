@@ -10,6 +10,14 @@
 // Test that header file is self-contained.
 #include <boost/capy/ex/frame_allocator.hpp>
 
+#include "test_suite.hpp"
+
+#include <coroutine>
+#include <exception>
+#include <memory_resource>
+#include <thread>
+#include <utility>
+
 /*
 Frame Allocator System
 ======================
@@ -106,3 +114,94 @@ Destruction order (LIFO):
 
 This guarantees frame_memory_resource<Alloc> outlives all frames it allocated.
 */
+
+namespace boost {
+namespace capy {
+
+namespace {
+
+struct hop_coro
+{
+    struct promise_type
+    {
+        hop_coro get_return_object()
+        {
+            return hop_coro{
+                std::coroutine_handle<promise_type>::from_promise(*this)};
+        }
+
+        std::suspend_always initial_suspend() noexcept { return {}; }
+        std::suspend_always final_suspend() noexcept { return {}; }
+        void return_void() {}
+        void unhandled_exception() { std::terminate(); }
+    };
+
+    std::coroutine_handle<promise_type> h_;
+
+    ~hop_coro()
+    {
+        if(h_)
+            h_.destroy();
+    }
+
+    hop_coro(hop_coro&& o) noexcept
+        : h_(std::exchange(o.h_, nullptr))
+    {
+    }
+
+    hop_coro& operator=(hop_coro&&) = delete;
+    hop_coro(hop_coro const&) = delete;
+
+private:
+    explicit hop_coro(std::coroutine_handle<promise_type> h)
+        : h_(h)
+    {
+    }
+};
+
+// Sets the frame allocator, suspends, then sets it again after
+// being resumed, possibly on another thread.
+hop_coro
+make_hop(
+    std::pmr::memory_resource* before,
+    std::pmr::memory_resource* after)
+{
+    set_current_frame_allocator(before);
+    co_await std::suspend_always{};
+    set_current_frame_allocator(after);
+}
+
+} // anonymous namespace
+
+struct frame_allocator_test
+{
+    void
+    testSetAfterResumeOnAnotherThread()
+    {
+        auto* before = std::pmr::null_memory_resource();
+        auto* after = std::pmr::new_delete_resource();
+
+        auto coro = make_hop(before, after);
+
+        // The thread exits before the second resumption, so a write
+        // through its slot would also land in freed storage.
+        std::thread([&] { coro.h_.resume(); }).join();
+
+        set_current_frame_allocator(nullptr);
+        coro.h_.resume();
+        BOOST_TEST(get_current_frame_allocator() == after);
+
+        set_current_frame_allocator(nullptr);
+    }
+
+    void
+    run()
+    {
+        testSetAfterResumeOnAnotherThread();
+    }
+};
+
+TEST_SUITE(frame_allocator_test, "capy.frame_allocator");
+
+} // capy
+} // boost

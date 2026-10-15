@@ -112,11 +112,19 @@ class BOOST_CAPY_DECL recycling_memory_resource : public std::pmr::memory_resour
         // global()'s holder destructor at process exit.
     };
 
+#if (defined(BOOST_CAPY_DYN_LINK) || defined(BOOST_ALL_DYN_LINK)) && \
+    !defined(BOOST_CAPY_STATIC_LINK)
+    // A shared build defines this thread's pool, and the flag below, in
+    // the library: inline, each module would cache in a pool of its own,
+    // which the library's thread-exit cleanup never drains.
+    static pool& local() noexcept;
+#else
     static pool& local() noexcept
     {
         static thread_local pool p;
         return p;
     }
+#endif
 
     static pool& global() noexcept;
     static std::mutex& global_mutex() noexcept;
@@ -126,9 +134,23 @@ class BOOST_CAPY_DECL recycling_memory_resource : public std::pmr::memory_resour
 
     // Register a thread-exit callback that drains this thread's local
     // pool back to the OS. Called only off the hot path: unconditionally
-    // from the slow paths, and once per thread from deallocate_fast
-    // behind a guard-free flag.
-    static void arm_thread_cleanup() noexcept;
+    // from the slow paths, and from deallocate_fast while the flag below
+    // is clear. Returns false once that callback has run: nothing drains
+    // the local pool after it, so frees must bypass it.
+    static bool arm_thread_cleanup() noexcept;
+
+    // Guard-free flag (constinit bool, trivial dtor): set once cleanup is
+    // armed, and cleared again when the cleanup has run.
+#if (defined(BOOST_CAPY_DYN_LINK) || defined(BOOST_ALL_DYN_LINK)) && \
+    !defined(BOOST_CAPY_STATIC_LINK)
+    static bool& thread_armed() noexcept;
+#else
+    static bool& thread_armed() noexcept
+    {
+        static thread_local bool armed = false;
+        return armed;
+    }
+#endif
 
 public:
     /** Destroy the resource.
@@ -202,14 +224,18 @@ public:
             ::operator delete(p);
             return;
         }
-        // Guard-free flag (constinit bool, trivial dtor): arms thread-exit
-        // cleanup exactly once for any thread that caches via deallocate,
-        // including consumer threads that never hit a slow path.
-        static thread_local bool armed = false;
+        // Arms thread-exit cleanup for any thread that caches via
+        // deallocate, including consumer threads that never hit a slow
+        // path; after that cleanup, the block bypasses the local pool.
+        auto& armed = thread_armed();
         if(!armed)
         {
+            if(!arm_thread_cleanup())
+            {
+                deallocate_slow(p, idx);
+                return;
+            }
             armed = true;
-            arm_thread_cleanup();
         }
         auto& lp = local();
         if(lp.buckets[idx].push(p))

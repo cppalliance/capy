@@ -108,12 +108,47 @@ public:
         BOOST_TEST_PASS();
     }
 
+    // A thread_local made before the thread's pool was first used is
+    // destroyed after that pool's exit-time drain. Blocks it allocates
+    // and frees then are not left in the drained pool, where nothing
+    // releases them.
+    void
+    testUseAfterThreadExitDrain()
+    {
+        constexpr std::size_t bytes = 128; // size class 1
+        constexpr std::size_t align = 8;
+
+        std::thread([] {
+            struct late_user
+            {
+                ~late_user()
+                {
+                    recycling_memory_resource mr;
+                    void* p = mr.allocate_fast(bytes, align);
+                    mr.deallocate_fast(p, bytes, align);
+                }
+            };
+            thread_local late_user user;
+
+            // Fill both the thread's pool and the shared one.
+            recycling_memory_resource mr;
+            std::vector<void*> ptrs;
+            for(int i = 0; i < 40; ++i)
+                ptrs.push_back(mr.allocate_fast(bytes, align));
+            for(void* p : ptrs)
+                mr.deallocate_fast(p, bytes, align);
+        }).join();
+
+        BOOST_TEST_PASS();
+    }
+
     void
     run()
     {
         testIsEqual();
         testSlowPaths();
         testThreadExitTeardown();
+        testUseAfterThreadExitDrain();
     }
 };
 
