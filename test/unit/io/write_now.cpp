@@ -12,17 +12,22 @@
 
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/capy/ex/abandon.hpp>
+#include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/test/fuse.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 #include <boost/capy/test/write_stream.hpp>
 
+#include "test/unit/death_test.hpp"
 #include "test/unit/test_helpers.hpp"
 
 #include <array>
 #include <coroutine>
 #include <string>
 #include <string_view>
+#include <tuple>
 
 namespace boost {
 namespace capy {
@@ -45,6 +50,36 @@ struct suspending_write_stream
     suspending_write_awaitable write_some(ConstBufferSequence auto)
         { return {}; }
 };
+
+// A stream whose write_some parks the writer for the test.
+struct parking_stream
+{
+    parked* slot;
+
+    struct write_awaitable
+    {
+        parked* slot;
+        bool await_ready() const noexcept { return false; }
+        std::coroutine_handle<>
+        await_suspend(std::coroutine_handle<> h, io_env const* env) noexcept
+        {
+            slot->h = h;
+            slot->owner = env->owner;
+            return std::noop_coroutine();
+        }
+        io_result<std::size_t> await_resume() const noexcept
+        {
+            return {std::error_code(), 1};
+        }
+    };
+
+    template<class Buffers>
+    write_awaitable write_some(Buffers const&)
+    {
+        return {slot};
+    }
+};
+static_assert(WriteStream<parking_stream>);
 
 class write_now_test
 {
@@ -316,9 +351,94 @@ public:
         BOOST_TEST(true);
     }
 
+    // Tearing down a parked write destroys the awaiting chain once,
+    // including the write_now that holds the op's frame memory.
+    void
+    testTeardownOfParkedWriteDestroysChainOnce()
+    {
+        alloc_counts st;
+        int parent_down = 0;
+        parked slot;
+        parking_stream s{&slot};
+        auto parent = [&](destroy_count_t) -> task<void>
+        {
+            write_now wn(s);
+            char c = 'x';
+            std::ignore = co_await wn(const_buffer(&c, 1));
+        };
+        int n = 0;
+        test_executor ex(n);
+        run_async(ex, counting_allocator<std::byte>(st))(
+            parent(destroy_count_t(parent_down)));
+        BOOST_TEST(slot);
+        capy::abandon(slot);
+        BOOST_TEST_EQ(parent_down, 1);
+        BOOST_TEST(st.allocs > 1);
+        BOOST_TEST(st.balanced());
+    }
+
+#if !defined(_WIN32)
+    // Destroying the parent from above while its write is parked
+    // destroys the write's lent frame from above, which terminates.
+    void
+    testDestroyParentAwaitingWriteTerminates()
+    {
+        BOOST_TEST(terminates([] {
+            parked slot;
+            parking_stream s{&slot};
+            auto parent = [&]() -> task<void>
+            {
+                write_now wn(s);
+                char c = 'x';
+                std::ignore = co_await wn(const_buffer(&c, 1));
+            };
+            int n = 0;
+            test_executor caller(n);
+            io_env env{executor_ref(caller), {}, nullptr};
+            // Started by hand, not lent, so this destroys it from above.
+            auto t = parent();
+            t.handle().promise().set_environment(&env);
+            t.handle().resume();
+        }));
+    }
+#endif
+
+    // A teardown on the second write tears down a reused cached frame.
+    void
+    testTeardownOfReusedFrame()
+    {
+        int parent_down = 0;
+        std::size_t first = 0;
+        parked slot;
+        parking_stream s{&slot};
+        auto parent = [&](destroy_count_t) -> task<void>
+        {
+            write_now wn(s);
+            char c = 'x';
+            auto [ec, n] = co_await wn(const_buffer(&c, 1));
+            first = n;
+            std::ignore = co_await wn(const_buffer(&c, 1));
+        };
+        int n = 0;
+        test_executor ex(n);
+        run_async(ex)(parent(destroy_count_t(parent_down)));
+        BOOST_TEST(slot);
+        std::exchange(slot, parked{}).resume();
+        BOOST_TEST_EQ(first, 1u);
+        BOOST_TEST_EQ(parent_down, 0);
+        BOOST_TEST(slot);
+        capy::abandon(slot);
+        BOOST_TEST_EQ(parent_down, 1);
+    }
+
     void
     run()
     {
+        testTeardownOfParkedWriteDestroysChainOnce();
+#if !defined(_WIN32)
+        testDestroyParentAwaitingWriteTerminates();
+#endif
+        testTeardownOfReusedFrame();
         testFrameRealloc();
         testSuspendingWrite();
         testSingleBuffer();

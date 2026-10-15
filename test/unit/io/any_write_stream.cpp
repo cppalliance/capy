@@ -11,6 +11,8 @@
 #include <boost/capy/io/any_write_stream.hpp>
 
 #include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/ex/abandon.hpp>
+#include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
@@ -24,6 +26,7 @@
 
 #include <array>
 #include <coroutine>
+#include <memory>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -47,6 +50,35 @@ struct pending_write_awaitable
         { return std::noop_coroutine(); }
     io_result<std::size_t> await_resume()
         { return {std::error_code(), 0}; }
+};
+
+// Parks the awaiting coroutine for the test to resume or abandon,
+// and counts how often the awaitable is destroyed.
+struct parking_write_awaitable
+{
+    parked* slot_;
+    int* down_;
+    parking_write_awaitable(parked* s, int* d) : slot_(s), down_(d) {}
+    parking_write_awaitable(parking_write_awaitable&& o) noexcept
+        : slot_(o.slot_), down_(std::exchange(o.down_, nullptr)) {}
+    ~parking_write_awaitable() { if(down_) ++(*down_); }
+    bool await_ready() const noexcept { return false; }
+    std::coroutine_handle<>
+    await_suspend(std::coroutine_handle<> h, io_env const* env) noexcept
+    {
+        return park_awaitable{slot_}.await_suspend(h, env);
+    }
+    io_result<std::size_t> await_resume()
+        { return {std::error_code(), 0}; }
+};
+
+struct parking_write_stream
+{
+    parked* slot_;
+    int* down_;
+    parking_write_awaitable write_some(
+        ConstBufferSequence auto)
+        { return parking_write_awaitable{slot_, down_}; }
 };
 
 struct pending_write_stream
@@ -500,6 +532,26 @@ public:
         BOOST_TEST_EQ(destroyed, 1);
     }
 
+    // A started write moved to another awaitable takes its claim with
+    // it, so the wrapper's teardown leaves the moved-to awaitable owning
+    // nothing.
+    void
+    testMoveStartedAwaitable()
+    {
+        int destroyed = 0;
+        pending_write_stream ps{&destroyed};
+        {
+            auto s = std::make_unique<any_write_stream>(&ps);
+            char const data[] = "x";
+            auto aw = s->write_some(const_buffer(data, 1));
+            BOOST_TEST(!aw.await_ready());
+            auto moved = std::move(aw);
+            s.reset();
+            BOOST_TEST_EQ(destroyed, 1);
+        }
+        BOOST_TEST_EQ(destroyed, 1);
+    }
+
     void
     testMoveAssignWithActiveAwaitable()
     {
@@ -522,12 +574,96 @@ public:
         }
     }
 
+    // A chain unwound while parked in a type-erased write destroys the
+    // write it waited on, as it would the stream's own awaitable.
+    void
+    testUnwindDestroysInnerWrite()
+    {
+        parked slot;
+        int down = 0;
+        parking_write_stream ps{&slot, &down};
+        any_write_stream s(&ps);
+        int dc = 0;
+        test_executor ex(dc);
+        run_async(ex)([](any_write_stream& s) -> task<void>
+        {
+            char c = 0;
+            std::ignore = co_await s.write_some(make_buffer(&c, 1));
+        }(s));
+        BOOST_TEST(static_cast<bool>(slot));
+        {
+            // Another write, made but never awaited, owns nothing.
+            char d = 0;
+            auto unused = s.write_some(make_buffer(&d, 1));
+        }
+        BOOST_TEST_EQ(down, 0);
+        capy::abandon(slot);
+        BOOST_TEST_EQ(down, 1);
+    }
+
+    // A wrapper destroyed while a write is parked on it has already
+    // destroyed that write; unwinding the chain afterwards must not
+    // touch the wrapper.
+    void
+    testUnwindAfterWrapperDestroyed()
+    {
+        parked slot;
+        int down = 0;
+        parking_write_stream ps{&slot, &down};
+        auto s = std::make_unique<any_write_stream>(&ps);
+        int dc = 0;
+        test_executor ex(dc);
+        run_async(ex)([](any_write_stream& s) -> task<void>
+        {
+            char c = 0;
+            std::ignore = co_await s.write_some(make_buffer(&c, 1));
+        }(*s));
+        BOOST_TEST(static_cast<bool>(slot));
+        s.reset();
+        BOOST_TEST_EQ(down, 1);
+        capy::abandon(slot);
+        BOOST_TEST_EQ(down, 1);
+    }
+
+    // A write unwound after its stream was assigned to leaves the
+    // write the stream started since then alone.
+    void
+    testUnwindAfterStreamAssigned()
+    {
+        parked first;
+        parked second;
+        int down = 0;
+        parking_write_stream ps1{&first, &down};
+        parking_write_stream ps2{&second, &down};
+        any_write_stream s(&ps1);
+        int dc = 0;
+        test_executor ex(dc);
+        auto op = [](any_write_stream& s) -> task<void>
+        {
+            char c = 0;
+            std::ignore = co_await s.write_some(make_buffer(&c, 1));
+        };
+        run_async(ex)(op(s));
+        BOOST_TEST(static_cast<bool>(first));
+        s = any_write_stream(&ps2);
+        BOOST_TEST_EQ(down, 1);
+        run_async(ex)(op(s));
+        BOOST_TEST(static_cast<bool>(second));
+        capy::abandon(first);
+        BOOST_TEST_EQ(down, 1);
+        capy::abandon(second);
+        BOOST_TEST_EQ(down, 2);
+    }
+
     void
     run()
     {
         testConstruct();
         testMove();
         testWriteSome();
+        testUnwindDestroysInnerWrite();
+        testUnwindAfterStreamAssigned();
+        testUnwindAfterWrapperDestroyed();
         testWriteSomePartial();
         testWriteSomeMultiple();
         testWriteSomeBufferSequence();
@@ -541,6 +677,7 @@ public:
         testReadyStreamSkipsSuspension();
         testDestroyWithActiveAwaitable();
         testMoveAssignWithActiveAwaitable();
+        testMoveStartedAwaitable();
         testMoveAssignOwning();
         testConstructThrows();
     }

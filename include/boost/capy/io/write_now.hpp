@@ -18,6 +18,8 @@
 #include <boost/capy/concept/write_stream.hpp>
 #include <coroutine>
 #include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/io_result.hpp>
 
@@ -61,6 +63,10 @@ namespace capy {
     `operator()` must not be made until the previous operation has
     completed (i.e., the returned awaitable is fully consumed).
 
+    Destroying the returned operation object while it is being awaited
+    calls `std::terminate`, except while its chain is unwound after an
+    @ref abandon.
+
     @par Example
 
     @code
@@ -97,6 +103,9 @@ class write_now
             std::coroutine_handle<> cont_{nullptr};
             io_env const* env_ = nullptr;
             bool done_ = false;
+
+            // The awaiting op_type while a parent awaits this frame.
+            op_type* owner_ = nullptr;
 
             op_type get_return_object()
             {
@@ -170,15 +179,23 @@ class write_now
                             return inner_.await_ready();
                         }
 
-                        std::coroutine_handle<> await_suspend(std::coroutine_handle<> h)
+                        // The inner operation may resume or destroy this
+                        // frame on another thread before control returns
+                        // here, so the handle must not round-trip through
+                        // the frame.
+                        auto await_suspend(std::coroutine_handle<> h)
                         {
-                            return detail::call_await_suspend(
-                                &inner_, h,
-                                p_->env_);
+                            return detail::symmetric_transfer(
+                                detail::call_await_suspend(
+                                    &inner_, h,
+                                    p_->env_));
                         }
 
                         decltype(auto) await_resume()
                         {
+                            // The resumption may arrive on another thread.
+                            set_current_frame_allocator(
+                                p_->env_->frame_allocator);
                             return inner_.await_resume();
                         }
                     };
@@ -219,7 +236,15 @@ class write_now
         ~op_type()
         {
             if(h_)
+            {
+                // Only the unwind of an abandoned chain destroys a frame
+                // that is still awaited.
+                auto& p = h_.promise();
+                if(!p.done_ && p.owner_ &&
+                    !(p.env_->owner && p.env_->owner->abandoned()))
+                    std::terminate(); // LCOV_EXCL_LINE reached only in a death test's child process
                 h_.destroy();
+            }
         }
 
         op_type(op_type const&) = delete;
@@ -244,12 +269,14 @@ class write_now
             auto& p = h_.promise();
             p.cont_ = cont;
             p.env_ = env;
+            p.owner_ = this;
             return h_;
         }
 
         [[nodiscard]] io_result<std::size_t> await_resume()
         {
             auto& p = h_.promise();
+            p.owner_ = nullptr;
             if(p.ep_)
                 std::rethrow_exception(p.ep_);
             return p.result_;

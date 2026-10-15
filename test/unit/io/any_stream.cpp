@@ -13,14 +13,19 @@
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/cond.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/fuse.hpp>
 
+#include "test/unit/io/owned_parking_stream.hpp"
 #include "test/unit/test_helpers.hpp"
 
+#include <memory>
 #include <string>
 #include <string_view>
+#include <tuple>
 
 namespace boost {
 namespace capy {
@@ -290,9 +295,47 @@ public:
         BOOST_TEST(r.success);
     }
 
+    // A wrapper destroyed or assigned to while a read or write is
+    // parked on the stream it owns ends that operation before
+    // destroying the stream.
+    void
+    testOwningStreamEndsWithOpParked(bool write, bool assign)
+    {
+        owned_parking_stream::state st;
+        owned_parking_stream::state other;
+        auto s = std::make_unique<any_stream>(owned_parking_stream(st));
+        int dc = 0;
+        test_executor ex(dc);
+        run_async(ex)([](any_stream& s, bool write) -> task<void>
+        {
+            char c = 0;
+            if(write)
+                std::ignore = co_await s.write_some(const_buffer(&c, 1));
+            else
+                std::ignore = co_await s.read_some(mutable_buffer(&c, 1));
+        }(*s, write));
+        BOOST_TEST(static_cast<bool>(st.slot));
+        BOOST_TEST(st.alive);
+
+        if(assign)
+            *s = any_stream(owned_parking_stream(other));
+        else
+            s.reset();
+        BOOST_TEST(!st.alive);
+        BOOST_TEST_EQ(st.ops_down, 1);
+        BOOST_TEST_EQ(st.late, 0);
+
+        capy::abandon(st.slot);
+        BOOST_TEST_EQ(st.ops_down, 1);
+    }
+
     void
     run()
     {
+        testOwningStreamEndsWithOpParked(false, false);
+        testOwningStreamEndsWithOpParked(false, true);
+        testOwningStreamEndsWithOpParked(true, false);
+        testOwningStreamEndsWithOpParked(true, true);
         testConstruct();
         testMove();
         testMoveAssignOwning();

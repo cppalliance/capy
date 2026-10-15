@@ -80,12 +80,22 @@ class any_read_stream
     void* cached_awaitable_ = nullptr;
     void* storage_ = nullptr;
     bool awaitable_active_ = false;
+    // The flag of the awaitable whose operation is active, cleared
+    // when the stream ends that operation itself.
+    bool* owner_ = nullptr;
+
+    void
+    disown() noexcept
+    {
+        if(owner_)
+            *std::exchange(owner_, nullptr) = false;
+    }
 
 public:
     /** Destructor.
 
-        Destroys the owned stream (if any) and releases the cached
-        awaitable storage.
+        Ends any operation in flight, then destroys the owned stream
+        (if any) and releases the cached awaitable storage.
     */
     ~any_read_stream();
 
@@ -130,6 +140,7 @@ public:
         , storage_(std::exchange(other.storage_, nullptr))
         , awaitable_active_(std::exchange(other.awaitable_active_, false))
     {
+        other.disown();
     }
 
     /** Assign by moving.
@@ -220,6 +231,16 @@ public:
     read_some(MB buffers);
 
 protected:
+    /** End the operation in flight, if any.
+
+        Destroys the wrapped stream's active operation, which may refer
+        to the stream, so an owner must call this before destroying the
+        stream. The awaitable that started the operation no longer ends
+        it.
+    */
+    void
+    end_operation() noexcept;
+
     /** Rebind to a new stream after move.
 
         Updates the internal pointer to reference a new stream object.
@@ -301,19 +322,27 @@ struct any_read_stream::vtable_for_impl
     };
 };
 
+inline void
+any_read_stream::end_operation() noexcept
+{
+    disown();
+    if(awaitable_active_)
+    {
+        vt_->destroy_awaitable(cached_awaitable_);
+        awaitable_active_ = false;
+    }
+}
+
 inline
 any_read_stream::~any_read_stream()
 {
+    end_operation();
+    if(cached_awaitable_)
+        ::operator delete(cached_awaitable_);
     if(storage_)
     {
         vt_->destroy(stream_);
         ::operator delete(storage_);
-    }
-    if(cached_awaitable_)
-    {
-        if(awaitable_active_)
-            vt_->destroy_awaitable(cached_awaitable_);
-        ::operator delete(cached_awaitable_);
     }
 }
 
@@ -322,16 +351,14 @@ any_read_stream::operator=(any_read_stream&& other) noexcept
 {
     if(this != &other)
     {
+        end_operation();
+        other.disown();
+        if(cached_awaitable_)
+            ::operator delete(cached_awaitable_);
         if(storage_)
         {
             vt_->destroy(stream_);
             ::operator delete(storage_);
-        }
-        if(cached_awaitable_)
-        {
-            if(awaitable_active_)
-                vt_->destroy_awaitable(cached_awaitable_);
-            ::operator delete(cached_awaitable_);
         }
         stream_ = std::exchange(other.stream_, nullptr);
         vt_ = std::exchange(other.vt_, nullptr);
@@ -391,6 +418,38 @@ any_read_stream::read_some(MB buffers)
     {
         any_read_stream* self_;
         detail::mutable_buffer_array<detail::max_iovec_> ba_;
+        // Set while this awaitable, not another on the same stream,
+        // holds the stream's inner awaitable.
+        bool owns_ = false;
+
+        // A chain unwound while suspended here never reaches
+        // await_resume, so the inner awaitable is destroyed here.
+        ~awaitable()
+        {
+            if(owns_)
+            {
+                self_->vt_->destroy_awaitable(self_->cached_awaitable_);
+                self_->awaitable_active_ = false;
+                self_->owner_ = nullptr;
+            }
+        }
+
+        awaitable(
+            any_read_stream* self,
+            detail::mutable_buffer_array<detail::max_iovec_> ba) noexcept
+            : self_(self)
+            , ba_(ba)
+        {
+        }
+
+        awaitable(awaitable&& other) noexcept
+            : self_(std::exchange(other.self_, nullptr))
+            , ba_(other.ba_)
+            , owns_(std::exchange(other.owns_, false))
+        {
+            if(owns_)
+                self_->owner_ = &owns_;
+        }
 
         bool
         await_ready()
@@ -400,6 +459,8 @@ any_read_stream::read_some(MB buffers)
                 self_->cached_awaitable_,
                 ba_.to_span());
             self_->awaitable_active_ = true;
+            owns_ = true;
+            self_->owner_ = &owns_;
 
             return self_->vt_->await_ready(
                 self_->cached_awaitable_);
@@ -416,12 +477,15 @@ any_read_stream::read_some(MB buffers)
         await_resume()
         {
             struct guard {
-                any_read_stream* self;
+                awaitable* a;
                 ~guard() {
-                    self->vt_->destroy_awaitable(self->cached_awaitable_);
-                    self->awaitable_active_ = false;
+                    a->self_->vt_->destroy_awaitable(
+                        a->self_->cached_awaitable_);
+                    a->self_->awaitable_active_ = false;
+                    a->self_->owner_ = nullptr;
+                    a->owns_ = false;
                 }
-            } g{self_};
+            } g{this};
             return self_->vt_->await_resume(
                 self_->cached_awaitable_);
         }

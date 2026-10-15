@@ -68,11 +68,14 @@ class any_stream
 public:
     /** Destructor.
 
-        Destroys the owned stream (if any). Base class destructors
-        handle their cached awaitable storage.
+        Ends any operation in flight, then destroys the owned stream
+        (if any). Base class destructors release their cached awaitable
+        storage.
     */
     ~any_stream()
     {
+        any_read_stream::end_operation();
+        any_write_stream::end_operation();
         if(storage_)
         {
             destroy_(stream_ptr_);
@@ -134,6 +137,8 @@ public:
     {
         if(this != &other)
         {
+            any_read_stream::end_operation();
+            any_write_stream::end_operation();
             if(storage_)
             {
                 destroy_(stream_ptr_);
