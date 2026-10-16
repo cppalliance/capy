@@ -11,11 +11,11 @@
 :page-mode: explanation
 
 The most efficient way to provide storage for bytes is a contiguous region: an array. 
-While it is not always possible to efficiently compose a full message in a single contiguous storage,
+While it is not always possible to efficiently compose a full message in a single contiguous region,
 it is certainly a good default. Capy offers two types for this purpose:
 
  * cpp:const_buffer[] -- a handle to a contiguous sequence of bytes. I/O operations will never modify these bytes.
- * cpp:mutable_buffer[] -- a handle to a contiguous storage for bytes; I/O operations will fill it.
+ * cpp:mutable_buffer[] -- a handle to a contiguous region for sttoring bytes; I/O operations will fill it.
 
 Both types are present in header `<boost/capy/buffers.hpp>`. 
 
@@ -73,7 +73,7 @@ The contract for read and write operations in Capy is:
 ----
 include::example$snippets/5a_contiguous_buffers.cpp[tag=good_management,indent=0]
 ----
-<1> OK: The read will be performed at unpredictable time, but because afterwards
+<1> OK: The read will be performed at an unpredictable time, but because afterwards
     the coroutine needs to be resumed, its frame (containing the array) is guaranteed
     to outlive the read operation. 
 
@@ -81,7 +81,7 @@ include::example$snippets/5a_contiguous_buffers.cpp[tag=good_management,indent=0
 ----
 include::example$snippets/5a_contiguous_buffers.cpp[tag=bad_management,indent=0]
 ----
-<1> Bug: the awaitable rather than `co_await`-ed is returned to be used later.
+<1> Bug: the awaitable, rather than being `co_await`ed, is returned to be used later.
     At that later time the array will no longer be alive. 
 
 
@@ -111,7 +111,7 @@ include::example$snippets/5a_contiguous_buffers.cpp[tag=buffer_conversion,indent
 <2> Bug: will read indeterminate byte values, which is undefined behavior.
 
 
-== Buffer Processing interface
+== Buffer Processing Interface
 
 Algorithms operating on buffers use the following interface provided by both
 cpp:const_buffer[] and cpp:mutable_buffer[].

@@ -38,6 +38,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <span>
@@ -70,6 +71,43 @@ using namespace std::string_view_literals;
 // ---------------------------------------------------------------------
 // Buffer algorithms
 // ---------------------------------------------------------------------
+
+using Stream = capy::test::stream;
+
+// tag::read_all[]
+template<capy::MutableBufferSequence Buffers>
+capy::task<std::size_t> read_all(Stream& stream, Buffers buffers)
+{
+    capy::consuming_buffers consuming(buffers);
+    std::size_t const total_size = capy::buffer_size(buffers);
+    std::size_t total = 0;
+
+    while (total < total_size)
+    {
+        auto [ec, n] = co_await stream.read_some(consuming.data());
+        consuming.consume(n);
+        total += n;
+        if (ec)
+            break;
+    }
+
+    co_return total;
+}
+// end::read_all[]
+
+capy::task<> send_sliced(
+    Stream& stream,
+    std::array<capy::const_buffer, 2> const& bufs)
+{
+    // tag::buffer_slice[]
+    // send only the first 16 KB
+    co_await capy::write(stream, capy::buffer_slice(bufs, 0, 16384));
+    // everything after the first 16 KB
+    auto rest = capy::buffer_slice(bufs, 16384);
+    co_await capy::write(stream, rest);
+    // end::buffer_slice[]
+    BOOST_TEST(capy::buffer_size(rest) == capy::buffer_size(bufs) - 16384);
+}
 
 // tag::read_loop[]
 template<capy::ReadStream Stream, capy::MutableBufferSequence Buffers>
@@ -256,42 +294,12 @@ struct buffer_algo_test
         // tag::buffer_size_example[]
         auto buf1 = capy::make_buffer("hello"sv);  // 5 bytes
         auto buf2 = capy::make_buffer("world"sv);  // 5 bytes
-        auto combined = std::array{buf1, buf2};
+        auto buf3 = capy::make_buffer(""sv);       // 0 bytes
+        auto combined = std::array{buf1, buf2, buf3};
 
-        std::size_t total = capy::buffer_size(combined);  // 10
+        assert(capy::buffer_size(combined) == 10);
         // end::buffer_size_example[]
-        BOOST_TEST(total == 10);
-    }
-
-    void
-    testBufferEmpty()
-    {
-        // tag::buffer_empty_example[]
-        capy::const_buffer empty_buf;
-        capy::buffer_empty(empty_buf);  // true
-
-        capy::const_buffer non_empty("data", 4);
-        capy::buffer_empty(non_empty);  // false
-        // end::buffer_empty_example[]
-        BOOST_TEST(capy::buffer_empty(empty_buf));
-        BOOST_TEST(! capy::buffer_empty(non_empty));
-    }
-
-    void
-    testBufferLength()
-    {
-        capy::const_buffer buf1("one", 3);
-        capy::const_buffer buf2("two", 3);
-        capy::const_buffer buf3("three", 5);
-        // tag::buffer_length_example[]
-        auto single = capy::make_buffer("hello"sv);
-        capy::buffer_length(single);  // 1
-
-        auto arr = std::array{buf1, buf2, buf3};
-        capy::buffer_length(arr);  // 3
-        // end::buffer_length_example[]
-        BOOST_TEST(capy::buffer_length(single) == 1);
-        BOOST_TEST(capy::buffer_length(arr) == 3);
+        BOOST_TEST(capy::buffer_size(combined) == 10);
     }
 
     void
@@ -380,16 +388,50 @@ struct buffer_algo_test
     }
 
     void
+    testReadAll()
+    {
+        auto [a, b] = capy::test::make_stream_pair();
+        b.provide("abcdefghijklmnopqrst");  // 20 bytes readable from a
+        a.set_max_read_size(7);             // force several partial reads
+
+        std::vector<char> head(8), tail(12);
+        std::array<capy::mutable_buffer, 2> bufs{
+            capy::make_buffer(head), capy::make_buffer(tail)};
+
+        std::size_t got = 0;
+        capy::test::run_blocking([&](std::size_t n) { got = n; })(
+            read_all(a, bufs));
+
+        BOOST_TEST(got == 20);
+        BOOST_TEST(std::string(head.begin(), head.end()) == "abcdefgh");
+        BOOST_TEST(std::string(tail.begin(), tail.end()) == "ijklmnopqrst");
+    }
+
+    void
+    testBufferSlice()
+    {
+        auto [a, b] = capy::test::make_stream_pair();
+        std::string part1(10000, 'x');
+        std::string part2(10000, 'y');
+        std::array<capy::const_buffer, 2> bufs{
+            capy::make_buffer(part1), capy::make_buffer(part2)};
+
+        capy::test::run_blocking()(send_sliced(a, bufs));
+
+        BOOST_TEST(b.data() == part1 + part2);
+    }
+
+    void
     run()
     {
         testBufferSize();
-        testBufferEmpty();
-        testBufferLength();
         testBufferCopy();
         testPartialCopy();
         testCrossSequenceCopy();
         testReadFull();
         testWriteFull();
+        testReadAll();
+        testBufferSlice();
     }
 };
 
