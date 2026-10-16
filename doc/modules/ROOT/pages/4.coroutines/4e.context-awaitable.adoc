@@ -133,6 +133,7 @@ The key points:
 2. To resume the caller, wrap its handle in a cpp:continuation[] and pass that to the executor's `post` (or `dispatch`). These take a `continuation&`, not a raw `coroutine_handle`. Store the `continuation` in the awaitable so it keeps a stable address until the executor dequeues and resumes it. The executor links continuations intrusively, so a temporary would dangle.
 3. Respect the stop token for cancellation
 
+[#stop-callbacks-must-post-not-resume]
 === Stop Callbacks Must Post, Not Resume
 
 When implementing a stoppable awaitable, you may register a `std::stop_callback` to wake the coroutine when cancellation is requested. The callback fires synchronously on whatever thread calls `request_stop()`, which is typically *not* the executor's thread.
@@ -142,12 +143,10 @@ When implementing a stoppable awaitable, you may register a `std::stop_callback`
 *Never resume a coroutine handle directly from a stop_callback.* Doing so executes the coroutine on the wrong thread, corrupting the thread-local frame allocator. This causes use-after-free on the next coroutine allocation—potentially in completely unrelated code.
 ====
 
-Post the resume through the executor instead of resuming inline:
-
-[source,cpp]
-----
-include::example$snippets/4e_context_awaitable.cpp[tag=stoppable_awaitable]
-----
+Post the resume through the executor instead of resuming inline.
+The stop callback also races the completion of the operation, and only one of them may resume the coroutine.
+Each must first win an atomic _claim_ on the operation.
+xref:4.coroutines/4f.cancellation.adoc#stoppable-awaitables[Implementing Stoppable Awaitables] shows a complete I/O awaitable that handles both.
 
 The incorrect pattern—which compiles and appears to work but causes memory corruption—looks like this:
 
@@ -156,9 +155,7 @@ The incorrect pattern—which compiles and appears to work but causes memory cor
 include::example$snippets/4e_context_awaitable.cpp[tag=wrong_stop_callback,indent=0]
 ----
 
-See xref:4.coroutines/4f.cancellation.adoc#stoppable-awaitables[Implementing Stoppable Awaitables] for a complete example.
-
-For a production implementation of this exact pattern, read the source of cpp:async_waker::wait_awaiter[]. It registers a stop callback that posts the resume through the executor, and arbitrates between wakeup and cancellation with a single atomic claim.
+For a production implementation of the claim, read the source of cpp:async_waker::wait_awaiter[]. It registers a stop callback that posts the resume through the executor, and arbitrates between wakeup and cancellation with a single atomic claim. Unlike the example in xref:4.coroutines/4f.cancellation.adoc#stoppable-awaitables[Implementing Stoppable Awaitables], it does not make the winner wait for `await_suspend`. It requires a single-threaded executor or a strand instead, because each resumes one coroutine at a time.
 
 == Running a Custom ContextAwaitable
 

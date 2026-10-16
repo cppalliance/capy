@@ -113,7 +113,6 @@ using result_type = int;
 
 // Stand-ins for the async machinery the page leaves unspecified.
 void start_operation() {}
-void start_async_operation() {}
 void store_result() {}
 
 // tag::my_awaitable[]
@@ -195,34 +194,6 @@ capy::task<int> add_via_awaitable()
     co_return co_await add_awaitable{2, 3};
 }
 // end::runnable_awaitable[]
-
-// tag::stoppable_awaitable[]
-struct stoppable_awaitable
-{
-    mutable capy::continuation cont_;
-    std::optional<std::stop_callback<std::function<void()>>> stop_cb_;
-
-    bool await_ready() { return false; }
-
-    std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> h, capy::await_context const* env)
-    {
-        if (env->stop_token.stop_requested())
-            return h;  // Already cancelled, resume immediately
-
-        // Post through executor when stop is requested
-        cont_.h = h;
-        auto ex = env->executor;
-        stop_cb_.emplace(env->stop_token,
-            [this, ex]() mutable noexcept { ex.post(cont_); });
-
-        start_async_operation();
-        return std::noop_coroutine();
-    }
-
-    void await_resume() { /* ... */ }
-};
-// end::stoppable_awaitable[]
 
 // Compiles on purpose: the page shows this to warn that the broken
 // pattern is not caught by the compiler.
