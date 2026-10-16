@@ -37,11 +37,11 @@ synchronization everywhere.
 
 == The Solution: Extended await_suspend
 
-Capy awaitables receive context via `io_env` in `await_suspend`:
+Capy awaitables receive context via `await_context` in `await_suspend`:
 
 [source,cpp]
 ----
-auto await_suspend(std::coroutine_handle<> h, io_env const* env)
+auto await_suspend(std::coroutine_handle<> h, await_context const* env)
 {
     // Now we know where to dispatch and can check cancellation
     if (env->stop_token.stop_requested())
@@ -62,46 +62,46 @@ The promise passes the execution environment to every awaitable through
 Capy defines two progressively capable concepts:
 
 ----
-IoAwaitable
+ContextAwaitable
     │
     ▼
-IoRunnable
+ContextRunnable
 ----
 
-=== IoAwaitable
+=== ContextAwaitable
 
-The base concept. An `IoAwaitable` can receive context when awaited:
+The base concept. A `ContextAwaitable` can receive context when awaited:
 
 [source,cpp]
 ----
 template<typename T>
-concept IoAwaitable = requires(T a, std::coroutine_handle<> h, io_env const* env)
+concept ContextAwaitable = requires(T a, std::coroutine_handle<> h, await_context const* env)
 {
     { a.await_ready() } -> std::convertible_to<bool>;
-    { a.await_suspend(h, env) };  // Two-argument form with io_env
+    { a.await_suspend(h, env) };  // Two-argument form with await_context
     a.await_resume();
 };
 ----
 
 Key features:
 
-* Two-argument `await_suspend` receives `io_env` containing executor and stop token
+* Two-argument `await_suspend` receives `await_context` containing executor and stop token
 * Works with any executor type (via `executor_ref`)
 * Enables automatic context propagation
-* Awaitables should store the `io_env` as a pointer (`io_env const*`), never a copy. Launch functions guarantee the `io_env` outlives the operation.
+* Awaitables should store the `await_context` as a pointer (`await_context const*`), never a copy. Launch functions guarantee the `await_context` outlives the operation.
 
-Reference: `<boost/capy/concept/io_awaitable.hpp>`
+Reference: `<boost/capy/concept/context_awaitable.hpp>`
 
-=== IoRunnable
+=== ContextRunnable
 
-An `IoRunnable` is an `IoAwaitable` that can be launched from non-coroutine
+A `ContextRunnable` is a `ContextAwaitable` that can be launched from non-coroutine
 contexts by utilities like `run` and `run_async`:
 
 [source,cpp]
 ----
 template<typename T>
-concept IoRunnable =
-    IoAwaitable<T> &&
+concept ContextRunnable =
+    ContextAwaitable<T> &&
     requires { typename T::promise_type; } &&
     requires(T& t, T const& ct, typename T::promise_type const& cp)
     {
@@ -126,7 +126,7 @@ Context injection (`set_environment`, `set_continuation`) is handled internally
 by the promise through `await_suspend` and is not part of any concept.
 This is what `task<T>` implements.
 
-Reference: `<boost/capy/concept/io_runnable.hpp>`
+Reference: `<boost/capy/concept/context_runnable.hpp>`
 
 == How Context Flows
 
@@ -171,7 +171,7 @@ io_operation's await_suspend(h, ex, token)
 
 === Forward Propagation (Capy's Approach)
 
-Context flows _forward_ through `await_suspend` via `io_env`:
+Context flows _forward_ through `await_suspend` via `await_context`:
 
 [source,cpp]
 ----
@@ -209,13 +209,13 @@ Capy uses forward propagation for clarity and composability.
 
 == The Promise Support Mixin
 
-To implement an `IoRunnable` task, use the `io_awaitable_promise_base` CRTP mixin:
+To implement a `ContextRunnable` task, use the `context_awaitable_promise_base` CRTP mixin:
 
 [source,cpp]
 ----
 struct my_task
 {
-    struct promise_type : io_awaitable_promise_base<promise_type>
+    struct promise_type : context_awaitable_promise_base<promise_type>
     {
         my_task get_return_object();
         std::suspend_always initial_suspend();
@@ -276,13 +276,13 @@ Every `co_await` in a task automatically receives context.
 |===
 | Concept | Capability
 
-| `IoAwaitable`
+| `ContextAwaitable`
 | Receives executor and stop token in `await_suspend`
 
-| `IoRunnable`
+| `ContextRunnable`
 | Adds launch interface (`handle()`, `release()`, `exception()`, `result()`)
 
-| `io_awaitable_promise_base`
+| `context_awaitable_promise_base`
 | CRTP mixin implementing context storage and propagation
 |===
 

@@ -41,14 +41,14 @@ std::error_code connect_sync()
     return {};
 }
 
-capy::immediate<capy::io_result<std::size_t>>
+capy::immediate<capy::results<std::size_t>>
 write(capy::const_buffer buf)
 {
     auto n = write_all_sync(buf);
     return capy::ready(n);  // success with n bytes
 }
 
-capy::immediate<capy::io_result<>>
+capy::immediate<capy::results<>>
 connect()
 {
     connect_sync();
@@ -65,7 +65,7 @@ std::error_code write_checked_sync(capy::const_buffer buf)
     return {};
 }
 
-capy::immediate<capy::io_result<std::size_t>>
+capy::immediate<capy::results<std::size_t>>
 write(capy::const_buffer buf)
 {
     auto ec = write_checked_sync(buf);

@@ -261,7 +261,7 @@ struct signal_park
     bool await_ready() const noexcept { return false; }
 
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<> h, io_env const* env) noexcept
+    await_suspend(std::coroutine_handle<> h, await_context const* env) noexcept
     {
         slot->h = h;
         slot->owner = env->owner;

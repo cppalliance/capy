@@ -36,30 +36,30 @@ If any of `f1`...`fN` fails, you get the error - not a tuple of mixed results. T
 | 10 | One throws, another returns `ec` (either order) | Exception always wins. No value to return through an exception. Tuple is not accessible. | Settled     |
 | 11 | Parent stop token fires                   | Not a special case. Children return ECANCELED, which is an error like any other. First ec wins, standard error behavior. | Settled     |
 | 12 | All tasks fail                            | Propagate single error_code (first wins). Not a tuple of failures.       | Settled     |
-| 13 | How does failure reach the caller?        | Via the outer `io_result`'s `ec`. See Return Type below.                 | Settled     |
-| 14 | Return type                               | `io_result<R1, R2, ..., Rn>` where each `Ri` is `Ti` if child has single `T`, or `tuple<Ti...>` if child has multiple `T`s. See Return Type below. | Settled     |
+| 13 | How does failure reach the caller?        | Via the outer `results`'s `ec`. See Return Type below.                 | Settled     |
+| 14 | Return type                               | `results<R1, R2, ..., Rn>` where each `Ri` is `Ti` if child has single `T`, or `tuple<Ti...>` if child has multiple `T`s. See Return Type below. | Settled     |
 
 ---
 
 ## io::when_all Return Type
 
-Peter Dimov's proposal: the return type lifts the error_code out of each child's `io_result` into a single outer `io_result`. Child value types are collected as parameters.
+Peter Dimov's proposal: the return type lifts the error_code out of each child's `results` into a single outer `results`. Child value types are collected as parameters.
 
-Given children returning `io_result<T1...>`, `io_result<T2...>`, ..., `io_result<Tn...>`:
+Given children returning `results<T1...>`, `results<T2...>`, ..., `results<Tn...>`:
 
 ```
 io::when_all(child1, child2, ..., childN)
-  -> io_result<R1, R2, ..., Rn>
+  -> results<R1, R2, ..., Rn>
 ```
 
 Where each `Ri` is:
-- `Ti` directly, if the child returns `io_result<Ti>` (single type - no wrapping)
-- `tuple<Ti...>` if the child returns `io_result<Ti1, Ti2, ...>` (multiple types)
-- `tuple<>` if the child returns `io_result<>` (no value types)
+- `Ti` directly, if the child returns `results<Ti>` (single type - no wrapping)
+- `tuple<Ti...>` if the child returns `results<Ti1, Ti2, ...>` (multiple types)
+- `tuple<>` if the child returns `results<>` (no value types)
 
 ### Examples
 
-Three reads, each returning `io_result<size_t>`:
+Three reads, each returning `results<size_t>`:
 
 ```cpp
 auto [ec, n1, n2, n3] = co_await io::when_all(
@@ -73,9 +73,9 @@ auto [ec, n1, n2, n3] = co_await io::when_all(
 Mixed result types:
 
 ```cpp
-// task_a returns io_result<size_t>
-// task_b returns io_result<size_t, flags>
-// task_c returns io_result<message>
+// task_a returns results<size_t>
+// task_b returns results<size_t, flags>
+// task_c returns results<message>
 auto [ec, n, tf, msg] = co_await io::when_all(
     task_a, task_b, task_c);
 // ec: single error_code
@@ -84,12 +84,12 @@ auto [ec, n, tf, msg] = co_await io::when_all(
 // msg: message from task_c
 ```
 
-Void results (`io_result<>`):
+Void results (`results<>`):
 
 ```cpp
-// task_a returns io_result<size_t>
-// task_b returns io_result<>  (just error_code, no values)
-// task_c returns io_result<size_t>
+// task_a returns results<size_t>
+// task_b returns results<>  (just error_code, no values)
+// task_c returns results<size_t>
 auto [ec, n1, empty, n2] = co_await io::when_all(
     task_a, task_b, task_c);
 // ec: single error_code
@@ -98,14 +98,14 @@ auto [ec, n1, empty, n2] = co_await io::when_all(
 // n2: size_t from task_c
 ```
 
-`io_result<>` contributes a `tuple<>` to the outer parameter list. Same rule as multiple types (`tuple<T...>`), applied to zero types.
+`results<>` contributes a `tuple<>` to the outer parameter list. Same rule as multiple types (`tuple<T...>`), applied to zero types.
 
 ### Why this works
 
 - **Binary outcome.** Caller checks one `ec`. On success, destructures the values. On failure, handles one error. Matches the synchronous analogy.
 - **No redundant error codes.** Child error codes are stripped. On the success path they were all zero. On the failure path only the first matters.
 - **Natural destructuring.** Single-type children flatten into the parameter list. `auto [ec, n1, n2, n3]` just works.
-- **Consistent with io_result convention.** The result is itself an `io_result`, so it composes with anything that already handles `io_result`.
+- **Consistent with `results` convention.** The result is itself a `results`, so it composes with anything that already handles `results`.
 
 ---
 
@@ -138,15 +138,15 @@ io::when_any(child1, child2, ..., childN)
 ```
 
 Where each `Ri` follows the same rules as `when_all`:
-- `Ti` directly, if the child returns `io_result<Ti>` (single type)
-- `tuple<Ti...>` if the child returns `io_result<Ti1, Ti2, ...>` (multiple types)
-- `tuple<>` if the child returns `io_result<>` (no value types)
+- `Ti` directly, if the child returns `results<Ti>` (single type)
+- `tuple<Ti...>` if the child returns `results<Ti1, Ti2, ...>` (multiple types)
+- `tuple<>` if the child returns `results<>` (no value types)
 
 Index 0 (`error_code`) is the failure/no-winner case. Index 1..N identifies which child won.
 
 ### Examples
 
-Three reads, each returning `io_result<size_t>`:
+Three reads, each returning `results<size_t>`:
 
 ```cpp
 auto result = co_await io::when_any(
@@ -164,8 +164,8 @@ else
 Mixed result types:
 
 ```cpp
-// task_a returns io_result<size_t>
-// task_b returns io_result<message>
+// task_a returns results<size_t>
+// task_b returns results<message>
 auto result = co_await io::when_any(task_a, task_b);
 // result: variant<error_code, size_t, message>
 
@@ -182,7 +182,7 @@ else
 - **Winner identification.** `result.index() - 1` maps directly to the child index. No separate index field needed.
 - **Error at index 0.** Failure is always `index() == 0`. Simple boolean check: `if (result.index() == 0)`.
 - **No redundant error codes.** Winners have `!ec` by definition. The child's error_code is stripped. Only the failure case carries an error_code.
-- **Consistent with when_all.** Same `Ri` flattening rules. Same error_code stripping. Different container (variant vs io_result).
+- **Consistent with when_all.** Same `Ri` flattening rules. Same error_code stripping. Different container (variant vs `results`).
 
 ---
 
@@ -194,7 +194,7 @@ All rows settled. Both tables complete. No open questions remain.
 
 ## Contributors
 
-- Peter Dimov: primitive normalization rule, binary success/failure model, "first ec wins" semantics, outer io_result return type proposal, corrections to rows 5/10/12
+- Peter Dimov: primitive normalization rule, binary success/failure model, "first ec wins" semantics, outer `results` return type proposal, corrections to rows 5/10/12
 - Andrzej Krzemienski: error_code is status not error, three-bucket classification (success/failure/cancellation)
 - Michael Vandeberg: predicate-based combinator design (superseded by concrete io:: approach), when_any winner selection, issues 204-206
 - Vinnie Falco: ssl_stream_truncated counterexample, partial transfer preservation question

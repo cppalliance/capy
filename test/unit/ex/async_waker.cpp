@@ -365,7 +365,7 @@ struct async_waker_test
         }(waker, destroy_count_t(down));
         auto h = t.handle();
         t.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         h.promise().set_environment(&env);
         h.resume();

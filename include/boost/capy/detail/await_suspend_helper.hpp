@@ -12,7 +12,7 @@
 #define BOOST_CAPY_DETAIL_AWAIT_SUSPEND_HELPER_HPP
 
 #include <coroutine>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 
 #include <type_traits>
 
@@ -73,7 +73,7 @@ template<typename Awaitable>
 std::coroutine_handle<> call_await_suspend(
     Awaitable* a,
     std::coroutine_handle<> h,
-    io_env const* env)
+    await_context const* env)
 {
     using R = decltype(a->await_suspend(h, env));
     if constexpr (std::is_void_v<R>)

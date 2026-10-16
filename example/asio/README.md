@@ -90,7 +90,7 @@ int main()
 
 ## use_capy_example.cpp
 
-This example demonstrates the `use_capy` completion token, which allows **any Asio async operation** to be awaited directly from a Capy coroutine. The returned awaitable satisfies Capy's `IoAwaitable` concept with the extended `await_suspend` signature.
+This example demonstrates the `use_capy` completion token, which allows **any Asio async operation** to be awaited directly from a Capy coroutine. The returned awaitable satisfies Capy's `ContextAwaitable` concept with the extended `await_suspend` signature.
 
 ```cpp
 capy::task<>
@@ -119,9 +119,9 @@ reader(net::ip::tcp::socket& socket, std::size_t total)
 The `use_capy` token:
 
 - Works with any Asio async operation
-- Returns an `IoAwaitable` that integrates with Capy's executor and cancellation
+- Returns a `ContextAwaitable` that integrates with Capy's executor and cancellation
 - Bridges `std::stop_token` to Asio's cancellation system
-- Returns results as `capy::io_result<...>` for structured bindings
+- Returns results as `capy::results<...>` for structured bindings
 - Uses `asio::deferred_async_operation` internally (no `std::function` overhead)
 
 ---

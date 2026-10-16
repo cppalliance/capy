@@ -14,7 +14,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/buffer_archetype.hpp>
 #include <boost/capy/concept/decomposes_to.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <system_error>
 
 #include <concepts>
@@ -23,7 +23,7 @@
 namespace boost {
 namespace capy {
 
-/** Requires `write_some` to return an `IoAwaitable` decomposing to an error code and a size.
+/** Requires `write_some` to return a `ContextAwaitable` decomposing to an error code and a size.
 
     A type satisfies `WriteStream` if it provides a `write_some`
     member function template that accepts any @ref ConstBufferSequence
@@ -35,7 +35,7 @@ namespace capy {
 
     @li `T` must provide a `write_some` member function template
         accepting any @ref ConstBufferSequence.
-    @li The return type of `write_some` must satisfy @ref IoAwaitable.
+    @li The return type of `write_some` must satisfy @ref ContextAwaitable.
     @li The awaitable's result must decompose to
         `(error_code,std::size_t)` via structured bindings.
 
@@ -111,14 +111,14 @@ namespace capy {
     @par !example example_2
 
 
-    @see IoAwaitable, ConstBufferSequence, awaitable_decomposes_to
+    @see ContextAwaitable, ConstBufferSequence, awaitable_decomposes_to
 */
 // tag::write_stream_concept[]
 template<typename T>
 concept WriteStream =
     requires(T& stream, const_buffer_archetype buffers)
     {
-        { stream.write_some(buffers) } -> IoAwaitable;
+        { stream.write_some(buffers) } -> ContextAwaitable;
         requires awaitable_decomposes_to<
             decltype(stream.write_some(buffers)),
             std::error_code, std::size_t>;

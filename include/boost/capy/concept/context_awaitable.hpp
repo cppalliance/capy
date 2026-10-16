@@ -8,11 +8,11 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_CONCEPT_IO_AWAITABLE_HPP
-#define BOOST_CAPY_CONCEPT_IO_AWAITABLE_HPP
+#ifndef BOOST_CAPY_CONCEPT_CONTEXT_AWAITABLE_HPP
+#define BOOST_CAPY_CONCEPT_CONTEXT_AWAITABLE_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <concepts>
 #include <coroutine>
 #include <ranges>
@@ -26,16 +26,16 @@ namespace capy {
     In a `co_await` expression the language accepts exactly three
     return types from `await_suspend`: `void`, `bool`, and
     `std::coroutine_handle<P>` for any promise type `P`. This concept
-    expresses that rule so that @ref IoAwaitable can reject a malformed
+    expresses that rule so that @ref ContextAwaitable can reject a malformed
     awaitable at constraint-checking time rather than deep inside the
     coroutine machinery.
 
-    See the description of `await_suspend` in @ref IoAwaitable for the
+    See the description of `await_suspend` in @ref ContextAwaitable for the
     meaning attached to each return type.
 
     @tparam T The return type of `await_suspend`.
 
-    @see @ref IoAwaitable
+    @see @ref ContextAwaitable
 */
 template<typename T>
 concept AwaitSuspendResult =
@@ -51,7 +51,7 @@ concept AwaitSuspendResult =
 /** Describes types that can be `co_await`-ed in Capy-coroutines and 
     that can be passed the information about the execution environment.
 
-    See the tutorial section _The IoAwaitable Protocol_ for the description
+    See the tutorial section _The ContextAwaitable Protocol_ for the description
     of the execution environment propagation mechanism in Capy.
 
 
@@ -114,7 +114,7 @@ concept AwaitSuspendResult =
     the chain from its owner. A continuation without an owner is destroyed
     alone, leaving the frames above it holding a destroyed frame.
 
-    _Lifetime_: The object of type @ref io_env pointed to by `env` remains valid 
+    _Lifetime_: The object of type @ref await_context pointed to by `env` remains valid 
     for the duration of the async operation represented by `A`. This is guarantee is maintained
     by @ref run, @ref run_async and the other functions that "start a task".
     
@@ -142,17 +142,17 @@ concept AwaitSuspendResult =
 
     @par Models
 
-    General-purpose class templates that model `IoAwaitable`: @ref task, @ref quitter, @ref immediate.
+    General-purpose class templates that model `ContextAwaitable`: @ref task, @ref quitter, @ref immediate.
 
 
-    @see @ref AwaitSuspendResult, @ref IoRunnable, @ref io_env, @ref executor_ref
+    @see @ref AwaitSuspendResult, @ref ContextRunnable, @ref await_context, @ref executor_ref
 */
 template<typename A>
-concept IoAwaitable = std::move_constructible<A> &&
+concept ContextAwaitable = std::move_constructible<A> &&
     requires(
         A a,
         std::coroutine_handle<> h,
-        io_env const* env)
+        await_context const* env)
     {
         { a.await_ready() } -> std::same_as<bool>;
         { a.await_suspend(h, env) } -> AwaitSuspendResult;
@@ -168,18 +168,18 @@ concept IoAwaitable = std::move_constructible<A> &&
 template<typename A>
 using awaitable_result_t = decltype(std::declval<std::decay_t<A>&>().await_resume());
 
-/** Requires a sized input range whose value type satisfies `IoAwaitable`.
+/** Requires a sized input range whose value type satisfies `ContextAwaitable`.
 
-    A range satisfies `IoAwaitableRange` if it is a sized input range
-    whose value type satisfies @ref IoAwaitable.
+    A range satisfies `ContextAwaitableRange` if it is a sized input range
+    whose value type satisfies @ref ContextAwaitable.
 
     @tparam R The range type.
 */
 template<typename R>
-concept IoAwaitableRange =
+concept ContextAwaitableRange =
     std::ranges::input_range<R> &&
     std::ranges::sized_range<R> &&
-    IoAwaitable<std::ranges::range_value_t<R>>;
+    ContextAwaitable<std::ranges::range_value_t<R>>;
 
 } // namespace capy
 } // namespace boost

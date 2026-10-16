@@ -20,7 +20,7 @@
 namespace capy = boost::capy;
 
 // Sum integers in [lo, hi)
-capy::io_task<long long> partial_sum(int lo, int hi)
+capy::task<capy::results<long long>> partial_sum(int lo, int hi)
 {
     // tag::thread_id[]
     std::ostringstream oss;
@@ -32,7 +32,7 @@ capy::io_task<long long> partial_sum(int lo, int hi)
     long long sum = 0;
     for (int i = lo; i < hi; ++i)
         sum += i;
-    co_return capy::io_result<long long>{std::error_code(), sum};
+    co_return capy::results<long long>{std::error_code(), sum};
 }
 
 int main()

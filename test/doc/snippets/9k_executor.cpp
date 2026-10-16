@@ -15,9 +15,9 @@
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/abandon.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 
 #include <atomic>
@@ -133,7 +133,7 @@ static_assert(sizeof(layout_sketch::executor_ref)
 
 // I/O awaitable shape: embeds a continuation for the caller's handle
 // and an executor_ref for completion dispatch.
-struct io_awaitable_sketch
+struct context_awaitable_sketch
 {
     capy::continuation cont_;
     capy::executor_ref ex_;
@@ -142,7 +142,7 @@ struct io_awaitable_sketch
     std::coroutine_handle<>
     await_suspend(
         std::coroutine_handle<> h,
-        capy::io_env const* env) noexcept
+        capy::await_context const* env) noexcept
     {
         cont_.h = h;
         ex_ = env->executor;

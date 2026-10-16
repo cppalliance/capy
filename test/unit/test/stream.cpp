@@ -16,11 +16,11 @@
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 #include <boost/capy/when_all.hpp>
@@ -703,7 +703,7 @@ public:
 
         auto h = reader.handle();
         reader.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         env.stop_token = ss.get_token();
         h.promise().set_environment(&env);
@@ -775,7 +775,7 @@ public:
 
         auto h = reader.handle();
         reader.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         env.stop_token = ss.get_token();
         h.promise().set_environment(&env);
@@ -809,7 +809,7 @@ public:
 
         auto h = reader.handle();
         reader.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         env.stop_token = ss.get_token();
         h.promise().set_environment(&env);
@@ -1037,25 +1037,25 @@ public:
             auto [a, b] = make_stream_pair(f);
 
             (void) co_await when_all(
-                [](stream a) -> io_task<> {
+                [](stream a) -> task<results<>> {
                     char buf[32] = {};
                     auto [ec, n] = co_await a.read_some(
                         make_buffer(buf));
                     if(ec)
-                        co_return io_result<>{ec};
+                        co_return results<>{ec};
                     BOOST_TEST_EQ(n, 5u);
                     BOOST_TEST_EQ(
                         std::string_view(buf, n),
                         "hello");
-                    co_return io_result<>{};
+                    co_return results<>{};
                 }(std::move(a)),
-                [](stream b) -> io_task<> {
+                [](stream b) -> task<results<>> {
                     auto [ec, n] = co_await b.write_some(
                         make_buffer("hello", 5));
                     if(ec)
-                        co_return io_result<>{ec};
+                        co_return results<>{ec};
                     BOOST_TEST_EQ(n, 5u);
-                    co_return io_result<>{};
+                    co_return results<>{};
                 }(std::move(b))
             );
         });
@@ -1256,25 +1256,25 @@ public:
             auto [a, b] = make_stream_pair(f);
 
             (void) co_await when_all(
-                [](stream a) -> io_task<> {
+                [](stream a) -> task<results<>> {
                     char buf[3] = {};
                     auto [ec, n] = co_await a.read_some(
                         make_buffer(buf));
                     if(ec)
-                        co_return io_result<>{ec};
+                        co_return results<>{ec};
                     BOOST_TEST_EQ(n, 3u);
                     BOOST_TEST_EQ(
                         std::string_view(buf, n),
                         "hel");
-                    co_return io_result<>{};
+                    co_return results<>{};
                 }(std::move(a)),
-                [](stream b) -> io_task<> {
+                [](stream b) -> task<results<>> {
                     auto [ec, n] = co_await b.write_some(
                         make_buffer("hello", 5));
                     if(ec)
-                        co_return io_result<>{ec};
+                        co_return results<>{ec};
                     BOOST_TEST_EQ(n, 5u);
-                    co_return io_result<>{};
+                    co_return results<>{};
                 }(std::move(b))
             );
         });
@@ -1347,17 +1347,17 @@ public:
             auto [a, b] = make_stream_pair(f);
 
             (void) co_await when_all(
-                [](stream a) -> io_task<> {
+                [](stream a) -> task<results<>> {
                     char buf[32] = {};
                     auto [ec, n] = co_await a.read_some(
                         make_buffer(buf));
                     BOOST_TEST(ec == cond::eof);
                     BOOST_TEST_EQ(n, 0u);
-                    co_return io_result<>{ec};
+                    co_return results<>{ec};
                 }(std::move(a)),
-                [](stream b) -> io_task<> {
+                [](stream b) -> task<results<>> {
                     b.close();
-                    co_return io_result<>{};
+                    co_return results<>{};
                 }(std::move(b))
             );
         }());
@@ -1405,7 +1405,7 @@ public:
             auto [a, b] = make_stream_pair(f);
 
             (void) co_await when_all(
-                [](stream a) -> io_task<> {
+                [](stream a) -> task<results<>> {
                     // Reader suspends waiting for data.
                     // Gets data, eof from peer's guard,
                     // or its own fuse error on resume.
@@ -1413,19 +1413,19 @@ public:
                     auto [ec, n] = co_await a.read_some(
                         make_buffer(buf));
                     if(ec)
-                        co_return io_result<>{ec};
+                        co_return results<>{ec};
                     BOOST_TEST_EQ(n, 5u);
-                    co_return io_result<>{};
+                    co_return results<>{};
                 }(std::move(a)),
-                [](stream b) -> io_task<> {
+                [](stream b) -> task<results<>> {
                     // Writer may get fuse error, which
                     // closes the peer via the guard
                     auto [ec, n] = co_await b.write_some(
                         make_buffer("hello", 5));
                     if(ec)
-                        co_return io_result<>{ec};
+                        co_return results<>{ec};
                     BOOST_TEST_EQ(n, 5u);
-                    co_return io_result<>{};
+                    co_return results<>{};
                 }(std::move(b))
             );
         });

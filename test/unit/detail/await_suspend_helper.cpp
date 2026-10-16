@@ -10,7 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/detail/await_suspend_helper.hpp>
 
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 
 #include <coroutine>
 
@@ -26,7 +26,7 @@ class await_suspend_helper_test
     struct void_awaitable
     {
         bool suspended = false;
-        void await_suspend(std::coroutine_handle<>, io_env const*)
+        void await_suspend(std::coroutine_handle<>, await_context const*)
         {
             suspended = true;
         }
@@ -36,7 +36,7 @@ class await_suspend_helper_test
     struct bool_awaitable
     {
         bool value;
-        bool await_suspend(std::coroutine_handle<>, io_env const*)
+        bool await_suspend(std::coroutine_handle<>, await_context const*)
         {
             return value;
         }
@@ -48,7 +48,7 @@ class await_suspend_helper_test
     {
         std::coroutine_handle<P> next;
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<>, io_env const*)
+        await_suspend(std::coroutine_handle<>, await_context const*)
         {
             return next;
         }

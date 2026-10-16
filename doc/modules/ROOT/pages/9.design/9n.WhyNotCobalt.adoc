@@ -218,14 +218,14 @@ Capy supports multi-threaded execution. cpp:thread_pool[] distributes work acros
 
 Cobalt stores executor context in thread-local variables. Coroutines access it via `this_coro::executor`. This design is scoped to single-threaded, single-executor configurations.
 
-Capy introduces the https://wg21.link/P4003[IoAwaitable protocol] and uses it for context propagation. When you `co_await`, the caller passes its execution environment to the child structurally:
+Capy introduces the https://wg21.link/P4003[ContextAwaitable protocol] and uses it for context propagation. When you `co_await`, the caller passes its execution environment to the child structurally:
 
 [source,cpp]
 ----
 include::example$snippets/9n_why_not_cobalt.cpp[tag=await_suspend_env,indent=0]
 ----
 
-No thread-local state. No ambient context. The executor and stop token flow forward through the call chain via the cpp:io_env[] parameter.
+No thread-local state. No ambient context. The executor and stop token flow forward through the call chain via the cpp:await_context[] parameter.
 
 [cols="1,1,1"]
 |===
@@ -244,7 +244,7 @@ No thread-local state. No ambient context. The executor and stop token flow forw
 | No
 
 | Stop token delivery
-| Structural (cpp:io_env[])
+| Structural (cpp:await_context[])
 | `this_coro::cancellation_state`
 |===
 
@@ -252,7 +252,7 @@ No thread-local state. No ambient context. The executor and stop token flow forw
 
 Both libraries propagate cancellation automatically through coroutine chains. Both support OS-level cancellation of pending I/O operations (`CancelIoEx` on Windows, `IORING_OP_ASYNC_CANCEL` on Linux).
 
-Capy uses `std::stop_token`, propagated via the IoAwaitable protocol's cpp:io_env[] parameter. The token flows forward structurally alongside the executor.
+Capy uses `std::stop_token`, propagated via the ContextAwaitable protocol's cpp:await_context[] parameter. The token flows forward structurally alongside the executor.
 
 Cobalt uses Asio's `cancellation_signal` and `cancellation_slot`. Propagation is wired automatically in `await_suspend` via `forward_cancellation`. `this_coro::cancellation_state` provides filtering control over which cancellation types pass through.
 
@@ -265,7 +265,7 @@ Cobalt uses Asio's `cancellation_signal` and `cancellation_slot`. Propagation is
 | `asio::cancellation_signal`
 
 | Propagation
-| Automatic (cpp:io_env[])
+| Automatic (cpp:await_context[])
 | Automatic (slot/signal wiring)
 
 | Filtering
@@ -361,7 +361,7 @@ cpp:recycling_memory_resource[] provides zero-overhead recycling after warmup. M
 
 Cobalt is coupled to Asio's `io_context`. The execution model and the platform abstractions are one thing.
 
-Capy separates them. The execution model — executors, cancellation, allocation — lives in Capy. Platform abstractions live in Corosio, a companion library that provides native TCP sockets, acceptors, TLS streams, timers, DNS resolution, and signal handling. It builds on Capy's IoAwaitable protocol with five native backends: epoll and io_uring (Linux), kqueue (BSD/macOS), IOCP (Windows), and select (portable fallback). You can test Capy's execution model without a network stack. You can swap the I/O backend without changing your application code.
+Capy separates them. The execution model — executors, cancellation, allocation — lives in Capy. Platform abstractions live in Corosio, a companion library that provides native TCP sockets, acceptors, TLS streams, timers, DNS resolution, and signal handling. It builds on Capy's ContextAwaitable protocol with five native backends: epoll and io_uring (Linux), kqueue (BSD/macOS), IOCP (Windows), and select (portable fallback). You can test Capy's execution model without a network stack. You can swap the I/O backend without changing your application code.
 
 [cols="1,1,1"]
 |===

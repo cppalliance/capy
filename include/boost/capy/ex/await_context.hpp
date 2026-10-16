@@ -8,8 +8,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_IO_ENV_HPP
-#define BOOST_CAPY_IO_ENV_HPP
+#ifndef BOOST_CAPY_AWAIT_CONTEXT_HPP
+#define BOOST_CAPY_AWAIT_CONTEXT_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
@@ -26,24 +26,24 @@ class chain_owner;
 /** Carries the executor, stop token, and frame allocator through a coroutine chain.
 
     This struct bundles the execution context passed through
-    coroutine chains via the IoAwaitable protocol. It contains
+    coroutine chains via the ContextAwaitable protocol. It contains
     the executor for resumption, a stop token for cancellation,
     and an optional frame allocator for coroutine frame allocation.
 
     @par Lifetime
 
-    Launcher functions (@ref run_async, @ref run) own the `io_env` and
+    Launcher functions (@ref run_async, @ref run) own the `await_context` and
     guarantee it outlives all tasks and awaitables in the started
-    chain. Awaitables receive `io_env const*` in `await_suspend`
+    chain. Awaitables receive `await_context const*` in `await_suspend`
     and should store it directly, never copy the pointed-to object.
 
     @par Thread Safety
     The referenced executor and allocator must remain valid
     for the lifetime of any coroutine using this environment.
 
-    @see IoAwaitable, IoRunnable
+    @see ContextAwaitable, ContextRunnable
 */
-struct io_env
+struct await_context
 {
     /** The executor for coroutine resumption. */
     executor_ref executor;

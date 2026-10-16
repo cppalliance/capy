@@ -18,7 +18,7 @@ namespace boost::capy {
 
 /** Concept for awaitables that are also senders.
 
-    Refines @ref IoAwaitable with the `std::execution` sender
+    Refines @ref ContextAwaitable with the `std::execution` sender
     requirements: the same op can be driven by `co_await` in a capy
     coroutine and by `connect`/`start` in a sender pipeline. Both
     halves are structural — deriving @ref awaitable_sender_base is
@@ -40,10 +40,10 @@ namespace boost::capy {
 */
 template<class S>
 concept AwaitableSender =
-    IoAwaitable<S> &&
+    ContextAwaitable<S> &&
     ex::sender<S>;
 
-/** CRTP mixin that makes an IoAwaitable a sender.
+/** CRTP mixin that makes a ContextAwaitable a sender.
 
     Deriving from this base adds the C++26 sender interface to
     an I/O awaitable, so the same op type works under `co_await`
@@ -77,7 +77,7 @@ concept AwaitableSender =
     @code
     struct read_op : awaitable_sender_base<read_op>
     {
-        // usual IoAwaitable members; the completion signatures
+        // usual ContextAwaitable members; the completion signatures
         // follow await_resume()'s result type
     };
     @endcode

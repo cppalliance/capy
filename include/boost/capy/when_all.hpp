@@ -12,16 +12,16 @@
 #define BOOST_CAPY_WHEN_ALL_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/detail/io_result_combinators.hpp>
+#include <boost/capy/detail/results_combinators.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <coroutine>
 #include <boost/capy/detail/abandonable.hpp>
 #include <boost/capy/detail/owned_range.hpp>
 #include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/frame_alloc_mixin.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/task.hpp>
 
@@ -97,7 +97,7 @@ struct when_all_core
     std::optional<stop_callback_t> parent_stop_callback_;
 
     continuation continuation_;
-    io_env const* caller_env_ = nullptr;
+    await_context const* caller_env_ = nullptr;
 
     // Set when a branch is abandoned before finishing: the parent is
     // then abandoned rather than resumed.
@@ -163,10 +163,10 @@ struct when_all_state
 
 /** Shared state for homogeneous when_all (range overload).
 
-    Stores extracted io_result payloads in a vector indexed by task
+    Stores extracted results payloads in a vector indexed by task
     position. Tracks the first error_code for error propagation.
 
-    @tparam T The payload type extracted from io_result.
+    @tparam T The payload type extracted from `results`.
 */
 template<typename T>
 struct when_all_homogeneous_state
@@ -200,7 +200,7 @@ struct when_all_homogeneous_state
     }
 };
 
-/** Specialization for void io_result children (no payload storage). */
+/** Specialization for void `results` children (no payload storage). */
 template<>
 struct when_all_homogeneous_state<std::tuple<>>
 {
@@ -242,7 +242,7 @@ struct when_all_runner
     {
         StateType* state_ = nullptr;
         std::size_t index_ = 0;
-        io_env env_;
+        await_context env_;
         // Owns the branch's segment.
         chain_owner segment_;
         bool done_ = false;
@@ -337,14 +337,14 @@ struct when_all_runner
         auto await_transform(Awaitable&& a)
         {
             using A = std::decay_t<Awaitable>;
-            if constexpr (IoAwaitable<A>)
+            if constexpr (ContextAwaitable<A>)
             {
                 return transform_awaiter<Awaitable>{
                     std::forward<Awaitable>(a), this};
             }
             else
             {
-                static_assert(sizeof(A) == 0, "requires IoAwaitable");
+                static_assert(sizeof(A) == 0, "requires ContextAwaitable");
             }
         }
     };
@@ -372,12 +372,12 @@ struct when_all_runner
     }
 };
 
-/** Create an io_result-aware runner for a single awaitable (range path).
+/** Create a `results`-aware runner for a single awaitable (range path).
 
     Checks the error code, records errors and requests stop on failure,
     or extracts the payload on success.
 */
-template<IoAwaitable Awaitable, typename StateType>
+template<ContextAwaitable Awaitable, typename StateType>
 when_all_runner<StateType>
 make_when_all_homogeneous_runner(Awaitable* inner, StateType* state, std::size_t index)
 {
@@ -397,20 +397,20 @@ make_when_all_homogeneous_runner(Awaitable* inner, StateType* state, std::size_t
     }
     else
     {
-        using PayloadT = io_result_payload_t<
+        using PayloadT = results_payload_t<
             awaitable_result_t<Awaitable>>;
         if constexpr (!std::is_same_v<PayloadT, std::tuple<>>)
         {
             state->set_result(index,
-                extract_io_payload(std::move(result)));
+                extract_results_payload(std::move(result)));
         }
     }
 }
 
-/** Create a runner for io_result children that requests stop on ec. */
-template<std::size_t Index, IoAwaitable Awaitable, typename... Ts>
+/** Create a runner for `results` children that requests stop on ec. */
+template<std::size_t Index, ContextAwaitable Awaitable, typename... Ts>
 when_all_runner<when_all_state<Ts...>>
-make_when_all_io_runner(Awaitable* inner, when_all_state<Ts...>* state)
+make_when_all_results_runner(Awaitable* inner, when_all_state<Ts...>* state)
 {
     // Taken from the join's storage only once running, into a local:
     // a runner destroyed unstarted owns no branch, and one destroyed
@@ -429,9 +429,9 @@ make_when_all_io_runner(Awaitable* inner, when_all_state<Ts...>* state)
     }
 }
 
-/** Launcher that uses io_result-aware runners. */
-template<IoAwaitable... Awaitables>
-class when_all_io_launcher
+/** Launcher that uses `results`-aware runners. */
+template<ContextAwaitable... Awaitables>
+class when_all_results_launcher
 {
     using state_type = when_all_state<awaitable_result_t<Awaitables>...>;
 
@@ -439,7 +439,7 @@ class when_all_io_launcher
     state_type* state_;
 
 public:
-    when_all_io_launcher(
+    when_all_results_launcher(
         std::tuple<Awaitables...>* awaitables,
         state_type* state)
         : awaitables_(awaitables)
@@ -453,7 +453,7 @@ public:
     }
 
     std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> continuation, io_env const* caller_env)
+        std::coroutine_handle<> continuation, await_context const* caller_env)
     {
         state_->core_.continuation_.h = continuation;
         state_->core_.continuation_.owner = caller_env->owner;
@@ -489,13 +489,13 @@ private:
     template<std::size_t I>
     void launch_one(executor_ref caller_ex, std::stop_token token)
     {
-        auto runner = make_when_all_io_runner<I>(
+        auto runner = make_when_all_results_runner<I>(
             &std::get<I>(*awaitables_), state_);
 
         auto h = runner.release();
         h.promise().state_ = state_;
         h.promise().segment_.bind(h, caller_ex);
-        h.promise().env_ = io_env{caller_ex, token,
+        h.promise().env_ = await_context{caller_ex, token,
             state_->core_.caller_env_->frame_allocator,
             &h.promise().segment_};
 
@@ -521,7 +521,7 @@ auto extract_results(when_all_state<Ts...>& state)
 {
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
         // Explicit element types: CTAD would collapse a single
-        // io_result child via the tuple copy deduction guide
+        // `results` child via the tuple copy deduction guide
         return std::tuple<
             decltype(extract_single_result<Is>(state))...>(
                 extract_single_result<Is>(state)...);
@@ -537,7 +537,7 @@ template<typename Range>
 class when_all_homogeneous_launcher
 {
     using Awaitable = std::ranges::range_value_t<Range>;
-    using PayloadT = io_result_payload_t<awaitable_result_t<Awaitable>>;
+    using PayloadT = results_payload_t<awaitable_result_t<Awaitable>>;
 
     Range* range_;
     when_all_homogeneous_state<PayloadT>* state_;
@@ -556,7 +556,7 @@ public:
         return std::ranges::empty(*range_);
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> continuation, io_env const* caller_env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> continuation, await_context const* caller_env)
     {
         state_->core_.continuation_.h = continuation;
         state_->core_.continuation_.owner = caller_env->owner;
@@ -585,7 +585,7 @@ public:
             h.promise().state_ = state_;
             h.promise().index_ = index;
             h.promise().segment_.bind(h, caller_env->executor);
-            h.promise().env_ = io_env{caller_env->executor, token,
+            h.promise().env_ = await_context{caller_env->executor, token,
                 caller_env->frame_allocator, &h.promise().segment_};
 
             state_->runner_handles_[index].h = std::coroutine_handle<>{h};
@@ -609,12 +609,12 @@ public:
 
 } // namespace detail
 
-/** Execute a range of io_result-returning awaitables concurrently.
+/** Execute a range of `results`-returning awaitables concurrently.
 
     Starts all awaitables simultaneously and waits for all to complete.
     On success, extracted payloads are collected in a vector preserving
     input order. The first error_code makes a stop request that every
-    sibling observes, and is propagated in the outer io_result.
+    sibling observes, and is propagated in the outer results.
     Exceptions always beat error codes.
 
     @li All child awaitables run concurrently on the caller's executor.
@@ -645,9 +645,9 @@ public:
     completes only after every child has finished.
 
     @par Await-returns
-    An object of type `io_result<std::vector<PayloadT>>` destructuring as
+    An object of type `results<std::vector<PayloadT>>` destructuring as
     `[ec, values]`, where `PayloadT` is the payload of one child's
-    `io_result`.
+    `results`.
 
     `ec` is the first non-zero `ec` await-returned by a child, in
     completion order rather than input order. The `ec` of every other
@@ -667,18 +667,18 @@ public:
     payload per input awaitable; otherwise `values` is empty.
 
     @par Remarks
-    Supports _IoAwaitable cancellation_.
+    Supports _ContextAwaitable cancellation_.
 
     @par Thread Safety
     The returned task must be awaited from a single execution context.
     Child awaitables execute concurrently but complete through the caller's
     executor.
 
-    @param awaitables Range of io_result-returning awaitables to execute
+    @param awaitables Range of `results`-returning awaitables to execute
         concurrently (must not be empty).
 
-    @return A task yielding io_result<vector<PayloadT>> where PayloadT
-        is the payload extracted from each child's io_result.
+    @return A task yielding `results<vector<PayloadT>>` where PayloadT
+        is the payload extracted from each child's results.
 
     @throws std::invalid_argument if range is empty (thrown before
         coroutine suspends).
@@ -697,22 +697,22 @@ public:
     @par !example example_1
 
 
-    @see IoAwaitableRange, when_all
+    @see ContextAwaitableRange, when_all
 */
-template<IoAwaitableRange R>
-    requires detail::is_io_result_v<
+template<ContextAwaitableRange R>
+    requires detail::is_results_v<
         awaitable_result_t<std::ranges::range_value_t<R>>>
     && (!std::is_same_v<
-            detail::io_result_payload_t<
+            detail::results_payload_t<
                 awaitable_result_t<std::ranges::range_value_t<R>>>,
             std::tuple<>>)
 [[nodiscard]] auto when_all(R&& awaitables)
-    -> task<io_result<std::vector<
-        detail::io_result_payload_t<
+    -> task<results<std::vector<
+        detail::results_payload_t<
             awaitable_result_t<std::ranges::range_value_t<R>>>>>>
 {
     using Awaitable = std::ranges::range_value_t<R>;
-    using PayloadT = detail::io_result_payload_t<
+    using PayloadT = detail::results_payload_t<
         awaitable_result_t<Awaitable>>;
     using OwnedRange = detail::owned_range_t<R>;
 
@@ -731,20 +731,20 @@ template<IoAwaitableRange R>
         std::rethrow_exception(state.core_.first_exception_);
 
     if(state.has_error_.load(std::memory_order_relaxed))
-        co_return io_result<std::vector<PayloadT>>{state.first_error_, {}};
+        co_return results<std::vector<PayloadT>>{state.first_error_, {}};
 
-    std::vector<PayloadT> results;
-    results.reserve(count);
+    std::vector<PayloadT> values;
+    values.reserve(count);
     for(auto& opt : state.results_)
-        results.push_back(std::move(*opt));
+        values.push_back(std::move(*opt));
 
-    co_return io_result<std::vector<PayloadT>>{std::error_code(), std::move(results)};
+    co_return results<std::vector<PayloadT>>{std::error_code(), std::move(values)};
 }
 
-/** Execute a range of void io_result-returning awaitables concurrently.
+/** Execute a range of void `results`-returning awaitables concurrently.
 
     Starts all awaitables simultaneously and waits for all to complete.
-    Since all awaitables return io_result<>, no payload values are
+    Since all awaitables return results<>, no payload values are
     collected. The first error_code makes a stop request that every
     sibling observes, and is propagated. Exceptions always beat error
     codes.
@@ -771,7 +771,7 @@ template<IoAwaitableRange R>
     completes only after every child has finished.
 
     @par Await-returns
-    An object of type `io_result<>` destructuring as `[ec]`. The children
+    An object of type `results<>` destructuring as `[ec]`. The children
     have no payloads, so nothing else is reported.
 
     `ec` is the first non-zero `ec` await-returned by a child, in
@@ -787,17 +787,17 @@ template<IoAwaitableRange R>
     await-returned success.
 
     @par Remarks
-    Supports _IoAwaitable cancellation_.
+    Supports _ContextAwaitable cancellation_.
 
     @par Thread Safety
     The returned task must be awaited from a single execution context.
     Child awaitables execute concurrently but complete through the caller's
     executor.
 
-    @param awaitables Range of io_result<>-returning awaitables to
+    @param awaitables Range of `results<>`-returning awaitables to
         execute concurrently (must not be empty).
 
-    @return A task yielding io_result<> whose ec is the first child
+    @return A task yielding `results<>` whose ec is the first child
         error, or default-constructed on success.
 
     @throws std::invalid_argument if range is empty.
@@ -816,16 +816,16 @@ template<IoAwaitableRange R>
     @par !example example_2
 
 
-    @see IoAwaitableRange, when_all
+    @see ContextAwaitableRange, when_all
 */
-template<IoAwaitableRange R>
-    requires detail::is_io_result_v<
+template<ContextAwaitableRange R>
+    requires detail::is_results_v<
         awaitable_result_t<std::ranges::range_value_t<R>>>
     && std::is_same_v<
-            detail::io_result_payload_t<
+            detail::results_payload_t<
                 awaitable_result_t<std::ranges::range_value_t<R>>>,
             std::tuple<>>
-[[nodiscard]] auto when_all(R&& awaitables) -> task<io_result<>>
+[[nodiscard]] auto when_all(R&& awaitables) -> task<results<>>
 {
     using OwnedRange = detail::owned_range_t<R>;
 
@@ -844,16 +844,16 @@ template<IoAwaitableRange R>
         std::rethrow_exception(state.core_.first_exception_);
 
     if(state.has_error_.load(std::memory_order_relaxed))
-        co_return io_result<>{state.first_error_};
+        co_return results<>{state.first_error_};
 
-    co_return io_result<>{};
+    co_return results<>{};
 }
 
-/** Execute io_result-returning awaitables concurrently, inspecting error codes.
+/** Execute `results`-returning awaitables concurrently, inspecting error codes.
 
-    Overload selected when all children return io_result<Ts...>.
+    Overload selected when all children return results<Ts...>.
     The error_code is lifted out of each child into a single outer
-    io_result. On success all values are returned; on failure the
+    results. On success all values are returned; on failure the
     first error_code wins.
 
     @par Await-effects
@@ -875,9 +875,9 @@ template<IoAwaitableRange R>
     completes only after every child has finished.
 
     @par Await-returns
-    An object of type `io_result<P1, ..., Pn>` destructuring as
+    An object of type `results<P1, ..., Pn>` destructuring as
     `[ec, v1, ..., vn]`, where `Pi` is the payload of the i-th child's
-    `io_result`.
+    `results`.
 
     `ec` is the first non-zero `ec` await-returned by a child, in
     completion order rather than argument order. The `ec` of every other
@@ -898,7 +898,7 @@ template<IoAwaitableRange R>
     and `ec` is success only if every child await-returned success.
 
     @par Remarks
-    Supports _IoAwaitable cancellation_.
+    Supports _ContextAwaitable cancellation_.
 
     @par Thread Safety
     The returned task must be awaited from a single execution context.
@@ -916,31 +916,31 @@ template<IoAwaitableRange R>
         has finished or been abandoned.
 
     @param awaitables One or more awaitables each returning
-        io_result<Ts...>.
+        results<Ts...>.
 
-    @return A task yielding io_result<R1, R2, ..., Rn> where each Ri
+    @return A task yielding `results<R1, R2, ..., Rn>` where each Ri
         follows the payload flattening rules.
 */
-template<IoAwaitable... As>
+template<ContextAwaitable... As>
     requires (sizeof...(As) > 0)
-          && detail::all_io_result_awaitables<As...>
+          && detail::all_results_awaitables<As...>
 [[nodiscard]] auto when_all(As... awaitables)
-    -> task<io_result<
-        detail::io_result_payload_t<awaitable_result_t<As>>...>>
+    -> task<results<
+        detail::results_payload_t<awaitable_result_t<As>>...>>
 {
-    using result_type = io_result<
-        detail::io_result_payload_t<awaitable_result_t<As>>...>;
+    using result_type = results<
+        detail::results_payload_t<awaitable_result_t<As>>...>;
 
     detail::when_all_state<awaitable_result_t<As>...> state;
     std::tuple<As...> awaitable_tuple(std::move(awaitables)...);
 
-    co_await detail::when_all_io_launcher<As...>(&awaitable_tuple, &state);
+    co_await detail::when_all_results_launcher<As...>(&awaitable_tuple, &state);
 
     // Exception always wins over error_code
     if(state.core_.first_exception_)
         std::rethrow_exception(state.core_.first_exception_);
 
-    auto r = detail::build_when_all_io_result<result_type>(
+    auto r = detail::build_when_all_results<result_type>(
         detail::extract_results(state));
     if(state.has_error_.load(std::memory_order_relaxed))
         std::get<0>(r) = state.first_error_;

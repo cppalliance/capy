@@ -10,11 +10,11 @@
 #ifndef BOOST_CAPY_BENCH_STDEXEC_AWAITABLE_SENDER_HPP
 #define BOOST_CAPY_BENCH_STDEXEC_AWAITABLE_SENDER_HPP
 
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 
 #include <stdexec/execution.hpp>
 
@@ -31,7 +31,7 @@ namespace boost::capy {
 // Query CPO for obtaining a Capy-compatible executor
 // from a P2300 environment. The returned object must
 // satisfy Capy's Executor concept. Environments that
-// host IoAwaitables via the as_sender_lossy bridge must
+// host ContextAwaitables via the as_sender_lossy bridge must
 // answer this query.
 struct get_io_executor_t
 {
@@ -120,24 +120,24 @@ auto resolve_executor(Env const& env)
 
 } // namespace detail
 
-/** Sender that wraps an IoAwaitable.
+/** Sender that wraps a ContextAwaitable.
 
     When connected or co_awaited, the bridge queries
     the receiver's or promise's environment for a
     Capy-compatible executor via get_io_executor.
     The executor is stored by value in the operation
-    state and used to construct the io_env passed to
-    the IoAwaitable's await_suspend.
+    state and used to construct the await_context passed to
+    the ContextAwaitable's await_suspend.
 
-    @tparam IoAw The IoAwaitable type.
+    @tparam CtxAw The ContextAwaitable type.
 */
-template<class IoAw>
+template<class CtxAw>
 struct awaitable_sender
 {
     using sender_concept = stdexec::sender_tag;
 
     using result_type = decltype(
-        std::declval<std::decay_t<IoAw>&>().await_resume());
+        std::declval<std::decay_t<CtxAw>&>().await_resume());
 
     static auto make_sigs()
     {
@@ -170,7 +170,7 @@ struct awaitable_sender
 
     using completion_signatures = decltype(make_sigs());
 
-    IoAw aw_;
+    CtxAw aw_;
 
     template<class Receiver>
     struct op_state
@@ -187,13 +187,13 @@ struct awaitable_sender
                 stdexec::get_env(
                     std::declval<Receiver const&>())));
 
-        IoAw aw_;
+        CtxAw aw_;
         Receiver rcvr_;
         executor_type ex_;
-        io_env env_;
+        await_context env_;
         detail::frame_cb cb_;
 
-        op_state(IoAw aw, Receiver rcvr)
+        op_state(CtxAw aw, Receiver rcvr)
             : aw_(std::move(aw))
             , rcvr_(std::move(rcvr))
             , ex_{}
@@ -312,7 +312,7 @@ struct awaitable_sender
                     stdexec::get_stop_token_t{});
             }
 
-            env_ = io_env{ex_, st, nullptr};
+            env_ = await_context{ex_, st, nullptr};
 
             if(aw_.await_ready())
             {
@@ -352,7 +352,7 @@ struct awaitable_sender
     // Bypass stdexec's sender_awaitable when co_awaited
     // from a coroutine that provides get_io_executor or
     // a start scheduler with get_io_executor. Adapts the
-    // IoAwaitable's 2-arg await_suspend to the standard
+    // ContextAwaitable's 2-arg await_suspend to the standard
     // 1-arg protocol.
     template<class Promise>
     auto as_awaitable(Promise& promise) &&
@@ -373,10 +373,10 @@ struct awaitable_sender
 
         struct aw
         {
-            IoAw aw_;
+            CtxAw aw_;
             executor_type ex_;
             std::stop_token st_;
-            io_env env_;
+            await_context env_;
 
             bool await_ready() noexcept
             {
@@ -386,7 +386,7 @@ struct awaitable_sender
             std::coroutine_handle<>
             await_suspend(std::coroutine_handle<> h)
             {
-                env_ = io_env{ex_, st_, nullptr};
+                env_ = await_context{ex_, st_, nullptr};
                 return aw_.await_suspend(h, &env_);
             }
 
@@ -400,7 +400,7 @@ struct awaitable_sender
     }
 };
 
-/** Create a stdexec sender from an IoAwaitable.
+/** Create a stdexec sender from a ContextAwaitable.
 
     The bridge routes the awaitable's result through sender
     channels based on its type:
@@ -421,21 +421,21 @@ struct awaitable_sender
     via get_io_executor. The environment must answer this
     query with an object satisfying Capy's Executor concept.
 
-    @param aw The IoAwaitable to wrap.
+    @param aw The ContextAwaitable to wrap.
     @return A sender whose completion channels reflect
         the awaitable's result type.
 */
 // Benchmark-only bridge. Unlike the canonical as_sender in
-// example/awaitable-sender, this one accepts a compound io_result and
+// example/awaitable-sender, this one accepts a compound `results` and
 // splits it at runtime: set_value(n) on success, set_error(ec) on
 // failure, dropping the byte count that accompanied the error. The
 // benchmark keeps it to measure the bridge without the task<error_code>
 // wrapper the canonical bridge requires; do not copy it into examples.
-template<class IoAw>
-auto as_sender_lossy(IoAw&& aw)
+template<class CtxAw>
+auto as_sender_lossy(CtxAw&& aw)
 {
-    return awaitable_sender<std::decay_t<IoAw>>{
-        std::forward<IoAw>(aw)};
+    return awaitable_sender<std::decay_t<CtxAw>>{
+        std::forward<CtxAw>(aw)};
 }
 
 // split_ec: sender adapter that routes error_code to

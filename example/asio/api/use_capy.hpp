@@ -19,9 +19,9 @@
 
 #include <coroutine>
 #include <boost/capy/continuation.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 
 #include <cstddef>
 #include <memory>
@@ -65,7 +65,7 @@ struct cancel_bridge
 
 //----------------------------------------------------------
 //
-// result_type_for - Maps completion signature to io_result
+// result_type_for - Maps completion signature to `results`
 //
 //----------------------------------------------------------
 
@@ -75,25 +75,25 @@ struct result_type_for;
 template<>
 struct result_type_for<boost::system::error_code>
 {
-    using type = capy::io_result<>;
+    using type = capy::results<>;
 };
 
 template<typename T1>
 struct result_type_for<boost::system::error_code, T1>
 {
-    using type = capy::io_result<std::decay_t<T1>>;
+    using type = capy::results<std::decay_t<T1>>;
 };
 
 template<typename T1, typename T2>
 struct result_type_for<boost::system::error_code, T1, T2>
 {
-    using type = capy::io_result<std::decay_t<T1>, std::decay_t<T2>>;
+    using type = capy::results<std::decay_t<T1>, std::decay_t<T2>>;
 };
 
 template<typename T1, typename T2, typename T3>
 struct result_type_for<boost::system::error_code, T1, T2, T3>
 {
-    using type = capy::io_result<std::decay_t<T1>, std::decay_t<T2>, std::decay_t<T3>>;
+    using type = capy::results<std::decay_t<T1>, std::decay_t<T2>, std::decay_t<T3>>;
 };
 
 template<typename... Args>
@@ -101,7 +101,7 @@ using result_type_for_t = typename result_type_for<Args...>::type;
 
 //----------------------------------------------------------
 //
-// capy_awaitable - IoAwaitable wrapping a deferred operation
+// capy_awaitable - ContextAwaitable wrapping a deferred operation
 //
 //----------------------------------------------------------
 
@@ -129,7 +129,7 @@ public:
     // tag::await_suspend[]
     std::coroutine_handle<> await_suspend(
         std::coroutine_handle<> h,
-        capy::io_env const* env)
+        capy::await_context const* env)
     {
         cancel_ = std::make_shared<cancel_bridge>(env->stop_token);
 
@@ -211,10 +211,10 @@ private:
 //
 //----------------------------------------------------------
 
-/** Completion token that returns an IoAwaitable.
+/** Completion token that returns a ContextAwaitable.
 
     This completion token can be passed to any Asio async operation
-    to receive an awaitable that satisfies capy's IoAwaitable concept.
+    to receive an awaitable that satisfies capy's ContextAwaitable concept.
     The awaitable uses the extended await_suspend signature that
     accepts an executor and stop token.
 

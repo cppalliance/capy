@@ -30,9 +30,9 @@
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/concept/write_stream.hpp>
-#include <boost/capy/io_task.hpp>
-#include <boost/capy/io/any_write_stream.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
+#include <boost/capy/io/any_write_stream.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 #include <boost/capy/test/stream.hpp>
 #include <boost/capy/write.hpp>
@@ -188,7 +188,7 @@ struct chained_buffers
 
 // The iteration fragment binds each buffer without using it; the page
 // comment explains the loop body instead. The slice fragment discards
-// io_result values the same way.
+// results values the same way.
 
 // tag::iterate[]
 template<capy::ConstBufferSequence Buffers>

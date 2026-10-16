@@ -30,7 +30,7 @@
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/concept/write_stream.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 #include <boost/capy/test/stream.hpp>

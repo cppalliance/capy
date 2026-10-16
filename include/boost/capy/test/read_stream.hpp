@@ -17,8 +17,8 @@
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/cond.hpp>
 #include <coroutine>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/test/fuse.hpp>
 
 #include <string>
@@ -148,21 +148,21 @@ public:
             bool await_ready() const noexcept { return false; }
 
             // The operation completes synchronously, but await_suspend
-            // is the only place io_env is delivered (the promise's
+            // is the only place await_context is delivered (the promise's
             // transform_awaiter forwards it here). Returning false means
             // the coroutine does not actually suspend — it resumes
             // immediately — so the read still completes synchronously
-            // while having observed the stop token. See io_env, IoAwaitable.
+            // while having observed the stop token. See await_context, ContextAwaitable.
             bool
             await_suspend(
                 std::coroutine_handle<>,
-                io_env const* env) noexcept
+                await_context const* env) noexcept
             {
                 canceled_ = env->stop_token.stop_requested();
                 return false;
             }
 
-            [[nodiscard]] io_result<std::size_t>
+            [[nodiscard]] results<std::size_t>
             await_resume()
             {
                 // Empty buffer is a no-op regardless of

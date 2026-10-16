@@ -30,7 +30,7 @@
 namespace capy = boost::capy;
 namespace ex   = capy::example;
 
-capy::io_task<std::size_t>
+capy::task<capy::results<std::size_t>>
 write_batch(capy::any_write_stream& dest,
     std::array<capy::const_buffer, 3> const& bufs)
 {
@@ -61,10 +61,10 @@ int main()
         capy::make_buffer(parts[2].data(), parts[2].size())};
 
     capy::thread_pool pool(2);
-    capy::io_result<std::size_t> r;
+    capy::results<std::size_t> r;
     std::latch done{1};
     capy::run_async(pool.get_executor(),
-        [&](capy::io_result<std::size_t> ir) { r = ir; done.count_down(); })(
+        [&](capy::results<std::size_t> ir) { r = ir; done.count_down(); })(
             write_batch(dest, bufs));
     done.wait();
     auto const& [ec, n] = r;

@@ -11,9 +11,9 @@
 #define BOOST_CAPY_EXAMPLE_CUDA_DATAMOVEMENT_HPP
 
 #include <boost/capy/continuation.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/concept/const_buffer_sequence.hpp>
 
@@ -98,7 +98,7 @@ struct cuda_stream_awaiter
     }
 };
 
-/// A CUDA stream whose data-movement operations are IoAwaitables.
+/// A CUDA stream whose data-movement operations are ContextAwaitables.
 ///
 /// `memcpy_h2d`/`memcpy_d2h` issue a `cudaMemcpyAsync` and resume the
 /// awaiting coroutine on `env->executor` when the stream's
@@ -143,7 +143,7 @@ class cuda_stream
         }
 
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const* env)
+        await_suspend(std::coroutine_handle<> h, await_context const* env)
         {
             auto err = cudaMemcpyAsync(
                 dst, src, count, kind, self->stream_);
@@ -185,7 +185,7 @@ class cuda_stream
         }
 
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const* env)
+        await_suspend(std::coroutine_handle<> h, await_context const* env)
         {
             self->cont_.h = h;
             self->cont_.owner = env->owner;
@@ -278,7 +278,7 @@ public:
 /// single host function follows the last, so the stream keeps its queue
 /// depth and the coroutine suspends once per `write_some`. Because
 /// `cudaMemcpyAsync` transfers each buffer in one operation, `write_some`
-/// never performs a partial write. Errors are delivered via `io_result`
+/// never performs a partial write. Errors are delivered via `results`
 /// rather than exceptions. Does not own `stream_`; the caller is
 /// responsible for the stream's lifetime.
 class cuda_device_stream
@@ -326,7 +326,7 @@ public:
             }
 
             std::coroutine_handle<>
-            await_suspend(std::coroutine_handle<> h, io_env const* env)
+            await_suspend(std::coroutine_handle<> h, await_context const* env)
             {
                 // Enqueue the whole sequence before the host function so
                 // the stream runs the batch back to back.
@@ -359,7 +359,7 @@ public:
                 return std::noop_coroutine();
             }
 
-            io_result<std::size_t>
+            results<std::size_t>
             await_resume()
             {
                 if(! self->error_)

@@ -32,7 +32,7 @@ When async code finishes waiting, it needs to resume somewhere. Where?
 
 *Capy's answer:* The same place it started. Automatically.
 
-* Context flows forward through `await_suspend(h, env)` where `env` is an `io_env`
+* Context flows forward through `await_suspend(h, env)` where `env` is an `await_context`
 * Your coroutine started on executor X? It resumes on executor X.
 
 *TMC's answer:* Where you tell it, with flexibility to change mid-execution.
@@ -152,7 +152,7 @@ include::example$snippets/9p_why_not_tmc.cpp[tag=arena,indent=0]
 
 For I/O workloads where HALO cannot apply, allocator control is essential, not optional.
 
-== Getting Technical: The IoAwaitable Protocol
+== Getting Technical: The ContextAwaitable Protocol
 
 When you write `co_await something`, what happens?
 
@@ -176,9 +176,9 @@ The awaitable receives:
 
 * `h` — The handle (for resumption)
 * `env` — The execution environment containing:
-** cpp:io_env::executor[env->executor] — The executor (where to resume)
-** cpp:io_env::stop_token[env->stop_token] — A stop token (for cancellation)
-** cpp:io_env::frame_allocator[env->frame_allocator] — An optional `std::pmr::memory_resource*` for coroutine frame allocation (null selects the default allocator)
+** cpp:await_context::executor[env->executor] — The executor (where to resume)
+** cpp:await_context::stop_token[env->stop_token] — A stop token (for cancellation)
+** cpp:await_context::frame_allocator[env->frame_allocator] — An optional `std::pmr::memory_resource*` for coroutine frame allocation (null selects the default allocator)
 
 *TMC's approach:*
 
@@ -359,7 +359,7 @@ Corosio builds real networking on Capy:
 * Timers, DNS resolution, signal handling
 * Native backends: epoll and io_uring (Linux), kqueue (BSD/macOS), IOCP (Windows), select (portable fallback)
 
-All built on Capy's IoAwaitable protocol. Coroutines only. No callbacks.
+All built on Capy's ContextAwaitable protocol. Coroutines only. No callbacks.
 
 == When to Use Each
 

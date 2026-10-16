@@ -12,11 +12,11 @@
 //
 // Provides pool_scheduler (the P2300 scheduler for
 // sender_thread_pool), the capy executor adapter, and
-// the io_env for beman::execution::task.
+// the await_context for beman::execution::task.
 //
 
-#ifndef BOOST_CAPY_BENCH_SENDER_IO_ENV_HPP
-#define BOOST_CAPY_BENCH_SENDER_IO_ENV_HPP
+#ifndef BOOST_CAPY_BENCH_SENDER_AWAIT_CONTEXT_HPP
+#define BOOST_CAPY_BENCH_SENDER_AWAIT_CONTEXT_HPP
 
 #include "sender_thread_pool.hpp"
 #include "awaitable_sender.hpp"
@@ -208,20 +208,20 @@ inline void sender_as_capy_executor::post(
     ex::start(p->op_);
 }
 
-struct io_env
+struct await_context
 {
     using scheduler_type = pool_scheduler;
     using allocator_type = std::pmr::polymorphic_allocator<std::byte>;
 
     sender_thread_pool* pool_ = nullptr;
 
-    io_env() = default;
+    await_context() = default;
 
     template <typename Env>
         requires requires(Env const& e) {
             pool_scheduler{ex::get_scheduler(e)};
         }
-    io_env(Env const& e)
+    await_context(Env const& e)
         : pool_(pool_scheduler{ex::get_scheduler(e)}.pool_)
     {}
 };

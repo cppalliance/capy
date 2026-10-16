@@ -20,9 +20,8 @@
 // Core types
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/io_result.hpp>
-#include <boost/capy/io_task.hpp>
 #include <boost/capy/quitter.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 
 // Algorithms
@@ -48,8 +47,8 @@
 #include <boost/capy/concept/decomposes_to.hpp>
 #include <boost/capy/concept/execution_context.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/concept/io_runnable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
+#include <boost/capy/concept/context_runnable.hpp>
 #include <boost/capy/concept/mutable_buffer_sequence.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/concept/stream.hpp>
@@ -66,7 +65,7 @@
 #include <boost/capy/ex/work_guard.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/immediate.hpp>
-#include <boost/capy/ex/io_awaitable_promise_base.hpp>
+#include <boost/capy/ex/context_awaitable_promise_base.hpp>
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/ex/run.hpp>
 #include <boost/capy/ex/run_async.hpp>

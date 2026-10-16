@@ -126,7 +126,7 @@ include::example$snippets/7a_drivers.cpp[tag=early_return,indent=0]
 
 === Coroutine Support
 
-`armed()` detects when the test lambda returns an cpp:IoRunnable[] (such as
+`armed()` detects when the test lambda returns a cpp:ContextRunnable[] (such as
 cpp:task[task<void>]) and drives it to completion via `run_blocking` internally.
 You do not need to call `run_blocking` yourself:
 

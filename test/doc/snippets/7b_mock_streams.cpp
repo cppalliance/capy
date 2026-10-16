@@ -43,7 +43,6 @@ namespace {
 #include <boost/capy/test/read_stream.hpp>
 #include <boost/capy/test/fuse.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/task.hpp>
 
 namespace capy = boost::capy;
 
@@ -95,7 +94,6 @@ void test_write_stream()
 #include <boost/capy/test/stream.hpp>
 #include <boost/capy/test/fuse.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/task.hpp>
 
 namespace capy = boost::capy;
 

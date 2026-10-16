@@ -41,22 +41,22 @@ int main()
     int shared_value = 0;
 
     // tag::producer[]
-    auto producer = [&]() -> capy::io_task<> {
+    auto producer = [&]() -> capy::task<capy::results<>> {
         std::cout << "Producer: preparing data...\n";
         shared_value = 42;
         std::cout << "Producer: data ready, signaling\n";
         data_ready.set();
-        co_return capy::io_result<>{};
+        co_return capy::results<>{};
     };
     // end::producer[]
 
     // tag::consumer[]
-    auto consumer = [&]() -> capy::io_task<> {
+    auto consumer = [&]() -> capy::task<capy::results<>> {
         std::cout << "Consumer: waiting for data...\n";
         auto [ec] = co_await data_ready.wait();
         (void)ec;
         std::cout << "Consumer: received value " << shared_value << "\n";
-        co_return capy::io_result<>{};
+        co_return capy::results<>{};
     };
     // end::consumer[]
 

@@ -13,8 +13,8 @@
 #include "../doc_warnings.hpp"
 
 #include <boost/capy/task.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 
@@ -54,28 +54,28 @@ struct plain_awaitable_handle
     // end::std_suspend_handle[]
 };
 
-struct io_awaitable_form
+struct context_awaitable_form
 {
     // tag::await_suspend_env[]
-    auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env);
+    auto await_suspend(std::coroutine_handle<> h, capy::await_context const* env);
     // end::await_suspend_env[]
 };
 
 // Mirrors the shape of task.hpp's transform_awaitable(); never
-// instantiated with a non-IoAwaitable, so the else branch only
+// instantiated with a non-ContextAwaitable, so the else branch only
 // has to parse.
 template<class Awaitable>
 void protocol_strictness_shape()
 {
     using A = std::decay_t<Awaitable>;
-    if constexpr (capy::IoAwaitable<A>)
+    if constexpr (capy::ContextAwaitable<A>)
     {
     }
     // tag::strict_static_assert[]
     // From task.hpp transform_awaitable()
     else
     {
-        static_assert(sizeof(A) == 0, "requires IoAwaitable");
+        static_assert(sizeof(A) == 0, "requires ContextAwaitable");
     }
     // end::strict_static_assert[]
 }

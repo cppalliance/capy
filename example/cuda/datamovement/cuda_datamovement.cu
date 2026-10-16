@@ -10,7 +10,7 @@
 #include "cuda_datamovement.hpp"
 
 #include <boost/capy.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/test/write_stream.hpp>
 
 #include <cstddef>
@@ -22,22 +22,22 @@
 namespace capy = boost::capy;
 namespace ex   = capy::example;
 
-// Intentionally io_env-less: a standard awaitable, not an IoAwaitable.
-static_assert(! capy::IoAwaitable<ex::cuda_stream_awaiter>);
+// Intentionally await_context-less: a standard awaitable, not a ContextAwaitable.
+static_assert(! capy::ContextAwaitable<ex::cuda_stream_awaiter>);
 
 // The data-movement awaitables depend on this helper, which the paper
 // references but never defines.
 static_assert(std::is_same_v<
     decltype(ex::make_cuda_error(cudaSuccess)), std::error_code>);
 
-// The memcpy member functions return IoAwaitables.
-static_assert(capy::IoAwaitable<
+// The memcpy member functions return ContextAwaitables.
+static_assert(capy::ContextAwaitable<
     decltype(std::declval<ex::cuda_stream&>().memcpy_h2d(
         nullptr, nullptr, std::size_t{0}))>);
-static_assert(capy::IoAwaitable<
+static_assert(capy::ContextAwaitable<
     decltype(std::declval<ex::cuda_stream&>().memcpy_d2h(
         nullptr, nullptr, std::size_t{0}))>);
-static_assert(capy::IoAwaitable<
+static_assert(capy::ContextAwaitable<
     decltype(std::declval<ex::cuda_stream&>().synchronize())>);
 
 // GPU device memory satisfies WriteStream and type-erases with zero
@@ -75,7 +75,7 @@ link_check()
 #include <nccl.h>
 
 // NCCL interop: a collective enqueues onto the CUDA stream, then
-// synchronize() awaits its completion through the same IoAwaitable path.
+// synchronize() awaits its completion through the same ContextAwaitable path.
 capy::task<>
 all_reduce(ex::cuda_stream& cs, ncclComm_t comm,
     float const* sendbuf, float* recvbuf, std::size_t count)

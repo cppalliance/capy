@@ -10,7 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/concept/stream.hpp>
 
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/io/any_stream.hpp>
 
 #include <system_error>
@@ -28,14 +28,14 @@ namespace {
 // Mock awaitables
 //----------------------------------------------------------
 
-// Mock IoAwaitable returning std::pair for read
+// Mock ContextAwaitable returning std::pair for read
 struct mock_read_awaitable
 {
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const*) const noexcept
+        await_context const*) const noexcept
     {
     }
 
@@ -46,14 +46,14 @@ struct mock_read_awaitable
     }
 };
 
-// Mock IoAwaitable returning std::pair for write
+// Mock ContextAwaitable returning std::pair for write
 struct mock_write_awaitable
 {
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const*) const noexcept
+        await_context const*) const noexcept
     {
     }
 

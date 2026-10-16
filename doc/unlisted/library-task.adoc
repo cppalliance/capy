@@ -171,7 +171,7 @@ A coroutine has unique state that cannot be duplicated.
 
 == Affinity and Context
 
-Tasks implement `IoRunnable`, receiving execution environment when
+Tasks implement `ContextRunnable`, receiving execution environment when
 awaited:
 
 [source,cpp]
@@ -192,7 +192,7 @@ task<void> parent()  // Bound to pool's executor
 run_async(pool.get_executor())(parent());
 ----
 
-See xref:../io-awaitables/concepts.adoc[Concept Hierarchy] for details.
+See xref:../context-awaitables/concepts.adoc[Concept Hierarchy] for details.
 
 == Advanced Operations
 
@@ -260,6 +260,6 @@ After `release()`, the task is empty and must not be awaited.
 
 == Next Steps
 
-* xref:io-result.adoc[Error Handling with io_result] — Handle I/O errors
+* xref:results.adoc[Error Handling with `results`] — Handle I/O errors
 * xref:when-all.adoc[Concurrent Composition] — Run tasks in parallel
-* xref:../io-awaitables/launching.adoc[Launching Coroutines] — Start tasks with `run_async`
+* xref:../context-awaitables/launching.adoc[Launching Coroutines] — Start tasks with `run_async`

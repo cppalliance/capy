@@ -215,9 +215,9 @@ run_scene1(capy::thread_pool& pool, float& out)
 // Scene 2: a stream read exposed as a stdexec sender, composed with
 // stdexec::upon_error, driven by sync_wait. write_env injects the
 // capy executor that the as_sender bridge needs to drive the
-// underlying IoAwaitable.
+// underlying ContextAwaitable.
 //
-// read_some returns io_result<size_t>, which as_sender rejects at
+// read_some returns results<size_t>, which as_sender rejects at
 // compile time: sender completion channels are exclusive, so routing
 // the error through set_error would drop the byte count of a partial
 // read. The sanctioned route is a task<error_code> wrapper that moves
@@ -245,7 +245,7 @@ scene2_happy_path(capy::thread_pool& pool)
     auto sndr = ex::write_env(
         capy::as_sender(
             read_into(a, capy::mutable_buffer(buf, sizeof buf), n)),
-        ex::prop{capy::get_io_executor, pool.get_executor()})
+        ex::prop{capy::get_context_executor, pool.get_executor()})
         | ex::upon_error([](auto e) noexcept {
             if constexpr (std::is_same_v<
                 std::decay_t<decltype(e)>, std::error_code>)
@@ -281,7 +281,7 @@ scene2_error_path(capy::thread_pool& pool)
     auto sndr = ex::write_env(
         capy::as_sender(
             read_into(a, capy::mutable_buffer(buf, sizeof buf), n)),
-        ex::prop{capy::get_io_executor, pool.get_executor()})
+        ex::prop{capy::get_context_executor, pool.get_executor()})
         | ex::upon_error([&](auto e) noexcept {
             if constexpr (std::is_same_v<
                 std::decay_t<decltype(e)>, std::error_code>)

@@ -50,14 +50,14 @@ namespace ex_2 {
 struct my_sync_sink
 {
     template<capy::ConstBufferSequence CB>
-    capy::immediate<capy::io_result<std::size_t>>
+    capy::immediate<capy::results<std::size_t>>
     write(CB buffers)
     {
         auto n = process_sync(buffers);
         return {{std::error_code(), n}};
     }
 
-    capy::immediate<capy::io_result<>>
+    capy::immediate<capy::results<>>
     write_eof()
     {
         return {{}};

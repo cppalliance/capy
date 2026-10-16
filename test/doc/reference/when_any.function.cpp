@@ -31,7 +31,7 @@ namespace capy = boost::capy;
 namespace {
 namespace ex_1 {
 // tag::example_1[]
-capy::io_task<std::size_t> read_from( capy::any_read_stream& stream, capy::mutable_buffer buf )
+capy::task<capy::results<std::size_t>> read_from( capy::any_read_stream& stream, capy::mutable_buffer buf )
 {
     co_return co_await stream.read_some(buf);
 }
@@ -41,7 +41,7 @@ capy::task<void> read_first_ready(
 {
     // One awaitable per stream: each stream is touched by exactly one
     // child, so racing them concurrently is safe.
-    std::vector<capy::io_task<std::size_t>> reads;
+    std::vector<capy::task<capy::results<std::size_t>>> reads;
     for (std::size_t i = 0; i < streams.size(); ++i)
         reads.push_back(read_from(streams[i], buffers[i]));
 
@@ -55,19 +55,19 @@ capy::task<void> read_first_ready(
 } // namespace ex_1
 namespace ex_2 {
 // tag::example_2[]
-capy::io_task<> background_work_a()
+capy::task<capy::results<>> background_work_a()
 {
     co_return {};
 }
 
-capy::io_task<> background_work_b()
+capy::task<capy::results<>> background_work_b()
 {
     co_return {};
 }
 
 capy::task<void> example()
 {
-    std::vector<capy::io_task<>> jobs;
+    std::vector<capy::task<capy::results<>>> jobs;
     jobs.push_back(background_work_a());
     jobs.push_back(background_work_b());
 

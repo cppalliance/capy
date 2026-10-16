@@ -21,7 +21,8 @@
 
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/results.hpp>
+#include <boost/capy/task.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 
@@ -52,9 +53,9 @@ namespace overview {
 
 std::atomic<int> runs{0};
 
-capy::io_task<> task_a() { ++runs; co_return capy::io_result<>{}; }
-capy::io_task<> task_b() { ++runs; co_return capy::io_result<>{}; }
-capy::io_task<> task_c() { ++runs; co_return capy::io_result<>{}; }
+capy::task<capy::results<>> task_a() { ++runs; co_return capy::results<>{}; }
+capy::task<capy::results<>> task_b() { ++runs; co_return capy::results<>{}; }
+capy::task<capy::results<>> task_c() { ++runs; co_return capy::results<>{}; }
 
 // tag::sequential[]
 capy::task<> sequential()
@@ -79,19 +80,19 @@ namespace when_all_basics {
 
 // tag::when_all_basic[]
 
-capy::io_task<int> fetch_a()
+capy::task<capy::results<int>> fetch_a()
 {
-    co_return capy::io_result<int>{std::error_code(), 1};
+    co_return capy::results<int>{std::error_code(), 1};
 }
 
-capy::io_task<int> fetch_b()
+capy::task<capy::results<int>> fetch_b()
 {
-    co_return capy::io_result<int>{std::error_code(), 2};
+    co_return capy::results<int>{std::error_code(), 2};
 }
 
-capy::io_task<std::string> fetch_c()
+capy::task<capy::results<std::string>> fetch_c()
 {
-    co_return capy::io_result<std::string>{std::error_code(), "hello"};
+    co_return capy::results<std::string>{std::error_code(), "hello"};
 }
 
 capy::task<> example()
@@ -111,11 +112,11 @@ capy::task<> example()
 namespace void_mix {
 
 // tag::when_all_void_mix[]
-capy::io_task<> void_task() { co_return capy::io_result<>{}; }
+capy::task<capy::results<>> void_task() { co_return capy::results<>{}; }
 
-capy::io_task<int> int_task()
+capy::task<capy::results<int>> int_task()
 {
-    co_return capy::io_result<int>{std::error_code(), 42};
+    co_return capy::results<int>{std::error_code(), 42};
 }
 
 capy::task<> example()
@@ -123,7 +124,7 @@ capy::task<> example()
     auto [ec, a, b, c] = co_await capy::when_all(
         int_task(), void_task(), int_task());
     // a == 42       (int)
-    // b == tuple<>  (from void io_task)
+    // b == tuple<>  (from task<results<>>)
     // c == 42       (int)
 }
 // end::when_all_void_mix[]
@@ -132,8 +133,8 @@ capy::task<> example()
 
 namespace all_void {
 
-capy::io_task<> void_task_a() { co_return capy::io_result<>{}; }
-capy::io_task<> void_task_b() { co_return capy::io_result<>{}; }
+capy::task<capy::results<>> void_task_a() { co_return capy::results<>{}; }
+capy::task<capy::results<>> void_task_b() { co_return capy::results<>{}; }
 
 // tag::when_all_all_void[]
 capy::task<> example()
@@ -150,14 +151,14 @@ capy::task<> example()
 
 namespace error_handling {
 
-capy::io_task<int> task_a()
+capy::task<capy::results<int>> task_a()
 {
-    co_return capy::io_result<int>{std::error_code(), 1};
+    co_return capy::results<int>{std::error_code(), 1};
 }
 
-capy::io_task<int> task_b()
+capy::task<capy::results<int>> task_b()
 {
-    co_return capy::io_result<int>{capy::error::timeout, 0};
+    co_return capy::results<int>{capy::error::timeout, 0};
 }
 
 // tag::when_all_error[]
@@ -174,11 +175,11 @@ capy::task<> example()
 namespace exceptions {
 
 // tag::when_all_exception[]
-capy::io_task<int> might_throw(bool fail)
+capy::task<capy::results<int>> might_throw(bool fail)
 {
     if (fail)
         throw std::runtime_error("failed");
-    co_return capy::io_result<int>{std::error_code(), 42};
+    co_return capy::results<int>{std::error_code(), 42};
 }
 
 capy::task<> example()
@@ -200,30 +201,30 @@ namespace stop_prop {
 
 std::atomic<int> iterations{0};
 
-capy::io_task<> do_iteration()
+capy::task<capy::results<>> do_iteration()
 {
     ++iterations;
-    co_return capy::io_result<>{};
+    co_return capy::results<>{};
 }
 
-capy::io_task<> fail_fast()
+capy::task<capy::results<>> fail_fast()
 {
-    co_return capy::io_result<>{capy::error::timeout};
+    co_return capy::results<>{capy::error::timeout};
 }
 
 // tag::stop_propagation[]
-capy::io_task<> long_running()
+capy::task<capy::results<>> long_running()
 {
     auto token = co_await capy::this_coro::stop_token;
 
     for (int i = 0; i < 1000; ++i)
     {
         if (token.stop_requested())
-            co_return capy::io_result<>{};  // Exit early when sibling fails
+            co_return capy::results<>{};  // Exit early when sibling fails
 
         co_await do_iteration();
     }
-    co_return capy::io_result<>{};
+    co_return capy::results<>{};
 }
 // end::stop_propagation[]
 
@@ -231,14 +232,14 @@ capy::io_task<> long_running()
 
 namespace any_basic {
 
-capy::io_task<int> fetch_int()
+capy::task<capy::results<int>> fetch_int()
 {
-    co_return capy::io_result<int>{std::error_code(), 7};
+    co_return capy::results<int>{std::error_code(), 7};
 }
 
-capy::io_task<std::string> fetch_string()
+capy::task<capy::results<std::string>> fetch_string()
 {
-    co_return capy::io_result<std::string>{std::error_code(), "s"};
+    co_return capy::results<std::string>{std::error_code(), "s"};
 }
 
 // tag::when_any_basic[]
@@ -246,8 +247,8 @@ capy::io_task<std::string> fetch_string()
 capy::task<> example()
 {
     auto result = co_await capy::when_any(
-        fetch_int(),     // io_task<int>
-        fetch_string()   // io_task<std::string>
+        fetch_int(),     // task<results<int>>
+        fetch_string()   // task<results<std::string>>
     );
     // result is std::variant<std::error_code, int, std::string>
     // index 0: all tasks failed (error_code)
@@ -260,16 +261,16 @@ capy::task<> example()
 
 namespace wrap_translate {
 
-capy::io_task<> inner() { co_return capy::io_result<>{capy::error::canceled}; }
+capy::task<capy::results<>> inner() { co_return capy::results<>{capy::error::canceled}; }
 
 // tag::wrap_translate_error[]
 // canceled is benign here: translate it to success so when_any picks this child.
-capy::io_task<> wrapped()
+capy::task<capy::results<>> wrapped()
 {
     auto [ec] = co_await inner();
     if (ec == capy::cond::canceled)
-        co_return capy::io_result<>{};   // success: when_any sees a winner
-    co_return capy::io_result<>{ec};     // propagate other errors unchanged
+        co_return capy::results<>{};   // success: when_any sees a winner
+    co_return capy::results<>{ec};     // propagate other errors unchanged
 }
 // end::wrap_translate_error[]
 
@@ -277,14 +278,14 @@ capy::io_task<> wrapped()
 
 namespace wrap_lift {
 
-capy::io_task<> inner() { co_return capy::io_result<>{capy::error::timeout}; }
+capy::task<capy::results<>> inner() { co_return capy::results<>{capy::error::timeout}; }
 
 // tag::wrap_lift_error[]
 // Always succeeds; the winner's payload carries the original ec.
-capy::io_task<std::error_code> wrapped()
+capy::task<capy::results<std::error_code>> wrapped()
 {
     auto [ec] = co_await inner();
-    co_return capy::io_result<std::error_code>{std::error_code(), ec};
+    co_return capy::results<std::error_code>{std::error_code(), ec};
 }
 
 // when_any(wrapped(), ...) -> variant<error_code, std::error_code, ...>
@@ -303,24 +304,24 @@ struct page_data
     std::string sidebar;
 };
 
-capy::io_task<std::string> fetch_header(std::string url)
+capy::task<capy::results<std::string>> fetch_header(std::string url)
 {
-    co_return capy::io_result<std::string>{std::error_code(), url + ":header"};
+    co_return capy::results<std::string>{std::error_code(), url + ":header"};
 }
 
-capy::io_task<std::string> fetch_body(std::string url)
+capy::task<capy::results<std::string>> fetch_body(std::string url)
 {
-    co_return capy::io_result<std::string>{std::error_code(), url + ":body"};
+    co_return capy::results<std::string>{std::error_code(), url + ":body"};
 }
 
-capy::io_task<std::string> fetch_sidebar(std::string url)
+capy::task<capy::results<std::string>> fetch_sidebar(std::string url)
 {
-    co_return capy::io_result<std::string>{
+    co_return capy::results<std::string>{
         std::error_code(), url + ":sidebar"};
 }
 
 // tag::parallel_fetch[]
-capy::io_task<page_data> fetch_page_data(std::string url)
+capy::task<capy::results<page_data>> fetch_page_data(std::string url)
 {
     auto [ec, header, body, sidebar] = co_await capy::when_all(
         fetch_header(url),
@@ -328,9 +329,9 @@ capy::io_task<page_data> fetch_page_data(std::string url)
         fetch_sidebar(url)
     );
     if (ec)
-        co_return capy::io_result<page_data>{ec, {}};
+        co_return capy::results<page_data>{ec, {}};
 
-    co_return capy::io_result<page_data>{std::error_code(), {
+    co_return capy::results<page_data>{std::error_code(), {
         std::move(header),
         std::move(body),
         std::move(sidebar)
@@ -348,11 +349,11 @@ struct item
 };
 
 // tag::fan_out[]
-capy::io_task<int> process_item(item i);
+capy::task<capy::results<int>> process_item(item i);
 
 capy::task<int> process_all(std::vector<item> const& items)
 {
-    std::vector<capy::io_task<int>> tasks;
+    std::vector<capy::task<capy::results<int>>> tasks;
     for (auto const& item : items)
         tasks.push_back(process_item(item));
 
@@ -367,9 +368,9 @@ capy::task<int> process_all(std::vector<item> const& items)
 }
 // end::fan_out[]
 
-capy::io_task<int> process_item(item i)
+capy::task<capy::results<int>> process_item(item i)
 {
-    co_return capy::io_result<int>{std::error_code(), i.value};
+    co_return capy::results<int>{std::error_code(), i.value};
 }
 
 } // namespace fanout

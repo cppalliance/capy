@@ -8,12 +8,12 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_CONCEPT_IO_RUNNABLE_HPP
-#define BOOST_CAPY_CONCEPT_IO_RUNNABLE_HPP
+#ifndef BOOST_CAPY_CONCEPT_CONTEXT_RUNNABLE_HPP
+#define BOOST_CAPY_CONCEPT_CONTEXT_RUNNABLE_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
+#include <boost/capy/ex/await_context.hpp>
 
 #include <coroutine>
 #include <exception>
@@ -22,9 +22,9 @@
 namespace boost {
 namespace capy {
 
-/** Requires an `IoAwaitable` that exposes `handle` and `release`, and whose promise takes a continuation and an environment from outside a coroutine.
+/** Requires a `ContextAwaitable` that exposes `handle` and `release`, and whose promise takes a continuation and an environment from outside a coroutine.
 
-    Extends @ref IoAwaitable with the operations that @ref run and
+    Extends @ref ContextAwaitable with the operations that @ref run and
     @ref run_async need. Those operations start a task, transfer ownership
     of the coroutine frame, and retrieve results or exceptions after
     completion.
@@ -33,7 +33,7 @@ namespace capy {
 
     @par Syntactic Requirements
 
-    @li `T` must satisfy @ref IoAwaitable.
+    @li `T` must satisfy @ref ContextAwaitable.
     @li `T::promise_type` must be a valid type.
     @li `ct.handle()` (callable on a `const` task) returns
         `std::coroutine_handle<T::promise_type>`, must be `noexcept`.
@@ -75,9 +75,9 @@ namespace capy {
 
     The `set_environment` operation establishes the execution environment:
 
-    @li Sets the `io_env` pointer that propagates executor, stop token,
+    @li Sets the `await_context` pointer that propagates executor, stop token,
         and allocator through the coroutine chain.
-    @li The pointed-to `io_env` must outlive the coroutine.
+    @li The pointed-to `await_context` must outlive the coroutine.
 
     @par Requirements
 
@@ -97,12 +97,12 @@ namespace capy {
     @par !example example
 
 
-    @see IoAwaitable, run, run_async
+    @see ContextAwaitable, run, run_async
 */
-// tag::io_runnable_concept[]
+// tag::context_runnable_concept[]
 template<typename T>
-concept IoRunnable =
-    IoAwaitable<T> &&
+concept ContextRunnable =
+    ContextAwaitable<T> &&
     requires { typename T::promise_type; } &&
     requires(T& t, T const& ct, typename T::promise_type const& cp, typename T::promise_type& p)
     {
@@ -110,13 +110,13 @@ concept IoRunnable =
         { cp.exception() } noexcept -> std::same_as<std::exception_ptr>;
         { t.release() } noexcept;
         { p.set_continuation(std::coroutine_handle<>{}) } noexcept;
-        { p.set_environment(static_cast<io_env const*>(nullptr)) } noexcept;
+        { p.set_environment(static_cast<await_context const*>(nullptr)) } noexcept;
     } &&
     (std::is_void_v<decltype(std::declval<T&>().await_resume())> ||
      requires(typename T::promise_type& p) {
          p.result();
      });
-// end::io_runnable_concept[]
+// end::context_runnable_concept[]
 
 } // namespace capy
 } // namespace boost

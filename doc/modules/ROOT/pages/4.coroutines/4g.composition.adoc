@@ -3,7 +3,7 @@
 
 Headers: `<boost/capy/when_all.hpp>` and `<boost/capy/when_any.hpp>`. cpp:async_waker[] on this page is `<boost/capy/ex/async_waker.hpp>`.
 
-Both combinators take cpp:io_task[] children and return their results as a single cpp:io_result[]. If those two names are new, read xref:4.coroutines/4b.tasks.adoc#io-result-and-io-task[Reporting Errors] first -- everything below is expressed in them.
+Both combinators take cpp:task[task]`<results<...>>` children and return their results as a single cpp:results[]. If that type is new, read xref:4.coroutines/4b.tasks.adoc#reporting-errors[Reporting Errors] first -- everything below is expressed in them.
 
 == Overview
 
@@ -23,7 +23,7 @@ include::example$snippets/4g_composition.cpp[tag=concurrent,indent=0]
 
 == when_all: Wait for All Tasks
 
-cpp:when_all[] starts multiple cpp:io_task[] children concurrently and waits for all of them to complete. It returns cpp:task[task]`<io_result<R1, R2, ..., Rn>>`, a single `ec` plus the flattened payloads:
+cpp:when_all[] starts multiple cpp:task[task]`<results<...>>` children concurrently and waits for all of them to complete. It returns cpp:task[task]`<results<R1, R2, ..., Rn>>`, a single `ec` plus the flattened payloads:
 
 [source,cpp]
 ----
@@ -32,18 +32,18 @@ include::example$snippets/4g_composition.cpp[tag=when_all_basic,indent=0]
 
 === Result Type
 
-cpp:when_all[] returns cpp:io_result[io_result]`<R1, ..., Rn>` where each `Ri` is the child's payload flattened: `io_result<T>` contributes `T`, `io_result<>` contributes `tuple<>`. Check `ec` first; values are only meaningful when `!ec`.
+cpp:when_all[] returns cpp:results[results]`<R1, ..., Rn>` where each `Ri` is the child's payload flattened: `results<T>` contributes `T`, `results<>` contributes `tuple<>`. Check `ec` first; values are only meaningful when `!ec`.
 
-=== Void io_tasks
+=== Payload-free children
 
-cpp:io_task[io_task<>] children contribute `tuple<>` to the result:
+cpp:task[task]`<results<>>` children contribute `tuple<>` to the result:
 
 [source,cpp]
 ----
 include::example$snippets/4g_composition.cpp[tag=when_all_void_mix,indent=0]
 ----
 
-When all children are cpp:io_task[io_task<>], just check the error code:
+When all children are cpp:task[task]`<results<>>`, just check the error code:
 
 [source,cpp]
 ----
@@ -52,11 +52,11 @@ include::example$snippets/4g_composition.cpp[tag=when_all_all_void,indent=0]
 
 === Error Handling
 
-I/O errors are reported through the error code that leads the cpp:io_result[io_result]. When any child returns a non-zero error code:
+I/O errors are reported through the error code that leads the cpp:results[results]. When any child returns a non-zero error code:
 
 1. Stop is requested for sibling tasks
 2. All tasks complete (or respond to stop)
-3. The first `ec` (in completion order, not input order) is propagated in the outer cpp:io_result[io_result]
+3. The first `ec` (in completion order, not input order) is propagated in the outer cpp:results[results]
 
 [source,cpp]
 ----
@@ -81,7 +81,7 @@ include::example$snippets/4g_composition.cpp[tag=stop_propagation,indent=0]
 
 == when_any: First-to-Succeed Wins
 
-cpp:when_any[] starts multiple cpp:io_task[] children concurrently and returns when the first one *succeeds* (`!ec`):
+cpp:when_any[] starts multiple cpp:task[task]`<results<...>>` children concurrently and returns when the first one *succeeds* (`!ec`):
 
 [source,cpp]
 ----

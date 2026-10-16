@@ -271,4 +271,4 @@ cpp:frame_alloc_mixin[] (in `<boost/capy/ex/frame_alloc_mixin.hpp>`) supplies `o
 * Bypass virtual dispatch when that allocator is the default recycling memory resource.
 * Store the resolved allocator pointer at the tail of each frame, so deallocation uses the correct resource even if the thread-local allocator has since changed.
 
-This is the same strategy used internally by cpp:io_awaitable_promise_base[]. Use the mixin directly when your promise type does not need the full environment and continuation support that `io_awaitable_promise_base` provides. The allocation fast path uses thread-local storage and needs no synchronization; the global pool fallback is mutex-protected.
+This is the same strategy used internally by cpp:context_awaitable_promise_base[]. Use the mixin directly when your promise type does not need the full environment and continuation support that `context_awaitable_promise_base` provides. The allocation fast path uses thread-local storage and needs no synchronization; the global pool fallback is mutex-protected.

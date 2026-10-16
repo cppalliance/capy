@@ -21,8 +21,8 @@
 #include <boost/capy/buffers/asio.hpp>
 #include <boost/capy/concept/stream.hpp>
 #include <coroutine>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
 
 #include <cstddef>
 #include <memory>
@@ -81,7 +81,7 @@ public:
     {
         asio_socket* self_;
         MB buffers_;
-        capy::io_result<std::size_t> result_;
+        capy::results<std::size_t> result_;
         std::shared_ptr<cancel_state> cancel_;
         capy::continuation cont_;
 
@@ -102,7 +102,7 @@ public:
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
-            capy::io_env const* env)
+            capy::await_context const* env)
         {
             cont_.h = h;
             cont_.owner = env->owner;
@@ -132,7 +132,7 @@ public:
             return std::noop_coroutine();
         }
 
-        capy::io_result<std::size_t>
+        capy::results<std::size_t>
         await_resume()
         {
             cancel_.reset();
@@ -154,7 +154,7 @@ public:
     {
         asio_socket* self_;
         CB buffers_;
-        capy::io_result<std::size_t> result_;
+        capy::results<std::size_t> result_;
         std::shared_ptr<cancel_state> cancel_;
         capy::continuation cont_;
 
@@ -175,7 +175,7 @@ public:
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
-            capy::io_env const* env)
+            capy::await_context const* env)
         {
             cont_.h = h;
             cont_.owner = env->owner;
@@ -205,7 +205,7 @@ public:
             return std::noop_coroutine();
         }
 
-        capy::io_result<std::size_t>
+        capy::results<std::size_t>
         await_resume()
         {
             cancel_.reset();

@@ -7,13 +7,13 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 
@@ -84,7 +84,7 @@ struct frame_cb_test
         BOOST_TEST_EQ(value, 42);
     }
 
-    // IoAwaitable that resumes synchronously and returns a value
+    // ContextAwaitable that resumes synchronously and returns a value
     struct sync_awaitable
     {
         int value;
@@ -97,18 +97,18 @@ struct frame_cb_test
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
-            io_env const*) noexcept
+            await_context const*) noexcept
         {
             return h;
         }
 
-        io_result<int> await_resume() noexcept
+        results<int> await_resume() noexcept
         {
             return {std::error_code{}, value};
         }
     };
 
-    static_assert(IoAwaitable<sync_awaitable>);
+    static_assert(ContextAwaitable<sync_awaitable>);
 
     static task<int>
     await_sync(int v)
@@ -118,7 +118,7 @@ struct frame_cb_test
     }
 
     void
-    testWithIoAwaitable()
+    testWithContextAwaitable()
     {
         int result = 0;
         test::run_blocking(
@@ -127,7 +127,7 @@ struct frame_cb_test
         BOOST_TEST_EQ(result, 99);
     }
 
-    // IoAwaitable that posts to executor (async resume)
+    // ContextAwaitable that posts to executor (async resume)
     struct async_awaitable
     {
         int value;
@@ -141,20 +141,20 @@ struct frame_cb_test
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
-            io_env const* env) noexcept
+            await_context const* env) noexcept
         {
             cont_.h = h;
             env->executor.post(cont_);
             return std::noop_coroutine();
         }
 
-        io_result<int> await_resume() noexcept
+        results<int> await_resume() noexcept
         {
             return {std::error_code{}, value};
         }
     };
 
-    static_assert(IoAwaitable<async_awaitable>);
+    static_assert(ContextAwaitable<async_awaitable>);
 
     static task<int>
     await_async(int v)
@@ -190,7 +190,7 @@ struct frame_cb_test
         testResumeCallsFunctionPointer();
         testDestroyIsNoOp();
         testDataPointerPassedThrough();
-        testWithIoAwaitable();
+        testWithContextAwaitable();
         testWithAsyncAwaitable();
     }
 };

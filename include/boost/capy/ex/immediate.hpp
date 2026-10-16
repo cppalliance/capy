@@ -12,8 +12,8 @@
 #define BOOST_CAPY_EX_IMMEDIATE_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
 
 #include <coroutine>
 #include <stop_token>
@@ -30,7 +30,7 @@ namespace capy {
     is optimized away by the compiler.
 
     Use this to adapt synchronous operations to satisfy async concepts
-    like @ref IoAwaitable without the overhead of a full coroutine frame.
+    like @ref ContextAwaitable without the overhead of a full coroutine frame.
 
     @tparam T The result type to wrap.
 
@@ -42,7 +42,7 @@ namespace capy {
     @par !example example_2
 
 
-    @see ready, io_result
+    @see ready, results
 */
 template<class T>
 struct immediate
@@ -61,9 +61,9 @@ struct immediate
         return true;
     }
 
-    /** IoAwaitable protocol overload.
+    /** ContextAwaitable protocol overload.
 
-        This overload allows `immediate` to satisfy the @ref IoAwaitable
+        This overload allows `immediate` to satisfy the @ref ContextAwaitable
         concept. Since the result is already available, the environment
         is unused.
 
@@ -75,7 +75,7 @@ struct immediate
     std::coroutine_handle<>
     await_suspend(
         std::coroutine_handle<> h,
-        io_env const* env) const noexcept
+        await_context const* env) const noexcept
     {
         (void)h;
         (void)env;
@@ -104,71 +104,71 @@ struct immediate
     }
 };
 
-/** Create an immediate awaitable for a successful io_result.
+/** Create an immediate awaitable for a successful `results`.
 
-    This helper creates an @ref immediate wrapping an @ref io_result
+    This helper creates an @ref immediate wrapping an @ref results
     with no error and the provided values.
 
     @par Example
     @par !example example_1
 
 
-    @return An immediate awaitable containing a successful io_result.
+    @return An immediate awaitable containing a successful `results`.
 
-    @see immediate, io_result
+    @see immediate, results
 */
 inline
-immediate<io_result<>>
+immediate<results<>>
 ready() noexcept
 {
     return {{}};
 }
 
-/** Create an immediate awaitable for a successful io_result with one value.
+/** Create an immediate awaitable for a successful `results` with one value.
 
     @param t1 The result value.
 
-    @return An immediate awaitable containing `io_result<T1>{std::error_code(), t1}`.
+    @return An immediate awaitable containing `results<T1>{std::error_code(), t1}`.
 */
 template<class T1>
-immediate<io_result<T1>>
+immediate<results<T1>>
 ready(T1 t1)
 {
     return {{std::error_code(), std::move(t1)}};
 }
 
-/** Create an immediate awaitable for a successful io_result with two values.
+/** Create an immediate awaitable for a successful `results` with two values.
 
     @param t1 The first result value.
     @param t2 The second result value.
 
-    @return An immediate awaitable containing `io_result<T1,T2>{std::error_code(), t1, t2}`.
+    @return An immediate awaitable containing `results<T1,T2>{std::error_code(), t1, t2}`.
 */
 template<class T1, class T2>
-immediate<io_result<T1, T2>>
+immediate<results<T1, T2>>
 ready(T1 t1, T2 t2)
 {
     return {{std::error_code(), std::move(t1), std::move(t2)}};
 }
 
-/** Create an immediate awaitable for a successful io_result with three values.
+/** Create an immediate awaitable for a successful `results` with three values.
 
     @param t1 The first result value.
     @param t2 The second result value.
     @param t3 The third result value.
 
-    @return An immediate awaitable containing `io_result<T1,T2,T3>{std::error_code(), t1, t2, t3}`.
+    @return An immediate awaitable containing `results<T1,T2,T3>{std::error_code(), t1, t2, t3}`.
 */
 template<class T1, class T2, class T3>
-immediate<io_result<T1, T2, T3>>
+immediate<results<T1, T2, T3>>
 ready(T1 t1, T2 t2, T3 t3)
 {
     return {{std::error_code(), std::move(t1), std::move(t2), std::move(t3)}};
 }
 
-/** Create an immediate awaitable for a failed io_result.
+/** Create an immediate awaitable for a failed `results`.
 
-    This helper creates an @ref immediate wrapping an @ref io_result
+    This helper creates an @ref immediate wrapping an @ref results
     with an error code.
 
     @par Example
@@ -177,57 +177,57 @@ ready(T1 t1, T2 t2, T3 t3)
 
     @param ec The error code.
 
-    @return An immediate awaitable containing a failed io_result.
+    @return An immediate awaitable containing a failed `results`.
 
-    @see immediate, io_result
+    @see immediate, results
 */
 inline
-immediate<io_result<>>
+immediate<results<>>
 ready(std::error_code ec) noexcept
 {
     return {{ec}};
 }
 
-/** Create an immediate awaitable for an io_result with error and one value.
+/** Create an immediate awaitable for a `results` with error and one value.
 
     @param ec The error code.
     @param t1 The result value.
 
-    @return An immediate awaitable containing `io_result<T1>{ec, t1}`.
+    @return An immediate awaitable containing `results<T1>{ec, t1}`.
 */
 template<class T1>
-immediate<io_result<T1>>
+immediate<results<T1>>
 ready(std::error_code ec, T1 t1)
 {
     return {{ec, std::move(t1)}};
 }
 
-/** Create an immediate awaitable for an io_result with error and two values.
+/** Create an immediate awaitable for a `results` with error and two values.
 
     @param ec The error code.
     @param t1 The first result value.
     @param t2 The second result value.
 
-    @return An immediate awaitable containing `io_result<T1,T2>{ec, t1, t2}`.
+    @return An immediate awaitable containing `results<T1,T2>{ec, t1, t2}`.
 */
 template<class T1, class T2>
-immediate<io_result<T1, T2>>
+immediate<results<T1, T2>>
 ready(std::error_code ec, T1 t1, T2 t2)
 {
     return {{ec, std::move(t1), std::move(t2)}};
 }
 
-/** Create an immediate awaitable for an io_result with error and three values.
+/** Create an immediate awaitable for a `results` with error and three values.
 
     @param ec The error code.
     @param t1 The first result value.
     @param t2 The second result value.
     @param t3 The third result value.
 
-    @return An immediate awaitable containing `io_result<T1,T2,T3>{ec, t1, t2, t3}`.
+    @return An immediate awaitable containing `results<T1,T2,T3>{ec, t1, t2, t3}`.
 */
 template<class T1, class T2, class T3>
-immediate<io_result<T1, T2, T3>>
+immediate<results<T1, T2, T3>>
 ready(std::error_code ec, T1 t1, T2 t2, T3 t3)
 {
     return {{ec, std::move(t1), std::move(t2), std::move(t3)}};

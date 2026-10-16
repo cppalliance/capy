@@ -13,11 +13,11 @@ source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} PREFIX "" FILES
     stdexec/main.cpp
     stdexec/allocation_tracker.hpp
     stdexec/awaitable_sender.hpp
-    stdexec/ioaw_io_read_stream.hpp
-    stdexec/ioaw_read_stream.hpp
-    stdexec/ioaw_sync_read_stream.hpp
+    stdexec/ctxaw_io_read_stream.hpp
+    stdexec/ctxaw_read_stream.hpp
+    stdexec/ctxaw_sync_read_stream.hpp
     stdexec/sender_awaitable.hpp
-    stdexec/sender_io_env.hpp
+    stdexec/sender_await_context.hpp
     stdexec/sndr_any_read_stream.hpp
     stdexec/sndr_io_read_stream.hpp
     stdexec/sndr_read_stream.hpp

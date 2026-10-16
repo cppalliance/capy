@@ -8,7 +8,7 @@
 //
 
 #include <boost/capy/concept/execution_context.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/run.hpp>
 #include <boost/capy/ex/strand.hpp>
@@ -128,8 +128,8 @@ struct foreign_awaitable
     {
     }
 
-    // IoAwaitable protocol
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const*) const
+    // ContextAwaitable protocol
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, await_context const*) const
     {
         return h;
     }

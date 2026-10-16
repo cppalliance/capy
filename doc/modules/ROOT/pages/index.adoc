@@ -17,7 +17,7 @@ It offers a number of task synchronization mechanisms, ranging from low-level, l
 to high-level, like _strands_, `when_all`/`when_any` "joins", and the resume-on-the-same-executor guarantee.
 
 Libraries that want to provide concrete I/O implementations -- like those based on `epoll` or `io_uring` --
-can plug into Capy's system via the `IoAwaitable` protocol, which describes how tasks can be scheduled, 
+can plug into Capy's system via the `ContextAwaitable` protocol, which describes how tasks can be scheduled, 
 cancelled, and allocated in memory.
 
 You also get the testing tools that allow you to test your asynchronous flows in a deterministic way.
@@ -48,6 +48,6 @@ include::example$programs/index_page_echo.cpp[tag=full]
 
 * xref:quick-start.adoc[Quick Start] — Set up your first Capy project
 * xref:2.cpp20-coroutines/2a.foundations.adoc[{cpp}20 Coroutines Tutorial] — Learn coroutines from the ground up
-* xref:4.coroutines/4b.tasks.adoc[Coroutines in Capy] — Deep dive into cpp:task[task<T>] and the IoAwaitable protocol
+* xref:4.coroutines/4b.tasks.adoc[Coroutines in Capy] — Deep dive into cpp:task[task<T>] and the ContextAwaitable protocol
 * xref:5.buffers/5.intro.adoc[Buffer Sequences] — Contiguous buffers, composite buffers, system I/O, and the algorithms over them
 * xref:6.streams/6a.concepts.adoc[Stream Concepts] — Understand the three stream concepts

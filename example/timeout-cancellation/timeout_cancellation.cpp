@@ -70,15 +70,15 @@ struct fetch_channel
 // wakes fetch_ready. If the deadline wins first, when_any's stop
 // request cancels the wait; flag the worker so it stops early.
 // tag::race_await_fetch[]
-capy::io_task<std::string> await_fetch(fetch_channel& ch)
+capy::task<capy::results<std::string>> await_fetch(fetch_channel& ch)
 {
     auto [ec] = co_await ch.fetch_ready.wait();
     if (ec)
     {
         ch.cancelled.store(true);
-        co_return capy::io_result<std::string>{ec, {}};
+        co_return capy::results<std::string>{ec, {}};
     }
-    co_return capy::io_result<std::string>{std::error_code(), std::move(ch.result)};
+    co_return capy::results<std::string>{std::error_code(), std::move(ch.result)};
 }
 // end::race_await_fetch[]
 
@@ -86,10 +86,10 @@ capy::io_task<std::string> await_fetch(fetch_channel& ch)
 // the waker. This is the escape hatch: the user supplies the
 // thread and the clock.
 // tag::race_deadline[]
-capy::io_task<> deadline(capy::async_waker& waker)
+capy::task<capy::results<>> deadline(capy::async_waker& waker)
 {
     auto [ec] = co_await waker.wait();
-    co_return capy::io_result<>{ec};
+    co_return capy::results<>{ec};
 }
 // end::race_deadline[]
 

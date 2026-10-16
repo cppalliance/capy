@@ -33,16 +33,16 @@ target_link_libraries(parallel_fetch PRIVATE Boost::capy)
 include::example$parallel-fetch/parallel_fetch.cpp[tag=when_all_dashboard,indent=0]
 ----
 
-cpp:when_all[] requires children returning cpp:io_result[], so plain tasks are wrapped. The result is `io_result<std::string, int, double>`, a single `ec` plus the flattened payloads in input order.
+cpp:when_all[] requires children returning cpp:results[], so plain tasks are wrapped. The result is `results<std::string, int, double>`, a single `ec` plus the flattened payloads in input order.
 
-=== Void io_tasks
+=== Payload-free children
 
 [source,cpp]
 ----
 include::example$parallel-fetch/parallel_fetch.cpp[tag=when_all_void,indent=0]
 ----
 
-cpp:io_task[io_task<>] children return cpp:io_result[io_result<>] (an error code, no payload). Check `std::get<0>(r)` to detect failure.
+cpp:task[task]`<results<>>` children return cpp:results[results<>] (an error code, no payload). Check `std::get<0>(r)` to detect failure.
 
 === Error Propagation
 
@@ -51,7 +51,7 @@ cpp:io_task[io_task<>] children return cpp:io_result[io_result<>] (an error code
 include::example$parallel-fetch/parallel_fetch.cpp[tag=when_all_errors,indent=0]
 ----
 
-I/O errors are reported via `ec` in the cpp:io_result[io_result]. Thrown exceptions are captured separately. Upon error, cancellation is requested and the first exception is rethrown after all tasks complete.
+I/O errors are reported via `ec` in the cpp:results[results]. Thrown exceptions are captured separately. Upon error, cancellation is requested and the first exception is rethrown after all tasks complete.
 
 == Output
 

@@ -11,7 +11,7 @@ This document compares the combinator capabilities of two models:
 - **Coroutine-native** (`io::when_all`, `io::when_any`) as specified in `combinators.md`
 - **Sender/receiver** (`std::execution::when_all`) as specified in P2300R10
 
-The comparison assumes the sender model routes I/O results correctly: `!ec` goes to `set_value(T...)`, `ec` goes to `set_error(ec)`. This routing happens in the coroutine body - the translation layer described in P4093R0 (Falco, Gerbino). The coroutine absorbs the compound `io_result{ec, n}`, uses `n` on the success path, and propagates `ec` on the failure path. By the time the result crosses the sender boundary, it is clean: value or error, never both.
+The comparison assumes the sender model routes I/O results correctly: `!ec` goes to `set_value(T...)`, `ec` goes to `set_error(ec)`. This routing happens in the coroutine body - the translation layer described in P4093R0 (Falco, Gerbino). The coroutine absorbs the compound `results{ec, n}`, uses `n` on the success path, and propagates `ec` on the failure path. By the time the result crosses the sender boundary, it is clean: value or error, never both.
 
 ---
 
@@ -43,7 +43,7 @@ Assuming correct routing (`!ec` -> `set_value`, `ec` -> `set_error`):
 
 | # | Scenario | Coroutine-native | Sender | Gap? |
 |---|----------|------------------|--------|------|
-| 1 | All tasks succeed | `io_result<R1,...,Rn>` with `!ec` | `tuple<R1,...,Rn>` via `set_value` | Ergonomic only |
+| 1 | All tasks succeed | `results<R1,...,Rn>` with `!ec` | `tuple<R1,...,Rn>` via `set_value` | Ergonomic only |
 | 2 | One task returns `ec` | Inspects `ec`. Cancels siblings. | `set_error(tuple(ec, T...))`. Cancels siblings. | None |
 | 3 | Multiple `ec` concurrently | First `ec` wins. | First `set_error` wins. | None |
 | 4 | EOF, `n == 0` | Error. Cancel. | `set_error(tuple(eof, 0))`. Cancel. | None |
@@ -55,10 +55,10 @@ Assuming correct routing (`!ec` -> `set_value`, `ec` -> `set_error`):
 | 10 | Exception vs. `ec` | Exception wins. | Both are `set_error`. Distinguishable by type. | Minor (type dispatch needed) |
 | 11 | Parent stop | ECANCELED, standard behavior. | `set_stopped`. Standard behavior. | None |
 | 12 | All tasks fail | First `ec` wins. | First `set_error` wins. | None |
-| 13 | Failure reporting | Outer `io_result`'s `ec`. | `set_error` channel. | Ergonomic only |
-| 14 | Return type | `io_result<R1,...,Rn>`. One `ec`, flat destructuring. | `tuple<R1,...,Rn>`. No `ec` lifting. | Ergonomic only |
+| 13 | Failure reporting | Outer `results`'s `ec`. | `set_error` channel. | Ergonomic only |
+| 14 | Return type | `results<R1,...,Rn>`. One `ec`, flat destructuring. | `tuple<R1,...,Rn>`. No `ec` lifting. | Ergonomic only |
 
-**No structural gaps.** The sender `when_all` can do everything `io::when_all` can do when the routing is correct. With `set_error(tuple(ec, T...))`, partial bytes are preserved in the error payload. The differences are ergonomic: the coroutine-native return type (`io_result<R1,...,Rn>`) is more convenient than `tuple<R1,...,Rn>`. Neither difference affects capability.
+**No structural gaps.** The sender `when_all` can do everything `io::when_all` can do when the routing is correct. With `set_error(tuple(ec, T...))`, partial bytes are preserved in the error payload. The differences are ergonomic: the coroutine-native return type (`results<R1,...,Rn>`) is more convenient than `tuple<R1,...,Rn>`. Neither difference affects capability.
 
 ---
 
@@ -88,7 +88,7 @@ P2300 does not define `when_any`. A custom sender `when_any` can be written. Ass
 The key insight is that the compound result never needs to cross the sender boundary intact. The coroutine body decomposes it:
 
 ```
-I/O primitive -> io_result{ec, n}
+I/O primitive -> results{ec, n}
                       |
               coroutine body (translation layer)
                       |
@@ -109,7 +109,7 @@ The gaps are ergonomic, not structural:
 
 ### Return type convenience
 
-Coroutine-native `io::when_all` returns `io_result<R1, R2, ..., Rn>` - one `ec`, flat destructuring:
+Coroutine-native `io::when_all` returns `results<R1, R2, ..., Rn>` - one `ec`, flat destructuring:
 
 ```cpp
 auto [ec, n1, n2, n3] = co_await io::when_all(
@@ -155,6 +155,6 @@ These are the sender model's strengths. They are orthogonal to I/O combinators.
 
 There are no structural gaps between the two models for I/O combinators. The three-channel model works for I/O when the compound result is decomposed in the coroutine body before crossing the sender boundary. This decomposition is the translation layer described in P4093R0.
 
-The differences are ergonomic. The coroutine-native model provides a more convenient return type (`io_result<R1,...,Rn>` with one `ec` and flat destructuring), preserves partial bytes on the failure path, and ships `when_any` out of the box. The sender model requires the user to write `when_any` and returns less convenient types, but can express the same semantics.
+The differences are ergonomic. The coroutine-native model provides a more convenient return type (`results<R1,...,Rn>` with one `ec` and flat destructuring), preserves partial bytes on the failure path, and ships `when_any` out of the box. The sender model requires the user to write `when_any` and returns less convenient types, but can express the same semantics.
 
 Both models require a coroutine body to decompose the compound result. The coroutine body is the bridge between I/O's compound results and any combinator model - whether channel-based or value-based. The question is not which model handles compound results better at the combinator level. Both handle them identically, because both rely on the same coroutine body to decompose them first.

@@ -10,9 +10,9 @@
 // Test that header file is self-contained.
 #include <boost/capy/ex/abandon.hpp>
 
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/ex/context_awaitable_promise_base.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-#include <boost/capy/ex/io_awaitable_promise_base.hpp>
-#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
@@ -65,7 +65,7 @@ struct plain_park
 struct own_delete_task
 {
     struct promise_type
-        : io_awaitable_promise_base<promise_type>
+        : context_awaitable_promise_base<promise_type>
     {
         static void* operator new(std::size_t size)
         {
@@ -146,7 +146,7 @@ struct own_delete_task
     bool await_ready() const noexcept { return false; }
 
     std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> cont, io_env const* env)
+        std::coroutine_handle<> cont, await_context const* env)
     {
         h_.promise().set_continuation(cont);
         h_.promise().set_environment(env);
@@ -210,7 +210,7 @@ struct parking_lot
         bool await_ready() const noexcept { return false; }
 
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const* env)
+        await_suspend(std::coroutine_handle<> h, await_context const* env)
         {
             lot->hs.push_back(continuation{h, nullptr, env->owner});
             return std::noop_coroutine();
@@ -253,7 +253,7 @@ struct signal_park
     bool await_ready() const noexcept { return false; }
 
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<> h, io_env const* env) noexcept
+    await_suspend(std::coroutine_handle<> h, await_context const* env) noexcept
     {
         slot->h = h;
         slot->owner = env->owner;

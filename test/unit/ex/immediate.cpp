@@ -10,9 +10,10 @@
 // Test that header file is self-contained.
 #include <boost/capy/ex/immediate.hpp>
 
-#include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
+#include <boost/capy/task.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 
 #include "test/unit/test_helpers.hpp"
@@ -22,9 +23,9 @@
 namespace boost {
 namespace capy {
 
-static_assert(IoAwaitable<immediate<int>>);
-static_assert(IoAwaitable<immediate<io_result<>>>);
-static_assert(IoAwaitable<immediate<io_result<std::size_t>>>);
+static_assert(ContextAwaitable<immediate<int>>);
+static_assert(ContextAwaitable<immediate<results<>>>);
+static_assert(ContextAwaitable<immediate<results<std::size_t>>>);
 
 struct immediate_test
 {
@@ -37,15 +38,15 @@ struct immediate_test
             BOOST_TEST(im.await_ready());
         }
 
-        // immediate<io_result<>> is always ready
+        // immediate<results<>> is always ready
         {
-            immediate<io_result<>> im{{}};
+            immediate<results<>> im{{}};
             BOOST_TEST(im.await_ready());
         }
 
-        // immediate<io_result<std::size_t>> is always ready
+        // immediate<results<std::size_t>> is always ready
         {
-            immediate<io_result<std::size_t>> im{{std::error_code(), 100}};
+            immediate<results<std::size_t>> im{{std::error_code(), 100}};
             BOOST_TEST(im.await_ready());
         }
     }
@@ -65,16 +66,16 @@ struct immediate_test
             BOOST_TEST_EQ(im.await_resume(), "hello");
         }
 
-        // immediate<io_result<>> returns result
+        // immediate<results<>> returns result
         {
-            immediate<io_result<>> im{{}};
+            immediate<results<>> im{{}};
             auto r = im.await_resume();
             BOOST_TEST(!std::get<0>(r));
         }
 
-        // immediate<io_result<std::size_t>> returns result with value
+        // immediate<results<std::size_t>> returns result with value
         {
-            immediate<io_result<std::size_t>> im{{std::error_code(), 42}};
+            immediate<results<std::size_t>> im{{std::error_code(), 42}};
             auto r = im.await_resume();
             BOOST_TEST(!std::get<0>(r));
             BOOST_TEST_EQ(std::get<1>(r), 42u);
@@ -94,13 +95,13 @@ struct immediate_test
             BOOST_TEST_EQ(result, 42);
         }
 
-        // co_await immediate<io_result<std::size_t>>
+        // co_await immediate<results<std::size_t>>
         {
-            auto coro = []() -> io_task<std::size_t> {
-                co_return co_await immediate<io_result<std::size_t>>{{std::error_code(), 100}};
+            auto coro = []() -> task<results<std::size_t>> {
+                co_return co_await immediate<results<std::size_t>>{{std::error_code(), 100}};
             };
-            io_result<std::size_t> result{};
-            test::run_blocking([&](io_result<std::size_t> v) { result = v; })(coro());
+            results<std::size_t> result{};
+            test::run_blocking([&](results<std::size_t> v) { result = v; })(coro());
             BOOST_TEST(!std::get<0>(result));
             BOOST_TEST_EQ(std::get<1>(result), 100u);
         }
@@ -108,7 +109,7 @@ struct immediate_test
         // Structured binding with co_await
         {
             auto coro = []() -> task<std::size_t> {
-                auto [ec, n] = co_await immediate<io_result<std::size_t>>{{std::error_code(), 50}};
+                auto [ec, n] = co_await immediate<results<std::size_t>>{{std::error_code(), 50}};
                 if(ec)
                     co_return 0;
                 co_return n;
@@ -300,7 +301,7 @@ struct immediate_test
         {
             mock_sync_parser& pr_;
 
-            immediate<io_result<std::size_t>>
+            immediate<results<std::size_t>>
             write(std::size_t n)
             {
                 auto ec = pr_.write(n);
@@ -309,7 +310,7 @@ struct immediate_test
                 return ready(n);
             }
 
-            immediate<io_result<>>
+            immediate<results<>>
             write_eof()
             {
                 pr_.finish();
@@ -350,9 +351,9 @@ struct immediate_test
     }
 
     void
-    testIoAwaitableProtocol()
+    testContextAwaitableProtocol()
     {
-        // Test await_suspend with executor (IoAwaitable protocol)
+        // Test await_suspend with executor (ContextAwaitable protocol)
         {
             int dispatch_count = 0;
             test_executor ex(dispatch_count);
@@ -362,7 +363,7 @@ struct immediate_test
 
             // Even though we call await_suspend, it returns noop
             // because the result is already ready
-            io_env env{ex, {}};
+            await_context env{ex, {}};
             auto result = im.await_suspend(
                 std::noop_coroutine(),
                 &env);
@@ -406,7 +407,7 @@ struct immediate_test
         testReadyThreeValues();
         testReadyWithError();
         testWriteSinkPattern();
-        testIoAwaitableProtocol();
+        testContextAwaitableProtocol();
         testMoveSemantics();
     }
 };

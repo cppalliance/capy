@@ -27,7 +27,7 @@ namespace capy {
     on another executor, or one branch of `when_all` or `when_any`. Its
     owner is the coroutine that started it, suspended above the
     segment's top frame until that frame completes. Every coroutine in
-    the segment reaches the owner through its @ref io_env.
+    the segment reaches the owner through its @ref await_context.
 
     When the holder of a suspended coroutine in the segment gives it up
     with @ref abandon, the owner posts its own continuation to its

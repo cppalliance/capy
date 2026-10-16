@@ -16,7 +16,7 @@ following xref:reference:boost/capy.adoc[Reference] section.
 == What This Section Covers
 
 * xref:A.specification-methods/Ab.cancellation.adoc[Cancellation] -- What it means for a
-  function to support `IoAwaitable` cancellation via a propagated `std::stop_token`.
+  function to support `ContextAwaitable` cancellation via a propagated `std::stop_token`.
 * xref:A.specification-methods/Ac.contingencies.adoc[Contingencies] -- What a
   _contingency_ is, and how the reference describes operations that cannot complete in
   full.

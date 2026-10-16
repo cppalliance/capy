@@ -8,13 +8,13 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Compiled fragments shown in pages/4.coroutines/4d.io-awaitable.adoc.
+// Compiled fragments shown in pages/4.coroutines/4d.context-awaitable.adoc.
 
 #include "../doc_warnings.hpp"
 
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/continuation.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/task.hpp>
@@ -59,21 +59,21 @@ struct std_awaiter_handle
     // end::std_await_suspend[]
 };
 
-struct io_awaiter_signature
+struct context_awaiter_signature
 {
     // tag::two_arg_await_suspend[]
-    auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env);
+    auto await_suspend(std::coroutine_handle<> h, capy::await_context const* env);
     // end::two_arg_await_suspend[]
 };
 
-static_assert(capy::IoAwaitable<capy::task<int>>);
-static_assert(!capy::IoAwaitable<std_awaiter_void>);
+static_assert(capy::ContextAwaitable<capy::task<int>>);
+static_assert(!capy::ContextAwaitable<std_awaiter_void>);
 
 struct caller_promise
 {
-    capy::io_env const* env_ = nullptr;
+    capy::await_context const* env_ = nullptr;
 
-    capy::io_env const* environment() const noexcept { return env_; }
+    capy::await_context const* environment() const noexcept { return env_; }
 };
 
 template<class Awaitable>
@@ -95,7 +95,7 @@ struct transform_awaiter_sketch
 struct context_flow_child
 {
     std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<>, capy::io_env const*)
+        std::coroutine_handle<>, capy::await_context const*)
     {
         return std::noop_coroutine();
     }
@@ -119,7 +119,7 @@ void store_result() {}
 // tag::my_awaitable[]
 struct my_awaitable
 {
-    capy::io_env const* env_ = nullptr;
+    capy::await_context const* env_ = nullptr;
     capy::continuation cont_;
     result_type result_;
 
@@ -129,7 +129,7 @@ struct my_awaitable
     }
 
     std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> h, capy::io_env const* env)
+        std::coroutine_handle<> h, capy::await_context const* env)
     {
         // Store pointer to environment, never copy
         env_ = env;
@@ -161,7 +161,7 @@ private:
 // end::my_awaitable[]
 
 // tag::runnable_awaitable[]
-// A complete IoAwaitable following the pattern above. It produces a
+// A complete ContextAwaitable following the pattern above. It produces a
 // value, then resumes the caller on the caller's own executor by posting
 // its continuation. A real one would do this from an async completion
 // callback; here the "operation" finishes immediately.
@@ -169,7 +169,7 @@ struct add_awaitable
 {
     int a_;
     int b_;
-    capy::io_env const* env_ = nullptr;
+    capy::await_context const* env_ = nullptr;
     // Defaulted, so the call site supplies only a_ and b_.
     capy::continuation cont_{};
     result_type result_{};
@@ -177,7 +177,7 @@ struct add_awaitable
     bool await_ready() const noexcept { return false; }
 
     std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> h, capy::io_env const* env)
+        std::coroutine_handle<> h, capy::await_context const* env)
     {
         env_ = env;
         cont_.h = h;
@@ -189,7 +189,7 @@ struct add_awaitable
     result_type await_resume() { return result_; }
 };
 
-// A task awaits the custom IoAwaitable and returns what it delivered.
+// A task awaits the custom ContextAwaitable and returns what it delivered.
 capy::task<int> add_via_awaitable()
 {
     co_return co_await add_awaitable{2, 3};
@@ -205,7 +205,7 @@ struct stoppable_awaitable
     bool await_ready() { return false; }
 
     std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> h, capy::io_env const* env)
+        std::coroutine_handle<> h, capy::await_context const* env)
     {
         if (env->stop_token.stop_requested())
             return h;  // Already cancelled, resume immediately
@@ -230,7 +230,7 @@ struct wrong_stop_callback_demo
 {
     std::optional<std::stop_callback<std::function<void()>>> stop_cb_;
 
-    void emplace_wrong(std::coroutine_handle<> h, capy::io_env const* env)
+    void emplace_wrong(std::coroutine_handle<> h, capy::await_context const* env)
     {
         // tag::wrong_stop_callback[]
         // WRONG: resumes coroutine on the calling thread
@@ -240,18 +240,18 @@ struct wrong_stop_callback_demo
 };
 
 // Mirrors the shape of task.hpp's transform_awaitable; the shown
-// static_assert sits in the branch taken for non-IoAwaitables.
+// static_assert sits in the branch taken for non-ContextAwaitables.
 template<class A>
 void await_transform_sketch()
 {
-    if constexpr (capy::IoAwaitable<A>)
+    if constexpr (capy::ContextAwaitable<A>)
     {
     }
     else
     {
         // tag::reject_plain[]
-        // In task.hpp, when the awaited type is not an IoAwaitable:
-        static_assert(sizeof(A) == 0, "requires IoAwaitable");
+        // In task.hpp, when the awaited type is not a ContextAwaitable:
+        static_assert(sizeof(A) == 0, "requires ContextAwaitable");
         // end::reject_plain[]
     }
 }
@@ -271,14 +271,14 @@ void start_foreign_op(std::function<void()> on_complete)
 // Bridge a foreign async operation into a Capy coroutine.
 struct foreign_bridge
 {
-    capy::io_env const* env_ = nullptr;
+    capy::await_context const* env_ = nullptr;
     capy::continuation cont_;
     result_type result_;
 
     bool await_ready() const noexcept { return false; }
 
     std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> h, capy::io_env const* env)
+        std::coroutine_handle<> h, capy::await_context const* env)
     {
         env_ = env;
         cont_.h = h;   // stable address; the executor links continuations intrusively
@@ -304,7 +304,7 @@ capy::task<int> use_bridge()
     co_return co_await foreign_bridge{};
 }
 
-struct io_awaitable_test
+struct context_awaitable_test
 {
     void testForeignBridge()
     {
@@ -323,7 +323,7 @@ struct io_awaitable_test
     {
         // tag::run_awaitable[]
         // Run the task on a thread pool and observe the value the
-        // custom IoAwaitable delivered to the completion handler.
+        // custom ContextAwaitable delivered to the completion handler.
         capy::thread_pool pool(1);
         int result = 0;
         capy::run_async(pool.get_executor(), [&result](int value) {
@@ -343,4 +343,4 @@ struct io_awaitable_test
 
 } // namespace
 
-TEST_SUITE(io_awaitable_test, "boost.capy.doc.4d_io_awaitable");
+TEST_SUITE(context_awaitable_test, "boost.capy.doc.4d_context_awaitable");

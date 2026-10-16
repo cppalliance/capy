@@ -55,8 +55,8 @@ capy::task<> fetch_user_dashboard(std::string username)
     // Heterogeneous return types are flattened into the result.
     std::cout << "Starting parallel fetches...\n";
 
-    auto wrap = [](auto inner) -> capy::io_task<decltype(inner.await_resume())> {
-        co_return capy::io_result<decltype(inner.await_resume())>{
+    auto wrap = [](auto inner) -> capy::task<capy::results<decltype(inner.await_resume())>> {
+        co_return capy::results<decltype(inner.await_resume())>{
             std::error_code(), co_await std::move(inner)};
     };
 
@@ -74,16 +74,16 @@ capy::task<> fetch_user_dashboard(std::string username)
 }
 
 // Example with void tasks
-capy::io_task<> log_access(std::string resource)
+capy::task<capy::results<>> log_access(std::string resource)
 {
     std::cout << "Logging access to: " << resource << "\n";
-    co_return capy::io_result<>{};
+    co_return capy::results<>{};
 }
 
-capy::io_task<> update_metrics(std::string metric)
+capy::task<capy::results<>> update_metrics(std::string metric)
 {
     std::cout << "Updating metric: " << metric << "\n";
-    co_return capy::io_result<>{};
+    co_return capy::results<>{};
 }
 
 capy::task<std::string> fetch_with_side_effects()
@@ -105,7 +105,7 @@ capy::task<std::string> fetch_with_side_effects()
 }
 
 // Error handling example
-capy::io_task<int> might_fail(bool should_fail, std::string name)
+capy::task<capy::results<int>> might_fail(bool should_fail, std::string name)
 {
     std::cout << "Task " << name << " starting\n";
 
@@ -115,7 +115,7 @@ capy::io_task<int> might_fail(bool should_fail, std::string name)
     }
 
     std::cout << "Task " << name << " completed\n";
-    co_return capy::io_result<int>{std::error_code(), 42};
+    co_return capy::results<int>{std::error_code(), 42};
 }
 
 capy::task<> demonstrate_error_handling()

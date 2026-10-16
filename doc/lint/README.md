@@ -63,7 +63,7 @@ name would make that gate match nothing while still exiting 0.
 The gate prints one entry per finding — location, rule, message, and a quote:
 
 ```
-ERROR  include/boost/capy/concept/io_awaitable.hpp:68
+ERROR  include/boost/capy/concept/context_awaitable.hpp:68
        [sentence_length C2] sentence over 25 words (30)
        "_Effects_: If this operations instructs a coroutine to be resumed, i ... anner specific to `A`."
 ```
@@ -75,7 +75,7 @@ Three things make that possible, and each has a constraint worth knowing:
   `{file, line, excerpt}`. The comparator always passes `--details`; the reseed never does,
   so a committed `baseline.json` still contains no line numbers and cannot churn.
 - **Docstring findings are reported against the header, not the generated corpus.** A finding
-  in `lint/.docstrings/concept/io_awaitable.hpp.adoc` is unactionable — nobody edits that file.
+  in `lint/.docstrings/concept/context_awaitable.hpp.adoc` is unactionable — nobody edits that file.
   `extract-docstrings.mjs` writes a `<file>.adoc.lines.json` sidecar mapping output-line ranges
   back to the line in the `.hpp` where each doc comment starts, and the reporter refines within
   the block by locating the excerpt in the header text. The sidecar is written *beside* the

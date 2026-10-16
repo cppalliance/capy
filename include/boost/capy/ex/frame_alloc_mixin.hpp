@@ -36,9 +36,9 @@ namespace capy {
        and deallocation.
 
     This is the same allocation strategy used by @ref
-    io_awaitable_promise_base. Use this mixin directly when your
+    context_awaitable_promise_base. Use this mixin directly when your
     promise type does not need the full environment and continuation
-    support that `io_awaitable_promise_base` provides.
+    support that `context_awaitable_promise_base` provides.
 
     @par Example
     @par !example example
@@ -48,7 +48,7 @@ namespace capy {
     The allocation fast path uses thread-local storage and requires
     no synchronization. The global pool fallback is mutex-protected.
 
-    @see io_awaitable_promise_base, frame_allocator, recycling_memory_resource
+    @see context_awaitable_promise_base, frame_allocator, recycling_memory_resource
 */
 struct frame_alloc_mixin
 {

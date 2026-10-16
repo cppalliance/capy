@@ -328,12 +328,12 @@ public:
 // end::dialog[]
 
 // tag::dialog_awaitable[]
-// An IoAwaitable for an operation the toolkit completes.  The protocol
-// is the subject of the IoAwaitable page; one line of it matters here.
+// A ContextAwaitable for an operation the toolkit completes.  The protocol
+// is the subject of the ContextAwaitable page; one line of it matters here.
 struct show_dialog
 {
     dialog& dialog_;
-    capy::io_env const* env_ = nullptr;
+    capy::await_context const* env_ = nullptr;
     capy::continuation cont_ = {};
     std::string answer_ = {};
 
@@ -343,7 +343,7 @@ struct show_dialog
     }
 
     std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> h, capy::io_env const* env)
+        std::coroutine_handle<> h, capy::await_context const* env)
     {
         env_ = env;
         cont_.h = h;

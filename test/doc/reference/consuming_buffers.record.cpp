@@ -32,7 +32,7 @@ namespace {
 namespace ex_1 {
 // tag::example[]
 template<capy::MutableBufferSequence Buffers>
-capy::io_task<std::size_t> read_until_full( capy::any_read_stream& stream, Buffers buffers )
+capy::task<capy::results<std::size_t>> read_until_full( capy::any_read_stream& stream, Buffers buffers )
 {
     capy::consuming_buffers consuming(buffers);
     std::size_t total = 0, want = capy::buffer_size(buffers);

@@ -7,9 +7,9 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Reference examples for boost::capy::io_task, injected into its documentation by
+// Reference examples for boost::capy::results, injected into its documentation by
 // doc/addons/extensions/reference-snippets.lua. Declared in:
-//   include/boost/capy/io_task.hpp
+//   include/boost/capy/results.hpp
 //
 // The tagged regions are what the reference renders; the includes,
 // suppressions and namespaces around them are scaffolding. Each region gets
@@ -31,19 +31,25 @@ namespace capy = boost::capy;
 namespace {
 
 namespace ex_1 {
-// tag::example[]
-capy::io_task<std::size_t> read_one( capy::any_read_stream& s, capy::mutable_buffer buf )
+// tag::example_1[]
+capy::task<> discard_first_chunk( capy::any_read_stream& s, capy::mutable_buffer buf )
 {
-    co_return co_await s.read_some(buf);  // returns io_result<std::size_t>
+    auto [ec, n] = co_await s.read_some(buf);
+    if (ec)
+        co_return;  // error: n's meaning here is defined by read_some
 }
-
-capy::io_task<> require_ready(bool ready)
-{
-    if(!ready)
-        co_return capy::make_error_code(capy::error::eof);  // error_code converts to io_result<>
-    co_return {};
-}
-// end::example[]
+// end::example_1[]
 } // namespace ex_1
+
+namespace ex_2 {
+// tag::example_2[]
+capy::task<> read_into_locals( capy::any_read_stream& s, capy::mutable_buffer buf )
+{
+    std::error_code ec;
+    std::size_t n = 0;
+    std::tie(ec, n) = co_await s.read_some(buf);
+}
+// end::example_2[]
+} // namespace ex_2
 
 } // namespace

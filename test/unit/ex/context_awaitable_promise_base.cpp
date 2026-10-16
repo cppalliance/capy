@@ -8,9 +8,9 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/ex/io_awaitable_promise_base.hpp>
+#include <boost/capy/ex/context_awaitable_promise_base.hpp>
 
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 
 #include "test_suite.hpp"
@@ -24,7 +24,7 @@ namespace capy {
 
 struct test_coro
 {
-    struct promise_type : io_awaitable_promise_base<promise_type>
+    struct promise_type : context_awaitable_promise_base<promise_type>
     {
         test_coro get_return_object()
         {
@@ -63,7 +63,7 @@ private:
 
 struct custom_transform_coro
 {
-    struct promise_type : io_awaitable_promise_base<promise_type>
+    struct promise_type : context_awaitable_promise_base<promise_type>
     {
         int transform_count_ = 0;
 
@@ -109,13 +109,13 @@ private:
     }
 };
 
-struct io_awaitable_promise_base_test
+struct context_awaitable_promise_base_test
 {
     void
     testSetAndGetEnvironment()
     {
         std::stop_source source;
-        io_env env;
+        await_context env;
         env.stop_token = source.get_token();
 
         auto c = []() -> test_coro { co_return; }();
@@ -133,7 +133,7 @@ struct io_awaitable_promise_base_test
     testDefaultEnvironment()
     {
         auto c = []() -> test_coro { co_return; }();
-        io_env env;
+        await_context env;
         c.h_.promise().set_environment(&env);
         auto const* retrieved = c.h_.promise().environment();
 
@@ -148,7 +148,7 @@ struct io_awaitable_promise_base_test
         auto c = []() -> test_coro { co_return; }();
 
         std::stop_source source;
-        io_env env;
+        await_context env;
         env.stop_token = source.get_token();
         c.h_.promise().set_environment(&env);
 
@@ -165,7 +165,7 @@ struct io_awaitable_promise_base_test
     {
         auto c = []() -> custom_transform_coro { co_return; }();
 
-        io_env env;
+        await_context env;
         c.h_.promise().set_environment(&env);
 
         BOOST_TEST_EQ(c.h_.promise().transform_count_, 0);
@@ -198,7 +198,7 @@ struct io_awaitable_promise_base_test
     testEnvironmentAwaiterNeverSuspends()
     {
         auto c = []() -> test_coro { co_return; }();
-        io_env env;
+        await_context env;
         c.h_.promise().set_environment(&env);
         auto awaiter = c.h_.promise().await_transform(this_coro::environment);
 
@@ -213,7 +213,7 @@ struct io_awaitable_promise_base_test
         auto executor = pool.get_executor();
 
         auto c = []() -> test_coro { co_return; }();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(executor);
         c.h_.promise().set_environment(&env);
 
@@ -235,8 +235,8 @@ struct io_awaitable_promise_base_test
 };
 
 TEST_SUITE(
-    io_awaitable_promise_base_test,
-    "boost.capy.ex.io_awaitable_promise_base");
+    context_awaitable_promise_base_test,
+    "boost.capy.ex.context_awaitable_promise_base");
 
 } // namespace capy
 } // namespace boost

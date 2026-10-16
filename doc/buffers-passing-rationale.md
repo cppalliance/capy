@@ -9,7 +9,7 @@ implementations copy the buffer sequence, or whether they should accept
 by reference and leave lifetime management to the caller.
 
 A secondary question is whether the distinction between coroutine-based
-and non-coroutine-based implementations (tasks returning `io_task` vs.
+and non-coroutine-based implementations (tasks returning `task<results<...>>` vs.
 raw awaitables) changes the answer.
 
 The discussion took place between Vinnie Falco and Peter Dimov. The
@@ -27,12 +27,12 @@ The capy documentation currently states:
 This statement is acknowledged to be backwards. The discussion produced
 the following corrected understanding:
 
-- A function that returns an `IoAwaitable` directly (a raw awaitable,
+- A function that returns a `ContextAwaitable` directly (a raw awaitable,
   not backed by a coroutine frame) must store the buffer sequence inside
   the awaitable, because there is no coroutine frame to hold it. Taking
   by value ensures the sequence lives in the returned object.
 
-- A function that returns an `io_task` (a coroutine) type-erases the
+- A function that returns a `task<results<...>>` (a coroutine) type-erases the
   buffer sequence into its coroutine frame. In this case the caller's
   object is referenced across suspension points through the coroutine
   frame itself, and taking by `const&` is correct - the sequence is not
@@ -158,7 +158,7 @@ template<class ReadStream> class xoring_stream
     ReadStream& s_;
 public:
     template<class Buffers>
-    io_task<size_t> read_some(Buffers buffers) // first copy here
+    task<results<size_t>> read_some(Buffers buffers) // first copy here
     {
         auto [ec, n] = co_await s_.read_some(buffers); // second copy here
         xor_buffers(buffers, n);
@@ -219,11 +219,11 @@ which makes by-`&&` equivalent to by-value for the storage decision.
 
 The passing convention differs by return type:
 
-- `io_task<size_t> read_some(Buffers const& buf)` - the coroutine frame
+- `task<results<size_t>> read_some(Buffers const& buf)` - the coroutine frame
   is the storage. The caller's object is kept alive by the `co_await`
   chain. By-`const&` is correct and no copy is made.
 
-- `IoAwaitable auto read_some(Buffers buf)` - the returned object is the
+- `ContextAwaitable auto read_some(Buffers buf)` - the returned object is the
   storage. The awaitable must be self-contained. By-value is required.
 
 The concept as written applies to both cases with a single signature,
@@ -233,7 +233,7 @@ cost of a more complex concept.
 
 ### The Array Problem
 
-The `io_task` path accepts `const_buffer buf[N]` today because it takes
+The `task<results<...>>` path accepts `const_buffer buf[N]` today because it takes
 by `const&` and does not make a copy. If the concept is tightened to
 require a copy, raw arrays are excluded. The fix is `std::array`, but
 this is a source-compatibility break for any code that passes C arrays
@@ -253,13 +253,13 @@ today.
    `std::array` or a container. The concept should not be weakened to
    accommodate `T[]`.
 
-4. **Raw awaitables must store a copy.** A function returning an
-   `IoAwaitable` directly, without a backing coroutine frame, must
+4. **Raw awaitables must store a copy.** A function returning a
+   `ContextAwaitable` directly, without a backing coroutine frame, must
    store the buffer sequence in the returned object. By-value is the
    only safe signature.
 
 5. **Coroutine-based tasks can accept by `const&`.** When the function
-   is a coroutine returning `io_task`, the sequence lives in the
+   is a coroutine returning `task<results<...>>`, the sequence lives in the
    caller's frame across the `co_await`. No copy is needed by the
    callee.
 

@@ -15,7 +15,7 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_slice.hpp>
 #include <coroutine>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -121,7 +121,7 @@ public:
 
             @return @p h, so the caller resumes immediately.
         */
-        std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const*) const noexcept { return h; }
+        std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, await_context const*) const noexcept { return h; }
 
         /** Return the current split and advance to the next.
 

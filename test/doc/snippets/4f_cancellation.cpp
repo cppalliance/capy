@@ -16,12 +16,12 @@
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/async_waker.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/when_any.hpp>
 
@@ -95,7 +95,7 @@ capy::task<> parent()
 
 capy::task<> child()
 {
-    // Receives parent's stop token via IoAwaitable protocol
+    // Receives parent's stop token via ContextAwaitable protocol
     auto token = co_await capy::this_coro::stop_token;  // Access current token
 }
 // end::token_propagation[]
@@ -175,7 +175,7 @@ capy::task<std::string> fetch_with_cancel()
 std::optional<std::stop_callback<std::coroutine_handle<>>> stop_cb;
 
 std::coroutine_handle<> await_suspend(
-    std::coroutine_handle<> h, capy::io_env const* env)
+    std::coroutine_handle<> h, capy::await_context const* env)
 {
     stop_cb.emplace(env->stop_token, h);  // Resumes inline!
     return std::noop_coroutine();
@@ -185,9 +185,9 @@ std::coroutine_handle<> await_suspend(
 // Compile-only bug demo: firing the callback would resume the
 // coroutine on the stopping thread, so nothing ever calls it.
 [[maybe_unused]] std::coroutine_handle<> (* const wrong_pattern)(
-    std::coroutine_handle<>, capy::io_env const*) = &await_suspend;
+    std::coroutine_handle<>, capy::await_context const*) = &await_suspend;
 
-void start_async_operation(std::coroutine_handle<>, capy::io_env const*) {}
+void start_async_operation(std::coroutine_handle<>, capy::await_context const*) {}
 
 // tag::stoppable_awaitable[]
 struct my_stoppable_awaitable
@@ -201,7 +201,7 @@ struct my_stoppable_awaitable
     bool await_ready() { return false; }
 
     std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> h, capy::io_env const* env)
+        std::coroutine_handle<> h, capy::await_context const* env)
     {
         if (env->stop_token.stop_requested())
             return h;  // Already cancelled
@@ -235,23 +235,23 @@ struct fetch_channel
 // One side of the race: completes when the fetch worker thread
 // wakes fetch_ready. If the deadline wins first, when_any's stop
 // request cancels the wait; flag the worker so it stops early.
-capy::io_task<std::string> await_fetch(fetch_channel& ch)
+capy::task<capy::results<std::string>> await_fetch(fetch_channel& ch)
 {
     auto [ec] = co_await ch.fetch_ready.wait();
     if (ec)
     {
         ch.cancelled.store(true);
-        co_return capy::io_result<std::string>{ec, {}};
+        co_return capy::results<std::string>{ec, {}};
     }
-    co_return capy::io_result<std::string>{std::error_code(), std::move(ch.result)};
+    co_return capy::results<std::string>{std::error_code(), std::move(ch.result)};
 }
 
 // The other side of the race: completes once whatever plays the
 // clock wakes the waker.
-capy::io_task<> deadline(capy::async_waker& waker)
+capy::task<capy::results<>> deadline(capy::async_waker& waker)
 {
     auto [ec] = co_await waker.wait();
-    co_return capy::io_result<>{ec};
+    co_return capy::results<>{ec};
 }
 // end::racing_deadline[]
 
@@ -275,7 +275,7 @@ class download_manager
 public:
     void start_download(std::string url)
     {
-        // Token propagated via io_env, not as a function argument
+        // Token propagated via await_context, not as a function argument
         capy::run_async(executor_, stop_source_.get_token())(download(url));
     }
 
@@ -287,7 +287,7 @@ public:
 
 capy::task<void> download(std::string url)
 {
-    // From run_async's io_env
+    // From run_async's await_context
     auto token = co_await capy::this_coro::stop_token;
     while (!token.stop_requested())
     {

@@ -89,7 +89,7 @@ struct MyReadStream
 {
     MyReadStream() = default;
     MyReadStream(MyReadStream&&) = default;
-    capy::io_task<std::size_t> read_some(auto&&) { co_return {std::error_code{}, 0}; }
+    capy::task<capy::results<std::size_t>> read_some(auto&&) { co_return {std::error_code{}, 0}; }
 };
 
 MyReadStream makeMyStream() { return {}; } 

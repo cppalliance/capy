@@ -13,8 +13,8 @@
 #include "../doc_warnings.hpp"
 
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/concept/io_runnable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
+#include <boost/capy/concept/context_runnable.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/io/any_write_stream.hpp>
 #include <boost/capy/task.hpp>
@@ -37,9 +37,9 @@ namespace {
 capy::task<> my_algo(capy::any_write_stream& stream);
 // end::capy_signature[]
 
-static_assert(capy::IoAwaitable<capy::task<>>);
-static_assert(capy::IoRunnable<capy::task<>>);
-static_assert(capy::IoRunnable<capy::task<int>>);
+static_assert(capy::ContextAwaitable<capy::task<>>);
+static_assert(capy::ContextRunnable<capy::task<>>);
+static_assert(capy::ContextRunnable<capy::task<int>>);
 
 namespace context_propagation {
 
@@ -47,7 +47,7 @@ namespace context_propagation {
 struct child_operation
 {
     // tag::await_suspend_env[]
-    auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env);
+    auto await_suspend(std::coroutine_handle<> h, capy::await_context const* env);
     // end::await_suspend_env[]
 };
 

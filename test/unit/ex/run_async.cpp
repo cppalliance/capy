@@ -824,7 +824,7 @@ struct run_async_test
     }
 
     //----------------------------------------------------------
-    // Custom Task Type (proves IoRunnable genericity)
+    // Custom Task Type (proves ContextRunnable genericity)
     //----------------------------------------------------------
 
     static custom_task<int>
@@ -842,7 +842,7 @@ struct run_async_test
     void
     testCustomTaskType()
     {
-        // Proves run_async works with any IoRunnable, not just capy::task
+        // Proves run_async works with any ContextRunnable, not just capy::task
         int dispatch_count = 0;
         sync_executor d(dispatch_count);
         int result = 0;

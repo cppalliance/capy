@@ -1,23 +1,23 @@
 # Zero-Allocation Sender-to-Awaitable Bridge
 
-Every IoAwaitable ever written - timers, mutexes, channels, semaphores,
+Every ContextAwaitable ever written - timers, mutexes, channels, semaphores,
 file I/O, sockets, database queries, HTTP clients - is now consumable
 by a sender pipeline. No coroutine frame. No heap allocation. Zero cost.
 
 ## What This Is
 
-`as_sender` wraps any IoAwaitable in a P2300-compliant sender. A
+`as_sender` wraps any ContextAwaitable in a P2300-compliant sender. A
 receiver attaches to the sender through `connect`. When `start` is
 called, the operation state drives the awaitable protocol directly -
 `await_ready`, `await_suspend`, `await_resume` - without ever creating
 a coroutine.
 
 The awaitable does not know it is talking to a sender. It sees a
-`coroutine_handle<>` and an `io_env*`, exactly as it would from a
+`coroutine_handle<>` and an `await_context*`, exactly as it would from a
 coroutine. The awaitable's code does not change. Not one line.
 
 ```cpp
-// Wrap any IoAwaitable as a sender
+// Wrap any ContextAwaitable as a sender
 auto sndr = as_sender(stream.read_some(buf));
 
 // Attach a receiver and start the operation
@@ -71,13 +71,13 @@ Here is what happens, step by step:
   Nothing runs yet. Senders are lazy.
 
 - **`connect(sender, receiver)`** produces an operation state. The
-  operation state holds the awaitable, the receiver, an `io_env`, and
+  operation state holds the awaitable, the receiver, an `await_context`, and
   a `frame_cb`. Everything lives on the operation state. No allocation.
 
 - **`start(op_state)`** begins the operation:
 
   1. The executor and stop token are pulled from the receiver's
-     environment and stored in the `io_env`.
+     environment and stored in the `await_context`.
 
   2. `await_ready()` is checked. If the awaitable is immediately
      ready, the result is harvested and the receiver is signaled
@@ -109,14 +109,14 @@ without a coroutine ever existing.
 The awaitable ecosystem and the sender ecosystem are no longer
 separate worlds. They are one world.
 
-Every IoAwaitable anyone has written becomes a sender with a single
+Every ContextAwaitable anyone has written becomes a sender with a single
 function call. Awaitable authors gain a new consumer base without
 modifying a single line of their code. Sender authors gain access to
 every I/O primitive the awaitable ecosystem has produced - and will
 produce - at zero allocation cost.
 
 - **One I/O implementation.** The library implements each operation
-  once as an IoAwaitable. Coroutines `co_await` it. Sender pipelines
+  once as a ContextAwaitable. Coroutines `co_await` it. Sender pipelines
   consume it through `as_sender`. Both go through the same reactor,
   the same executor, the same platform code.
 
@@ -128,11 +128,11 @@ produce - at zero allocation cost.
 - **Full protocol fidelity.** The bridge respects `await_ready` for
   synchronous fast-paths. It normalizes `await_suspend` return types
   (`void`, `bool`, `coroutine_handle<>`). It propagates the executor
-  and stop token through `io_env`. It routes results to `set_value`,
+  and stop token through `await_context`. It routes results to `set_value`,
   errors to `set_error`, and cancellation to `set_stopped`.
 
 - **Transparent to the awaitable.** The awaitable sees a
-  `coroutine_handle<>` and an `io_env const*`. It does not know
+  `coroutine_handle<>` and an `await_context const*`. It does not know
   whether the handle points at a coroutine frame or a `frame_cb`. It
   does not need to know. The handle is the abstraction boundary, and
   the abstraction holds.
@@ -148,7 +148,7 @@ produce - at zero allocation cost.
 namespace capy = boost::capy;
 namespace ex = beman::execution;
 
-// A Capy IoAwaitable - a single-slot waker wait
+// A Capy ContextAwaitable - a single-slot waker wait
 capy::async_waker waker;
 auto sndr = capy::as_sender(waker.wait());
 
@@ -167,7 +167,7 @@ waker.wake();
 ```
 
 The receiver's environment provides the executor and stop token. The
-bridge threads them into the `io_env` that the awaitable expects. When
+bridge threads them into the `await_context` that the awaitable expects. When
 `waker.wake()` runs, the executor resumes the handle, the receiver
 gets `set_value()`. Twenty-four bytes of `frame_cb` on the operation
 state. That is the entire cost.

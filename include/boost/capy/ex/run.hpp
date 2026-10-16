@@ -14,13 +14,13 @@
 #include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/detail/run.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/concept/io_runnable.hpp>
+#include <boost/capy/concept/context_runnable.hpp>
 #include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <coroutine>
 #include <boost/capy/ex/frame_alloc_mixin.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 
 #include <exception>
 #include <memory_resource>
@@ -190,7 +190,7 @@ inline boundary_trampoline make_boundary_trampoline()
     co_return;
 }
 
-/** Awaitable that binds an IoRunnable to a specific executor.
+/** Awaitable that binds a ContextRunnable to a specific executor.
 
     Stores the executor and inner task by value. When co_awaited, the
     co_await expression's lifetime extension keeps both alive for the
@@ -200,22 +200,22 @@ inline boundary_trampoline make_boundary_trampoline()
     the inner task's `final_suspend` resumes the trampoline, which
     dispatches back through the caller's executor.
 
-    The `io_env` is owned by this awaitable and is guaranteed to
+    The `await_context` is owned by this awaitable and is guaranteed to
     outlive the inner task and all awaitables in its chain. Awaitables
-    may store `io_env const*` without concern for dangling references.
+    may store `await_context const*` without concern for dangling references.
 
-    @tparam Task The IoRunnable type
+    @tparam Task The ContextRunnable type
     @tparam Ex The executor type
     @tparam InheritStopToken If true, inherit caller's stop token
     @tparam Alloc The allocator type (void for no allocator)
 */
-template<IoRunnable Task, Executor Ex, bool InheritStopToken, class Alloc = void>
+template<ContextRunnable Task, Executor Ex, bool InheritStopToken, class Alloc = void>
 struct [[nodiscard]] run_awaitable_ex
 {
     Ex ex_;
     frame_memory_resource<Alloc> resource_;
     std::conditional_t<InheritStopToken, std::monostate, std::stop_token> st_;
-    io_env env_;
+    await_context env_;
     executor_ref caller_ex_;
     boundary_trampoline tr_;
     continuation task_cont_;
@@ -293,7 +293,7 @@ struct [[nodiscard]] run_awaitable_ex
         return inner_.await_resume();
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const* caller_env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, await_context const* caller_env)
     {
         tr_ = make_boundary_trampoline();
         auto& tp = tr_.h_.promise();
@@ -364,16 +364,16 @@ struct [[nodiscard]] run_awaitable_ex
     The inner task's `final_suspend` resumes the parent directly via
     unconditional symmetric transfer.
 
-    @tparam Task The IoRunnable type
+    @tparam Task The ContextRunnable type
     @tparam InheritStopToken If true, inherit caller's stop token
     @tparam Alloc The allocator type (void for no allocator)
 */
-template<IoRunnable Task, bool InheritStopToken, class Alloc = void>
+template<ContextRunnable Task, bool InheritStopToken, class Alloc = void>
 struct [[nodiscard]] run_awaitable
 {
     frame_memory_resource<Alloc> resource_;
     std::conditional_t<InheritStopToken, std::monostate, std::stop_token> st_;
-    io_env env_;
+    await_context env_;
     // Set while the parent is suspended awaiting the inner task.
     bool lent_ = false;
     Task inner_;  // Last: destroyed first, while env_ is still valid
@@ -434,7 +434,7 @@ struct [[nodiscard]] run_awaitable
         return inner_.await_resume();
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const* caller_env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, await_context const* caller_env)
     {
         auto h = inner_.handle();
         auto& p = h.promise();
@@ -519,7 +519,7 @@ public:
     run_wrapper_ex& operator=(run_wrapper_ex const&) = delete;
     run_wrapper_ex& operator=(run_wrapper_ex&&) = delete;
 
-    template<IoRunnable Task>
+    template<ContextRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
         // The task's frame is made; the caller's own frames are not.
@@ -579,7 +579,7 @@ public:
     run_wrapper_ex& operator=(run_wrapper_ex const&) = delete;
     run_wrapper_ex& operator=(run_wrapper_ex&&) = delete;
 
-    template<IoRunnable Task>
+    template<ContextRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
         // The task's frame is made; the caller's own frames are not.
@@ -621,7 +621,7 @@ public:
     run_wrapper_ex& operator=(run_wrapper_ex const&) = delete;
     run_wrapper_ex& operator=(run_wrapper_ex&&) = delete;
 
-    template<IoRunnable Task>
+    template<ContextRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
         if constexpr (InheritStopToken)
@@ -682,7 +682,7 @@ public:
     run_wrapper& operator=(run_wrapper const&) = delete;
     run_wrapper& operator=(run_wrapper&&) = delete;
 
-    template<IoRunnable Task>
+    template<ContextRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
         // The task's frame is made; the caller's own frames are not.
@@ -739,7 +739,7 @@ public:
     run_wrapper& operator=(run_wrapper const&) = delete;
     run_wrapper& operator=(run_wrapper&&) = delete;
 
-    template<IoRunnable Task>
+    template<ContextRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
         // The task's frame is made; the caller's own frames are not.
@@ -772,7 +772,7 @@ public:
     run_wrapper& operator=(run_wrapper const&) = delete;
     run_wrapper& operator=(run_wrapper&&) = delete;
 
-    template<IoRunnable Task>
+    template<ContextRunnable Task>
     [[nodiscard]] auto operator()(Task t) &&
     {
         return run_awaitable<Task, false, void>{std::move(t), std::move(st_)};

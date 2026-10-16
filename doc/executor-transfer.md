@@ -239,14 +239,14 @@ If neither the caller nor the target is a strand, both `transfer_to` calls forwa
 
 The `transfer_to` design requires every launch function author to call `transfer_to` on both trips. If someone writes a custom `run`-like function and forgets the return trip, they reintroduce the bug. An RAII guard in the coroutine frame could make the fix automatic. Three approaches:
 
-### Option A: Flag in io_env
+### Option A: Flag in await_context
 
-The strand sets a flag in the `io_env` when it dispatches a coroutine. The trampoline checks the flag on both trips and posts instead of dispatching when it is set.
+The strand sets a flag in the `await_context` when it dispatches a coroutine. The trampoline checks the flag on both trips and posts instead of dispatching when it is set.
 
-`io_env` gains a bool:
+`await_context` gains a bool:
 
 ```cpp
-struct io_env
+struct await_context
 {
     executor_ref executor;
     std::stop_token stop_token;

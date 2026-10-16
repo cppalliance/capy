@@ -169,7 +169,7 @@ struct stoppable_timer
 {
     std::chrono::milliseconds duration_;
     timer_handle handle_;
-    io_env const* env_ = nullptr;
+    await_context const* env_ = nullptr;
     bool cancelled_ = false;
 
     bool await_ready() const
@@ -177,7 +177,7 @@ struct stoppable_timer
         return duration_.count() <= 0;
     }
 
-    void await_suspend(std::coroutine_handle<> h, io_env const* env)
+    void await_suspend(std::coroutine_handle<> h, await_context const* env)
     {
         env_ = env;  // Store pointer, never copy
 

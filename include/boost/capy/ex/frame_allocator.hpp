@@ -76,7 +76,7 @@ current_frame_allocator_ref() noexcept
 /** Return the current frame allocator for this thread.
 
     These accessors exist to implement the allocator
-    propagation portion of the @ref IoAwaitable protocol.
+    propagation portion of the @ref ContextAwaitable protocol.
     Launcher functions (`run_async`, `run`) set the
     thread-local value before invoking a child coroutine.
     The child's `promise_type::operator new` reads it to
@@ -88,7 +88,7 @@ current_frame_allocator_ref() noexcept
     that TLS contains the allocator associated with the
     currently running chain. Outside that window the value
     is indeterminate. Only code that implements an
-    @ref IoAwaitable should call these functions.
+    @ref ContextAwaitable should call these functions.
 
     A return value of `nullptr` means "not specified" -
     no allocator is established for this chain.
@@ -105,7 +105,7 @@ current_frame_allocator_ref() noexcept
     @return The thread-local memory_resource pointer,
     or `nullptr` if none is set.
 
-    @see set_current_frame_allocator, IoAwaitable
+    @see set_current_frame_allocator, ContextAwaitable
 */
 inline
 std::pmr::memory_resource*
@@ -119,7 +119,7 @@ get_current_frame_allocator() noexcept
     Installs @p mr as the frame allocator read by the
     next coroutine's `promise_type::operator new` on
     this thread. Only launcher functions and
-    @ref IoAwaitable machinery should call this; see
+    @ref ContextAwaitable machinery should call this; see
     @ref get_current_frame_allocator for the full protocol
     description.
 
@@ -129,7 +129,7 @@ get_current_frame_allocator() noexcept
     @param mr The memory_resource to install, or
     `nullptr` to clear.
 
-    @see get_current_frame_allocator, IoAwaitable
+    @see get_current_frame_allocator, ContextAwaitable
 */
 inline void
 set_current_frame_allocator(

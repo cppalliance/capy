@@ -37,7 +37,7 @@ namespace capy = boost::capy;
 
 // Simulates a data source that takes `steps` iterations to produce a result.
 // Each step checks the stop token so the task exits promptly when cancelled.
-capy::io_task<std::string> fetch_from_source(
+capy::task<capy::results<std::string>> fetch_from_source(
     std::string name, int steps, int step_ms)
 {
     auto token = co_await capy::this_coro::stop_token;
@@ -48,7 +48,7 @@ capy::io_task<std::string> fetch_from_source(
         {
             std::cout << "  [" << name << "] cancelled at step "
                       << i << "/" << steps << "\n";
-            co_return capy::io_result<std::string>{std::error_code(), name + ": cancelled"};
+            co_return capy::results<std::string>{std::error_code(), name + ": cancelled"};
         }
 
         // Simulate work
@@ -59,7 +59,7 @@ capy::io_task<std::string> fetch_from_source(
                   << (i + 1) << "/" << steps << "\n";
     }
 
-    co_return capy::io_result<std::string>{std::error_code(), name + ": done"};
+    co_return capy::results<std::string>{std::error_code(), name + ": done"};
 }
 
 // Race three sources — the fastest one wins, the rest get cancelled.
@@ -87,7 +87,7 @@ capy::task<> race_data_sources()
 
 // A void task that loops until stopped.
 // Useful for background workers that run indefinitely.
-capy::io_task<> background_worker(std::string name, int step_ms)
+capy::task<capy::results<>> background_worker(std::string name, int step_ms)
 {
     auto token = co_await capy::this_coro::stop_token;
     int iteration = 0;
@@ -102,16 +102,16 @@ capy::io_task<> background_worker(std::string name, int step_ms)
 
     std::cout << "  [" << name << "] stopped after "
               << iteration << " iterations\n";
-    co_return capy::io_result<>{};
+    co_return capy::results<>{};
 }
 
 // A task that finishes after a fixed delay (acts as a timeout).
-capy::io_task<> timeout(int ms)
+capy::task<capy::results<>> timeout(int ms)
 {
     std::this_thread::sleep_for(
         std::chrono::milliseconds(ms));
     std::cout << "  [timeout] expired after " << ms << "ms\n";
-    co_return capy::io_result<>{};
+    co_return capy::results<>{};
 }
 
 // Race three replicas using variadic overload.

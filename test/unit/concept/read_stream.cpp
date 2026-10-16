@@ -10,7 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/concept/read_stream.hpp>
 
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 
 #include <system_error>
 
@@ -23,14 +23,14 @@ namespace capy {
 
 namespace {
 
-// Mock IoAwaitable returning std::pair
+// Mock ContextAwaitable returning std::pair
 struct mock_read_awaitable_pair
 {
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const*) const noexcept
+        await_context const*) const noexcept
     {
     }
 
@@ -41,14 +41,14 @@ struct mock_read_awaitable_pair
     }
 };
 
-// Mock IoAwaitable returning std::tuple
+// Mock ContextAwaitable returning std::tuple
 struct mock_read_awaitable_tuple
 {
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const*) const noexcept
+        await_context const*) const noexcept
     {
     }
 
@@ -59,28 +59,28 @@ struct mock_read_awaitable_tuple
     }
 };
 
-// Mock IoAwaitable with wrong return type
+// Mock ContextAwaitable with wrong return type
 struct mock_read_awaitable_wrong_type
 {
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const*) const noexcept
+        await_context const*) const noexcept
     {
     }
 
     int await_resume() const noexcept { return 0; }
 };
 
-// Mock IoAwaitable with wrong decomposition order
+// Mock ContextAwaitable with wrong decomposition order
 struct mock_read_awaitable_wrong_order
 {
     bool await_ready() const noexcept { return true; }
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const*) const noexcept
+        await_context const*) const noexcept
     {
     }
 
@@ -91,7 +91,7 @@ struct mock_read_awaitable_wrong_order
     }
 };
 
-// Mock awaitable missing IoAwaitable protocol
+// Mock awaitable missing ContextAwaitable protocol
 struct mock_read_awaitable_not_io
 {
     bool await_ready() const noexcept { return true; }
@@ -163,7 +163,7 @@ struct invalid_read_stream_wrong_order
     }
 };
 
-// Invalid: not an IoAwaitable
+// Invalid: not a ContextAwaitable
 struct invalid_read_stream_not_io
 {
     template<MutableBufferSequence MB>
@@ -205,7 +205,7 @@ static_assert(!ReadStream<invalid_read_stream_wrong_type>);
 // Wrong decomposition order does not satisfy ReadStream
 static_assert(!ReadStream<invalid_read_stream_wrong_order>);
 
-// Non-IoAwaitable does not satisfy ReadStream
+// Non-ContextAwaitable does not satisfy ReadStream
 static_assert(!ReadStream<invalid_read_stream_not_io>);
 
 // Missing read_some does not satisfy ReadStream

@@ -15,9 +15,9 @@
 #include <boost/capy/concept/executor.hpp>
 #include <coroutine>
 #include <boost/capy/ex/abandon.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/task.hpp>
 
 #include <atomic>
@@ -267,7 +267,7 @@ struct self_destroy_awaitable
 {
     bool await_ready() {return false;}
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, await_context const* env)
     {
         continuation c{h, nullptr, env->owner};
         capy::abandon(c);
@@ -296,7 +296,7 @@ using stop_resume_callback = std::stop_callback<resume_via_post>;
 
 inline resume_via_post
 post_resume(
-    io_env const& env,
+    await_context const& env,
     std::coroutine_handle<> h) noexcept
 {
     return resume_via_post{env.executor, continuation{h, nullptr, env.owner}};
@@ -334,7 +334,7 @@ struct stop_only_awaitable
 
     bool await_ready() {return false;}
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, await_context const* env)
     {
         if (env->stop_token.stop_requested())
             return h;
@@ -600,7 +600,7 @@ struct yield_awaitable
         return false;
     }
 
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, await_context const* env)
     {
         // Post ourselves back to the queue
         cont_.h = h;
@@ -661,7 +661,7 @@ struct park_awaitable
     bool await_ready() const noexcept { return false; }
 
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<> h, io_env const* env) noexcept
+    await_suspend(std::coroutine_handle<> h, await_context const* env) noexcept
     {
         slot->h = h;
         slot->owner = env->owner;

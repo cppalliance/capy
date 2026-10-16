@@ -20,8 +20,7 @@
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/io_result.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 #include <boost/capy/test/stream.hpp>
@@ -111,10 +110,10 @@ public:
     }
 
     template<capy::MutableBufferSequence MB>
-    capy::io_task<std::size_t>
+    capy::task<capy::results<std::size_t>>
     read_some(MB buffers)
     {
-        using result = capy::io_result<std::size_t>;
+        using result = capy::results<std::size_t>;
 
         if(rest_.empty())
             co_return result{capy::error::eof, 0};
@@ -145,10 +144,10 @@ static_assert(capy::Stream<capy::test::stream>);
 // Algorithms name the concept rather than a concrete stream, so the same
 // code drives a socket, a TLS stream, or the test double.
 template<capy::ReadStream S>
-capy::io_task<std::size_t>
+capy::task<capy::results<std::size_t>>
 count_bytes(S& source)
 {
-    using result = capy::io_result<std::size_t>;
+    using result = capy::results<std::size_t>;
 
     char storage[64];
     std::size_t total = 0;

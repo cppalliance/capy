@@ -159,10 +159,10 @@ run_loop::get_executor() noexcept
 static_assert(capy::Executor<run_loop::executor_type>);
 // end::concept_check[]
 
-capy::io_task<int> compute(int x)
+capy::task<capy::results<int>> compute(int x)
 {
     std::cout << "  computing " << x << " * " << x << "\n";
-    co_return capy::io_result<int>{std::error_code(), x * x};
+    co_return capy::results<int>{std::error_code(), x * x};
 }
 
 capy::task<> run_tasks()

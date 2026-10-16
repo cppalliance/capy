@@ -244,4 +244,4 @@ If allocation is the bottleneck:
 == Next Steps
 
 * xref:executors.adoc[Executors and Strands] — Execution contexts
-* xref:../io-awaitables/allocator.adoc[The Allocator] — Allocation window details
+* xref:../context-awaitables/allocator.adoc[The Allocator] — Allocation window details

@@ -14,7 +14,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/buffer_archetype.hpp>
 #include <boost/capy/concept/decomposes_to.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <system_error>
 
 #include <concepts>
@@ -23,7 +23,7 @@
 namespace boost {
 namespace capy {
 
-/** Requires `read_some` to return an `IoAwaitable` decomposing to an error code and a size.
+/** Requires `read_some` to return a `ContextAwaitable` decomposing to an error code and a size.
 
     A type satisfies `ReadStream` if it provides a `read_some`
     member function template that accepts any @ref MutableBufferSequence
@@ -32,7 +32,7 @@ namespace capy {
     @par Syntactic Requirements
     @li `T` must provide a `read_some` member function template
         accepting any @ref MutableBufferSequence.
-    @li The return type of `read_some` must satisfy @ref IoAwaitable.
+    @li The return type of `read_some` must satisfy @ref ContextAwaitable.
     @li The awaitable's result must decompose to
         `(error_code,std::size_t)` via structured bindings.
 
@@ -102,14 +102,14 @@ namespace capy {
     @par !example example_2
 
 
-    @see IoAwaitable, MutableBufferSequence, awaitable_decomposes_to
+    @see ContextAwaitable, MutableBufferSequence, awaitable_decomposes_to
 */
 // tag::read_stream_concept[]
 template<typename T>
 concept ReadStream =
     requires(T& stream, mutable_buffer_archetype buffers)
     {
-        { stream.read_some(buffers) } -> IoAwaitable;
+        { stream.read_some(buffers) } -> ContextAwaitable;
         requires awaitable_decomposes_to<
             decltype(stream.read_some(buffers)),
             std::error_code, std::size_t>;

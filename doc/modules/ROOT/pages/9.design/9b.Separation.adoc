@@ -17,7 +17,7 @@ The answer is physical design. Capy and Corosio sit at different levels of the p
 
 == What Lives Where
 
-**Capy** provides the foundational abstractions for coroutine-based I/O. Tasks. Buffers. Stream concepts. Executors. The IoAwaitable protocol. Type-erased streams. Composition primitives like cpp:when_all[] and cpp:when_any[]. It is pure {cpp}20. It has no platform-specific I/O code. No sockets. No file descriptors. No OS event loop.
+**Capy** provides the foundational abstractions for coroutine-based I/O. Tasks. Buffers. Stream concepts. Executors. The ContextAwaitable protocol. Type-erased streams. Composition primitives like cpp:when_all[] and cpp:when_any[]. It is pure {cpp}20. It has no platform-specific I/O code. No sockets. No file descriptors. No OS event loop.
 
 **Corosio** provides platform networking. TCP sockets. TLS streams. DNS resolution. Delays and timeouts. Signal handling. It implements five platform-specific event loop backends: epoll and io_uring on Linux, kqueue on macOS/BSD, IOCP on Windows, and POSIX select as a fallback. Corosio depends on Capy. Capy does not depend on Corosio.
 
@@ -148,7 +148,7 @@ Merging these into Capy would mean that a developer who wants a cpp:task[task<>]
 
 == Conclusion
 
-Good design separates things that change for different reasons. Capy changes when the coroutine execution model evolves - new composition primitives, new buffer types, refinements to the IoAwaitable protocol. Corosio changes when platform I/O APIs evolve - new io_uring features on Linux, new IOCP capabilities on Windows, new TLS backends.
+Good design separates things that change for different reasons. Capy changes when the coroutine execution model evolves - new composition primitives, new buffer types, refinements to the ContextAwaitable protocol. Corosio changes when platform I/O APIs evolve - new io_uring features on Linux, new IOCP capabilities on Windows, new TLS backends.
 
 The converse is also important: things that change together should not be separated. An unstable implementation detail that serves only one component belongs inside that component, not in a separate library. Capy and Corosio do not change together.
 

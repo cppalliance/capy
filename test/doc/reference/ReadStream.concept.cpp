@@ -33,7 +33,7 @@ namespace {
 namespace ex_1 {
 // tag::example_1[]
 template< capy::MutableBufferSequence MB >
-capy::IoAwaitable auto read_some( MB buffers );
+capy::ContextAwaitable auto read_some( MB buffers );
 // end::example_1[]
 } // namespace ex_1
 

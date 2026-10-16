@@ -100,8 +100,8 @@ A `ReadStream` provides partial read operations via `read_some()`:
 template<typename T>
 concept ReadStream = requires(T& stream, MutableBufferSequence auto buffers)
 {
-    { stream.read_some(buffers) } -> IoAwaitable;
-    // Returns io_result<std::size_t>
+    { stream.read_some(buffers) } -> ContextAwaitable;
+    // Returns results<std::size_t>
 };
 ----
 
@@ -153,8 +153,8 @@ A `WriteStream` provides partial write operations via `write_some()`:
 template<typename T>
 concept WriteStream = requires(T& stream, ConstBufferSequence auto buffers)
 {
-    { stream.write_some(buffers) } -> IoAwaitable;
-    // Returns io_result<std::size_t>
+    { stream.write_some(buffers) } -> ContextAwaitable;
+    // Returns results<std::size_t>
 };
 ----
 
@@ -211,8 +211,8 @@ A `ReadSource` provides complete read operations via `read()`:
 template<typename T>
 concept ReadSource = requires(T& source, MutableBufferSequence auto buffers)
 {
-    { source.read(buffers) } -> IoAwaitable;
-    // Returns io_result<std::size_t>
+    { source.read(buffers) } -> ContextAwaitable;
+    // Returns results<std::size_t>
 };
 ----
 
@@ -258,9 +258,9 @@ A `WriteSink` provides complete write operations with explicit EOF signaling:
 template<typename T>
 concept WriteSink = requires(T& sink, ConstBufferSequence auto buffers, bool eof)
 {
-    { sink.write(buffers) } -> IoAwaitable;        // Write all bytes
-    { sink.write(buffers, eof) } -> IoAwaitable;   // Write + optional EOF
-    { sink.write_eof() } -> IoAwaitable;           // Signal end of data
+    { sink.write(buffers) } -> ContextAwaitable;        // Write all bytes
+    { sink.write(buffers, eof) } -> ContextAwaitable;   // Write + optional EOF
+    { sink.write_eof() } -> ContextAwaitable;           // Signal end of data
 };
 ----
 
@@ -313,8 +313,8 @@ its internal storage:
 template<typename T>
 concept BufferSource = requires(T& src, const_buffer* arr, std::size_t max_count)
 {
-    { src.pull(arr, max_count) } -> IoAwaitable;
-    // Returns io_result<std::size_t> where size_t is buffer count
+    { src.pull(arr, max_count) } -> ContextAwaitable;
+    // Returns results<std::size_t> where size_t is buffer count
 };
 ----
 
@@ -377,9 +377,9 @@ concept BufferSink = requires(T& sink, mutable_buffer* arr, std::size_t max_coun
                               std::size_t n, bool eof)
 {
     { sink.prepare(arr, max_count) } -> std::convertible_to<std::size_t>;  // Sync
-    { sink.commit(n) } -> IoAwaitable;           // Commit n bytes
-    { sink.commit(n, eof) } -> IoAwaitable;      // Commit + optional EOF
-    { sink.commit_eof() } -> IoAwaitable;        // Signal end of data
+    { sink.commit(n) } -> ContextAwaitable;           // Commit n bytes
+    { sink.commit(n, eof) } -> ContextAwaitable;      // Commit + optional EOF
+    { sink.commit_eof() } -> ContextAwaitable;        // Signal end of data
 };
 ----
 

@@ -7,9 +7,9 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Reference examples for boost::capy::IoAwaitable, injected into its documentation by
+// Reference examples for boost::capy::ContextAwaitable, injected into its documentation by
 // doc/addons/extensions/reference-snippets.lua. Declared in:
-//   include/boost/capy/concept/io_awaitable.hpp
+//   include/boost/capy/concept/context_awaitable.hpp
 //
 // The tagged regions are what the reference renders; the includes,
 // suppressions and namespaces around them are scaffolding. Each region gets
@@ -42,7 +42,7 @@ void start_my_io_op(std::stop_token, Completion&&) {}
 // tag::example[]
 class my_awaitable
 {
-    capy::io_env const* env_ = nullptr;
+    capy::await_context const* env_ = nullptr;
     capy::continuation  cont_;
     std::error_code     ec_ {};
 
@@ -50,7 +50,7 @@ public:
     bool await_ready() const noexcept { return false; }
 
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<> h, capy::io_env const* env) noexcept
+    await_suspend(std::coroutine_handle<> h, capy::await_context const* env) noexcept
     {
         env_  = env;                      // store the pointer, never a copy
         cont_ = capy::continuation{h};
@@ -66,11 +66,11 @@ public:
         return std::noop_coroutine(); // go back to scheduler
     }
 
-    capy::io_result<> await_resume() const noexcept { return {ec_}; }
+    capy::results<> await_resume() const noexcept { return {ec_}; }
 };
 // end::example[]
 
-static_assert( capy::IoAwaitable<my_awaitable> );
+static_assert( capy::ContextAwaitable<my_awaitable> );
 } // namespace ex_1
 
 } // namespace

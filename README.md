@@ -50,14 +50,14 @@ Capy is also used by [Beast2](https://github.com/cppalliance/beast2), which uses
 
 The Beast2 family of libraries includes:
 
-- **Capy** — The foundation of I/O.
-- **Corosio** — Coroutine-only portable networking. This is the successor to Boost.Asio.
-- **Http** — Sans-I/O HTTP/1.1. This is a high-level library: servers, clients, Express JS middleware.
-- **Websocket** — Sans-I/O Websocket. This is also a high-level library.
-- **Beast2** — High-level HTTP and WebSocket servers. Express.js-style routing, multithreaded, idiomatic C++.
-- **Burl** — High-level HTTP client. The features of curl, the ergonomics of coroutines, and the design sensibility of Python Requests.
+- **[Capy](https://github.com/cppalliance/capy)** — The foundation of I/O.
+- **[Corosio](https://github.com/cppalliance/corosio)** — Coroutine-only portable networking. This is the successor to Boost.Asio.
+- **[Http](https://github.com/cppalliance/http)** — Sans-I/O HTTP/1.1. This is a high-level library: servers, clients, Express JS middleware.
+- **[Websocket](https://github.com/cppalliance/websocket)** — Sans-I/O Websocket. This is also a high-level library.
+- **[Beast2](https://github.com/cppalliance/beast2)** — High-level HTTP and WebSocket servers. Express.js-style routing, multithreaded, idiomatic C++.
+- **[Burl](https://github.com/cppalliance/burl)** — High-level HTTP client. The features of curl, the ergonomics of coroutines, and the design sensibility of Python Requests.
 
-Currently, the C++ Standard does not deliver facilities optimized for networking I/O. We believe that Capy should become a standard library component to fill this gap. Our first paper based on Capy introduces the _IoAwaitable_ family of concepts:
+Currently, the C++ Standard does not deliver facilities optimized for networking I/O. We believe that Capy should become a standard library component to fill this gap. Our first paper based on Capy introduces the _IoAwaitable_ family of concepts, which Capy now names _ContextAwaitable_:
 
 - Paper: https://github.com/cppalliance/wg21-papers/blob/master/source/_reserve/d4003-io-awaitables.md
 
@@ -71,7 +71,7 @@ Capy represents Boost returning to its role as a leader in C++ standardization e
 
 When an I/O operation completes, the operating system wakes up some thread, such as a completion port thread, an epoll reactor, or an io_uring worker. Without affinity tracking, your coroutine resumes on that arbitrary thread, forcing you to add synchronization everywhere or risk data races. This is the fundamental problem that coroutine-based networking must solve.
 
-Capy's answer is the _IoAwaitable_ protocol. When you launch a coroutine with a designated executor, every child coroutine inherits that executor affinity automatically. Execution context flows forward through `co_await` chains, not backward through P3826 queries, to ensure every coroutine in the chain runs in the same context. When I/O completes on some OS thread, the _IoAwaitable_ protocol ensures your coroutine resumes on its designated executor. The data flow is explicit and testable. There are no thread-local globals, no implicit context, no surprises. Capy's `task` type uses the compiler to enforce invariants.
+Capy's answer is the _ContextAwaitable_ protocol. When you launch a coroutine with a designated executor, every child coroutine inherits that executor affinity automatically. Execution context flows forward through `co_await` chains, not backward through P3826 queries, to ensure every coroutine in the chain runs in the same context. When I/O completes on some OS thread, the _ContextAwaitable_ protocol ensures your coroutine resumes on its designated executor. The data flow is explicit and testable. There are no thread-local globals, no implicit context, no surprises. Capy's `task` type uses the compiler to enforce invariants.
 
 Cancellation follows the same forward-propagation model. Stop tokens flow forward from the launch of a coroutine chain alongside the execution context, to arrive at the platform API boundary, providing a uniform cancellation interface across all operations.
 
@@ -85,7 +85,7 @@ Capy is opinionated on the things that matter for I/O:
 - Stop token integration: uniform cancellation, always available
 - Allocator control over frame allocation with zero-overhead recycling
 - Forward propagation of the full context through every `co_await`
-- A `task` type that enforces the _IoAwaitable_ protocol at compile time
+- A `task` type that enforces the _ContextAwaitable_ protocol at compile time
 - Composition primitives for launching and coordinating coroutines
 - A strand for safe concurrency without mutexes
 - Buffer sequences: `std::ranges` for untyped bytes

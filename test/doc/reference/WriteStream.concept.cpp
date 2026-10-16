@@ -33,7 +33,7 @@ namespace {
 namespace ex_1 {
 // tag::example_1[]
 template< capy::ConstBufferSequence Buffers >
-capy::IoAwaitable auto write_some( Buffers buffers );
+capy::ContextAwaitable auto write_some( Buffers buffers );
 // end::example_1[]
 } // namespace ex_1
 

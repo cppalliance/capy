@@ -17,7 +17,7 @@
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/io/write_now.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/read_stream.hpp>
 #include <boost/capy/test/run_blocking.hpp>
@@ -46,7 +46,7 @@ namespace api_sketch {
 // tag::write_signature[]
 auto write(capy::WriteStream auto& stream,
            capy::ConstBufferSequence auto buffers)
-    -> capy::io_task<std::size_t>;
+    -> capy::task<capy::results<std::size_t>>;
 // end::write_signature[]
 
 // tag::write_now_sketch[]
@@ -56,14 +56,14 @@ class write_now
 public:
     explicit write_now(Stream& s) noexcept;
 
-    capy::IoAwaitable auto operator()(capy::ConstBufferSequence auto buffers);
+    capy::ContextAwaitable auto operator()(capy::ConstBufferSequence auto buffers);
 };
 // end::write_now_sketch[]
 
 } // namespace api_sketch
 
 static_assert(requires(capy::test::write_stream& s, capy::const_buffer b) {
-    { capy::write(s, b) } -> std::same_as<capy::io_task<std::size_t>>;
+    { capy::write(s, b) } -> std::same_as<capy::task<capy::results<std::size_t>>>;
 });
 static_assert(
     std::constructible_from<

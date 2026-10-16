@@ -12,10 +12,10 @@
 #define BOOST_CAPY_WHEN_ANY_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/detail/io_result_combinators.hpp>
+#include <boost/capy/detail/results_combinators.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <coroutine>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/detail/abandonable.hpp>
@@ -23,7 +23,7 @@
 #include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/frame_alloc_mixin.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/task.hpp>
 
 #include <array>
@@ -42,12 +42,12 @@
 #include <vector>
 
 /*
-   when_any - Race multiple io_result tasks, select first success
+   when_any - Race multiple results tasks, select first success
    =============================================================
 
    OVERVIEW:
    ---------
-   when_any launches N io_result-returning tasks concurrently. A task
+   when_any launches N results-returning tasks concurrently. A task
    wins by returning !ec; errors and exceptions do not win. Once a
    winner is found, stop is requested for siblings and the winner's
    payload is returned. If no winner exists (all fail), one of the
@@ -64,8 +64,8 @@
 
    Key components:
      - when_any_core:    Shared state tracking winner and completion
-     - when_any_io_runner: Wrapper coroutine for each child task
-     - when_any_io_launcher/when_any_io_homogeneous_launcher:
+     - when_any_results_runner: Wrapper coroutine for each child task
+     - when_any_results_launcher/when_any_results_homogeneous_launcher:
                           Awaitables that start all runners concurrently
 
    CRITICAL INVARIANTS:
@@ -155,7 +155,7 @@ struct when_any_core
     std::optional<stop_callback_t> parent_stop_callback_;
 
     continuation continuation_;
-    io_env const* caller_env_ = nullptr;
+    await_context const* caller_env_ = nullptr;
 
     // Set when a branch is abandoned before finishing: the parent is
     // then abandoned rather than resumed.
@@ -208,9 +208,9 @@ struct when_any_core
 
 namespace detail {
 
-// State for io_result-aware when_any: only !ec wins.
+// State for `results`-aware when_any: only !ec wins.
 template<typename... Ts>
-struct when_any_io_state
+struct when_any_results_state
 {
     static constexpr std::size_t task_count = sizeof...(Ts);
     using variant_type = std::variant<std::error_code, Ts...>;
@@ -226,7 +226,7 @@ struct when_any_io_state
     std::error_code last_error_;
     std::exception_ptr last_exception_;
 
-    when_any_io_state()
+    when_any_results_state()
         : core_(task_count)
     {
     }
@@ -246,17 +246,17 @@ struct when_any_io_state
     }
 };
 
-// Wrapper coroutine for io_result-aware when_any children.
+// Wrapper coroutine for `results`-aware when_any children.
 // unhandled_exception records the exception but does NOT claim winner status.
 template<typename StateType>
-struct when_any_io_runner
+struct when_any_results_runner
 {
     struct promise_type
         : detail::process_frame_mixin
     {
         StateType* state_ = nullptr;
         std::size_t index_ = 0;
-        io_env env_;
+        await_context env_;
         // Owns the branch's segment.
         chain_owner segment_;
         bool done_ = false;
@@ -267,9 +267,9 @@ struct when_any_io_runner
                 state_->core_.lose_branch();
         }
 
-        when_any_io_runner get_return_object() noexcept
+        when_any_results_runner get_return_object() noexcept
         {
-            return when_any_io_runner(
+            return when_any_results_runner(
                 std::coroutine_handle<promise_type>::from_promise(*this));
         }
 
@@ -318,7 +318,7 @@ struct when_any_io_runner
 
         void return_void() noexcept {}
 
-        // Exceptions do NOT win in io_result when_any
+        // Exceptions do NOT win in `results` when_any
         void unhandled_exception() noexcept
         {
             state_->record_exception(std::current_exception());
@@ -348,33 +348,33 @@ struct when_any_io_runner
         auto await_transform(Awaitable&& a)
         {
             using A = std::decay_t<Awaitable>;
-            if constexpr (IoAwaitable<A>)
+            if constexpr (ContextAwaitable<A>)
             {
                 return transform_awaiter<Awaitable>{
                     std::forward<Awaitable>(a), this};
             }
             else
             {
-                static_assert(sizeof(A) == 0, "requires IoAwaitable");
+                static_assert(sizeof(A) == 0, "requires ContextAwaitable");
             }
         }
     };
 
     std::coroutine_handle<promise_type> h_;
 
-    explicit when_any_io_runner(std::coroutine_handle<promise_type> h) noexcept
+    explicit when_any_results_runner(std::coroutine_handle<promise_type> h) noexcept
         : h_(h)
     {
     }
 
-    when_any_io_runner(when_any_io_runner&& other) noexcept
+    when_any_results_runner(when_any_results_runner&& other) noexcept
         : h_(std::exchange(other.h_, nullptr))
     {
     }
 
-    when_any_io_runner(when_any_io_runner const&) = delete;
-    when_any_io_runner& operator=(when_any_io_runner const&) = delete;
-    when_any_io_runner& operator=(when_any_io_runner&&) = delete;
+    when_any_results_runner(when_any_results_runner const&) = delete;
+    when_any_results_runner& operator=(when_any_results_runner const&) = delete;
+    when_any_results_runner& operator=(when_any_results_runner&&) = delete;
 
     auto release() noexcept
     {
@@ -383,9 +383,9 @@ struct when_any_io_runner
 };
 
 // Runner coroutine: only tries to win when the child returns !ec.
-template<std::size_t I, IoAwaitable Awaitable, typename StateType>
-when_any_io_runner<StateType>
-make_when_any_io_runner(Awaitable* inner, StateType* state)
+template<std::size_t I, ContextAwaitable Awaitable, typename StateType>
+when_any_results_runner<StateType>
+make_when_any_results_runner(Awaitable* inner, StateType* state)
 {
     // Taken from the join's storage only once running, into a local:
     // a runner destroyed unstarted owns no branch, and one destroyed
@@ -405,7 +405,7 @@ make_when_any_io_runner(Awaitable* inner, StateType* state)
             {
                 state->result_.emplace(
                     std::in_place_index<I + 1>,
-                    detail::extract_io_payload(std::move(result)));
+                    detail::extract_results_payload(std::move(result)));
             }
             catch(...)
             {
@@ -420,18 +420,18 @@ make_when_any_io_runner(Awaitable* inner, StateType* state)
     }
 }
 
-// Launcher for io_result-aware when_any.
-template<IoAwaitable... Awaitables>
-class when_any_io_launcher
+// Launcher for `results`-aware when_any.
+template<ContextAwaitable... Awaitables>
+class when_any_results_launcher
 {
-    using state_type = when_any_io_state<
-        io_result_payload_t<awaitable_result_t<Awaitables>>...>;
+    using state_type = when_any_results_state<
+        results_payload_t<awaitable_result_t<Awaitables>>...>;
 
     std::tuple<Awaitables...>* tasks_;
     state_type* state_;
 
 public:
-    when_any_io_launcher(
+    when_any_results_launcher(
         std::tuple<Awaitables...>* tasks,
         state_type* state)
         : tasks_(tasks)
@@ -445,7 +445,7 @@ public:
     }
 
     std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> continuation, io_env const* caller_env)
+        std::coroutine_handle<> continuation, await_context const* caller_env)
     {
         state_->core_.continuation_.h = continuation;
         state_->core_.continuation_.owner = caller_env->owner;
@@ -481,14 +481,14 @@ private:
     template<std::size_t I>
     void launch_one(executor_ref caller_ex, std::stop_token token)
     {
-        auto runner = make_when_any_io_runner<I>(
+        auto runner = make_when_any_results_runner<I>(
             &std::get<I>(*tasks_), state_);
 
         auto h = runner.release();
         h.promise().state_ = state_;
         h.promise().index_ = I;
         h.promise().segment_.bind(h, caller_ex);
-        h.promise().env_ = io_env{caller_ex, token,
+        h.promise().env_ = await_context{caller_ex, token,
             state_->core_.caller_env_->frame_allocator,
             &h.promise().segment_};
 
@@ -497,12 +497,12 @@ private:
     }
 };
 
-/** Shared state for homogeneous io_result-aware when_any (range overload).
+/** Shared state for homogeneous `results`-aware when_any (range overload).
 
-    @tparam T The payload type extracted from io_result.
+    @tparam T The payload type extracted from `results`.
 */
 template<typename T>
-struct when_any_io_homogeneous_state
+struct when_any_results_homogeneous_state
 {
     when_any_core core_;
     std::optional<T> result_;
@@ -512,7 +512,7 @@ struct when_any_io_homogeneous_state
     std::error_code last_error_;
     std::exception_ptr last_exception_;
 
-    explicit when_any_io_homogeneous_state(std::size_t count)
+    explicit when_any_results_homogeneous_state(std::size_t count)
         : core_(count)
         , runner_handles_(std::make_unique<continuation[]>(count))
     {
@@ -533,9 +533,9 @@ struct when_any_io_homogeneous_state
     }
 };
 
-/** Specialization for void io_result children (no payload storage). */
+/** Specialization for void `results` children (no payload storage). */
 template<>
-struct when_any_io_homogeneous_state<std::tuple<>>
+struct when_any_results_homogeneous_state<std::tuple<>>
 {
     when_any_core core_;
     std::unique_ptr<continuation[]> runner_handles_;
@@ -544,7 +544,7 @@ struct when_any_io_homogeneous_state<std::tuple<>>
     std::error_code last_error_;
     std::exception_ptr last_exception_;
 
-    explicit when_any_io_homogeneous_state(std::size_t count)
+    explicit when_any_results_homogeneous_state(std::size_t count)
         : core_(count)
         , runner_handles_(std::make_unique<continuation[]>(count))
     {
@@ -565,13 +565,13 @@ struct when_any_io_homogeneous_state<std::tuple<>>
     }
 };
 
-/** Create an io_result-aware runner for homogeneous when_any (range path).
+/** Create a `results`-aware runner for homogeneous when_any (range path).
 
     Only tries to win when the child returns !ec.
 */
-template<IoAwaitable Awaitable, typename StateType>
-when_any_io_runner<StateType>
-make_when_any_io_homogeneous_runner(
+template<ContextAwaitable Awaitable, typename StateType>
+when_any_results_runner<StateType>
+make_when_any_results_homogeneous_runner(
     Awaitable* inner, StateType* state, std::size_t index)
 {
     // Taken from the join's storage only once running, into a local:
@@ -587,14 +587,14 @@ make_when_any_io_homogeneous_runner(
     {
         if(state->core_.try_win(index))
         {
-            using PayloadT = io_result_payload_t<
+            using PayloadT = results_payload_t<
                 awaitable_result_t<Awaitable>>;
             if constexpr (!std::is_same_v<PayloadT, std::tuple<>>)
             {
                 try
                 {
                     state->result_.emplace(
-                        extract_io_payload(std::move(result)));
+                        extract_results_payload(std::move(result)));
                 }
                 catch(...)
                 {
@@ -610,20 +610,20 @@ make_when_any_io_homogeneous_runner(
     }
 }
 
-/** Starts all io_result-aware homogeneous runners concurrently. */
-template<IoAwaitableRange Range>
-class when_any_io_homogeneous_launcher
+/** Starts all `results`-aware homogeneous runners concurrently. */
+template<ContextAwaitableRange Range>
+class when_any_results_homogeneous_launcher
 {
     using Awaitable = std::ranges::range_value_t<Range>;
-    using PayloadT = io_result_payload_t<awaitable_result_t<Awaitable>>;
+    using PayloadT = results_payload_t<awaitable_result_t<Awaitable>>;
 
     Range* range_;
-    when_any_io_homogeneous_state<PayloadT>* state_;
+    when_any_results_homogeneous_state<PayloadT>* state_;
 
 public:
-    when_any_io_homogeneous_launcher(
+    when_any_results_homogeneous_launcher(
         Range* range,
-        when_any_io_homogeneous_state<PayloadT>* state)
+        when_any_results_homogeneous_state<PayloadT>* state)
         : range_(range)
         , state_(state)
     {
@@ -635,7 +635,7 @@ public:
     }
 
     std::coroutine_handle<> await_suspend(
-        std::coroutine_handle<> continuation, io_env const* caller_env)
+        std::coroutine_handle<> continuation, await_context const* caller_env)
     {
         state_->core_.continuation_.h = continuation;
         state_->core_.continuation_.owner = caller_env->owner;
@@ -657,14 +657,14 @@ public:
         std::size_t index = 0;
         for(auto&& a : *range_)
         {
-            auto runner = make_when_any_io_homogeneous_runner(
+            auto runner = make_when_any_results_homogeneous_runner(
                 &a, state_, index);
 
             auto h = runner.release();
             h.promise().state_ = state_;
             h.promise().index_ = index;
             h.promise().segment_.bind(h, caller_env->executor);
-            h.promise().env_ = io_env{caller_env->executor, token,
+            h.promise().env_ = await_context{caller_env->executor, token,
                 caller_env->frame_allocator, &h.promise().segment_};
 
             state_->runner_handles_[index].h = std::coroutine_handle<>{h};
@@ -685,7 +685,7 @@ public:
 
 } // namespace detail
 
-/** Race a range of io_result-returning awaitables (non-void payloads).
+/** Race a range of `results`-returning awaitables (non-void payloads).
 
     Only a child returning !ec can win. Errors and exceptions do not
     claim winner status. If all children fail, an unspecified one of
@@ -717,7 +717,7 @@ public:
     @par Await-returns
     An object of type
     `std::variant<std::error_code, std::pair<std::size_t, PayloadT>>`,
-    where `PayloadT` is the payload of one child's `io_result`.
+    where `PayloadT` is the payload of one child's `results`.
 
     @li Index 1 holds the winner's position in the input range paired
         with its payload.
@@ -739,7 +739,7 @@ public:
     or a failed child's exception is rethrown.
 
     @par Remarks
-    Supports _IoAwaitable cancellation_. A canceled child await-returns a
+    Supports _ContextAwaitable cancellation_. A canceled child await-returns a
     non-zero `ec` and so cannot win; if no child has already succeeded,
     the result settles at index 0.
 
@@ -748,7 +748,7 @@ public:
     Child awaitables execute concurrently but complete through the caller's
     executor.
 
-    @param awaitables Range of io_result-returning awaitables (must
+    @param awaitables Range of `results`-returning awaitables (must
         not be empty).
 
     @return A task yielding variant<error_code, pair<size_t, PayloadT>>
@@ -774,23 +774,23 @@ public:
     @par !example example_1
 
 
-    @see IoAwaitableRange, when_any
+    @see ContextAwaitableRange, when_any
 */
-template<IoAwaitableRange R>
-    requires detail::is_io_result_v<
+template<ContextAwaitableRange R>
+    requires detail::is_results_v<
         awaitable_result_t<std::ranges::range_value_t<R>>>
     && (!std::is_same_v<
-            detail::io_result_payload_t<
+            detail::results_payload_t<
                 awaitable_result_t<std::ranges::range_value_t<R>>>,
             std::tuple<>>)
 [[nodiscard]] auto when_any(R&& awaitables)
     -> task<std::variant<std::error_code,
         std::pair<std::size_t,
-            detail::io_result_payload_t<
+            detail::results_payload_t<
                 awaitable_result_t<std::ranges::range_value_t<R>>>>>>
 {
     using Awaitable = std::ranges::range_value_t<R>;
-    using PayloadT = detail::io_result_payload_t<
+    using PayloadT = detail::results_payload_t<
         awaitable_result_t<Awaitable>>;
     using result_type = std::variant<std::error_code,
         std::pair<std::size_t, PayloadT>>;
@@ -802,9 +802,9 @@ template<IoAwaitableRange R>
 
     OwnedRange owned_awaitables = detail::own_range(std::forward<R>(awaitables));
 
-    detail::when_any_io_homogeneous_state<PayloadT> state(count);
+    detail::when_any_results_homogeneous_state<PayloadT> state(count);
 
-    co_await detail::when_any_io_homogeneous_launcher<OwnedRange>(
+    co_await detail::when_any_results_homogeneous_launcher<OwnedRange>(
         &owned_awaitables, &state);
 
     // Winner found
@@ -822,7 +822,7 @@ template<IoAwaitableRange R>
     co_return result_type{std::in_place_index<0>, state.last_error_};
 }
 
-/** Race a range of void io_result-returning awaitables.
+/** Race a range of void `results`-returning awaitables.
 
     Only a child returning !ec can win. Returns the winner's index
     at variant index 1, or error_code at index 0 on all-fail.
@@ -868,7 +868,7 @@ template<IoAwaitableRange R>
     or a failed child's exception is rethrown.
 
     @par Remarks
-    Supports _IoAwaitable cancellation_. A canceled child await-returns a
+    Supports _ContextAwaitable cancellation_. A canceled child await-returns a
     non-zero `ec` and so cannot win; if no child has already succeeded,
     the result settles at index 0.
 
@@ -877,7 +877,7 @@ template<IoAwaitableRange R>
     Child awaitables execute concurrently but complete through the caller's
     executor.
 
-    @param awaitables Range of io_result<>-returning awaitables (must
+    @param awaitables Range of `results<>`-returning awaitables (must
         not be empty).
 
     @return A task yielding variant<error_code, size_t> where index 0
@@ -899,13 +899,13 @@ template<IoAwaitableRange R>
     @par !example example_2
 
 
-    @see IoAwaitableRange, when_any
+    @see ContextAwaitableRange, when_any
 */
-template<IoAwaitableRange R>
-    requires detail::is_io_result_v<
+template<ContextAwaitableRange R>
+    requires detail::is_results_v<
         awaitable_result_t<std::ranges::range_value_t<R>>>
     && std::is_same_v<
-            detail::io_result_payload_t<
+            detail::results_payload_t<
                 awaitable_result_t<std::ranges::range_value_t<R>>>,
             std::tuple<>>
 [[nodiscard]] auto when_any(R&& awaitables)
@@ -920,9 +920,9 @@ template<IoAwaitableRange R>
 
     OwnedRange owned_awaitables = detail::own_range(std::forward<R>(awaitables));
 
-    detail::when_any_io_homogeneous_state<std::tuple<>> state(count);
+    detail::when_any_results_homogeneous_state<std::tuple<>> state(count);
 
-    co_await detail::when_any_io_homogeneous_launcher<OwnedRange>(
+    co_await detail::when_any_results_homogeneous_launcher<OwnedRange>(
         &owned_awaitables, &state);
 
     // Winner found
@@ -940,9 +940,9 @@ template<IoAwaitableRange R>
     co_return result_type{std::in_place_index<0>, state.last_error_};
 }
 
-/** Race io_result-returning awaitables, selecting the first success.
+/** Race `results`-returning awaitables, selecting the first success.
 
-    Overload selected when all children return io_result<Ts...>.
+    Overload selected when all children return results<Ts...>.
     Only a child returning !ec can win. Errors and exceptions do
     not claim winner status.
 
@@ -967,7 +967,7 @@ template<IoAwaitableRange R>
 
     @par Await-returns
     An object of type `std::variant<std::error_code, P1, ..., Pn>`, where
-    `Pi` is the payload of the i-th child's `io_result`.
+    `Pi` is the payload of the i-th child's `results`.
 
     @li Index i+1 identifies the i-th argument as the winner and holds
         its payload.
@@ -989,7 +989,7 @@ template<IoAwaitableRange R>
     result holds index 0, or a failed child's exception is rethrown.
 
     @par Remarks
-    Supports _IoAwaitable cancellation_. A canceled child await-returns a
+    Supports _ContextAwaitable cancellation_. A canceled child await-returns a
     non-zero `ec` and so cannot win; if no child has already succeeded,
     the result settles at index 0.
 
@@ -999,7 +999,7 @@ template<IoAwaitableRange R>
     executor.
 
     @param as The awaitables to race. Each must satisfy @ref
-        IoAwaitable and is consumed (moved-from) when `when_any`
+        ContextAwaitable and is consumed (moved-from) when `when_any`
         is awaited.
 
     @return A task yielding variant<error_code, R1, ..., Rn> where
@@ -1027,23 +1027,23 @@ template<IoAwaitableRange R>
         parent is abandoned rather than resumed once the last branch
         has finished or been abandoned.
 */
-template<IoAwaitable... As>
+template<ContextAwaitable... As>
     requires (sizeof...(As) > 0)
-          && detail::all_io_result_awaitables<As...>
+          && detail::all_results_awaitables<As...>
 [[nodiscard]] auto when_any(As... as)
     -> task<std::variant<
         std::error_code,
-        detail::io_result_payload_t<awaitable_result_t<As>>...>>
+        detail::results_payload_t<awaitable_result_t<As>>...>>
 {
     using result_type = std::variant<
         std::error_code,
-        detail::io_result_payload_t<awaitable_result_t<As>>...>;
+        detail::results_payload_t<awaitable_result_t<As>>...>;
 
-    detail::when_any_io_state<
-        detail::io_result_payload_t<awaitable_result_t<As>>...> state;
+    detail::when_any_results_state<
+        detail::results_payload_t<awaitable_result_t<As>>...> state;
     std::tuple<As...> awaitable_tuple(std::move(as)...);
 
-    co_await detail::when_any_io_launcher<As...>(
+    co_await detail::when_any_results_launcher<As...>(
         &awaitable_tuple, &state);
 
     // Winner found: return their result

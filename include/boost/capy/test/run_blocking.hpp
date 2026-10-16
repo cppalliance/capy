@@ -422,11 +422,11 @@ public:
         @throws std::system_error with `error::canceled` if the task
             is abandoned before it completes.
 
-        @tparam Task The IoRunnable type.
+        @tparam Task The ContextRunnable type.
 
         @param t The task to execute.
     */
-    template<IoRunnable Task>
+    template<ContextRunnable Task>
     void
     operator()(Task t) &&
     {

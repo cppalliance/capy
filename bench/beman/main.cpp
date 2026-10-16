@@ -25,16 +25,16 @@
 
 #include "allocation_tracker.hpp"
 #include "awaitable_sender.hpp"
-#include "ioaw_read_stream.hpp"
-#include "ioaw_io_read_stream.hpp"
+#include "ctxaw_read_stream.hpp"
+#include "ctxaw_io_read_stream.hpp"
 #include "repeat_until.hpp"
 #include "sender_awaitable.hpp"
 #include "sndr_any_read_stream.hpp"
 #include "sndr_io_read_stream.hpp"
 #include "sndr_read_stream.hpp"
 #include "sndr_sync_read_stream.hpp"
-#include "ioaw_sync_read_stream.hpp"
-#include "sender_io_env.hpp"
+#include "ctxaw_sync_read_stream.hpp"
+#include "sender_await_context.hpp"
 
 #include <boost/capy.hpp>
 #include <boost/capy/io/any_read_stream.hpp>
@@ -91,7 +91,7 @@ static constexpr int BRIDGED_EXEC_MODEL = 1;
 // Table 1: capy::task
 //
 // Templated session/accept coroutines instantiated with each
-// stream type. The executor comes from io_env via capy::task's
+// stream type. The executor comes from await_context via capy::task's
 // transform_awaiter.
 // ===================================================================
 
@@ -124,7 +124,7 @@ capy::task<> capy_accept(Stream& stream, cell_result& out)
 // Table 1: capy::task — Column B (sender via await_sender bridge)
 //
 // The stream returns a sender. capy::task consumes it by wrapping
-// in await_sender which bridges the sender to an IoAwaitable.
+// in await_sender which bridges the sender to a ContextAwaitable.
 // Single pool: sender_thread_pool with sender_as_capy_executor
 // adapter so capy::task can run on it.
 // ===================================================================
@@ -158,7 +158,7 @@ capy::task<> capy_accept_sndr(Stream& stream, cell_result& out)
 // ===================================================================
 // Table 2: bex::task — Column A (sender, native)
 //
-// Same templated pattern but using bex::task<void, io_env> coroutines on
+// Same templated pattern but using bex::task<void, await_context> coroutines on
 // sender_thread_pool.
 // ===================================================================
 
@@ -166,7 +166,7 @@ template <class Stream>
 auto bex_session(
     Stream& stream,
     std::allocator_arg_t,
-    std::pmr::polymorphic_allocator<std::byte>) -> bex::task<void, io_env>
+    std::pmr::polymorphic_allocator<std::byte>) -> bex::task<void, await_context>
 {
     char buf[64];
     for (int i = 0; i < INNER_LOOPS; ++i)
@@ -179,7 +179,7 @@ auto bex_accept(
     Stream& stream,
     cell_result& out,
     std::allocator_arg_t,
-    std::pmr::polymorphic_allocator<std::byte> alloc) -> bex::task<void, io_env>
+    std::pmr::polymorphic_allocator<std::byte> alloc) -> bex::task<void, await_context>
 {
     auto before = g_alloc_count.load(std::memory_order_relaxed);
     auto start = std::chrono::steady_clock::now();
@@ -197,15 +197,15 @@ auto bex_accept(
 // ===================================================================
 // Table 2: bex::task — Column B (awaitable via as_sender_lossy bridge)
 //
-// The stream returns an IoAwaitable. bex::task consumes it by
+// The stream returns a ContextAwaitable. bex::task consumes it by
 // wrapping in as_sender_lossy which bridges the awaitable to a sender.
 // ===================================================================
 
 template <class Stream>
-auto bex_session_ioaw(
+auto bex_session_ctxaw(
     Stream& stream,
     std::allocator_arg_t,
-    std::pmr::polymorphic_allocator<std::byte>) -> bex::task<void, io_env>
+    std::pmr::polymorphic_allocator<std::byte>) -> bex::task<void, await_context>
 {
     char buf[64];
     for (int i = 0; i < INNER_LOOPS; ++i)
@@ -215,17 +215,17 @@ auto bex_session_ioaw(
 }
 
 template <class Stream>
-auto bex_accept_ioaw(
+auto bex_accept_ctxaw(
     Stream& stream,
     cell_result& out,
     std::allocator_arg_t,
-    std::pmr::polymorphic_allocator<std::byte> alloc) -> bex::task<void, io_env>
+    std::pmr::polymorphic_allocator<std::byte> alloc) -> bex::task<void, await_context>
 {
     auto before = g_alloc_count.load(std::memory_order_relaxed);
     auto start = std::chrono::steady_clock::now();
 
     for (int i = 0; i < OUTER_LOOPS; ++i)
-        co_await bex_session_ioaw(stream,
+        co_await bex_session_ctxaw(stream,
             std::allocator_arg, alloc);
 
     auto elapsed = std::chrono::steady_clock::now() - start;
@@ -344,10 +344,10 @@ int main()
     // Col B: Awaitable (via as_sender_lossy bridge)
 
 
-    // Native — ioaw_read_stream
+    // Native — ctxaw_read_stream
     {
         sender_thread_pool pool(1);
-        ioaw_read_stream stream;
+        ctxaw_read_stream stream;
         auto sched = pool.get_scheduler();
         int count = OPS_PER_CELL;
         char buf[64];
@@ -372,10 +372,10 @@ int main()
             after - before};
     }
 
-    // Abstract — ioaw_io_read_stream
+    // Abstract — ctxaw_io_read_stream
     {
         sender_thread_pool pool(1);
-        ioaw_io_read_stream_impl stream;
+        ctxaw_io_read_stream_impl stream;
         auto sched = pool.get_scheduler();
         int count = OPS_PER_CELL;
         char buf[64];
@@ -386,7 +386,7 @@ int main()
             repeat_until(
                 bex::let_value(bex::just(), [&]() {
                     return capy::as_sender_lossy(
-                        static_cast<ioaw_io_read_stream&>(
+                        static_cast<ctxaw_io_read_stream&>(
                             stream).read_some(
                                 capy::mutable_buffer(
                                     buf, sizeof(buf))));
@@ -406,7 +406,7 @@ int main()
     // Type erased — capy::any_read_stream
     {
         sender_thread_pool pool(1);
-        ioaw_read_stream concrete;
+        ctxaw_read_stream concrete;
         capy::any_read_stream stream(&concrete);
         auto sched = pool.get_scheduler();
         int count = OPS_PER_CELL;
@@ -461,10 +461,10 @@ int main()
             after - before};
     }
 
-    // Synchronous — ioaw_sync_read_stream (Col B)
+    // Synchronous — ctxaw_sync_read_stream (Col B)
     {
         sender_thread_pool pool(1);
-        ioaw_sync_read_stream stream;
+        ctxaw_sync_read_stream stream;
         auto sched = pool.get_scheduler();
         int count = OPS_PER_CELL;
         char buf[64];
@@ -494,21 +494,21 @@ int main()
     // ---------------------------------------------------------------
 
 
-    // Native — ioaw_read_stream
+    // Native — ctxaw_read_stream
     {
         capy::thread_pool pool(1);
-        ioaw_read_stream stream;
+        ctxaw_read_stream stream;
         capy::run_async(pool.get_executor())(
             capy_accept(stream, grid[run][CAPY_TASK][NATIVE_STREAM][NATIVE_EXEC_MODEL]));
         pool.join();
     }
 
-    // Abstract — ioaw_io_read_stream
+    // Abstract — ctxaw_io_read_stream
     {
         capy::thread_pool pool(1);
-        ioaw_io_read_stream_impl stream;
+        ctxaw_io_read_stream_impl stream;
         capy::run_async(pool.get_executor())(
-            capy_accept(static_cast<ioaw_io_read_stream&>(stream),
+            capy_accept(static_cast<ctxaw_io_read_stream&>(stream),
                 grid[run][CAPY_TASK][ABSTRACT_STREAM][NATIVE_EXEC_MODEL]));
         pool.join();
     }
@@ -516,17 +516,17 @@ int main()
     // Type erased — capy::any_read_stream
     {
         capy::thread_pool pool(1);
-        ioaw_read_stream concrete;
+        ctxaw_read_stream concrete;
         capy::any_read_stream stream(&concrete);
         capy::run_async(pool.get_executor())(
             capy_accept(stream, grid[run][CAPY_TASK][TYPE_ERASED_STREAM][NATIVE_EXEC_MODEL]));
         pool.join();
     }
 
-    // Synchronous — ioaw_sync_read_stream
+    // Synchronous — ctxaw_sync_read_stream
     {
         capy::thread_pool pool(1);
-        ioaw_sync_read_stream stream;
+        ctxaw_sync_read_stream stream;
         capy::run_async(pool.get_executor())(
             capy_accept(stream, grid[run][CAPY_TASK][SYNC_STREAM][NATIVE_EXEC_MODEL]));
         pool.join();
@@ -577,7 +577,7 @@ int main()
     }
 
     // ---------------------------------------------------------------
-    // Table 3: beman::execution::task (bex::task<void, io_env>)
+    // Table 3: beman::execution::task (bex::task<void, await_context>)
     // ---------------------------------------------------------------
 
 
@@ -640,29 +640,29 @@ int main()
 
     // Col B: Awaitable (via as_sender_lossy bridge)
 
-    // Native — ioaw_read_stream
+    // Native — ctxaw_read_stream
     {
         sender_thread_pool pool(1);
-        ioaw_read_stream stream;
+        ctxaw_read_stream stream;
         auto sched = pool.get_scheduler();
         auto* mr = get_counting_resource();
         bex::sync_wait(bex::starts_on(sched,
-            bex_accept_ioaw(
+            bex_accept_ctxaw(
                 stream, grid[run][BEMAN_TASK][NATIVE_STREAM][BRIDGED_EXEC_MODEL],
                 std::allocator_arg,
                 std::pmr::polymorphic_allocator<std::byte>(mr))));
         pool.join();
     }
 
-    // Abstract — ioaw_io_read_stream
+    // Abstract — ctxaw_io_read_stream
     {
         sender_thread_pool pool(1);
-        ioaw_io_read_stream_impl stream;
+        ctxaw_io_read_stream_impl stream;
         auto sched = pool.get_scheduler();
         auto* mr = get_counting_resource();
         bex::sync_wait(bex::starts_on(sched,
-            bex_accept_ioaw(
-                static_cast<ioaw_io_read_stream&>(stream),
+            bex_accept_ctxaw(
+                static_cast<ctxaw_io_read_stream&>(stream),
                 grid[run][BEMAN_TASK][ABSTRACT_STREAM][BRIDGED_EXEC_MODEL],
                 std::allocator_arg,
                 std::pmr::polymorphic_allocator<std::byte>(mr))));
@@ -672,26 +672,26 @@ int main()
     // Type erased — capy::any_read_stream
     {
         sender_thread_pool pool(1);
-        ioaw_read_stream concrete;
+        ctxaw_read_stream concrete;
         capy::any_read_stream stream(&concrete);
         auto sched = pool.get_scheduler();
         auto* mr = get_counting_resource();
         bex::sync_wait(bex::starts_on(sched,
-            bex_accept_ioaw(
+            bex_accept_ctxaw(
                 stream, grid[run][BEMAN_TASK][TYPE_ERASED_STREAM][BRIDGED_EXEC_MODEL],
                 std::allocator_arg,
                 std::pmr::polymorphic_allocator<std::byte>(mr))));
         pool.join();
     }
 
-    // Synchronous — ioaw_sync_read_stream
+    // Synchronous — ctxaw_sync_read_stream
     {
         sender_thread_pool pool(1);
-        ioaw_sync_read_stream stream;
+        ctxaw_sync_read_stream stream;
         auto sched = pool.get_scheduler();
         auto* mr = get_counting_resource();
         bex::sync_wait(bex::starts_on(sched,
-            bex_accept_ioaw(
+            bex_accept_ctxaw(
                 stream, grid[run][BEMAN_TASK][SYNC_STREAM][BRIDGED_EXEC_MODEL],
                 std::allocator_arg,
                 std::pmr::polymorphic_allocator<std::byte>(mr))));

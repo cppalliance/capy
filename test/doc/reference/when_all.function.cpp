@@ -31,7 +31,7 @@ namespace capy = boost::capy;
 namespace {
 namespace ex_1 {
 // tag::example_1[]
-capy::io_task<std::size_t> read_one( capy::any_read_stream& stream, capy::mutable_buffer buf )
+capy::task<capy::results<std::size_t>> read_one( capy::any_read_stream& stream, capy::mutable_buffer buf )
 {
     co_return co_await stream.read_some(buf);
 }
@@ -41,7 +41,7 @@ capy::task<void> read_all_connections(
 {
     // One awaitable per stream: each stream is touched by exactly one
     // child, so running them concurrently is safe.
-    std::vector<capy::io_task<std::size_t>> reads;
+    std::vector<capy::task<capy::results<std::size_t>>> reads;
     for (std::size_t i = 0; i < streams.size(); ++i)
         reads.push_back(read_one(streams[i], buffers[i]));
 
@@ -58,9 +58,9 @@ namespace ex_2 {
 template< class MakeJob >
 capy::task<void> run_n_jobs( MakeJob make_job, int n )
 {
-    std::vector<capy::io_task<>> jobs;
+    std::vector<capy::task<capy::results<>>> jobs;
     for (int i = 0; i < n; ++i)
-        jobs.push_back(make_job(i));  // io_task<> per index
+        jobs.push_back(make_job(i));  // task<results<>> per index
 
     auto [ec] = co_await capy::when_all(std::move(jobs));
 }

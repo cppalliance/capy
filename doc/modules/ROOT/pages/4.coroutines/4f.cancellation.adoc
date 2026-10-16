@@ -137,7 +137,7 @@ Coroutines have a propagation problem: passing a stop token explicitly to every 
 
 === Capy's Answer: Automatic Propagation
 
-Capy propagates stop tokens downward through `co_await`. When you await a task, the IoAwaitable protocol passes the current stop token to the child:
+Capy propagates stop tokens downward through `co_await`. When you await a task, the ContextAwaitable protocol passes the current stop token to the child:
 
 [source,cpp]
 ----

@@ -47,7 +47,7 @@ int main()
     int acquisition_order = 0;
     std::vector<int> order_log;
 
-    auto worker = [&](int id) -> capy::io_task<> {
+    auto worker = [&](int id) -> capy::task<capy::results<>> {
         std::cout << "Worker " << id << " waiting for lock\n";
         // tag::scoped_lock[]
         auto [ec, guard] = co_await mtx.scoped_lock();
@@ -55,7 +55,7 @@ int main()
         {
             std::cout << "Worker " << id
                       << " canceled: " << ec.message() << "\n";
-            co_return capy::io_result<>{ec};
+            co_return capy::results<>{ec};
         }
         // end::scoped_lock[]
 
@@ -65,7 +65,7 @@ int main()
                   << " acquired lock (sequence " << seq << ")\n";
 
         std::cout << "Worker " << id << " releasing lock\n";
-        co_return capy::io_result<>{};
+        co_return capy::results<>{};
     };
 
     auto run_all = [&]() -> capy::task<> {

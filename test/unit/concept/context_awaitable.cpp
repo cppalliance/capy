@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 
 #include <coroutine>
 #include <cstddef>
@@ -31,7 +31,7 @@ struct awaitable_suspend_void
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const*) const noexcept
+        await_context const*) const noexcept
     {
     }
 
@@ -44,7 +44,7 @@ struct awaitable_suspend_bool
 
     bool await_suspend(
         std::coroutine_handle<>,
-        io_env const*) const noexcept
+        await_context const*) const noexcept
     {
         return false;
     }
@@ -58,7 +58,7 @@ struct awaitable_suspend_handle
 
     std::coroutine_handle<> await_suspend(
         std::coroutine_handle<> h,
-        io_env const*) const noexcept
+        await_context const*) const noexcept
     {
         return h;
     }
@@ -72,7 +72,7 @@ struct awaitable_suspend_typed_handle
 
     std::coroutine_handle<mock_promise> await_suspend(
         std::coroutine_handle<>,
-        io_env const*) const noexcept
+        await_context const*) const noexcept
     {
         return {};
     }
@@ -87,7 +87,7 @@ struct awaitable_suspend_int
 
     int await_suspend(
         std::coroutine_handle<>,
-        io_env const*) const noexcept
+        await_context const*) const noexcept
     {
         return 0;
     }
@@ -112,7 +112,7 @@ struct awaitable_ready_void
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const*) const noexcept
+        await_context const*) const noexcept
     {
     }
 
@@ -128,7 +128,7 @@ struct awaitable_no_move
 
     void await_suspend(
         std::coroutine_handle<>,
-        io_env const*) const noexcept
+        await_context const*) const noexcept
     {
     }
 
@@ -155,27 +155,27 @@ static_assert(!AwaitSuspendResult<std::nullptr_t>);
 static_assert(!AwaitSuspendResult<handle_convertible>);
 static_assert(!AwaitSuspendResult<std::coroutine_handle<>*>);
 
-// Every valid await_suspend return type satisfies IoAwaitable
-static_assert(IoAwaitable<awaitable_suspend_void>);
-static_assert(IoAwaitable<awaitable_suspend_bool>);
-static_assert(IoAwaitable<awaitable_suspend_handle>);
-static_assert(IoAwaitable<awaitable_suspend_typed_handle>);
+// Every valid await_suspend return type satisfies ContextAwaitable
+static_assert(ContextAwaitable<awaitable_suspend_void>);
+static_assert(ContextAwaitable<awaitable_suspend_bool>);
+static_assert(ContextAwaitable<awaitable_suspend_handle>);
+static_assert(ContextAwaitable<awaitable_suspend_typed_handle>);
 
 // Invalid protocol shapes are rejected
-static_assert(!IoAwaitable<awaitable_suspend_int>);
-static_assert(!IoAwaitable<awaitable_one_arg_suspend>);
-static_assert(!IoAwaitable<awaitable_ready_void>);
-static_assert(!IoAwaitable<awaitable_no_move>);
-static_assert(!IoAwaitable<int>);
+static_assert(!ContextAwaitable<awaitable_suspend_int>);
+static_assert(!ContextAwaitable<awaitable_one_arg_suspend>);
+static_assert(!ContextAwaitable<awaitable_ready_void>);
+static_assert(!ContextAwaitable<awaitable_no_move>);
+static_assert(!ContextAwaitable<int>);
 
 // awaitable_result_t names the await_resume return type
 static_assert(std::same_as<awaitable_result_t<awaitable_suspend_void>, void>);
 static_assert(std::same_as<awaitable_result_t<awaitable_suspend_bool>, int>);
 
-// IoAwaitableRange requires a sized input range of IoAwaitables
-static_assert(IoAwaitableRange<std::vector<awaitable_suspend_void>>);
-static_assert(!IoAwaitableRange<std::vector<awaitable_one_arg_suspend>>);
-static_assert(!IoAwaitableRange<awaitable_suspend_void>);
+// ContextAwaitableRange requires a sized input range of ContextAwaitables
+static_assert(ContextAwaitableRange<std::vector<awaitable_suspend_void>>);
+static_assert(!ContextAwaitableRange<std::vector<awaitable_one_arg_suspend>>);
+static_assert(!ContextAwaitableRange<awaitable_suspend_void>);
 
 } // namespace capy
 } // namespace boost

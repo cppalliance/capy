@@ -36,7 +36,6 @@ namespace {
 // headers are already included above); they are kept for the page text.
 
 // tag::run_blocking_basic[]
-#include <boost/capy/task.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 
 namespace capy = boost::capy;

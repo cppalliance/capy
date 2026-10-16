@@ -27,7 +27,7 @@ namespace capy {
     @par !example example
 
 
-    @see io_awaitable_promise_base, io_env
+    @see context_awaitable_promise_base, await_context
 */
 namespace this_coro {
 
@@ -38,7 +38,7 @@ namespace this_coro {
     carries no data; it serves only as a sentinel for compile-time dispatch.
 
     @see environment
-    @see io_awaitable_promise_base
+    @see context_awaitable_promise_base
 */
 struct environment_tag {};
 
@@ -49,7 +49,7 @@ struct environment_tag {};
     data; it serves only as a sentinel for compile-time dispatch.
 
     @see executor
-    @see io_awaitable_promise_base
+    @see context_awaitable_promise_base
 */
 struct executor_tag {};
 
@@ -60,7 +60,7 @@ struct executor_tag {};
     no data; it serves only as a sentinel for compile-time dispatch.
 
     @see stop_token
-    @see io_awaitable_promise_base
+    @see context_awaitable_promise_base
 */
 struct stop_token_tag {};
 
@@ -71,7 +71,7 @@ struct stop_token_tag {};
     no data; it serves only as a sentinel for compile-time dispatch.
 
     @see frame_allocator
-    @see io_awaitable_promise_base
+    @see context_awaitable_promise_base
 */
 struct frame_allocator_tag {};
 
@@ -79,7 +79,7 @@ struct frame_allocator_tag {};
 
     Use `co_await this_coro::environment` inside a coroutine whose promise
     type supports environment access (e.g., inherits from
-    @ref io_awaitable_promise_base). The returned environment contains the
+    @ref context_awaitable_promise_base). The returned environment contains the
     executor, stop token, and allocator for this coroutine.
 
     @par Example
@@ -87,18 +87,18 @@ struct frame_allocator_tag {};
 
 
     @par Preconditions
-    An `io_env` must have been installed for this coroutine before the tag
+    An `await_context` must have been installed for this coroutine before the tag
     is awaited. Starting the coroutine via @ref run or `run_async` installs
     one; awaiting the tag without an installed environment is undefined
     behavior (an assertion fires in debug builds).
 
     @par Behavior
-    @li Returns a pointer to the stored `io_env`
+    @li Returns a pointer to the stored `await_context`
     @li This operation never suspends; `await_ready()` always returns `true`
 
     @see environment_tag
-    @see io_awaitable_promise_base
-    @see io_env
+    @see context_awaitable_promise_base
+    @see await_context
 */
 inline constexpr environment_tag environment{};
 
@@ -106,7 +106,7 @@ inline constexpr environment_tag environment{};
 
     Use `co_await this_coro::executor` inside a coroutine whose promise
     type supports executor access (e.g., inherits from
-    @ref io_awaitable_promise_base). The returned executor reflects the
+    @ref context_awaitable_promise_base). The returned executor reflects the
     executor this coroutine is bound to.
 
     @par Example
@@ -114,19 +114,19 @@ inline constexpr environment_tag environment{};
 
 
     @par Preconditions
-    An `io_env` must have been installed for this coroutine before the tag
+    An `await_context` must have been installed for this coroutine before the tag
     is awaited (see @ref environment). Awaiting it without an installed
     environment is undefined behavior (an assertion fires in debug builds).
 
     @par Behavior
     @li Returns the installed environment's `executor` field. If the started
-        chain installed an `io_env` whose `executor` was left default, the
+        chain installed an `await_context` whose `executor` was left default, the
         result is a default-constructed `executor_ref` (where `operator bool()`
         returns `false`).
     @li This operation never suspends; `await_ready()` always returns `true`.
 
     @see executor_tag
-    @see io_awaitable_promise_base
+    @see context_awaitable_promise_base
 */
 inline constexpr executor_tag executor{};
 
@@ -134,7 +134,7 @@ inline constexpr executor_tag executor{};
 
     Use `co_await this_coro::stop_token` inside a coroutine whose promise
     type supports stop token access (e.g., inherits from
-    @ref io_awaitable_promise_base). The returned stop token reflects whatever
+    @ref context_awaitable_promise_base). The returned stop token reflects whatever
     token was passed to this coroutine when it was awaited.
 
     @par Example
@@ -142,20 +142,20 @@ inline constexpr executor_tag executor{};
 
 
     @par Preconditions
-    An `io_env` must have been installed for this coroutine before the tag
+    An `await_context` must have been installed for this coroutine before the tag
     is awaited (see @ref environment). Awaiting it without an installed
     environment is undefined behavior (an assertion fires in debug builds).
 
     @par Behavior
     @li Returns the installed environment's `stop_token` field. If the started
-        chain installed an `io_env` whose `stop_token` was left default, the
+        chain installed an `await_context` whose `stop_token` was left default, the
         result is a default-constructed `std::stop_token` (where
         `stop_possible()` returns `false`).
     @li The returned token remains valid for the coroutine's lifetime.
     @li This operation never suspends; `await_ready()` always returns `true`.
 
     @see stop_token_tag
-    @see io_awaitable_promise_base
+    @see context_awaitable_promise_base
 */
 inline constexpr stop_token_tag stop_token{};
 
@@ -163,7 +163,7 @@ inline constexpr stop_token_tag stop_token{};
 
     Use `co_await this_coro::frame_allocator` inside a coroutine whose promise
     type supports frame allocator access (e.g., inherits from
-    @ref io_awaitable_promise_base). The returned pointer is the memory resource
+    @ref context_awaitable_promise_base). The returned pointer is the memory resource
     used for coroutine frame allocation.
 
     @par Example
@@ -171,7 +171,7 @@ inline constexpr stop_token_tag stop_token{};
 
 
     @par Preconditions
-    An `io_env` must have been installed for this coroutine before the tag
+    An `await_context` must have been installed for this coroutine before the tag
     is awaited (see @ref environment). Awaiting it without an installed
     environment is undefined behavior (an assertion fires in debug builds).
 
@@ -181,7 +181,7 @@ inline constexpr stop_token_tag stop_token{};
     @li This operation never suspends; `await_ready()` always returns `true`.
 
     @see frame_allocator_tag
-    @see io_awaitable_promise_base
+    @see context_awaitable_promise_base
 */
 inline constexpr frame_allocator_tag frame_allocator{};
 

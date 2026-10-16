@@ -4,8 +4,8 @@ One GPU completion, three notification mechanisms, one protocol.
 
 The same pipeline (fill a device buffer, copy it back to host, await the
 CUDA stream) is awaited three structurally different ways. All three are
-`boost::capy::IoAwaitable`s, and all three produce the identical result
-at runtime. This demonstrates that the IoAwaitable protocol is
+`boost::capy::ContextAwaitable`s, and all three produce the identical result
+at runtime. This demonstrates that the ContextAwaitable protocol is
 independent of how asynchronous completion is detected: a host-function
 callback is only one option, and not the best-scaling one.
 

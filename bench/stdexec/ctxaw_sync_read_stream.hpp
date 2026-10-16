@@ -8,7 +8,7 @@
 //
 
 //
-// Synchronous-completion IoAwaitable stream.
+// Synchronous-completion ContextAwaitable stream.
 //
 // Every read completes immediately via symmetric
 // transfer — await_suspend returns the coroutine
@@ -16,16 +16,16 @@
 // round-trip.
 //
 
-#ifndef BOOST_CAPY_BENCH_IOAW_SYNC_READ_STREAM_HPP
-#define BOOST_CAPY_BENCH_IOAW_SYNC_READ_STREAM_HPP
+#ifndef BOOST_CAPY_BENCH_STDEXEC_CTXAW_SYNC_READ_STREAM_HPP
+#define BOOST_CAPY_BENCH_STDEXEC_CTXAW_SYNC_READ_STREAM_HPP
 
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
 
 #include <coroutine>
 #include <cstddef>
 
-struct ioaw_sync_read_stream
+struct ctxaw_sync_read_stream
 {
     struct read_awaitable
     {
@@ -37,13 +37,13 @@ struct ioaw_sync_read_stream
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
-            boost::capy::io_env const*)
+            boost::capy::await_context const*)
         {
             // Data already buffered — resume inline
             return h;
         }
 
-        boost::capy::io_result<std::size_t>
+        boost::capy::results<std::size_t>
         await_resume() noexcept
         {
             return {std::error_code(), 0};

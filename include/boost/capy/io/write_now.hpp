@@ -14,14 +14,14 @@
 #include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/consuming_buffers.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <coroutine>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/abandon.hpp>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
 
 #include <cstddef>
 #include <exception>
@@ -98,10 +98,10 @@ class write_now
     {
         struct promise_type
         {
-            io_result<std::size_t> result_;
+            results<std::size_t> result_;
             std::exception_ptr ep_;
             std::coroutine_handle<> cont_{nullptr};
-            io_env const* env_ = nullptr;
+            await_context const* env_ = nullptr;
             bool done_ = false;
 
             // The awaiting op_type while a parent awaits this frame.
@@ -148,7 +148,7 @@ class write_now
             }
 
             void return_value(
-                io_result<std::size_t> r) noexcept
+                results<std::size_t> r) noexcept
             {
                 result_ = r;
             }
@@ -167,7 +167,7 @@ class write_now
             auto await_transform(A&& a)
             {
                 using decayed = std::decay_t<A>;
-                if constexpr (IoAwaitable<decayed>)
+                if constexpr (ContextAwaitable<decayed>)
                 {
                     struct wrapper
                     {
@@ -264,7 +264,7 @@ class write_now
 
         std::coroutine_handle<> await_suspend(
             std::coroutine_handle<> cont,
-            io_env const* env)
+            await_context const* env)
         {
             auto& p = h_.promise();
             p.cont_ = cont;
@@ -273,7 +273,7 @@ class write_now
             return h_;
         }
 
-        [[nodiscard]] io_result<std::size_t> await_resume()
+        [[nodiscard]] results<std::size_t> await_resume()
         {
             auto& p = h_.promise();
             p.owner_ = nullptr;
@@ -369,10 +369,10 @@ public:
             cb.consume(std::get<1>(r));
             total_written += std::get<1>(r);
             if(std::get<0>(r))
-                co_return io_result<std::size_t>{
+                co_return results<std::size_t>{
                     std::get<0>(r), total_written};
         }
-        co_return io_result<std::size_t>{
+        co_return results<std::size_t>{
             std::error_code(), total_written};
     }
 #else
@@ -394,14 +394,14 @@ public:
                 break;
             auto r = inner.await_resume();
             if(std::get<0>(r))
-                co_return io_result<std::size_t>{
+                co_return results<std::size_t>{
                     std::get<0>(r), total_written};
             cb.consume(std::get<1>(r));
             total_written += std::get<1>(r);
         }
 
         if(total_written >= total_size)
-            co_return io_result<std::size_t>{
+            co_return results<std::size_t>{
                 std::error_code(), total_written};
 
         co_yield 0;
@@ -413,10 +413,10 @@ public:
             cb.consume(std::get<1>(r));
             total_written += std::get<1>(r);
             if(std::get<0>(r))
-                co_return io_result<std::size_t>{
+                co_return results<std::size_t>{
                     std::get<0>(r), total_written};
         }
-        co_return io_result<std::size_t>{
+        co_return results<std::size_t>{
             std::error_code(), total_written};
     }
 #endif

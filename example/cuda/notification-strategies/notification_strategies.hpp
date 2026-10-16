@@ -11,8 +11,8 @@
 #define BOOST_CAPY_EXAMPLE_CUDA_NOTIFICATION_STRATEGIES_HPP
 
 #include <boost/capy/continuation.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/ex/io_env.hpp>
 
 #include <cuda_runtime.h>
 
@@ -233,10 +233,10 @@ public:
         return stream_;
     }
 
-    /// Return an IoAwaitable that completes via a host-function callback.
+    /// Return a ContextAwaitable that completes via a host-function callback.
     callback_awaitable sync_via_callback() noexcept;
 
-    /// Return an IoAwaitable that completes after a blocking synchronize
+    /// Return a ContextAwaitable that completes after a blocking synchronize
     /// runs on `svc`.
     deferred_sync_awaitable sync_via_deferred(sync_service& svc) noexcept;
 };
@@ -293,12 +293,12 @@ public:
             throw std::system_error(make_cuda_error(err));
     }
 
-    /// Return an IoAwaitable that completes when this event is observed
+    /// Return a ContextAwaitable that completes when this event is observed
     /// ready by `svc`.
     poll_awaitable sync_via_poll(poll_service& svc) noexcept;
 };
 
-/** IoAwaitable that resumes via a CUDA host-function callback.
+/** ContextAwaitable that resumes via a CUDA host-function callback.
 
     `cudaLaunchHostFunc` enqueues a host callback at the stream's current
     position. CUDA runs it on a driver-owned thread that must not make
@@ -340,7 +340,7 @@ struct callback_awaitable
     }
 
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<> h, io_env const* env)
+    await_suspend(std::coroutine_handle<> h, await_context const* env)
     {
         cont_.h = h;
         cont_.owner = env->owner;
@@ -376,7 +376,7 @@ cuda_stream::sync_via_callback() noexcept
     return callback_awaitable{stream_};
 }
 
-/// IoAwaitable that resumes when a CUDA event reports ready, detected by
+/// ContextAwaitable that resumes when a CUDA event reports ready, detected by
 /// a polling service thread rather than a callback or a blocking wait.
 ///
 /// @note A production awaitable should also check `env->stop_token` for
@@ -402,7 +402,7 @@ public:
     }
 
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<> h, io_env const* env)
+    await_suspend(std::coroutine_handle<> h, await_context const* env)
     {
         cont_.h = h;
         cont_.owner = env->owner;
@@ -422,7 +422,7 @@ cuda_event::sync_via_poll(poll_service& svc) noexcept
     return poll_awaitable{svc, event_};
 }
 
-/// IoAwaitable that resumes after a blocking `cudaStreamSynchronize` runs
+/// ContextAwaitable that resumes after a blocking `cudaStreamSynchronize` runs
 /// on a service thread, keeping the worker thread free meanwhile.
 class deferred_sync_awaitable
 {
@@ -444,7 +444,7 @@ public:
     }
 
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<> h, io_env const* env)
+    await_suspend(std::coroutine_handle<> h, await_context const* env)
     {
         auto ex = env->executor;
         auto stream = stream_;

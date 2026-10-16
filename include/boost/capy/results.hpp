@@ -8,8 +8,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_IO_RESULT_HPP
-#define BOOST_CAPY_IO_RESULT_HPP
+#ifndef BOOST_CAPY_RESULTS_HPP
+#define BOOST_CAPY_RESULTS_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <system_error>
@@ -49,26 +49,26 @@ namespace capy {
         `std::error_code`.
 */
 template<class... Ts>
-using io_result = std::tuple<std::error_code, Ts...>;
+using results = std::tuple<std::error_code, Ts...>;
 
 namespace detail {
 
 // Outcomes are structural, not nominal: any std::tuple whose first
-// element is error_code is an io_result, regardless of how the
+// element is error_code is a `results`, regardless of how the
 // producing operation spelled it.
 template<class T>
-struct is_io_result : std::false_type {};
+struct is_results : std::false_type {};
 
 template<class... Ts>
-struct is_io_result<std::tuple<std::error_code, Ts...>>
+struct is_results<std::tuple<std::error_code, Ts...>>
     : std::true_type {};
 
 template<class T>
-inline constexpr bool is_io_result_v = is_io_result<T>::value;
+inline constexpr bool is_results_v = is_results<T>::value;
 
 } // namespace detail
 
 } // namespace capy
 } // namespace boost
 
-#endif // BOOST_CAPY_IO_RESULT_HPP
+#endif // BOOST_CAPY_RESULTS_HPP

@@ -1,6 +1,6 @@
 # Fabrics example (P4251R0)
 
-The transport-neutral, non-GPU listings from P4251R0 "IoAwaitables for GPU
+The transport-neutral, non-GPU listings from P4251R0 "ContextAwaitables for GPU
 Data Movement". Validation that the paper's byte-oriented and
 HPC-fabric calls are type-correct against the real `boost::capy` API and the
 installed fabric libraries. Nothing here is executed; a clean build is the

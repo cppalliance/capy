@@ -101,7 +101,7 @@ struct continuation
 
     /** The owner of the chain segment the coroutine belongs to.
 
-        Set from the coroutine's @ref io_env when it is parked or
+        Set from the coroutine's @ref await_context when it is parked or
         queued. A holder that gives the coroutine up passes this
         continuation to @ref abandon, which unwinds the segment from its
         owner. Null for a coroutine with no owner, such as an owner's own

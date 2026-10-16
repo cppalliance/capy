@@ -12,7 +12,7 @@
 #define BOOST_CAPY_TEST_FUSE_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/concept/io_runnable.hpp>
+#include <boost/capy/concept/context_runnable.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 #include <system_error>
@@ -515,7 +515,7 @@ public:
         encountering a failure. First runs the complete loop
         using error codes, then runs using exceptions.
 
-        This overload handles lambdas that return an @ref IoRunnable
+        This overload handles lambdas that return an @ref ContextRunnable
         (such as `task<void>`), executing them synchronously via
         @ref run_blocking.
 
@@ -533,7 +533,7 @@ public:
         of the last @ref maybe_fail or @ref fail call.
     */
     template<class F>
-        requires IoRunnable<std::invoke_result_t<F, fuse&>>
+        requires ContextRunnable<std::invoke_result_t<F, fuse&>>
     result
     armed(F&& fn)
     {
@@ -542,7 +542,7 @@ public:
 
     /** Run a coroutine test function on a caller-supplied runner.
 
-        Behaves like the @ref IoRunnable overload of @ref armed, but
+        Behaves like the @ref ContextRunnable overload of @ref armed, but
         instead of driving each iteration through @ref run_blocking, it
         hands the coroutine to `run_one`. This lets a caller run each
         iteration on any execution context it chooses. Operations built
@@ -552,7 +552,7 @@ public:
         the caller owns the drive loop.
 
         @par Runner contract
-        `run_one` is invoked once per round with the @ref IoRunnable
+        `run_one` is invoked once per round with the @ref ContextRunnable
         produced by `fn`. It must run that task to completion
         synchronously and *return* any exception the task raised as a
         `std::exception_ptr` (null on success). It must not rethrow.
@@ -575,7 +575,7 @@ public:
         @return A @ref result indicating success or failure.
     */
     template<class Runner, class F>
-        requires IoRunnable<std::invoke_result_t<F, fuse&>>
+        requires ContextRunnable<std::invoke_result_t<F, fuse&>>
             && std::same_as<
                 std::invoke_result_t<Runner&, std::invoke_result_t<F, fuse&>>,
                 std::exception_ptr>
@@ -620,7 +620,7 @@ public:
         @see armed
     */
     template<class F>
-        requires IoRunnable<std::invoke_result_t<F, fuse&>>
+        requires ContextRunnable<std::invoke_result_t<F, fuse&>>
     result
     operator()(F&& fn)
     {
@@ -698,7 +698,7 @@ public:
         of the @ref fail call.
     */
     template<class F>
-        requires IoRunnable<std::invoke_result_t<F, fuse&>>
+        requires ContextRunnable<std::invoke_result_t<F, fuse&>>
     result
     inert(F&& fn)
     {

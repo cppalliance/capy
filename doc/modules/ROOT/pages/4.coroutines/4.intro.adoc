@@ -22,7 +22,7 @@ Capy's coroutine model is built around a single principle: asynchronous code sho
   cpp:run_async[], and binding child tasks with cpp:run[].
 * xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] -- Executors,
   execution contexts, thread pools, and strands.
-* xref:4.coroutines/4e.io-awaitable.adoc[The IoAwaitable Protocol] -- How the executor and
+* xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol] -- How the executor and
   stop token propagate through a chain of awaited coroutines.
 * xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation] -- Cooperative
   cancellation with `std::stop_token`, and how Capy tasks observe it.

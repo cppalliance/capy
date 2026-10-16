@@ -33,10 +33,10 @@ struct demo_receiver
 {
     using receiver_concept = ex::receiver_t;
 
-    capy::io_sender_env env_;
+    capy::context_sender_env env_;
     std::latch* done_;
 
-    auto get_env() const noexcept -> capy::io_sender_env
+    auto get_env() const noexcept -> capy::context_sender_env
     {
         return env_;
     }
@@ -83,7 +83,7 @@ int main()
     // wait() requires resumption on a single thread.
     capy::thread_pool pool(1);
 
-    // Named so io_sender_env's executor_ref (which stores a
+    // Named so context_sender_env's executor_ref (which stores a
     // pointer to whatever it is given) points at a stable object
     // instead of a temporary that dies at the end of the
     // full-expression that constructs each demo_receiver.
@@ -103,7 +103,7 @@ int main()
 
     std::latch done(1);
 
-    // Build a sender from a Capy IoAwaitable
+    // Build a sender from a Capy ContextAwaitable
     auto sndr = capy::as_sender(waker_1.wait());
 
     // Connect with a receiver whose environment carries

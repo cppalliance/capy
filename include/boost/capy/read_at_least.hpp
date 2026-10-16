@@ -12,7 +12,8 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/cond.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/results.hpp>
+#include <boost/capy/task.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/consuming_buffers.hpp>
 #include <boost/capy/concept/read_stream.hpp>
@@ -53,7 +54,7 @@ namespace capy {
     not a contingency.
 
     @par Await-returns
-    An object of type `io_result<std::size_t>` destructuring as `[ec, n]`.
+    An object of type `results<std::size_t>` destructuring as `[ec, n]`.
 
     Upon a contingency, the count represents the number of bytes read so
     far, inclusive of the last partial read.
@@ -86,11 +87,11 @@ namespace capy {
     @param n The minimum number of bytes to read. Must not exceed
     `buffer_size(buffers)`.
 
-    @return A task yielding `io_result<std::size_t>` whose second element
+    @return A task yielding `results<std::size_t>` whose second element
     is the number of bytes read.
 
     @par Remarks
-    Supports _IoAwaitable cancellation_.
+    Supports _ContextAwaitable cancellation_.
 
     @par Example
 
@@ -103,7 +104,7 @@ template <typename S, typename MB>
   requires ReadStream<S> && MutableBufferSequence<MB>
 auto
 read_at_least(S& stream, MB buffers, std::size_t n) ->
-        io_task<std::size_t>
+        task<results<std::size_t>>
 {
     consuming_buffers consuming(buffers);
     std::size_t const total_size = buffer_size(buffers);

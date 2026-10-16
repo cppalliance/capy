@@ -10,8 +10,8 @@
 // Test that header file is self-contained.
 #include <boost/capy/ex/this_coro.hpp>
 
-#include <boost/capy/ex/io_awaitable_promise_base.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/ex/context_awaitable_promise_base.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 
 #include "test_suite.hpp"
@@ -24,7 +24,7 @@ namespace capy {
 
 struct tag_test_coro
 {
-    struct promise_type : io_awaitable_promise_base<promise_type>
+    struct promise_type : context_awaitable_promise_base<promise_type>
     {
         tag_test_coro get_return_object()
         {
@@ -150,7 +150,7 @@ struct this_coro_tags_test
         auto executor = pool.get_executor();
 
         auto c = []() -> tag_test_coro { co_return; }();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(executor);
         c.h_.promise().set_environment(&env);
 
@@ -170,7 +170,7 @@ struct this_coro_tags_test
         auto c = []() -> tag_test_coro { co_return; }();
 
         std::stop_source source;
-        io_env env;
+        await_context env;
         env.stop_token = source.get_token();
         c.h_.promise().set_environment(&env);
 
@@ -194,7 +194,7 @@ struct this_coro_tags_test
         auto c = []() -> tag_test_coro { co_return; }();
 
         auto* mr = std::pmr::new_delete_resource();
-        io_env env;
+        await_context env;
         env.frame_allocator = mr;
         c.h_.promise().set_environment(&env);
 
@@ -211,7 +211,7 @@ struct this_coro_tags_test
     testAwaitTransformAllocatorDefaultIsNull()
     {
         auto c = []() -> tag_test_coro { co_return; }();
-        io_env env;
+        await_context env;
         c.h_.promise().set_environment(&env);
 
         auto awaiter = c.h_.promise().await_transform(this_coro::frame_allocator);

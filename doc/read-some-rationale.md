@@ -58,7 +58,7 @@ template< typename T >
 concept ReadStream =
     requires( T& stream, mutable_buffer_archetype buffers )
     {
-        { stream.read_some( buffers ) } -> IoAwaitable;
+        { stream.read_some( buffers ) } -> ContextAwaitable;
         requires awaitable_decomposes_to<
             decltype( stream.read_some( buffers ) ),
             std::error_code, std::size_t >;
@@ -104,7 +104,7 @@ template< typename T >
 concept WriteStream =
     requires( T& stream, const_buffer_archetype buffers )
     {
-        { stream.write_some( buffers ) } -> IoAwaitable;
+        { stream.write_some( buffers ) } -> ContextAwaitable;
         requires awaitable_decomposes_to<
             decltype( stream.write_some( buffers ) ),
             std::error_code, std::size_t >;

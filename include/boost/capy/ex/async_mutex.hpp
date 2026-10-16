@@ -16,8 +16,8 @@
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
 
 #include <stop_token>
 
@@ -320,7 +320,7 @@ public:
 
         /** Enqueue the awaiting coroutine until the mutex is released.
 
-            This is the @ref IoAwaitable overload of `await_suspend`.
+            This is the @ref ContextAwaitable overload of `await_suspend`.
 
             If a stop request is already pending on `env->stop_token`, the
             awaiter records the cancellation and does not enqueue. The
@@ -347,7 +347,7 @@ public:
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
-            io_env const* env) noexcept
+            await_context const* env) noexcept
         {
             if(env->stop_token.stop_requested())
             {
@@ -370,12 +370,12 @@ public:
             Destroys the stop callback if one is registered, and unlinks a
             canceled awaiter from the wait queue.
 
-            @return An empty `io_result<>` if the mutex is now held by the
+            @return An empty `results<>` if the mutex is now held by the
             awaiting coroutine. Otherwise one holding `error::canceled`,
             which means the stop token won the race or the mutex was
             destroyed, and the mutex is not held.
         */
-        [[nodiscard]] io_result<> await_resume() noexcept
+        [[nodiscard]] results<> await_resume() noexcept
         {
             if(std::exchange(granted_, false))
                 m_->granted_to_ = nullptr;
@@ -518,7 +518,7 @@ public:
 
         /** Enqueue the awaiting coroutine until the mutex is released.
 
-            This is the @ref IoAwaitable overload of `await_suspend`. It
+            This is the @ref ContextAwaitable overload of `await_suspend`. It
             delegates to @ref lock_awaiter::await_suspend on the wrapped
             awaiter, so it has that function's contract.
 
@@ -537,19 +537,19 @@ public:
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
-            io_env const* env) noexcept
+            await_context const* env) noexcept
         {
             return inner_.await_suspend(h, env);
         }
 
         /** Complete the acquisition and report the outcome.
 
-            @return An `io_result<lock_guard>` destructuring as
+            @return A `results<lock_guard>` destructuring as
             `[ec, guard]`. On success `ec` is empty and `guard` holds the
             mutex, releasing it when destroyed. If the wait was canceled,
             `ec` is `error::canceled` and `guard` holds no mutex.
         */
-        [[nodiscard]] io_result<lock_guard> await_resume() noexcept
+        [[nodiscard]] results<lock_guard> await_resume() noexcept
         {
             auto r = inner_.await_resume();
             if(std::get<0>(r))

@@ -11,7 +11,7 @@
 #define BOOST_CAPY_TEST_OWNED_PARKING_STREAM_HPP
 
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 
 #include "test/unit/test_helpers.hpp"
 
@@ -67,12 +67,12 @@ struct owned_parking_stream
         bool await_ready() const noexcept { return false; }
 
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const* env) noexcept
+        await_suspend(std::coroutine_handle<> h, await_context const* env) noexcept
         {
             return park_awaitable{&st_->slot}.await_suspend(h, env);
         }
 
-        io_result<std::size_t> await_resume() noexcept
+        results<std::size_t> await_resume() noexcept
         {
             return {std::error_code(), 0};
         }

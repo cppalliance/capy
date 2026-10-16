@@ -12,7 +12,8 @@
 #define BOOST_CAPY_WRITE_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/results.hpp>
+#include <boost/capy/task.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/consuming_buffers.hpp>
 #include <boost/capy/concept/write_stream.hpp>
@@ -40,7 +41,7 @@ namespace capy {
 
     @par Await-returns
 
-    An object of type `io_result<std::size_t>` destructuring as `[ec, n]`.
+    An object of type `results<std::size_t>` destructuring as `[ec, n]`.
 
     Upon a contingency, `n` represents the number of bytes written
     so far.
@@ -73,22 +74,22 @@ namespace capy {
     sequence represented by `buffers` ends
     before the coroutine finishes, the behavior is undefined.
 
-    @return A task yielding `io_result<std::size_t>` whose second element
+    @return A task yielding `results<std::size_t>` whose second element
     is the number of bytes written.
 
     @par Remarks
 
-    Supports _IoAwaitable cancellation_.
+    Supports _ContextAwaitable cancellation_.
 
     @par Example
 
     @par !example example
 
 
-    @see WriteStream, ConstBufferSequence, IoAwaitable, io_result, cond.
+    @see WriteStream, ConstBufferSequence, ContextAwaitable, results, cond.
 */
 template <WriteStream S, ConstBufferSequence CB>
-auto write(S& stream, CB buffers) -> io_task<std::size_t>
+auto write(S& stream, CB buffers) -> task<results<std::size_t>>
 {
     consuming_buffers consuming(buffers);
     std::size_t const total_size = buffer_size(buffers);

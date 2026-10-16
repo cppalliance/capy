@@ -38,7 +38,6 @@ namespace {
 #include <boost/capy/test/buffer_to_string.hpp>
 #include <boost/capy/test/fuse.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
-#include <boost/capy/task.hpp>
 
 namespace capy = boost::capy;
 

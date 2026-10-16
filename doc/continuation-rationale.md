@@ -8,7 +8,7 @@ capy's executor interface. The central question is whether the executor
 concept should traffic in raw coroutine handles or in a richer type that
 carries intrusive queue metadata. Secondary questions address where the
 `continuation` object lives, how it is passed, and what this means for
-the promise base, the `IoAwaitable` protocol, and downstream consumers
+the promise base, the `ContextAwaitable` protocol, and downstream consumers
 like corosio.
 
 The consensus was reached through discussion and prototyping. The
@@ -35,8 +35,8 @@ concept Executor = requires(E& e, continuation c) {
 
 Both fields are public. The `continuation` lives in the I/O awaitable
 for caller-handle posting, and in combinator/trampoline state for
-parent-dispatch and child-launch patterns. The `IoAwaitable` concept
-is unchanged. The promise base (`io_awaitable_promise_base`) is
+parent-dispatch and child-launch patterns. The `ContextAwaitable` concept
+is unchanged. The promise base (`context_awaitable_promise_base`) is
 unchanged. The `dispatch` return type remains `std::coroutine_handle<>`
 for symmetric transfer.
 
@@ -174,7 +174,7 @@ executor's queue. Two locations were considered:
 
 ### Option L1: In the Promise
 
-`io_awaitable_promise_base` gains a `continuation` member. One
+`context_awaitable_promise_base` gains a `continuation` member. One
 `continuation` per coroutine, reused across all suspension points.
 
 **Arguments for:**
@@ -188,12 +188,12 @@ executor's queue. Two locations were considered:
 
 **Arguments against:**
 
-1. Changes the `IoAwaitable` concept. `await_suspend` must receive
+1. Changes the `ContextAwaitable` concept. `await_suspend` must receive
    `continuation&` instead of `coroutine_handle<>`, or the awaitable
    must reach into the caller's promise to get the continuation. Both
    are protocol changes.
 2. Burdens task authors. Every promise type that inherits from
-   `io_awaitable_promise_base` grows by a pointer (the `reserved`
+   `context_awaitable_promise_base` grows by a pointer (the `reserved`
    field) even though most suspension points never queue the
    continuation (they use symmetric transfer inline).
 3. Conflates two concerns. The promise stores "who resumes me when
@@ -214,7 +214,7 @@ wraps it in the embedded `continuation`, and passes that to
 
 **Arguments for:**
 
-1. No change to the `IoAwaitable` concept. The `continuation` is
+1. No change to the `ContextAwaitable` concept. The `continuation` is
    an implementation detail of the awaitable, not a protocol concern.
 2. The awaitable has a stable address for the duration of the
    suspension (the compiler guarantees this for the operand of
@@ -240,19 +240,19 @@ wraps it in the embedded `continuation`, and passes that to
 
 | Property | Promise (L1) | Awaitable (L2) |
 |---|---|---|
-| Changes `IoAwaitable` concept? | Yes | No |
+| Changes `ContextAwaitable` concept? | Yes | No |
 | Continuations per coroutine | One, reused | One per `co_await` |
 | Init cost per suspension | None (already set) | Set `h` and `reserved` |
 | Alignment with corosio `scheduler_op` | Separate patterns | Same pattern |
 | Burden on task authors | Yes — inherits extra pointer | None |
 | Combinator / trampoline sites | Free (in promise) | Need explicit storage |
-| `io_awaitable_promise_base` size | +8 bytes per coroutine | Unchanged |
+| `context_awaitable_promise_base` size | +8 bytes per coroutine | Unchanged |
 
 **Recommendation:** Option L2. The `continuation` is about how an
 I/O operation interacts with the executor's queue — that is the
 awaitable's concern. The handful of combinator and trampoline sites
 that need their own `continuation` storage are internal to the library
-and explicitly annotated. The promise base stays lean, the IoAwaitable
+and explicitly annotated. The promise base stays lean, the ContextAwaitable
 protocol is untouched, and task authors see no change.
 
 ## The Dispatch Return Type Question
@@ -400,7 +400,7 @@ only the input signature is the minimal, safe approach.
 
 ## The Promise Base Question
 
-`io_awaitable_promise_base` stores the parent's coroutine handle via
+`context_awaitable_promise_base` stores the parent's coroutine handle via
 `set_continuation(coroutine_handle<>)` / `continuation()`. Should
 this internal storage change from `coroutine_handle<>` to the
 `continuation` struct?
@@ -490,7 +490,7 @@ The `continuation` change requires updates in corosio:
    `coroutine_handle<>`.** The allocation cost and safety risk are
    both real.
 
-2. **The `IoAwaitable` concept should not change.** Awaitables
+2. **The `ContextAwaitable` concept should not change.** Awaitables
    receive `coroutine_handle<>` in `await_suspend` and manage the
    `continuation` internally.
 
@@ -512,7 +512,7 @@ The `continuation` change requires updates in corosio:
 | Per-post allocation (thread_pool) | `new work(h)` every call | None (intrusive queue) |
 | Per-post allocation (strand) | `strand_op` wrapper (recycled) | Same (wrapper retained) |
 | Type safety | Raw handle, easy to misuse | Struct, harder to fabricate |
-| `IoAwaitable` concept | `await_suspend(handle, env)` | Unchanged |
+| `ContextAwaitable` concept | `await_suspend(handle, env)` | Unchanged |
 | Promise base | `coroutine_handle<>` | Unchanged |
 | Combinator state | `coroutine_handle<>` fields | `continuation` fields |
 | Symmetric transfer | `dispatch` returns handle | Same |

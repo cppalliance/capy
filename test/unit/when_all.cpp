@@ -19,7 +19,7 @@
 #include <boost/capy/ex/this_coro.hpp>
 #include <boost/capy/ex/strand.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 
 #include "test_helpers.hpp"
@@ -46,7 +46,7 @@ namespace boost {
 namespace capy {
 
 // Verify when_all returns task which satisfies awaitable protocols
-static_assert(IoAwaitable<task<io_result<size_t, size_t>>>);
+static_assert(ContextAwaitable<task<results<size_t, size_t>>>);
 
 struct when_all_strand_test
 {
@@ -62,10 +62,10 @@ struct when_all_strand_test
         std::latch done(1);
         bool completed = false;
 
-        auto outer = [&]() -> task<io_result<std::tuple<>, std::tuple<>>> {
+        auto outer = [&]() -> task<results<std::tuple<>, std::tuple<>>> {
             co_return co_await when_all(
-                []() -> io_task<> { co_return io_result<>{{}}; }(),
-                []() -> io_task<> { co_return io_result<>{{}}; }()
+                []() -> task<results<>> { co_return results<>{{}}; }(),
+                []() -> task<results<>> { co_return results<>{{}}; }()
             );
         };
 
@@ -93,18 +93,18 @@ struct when_all_strand_test
         bool completed = false;
         size_t result = 0;
 
-        auto outer = [&]() -> task<io_result<size_t, size_t>> {
+        auto outer = [&]() -> task<results<size_t, size_t>> {
             co_return co_await when_all(
-                []() -> io_task<size_t> {
-                    co_return io_result<size_t>{std::error_code(), 10};
+                []() -> task<results<size_t>> {
+                    co_return results<size_t>{std::error_code(), 10};
                 }(),
-                []() -> io_task<size_t> {
-                    co_return io_result<size_t>{std::error_code(), 20};
+                []() -> task<results<size_t>> {
+                    co_return results<size_t>{std::error_code(), 20};
                 }());
         };
 
         run_async(s,
-            [&](io_result<size_t, size_t> r) {
+            [&](results<size_t, size_t> r) {
                 completed = true;
                 result = std::get<1>(r) + std::get<2>(r);
                 done.count_down();
@@ -131,35 +131,35 @@ TEST_SUITE(
     when_all_strand_test,
     "boost.capy.when_all_strand");
 
-// Verify IoAwaitableRange concept
-static_assert(IoAwaitableRange<std::vector<io_task<size_t>>>);
-static_assert(IoAwaitableRange<std::vector<io_task<>>>);
+// Verify ContextAwaitableRange concept
+static_assert(ContextAwaitableRange<std::vector<task<results<size_t>>>>);
+static_assert(ContextAwaitableRange<std::vector<task<results<>>>>);
 
-// io_task helpers for io_result-aware spec tests
+// task<results<...>> helpers for results-aware spec tests
 namespace {
 
-io_task<size_t>
-io_success_size(size_t n)
+task<results<size_t>>
+results_success_size(size_t n)
 {
-    co_return io_result<size_t>{std::error_code(), n};
+    co_return results<size_t>{std::error_code(), n};
 }
 
-io_task<size_t>
-io_error_size(std::error_code ec, size_t n = 0)
+task<results<size_t>>
+results_error_size(std::error_code ec, size_t n = 0)
 {
-    co_return io_result<size_t>{ec, n};
+    co_return results<size_t>{ec, n};
 }
 
-io_task<>
-io_void_ok()
+task<results<>>
+results_void_ok()
 {
-    co_return io_result<>{};
+    co_return results<>{};
 }
 
-io_task<>
-io_void_error(std::error_code ec)
+task<results<>>
+results_void_error(std::error_code ec)
 {
-    co_return io_result<>{ec};
+    co_return results<>{ec};
 }
 
 #if defined(_MSC_VER)
@@ -167,42 +167,42 @@ io_void_error(std::error_code ec)
 #pragma warning(disable : 4702) // unreachable code after throw
 #endif
 
-io_task<>
-io_void_throws(char const* msg)
+task<results<>>
+results_void_throws(char const* msg)
 {
     throw test_exception(msg);
-    co_return io_result<>{};
+    co_return results<>{};
 }
 
-io_task<size_t>
-io_throws_size(char const* msg)
+task<results<size_t>>
+results_throws_size(char const* msg)
 {
     throw test_exception(msg);
-    co_return io_result<size_t>{std::error_code(), 0};
+    co_return results<size_t>{std::error_code(), 0};
 }
 
 #if defined(_MSC_VER)
 #pragma warning(pop)
 #endif
 
-io_task<std::string>
-io_success_string(std::string s)
+task<results<std::string>>
+results_success_string(std::string s)
 {
-    co_return io_result<std::string>{std::error_code(), std::move(s)};
+    co_return results<std::string>{std::error_code(), std::move(s)};
 }
 
-io_task<size_t, int>
-io_success_size_int(size_t n, int flags)
+task<results<size_t, int>>
+results_success_size_int(size_t n, int flags)
 {
-    co_return io_result<size_t, int>{std::error_code(), n, flags};
+    co_return results<size_t, int>{std::error_code(), n, flags};
 }
 
 // Suspends until stop token fires, then returns ECANCELED.
-io_task<size_t>
-io_pending_size()
+task<results<size_t>>
+results_pending_size()
 {
     co_await stop_only_awaitable{};
-    co_return io_result<size_t>{make_error_code(error::canceled), 0};
+    co_return results<size_t>{make_error_code(error::canceled), 0};
 }
 
 } // anonymous namespace
@@ -216,11 +216,11 @@ struct when_all_range_test
         test_executor ex(dc);
         bool completed = false;
 
-        std::vector<io_task<size_t>> tasks;
-        tasks.push_back(io_success_size(42));
+        std::vector<task<results<size_t>>> tasks;
+        tasks.push_back(results_success_size(42));
 
         run_async(ex,
-            [&](io_result<std::vector<size_t>> r) {
+            [&](results<std::vector<size_t>> r) {
                 completed = true;
                 BOOST_TEST(!std::get<0>(r));
                 BOOST_TEST_EQ(std::get<1>(r).size(), 1u);
@@ -239,13 +239,13 @@ struct when_all_range_test
         test_executor ex(dc);
         bool completed = false;
 
-        std::vector<io_task<size_t>> tasks;
-        tasks.push_back(io_success_size(10));
-        tasks.push_back(io_success_size(20));
-        tasks.push_back(io_success_size(30));
+        std::vector<task<results<size_t>>> tasks;
+        tasks.push_back(results_success_size(10));
+        tasks.push_back(results_success_size(20));
+        tasks.push_back(results_success_size(30));
 
         run_async(ex,
-            [&](io_result<std::vector<size_t>> r) {
+            [&](results<std::vector<size_t>> r) {
                 completed = true;
                 BOOST_TEST(!std::get<0>(r));
                 BOOST_TEST_EQ(std::get<1>(r).size(), 3u);
@@ -270,12 +270,12 @@ struct when_all_range_test
 
         stashing_range tasks([](std::size_t i)
             {
-                return io_success_size((i + 1) * 10);
+                return results_success_size((i + 1) * 10);
             }, 3);
         static_assert(!std::ranges::forward_range<decltype(tasks)>);
 
         run_async(ex,
-            [&](io_result<std::vector<size_t>> r) {
+            [&](results<std::vector<size_t>> r) {
                 completed = true;
                 BOOST_TEST(!std::get<0>(r));
                 BOOST_TEST_EQ(std::get<1>(r).size(), 3u);
@@ -301,9 +301,9 @@ struct when_all_range_test
         int down = 0;
         bool completed = false;
         bool threw = false;
-        auto body = [](destroy_count_t) -> io_task<size_t>
+        auto body = [](destroy_count_t) -> task<results<size_t>>
         {
-            co_return io_result<size_t>{std::error_code(), 1};
+            co_return results<size_t>{std::error_code(), 1};
         };
         auto tasks = std::views::iota(0, 3) |
             std::views::transform([&](int i)
@@ -314,7 +314,7 @@ struct when_all_range_test
             });
 
         run_async(ex,
-            [&](io_result<std::vector<size_t>>) { completed = true; },
+            [&](results<std::vector<size_t>>) { completed = true; },
             [&](std::exception_ptr) { threw = true; })(
             when_all(tasks));
 
@@ -333,11 +333,11 @@ struct when_all_range_test
         auto tasks = std::views::iota(1, 4) |
             std::views::transform([](int i)
             {
-                return io_success_size(static_cast<size_t>(i * 10));
+                return results_success_size(static_cast<size_t>(i * 10));
             });
 
         run_async(ex,
-            [&](io_result<std::vector<size_t>> r) {
+            [&](results<std::vector<size_t>> r) {
                 completed = true;
                 BOOST_TEST(!std::get<0>(r));
                 BOOST_TEST_EQ(std::get<1>(r).size(), 3u);
@@ -358,10 +358,10 @@ struct when_all_range_test
         test_executor ex(dc);
         bool caught = false;
 
-        std::vector<io_task<size_t>> tasks;
+        std::vector<task<results<size_t>>> tasks;
 
         run_async(ex,
-            [](io_result<std::vector<size_t>>) {},
+            [](results<std::vector<size_t>>) {},
             [&](std::exception_ptr ep) {
                 try {
                     std::rethrow_exception(ep);
@@ -380,13 +380,13 @@ struct when_all_range_test
         test_executor ex(dc);
         bool completed = false;
 
-        std::vector<io_task<>> tasks;
-        tasks.push_back(io_void_ok());
-        tasks.push_back(io_void_ok());
-        tasks.push_back(io_void_ok());
+        std::vector<task<results<>>> tasks;
+        tasks.push_back(results_void_ok());
+        tasks.push_back(results_void_ok());
+        tasks.push_back(results_void_ok());
 
         run_async(ex,
-            [&](io_result<> r) {
+            [&](results<> r) {
                 completed = true;
                 BOOST_TEST(!std::get<0>(r));
             },
@@ -403,10 +403,10 @@ struct when_all_range_test
         test_executor ex(dc);
         bool caught = false;
 
-        std::vector<io_task<>> tasks;
+        std::vector<task<results<>>> tasks;
 
         run_async(ex,
-            [](io_result<>) {},
+            [](results<>) {},
             [&](std::exception_ptr ep) {
                 try {
                     std::rethrow_exception(ep);
@@ -426,12 +426,12 @@ struct when_all_range_test
         bool completed = false;
         std::error_code result_ec;
 
-        std::vector<io_task<size_t>> tasks;
-        tasks.push_back(io_error_size(make_error_code(error::eof)));
-        tasks.push_back(io_pending_size());
+        std::vector<task<results<size_t>>> tasks;
+        tasks.push_back(results_error_size(make_error_code(error::eof)));
+        tasks.push_back(results_pending_size());
 
         run_async(ex,
-            [&](io_result<std::vector<size_t>> r) {
+            [&](results<std::vector<size_t>> r) {
                 completed = true;
                 result_ec = std::get<0>(r);
             },
@@ -450,12 +450,12 @@ struct when_all_range_test
         bool completed = false;
         std::error_code result_ec;
 
-        std::vector<io_task<size_t>> tasks;
-        tasks.push_back(io_error_size(make_error_code(error::eof)));
-        tasks.push_back(io_error_size(make_error_code(error::timeout)));
+        std::vector<task<results<size_t>>> tasks;
+        tasks.push_back(results_error_size(make_error_code(error::eof)));
+        tasks.push_back(results_error_size(make_error_code(error::timeout)));
 
         run_async(ex,
-            [&](io_result<std::vector<size_t>> r) {
+            [&](results<std::vector<size_t>> r) {
                 completed = true;
                 result_ec = std::get<0>(r);
             },
@@ -474,13 +474,13 @@ struct when_all_range_test
         bool caught = false;
         std::string msg;
 
-        std::vector<io_task<size_t>> tasks;
-        tasks.push_back(io_success_size(1));
-        tasks.push_back(io_throws_size("range error"));
-        tasks.push_back(io_success_size(3));
+        std::vector<task<results<size_t>>> tasks;
+        tasks.push_back(results_success_size(1));
+        tasks.push_back(results_throws_size("range error"));
+        tasks.push_back(results_success_size(3));
 
         run_async(ex,
-            [](io_result<std::vector<size_t>>) {},
+            [](results<std::vector<size_t>>) {},
             [&](std::exception_ptr ep) {
                 try {
                     std::rethrow_exception(ep);
@@ -502,12 +502,12 @@ struct when_all_range_test
         bool completed = false;
         std::error_code result_ec;
 
-        std::vector<io_task<>> tasks;
-        tasks.push_back(io_void_ok());
-        tasks.push_back(io_void_error(make_error_code(error::eof)));
+        std::vector<task<results<>>> tasks;
+        tasks.push_back(results_void_ok());
+        tasks.push_back(results_void_error(make_error_code(error::eof)));
 
         run_async(ex,
-            [&](io_result<> r) {
+            [&](results<> r) {
                 completed = true;
                 result_ec = std::get<0>(r);
             },
@@ -525,12 +525,12 @@ struct when_all_range_test
         test_executor ex(dc);
         bool caught = false;
 
-        std::vector<io_task<>> tasks;
-        tasks.push_back(io_void_ok());
-        tasks.push_back(io_void_throws("void range error"));
+        std::vector<task<results<>>> tasks;
+        tasks.push_back(results_void_ok());
+        tasks.push_back(results_void_throws("void range error"));
 
         run_async(ex,
-            [](io_result<>) {},
+            [](results<>) {},
             [&](std::exception_ptr ep) {
                 try {
                     std::rethrow_exception(ep);
@@ -549,12 +549,12 @@ struct when_all_range_test
         test_executor ex(dc);
         bool caught = false;
 
-        std::vector<io_task<size_t>> tasks;
-        tasks.push_back(io_throws_size("exception wins"));
-        tasks.push_back(io_error_size(make_error_code(error::eof)));
+        std::vector<task<results<size_t>>> tasks;
+        tasks.push_back(results_throws_size("exception wins"));
+        tasks.push_back(results_error_size(make_error_code(error::eof)));
 
         run_async(ex,
-            [](io_result<std::vector<size_t>>) {},
+            [](results<std::vector<size_t>>) {},
             [&](std::exception_ptr ep) {
                 try {
                     std::rethrow_exception(ep);
@@ -574,23 +574,23 @@ struct when_all_range_test
         std::atomic<int> completion_count{0};
         bool completed = false;
 
-        auto counting_io = [&]() -> io_task<size_t> {
+        auto counting_io = [&]() -> task<results<size_t>> {
             ++completion_count;
-            co_return io_result<size_t>{std::error_code(), 1};
+            co_return results<size_t>{std::error_code(), 1};
         };
 
-        auto failing_io = [&]() -> io_task<size_t> {
+        auto failing_io = [&]() -> task<results<size_t>> {
             ++completion_count;
-            co_return io_result<size_t>{make_error_code(error::eof), 0};
+            co_return results<size_t>{make_error_code(error::eof), 0};
         };
 
-        std::vector<io_task<size_t>> tasks;
+        std::vector<task<results<size_t>>> tasks;
         tasks.push_back(counting_io());
         tasks.push_back(failing_io());
         tasks.push_back(counting_io());
 
         run_async(ex,
-            [&](io_result<std::vector<size_t>>) {
+            [&](results<std::vector<size_t>>) {
                 completed = true;
             },
             [](std::exception_ptr) {})(
@@ -608,11 +608,11 @@ struct when_all_range_test
         bool success_called = false;
         bool error_called = false;
 
-        std::vector<io_task<size_t>> tasks;
-        tasks.push_back(io_error_size(make_error_code(error::eof)));
+        std::vector<task<results<size_t>>> tasks;
+        tasks.push_back(results_error_size(make_error_code(error::eof)));
 
         run_async(ex,
-            [&](io_result<std::vector<size_t>> r) {
+            [&](results<std::vector<size_t>> r) {
                 success_called = true;
                 BOOST_TEST(!!std::get<0>(r));
             },
@@ -631,13 +631,13 @@ struct when_all_range_test
         test_executor ex(dc);
         bool completed = false;
 
-        std::vector<io_task<std::string>> tasks;
-        tasks.push_back(io_success_string("first"));
-        tasks.push_back(io_success_string("second"));
-        tasks.push_back(io_success_string("third"));
+        std::vector<task<results<std::string>>> tasks;
+        tasks.push_back(results_success_string("first"));
+        tasks.push_back(results_success_string("second"));
+        tasks.push_back(results_success_string("third"));
 
         run_async(ex,
-            [&](io_result<std::vector<std::string>> r) {
+            [&](results<std::vector<std::string>> r) {
                 completed = true;
                 BOOST_TEST(!std::get<0>(r));
                 BOOST_TEST_EQ(std::get<1>(r)[0], "first");
@@ -657,20 +657,20 @@ struct when_all_range_test
         test_executor ex(dc);
         bool completed = false;
 
-        auto range_task = []() -> io_task<std::vector<size_t>> {
-            std::vector<io_task<size_t>> tasks;
-            tasks.push_back(io_success_size(1));
-            tasks.push_back(io_success_size(2));
-            tasks.push_back(io_success_size(3));
+        auto range_task = []() -> task<results<std::vector<size_t>>> {
+            std::vector<task<results<size_t>>> tasks;
+            tasks.push_back(results_success_size(1));
+            tasks.push_back(results_success_size(2));
+            tasks.push_back(results_success_size(3));
             co_return co_await when_all(std::move(tasks));
         };
 
-        auto io_size_task = []() -> io_task<size_t> {
-            co_return io_result<size_t>{std::error_code(), 99};
+        auto results_size_task = []() -> task<results<size_t>> {
+            co_return results<size_t>{std::error_code(), 99};
         };
 
         run_async(ex,
-            [&](io_result<std::vector<size_t>, size_t> r) {
+            [&](results<std::vector<size_t>, size_t> r) {
                 completed = true;
                 BOOST_TEST(!std::get<0>(r));
                 BOOST_TEST_EQ(std::get<1>(r).size(), 3u);
@@ -678,7 +678,7 @@ struct when_all_range_test
                 BOOST_TEST_EQ(std::get<2>(r), 99u);
             },
             [](std::exception_ptr) {})(
-            when_all(range_task(), io_size_task()));
+            when_all(range_task(), results_size_task()));
 
         BOOST_TEST(completed);
     }
@@ -692,15 +692,15 @@ struct when_all_range_test
         bool completed = false;
         size_t result = 0;
 
-        auto outer = [&]() -> task<io_result<std::vector<size_t>>> {
-            std::vector<io_task<size_t>> tasks;
-            tasks.push_back(io_success_size(10));
-            tasks.push_back(io_success_size(20));
+        auto outer = [&]() -> task<results<std::vector<size_t>>> {
+            std::vector<task<results<size_t>>> tasks;
+            tasks.push_back(results_success_size(10));
+            tasks.push_back(results_success_size(20));
             co_return co_await when_all(std::move(tasks));
         };
 
         run_async(s,
-            [&](io_result<std::vector<size_t>> r) {
+            [&](results<std::vector<size_t>> r) {
                 completed = true;
                 BOOST_TEST(!std::get<0>(r));
                 result = std::get<1>(r)[0] + std::get<1>(r)[1];
@@ -729,12 +729,12 @@ struct when_all_range_test
         src.request_stop();
         bool completed = false;
 
-        std::vector<io_task<size_t>> tasks;
-        tasks.push_back(io_success_size(1));
-        tasks.push_back(io_success_size(2));
+        std::vector<task<results<size_t>>> tasks;
+        tasks.push_back(results_success_size(1));
+        tasks.push_back(results_success_size(2));
 
         run_async(ex, src.get_token(),
-            [&](io_result<std::vector<size_t>>) { completed = true; },
+            [&](results<std::vector<size_t>>) { completed = true; },
             [](std::exception_ptr) {})(when_all(std::move(tasks)));
 
         BOOST_TEST(completed);
@@ -750,8 +750,8 @@ struct when_all_range_test
         src.request_stop();
         bool completed = false;
 
-        auto outer = []() -> task<io_result<std::tuple<>, std::tuple<>>> {
-            co_return co_await when_all(io_void_ok(), io_void_ok());
+        auto outer = []() -> task<results<std::tuple<>, std::tuple<>>> {
+            co_return co_await when_all(results_void_ok(), results_void_ok());
         };
 
         run_async(ex, src.get_token(),
@@ -792,9 +792,9 @@ TEST_SUITE(
     when_all_range_test,
     "boost.capy.when_all_range");
 
-// Tests for io_result-aware when_all behavior per the combinators spec.
+// Tests for results-aware when_all behavior per the combinators spec.
 // Each test is labelled with the spec row it verifies.
-struct when_all_io_result_test
+struct when_all_results_test
 {
     // Spec Row 1: All tasks return !ec
     // Return tuple of all results. No cancellation.
@@ -807,7 +807,7 @@ struct when_all_io_result_test
         size_t n1 = 0, n2 = 0, n3 = 0;
 
         run_async(ex,
-            [&](io_result<size_t, size_t, size_t> r) {
+            [&](results<size_t, size_t, size_t> r) {
                 completed = true;
                 BOOST_TEST(!std::get<0>(r));
                 n1 = std::get<1>(r);
@@ -816,9 +816,9 @@ struct when_all_io_result_test
             },
             [](std::exception_ptr) {})(
             when_all(
-                io_success_size(10),
-                io_success_size(20),
-                io_success_size(30)));
+                results_success_size(10),
+                results_success_size(20),
+                results_success_size(30)));
 
         BOOST_TEST(completed);
         BOOST_TEST_EQ(n1, 10u);
@@ -836,13 +836,13 @@ struct when_all_io_result_test
         size_t result = 0;
 
         run_async(ex,
-            [&](io_result<size_t> r) {
+            [&](results<size_t> r) {
                 completed = true;
                 BOOST_TEST(!std::get<0>(r));
                 result = std::get<1>(r);
             },
             [](std::exception_ptr) {})(
-            when_all(io_success_size(42)));
+            when_all(results_success_size(42)));
 
         BOOST_TEST(completed);
         BOOST_TEST_EQ(result, 42u);
@@ -859,14 +859,14 @@ struct when_all_io_result_test
         std::error_code result_ec;
 
         run_async(ex,
-            [&](io_result<size_t, size_t> r) {
+            [&](results<size_t, size_t> r) {
                 completed = true;
                 result_ec = std::get<0>(r);
             },
             [](std::exception_ptr) {})(
             when_all(
-                io_error_size(make_error_code(error::eof)),
-                io_pending_size()));
+                results_error_size(make_error_code(error::eof)),
+                results_pending_size()));
 
         BOOST_TEST(completed);
         BOOST_TEST(result_ec == cond::eof);
@@ -883,14 +883,14 @@ struct when_all_io_result_test
         std::error_code result_ec;
 
         run_async(ex,
-            [&](io_result<size_t, size_t> r) {
+            [&](results<size_t, size_t> r) {
                 completed = true;
                 result_ec = std::get<0>(r);
             },
             [](std::exception_ptr) {})(
             when_all(
-                io_error_size(make_error_code(error::eof)),
-                io_error_size(make_error_code(error::timeout))));
+                results_error_size(make_error_code(error::eof)),
+                results_error_size(make_error_code(error::timeout))));
 
         BOOST_TEST(completed);
         BOOST_TEST(result_ec == cond::eof);
@@ -907,14 +907,14 @@ struct when_all_io_result_test
         std::error_code result_ec;
 
         run_async(ex,
-            [&](io_result<size_t, size_t> r) {
+            [&](results<size_t, size_t> r) {
                 completed = true;
                 result_ec = std::get<0>(r);
             },
             [](std::exception_ptr) {})(
             when_all(
-                io_error_size(make_error_code(error::eof), 0),
-                io_pending_size()));
+                results_error_size(make_error_code(error::eof), 0),
+                results_pending_size()));
 
         BOOST_TEST(completed);
         BOOST_TEST(result_ec == cond::eof);
@@ -932,14 +932,14 @@ struct when_all_io_result_test
         size_t partial = 0;
 
         run_async(ex,
-            [&](io_result<size_t> r) {
+            [&](results<size_t> r) {
                 completed = true;
                 result_ec = std::get<0>(r);
                 partial = std::get<1>(r);
             },
             [](std::exception_ptr) {})(
             when_all(
-                io_error_size(make_error_code(error::eof), 42)));
+                results_error_size(make_error_code(error::eof), 42)));
 
         BOOST_TEST(completed);
         BOOST_TEST(result_ec == cond::eof);
@@ -957,15 +957,15 @@ struct when_all_io_result_test
         size_t n1 = 0;
 
         run_async(ex,
-            [&](io_result<size_t, size_t> r) {
+            [&](results<size_t, size_t> r) {
                 completed = true;
                 result_ec = std::get<0>(r);
                 n1 = std::get<1>(r);
             },
             [](std::exception_ptr) {})(
             when_all(
-                io_error_size(make_error_code(error::eof), 42),
-                io_pending_size()));
+                results_error_size(make_error_code(error::eof), 42),
+                results_pending_size()));
 
         BOOST_TEST(completed);
         BOOST_TEST(result_ec == cond::eof);
@@ -982,13 +982,13 @@ struct when_all_io_result_test
         bool completed = false;
 
         run_async(ex,
-            [&](io_result<size_t> r) {
+            [&](results<size_t> r) {
                 completed = true;
                 BOOST_TEST(!std::get<0>(r));
                 BOOST_TEST_EQ(std::get<1>(r), 0u);
             },
             [](std::exception_ptr) {})(
-            when_all(io_success_size(0)));
+            when_all(results_success_size(0)));
 
         BOOST_TEST(completed);
     }
@@ -1004,13 +1004,13 @@ struct when_all_io_result_test
         std::error_code result_ec;
 
         run_async(ex,
-            [&](io_result<size_t> r) {
+            [&](results<size_t> r) {
                 completed = true;
                 result_ec = std::get<0>(r);
             },
             [](std::exception_ptr) {})(
             when_all(
-                io_error_size(make_error_code(error::eof), 0)));
+                results_error_size(make_error_code(error::eof), 0)));
 
         BOOST_TEST(completed);
         BOOST_TEST(result_ec == cond::eof);
@@ -1028,7 +1028,7 @@ struct when_all_io_result_test
         std::string msg;
 
         run_async(ex,
-            [&](io_result<size_t, size_t>) { completed = true; },
+            [&](results<size_t, size_t>) { completed = true; },
             [&](std::exception_ptr ep) {
                 try { std::rethrow_exception(ep); }
                 catch (test_exception const& e) {
@@ -1036,8 +1036,8 @@ struct when_all_io_result_test
                     msg = e.what();
                 }
             })(when_all(
-                io_throws_size("boom"),
-                io_pending_size()));
+                results_throws_size("boom"),
+                results_pending_size()));
 
         BOOST_TEST(!completed);
         BOOST_TEST(caught);
@@ -1056,7 +1056,7 @@ struct when_all_io_result_test
         std::string msg;
 
         run_async(ex,
-            [&](io_result<size_t, size_t>) { completed = true; },
+            [&](results<size_t, size_t>) { completed = true; },
             [&](std::exception_ptr ep) {
                 try { std::rethrow_exception(ep); }
                 catch (test_exception const& e) {
@@ -1064,8 +1064,8 @@ struct when_all_io_result_test
                     msg = e.what();
                 }
             })(when_all(
-                io_throws_size("first"),
-                io_throws_size("second")));
+                results_throws_size("first"),
+                results_throws_size("second")));
 
         BOOST_TEST(!completed);
         BOOST_TEST(caught);
@@ -1084,7 +1084,7 @@ struct when_all_io_result_test
         std::string msg;
 
         run_async(ex,
-            [&](io_result<size_t, size_t>) { completed = true; },
+            [&](results<size_t, size_t>) { completed = true; },
             [&](std::exception_ptr ep) {
                 try { std::rethrow_exception(ep); }
                 catch (test_exception const& e) {
@@ -1092,8 +1092,8 @@ struct when_all_io_result_test
                     msg = e.what();
                 }
             })(when_all(
-                io_throws_size("exception wins"),
-                io_error_size(make_error_code(error::eof))));
+                results_throws_size("exception wins"),
+                results_error_size(make_error_code(error::eof))));
 
         BOOST_TEST(!completed);
         BOOST_TEST(caught);
@@ -1111,13 +1111,13 @@ struct when_all_io_result_test
         bool caught = false;
 
         run_async(ex,
-            [&](io_result<size_t, size_t>) { completed = true; },
+            [&](results<size_t, size_t>) { completed = true; },
             [&](std::exception_ptr ep) {
                 try { std::rethrow_exception(ep); }
                 catch (test_exception const&) { caught = true; }
             })(when_all(
-                io_error_size(make_error_code(error::eof)),
-                io_throws_size("exception")));
+                results_error_size(make_error_code(error::eof)),
+                results_throws_size("exception")));
 
         BOOST_TEST(!completed);
         BOOST_TEST(caught);
@@ -1135,14 +1135,14 @@ struct when_all_io_result_test
         std::error_code result_ec;
 
         run_async(ex,
-            [&](io_result<size_t, size_t> r) {
+            [&](results<size_t, size_t> r) {
                 completed = true;
                 result_ec = std::get<0>(r);
             },
             [](std::exception_ptr) {})(
             when_all(
-                io_error_size(make_error_code(error::canceled)),
-                io_error_size(make_error_code(error::canceled))));
+                results_error_size(make_error_code(error::canceled)),
+                results_error_size(make_error_code(error::canceled))));
 
         BOOST_TEST(completed);
         BOOST_TEST(result_ec == cond::canceled);
@@ -1159,21 +1159,21 @@ struct when_all_io_result_test
         std::error_code result_ec;
 
         run_async(ex,
-            [&](io_result<size_t, size_t, size_t> r) {
+            [&](results<size_t, size_t, size_t> r) {
                 completed = true;
                 result_ec = std::get<0>(r);
             },
             [](std::exception_ptr) {})(
             when_all(
-                io_error_size(make_error_code(error::eof)),
-                io_error_size(make_error_code(error::timeout)),
-                io_error_size(make_error_code(error::canceled))));
+                results_error_size(make_error_code(error::eof)),
+                results_error_size(make_error_code(error::timeout)),
+                results_error_size(make_error_code(error::canceled))));
 
         BOOST_TEST(completed);
         BOOST_TEST(result_ec == cond::eof);
     }
 
-    // Spec Row 13: Failure reaches caller via io_result's ec
+    // Spec Row 13: Failure reaches caller via results's ec
     // Error goes through success handler, not exception handler.
     void
     testErrorViaSuccessHandler()
@@ -1184,14 +1184,14 @@ struct when_all_io_result_test
         bool error_called = false;
 
         run_async(ex,
-            [&](io_result<size_t> r) {
+            [&](results<size_t> r) {
                 success_called = true;
                 BOOST_TEST(!!std::get<0>(r));
             },
             [&](std::exception_ptr) {
                 error_called = true;
             })(when_all(
-                io_error_size(make_error_code(error::eof))));
+                results_error_size(make_error_code(error::eof))));
 
         BOOST_TEST(success_called);
         BOOST_TEST(!error_called);
@@ -1208,7 +1208,7 @@ struct when_all_io_result_test
         std::string s;
 
         run_async(ex,
-            [&](io_result<size_t, std::string> r) {
+            [&](results<size_t, std::string> r) {
                 completed = true;
                 BOOST_TEST(!std::get<0>(r));
                 n = std::get<1>(r);
@@ -1216,15 +1216,15 @@ struct when_all_io_result_test
             },
             [](std::exception_ptr) {})(
             when_all(
-                io_success_size(42),
-                io_success_string("hello")));
+                results_success_size(42),
+                results_success_string("hello")));
 
         BOOST_TEST(completed);
         BOOST_TEST_EQ(n, 42u);
         BOOST_TEST_EQ(s, "hello");
     }
 
-    // Spec Row 14 (multi-value child: io_result<T1, T2> contributes tuple<T1, T2>)
+    // Spec Row 14 (multi-value child: results<T1, T2> contributes tuple<T1, T2>)
     void
     testMultiValueChild()
     {
@@ -1235,7 +1235,7 @@ struct when_all_io_result_test
         std::tuple<size_t, int> tf;
 
         run_async(ex,
-            [&](io_result<size_t, std::tuple<size_t, int>> r) {
+            [&](results<size_t, std::tuple<size_t, int>> r) {
                 completed = true;
                 BOOST_TEST(!std::get<0>(r));
                 n = std::get<1>(r);
@@ -1243,8 +1243,8 @@ struct when_all_io_result_test
             },
             [](std::exception_ptr) {})(
             when_all(
-                io_success_size(42),
-                io_success_size_int(10, 7)));
+                results_success_size(42),
+                results_success_size_int(10, 7)));
 
         BOOST_TEST(completed);
         BOOST_TEST_EQ(n, 42u);
@@ -1252,7 +1252,7 @@ struct when_all_io_result_test
         BOOST_TEST_EQ(std::get<1>(tf), 7);
     }
 
-    // Spec Row 14 (void results: io_result<> contributes tuple<>)
+    // Spec Row 14 (void results: results<> contributes tuple<>)
     void
     testVoidResults()
     {
@@ -1262,15 +1262,15 @@ struct when_all_io_result_test
         size_t n = 0;
 
         run_async(ex,
-            [&](io_result<size_t, std::tuple<>> r) {
+            [&](results<size_t, std::tuple<>> r) {
                 completed = true;
                 BOOST_TEST(!std::get<0>(r));
                 n = std::get<1>(r);
             },
             [](std::exception_ptr) {})(
             when_all(
-                io_success_size(42),
-                io_void_ok()));
+                results_success_size(42),
+                results_void_ok()));
 
         BOOST_TEST(completed);
         BOOST_TEST_EQ(n, 42u);
@@ -1288,14 +1288,14 @@ struct when_all_io_result_test
         std::error_code result_ec;
 
         run_async(ex,
-            [&](io_result<size_t, size_t> r) {
+            [&](results<size_t, size_t> r) {
                 completed = true;
                 result_ec = std::get<0>(r);
             },
             [](std::exception_ptr) {})(
             when_all(
-                io_pending_size(),
-                io_error_size(make_error_code(error::eof))));
+                results_pending_size(),
+                results_error_size(make_error_code(error::eof))));
 
         BOOST_TEST(completed);
         BOOST_TEST(result_ec == cond::eof);
@@ -1307,9 +1307,9 @@ struct when_all_io_result_test
     {
         int a_down = 0, b_down = 0, parent_down = 0;
         std::queue<continuation> q;
-        auto branch = [](destroy_count_t) -> task<io_result<>>
+        auto branch = [](destroy_count_t) -> task<results<>>
         {
-            co_return io_result<>{};
+            co_return results<>{};
         };
         auto parent = [&](destroy_count_t) -> task<void>
         {
@@ -1347,10 +1347,10 @@ struct when_all_io_result_test
         int a_down = 0, b_down = 0, parent_down = 0;
         parked sa, sb;
         auto branch = [](parked* s, destroy_count_t)
-            -> task<io_result<>>
+            -> task<results<>>
         {
             co_await park_awaitable{s};
-            co_return io_result<>{};
+            co_return results<>{};
         };
         auto parent = [&](destroy_count_t) -> task<void>
         {
@@ -1377,10 +1377,10 @@ struct when_all_io_result_test
         int parent_down = 0;
         bool resumed = false;
         parked sa, sb;
-        auto branch = [](parked* s) -> task<io_result<>>
+        auto branch = [](parked* s) -> task<results<>>
         {
             co_await park_awaitable{s};
-            co_return io_result<>{};
+            co_return results<>{};
         };
         auto parent = [&](destroy_count_t) -> task<void>
         {
@@ -1398,9 +1398,9 @@ struct when_all_io_result_test
 
     // Parks the when_all runner itself, so tearing it down enters
     // through the runner's promise rather than through a branch task.
-    struct park_io_awaitable : park_awaitable
+    struct park_context_awaitable : park_awaitable
     {
-        io_result<> await_resume() const noexcept { return {}; }
+        results<> await_resume() const noexcept { return {}; }
     };
 
     // Losing every branch under run_async(ex, alloc) frees the runner
@@ -1414,7 +1414,7 @@ struct when_all_io_result_test
             parked* b, destroy_count_t) -> task<void>
         {
             std::ignore = co_await when_all(
-                park_io_awaitable{{a}}, park_io_awaitable{{b}});
+                park_context_awaitable{{a}}, park_context_awaitable{{b}});
         };
         int n = 0;
         test_executor ex(n);
@@ -1436,10 +1436,10 @@ struct when_all_io_result_test
         parked sa, sb;
         test_executor ex(n);
         auto branch = [](parked* s, destroy_count_t)
-            -> task<io_result<>>
+            -> task<results<>>
         {
             co_await park_awaitable{s};
-            co_return io_result<>{};
+            co_return results<>{};
         };
         auto join = [&]() -> task<void>
         {
@@ -1471,14 +1471,14 @@ struct when_all_io_result_test
         int down[count] = {}, parent_down = 0;
         parked slots[count];
         auto branch = [](parked* s, destroy_count_t)
-            -> task<io_result<>>
+            -> task<results<>>
         {
             co_await park_awaitable{s};
-            co_return io_result<>{};
+            co_return results<>{};
         };
         auto parent = [&](destroy_count_t) -> task<void>
         {
-            std::vector<task<io_result<>>> tasks;
+            std::vector<task<results<>>> tasks;
             for(int i = 0; i < count; ++i)
                 tasks.push_back(
                     branch(&slots[i], destroy_count_t(down[i])));
@@ -1504,10 +1504,10 @@ struct when_all_io_result_test
         int parent_down = 0;
         bool resumed = false;
         parked sa, sb;
-        auto branch = [](parked* s) -> task<io_result<>>
+        auto branch = [](parked* s) -> task<results<>>
         {
             co_await park_awaitable{s};
-            co_return io_result<>{};
+            co_return results<>{};
         };
         auto parent = [&](destroy_count_t) -> task<void>
         {
@@ -1530,17 +1530,17 @@ struct when_all_io_result_test
     {
         int leaf_down = 0, inner_down = 0, parent_down = 0;
         parked sa, sb, sc;
-        auto branch = [](parked* s, destroy_count_t) -> task<io_result<>>
+        auto branch = [](parked* s, destroy_count_t) -> task<results<>>
         {
             co_await park_awaitable{s};
-            co_return io_result<>{};
+            co_return results<>{};
         };
-        auto inner = [&](destroy_count_t) -> task<io_result<>>
+        auto inner = [&](destroy_count_t) -> task<results<>>
         {
             std::ignore = co_await when_all(
                 branch(&sb, destroy_count_t(leaf_down)),
                 branch(&sc, destroy_count_t(leaf_down)));
-            co_return io_result<>{};
+            co_return results<>{};
         };
         auto parent = [&](destroy_count_t) -> task<void>
         {
@@ -1574,14 +1574,14 @@ struct when_all_io_result_test
         int parent_down = 0;
         async_event ev;
         std::stop_source src;
-        auto branch = [&]() -> task<io_result<>>
+        auto branch = [&]() -> task<results<>>
         {
             auto tok = (co_await this_coro::environment)->stop_token;
             // Registered before the wait's, so libstdc++ runs it
             // after the wait's and relocks the stop state between.
             std::stop_callback extra(tok, [] {});
             auto [ec] = co_await ev.wait();
-            co_return io_result<>{ec};
+            co_return results<>{ec};
         };
         auto parent = [&](destroy_count_t) -> task<void>
         {
@@ -1609,10 +1609,10 @@ struct when_all_io_result_test
         {
             co_await park_awaitable{s};
         };
-        auto hop = [&](parked* s, destroy_count_t) -> task<io_result<>>
+        auto hop = [&](parked* s, destroy_count_t) -> task<results<>>
         {
             co_await capy::run(inner)(leaf(s, destroy_count_t(leaf_down)));
-            co_return io_result<>{};
+            co_return results<>{};
         };
         auto parent = [&](destroy_count_t) -> task<void>
         {
@@ -1649,15 +1649,15 @@ struct when_all_io_result_test
             std::queue<continuation> q;
             bool closed = false;
             int owner_down = 0;
-            auto branch = []() -> task<io_result<>>
+            auto branch = []() -> task<results<>>
             {
-                co_return io_result<>{};
+                co_return results<>{};
             };
             auto join = [&]() -> task<void>
             {
                 if(range)
                 {
-                    std::vector<task<io_result<>>> tasks;
+                    std::vector<task<results<>>> tasks;
                     tasks.push_back(branch());
                     tasks.push_back(branch());
                     std::ignore = co_await when_all(std::move(tasks));
@@ -1693,12 +1693,12 @@ struct when_all_io_result_test
         parked sa, sb;
         std::stop_token seen;
         auto branch = [](parked* s, std::stop_token* out)
-            -> task<io_result<>>
+            -> task<results<>>
         {
             if(out)
                 *out = (co_await this_coro::environment)->stop_token;
             co_await park_awaitable{s};
-            co_return io_result<>{};
+            co_return results<>{};
         };
         auto parent = [&]() -> task<void>
         {
@@ -1753,8 +1753,8 @@ struct when_all_io_result_test
 };
 
 TEST_SUITE(
-    when_all_io_result_test,
-    "boost.capy.when_all_io_result");
+    when_all_results_test,
+    "boost.capy.when_all_results");
 
 } // capy
 } // boost

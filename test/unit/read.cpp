@@ -148,9 +148,9 @@ struct contingent_read_stream
             bool await_ready() const noexcept { return true; }
 
             void await_suspend(
-                std::coroutine_handle<>, io_env const*) const noexcept {}
+                std::coroutine_handle<>, await_context const*) const noexcept {}
 
-            io_result<std::size_t>
+            results<std::size_t>
             await_resume()
             {
                 std::size_t const cap = buffer_size(buffers_);

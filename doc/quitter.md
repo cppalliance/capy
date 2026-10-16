@@ -2,7 +2,7 @@
 
 ## Summary
 
-`quitter<T>` is a task type that satisfies `IoRunnable` and provides
+`quitter<T>` is a task type that satisfies `ContextRunnable` and provides
 transparent cancellation. When the stop token is triggered, the
 coroutine body never sees the cancellation. The promise intercepts
 it on resume and short-circuits to `final_suspend`. RAII cleanup
@@ -20,7 +20,7 @@ achieves this via `set_stopped` - the coroutine never resumes. Capy's
 handling.
 
 `quitter<T>` closes this gap. It is a policy-level task type: same
-IoAwaitable protocol, same io_env propagation, same frame allocator,
+ContextAwaitable protocol, same await_context propagation, same frame allocator,
 same symmetric transfer - but with automatic stop-on-resume behavior.
 
 ## Behavior
@@ -32,7 +32,7 @@ returns a value or throws. No observable difference.
 
 ### When stop is requested
 
-1. The stop token in `io_env` is triggered (from a parent, a scope,
+1. The stop token in `await_context` is triggered (from a parent, a scope,
    or application shutdown).
 2. The in-flight I/O operation observes the token and completes
    (typically with `operation_aborted`).
@@ -79,14 +79,14 @@ struct [[nodiscard]] quitter
 {
     struct promise_type;
 
-    // IoAwaitable
+    // ContextAwaitable
     bool await_ready() const noexcept;
     auto await_resume();
     std::coroutine_handle<> await_suspend(
         std::coroutine_handle<> cont,
-        io_env const* env);
+        await_context const* env);
 
-    // IoRunnable
+    // ContextRunnable
     std::coroutine_handle<promise_type> handle() const noexcept;
     void release() noexcept;
 
@@ -104,7 +104,7 @@ struct [[nodiscard]] quitter
 
 ```cpp
 struct quitter<T>::promise_type
-    : io_awaitable_promise_base<promise_type>
+    : context_awaitable_promise_base<promise_type>
     , detail::task_return_base<T>
 {
     // Completion state
@@ -253,7 +253,7 @@ Identical to `task<T>::await_suspend()`:
 ```cpp
 std::coroutine_handle<> await_suspend(
     std::coroutine_handle<> cont,
-    io_env const* env)
+    await_context const* env)
 {
     h_.promise().set_continuation(cont);
     h_.promise().set_environment(env);
@@ -272,13 +272,13 @@ destructor - all identical to `task<T>`.
 
 `quitter<T>` satisfies:
 
-- `IoAwaitable` - has `await_suspend(coroutine_handle<>, io_env const*)`
-- `IoRunnable` - has `promise_type`, `handle()`, `release()`,
+- `ContextAwaitable` - has `await_suspend(coroutine_handle<>, await_context const*)`
+- `ContextRunnable` - has `promise_type`, `handle()`, `release()`,
   `exception()`, `set_continuation()`, `set_environment()`,
   `result()` (non-void)
 
 `quitter<T>` is usable with `run`, `run_async`, `when_all`,
-`when_any`, and any launcher that accepts `IoRunnable`.
+`when_any`, and any launcher that accepts `ContextRunnable`.
 
 ## Interaction with `when_all` / `when_any`
 
@@ -290,7 +290,7 @@ cleanly. The parent combinator sees the stopped completions and
 propagates accordingly.
 
 No changes to `when_all` or `when_any` are needed. The stop
-propagation already works through `io_env`. The only new behavior
+propagation already works through `await_context`. The only new behavior
 is inside `quitter`'s `transform_awaiter::await_resume()`.
 
 ## Usage
@@ -432,7 +432,7 @@ explicit error handling.
 
 The task type is a policy point. Users who want explicit error
 handling use `task<T>`. Users who want transparent cancellation
-use `quitter<T>`. The IoAwaitable protocol does not mandate a
+use `quitter<T>`. The ContextAwaitable protocol does not mandate a
 task. This is the design P4003 enables.
 
 **Why throw internally instead of `goto final_suspend`?**

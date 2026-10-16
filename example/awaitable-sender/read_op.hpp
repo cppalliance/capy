@@ -14,8 +14,8 @@
 
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/async_waker.hpp>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 
 #include <coroutine>
@@ -33,7 +33,7 @@ namespace boost::capy {
     `async_waker` rather than hand-rolling stop-callback arming:
     the waker's arbiter already resolves the races between
     arming, stop requests, and completion. Completes with a bare
-    `io_result<>`: a result carrying payload alongside the
+    `results<>`: a result carrying payload alongside the
     `error_code` cannot be a sender (see @ref as_sender).
 */
 class read_op : public awaitable_sender_base<read_op>
@@ -45,16 +45,16 @@ class read_op : public awaitable_sender_base<read_op>
     std::error_code ec_{};
     bool immediate_ = false;
 
-    io_env const* env_ = nullptr;
+    await_context const* env_ = nullptr;
     continuation cont_{};
 
     // Stop-wait mode: a coroutine owning a waker nobody wakes, so
     // it completes only when the environment's stop token fires
     // (with error::canceled). The waker lives in the coroutine
     // frame; the task is movable, keeping read_op movable.
-    std::optional<task<io_result<>>> stop_task_;
+    std::optional<task<results<>>> stop_task_;
 
-    static task<io_result<>> stop_wait()
+    static task<results<>> stop_wait()
     {
         async_waker waker;
         co_return co_await waker.wait();
@@ -96,7 +96,7 @@ public:
 
     std::coroutine_handle<> await_suspend(
         std::coroutine_handle<> h,
-        io_env const* env)
+        await_context const* env)
     {
         if(stop_task_)
             return stop_task_->await_suspend(h, env);
@@ -106,7 +106,7 @@ public:
         return std::noop_coroutine();
     }
 
-    io_result<> await_resume() noexcept
+    results<> await_resume() noexcept
     {
         // The op reports its own disposition in-band: a stop-wait
         // ends with the waker's error::canceled, which the sender
@@ -137,7 +137,7 @@ class counted_read_op
     std::size_t n_ = 0;
     std::size_t* n_out_ = nullptr;
 
-    io_env const* env_ = nullptr;
+    await_context const* env_ = nullptr;
     continuation cont_{};
 
 public:
@@ -160,7 +160,7 @@ public:
 
     std::coroutine_handle<> await_suspend(
         std::coroutine_handle<> h,
-        io_env const* env)
+        await_context const* env)
     {
         env_ = env;
         cont_ = continuation{h, nullptr, env->owner};
@@ -168,7 +168,7 @@ public:
         return std::noop_coroutine();
     }
 
-    io_result<> await_resume() noexcept
+    results<> await_resume() noexcept
     {
         // Written before either protocol observes completion, so
         // the count is valid on every channel, including

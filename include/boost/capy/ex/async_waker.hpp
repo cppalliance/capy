@@ -15,8 +15,8 @@
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
 
 #include <atomic>
 #include <coroutine>
@@ -299,7 +299,7 @@ public:
 
         /** Arm the waker with the awaiting coroutine.
 
-            This is the @ref IoAwaitable overload of `await_suspend`.
+            This is the @ref ContextAwaitable overload of `await_suspend`.
             Unlike `async_event` and `async_mutex`, it has three outcomes,
             because a `wake()` from another thread can land in the window
             between `await_ready` and this call.
@@ -337,7 +337,7 @@ public:
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
-            io_env const* env) noexcept
+            await_context const* env) noexcept
         {
             if(env->stop_token.stop_requested())
             {
@@ -362,6 +362,7 @@ public:
                 std::memory_order_acq_rel,
                 std::memory_order_acquire))
             {
+                // LCOV_EXCL_START race: a wake latched between await_ready and here
                 // Single-waiter precondition: a second concurrent
                 // wait would find the slot armed.
                 BOOST_CAPY_ASSERT(expected == state_token);
@@ -374,6 +375,7 @@ public:
                 waker_->st_.store(
                     state_empty, std::memory_order_release);
                 return h;
+                // LCOV_EXCL_STOP
             }
 
             // While arming nothing else can claim this waiter, so a stop
@@ -397,12 +399,12 @@ public:
             armed bookkeeping, so the destructor does not deregister a slot
             the resumption already consumed.
 
-            @return An empty `io_result<>` if the wait was woken, whether by
+            @return An empty `results<>` if the wait was woken, whether by
             `wake()` or by a token consumed inline. Otherwise one holding
             `error::canceled`, which means the stop token won the race or
             the waker was destroyed.
         */
-        [[nodiscard]] io_result<> await_resume() noexcept
+        [[nodiscard]] results<> await_resume() noexcept
         {
             if(active_)
             {
@@ -488,7 +490,7 @@ public:
         No other coroutine is currently waiting on this object; a
         coroutine woken or canceled but not yet resumed still is.
 
-        @return An awaitable that await-returns `io_result<>`;
+        @return An awaitable that await-returns `results<>`;
             empty on wakeup, `error::canceled` if the stop
             token wins.
     */
@@ -520,14 +522,14 @@ public:
                     std::memory_order_acq_rel,
                     std::memory_order_acquire))
                     return;
-                continue;
+                continue; // LCOV_EXCL_LINE spurious weak CAS failure
             }
             // The waiter is still publishing itself; it settles in a
             // few instructions.
             if(s == state_arming)
             {
-                std::this_thread::yield();
-                continue;
+                std::this_thread::yield(); // LCOV_EXCL_LINE race with a waiter still publishing itself
+                continue; // LCOV_EXCL_LINE race with a waiter still publishing itself
             }
             // armed: winning this CAS claims the waiter, whose
             // frame is pinned until we post its resumption.
@@ -547,7 +549,7 @@ public:
                 w->ex_.post(w->cont_);
                 return;
             }
-        }
+        } // LCOV_EXCL_LINE armed CAS lost to a stop callback or failed spuriously
     }
 };
 

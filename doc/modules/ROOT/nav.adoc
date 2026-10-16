@@ -6,7 +6,7 @@
 ** xref:4.coroutines/4b.tasks.adoc[The task Type]
 ** xref:4.coroutines/4c.launching.adoc[Starting Coroutines]
 ** xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts]
-** xref:4.coroutines/4e.io-awaitable.adoc[The IoAwaitable Protocol]
+** xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol]
 ** xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation]
 ** xref:4.coroutines/4g.composition.adoc[Concurrent Composition]
 ** xref:4.coroutines/4h.allocators.adoc[Frame Allocators]

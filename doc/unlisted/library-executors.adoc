@@ -296,4 +296,4 @@ Use `work_guard` for RAII:
 == Next Steps
 
 * xref:frame-allocators.adoc[Frame Allocators] — Optimize coroutine allocation
-* xref:../io-awaitables/executor.adoc[The Executor] — Affinity details
+* xref:../context-awaitables/executor.adoc[The Executor] — Affinity details

@@ -30,7 +30,7 @@
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/concept/write_stream.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 #include <boost/capy/test/stream.hpp>
@@ -73,7 +73,7 @@ using namespace std::string_view_literals;
 
 // tag::write_some_signature[]
 template<capy::ConstBufferSequence Buffers>
-capy::io_task<std::size_t> write_some(Buffers buffers);
+capy::task<capy::results<std::size_t>> write_some(Buffers buffers);
 // end::write_some_signature[]
 
 #if defined(BOOST_CAPY_DOC_HAS_POSIX_IO)

@@ -197,4 +197,4 @@ This generator:
 * Manages coroutine lifetime with RAII
 * Supports move semantics
 
-These fundamentals prepare you for understanding Capy's cpp:task[task<T>] type and the IoAwaitable protocol. Both build on standard coroutine machinery with executor affinity and stop token propagation.
+These fundamentals prepare you for understanding Capy's cpp:task[task<T>] type and the ContextAwaitable protocol. Both build on standard coroutine machinery with executor affinity and stop token propagation.

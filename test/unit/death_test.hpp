@@ -12,7 +12,7 @@
 
 #if !defined(_WIN32)
 
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 
 #include <coroutine>
 #include <exception>
@@ -82,7 +82,7 @@ exits_cleanly(F fn)
 /// Start a task by hand, as an awaiting parent would, and leave it lent.
 template<class Task>
 void
-lend(Task& t, io_env& env)
+lend(Task& t, await_context& env)
 {
     t.await_suspend(std::noop_coroutine(), &env).resume();
 }

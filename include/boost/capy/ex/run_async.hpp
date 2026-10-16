@@ -15,11 +15,11 @@
 #include <boost/capy/detail/run.hpp>
 #include <boost/capy/detail/run_callbacks.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/concept/io_runnable.hpp>
+#include <boost/capy/concept/context_runnable.hpp>
 #include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/ex/work_guard.hpp>
 
@@ -107,7 +107,7 @@ struct run_async_trampoline
         work_guard<Ex> wg_;
         Handlers handlers_;
         frame_memory_resource<Alloc> resource_;
-        io_env env_;
+        await_context env_;
         invoke_fn invoke_ = nullptr;
         void* task_promise_ = nullptr;
         // task_h_: raw handle for frame_guard cleanup in make_trampoline.
@@ -204,7 +204,7 @@ struct run_async_trampoline
 
     std::coroutine_handle<promise_type> h_;
 
-    template<IoRunnable Task>
+    template<ContextRunnable Task>
     static void invoke_impl(void* p, Handlers& h)
     {
         using R = decltype(std::declval<Task&>().await_resume());
@@ -232,7 +232,7 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
         work_guard<Ex> wg_;
         Handlers handlers_;
         std::pmr::memory_resource* mr_;
-        io_env env_;
+        await_context env_;
         invoke_fn invoke_ = nullptr;
         void* task_promise_ = nullptr;
         // task_h_: raw handle for frame_guard cleanup in make_trampoline.
@@ -309,7 +309,7 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
 
     std::coroutine_handle<promise_type> h_;
 
-    template<IoRunnable Task>
+    template<ContextRunnable Task>
     static void invoke_impl(void* p, Handlers& h)
     {
         using R = decltype(std::declval<Task&>().await_resume());
@@ -500,21 +500,21 @@ public:
         The rvalue ref-qualifier ensures the wrapper is consumed, enforcing
         correct LIFO destruction order.
 
-        The `io_env` constructed for the task is owned by the trampoline
+        The `await_context` constructed for the task is owned by the trampoline
         coroutine and is guaranteed to outlive the task and all awaitables
-        in its chain. Awaitables may store `io_env const*` without concern
+        in its chain. Awaitables may store `await_context const*` without concern
         for dangling references.
 
         @throws Any exception thrown by the executor's `dispatch`. The
             task is then destroyed without running, and the executor's
             work is released.
 
-        @tparam Task The IoRunnable type.
+        @tparam Task The ContextRunnable type.
 
         @param t The task to execute. Ownership is transferred to the
                  run_async_trampoline which destroys it after completion.
     */
-    template<IoRunnable Task>
+    template<ContextRunnable Task>
     void operator()(Task t) &&
     {
         auto task_h = t.handle();

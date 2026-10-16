@@ -15,11 +15,11 @@
 #include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/detail/buffer_array.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <coroutine>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
 
 #include <concepts>
 #include <coroutine>
@@ -274,8 +274,8 @@ struct any_write_stream::vtable
         void* storage,
         std::span<const_buffer const> buffers);
     bool (*await_ready)(void*);
-    std::coroutine_handle<> (*await_suspend)(void*, std::coroutine_handle<>, io_env const*);
-    io_result<std::size_t> (*await_resume)(void*);
+    std::coroutine_handle<> (*await_suspend)(void*, std::coroutine_handle<>, await_context const*);
+    results<std::size_t> (*await_resume)(void*);
     void (*destroy_awaitable)(void*) noexcept;
     std::size_t awaitable_size;
     std::size_t awaitable_align;
@@ -309,7 +309,7 @@ struct any_write_stream::vtable_for_impl
         +[](void* p) {
             return static_cast<Awaitable*>(p)->await_ready();
         },
-        +[](void* p, std::coroutine_handle<> h, io_env const* env) {
+        +[](void* p, std::coroutine_handle<> h, await_context const* env) {
             return detail::call_await_suspend(
                 static_cast<Awaitable*>(p), h, env);
         },
@@ -470,13 +470,13 @@ any_write_stream::write_some(CB buffers)
         }
 
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const* env)
+        await_suspend(std::coroutine_handle<> h, await_context const* env)
         {
             return self_->vt_->await_suspend(
                 self_->cached_awaitable_, h, env);
         }
 
-        [[nodiscard]] io_result<std::size_t>
+        [[nodiscard]] results<std::size_t>
         await_resume()
         {
             if(!owns_)

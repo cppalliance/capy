@@ -27,12 +27,12 @@
 
 #include "allocation_tracker.hpp"
 #include "awaitable_sender.hpp"
-#include "ioaw_io_read_stream.hpp"
-#include "ioaw_read_stream.hpp"
-#include "ioaw_sync_read_stream.hpp"
+#include "ctxaw_io_read_stream.hpp"
+#include "ctxaw_read_stream.hpp"
+#include "ctxaw_sync_read_stream.hpp"
 #include <exec/repeat_until.hpp>
 #include "sender_awaitable.hpp"
-#include "sender_io_env.hpp"
+#include "sender_await_context.hpp"
 #include "sndr_any_read_stream.hpp"
 #include "sndr_io_read_stream.hpp"
 #include "sndr_read_stream.hpp"
@@ -190,7 +190,7 @@ auto exec_accept(Stream& stream, cell_result& out)
 // -----------------------------------------------------------
 
 template <class Stream>
-auto exec_session_ioaw(
+auto exec_session_ctxaw(
     Stream& stream,
     sender_as_capy_executor ex) -> exec::task<void>
 {
@@ -204,7 +204,7 @@ auto exec_session_ioaw(
 }
 
 template <class Stream>
-auto exec_accept_ioaw(
+auto exec_accept_ctxaw(
     Stream& stream,
     sender_as_capy_executor ex,
     cell_result& out) -> exec::task<void>
@@ -213,7 +213,7 @@ auto exec_accept_ioaw(
     auto start = std::chrono::steady_clock::now();
 
     for (int i = 0; i < OUTER_LOOPS; ++i)
-        co_await exec_session_ioaw(stream, ex);
+        co_await exec_session_ctxaw(stream, ex);
 
     auto elapsed = std::chrono::steady_clock::now() - start;
     auto after = g_alloc_count.load(std::memory_order_relaxed);
@@ -363,11 +363,11 @@ int main()
 
     // Col B: Awaitable (via as_sender_lossy bridge)
 
-    // Native - ioaw_read_stream
+    // Native - ctxaw_read_stream
     {
         exec::static_thread_pool pool(2);
         static_pool_context ctx;
-        ioaw_read_stream stream;
+        ctxaw_read_stream stream;
         pool_scheduler sched{&pool, &ctx};
         sender_as_capy_executor adapter{&pool, &ctx};
         int count = OPS_PER_CELL;
@@ -392,11 +392,11 @@ int main()
             after - before};
     }
 
-    // Abstract - ioaw_io_read_stream
+    // Abstract - ctxaw_io_read_stream
     {
         exec::static_thread_pool pool(2);
         static_pool_context ctx;
-        ioaw_io_read_stream_impl stream;
+        ctxaw_io_read_stream_impl stream;
         pool_scheduler sched{&pool, &ctx};
         sender_as_capy_executor adapter{&pool, &ctx};
         int count = OPS_PER_CELL;
@@ -408,7 +408,7 @@ int main()
                 stdexec::let_value(stdexec::just(), [&]() {
                     return stdexec::write_env(
                         capy::as_sender_lossy(
-                            static_cast<ioaw_io_read_stream&>(
+                            static_cast<ctxaw_io_read_stream&>(
                                 stream).read_some(
                                     capy::mutable_buffer(
                                         buf, sizeof(buf)))),
@@ -428,7 +428,7 @@ int main()
     {
         exec::static_thread_pool pool(2);
         static_pool_context ctx;
-        ioaw_read_stream concrete;
+        ctxaw_read_stream concrete;
         capy::any_read_stream stream(&concrete);
         pool_scheduler sched{&pool, &ctx};
         sender_as_capy_executor adapter{&pool, &ctx};
@@ -454,11 +454,11 @@ int main()
             after - before};
     }
 
-    // Synchronous - ioaw_sync_read_stream (Col B)
+    // Synchronous - ctxaw_sync_read_stream (Col B)
     {
         exec::static_thread_pool pool(2);
         static_pool_context ctx;
-        ioaw_sync_read_stream stream;
+        ctxaw_sync_read_stream stream;
         pool_scheduler sched{&pool, &ctx};
         sender_as_capy_executor adapter{&pool, &ctx};
         int count = OPS_PER_CELL;
@@ -489,22 +489,22 @@ int main()
 
     // Col A: Awaitable (native)
 
-    // Native - ioaw_read_stream
+    // Native - ctxaw_read_stream
     {
         capy::thread_pool pool(1);
-        ioaw_read_stream stream;
+        ctxaw_read_stream stream;
         capy::run_async(pool.get_executor())(
             capy_accept(stream,
                 grid[run][CAPY_TASK][NATIVE_STREAM][NATIVE_EXEC_MODEL]));
         pool.join();
     }
 
-    // Abstract - ioaw_io_read_stream
+    // Abstract - ctxaw_io_read_stream
     {
         capy::thread_pool pool(1);
-        ioaw_io_read_stream_impl stream;
+        ctxaw_io_read_stream_impl stream;
         capy::run_async(pool.get_executor())(
-            capy_accept(static_cast<ioaw_io_read_stream&>(stream),
+            capy_accept(static_cast<ctxaw_io_read_stream&>(stream),
                 grid[run][CAPY_TASK][ABSTRACT_STREAM][NATIVE_EXEC_MODEL]));
         pool.join();
     }
@@ -512,7 +512,7 @@ int main()
     // Type erased - capy::any_read_stream
     {
         capy::thread_pool pool(1);
-        ioaw_read_stream concrete;
+        ctxaw_read_stream concrete;
         capy::any_read_stream stream(&concrete);
         capy::run_async(pool.get_executor())(
             capy_accept(stream,
@@ -520,10 +520,10 @@ int main()
         pool.join();
     }
 
-    // Synchronous - ioaw_sync_read_stream
+    // Synchronous - ctxaw_sync_read_stream
     {
         capy::thread_pool pool(1);
-        ioaw_sync_read_stream stream;
+        ctxaw_sync_read_stream stream;
         capy::run_async(pool.get_executor())(
             capy_accept(stream,
                 grid[run][CAPY_TASK][SYNC_STREAM][NATIVE_EXEC_MODEL]));
@@ -660,29 +660,29 @@ int main()
 
     // Col B: Awaitable (via as_sender_lossy bridge)
 
-    // Native - ioaw_read_stream
+    // Native - ctxaw_read_stream
     {
         exec::static_thread_pool pool(1);
         static_pool_context ctx;
         pool_scheduler sched{&pool, &ctx};
         sender_as_capy_executor adapter{&pool, &ctx};
-        ioaw_read_stream stream;
+        ctxaw_read_stream stream;
         stdexec::sync_wait(stdexec::starts_on(sched,
-            exec_accept_ioaw(stream, adapter,
+            exec_accept_ctxaw(stream, adapter,
                 grid[run][EXEC_TASK][NATIVE_STREAM][BRIDGED_EXEC_MODEL])));
         pool.request_stop();
     }
 
-    // Abstract - ioaw_io_read_stream
+    // Abstract - ctxaw_io_read_stream
     {
         exec::static_thread_pool pool(1);
         static_pool_context ctx;
         pool_scheduler sched{&pool, &ctx};
         sender_as_capy_executor adapter{&pool, &ctx};
-        ioaw_io_read_stream_impl stream;
+        ctxaw_io_read_stream_impl stream;
         stdexec::sync_wait(stdexec::starts_on(sched,
-            exec_accept_ioaw(
-                static_cast<ioaw_io_read_stream&>(stream),
+            exec_accept_ctxaw(
+                static_cast<ctxaw_io_read_stream&>(stream),
                 adapter,
                 grid[run][EXEC_TASK][ABSTRACT_STREAM][BRIDGED_EXEC_MODEL])));
         pool.request_stop();
@@ -694,28 +694,28 @@ int main()
         static_pool_context ctx;
         pool_scheduler sched{&pool, &ctx};
         sender_as_capy_executor adapter{&pool, &ctx};
-        ioaw_read_stream concrete;
+        ctxaw_read_stream concrete;
         capy::any_read_stream stream(&concrete);
         auto* mr = get_counting_resource();
         std::pmr::polymorphic_allocator<std::byte> alloc(mr);
         stdexec::sync_wait(
             stdexec::write_env(
                 stdexec::starts_on(sched,
-                    exec_accept_ioaw(stream, adapter,
+                    exec_accept_ctxaw(stream, adapter,
                         grid[run][EXEC_TASK][TYPE_ERASED_STREAM][BRIDGED_EXEC_MODEL])),
                 stdexec::prop{exec::get_frame_allocator, alloc}));
         pool.request_stop();
     }
 
-    // Synchronous - ioaw_sync_read_stream
+    // Synchronous - ctxaw_sync_read_stream
     {
         exec::static_thread_pool pool(1);
         static_pool_context ctx;
         pool_scheduler sched{&pool, &ctx};
         sender_as_capy_executor adapter{&pool, &ctx};
-        ioaw_sync_read_stream stream;
+        ctxaw_sync_read_stream stream;
         stdexec::sync_wait(stdexec::starts_on(sched,
-            exec_accept_ioaw(stream, adapter,
+            exec_accept_ctxaw(stream, adapter,
                 grid[run][EXEC_TASK][SYNC_STREAM][BRIDGED_EXEC_MODEL])));
         pool.request_stop();
     }

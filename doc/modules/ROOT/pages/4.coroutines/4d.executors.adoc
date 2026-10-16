@@ -19,7 +19,7 @@ Start this on a strand, and every resumption—after `conn.read()` and after `co
 
 Without the invariant, the coroutine could resume after `co_await conn.read()` on an `io_uring` completion thread, a pool thread, or wherever the I/O subsystem completed the operation. Correct code would then need either a mutex around every access to shared state or an explicit _resume-on-this-strand_ step after every `co_await`. A mutex defeats the purpose of the strand, and a single forgotten resume step reintroduces the data race.
 
-Because the invariant holds, the safe behavior is automatic and the unsafe behavior does not compile. Awaiting a _plain_ awaitable—one that could resume the coroutine on any thread—is rejected. See xref:4.coroutines/4e.io-awaitable.adoc#bridging-a-foreign-awaitable[Bridging a Foreign Awaitable] for why, and for the explicit escape hatch.
+Because the invariant holds, the safe behavior is automatic and the unsafe behavior does not compile. Awaiting a _plain_ awaitable—one that could resume the coroutine on any thread—is rejected. See xref:4.coroutines/4e.context-awaitable.adoc#bridging-a-foreign-awaitable[Bridging a Foreign Awaitable] for why, and for the explicit escape hatch.
 
 === How the Invariant Is Maintained
 

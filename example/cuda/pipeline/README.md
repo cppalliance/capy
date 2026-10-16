@@ -16,7 +16,7 @@ built but not run (P4251R0):
    `stdexec::upon_error`, and driven by `stdexec::sync_wait`. Two runs: a
    happy-path read, and a peer-close that exercises the `upon_error` arm.
 
-   `read_some` returns `io_result<size_t>`, which `as_sender` rejects at
+   `read_some` returns `results<size_t>`, which `as_sender` rejects at
    compile time: sender completion channels are exclusive, so routing the
    error through `set_error` would drop the byte count of a partial read.
    The scene therefore wraps the read in a `task<std::error_code>`

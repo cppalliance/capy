@@ -51,17 +51,17 @@ int main()
 
     // Each coroutine increments the shared counter without locks.
     // The strand ensures only one coroutine runs at a time.
-    auto increment = [&](int id) -> capy::io_task<> {
+    auto increment = [&](int id) -> capy::task<capy::results<>> {
         for (int i = 0; i < increments_per_coro; ++i)
             ++counter;
         std::cout << "Coroutine " << id
                   << " finished, counter = " << counter << "\n";
-        co_return capy::io_result<>{};
+        co_return capy::results<>{};
     };
     // end::counter[]
 
     auto run_all = [&]() -> capy::task<> {
-        std::vector<capy::io_task<>> tasks;
+        std::vector<capy::task<capy::results<>>> tasks;
         for (int i = 0; i < num_coroutines; ++i)
             tasks.push_back(increment(i));
         (void) co_await capy::when_all(std::move(tasks));

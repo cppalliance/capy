@@ -19,9 +19,9 @@ Tasks are sequential by default. When you await multiple tasks:
 
 [source,cpp]
 ----
-io_task<int> fetch_a();
-io_task<int> fetch_b();
-io_task<int> fetch_c();
+task<results<int>> fetch_a();
+task<results<int>> fetch_b();
+task<results<int>> fetch_c();
 
 task<> sequential()
 {
@@ -56,26 +56,26 @@ task<> concurrent()
 ----
 
 All three fetches run in parallel. The `co_await` completes when the slowest
-one finishes. Children must return `io_result<...>` (i.e., be `io_task<T>`).
+one finishes. Children must return `results<...>` (i.e., be `task<results<T>>`).
 
 == Return Value
 
-`when_all` returns `task<io_result<R1, R2, ..., Rn>>`, a single `ec` followed by each child's payload type. Each `Ri` is the child's payload flattened: `io_result<T>` contributes `T`, `io_result<>` contributes `tuple<>`.
+`when_all` returns `task<results<R1, R2, ..., Rn>>`, a single `ec` followed by each child's payload type. Each `Ri` is the child's payload flattened: `results<T>` contributes `T`, `results<>` contributes `tuple<>`.
 
 [source,cpp]
 ----
 // All non-void: single ec + flattened payloads
 auto [ec, x, y] = co_await when_all(
-    task_returning_int(),     // io_task<int>
-    task_returning_string()   // io_task<std::string>
+    task_returning_int(),     // task<results<int>>
+    task_returning_string()   // task<results<std::string>>
 );
 // ec is std::error_code, x is int, y is std::string
 
-// Mixed with void: io_task<> contributes tuple<>
+// Mixed with void: task<results<>> contributes tuple<>
 auto [ec2, a, b, c] = co_await when_all(
-    task_returning_int(),  // io_task<int>    — a is int
-    task_void(),           // io_task<>       — b is tuple<>
-    task_void()            // io_task<>       — c is tuple<>
+    task_returning_int(),  // task<results<int>>    — a is int
+    task_void(),           // task<results<>>       — b is tuple<>
+    task_void()            // task<results<>>       — c is tuple<>
 );
 
 // All void: just check ec
@@ -91,7 +91,7 @@ Results appear in the same order as the input tasks. Values are only meaningful 
 
 == Error Handling
 
-There are two error paths. I/O errors are reported through the `ec` field of the returned `io_result`. Thrown exceptions are captured separately.
+There are two error paths. I/O errors are reported through the `ec` field of the returned `results`. Thrown exceptions are captured separately.
 
 === I/O Errors (ec)
 
@@ -99,7 +99,7 @@ When a child returns a non-zero `ec`:
 
 1. Stop is requested for sibling tasks
 2. All tasks are allowed to complete (or respond to stop)
-3. The first `ec` is propagated in the outer `io_result`
+3. The first `ec` is propagated in the outer `results`
 
 [source,cpp]
 ----
@@ -107,7 +107,7 @@ task<> handle_errors()
 {
     auto [ec, a, b] = co_await when_all(
         might_fail_io(),
-        another_io_task()
+        another_task()
     );
     if (ec)
         std::cerr << "I/O error: " << ec.message() << "\n";
@@ -153,16 +153,16 @@ that support cancellation can respond by exiting early:
 
 [source,cpp]
 ----
-io_task<> cancellable_work()
+task<results<>> cancellable_work()
 {
     auto token = co_await this_coro::stop_token;
     for (int i = 0; i < 1000; ++i)
     {
         if (token.stop_requested())
-            co_return io_result<>{};  // Exit early
+            co_return results<>{};  // Exit early
         co_await do_chunk(i);
     }
-    co_return io_result<>{};
+    co_return results<>{};
 }
 
 task<> example()
@@ -243,10 +243,10 @@ run_async(pool.get_executor())(parent());
 
 [source,cpp]
 ----
-io_task<std::string> fetch(http_client& client, std::string url)
+task<results<std::string>> fetch(http_client& client, std::string url)
 {
     auto [ec, body] = co_await client.get(url);
-    co_return io_result<std::string>{ec, std::move(body)};
+    co_return results<std::string>{ec, std::move(body)};
 }
 
 task<> fetch_all(http_client& client)
@@ -290,10 +290,10 @@ Do NOT use `when_all` when:
 | Feature | Description
 
 | `when_all(tasks...)`
-| Launch `io_task` children concurrently, wait for all
+| Launch `task<results<...>>` children concurrently, wait for all
 
 | Return type
-| `task<io_result<R1, ..., Rn>>` — single `ec` + flattened payloads
+| `task<results<R1, ..., Rn>>` — single `ec` + flattened payloads
 
 | Error handling
 | First `ec` or exception propagated, siblings get stop

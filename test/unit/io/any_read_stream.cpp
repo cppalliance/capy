@@ -14,8 +14,8 @@
 #include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/cond.hpp>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/read_stream.hpp>
 #include <boost/capy/test/run_blocking.hpp>
@@ -48,9 +48,9 @@ struct pending_read_awaitable
         : counter_(std::exchange(o.counter_, nullptr)) {}
     ~pending_read_awaitable() { if(counter_) ++(*counter_); }
     bool await_ready() const noexcept { return false; }
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<>, io_env const*)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<>, await_context const*)
         { return std::noop_coroutine(); }
-    io_result<std::size_t> await_resume()
+    results<std::size_t> await_resume()
         { return {std::error_code(), 0}; }
 };
 
@@ -66,11 +66,11 @@ struct parking_read_awaitable
     ~parking_read_awaitable() { if(down_) ++(*down_); }
     bool await_ready() const noexcept { return false; }
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<> h, io_env const* env) noexcept
+    await_suspend(std::coroutine_handle<> h, await_context const* env) noexcept
     {
         return park_awaitable{slot_}.await_suspend(h, env);
     }
-    io_result<std::size_t> await_resume()
+    results<std::size_t> await_resume()
         { return {std::error_code(), 0}; }
 };
 
@@ -91,18 +91,18 @@ struct pending_read_stream
         { return pending_read_awaitable{counter_}; }
 };
 
-// Reports readiness without consulting the io_env, like a stream
+// Reports readiness without consulting the await_context, like a stream
 // whose data is already in user-space memory.
 struct ready_read_awaitable
 {
     int* suspended_;
     bool await_ready() const noexcept { return true; }
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<>, io_env const*)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<>, await_context const*)
     {
         ++(*suspended_);
         return std::noop_coroutine();
     }
-    io_result<std::size_t> await_resume()
+    results<std::size_t> await_resume()
         { return {std::error_code(), 7}; }
 };
 
@@ -121,9 +121,9 @@ struct resuming_read_awaitable
 {
     bool await_ready() const noexcept { return false; }
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<> h, io_env const*) noexcept
+    await_suspend(std::coroutine_handle<> h, await_context const*) noexcept
         { return h; }
-    io_result<std::size_t> await_resume() { return {std::error_code(), 7}; }
+    results<std::size_t> await_resume() { return {std::error_code(), 7}; }
 };
 
 struct resuming_read_stream

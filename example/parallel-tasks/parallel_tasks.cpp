@@ -25,7 +25,7 @@
 namespace capy = boost::capy;
 
 // Sum integers in [lo, hi)
-capy::io_task<long long> partial_sum(int lo, int hi)
+capy::task<capy::results<long long>> partial_sum(int lo, int hi)
 {
     std::ostringstream oss;
     oss << "  range [" << lo << ", " << hi
@@ -35,7 +35,7 @@ capy::io_task<long long> partial_sum(int lo, int hi)
     long long sum = 0;
     for (int i = lo; i < hi; ++i)
         sum += i;
-    co_return capy::io_result<long long>{std::error_code(), sum};
+    co_return capy::results<long long>{std::error_code(), sum};
 }
 
 int main()
@@ -63,7 +63,7 @@ int main()
         std::cout << "Dispatching " << num_tasks
                   << " parallel tasks...\n";
 
-        std::vector<capy::io_task<long long>> tasks;
+        std::vector<capy::task<capy::results<long long>>> tasks;
         for (int i = 0; i < num_tasks; ++i)
             tasks.push_back(partial_sum(i * chunk, (i + 1) * chunk));
 

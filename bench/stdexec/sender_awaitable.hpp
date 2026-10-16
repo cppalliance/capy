@@ -11,8 +11,8 @@
 #define BOOST_CAPY_BENCH_STDEXEC_SENDER_AWAITABLE_HPP
 
 #include <boost/capy/error.hpp>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
 
 #include <stdexec/execution.hpp>
 
@@ -184,7 +184,7 @@ struct bridge_receiver
 /** Awaitable that bridges a stdexec sender
     into a Capy coroutine.
 
-    Satisfies IoAwaitable. When co_awaited inside
+    Satisfies ContextAwaitable. When co_awaited inside
     a capy::task, connects the sender to a bridge
     receiver, starts the operation, and resumes
     the coroutine when the sender completes.
@@ -199,7 +199,7 @@ struct bridge_receiver
     completion signatures at compile time. If the
     sender can complete with
     set_error(std::error_code), await_resume
-    returns io_result so the error code is a
+    returns results so the error code is a
     value, not an exception. Otherwise
     await_resume returns the value directly and
     genuine exceptions are rethrown.
@@ -269,7 +269,7 @@ struct [[nodiscard]] sender_awaitable
     std::coroutine_handle<>
     await_suspend(
         std::coroutine_handle<> h,
-        io_env const* env)
+        await_context const* env)
     {
         ::new(op_buf_) op_state_type(
             stdexec::connect(
@@ -303,7 +303,7 @@ struct [[nodiscard]] sender_awaitable
 
 private:
     // Sender can complete with
-    // set_error(error_code). Return io_result
+    // set_error(error_code). Return `results`
     // so the error code is a value, not an
     // exception.
     auto await_resume_ec()
@@ -319,13 +319,13 @@ private:
         {
             // stopped at index 4
             if(result_.index() == 4)
-                return io_result<>{
+                return results<>{
                     make_error_code(
                         error::canceled)};
             if(result_.index() == 2)
-                return io_result<>{
+                return results<>{
                     std::get<2>(result_)};
-            return io_result<>{};
+            return results<>{};
         }
         else if constexpr (
             std::tuple_size_v<
@@ -334,13 +334,13 @@ private:
             using T = std::tuple_element_t<
                 0, value_tuple>;
             if(result_.index() == 4)
-                return io_result<T>{
+                return results<T>{
                     make_error_code(
                         error::canceled), T{}};
             if(result_.index() == 2)
-                return io_result<T>{
+                return results<T>{
                     std::get<2>(result_), T{}};
-            return io_result<T>{
+            return results<T>{
                 std::error_code(),
                 std::get<0>(
                     std::get<1>(
@@ -349,13 +349,13 @@ private:
         else
         {
             if(result_.index() == 4)
-                return io_result<value_tuple>{
+                return results<value_tuple>{
                     make_error_code(
                         error::canceled), value_tuple{}};
             if(result_.index() == 2)
-                return io_result<value_tuple>{
+                return results<value_tuple>{
                     std::get<2>(result_), value_tuple{}};
-            return io_result<value_tuple>{
+            return results<value_tuple>{
                 std::error_code(),
                 std::get<1>(
                     std::move(result_))};
@@ -391,11 +391,11 @@ private:
     }
 };
 
-/** Create an IoAwaitable from a stdexec sender.
+/** Create a ContextAwaitable from a stdexec sender.
 
     If the sender can complete with
     set_error(std::error_code), the returned
-    awaitable yields io_result so the error code
+    awaitable yields results so the error code
     is a value, not an exception. Otherwise the
     awaitable yields the value directly.
 
@@ -412,7 +412,7 @@ private:
     @endcode
 
     @param sndr The sender to bridge.
-    @return An IoAwaitable that can be co_awaited
+    @return A ContextAwaitable that can be co_awaited
         in a capy::task.
 */
 template<class Sender>

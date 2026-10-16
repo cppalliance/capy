@@ -10,12 +10,12 @@
 // Test that header file is self-contained.
 #include <boost/capy/ex/async_mutex.hpp>
 
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/strand.hpp>
 #include <boost/capy/task.hpp>
@@ -36,8 +36,8 @@
 namespace boost {
 namespace capy {
 
-static_assert(IoAwaitable<async_mutex::lock_awaiter>);
-static_assert(IoAwaitable<async_mutex::lock_guard_awaiter>);
+static_assert(ContextAwaitable<async_mutex::lock_awaiter>);
+static_assert(ContextAwaitable<async_mutex::lock_guard_awaiter>);
 
 struct async_mutex_test
 {
@@ -59,7 +59,7 @@ struct async_mutex_test
 
         auto h = t.handle();
         t.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         h.promise().set_environment(&env);
         h.resume();
@@ -94,7 +94,7 @@ struct async_mutex_test
 
         auto h1 = first.handle();
         first.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         h1.promise().set_environment(&env);
 
@@ -149,13 +149,13 @@ struct async_mutex_test
 
         auto h1 = holder.handle();
         holder.release();
-        io_env env1;
+        await_context env1;
         env1.executor = executor_ref(ex);
         h1.promise().set_environment(&env1);
 
         auto h2 = waiter.handle();
         waiter.release();
-        io_env env2;
+        await_context env2;
         env2.executor = executor_ref(ex);
         env2.stop_token = ss.get_token();
         h2.promise().set_environment(&env2);
@@ -210,13 +210,13 @@ struct async_mutex_test
 
         auto h1 = holder.handle();
         holder.release();
-        io_env env1;
+        await_context env1;
         env1.executor = executor_ref(ex);
         h1.promise().set_environment(&env1);
 
         auto h2 = waiter.handle();
         waiter.release();
-        io_env env2;
+        await_context env2;
         env2.executor = executor_ref(ex);
         env2.stop_token = ss.get_token();
         h2.promise().set_environment(&env2);
@@ -266,7 +266,7 @@ struct async_mutex_test
 
         auto h1 = holder.handle();
         holder.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         h1.promise().set_environment(&env);
 
@@ -330,27 +330,27 @@ struct async_mutex_test
 
         auto hh = holder.handle();
         holder.release();
-        io_env env_h;
+        await_context env_h;
         env_h.executor = executor_ref(ex);
         hh.promise().set_environment(&env_h);
 
         auto h1 = w1.handle();
         w1.release();
-        io_env env1;
+        await_context env1;
         env1.executor = executor_ref(ex);
         env1.stop_token = ss1.get_token();
         h1.promise().set_environment(&env1);
 
         auto h2 = w2.handle();
         w2.release();
-        io_env env2;
+        await_context env2;
         env2.executor = executor_ref(ex);
         env2.stop_token = ss2.get_token();
         h2.promise().set_environment(&env2);
 
         auto h3 = w3.handle();
         w3.release();
-        io_env env3;
+        await_context env3;
         env3.executor = executor_ref(ex);
         h3.promise().set_environment(&env3);
 
@@ -434,20 +434,20 @@ struct async_mutex_test
 
         auto hh = holder.handle();
         holder.release();
-        io_env env_h;
+        await_context env_h;
         env_h.executor = executor_ref(ex);
         hh.promise().set_environment(&env_h);
 
         auto h1 = w1.handle();
         w1.release();
-        io_env env1;
+        await_context env1;
         env1.executor = executor_ref(ex);
         env1.stop_token = ss1.get_token();
         h1.promise().set_environment(&env1);
 
         auto h2 = w2.handle();
         w2.release();
-        io_env env2;
+        await_context env2;
         env2.executor = executor_ref(ex);
         h2.promise().set_environment(&env2);
 
@@ -512,13 +512,13 @@ struct async_mutex_test
 
         auto h1 = holder.handle();
         holder.release();
-        io_env env1;
+        await_context env1;
         env1.executor = executor_ref(ex);
         h1.promise().set_environment(&env1);
 
         auto h2 = waiter.handle();
         waiter.release();
-        io_env env2;
+        await_context env2;
         env2.executor = executor_ref(ex);
         env2.stop_token = ss.get_token();
         h2.promise().set_environment(&env2);
@@ -558,7 +558,7 @@ struct async_mutex_test
 
         auto h = t.handle();
         t.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         env.stop_token = ss.get_token();
         h.promise().set_environment(&env);
@@ -589,7 +589,7 @@ struct async_mutex_test
 
         auto h = t.handle();
         t.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         h.promise().set_environment(&env);
         h.resume();
@@ -626,13 +626,13 @@ struct async_mutex_test
 
         auto h1 = holder.handle();
         holder.release();
-        io_env env1;
+        await_context env1;
         env1.executor = executor_ref(ex);
         h1.promise().set_environment(&env1);
 
         auto h2 = waiter.handle();
         waiter.release();
-        io_env env2;
+        await_context env2;
         env2.executor = executor_ref(ex);
         env2.stop_token = ss.get_token();
         h2.promise().set_environment(&env2);
@@ -690,7 +690,7 @@ struct async_mutex_test
 
         auto hh = holder.handle();
         holder.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         hh.promise().set_environment(&env);
 
@@ -770,26 +770,26 @@ struct async_mutex_test
 
         auto hh = holder.handle();
         holder.release();
-        io_env env_h;
+        await_context env_h;
         env_h.executor = executor_ref(ex);
         hh.promise().set_environment(&env_h);
 
         auto h1 = w1.handle();
         w1.release();
-        io_env env1;
+        await_context env1;
         env1.executor = executor_ref(ex);
         h1.promise().set_environment(&env1);
 
         auto h2 = w2.handle();
         w2.release();
-        io_env env2;
+        await_context env2;
         env2.executor = executor_ref(ex);
         env2.stop_token = ss.get_token();
         h2.promise().set_environment(&env2);
 
         auto h3 = w3.handle();
         w3.release();
-        io_env env3;
+        await_context env3;
         env3.executor = executor_ref(ex);
         h3.promise().set_environment(&env3);
 
@@ -848,7 +848,7 @@ struct async_mutex_test
 
         auto hh = holder.handle();
         holder.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         hh.promise().set_environment(&env);
 
@@ -894,7 +894,7 @@ struct async_mutex_test
 
         auto h = t.handle();
         t.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         h.promise().set_environment(&env);
         h.resume();
@@ -931,7 +931,7 @@ struct async_mutex_test
 
         auto h1 = first.handle();
         first.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         h1.promise().set_environment(&env);
 
@@ -984,13 +984,13 @@ struct async_mutex_test
 
         auto h1 = holder.handle();
         holder.release();
-        io_env env1;
+        await_context env1;
         env1.executor = executor_ref(ex);
         h1.promise().set_environment(&env1);
 
         auto h2 = waiter.handle();
         waiter.release();
-        io_env env2;
+        await_context env2;
         env2.executor = executor_ref(ex);
         env2.stop_token = ss.get_token();
         h2.promise().set_environment(&env2);

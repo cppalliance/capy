@@ -25,7 +25,7 @@ safe_resume Tests
 
 Verifies that safe_resume saves and restores the thread-local
 frame allocator around h.resume(). A plain coroutine (no
-io_awaitable_promise_base) is used so that operator new does
+context_awaitable_promise_base) is used so that operator new does
 not read TLS — we only care about the TLS value itself.
 */
 

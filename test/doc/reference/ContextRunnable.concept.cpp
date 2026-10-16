@@ -7,9 +7,9 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Reference examples for boost::capy::io_result, injected into its documentation by
+// Reference examples for boost::capy::ContextRunnable, injected into its documentation by
 // doc/addons/extensions/reference-snippets.lua. Declared in:
-//   include/boost/capy/io_result.hpp
+//   include/boost/capy/concept/context_runnable.hpp
 //
 // The tagged regions are what the reference renders; the includes,
 // suppressions and namespaces around them are scaffolding. Each region gets
@@ -31,25 +31,22 @@ namespace capy = boost::capy;
 namespace {
 
 namespace ex_1 {
-// tag::example_1[]
-capy::task<> discard_first_chunk( capy::any_read_stream& s, capy::mutable_buffer buf )
+// tag::example[]
+class T
 {
-    auto [ec, n] = co_await s.read_some(buf);
-    if (ec)
-        co_return;  // error: n's meaning here is defined by read_some
-}
-// end::example_1[]
-} // namespace ex_1
+public:
+    struct promise_type
+    {
+        std::exception_ptr exception() noexcept;
+        int result();  // non-void tasks only
+        void set_continuation(std::coroutine_handle<>) noexcept;
+        void set_environment(capy::await_context const*) noexcept;
+    };
 
-namespace ex_2 {
-// tag::example_2[]
-capy::task<> read_into_locals( capy::any_read_stream& s, capy::mutable_buffer buf )
-{
-    std::error_code ec;
-    std::size_t n = 0;
-    std::tie(ec, n) = co_await s.read_some(buf);
-}
-// end::example_2[]
-} // namespace ex_2
+    std::coroutine_handle<promise_type> handle() const noexcept;
+    void release() noexcept;
+};
+// end::example[]
+} // namespace ex_1
 
 } // namespace

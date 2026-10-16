@@ -41,8 +41,8 @@ the first one *succeeds* (`!ec`):
 task<> race()
 {
     auto result = co_await when_any(
-        fetch_from_primary(),   // io_task<Response>
-        fetch_from_backup()     // io_task<Response>
+        fetch_from_primary(),   // task<results<Response>>
+        fetch_from_backup()     // task<results<Response>>
     );
     // result is variant<error_code, Response, Response>
     // result.index() == 0: all tasks failed
@@ -67,8 +67,8 @@ When racing tasks with different return types:
 [source,cpp]
 ----
 auto result = co_await when_any(
-    task_returning_int(),     // io_task<int>
-    task_returning_string()   // io_task<std::string>
+    task_returning_int(),     // task<results<int>>
+    task_returning_string()   // task<results<std::string>>
 );
 
 if (result.index() == 0)
@@ -83,13 +83,13 @@ The `result` variable is a `std::variant<std::error_code, int, std::string>`. In
 
 === Void Tasks
 
-`io_task<>` children contribute `std::tuple<>` to the variant:
+`task<results<>>` children contribute `std::tuple<>` to the variant:
 
 [source,cpp]
 ----
 auto result = co_await when_any(
-    task_returning_int(),  // io_task<int>
-    task_void()            // io_task<>
+    task_returning_int(),  // task<results<int>>
+    task_void()            // task<results<>>
 );
 
 if (result.index() == 0)
@@ -110,9 +110,9 @@ Use `.index()` to identify which task won:
 [source,cpp]
 ----
 auto result = co_await when_any(
-    fetch_from_server_a(),  // io_task<Response>
-    fetch_from_server_b(),  // io_task<Response>
-    fetch_from_server_c()   // io_task<Response>
+    fetch_from_server_a(),  // task<results<Response>>
+    fetch_from_server_b(),  // task<results<Response>>
+    fetch_from_server_c()   // task<results<Response>>
 );
 // result: variant<error_code, Response, Response, Response>
 
@@ -136,7 +136,7 @@ For a dynamic number of tasks with the same type, use the range overload:
 
 [source,cpp]
 ----
-std::vector<io_task<Response>> requests;
+std::vector<task<results<Response>>> requests;
 for (auto& server : servers)
     requests.push_back(fetch_from(server));
 
@@ -160,7 +160,7 @@ For void tasks in a range:
 
 [source,cpp]
 ----
-std::vector<io_task<>> tasks;
+std::vector<task<results<>>> tasks;
 // ... populate tasks
 
 auto result = co_await when_any(std::move(tasks));
@@ -226,17 +226,17 @@ Tasks that support cancellation can exit early:
 
 [source,cpp]
 ----
-io_task<Response> fetch_with_cancel_support()
+task<results<Response>> fetch_with_cancel_support()
 {
     auto token = co_await this_coro::stop_token;
 
     for (auto& chunk : data_source)
     {
         if (token.stop_requested())
-            co_return io_result<Response>{std::error_code(), partial_response()};
+            co_return results<Response>{std::error_code(), partial_response()};
         co_await send_chunk(chunk);
     }
-    co_return io_result<Response>{std::error_code(), complete_response()};
+    co_return results<Response>{std::error_code(), complete_response()};
 }
 
 task<> example()
@@ -313,7 +313,7 @@ Race requests to multiple servers for reliability:
 
 [source,cpp]
 ----
-io_task<Response> fetch_with_redundancy(Request req)
+task<results<Response>> fetch_with_redundancy(Request req)
 {
     auto result = co_await when_any(
         fetch_from(primary_server, req),
@@ -322,7 +322,7 @@ io_task<Response> fetch_with_redundancy(Request req)
     // result: variant<error_code, Response, Response>
 
     if (result.index() == 0)
-        co_return io_result<Response>{std::get<0>(result), {}};
+        co_return results<Response>{std::get<0>(result), {}};
 
     std::cout << (result.index() == 1 ? "Primary" : "Backup")
               << " server responded\n";
@@ -333,7 +333,7 @@ io_task<Response> fetch_with_redundancy(Request req)
         if constexpr (!std::is_same_v<std::decay_t<decltype(v)>, std::error_code>)
             resp = v;
     }, result);
-    co_return io_result<Response>{std::error_code(), std::move(resp)};
+    co_return results<Response>{std::error_code(), std::move(resp)};
 }
 ----
 
@@ -343,9 +343,9 @@ Wait for the first available connection from a pool:
 
 [source,cpp]
 ----
-io_task<Connection> get_connection(std::vector<ConnectionPool>& pools)
+task<results<Connection>> get_connection(std::vector<ConnectionPool>& pools)
 {
-    std::vector<io_task<Connection>> attempts;
+    std::vector<task<results<Connection>>> attempts;
     for (auto& pool : pools)
         attempts.push_back(pool.acquire());
 
@@ -353,11 +353,11 @@ io_task<Connection> get_connection(std::vector<ConnectionPool>& pools)
     // result: variant<error_code, pair<size_t, Connection>>
 
     if (result.index() == 0)
-        co_return io_result<Connection>{std::get<0>(result), {}};
+        co_return results<Connection>{std::get<0>(result), {}};
 
     auto& [index, conn] = std::get<1>(result);
     std::cout << "Got connection from pool " << index << "\n";
-    co_return io_result<Connection>{std::error_code(), std::move(conn)};
+    co_return results<Connection>{std::error_code(), std::move(conn)};
 }
 ----
 
@@ -374,7 +374,7 @@ This function creates an acquire task for each pool, then races them. Whichever 
 | Returns on first success (`!ec`)
 
 | Return type
-| `task<io_result<R1, ..., Rn>>`
+| `task<results<R1, ..., Rn>>`
 | `task<variant<error_code, R1, ..., Rn>>`
 
 | Error handling
@@ -393,10 +393,10 @@ This function creates an acquire task for each pool, then races them. Whichever 
 | Feature | Description
 
 | `when_any(tasks...)`
-| Race `io_task` children, return first success
+| Race `task<results<...>>` children, return first success
 
 | `when_any(range)`
-| Race homogeneous `io_task` children from a range
+| Race homogeneous `task<results<...>>` children from a range
 
 | Return type (variadic)
 | `variant<error_code, R1, ..., Rn>` — index 0 is failure, 1..N is winner

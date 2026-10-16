@@ -20,7 +20,7 @@ struct vtable
     void (*construct_awaitable)(...);       // 8
     bool (*await_ready)(void*);            // 8
     std::coroutine_handle<> (*await_suspend)(void*, ...);     // 8
-    io_result<size_t> (*await_resume)(void*); // 8
+    results<size_t> (*await_resume)(void*); // 8
     void (*destroy_awaitable)(void*);      // 8
     size_t awaitable_size;                 // 8
     size_t awaitable_align;                // 8
@@ -46,11 +46,11 @@ bool await_ready() {
     return vt_->await_ready(cached_awaitable_);   // true → no suspend
 }
 
-std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env) {
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, await_context const* env) {
     return vt_->await_suspend(cached_awaitable_, h, env);
 }
 
-io_result<size_t> await_resume() {
+results<size_t> await_resume() {
     auto r = vt_->await_resume(cached_awaitable_);
     vt_->destroy_awaitable(cached_awaitable_);
     awaitable_active_ = owns_ = false;
@@ -73,7 +73,7 @@ bool await_ready() {
     return vt_->await_ready(cached_awaitable_);
 }
 
-io_result<size_t> await_resume() {
+results<size_t> await_resume() {
     if(!owns_)
         return {std::error_code(), 0};   // short-circuited
     auto r = vt_->await_resume(cached_awaitable_);
@@ -89,8 +89,8 @@ When a wrapper exposes more than one async operation, it cannot embed a single s
 
 Two sub-cases arise, distinguished by whether the operations share an await-return type:
 
-* *Same await-return type* (Boost.Http's `http::any_read_source`: `read_some` and `read` both await-return cpp:io_result[io_result<std::size_t>]). One ops struct (`awaitable_ops`) serves both operations; both `construct_*_awaitable` pointers return the same layout.
-* *Different await-return types* (Boost.Http's `http::any_buffer_source`: `pull` await-returns cpp:io_result[io_result<std::span<const_buffer>>] while its synthesized `read_some`/`read` await-return `io_result<std::size_t>`; `http::any_buffer_sink` and `http::any_write_sink` similarly mix `io_result<>`, `io_result<std::size_t>`). These need more than one ops struct (e.g. `awaitable_ops` plus `read_awaitable_ops`/`write_awaitable_ops`/`eof_awaitable_ops`), and each `construct` returns the ops matching its result type.
+* *Same await-return type* (Boost.Http's `http::any_read_source`: `read_some` and `read` both await-return cpp:results[results<std::size_t>]). One ops struct (`awaitable_ops`) serves both operations; both `construct_*_awaitable` pointers return the same layout.
+* *Different await-return types* (Boost.Http's `http::any_buffer_source`: `pull` await-returns cpp:results[results<std::span<const_buffer>>] while its synthesized `read_some`/`read` await-return `results<std::size_t>`; `http::any_buffer_sink` and `http::any_write_sink` similarly mix `results<>`, `results<std::size_t>`). These need more than one ops struct (e.g. `awaitable_ops` plus `read_awaitable_ops`/`write_awaitable_ops`/`eof_awaitable_ops`), and each `construct` returns the ops matching its result type.
 
 Capy's own multi-operation wrapper avoids this problem entirely. cpp:any_stream[] exposes two operations, `read_some` and `write_some`, but does not build a shared per-construct ops table for them: it inherits from cpp:any_read_stream[] and cpp:any_write_stream[], composing two independent flat, single-operation vtables. Per-construct ops are needed only when multiple operations act on one shared inner source or sink object.
 
@@ -102,7 +102,7 @@ struct awaitable_ops
 {
     bool (*await_ready)(void*);
     std::coroutine_handle<> (*await_suspend)(void*, ...);
-    io_result<size_t> (*await_resume)(void*);
+    results<size_t> (*await_resume)(void*);
     void (*destroy)(void*);
 };
 
@@ -126,14 +126,14 @@ bool await_ready() const noexcept {
     return buffers_.empty();             // short-circuit
 }
 
-std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, io_env const* env) {
+std::coroutine_handle<> await_suspend(std::coroutine_handle<> h, await_context const* env) {
     active_ops_ = vt_->construct_read_some_awaitable(source_, cached_awaitable_, buffers_);
     if(active_ops_->await_ready(cached_awaitable_))
         return h;                        // immediate → resume caller
     return active_ops_->await_suspend(cached_awaitable_, h, env);
 }
 
-io_result<size_t> await_resume() {
+results<size_t> await_resume() {
     if(!active_ops_)
         return {std::error_code(), 0};                  // short-circuited
     auto r = active_ops_->await_resume(cached_awaitable_);
@@ -184,12 +184,12 @@ The flat layout keeps all per-awaitable function pointers adjacent to `construct
 | cpp:any_stream[] (`read_some` via cpp:any_read_stream[]; `write_some` via cpp:any_write_stream[] -- two independent flat vtables, no shared ops table)
 
 | Per-construct ops, single ops struct (multiple operations, all sharing one await-return type)
-| Boost.Http's `http::any_read_source` (`read_some`, `read` -- both cpp:io_result[io_result<size_t>])
+| Boost.Http's `http::any_read_source` (`read_some`, `read` -- both cpp:results[results<size_t>])
 
 | Per-construct ops, multiple ops structs (operations differ in await-return type)
-| Boost.Http's `http::any_buffer_source` (`pull` → cpp:io_result[io_result<span>]; synthesized `read_some`/`read` → `io_result<size_t>`) +
-  `http::any_buffer_sink` (`commit`/`commit_eof` → `io_result<>`; `write_some`/`write` → `io_result<size_t>`) +
-  `http::any_write_sink` (`write_some`/`write` → `io_result<size_t>`; `write_eof()` → `io_result<>`)
+| Boost.Http's `http::any_buffer_source` (`pull` → cpp:results[results<span>]; synthesized `read_some`/`read` → `results<size_t>`) +
+  `http::any_buffer_sink` (`commit`/`commit_eof` → `results<>`; `write_some`/`write` → `results<size_t>`) +
+  `http::any_write_sink` (`write_some`/`write` → `results<size_t>`; `write_eof()` → `results<>`)
 |===
 
 == Why the Flat Layout Cannot Scale

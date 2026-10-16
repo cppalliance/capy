@@ -11,7 +11,7 @@
 // Minimal thread pool for sender benchmarks.
 //
 // sender_thread_pool is the execution context.
-// pool_scheduler (defined in sender_io_env.hpp)
+// pool_scheduler (defined in sender_await_context.hpp)
 // is the P2300 scheduler handle.
 //
 
@@ -92,7 +92,7 @@ public:
     sender_thread_pool(sender_thread_pool const&) = delete;
     sender_thread_pool& operator=(sender_thread_pool const&) = delete;
 
-    // Defined in sender_io_env.hpp after pool_scheduler
+    // Defined in sender_await_context.hpp after pool_scheduler
     pool_scheduler get_scheduler() noexcept;
 
     void enqueue(work_item* w)

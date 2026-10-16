@@ -7,7 +7,7 @@ This benchmark compares three execution models for asynchronous I/O across three
 
 ## Trade-off summary
 
-| Property                          | capy IoAwaitable                      | P2300 sender/receiver                        |
+| Property                          | capy ContextAwaitable                      | P2300 sender/receiver                        |
 |-----------------------------------|---------------------------------------|----------------------------------------------|
 | Native concrete performance       | ~31 ns/op, 0 al/op                   | ~32–34 ns/op, 0 al/op                        |
 | Type erasure cost (with recycler) | +5 ns/op, 0 al/op                    | +21–23 ns/op, 1 al/op (conditional on SBO fit [18]) |
@@ -27,7 +27,7 @@ This benchmark compares three execution models for asynchronous I/O across three
 
 ## Results
 
-All values are mean +/- stddev over 5 runs (warmup excluded). **Bold** = native execution model (Column A). al/op counts allocation calls per operation, including recycled allocations. The bridge column (B) in Tables 1 and 3 shows 1 al/op — the `scheduled_resume` operation state when IoAwaitables post through `schedule()` → `connect()` → `start()`.
+All values are mean +/- stddev over 5 runs (warmup excluded). **Bold** = native execution model (Column A). al/op counts allocation calls per operation, including recycled allocations. The bridge column (B) in Tables 1 and 3 shows 1 al/op — the `scheduled_resume` operation state when ContextAwaitables post through `schedule()` → `connect()` → `start()`.
 
 ### Table 1: sender/receiver pipeline
 
@@ -85,15 +85,15 @@ The allocation counts (from the native Column A):
 | Abstract              | 1        | 0          | 1         |
 | Type-erased           | 1        | 0          | 1         |
 
-The IoAwaitable column (capy::task) shows 0 al/op at all abstraction levels. The sender columns show 1 al/op once the stream is abstracted — the type-erased `concrete_op` allocation that the recycler serves from its free list.
+The ContextAwaitable column (capy::task) shows 0 al/op at all abstraction levels. The sender columns show 1 al/op once the stream is abstracted — the type-erased `concrete_op` allocation that the recycler serves from its free list.
 
 ### Bridges are competitive
 
 The non-bold column in each table measures the cost of consuming the opposite I/O type through a bridge. Both bridges use universally correct protocols — not optimized for this benchmark's specific senders.
 
-- **await_sender** (sender → IoAwaitable, Table 2 Col B): Adds ~17 ns and **zero allocations** for native senders. The bridge connects the sender to a bridge receiver and uses an atomic exchange protocol to handle synchronous and asynchronous completion uniformly. The receiver resumes the coroutine directly — no posting through the executor. Abstract and type-erased senders show 1 al/op — the type-erased `concrete_op` allocation from the sender side, not the bridge.
+- **await_sender** (sender → ContextAwaitable, Table 2 Col B): Adds ~17 ns and **zero allocations** for native senders. The bridge connects the sender to a bridge receiver and uses an atomic exchange protocol to handle synchronous and asynchronous completion uniformly. The receiver resumes the coroutine directly — no posting through the executor. Abstract and type-erased senders show 1 al/op — the type-erased `concrete_op` allocation from the sender side, not the bridge.
 
-- **as_sender** (IoAwaitable → sender, Tables 1 and 3 Col B): For `beman::execution::task` (Table 3), the `awaitable_sender`'s `as_awaitable` member lets beman's `await_transform` [2, §33.9.11.8] call the IoAwaitable directly, bypassing beman's `sender_awaitable` wrapping. The overhead is ~11 ns over the native sender path. For the sender pipeline (Table 1), the bridge constructs a synthetic coroutine frame (`frame_cb`). Both paths incur 1 al/op from the `scheduled_resume` operation state — the P2300-mandated `schedule()` → `connect()` → `start()` protocol to resume a coroutine on the scheduler.
+- **as_sender** (ContextAwaitable → sender, Tables 1 and 3 Col B): For `beman::execution::task` (Table 3), the `awaitable_sender`'s `as_awaitable` member lets beman's `await_transform` [2, §33.9.11.8] call the ContextAwaitable directly, bypassing beman's `sender_awaitable` wrapping. The overhead is ~11 ns over the native sender path. For the sender pipeline (Table 1), the bridge constructs a synthetic coroutine frame (`frame_cb`). Both paths incur 1 al/op from the `scheduled_resume` operation state — the P2300-mandated `schedule()` → `connect()` → `start()` protocol to resume a coroutine on the scheduler.
 
 ### The bridged awaitable outperforms native senders under abstraction
 
@@ -102,7 +102,7 @@ In Table 3 (`beman::execution::task`), the bridged awaitable column (Col B) is *
 - Table 3 abstract: awaitable bridge 43.4 ns (1 al/op) vs sender native **55.2 ns (1 al/op)**
 - Table 3 type-erased: awaitable bridge 48.7 ns (1 al/op) vs sender native **55.2 ns (1 al/op)**
 
-Both sides now show 1 al/op at the abstract/type-erased level, but the awaitable bridge is still 7–12 ns faster. The bridged awaitable's performance is remarkably flat across abstraction levels (43.5/43.4/48.7 ns), while the native sender jumps sharply from 31.9 ns (native) to 55.2 ns (abstract). This occurs because the bridge cost is constant — the IoAwaitable's `await_suspend` always follows the same path regardless of stream abstraction — while the sender model's virtual dispatch and type erasure machinery scale with abstraction level.
+Both sides now show 1 al/op at the abstract/type-erased level, but the awaitable bridge is still 7–12 ns faster. The bridged awaitable's performance is remarkably flat across abstraction levels (43.5/43.4/48.7 ns), while the native sender jumps sharply from 31.9 ns (native) to 55.2 ns (abstract). This occurs because the bridge cost is constant — the ContextAwaitable's `await_suspend` always follows the same path regardless of stream abstraction — while the sender model's virtual dispatch and type erasure machinery scale with abstraction level.
 
 In Table 1 (sender pipeline), the bridge is slightly faster: bridge 54.1 ns vs native 57.5 ns at the type-erased level — both at 1 al/op.
 
@@ -133,7 +133,7 @@ This mechanism recovers symmetric transfer **only when a sender is `co_await`'d 
 
 ### Table 3 and `as_awaitable`
 
-Table 3's native sender column (Col A) benefits from `bex::task`'s `as_awaitable` dispatch. When a sender provides an `as_awaitable` member, `bex::task`'s `await_transform` calls it directly — the sender's `connect` and `start` methods are never invoked. stdexec's implementation confirms this dispatch priority: the `as_awaitable` CPO uses a `__first_callable` chain that checks the sender's member function first, before falling back to generic wrapping [15]. The benchmark's `sndr_read_stream::read_sender` provides exactly this: an `as_awaitable` that returns a lightweight `work_item` awaitable, identical in cost to the IoAwaitable path.
+Table 3's native sender column (Col A) benefits from `bex::task`'s `as_awaitable` dispatch. When a sender provides an `as_awaitable` member, `bex::task`'s `await_transform` calls it directly — the sender's `connect` and `start` methods are never invoked. stdexec's implementation confirms this dispatch priority: the `as_awaitable` CPO uses a `__first_callable` chain that checks the sender's member function first, before falling back to generic wrapping [15]. The benchmark's `sndr_read_stream::read_sender` provides exactly this: an `as_awaitable` that returns a lightweight `work_item` awaitable, identical in cost to the ContextAwaitable path.
 
 This explains why Table 3 native sender (31.9 ns/op) matches Table 2 native awaitable (31.4 ns/op) — both are measuring the awaitable path, not the sender protocol.
 
@@ -143,7 +143,7 @@ Senders that do not provide `as_awaitable` — which includes most senders produ
 
 ### Compile-time safety
 
-The IoAwaitable protocol's 2-argument `await_suspend(coroutine_handle<>, io_env const*)` structurally enforces that the execution environment is provided at suspension time. The dependency is in the function signature — the compiler rejects any call site that does not provide it.
+The ContextAwaitable protocol's 2-argument `await_suspend(coroutine_handle<>, await_context const*)` structurally enforces that the execution environment is provided at suspension time. The dependency is in the function signature — the compiler rejects any call site that does not provide it.
 
 In the sender/receiver model, environment availability is checked when a sender queries the receiver's environment inside `start()`. This check IS compile-time (it fails template instantiation if the query is unsupported), but it is opt-in: each sender must explicitly constrain its `connect` method. If the sender author forgets the constraint, the error appears as a deep template instantiation failure rather than a clear signature mismatch. P3164R4 [11] and P3557R2 [12] are addressing diagnostic quality for these errors but are not yet part of the C++26 standard.
 
@@ -181,7 +181,7 @@ The sender model would need an equivalent mechanism (a way for `start()` to indi
 
 ### What the bridge columns demonstrate
 
-The bridged columns represent the real cost that arises when a library returns one I/O type but the application uses the other execution model. A networking library built on IoAwaitables will pay the `as_sender` tax when consumed from a sender pipeline. Conversely, a sender-based I/O library will pay the `await_sender` tax when consumed from `capy::task`.
+The bridged columns represent the real cost that arises when a library returns one I/O type but the application uses the other execution model. A networking library built on ContextAwaitables will pay the `as_sender` tax when consumed from a sender pipeline. Conversely, a sender-based I/O library will pay the `await_sender` tax when consumed from `capy::task`.
 
 Both bridges are designed for universal correctness:
 
@@ -206,7 +206,7 @@ This benchmark measures per-operation overhead for sequential I/O in a tight loo
 **Execution models** (one per table):
 
 - **sender/receiver pipeline** — Pure sender pipeline using stdexec's `repeat_until` [19] + `let_value`. No coroutines. Driven by `sender_thread_pool` via `sync_wait`. The `repeat_until` algorithm wraps each iteration with a `trampoline_scheduler` [19] that bounds recursion depth and stack consumption, preventing stack overflow from repeated inline completions.
-- **capy::task** — Capy's coroutine task, driven by `capy::thread_pool`. Natively consumes IoAwaitables.
+- **capy::task** — Capy's coroutine task, driven by `capy::thread_pool`. Natively consumes ContextAwaitables.
 - **beman::execution::task** — Beman's P2300 coroutine task [1], driven by `sender_thread_pool`. Natively consumes senders. **Note:** `bex::task`'s `await_transform` checks `as_awaitable` on the sender (first-priority dispatch per [exec.as.awaitable]). When the sender provides an `as_awaitable` member — as the benchmark's `sndr_read_stream` does — the task calls it directly, bypassing `connect`/`start` entirely. Table 3's native sender column (Col A) therefore measures the `as_awaitable` path, not the full sender protocol. This is the best-case scenario for senders in coroutines. See *Table 3 and `as_awaitable`* in the Analysis section for implications.
 
 **Stream abstraction levels** (one per row):
@@ -229,7 +229,7 @@ Both thread pools inherit from `boost::capy::execution_context`, providing the s
 - **capy::thread_pool** — Used in Table 2 Col A. Posts `continuation&` objects via intrusive linked list (zero allocation per post).
 - **sender_thread_pool** — Used in all other cells. Posts `work_item*` intrusively when the sender's operation state inherits `work_item` (zero allocation). Has no `post(coroutine_handle<>)` — P2300 execution contexts only expose `schedule()` [20], which returns a sender. To resume a coroutine on the scheduler, the caller must go through `schedule()` → `connect()` → `start()`, heap-allocating the operation state (one allocation per post).
 
-The `schedule`/`connect`/`start` allocation path is used when IoAwaitables post through the executor adapter (Tables 1 and 3 Col B). This is a cross-protocol adaptation cost: the IoAwaitable produces a `coroutine_handle<>`, but P2300 has no way to accept a bare handle. The adapter must create a `scheduled_resume` operation state — `connect(schedule(sched), resume_receiver)` — and heap-allocate it because the coroutine is suspended and cannot host it. The operation state IS the queue node (inherits `work_item`), so no additional wrapping is needed, but the allocation is unavoidable. Real P2300 execution contexts (stdexec's `run_loop`, `static_thread_pool`) use the same intrusive queue pattern [6].
+The `schedule`/`connect`/`start` allocation path is used when ContextAwaitables post through the executor adapter (Tables 1 and 3 Col B). This is a cross-protocol adaptation cost: the ContextAwaitable produces a `coroutine_handle<>`, but P2300 has no way to accept a bare handle. The adapter must create a `scheduled_resume` operation state — `connect(schedule(sched), resume_receiver)` — and heap-allocate it because the coroutine is suspended and cannot host it. The operation state IS the queue node (inherits `work_item`), so no additional wrapping is needed, but the allocation is unavoidable. Real P2300 execution contexts (stdexec's `run_loop`, `static_thread_pool`) use the same intrusive queue pattern [6].
 
 **Operation state recycling:**
 
@@ -251,7 +251,7 @@ Each `co_await` suspends the coroutine and posts to the thread pool's work queue
 
 ## Bridge Implementations
 
-### await_sender (sender → IoAwaitable)
+### await_sender (sender → ContextAwaitable)
 
 Used in Table 2 Column B. Wraps a P2300 sender so it can be `co_await`'d inside a `capy::task`.
 
@@ -259,21 +259,21 @@ Used in Table 2 Column B. Wraps a P2300 sender so it can be `co_await`'d inside 
 
 **Synchronous completion safety:** The bridge uses an `std::atomic<bool>` exchange protocol. Both `await_suspend` (after calling `start()`) and the receiver's completion function call `done_.exchange(true, memory_order_acq_rel)`. Whichever side arrives second (sees `true` from the exchange) is responsible for resuming the coroutine. If the sender completes synchronously during `start()`, `await_suspend` detects this and returns the coroutine handle for symmetric transfer — the coroutine never actually suspends, avoiding stack corruption [5]. This is the same pattern used by stdexec's `__sender_awaitable` [15], which uses `std::atomic<bool>` with a compare-and-swap protocol and a `std::thread::id` check for the same purpose, and by beman::execution's `sender_awaitable` [1], which uses `atomic<thread::id>`.
 
-**Result routing:** The bridge inspects the sender's error completion signatures at compile time. If the sender can complete with `set_error(std::error_code)`, `await_resume` returns `io_result<T>` so the error code is a value, not an exception. Otherwise, `await_resume` returns the value directly and rethrows exceptions.
+**Result routing:** The bridge inspects the sender's error completion signatures at compile time. If the sender can complete with `set_error(std::error_code)`, `await_resume` returns `results<T>` so the error code is a value, not an exception. Otherwise, `await_resume` returns the value directly and rethrows exceptions.
 
 **Zero bridge allocations:** The operation state lives on the coroutine frame (via placement new into a sized buffer). The receiver resumes the coroutine directly — no posting through the executor. The 0 al/op for native senders confirms this.
 
-### as_sender (IoAwaitable → sender)
+### as_sender (ContextAwaitable → sender)
 
-Used in Tables 1 and 3 Column B. Wraps an IoAwaitable so it can be consumed by the P2300 sender/receiver model.
+Used in Tables 1 and 3 Column B. Wraps a ContextAwaitable so it can be consumed by the P2300 sender/receiver model.
 
 **Mechanism:** The bridge constructs a synthetic coroutine frame (`frame_cb`) — a 24-byte struct whose first two members (resume/destroy function pointers) match the coroutine frame ABI layout used by MSVC, GCC, and Clang. `coroutine_handle<>::from_address(&cb_)` produces a valid handle whose `.resume()` calls the bridge's completion callback. This avoids allocating an actual coroutine frame, unlike P2300's `connect-awaitable` which creates a bridge coroutine with a heap-allocated frame that is "not generally eligible for the heap-allocation elision optimization (HALO)" [3]. stdexec mitigates this in its `__connect_awaitable` implementation by pre-allocating the coroutine frame inline in the operation state's storage buffer (64 bytes on 64-bit systems), providing a manual HALO that avoids heap allocation when the frame fits [17]. P4126R0 [10] proposes standardizing the synthetic frame technique as a "universal continuation model."
 
 **Executor query:** The bridge obtains a Capy-compatible executor from the P2300 environment using the standard query forwarding mechanism [2, §33.9.4]. It defines a `get_io_executor` query CPO marked as a forwarding query (`forwarding_query(get_io_executor_t{})` returns `true`), ensuring it propagates through sender adapter chains via `FWD-ENV` [2, §33.9.3.5]. Since `starts_on` injects `sched_env<Scheduler>` (which only answers `get_scheduler` and `get_domain`), the bridge queries `get_scheduler(env)` — which IS forwarded — then queries the scheduler itself: `scheduler.query(get_io_executor_t{})`. The scheduler returns a Capy executor by value, which the bridge stores in the operation state. No benchmark-specific types appear in the bridge code.
 
-**`as_awaitable` customization:** The `awaitable_sender` provides an `as_awaitable(Promise&)` member, which is the first-priority dispatch in `[exec.as.awaitable]` [2, §33.9.11.8]. stdexec's implementation confirms this priority: the `as_awaitable` CPO dispatches via `__first_callable` with the member function check (`__with_member`) as the highest priority, followed by transformed sender member, simple awaitable, and finally generic sender wrapping [15]. When `co_await`'d inside a `bex::task`, beman's `await_transform` calls this member instead of wrapping the sender in `sender_awaitable`. The member creates a standard awaitable that calls the IoAwaitable's 2-argument `await_suspend(handle, io_env const*)` directly, adapting it to the standard 1-argument protocol. This eliminates a double bridge (IoAwaitable → sender → `sender_awaitable` → awaitable) that would otherwise add connect/start/variant/atomic overhead.
+**`as_awaitable` customization:** The `awaitable_sender` provides an `as_awaitable(Promise&)` member, which is the first-priority dispatch in `[exec.as.awaitable]` [2, §33.9.11.8]. stdexec's implementation confirms this priority: the `as_awaitable` CPO dispatches via `__first_callable` with the member function check (`__with_member`) as the highest priority, followed by transformed sender member, simple awaitable, and finally generic sender wrapping [15]. When `co_await`'d inside a `bex::task`, beman's `await_transform` calls this member instead of wrapping the sender in `sender_awaitable`. The member creates a standard awaitable that calls the ContextAwaitable's 2-argument `await_suspend(handle, await_context const*)` directly, adapting it to the standard 1-argument protocol. This eliminates a double bridge (ContextAwaitable → sender → `sender_awaitable` → awaitable) that would otherwise add connect/start/variant/atomic overhead.
 
-**Completion routing:** The `frame_cb` callback calls `await_resume()` on the IoAwaitable and routes the result through P2300 completion channels based on the return type: `void` → `set_value()`, `error_code` → `set_value()`/`set_error(ec)`, other types → `set_value(T)`.
+**Completion routing:** The `frame_cb` callback calls `await_resume()` on the ContextAwaitable and routes the result through P2300 completion channels based on the return type: `void` → `set_value()`, `error_code` → `set_value()`/`set_error(ec)`, other types → `set_value(T)`.
 
 ## References
 

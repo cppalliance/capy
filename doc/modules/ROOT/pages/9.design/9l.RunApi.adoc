@@ -9,7 +9,7 @@ Capy has two launcher functions: cpp:run_async[] (fire-and-forget from non-corou
 
 === `run_async` -- Fire-and-Forget
 
-cpp:run_async[] starts any _IoRunnable_ from non-coroutine code: `main()`, callback handlers, event loops. cpp:task[task<T>] is the most common conforming type, but any user-defined type satisfying the concept works. The function does not return a value to the caller. Handlers receive the task's result or exception after completion, as data; they should not throw. An exception that no handler consumes (none was supplied, or a handler let one escape) calls `std::terminate`; it is never silently discarded. To catch an error instead, `co_await` the work inside a coroutine.
+cpp:run_async[] starts any _ContextRunnable_ from non-coroutine code: `main()`, callback handlers, event loops. cpp:task[task<T>] is the most common conforming type, but any user-defined type satisfying the concept works. The function does not return a value to the caller. Handlers receive the task's result or exception after completion, as data; they should not throw. An exception that no handler consumes (none was supplied, or a handler let one escape) calls `std::terminate`; it is never silently discarded. To catch an error instead, `co_await` the work inside a coroutine.
 
 [source,cpp]
 ----
@@ -18,7 +18,7 @@ include::example$snippets/9l_run_api.cpp[tag=run_async_usage,indent=0]
 
 === `run` -- Awaitable Within a Coroutine
 
-cpp:run[] is the coroutine-side counterpart. It binds any _IoRunnable_ to a (possibly different) executor and returns the result to the caller via `co_await`. It also supports overloads that customize stop token or allocator while inheriting the caller's executor.
+cpp:run[] is the coroutine-side counterpart. It binds any _ContextRunnable_ to a (possibly different) executor and returns the result to the caller via `co_await`. It also supports overloads that customize stop token or allocator while inheriting the caller's executor.
 
 [source,cpp]
 ----
@@ -264,7 +264,7 @@ auto op = connect(sndr, receiver);   // Allocator available NOW -- too late
 start(op);
 ----
 
-In the _IoAwaitable_ model, context flows _forward_ from launcher to task:
+In the _ContextAwaitable_ model, context flows _forward_ from launcher to task:
 
 [role=figure]
 ----

@@ -14,7 +14,7 @@
 #include "awaitable_sender_base.hpp"
 #include "awaitable_sender_detail.hpp"
 
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 
 #include <stdexec/execution.hpp>
 
@@ -24,23 +24,23 @@
 namespace boost::capy {
 
 // -------------------------------------------------------
-// Sender that wraps an IoAwaitable
+// Sender that wraps a ContextAwaitable
 // -------------------------------------------------------
 
-/** A sender that wraps an IoAwaitable.
+/** A sender that wraps a ContextAwaitable.
 
-    Adapts an IoAwaitable to the `std::execution` sender
+    Adapts a ContextAwaitable to the `std::execution` sender
     concept, enabling composition with other sender operations
     and adapters.
 */
-template<class IoAw>
+template<class CtxAw>
 struct awaitable_sender
 {
     using sender_concept = ex::sender_t;
 
-    IoAw aw_;
+    CtxAw aw_;
 
-    /** Return the completion signatures deduced from `IoAw`.
+    /** Return the completion signatures deduced from `CtxAw`.
 
         C++26 static-template form (see @ref awaitable_sender_base
         for the mechanism notes).
@@ -48,29 +48,29 @@ struct awaitable_sender
     template<class Sndr, class... Env>
     static consteval auto get_completion_signatures() noexcept
     {
-        return decltype(detail::make_sigs<IoAw>()){};
+        return decltype(detail::make_sigs<CtxAw>()){};
     }
 
     /// Connect this sender with a receiver to form an operation state.
     template<class Receiver>
     auto connect(Receiver rcvr) &&
-        -> detail::awaitable_op_state<IoAw, Receiver>
+        -> detail::awaitable_op_state<CtxAw, Receiver>
     {
-        return detail::awaitable_op_state<IoAw, Receiver>(
+        return detail::awaitable_op_state<CtxAw, Receiver>(
             std::move(aw_), std::move(rcvr));
     }
 
     /// Connect a copy of the sender to a receiver.
     template<class Receiver>
     auto connect(Receiver rcvr) const&
-        -> detail::awaitable_op_state<IoAw, Receiver>
+        -> detail::awaitable_op_state<CtxAw, Receiver>
     {
-        return detail::awaitable_op_state<IoAw, Receiver>(
+        return detail::awaitable_op_state<CtxAw, Receiver>(
             aw_, std::move(rcvr));
     }
 };
 
-/** Create a `std::execution` sender from an IoAwaitable.
+/** Create a `std::execution` sender from a ContextAwaitable.
 
     The bridge routes the awaitable's result through sender
     channels based on its type:
@@ -78,14 +78,14 @@ struct awaitable_sender
     - `void` - calls `set_value()`.
     - `error_code`, or any single-element tuple-like whose
       sole element is `error_code` (such as an empty
-      `io_result`) - calls `set_value()` when the code is
+      `results`) - calls `set_value()` when the code is
       zero, `set_error(ec)` otherwise.
     - Any other single value `T` - calls `set_value(T)`.
 
     Compound results are rejected at compile time, and the
     constraint is structural, not nominal: any tuple-like whose
     element 0 is `error_code` with additional elements is
-    refused, whether it is `io_result<size_t>`,
+    refused, whether it is `results<size_t>`,
     `std::tuple<error_code, size_t>`, or a user-defined type of
     the same shape. Completion channels are exclusive, so a
     partial success (an `error_code` arriving alongside bytes
@@ -108,14 +108,14 @@ struct awaitable_sender
     auto sndr = as_sender(waker.wait());
     @endcode
 
-    @param aw The IoAwaitable to wrap.
+    @param aw The ContextAwaitable to wrap.
     @return A sender whose completion channels reflect
         the awaitable's result type.
 */
-template<class IoAw>
-auto as_sender(IoAw&& aw)
+template<class CtxAw>
+auto as_sender(CtxAw&& aw)
 {
-    using R = awaitable_result_t<std::decay_t<IoAw>>;
+    using R = awaitable_result_t<std::decay_t<CtxAw>>;
     static_assert(
         !detail::is_compound_ec_result_v<R>,
         "as_sender does not accept awaitables whose result "
@@ -124,22 +124,22 @@ auto as_sender(IoAw&& aw)
         "(error_code plus payload) would be silently dropped. "
         "Wrap the operation in a task<error_code> that inspects "
         "the full result and returns the error code.");
-    return awaitable_sender<std::decay_t<IoAw>>{
-        std::forward<IoAw>(aw)};
+    return awaitable_sender<std::decay_t<CtxAw>>{
+        std::forward<CtxAw>(aw)};
 }
 
 /** Return the awaitable as a sender.
 
     Boundary normalizer for generic code handed an arbitrary
-    @ref IoAwaitable: an op that already models
+    @ref ContextAwaitable: an op that already models
     @ref AwaitableSender passes through unchanged, anything else
     is lifted with @ref as_sender. Either way the result is a
     sender by value.
 
-    @param a The IoAwaitable to normalize.
+    @param a The ContextAwaitable to normalize.
     @return `a` itself, or `as_sender(a)`.
 */
-template<IoAwaitable A>
+template<ContextAwaitable A>
 auto ensure_sender(A&& a)
 {
     if constexpr (AwaitableSender<std::remove_cvref_t<A>>)

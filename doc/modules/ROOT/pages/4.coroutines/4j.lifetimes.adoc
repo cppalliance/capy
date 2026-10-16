@@ -121,14 +121,14 @@ they describe is not.
 
 == Inside an Awaitable
 
-An awaitable is given an cpp:io_env[] pointer in `await_suspend`. The
+An awaitable is given an cpp:await_context[] pointer in `await_suspend`. The
 environment belongs to the launcher that started the chain and lives until the
 awaitable's coroutine resumes or is unwound, so the awaitable can keep the
 pointer. The cpp:continuation[] it hands to an executor must keep a stable
 address until the executor runs it, so it belongs in the awaitable, not on the
 stack.
 
-xref:4.coroutines/4e.io-awaitable.adoc#_implementing_custom_ioawaitables[Implementing Custom IoAwaitables]
+xref:4.coroutines/4e.context-awaitable.adoc#_implementing_custom_contextawaitables[Implementing Custom ContextAwaitables]
 lists these rules, and the rules for stop callbacks.
 
 == Who Owns a Suspended Coroutine
@@ -223,7 +223,7 @@ include::example$snippets/4j_lifetimes.cpp[tag=shutdown_order,indent=0]
 | The storage outlives the operation; await it, do not store it.
 
 | Awaitable
-| Keep the `io_env` pointer; keep the `continuation` in the awaitable.
+| Keep the `await_context` pointer; keep the `continuation` in the awaitable.
 
 | Suspended coroutine
 | Its holder resumes it or abandons it; never `destroy()` an awaited handle.

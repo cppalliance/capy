@@ -11,7 +11,7 @@
 #include <boost/capy/task.hpp>
 
 #include <boost/capy/ex/abandon.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/this_coro.hpp>
@@ -37,19 +37,19 @@
 namespace boost {
 namespace capy {
 
-static_assert(IoAwaitable<task<void>>);
-static_assert(IoAwaitable<task<int>>);
-static_assert(IoRunnable<task<void>>);
-static_assert(IoRunnable<task<int>>);
+static_assert(ContextAwaitable<task<void>>);
+static_assert(ContextAwaitable<task<int>>);
+static_assert(ContextRunnable<task<void>>);
+static_assert(ContextRunnable<task<int>>);
 
-// Verify set_continuation/set_environment are part of IoRunnable
+// Verify set_continuation/set_environment are part of ContextRunnable
 static_assert(requires(task<void>::promise_type& p) {
     { p.set_continuation(std::coroutine_handle<>{}) } noexcept;
-    { p.set_environment(static_cast<io_env const*>(nullptr)) } noexcept;
+    { p.set_environment(static_cast<await_context const*>(nullptr)) } noexcept;
 });
 static_assert(requires(task<int>::promise_type& p) {
     { p.set_continuation(std::coroutine_handle<>{}) } noexcept;
-    { p.set_environment(static_cast<io_env const*>(nullptr)) } noexcept;
+    { p.set_environment(static_cast<await_context const*>(nullptr)) } noexcept;
 });
 
 /** Tracking executor that logs dispatch calls with an ID.
@@ -137,7 +137,7 @@ struct task_test
             parked slot;
             int n = 0;
             test_executor ex(n);
-            io_env env{executor_ref(ex), {}, nullptr};
+            await_context env{executor_ref(ex), {}, nullptr};
             auto t = [](parked* s) -> task<void> {
                 co_await park_awaitable{s};
             }(&slot);
@@ -152,7 +152,7 @@ struct task_test
             parked slot;
             int n = 0;
             test_executor ex(n);
-            io_env env{executor_ref(ex), {}, nullptr};
+            await_context env{executor_ref(ex), {}, nullptr};
             auto body = [](parked* s) -> task<void> {
                 co_await park_awaitable{s};
             };
@@ -170,7 +170,7 @@ struct task_test
             { auto t = body(); }               // never started
             int n = 0;
             test_executor ex(n);
-            io_env env{executor_ref(ex), {}, nullptr};
+            await_context env{executor_ref(ex), {}, nullptr};
             auto t = body();
             lend(t, env);                     // runs to final_suspend
             return t.handle().done();
@@ -351,7 +351,7 @@ struct task_test
     {
         int dispatch_count = 0;
         test_executor ex(dispatch_count);
-        io_env env{executor_ref(ex), {}, nullptr};
+        await_context env{executor_ref(ex), {}, nullptr};
 
         // Value task: exception stored but never observed
         {
@@ -467,7 +467,7 @@ struct task_test
     {
         int dispatch_count = 0;
         test_executor ex(dispatch_count);
-        io_env env{executor_ref(ex), {}, nullptr};
+        await_context env{executor_ref(ex), {}, nullptr};
 
         // move constructor
         {
@@ -596,7 +596,7 @@ struct task_test
     {
         int dispatch_count = 0;
         test_executor ex(dispatch_count);
-        io_env env{executor_ref(ex), {}, nullptr};
+        await_context env{executor_ref(ex), {}, nullptr};
 
         auto t1 = void_task_basic();
         auto h = t1.handle();
@@ -1619,12 +1619,12 @@ struct task_test
         BOOST_TEST(state == 2);
     }
 
-    // An IoAwaitable whose await_suspend returns bool, to drive the
+    // A ContextAwaitable whose await_suspend returns bool, to drive the
     // non-handle branch of the task transform_awaiter.
     struct bool_resume_awaitable
     {
         bool await_ready() const noexcept { return false; }
-        bool await_suspend(std::coroutine_handle<>, io_env const*) noexcept
+        bool await_suspend(std::coroutine_handle<>, await_context const*) noexcept
         {
             return false;  // do not suspend
         }

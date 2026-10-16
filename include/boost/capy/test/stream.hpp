@@ -17,8 +17,8 @@
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/continuation.hpp>
 #include <coroutine>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/read.hpp>
 #include <boost/capy/task.hpp>
@@ -338,7 +338,7 @@ public:
 
             bool await_suspend(
                 std::coroutine_handle<> h,
-                io_env const* env) noexcept
+                await_context const* env) noexcept
             {
                 // A callback registered after stop was requested would
                 // fire inline and post this coroutine, which could then be
@@ -365,7 +365,7 @@ public:
                 return true;
             }
 
-            [[nodiscard]] io_result<std::size_t>
+            [[nodiscard]] results<std::size_t>
             await_resume()
             {
                 if(stop_cb_active_)
@@ -461,13 +461,13 @@ public:
             bool
             await_suspend(
                 std::coroutine_handle<>,
-                io_env const* env) noexcept
+                await_context const* env) noexcept
             {
                 canceled_ = env->stop_token.stop_requested();
                 return false;
             }
 
-            [[nodiscard]] io_result<std::size_t>
+            [[nodiscard]] results<std::size_t>
             await_resume()
             {
                 std::size_t n = buffer_size(buffers_);

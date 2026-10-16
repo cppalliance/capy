@@ -10,16 +10,15 @@
 // Test that header file is self-contained.
 #include <boost/capy/ex/async_event.hpp>
 
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/strand.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
-#include <boost/capy/io_result.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/when_all.hpp>
 
@@ -36,7 +35,7 @@
 namespace boost {
 namespace capy {
 
-static_assert(IoAwaitable<async_event::wait_awaiter>);
+static_assert(ContextAwaitable<async_event::wait_awaiter>);
 
 struct async_event_test
 {
@@ -91,7 +90,7 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         h.promise().set_environment(&env);
 
@@ -138,7 +137,7 @@ struct async_event_test
         t2.release();
         t3.release();
 
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         h1.promise().set_environment(&env);
         h2.promise().set_environment(&env);
@@ -182,7 +181,7 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         h.promise().set_environment(&env);
         h.resume();
@@ -209,7 +208,7 @@ struct async_event_test
 
         auto h1 = t1.handle();
         t1.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         h1.promise().set_environment(&env);
         h1.resume();
@@ -276,7 +275,7 @@ struct async_event_test
         t2.release();
         t3.release();
 
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         h1.promise().set_environment(&env);
         h2.promise().set_environment(&env);
@@ -332,7 +331,7 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         env.stop_token = ss.get_token();
         h.promise().set_environment(&env);
@@ -383,14 +382,14 @@ struct async_event_test
 
         auto h1 = w1.handle();
         w1.release();
-        io_env env1;
+        await_context env1;
         env1.executor = executor_ref(ex);
         env1.stop_token = ss.get_token();
         h1.promise().set_environment(&env1);
 
         auto h2 = w2.handle();
         w2.release();
-        io_env env2;
+        await_context env2;
         env2.executor = executor_ref(ex);
         h2.promise().set_environment(&env2);
 
@@ -446,7 +445,7 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         env.stop_token = ss.get_token();
         h.promise().set_environment(&env);
@@ -480,7 +479,7 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         env.stop_token = ss.get_token();
         h.promise().set_environment(&env);
@@ -506,7 +505,7 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         h.promise().set_environment(&env);
         h.resume();
@@ -541,7 +540,7 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         env.stop_token = ss.get_token();
         h.promise().set_environment(&env);
@@ -584,7 +583,7 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         h.promise().set_environment(&env);
 
@@ -627,7 +626,7 @@ struct async_event_test
         t2.release();
         t3.release();
 
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         h1.promise().set_environment(&env);
         h2.promise().set_environment(&env);
@@ -669,7 +668,7 @@ struct async_event_test
 
         auto h = t.handle();
         t.release();
-        io_env env;
+        await_context env;
         env.executor = executor_ref(ex);
         env.stop_token = ss.get_token();
         h.promise().set_environment(&env);
@@ -686,11 +685,11 @@ struct async_event_test
         h.destroy();
     }
 
-    static io_task<>
+    static task<results<>>
     set_event_task(async_event& evt)
     {
         evt.set();
-        co_return io_result<>{};
+        co_return results<>{};
     }
 
     static task<void>

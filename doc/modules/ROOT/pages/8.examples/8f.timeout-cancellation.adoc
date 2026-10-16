@@ -52,7 +52,7 @@ you spun up yourself to play the role of a clock, wakes it with cpp:async_waker:
 include::example$timeout-cancellation/timeout_cancellation.cpp[tag=fetch_channel]
 ----
 
-cpp:async_waker::wait[wait]`()` returns an cpp:io_result[io_result<>] that is empty on wakeup and carries
+cpp:async_waker::wait[wait]`()` returns a cpp:results[results<>] that is empty on wakeup and carries
 cpp:cond::canceled[cond::canceled] if the environment's stop token fires first. A wakeup
 with no waiter present is latched as one pending token, so the
 wake-before-wait race is benign. Extra wakes collapse into that single
@@ -63,7 +63,7 @@ callback from another library.
 
 === Racing a Fetch Against a Deadline
 
-`demo_timeout` builds two cpp:io_task[] children, each just a waker wait, and
+`demo_timeout` builds two cpp:task[task]`<results<>>` children, each just a waker wait, and
 races them with cpp:when_any[]:
 
 [source,cpp]

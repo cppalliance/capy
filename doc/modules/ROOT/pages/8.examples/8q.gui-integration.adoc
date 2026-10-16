@@ -103,7 +103,7 @@ cpp:run[] is what moves the work. It starts the inner task on the executor you n
 
 Three contracts combine to put that boundary on the GUI thread:
 
-* cpp:run_async[] builds one cpp:io_env[] holding the executor it was given, and passes the task a pointer to it.
+* cpp:run_async[] builds one cpp:await_context[] holding the executor it was given, and passes the task a pointer to it.
 * cpp:task[] propagates that pointer into every `co_await` in its body. A task completes by symmetric transfer and never posts, so nothing in the chain substitutes a different executor.
 * cpp:run[] records the caller's executor and posts the caller back through it when the inner task completes. That post runs on a pool thread and lands in the GUI queue.
 
@@ -115,7 +115,7 @@ Two conditions carry the invariant, and both are contracts rather than magic.
 
 The executor must resume handles on one thread only. A GUI loop does, by construction.
 
-Every awaitable in the chain must honor the cpp:IoAwaitable[] requirement to resume through cpp:io_env::executor[env->executor]. Capy's own types do: cpp:when_all[] and cpp:when_any[] return control to the caller through the caller's executor, and cpp:run[] does the same at an executor boundary. An awaitable that resumes the handle directly from a foreign thread breaks the invariant, and no other part of the library can repair it. <<toolkit-completion,The next section>> shows one that honors it.
+Every awaitable in the chain must honor the cpp:ContextAwaitable[] requirement to resume through cpp:await_context::executor[env->executor]. Capy's own types do: cpp:when_all[] and cpp:when_any[] return control to the caller through the caller's executor, and cpp:run[] does the same at an executor boundary. An awaitable that resumes the handle directly from a foreign thread breaks the invariant, and no other part of the library can repair it. <<toolkit-completion,The next section>> shows one that honors it.
 ====
 
 [#toolkit-completion]
@@ -128,14 +128,14 @@ cpp:run[] covers work you hand to Capy. A toolkit also completes operations of i
 include::example$gui-integration/gui_integration.cpp[tag=dialog]
 ----
 
-Awaiting that needs an cpp:IoAwaitable[]. xref:4.coroutines/4e.io-awaitable.adoc#bridging-a-foreign-awaitable[Bridging a Foreign Awaitable] covers the protocol. One line of it decides thread affinity:
+Awaiting that needs a cpp:ContextAwaitable[]. xref:4.coroutines/4e.context-awaitable.adoc#bridging-a-foreign-awaitable[Bridging a Foreign Awaitable] covers the protocol. One line of it decides thread affinity:
 
 [source,cpp]
 ----
 include::example$gui-integration/gui_integration.cpp[tag=dialog_awaitable]
 ----
 
-The toolkit's thread does not resume the coroutine. It posts the continuation through cpp:io_env::executor[env->executor], and the executor resumes it on the GUI thread. That is the second condition above, honored in one call.
+The toolkit's thread does not resume the coroutine. It posts the continuation through cpp:await_context::executor[env->executor], and the executor resumes it on the GUI thread. That is the second condition above, honored in one call.
 
 The widget update after this `co_await` carries the same thread check as every other access. Resume the handle directly instead of posting, and the check fires.
 

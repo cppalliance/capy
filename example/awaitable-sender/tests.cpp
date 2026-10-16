@@ -62,7 +62,7 @@ struct test_env
     capy::executor_ref ex_;
     Token tok_;
 
-    auto query(capy::get_io_executor_t const&) const noexcept
+    auto query(capy::get_context_executor_t const&) const noexcept
         -> capy::executor_ref
     {
         return ex_;
@@ -178,20 +178,20 @@ bool await_latch(
         } \
     } while(0)
 
-// Mock IoAwaitable with a scripted error_code result,
+// Mock ContextAwaitable with a scripted error_code result,
 // completing through the environment's executor.
 struct ec_op
 {
     std::error_code ec_{};
 
-    capy::io_env const* env_ = nullptr;
+    capy::await_context const* env_ = nullptr;
     capy::continuation cont_{};
 
     bool await_ready() const noexcept { return false; }
 
     auto await_suspend(
         std::coroutine_handle<> h,
-        capy::io_env const* env)
+        capy::await_context const* env)
     {
         env_ = env;
         cont_ = capy::continuation{h};
@@ -202,20 +202,20 @@ struct ec_op
     std::error_code await_resume() noexcept { return ec_; }
 };
 
-// Mock IoAwaitable with a scripted compound (ec, n) result.
+// Mock ContextAwaitable with a scripted compound (ec, n) result.
 struct compound_op
 {
     std::error_code ec_{};
     std::size_t n_ = 0;
 
-    capy::io_env const* env_ = nullptr;
+    capy::await_context const* env_ = nullptr;
     capy::continuation cont_{};
 
     bool await_ready() const noexcept { return false; }
 
     auto await_suspend(
         std::coroutine_handle<> h,
-        capy::io_env const* env)
+        capy::await_context const* env)
     {
         env_ = env;
         cont_ = capy::continuation{h};
@@ -223,7 +223,7 @@ struct compound_op
         return std::noop_coroutine();
     }
 
-    capy::io_result<std::size_t> await_resume() noexcept
+    capy::results<std::size_t> await_resume() noexcept
     {
         return {ec_, n_};
     }
@@ -243,19 +243,19 @@ capy::task<std::error_code> read_some(
 
 static_assert(capy::AwaitableSender<capy::counted_read_op>);
 
-// Mock IoAwaitable that completes with no payload at all
-// (the `void` row of make_sigs, distinct from io_result<>'s
+// Mock ContextAwaitable that completes with no payload at all
+// (the `void` row of make_sigs, distinct from `results<>`'s
 // 1-tuple-ec row exercised by async_waker).
 struct void_op
 {
-    capy::io_env const* env_ = nullptr;
+    capy::await_context const* env_ = nullptr;
     capy::continuation cont_{};
 
     bool await_ready() const noexcept { return false; }
 
     auto await_suspend(
         std::coroutine_handle<> h,
-        capy::io_env const* env)
+        capy::await_context const* env)
     {
         env_ = env;
         cont_ = capy::continuation{h};
@@ -266,18 +266,18 @@ struct void_op
     void await_resume() noexcept {}
 };
 
-// Mock IoAwaitable returning a plain value type, unrelated to
+// Mock ContextAwaitable returning a plain value type, unrelated to
 // error_code (the "other T" row of make_sigs).
 struct value_op
 {
-    capy::io_env const* env_ = nullptr;
+    capy::await_context const* env_ = nullptr;
     capy::continuation cont_{};
 
     bool await_ready() const noexcept { return false; }
 
     auto await_suspend(
         std::coroutine_handle<> h,
-        capy::io_env const* env)
+        capy::await_context const* env)
     {
         env_ = env;
         cont_ = capy::continuation{h};
@@ -288,18 +288,18 @@ struct value_op
     int await_resume() noexcept { return 17; }
 };
 
-// Mock IoAwaitable whose await_resume() can throw, exercising
+// Mock ContextAwaitable whose await_resume() can throw, exercising
 // awaitable_op_state's conditional try/catch -> set_error(exception_ptr).
 struct throwing_op
 {
-    capy::io_env const* env_ = nullptr;
+    capy::await_context const* env_ = nullptr;
     capy::continuation cont_{};
 
     bool await_ready() const noexcept { return false; }
 
     auto await_suspend(
         std::coroutine_handle<> h,
-        capy::io_env const* env)
+        capy::await_context const* env)
     {
         env_ = env;
         cont_ = capy::continuation{h};
@@ -391,7 +391,7 @@ void test_value_survives_racing_stop()
     CHECK(out.ch == channel::value);
 }
 
-void test_empty_io_result_success()
+void test_empty_results_success()
 {
     capy::thread_pool pool(1);
     auto pool_ex = pool.get_executor();
@@ -599,7 +599,7 @@ void test_read_op_then_pipeline()
 }
 
 // sync_wait's environment provides get_scheduler but neither
-// get_io_executor nor a stop token; these exercise the scheduler
+// get_context_executor nor a stop token; these exercise the scheduler
 // bridge end-to-end on the run_loop.
 void test_sync_wait_value()
 {
@@ -636,14 +636,14 @@ struct alloc_probe_op
 {
     std::pmr::memory_resource** out_;
 
-    capy::io_env const* env_ = nullptr;
+    capy::await_context const* env_ = nullptr;
     capy::continuation cont_{};
 
     bool await_ready() const noexcept { return false; }
 
     auto await_suspend(
         std::coroutine_handle<> h,
-        capy::io_env const* env)
+        capy::await_context const* env)
     {
         *out_ = env->frame_allocator;
         env_ = env;
@@ -660,7 +660,7 @@ struct pmr_env
     capy::executor_ref ex_;
     std::pmr::memory_resource* mr_;
 
-    auto query(capy::get_io_executor_t const&) const noexcept
+    auto query(capy::get_context_executor_t const&) const noexcept
         -> capy::executor_ref
     {
         return ex_;
@@ -694,7 +694,7 @@ struct pmr_receiver
     void set_stopped() && noexcept { done_->count_down(); }
 };
 
-void test_env_allocator_reaches_io_env()
+void test_env_allocator_reaches_await_context()
 {
     capy::thread_pool pool(1);
     auto pool_ex = pool.get_executor();
@@ -799,13 +799,13 @@ void test_coawait_stopped_midflight()
 
 // Channel splitting is structural, not nominal (P4093): any
 // tuple-like leading with error_code splits when it carries no
-// payload and is rejected when it does, io_result or not.
+// payload and is rejected when it does, `results` or not.
 static_assert(capy::detail::is_ec_outcome_v<std::error_code>);
-static_assert(capy::detail::is_ec_outcome_v<capy::io_result<>>);
+static_assert(capy::detail::is_ec_outcome_v<capy::results<>>);
 static_assert(capy::detail::is_ec_outcome_v<
     std::tuple<std::error_code>>);
 static_assert(capy::detail::is_compound_ec_result_v<
-    capy::io_result<std::size_t>>);
+    capy::results<std::size_t>>);
 static_assert(capy::detail::is_compound_ec_result_v<
     std::tuple<std::error_code, int>>);
 static_assert(capy::detail::is_compound_ec_result_v<
@@ -820,10 +820,10 @@ static_assert(!capy::detail::is_compound_ec_result_v<
 // both protocols; compound_op is awaitable-only; the as_sender
 // wrapper is sender-only (no await_suspend).
 static_assert(capy::AwaitableSender<capy::read_op>);
-static_assert(capy::IoAwaitable<compound_op> &&
+static_assert(capy::ContextAwaitable<compound_op> &&
     !capy::AwaitableSender<compound_op>);
 static_assert(
-    !capy::IoAwaitable<capy::awaitable_sender<compound_op>> &&
+    !capy::ContextAwaitable<capy::awaitable_sender<compound_op>> &&
     !capy::AwaitableSender<capy::awaitable_sender<compound_op>>);
 
 // ensure_sender: identity for dual-protocol ops, lifting for
@@ -860,7 +860,7 @@ struct held_op
 
     std::coroutine_handle<> await_suspend(
         std::coroutine_handle<> h,
-        capy::io_env const* env) noexcept
+        capy::await_context const* env) noexcept
     {
         slot_->h = h;
         slot_->owner = env->owner;
@@ -907,7 +907,7 @@ struct unowned_held_op
 
     std::coroutine_handle<> await_suspend(
         std::coroutine_handle<> h,
-        capy::io_env const*) noexcept
+        capy::await_context const*) noexcept
     {
         slot_->h = h;
         parked_->count_down();
@@ -1002,7 +1002,7 @@ void test_posted_op_abandon_unwinds_launch(Op op)
 
 int main()
 {
-    test_empty_io_result_success();
+    test_empty_results_success();
     test_void_op_success();
     test_value_op_success();
     test_throwing_op_error();
@@ -1027,7 +1027,7 @@ int main()
     test_sync_wait_value();
     test_sync_wait_pipeline();
     test_sync_wait_error_throws();
-    test_env_allocator_reaches_io_env();
+    test_env_allocator_reaches_await_context();
     test_coawait_matches_sender_success();
     test_coawait_matches_sender_error();
     test_coawait_stopped_before_start();

@@ -8,14 +8,14 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_EX_IO_AWAITABLE_PROMISE_BASE_HPP
-#define BOOST_CAPY_EX_IO_AWAITABLE_PROMISE_BASE_HPP
+#ifndef BOOST_CAPY_EX_CONTEXT_AWAITABLE_PROMISE_BASE_HPP
+#define BOOST_CAPY_EX_CONTEXT_AWAITABLE_PROMISE_BASE_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/ex/abandon.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/frame_alloc_mixin.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 
 #include <coroutine>
@@ -33,7 +33,7 @@ namespace capy {
     1. **Frame allocation** — The mixin provides `operator new/delete` that
        use the thread-local frame allocator set by `run_async`.
 
-    2. **Environment storage** — The mixin stores a pointer to the `io_env`
+    2. **Environment storage** — The mixin stores a pointer to the `await_context`
        containing the executor, stop token, and allocator for this coroutine.
 
     3. **Environment access** — Coroutine code can retrieve the environment
@@ -63,11 +63,11 @@ namespace capy {
     @ref this_coro::stop_token_tag, @ref this_coro::frame_allocator_tag),
     then delegates all other awaitables to your `transform_awaitable`.
 
-    @par Making Your Coroutine an IoAwaitable
+    @par Making Your Coroutine a ContextAwaitable
 
     The mixin handles the "inside the coroutine" part—accessing the
     environment. To receive the environment when your coroutine is awaited
-    (satisfying @ref IoAwaitable), implement the `await_suspend` overload
+    (satisfying @ref ContextAwaitable), implement the `await_suspend` overload
     on your coroutine return type:
 
     @par !example example_3
@@ -98,14 +98,14 @@ namespace capy {
 
     @see this_coro::environment, this_coro::executor,
          this_coro::stop_token, this_coro::frame_allocator
-    @see io_env
-    @see IoAwaitable
+    @see await_context
+    @see ContextAwaitable
 */
 template<typename Derived>
-class io_awaitable_promise_base
+class context_awaitable_promise_base
     : public frame_alloc_mixin
 {
-    io_env const* env_ = nullptr;
+    await_context const* env_ = nullptr;
     mutable std::coroutine_handle<> cont_{std::noop_coroutine()};
 
 public:
@@ -147,11 +147,11 @@ public:
         Call this from your coroutine type's `await_suspend`
         overload to make the environment available via
         `co_await this_coro::environment`. The pointed-to
-        `io_env` must outlive this coroutine.
+        `await_context` must outlive this coroutine.
 
         @param env The environment to store.
     */
-    void set_environment(io_env const* env) noexcept
+    void set_environment(await_context const* env) noexcept
     {
         env_ = env;
     }
@@ -160,7 +160,7 @@ public:
 
         @return The environment.
     */
-    io_env const* environment() const noexcept
+    await_context const* environment() const noexcept
     {
         BOOST_CAPY_ASSERT(env_);
         return env_;
@@ -204,10 +204,10 @@ public:
             BOOST_CAPY_ASSERT(env_);
             struct awaiter
             {
-                io_env const* env_;
+                await_context const* env_;
                 bool await_ready() const noexcept { return true; }
                 void await_suspend(std::coroutine_handle<>) const noexcept { }
-                io_env const* await_resume() const noexcept { return env_; }
+                await_context const* await_resume() const noexcept { return env_; }
             };
             return awaiter{env_};
         }

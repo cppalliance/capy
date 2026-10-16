@@ -8,7 +8,7 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 
 #include <string>
 #include <tuple>
@@ -18,17 +18,17 @@
 namespace boost {
 namespace capy {
 
-struct io_result_test
+struct results_test
 {
     void
     testVoidResult()
     {
         // Default construction
-        io_result<> r1;
+        results<> r1;
         BOOST_TEST(!std::get<0>(r1));
 
         // With error
-        io_result<> r2{make_error_code(std::errc::invalid_argument)};
+        results<> r2{make_error_code(std::errc::invalid_argument)};
         BOOST_TEST(std::get<0>(r2));
 
         // Structured binding
@@ -40,17 +40,17 @@ struct io_result_test
     testSizeResult()
     {
         // Default construction
-        io_result<std::size_t> r1;
+        results<std::size_t> r1;
         BOOST_TEST(!std::get<0>(r1));
         BOOST_TEST_EQ(std::get<1>(r1), 0u);
 
         // With values
-        io_result<std::size_t> r2{std::error_code(), 42};
+        results<std::size_t> r2{std::error_code(), 42};
         BOOST_TEST(!std::get<0>(r2));
         BOOST_TEST_EQ(std::get<1>(r2), 42u);
 
         // With error
-        io_result<std::size_t> r3{
+        results<std::size_t> r3{
             make_error_code(std::errc::invalid_argument), 10};
         BOOST_TEST(std::get<0>(r3));
         BOOST_TEST_EQ(std::get<1>(r3), 10u);
@@ -65,7 +65,7 @@ struct io_result_test
     testGenericSingleValue()
     {
         // With string value
-        io_result<std::string> r1{std::error_code(), "hello"};
+        results<std::string> r1{std::error_code(), "hello"};
         BOOST_TEST(!std::get<0>(r1));
         BOOST_TEST_EQ(std::get<1>(r1), "hello");
 
@@ -75,7 +75,7 @@ struct io_result_test
         BOOST_TEST_EQ(v, "hello");
 
         // With error
-        io_result<std::string> r2{
+        results<std::string> r2{
             make_error_code(std::errc::invalid_argument), "error"};
         BOOST_TEST(std::get<0>(r2));
         BOOST_TEST_EQ(std::get<1>(r2), "error");
@@ -85,7 +85,7 @@ struct io_result_test
     testMultiValue()
     {
         // With multiple values
-        io_result<int, double, std::string> r1{
+        results<int, double, std::string> r1{
             {}, 42, 3.14, std::string("test")};
         BOOST_TEST(!std::get<0>(r1));
         BOOST_TEST_EQ(std::get<1>(r1), 42);
@@ -100,7 +100,7 @@ struct io_result_test
         BOOST_TEST_EQ(c, "test");
 
         // With error
-        io_result<int, double> r2{
+        results<int, double> r2{
             make_error_code(std::errc::invalid_argument), 0, 0.0};
         BOOST_TEST(std::get<0>(r2));
         BOOST_TEST_EQ(std::get<1>(r2), 0);
@@ -111,7 +111,7 @@ struct io_result_test
     testFourPlusArgs()
     {
         // Verify no arity limit
-        io_result<int, double, std::string, bool> r1{
+        results<int, double, std::string, bool> r1{
             {}, 1, 2.5, std::string("hi"), true};
         BOOST_TEST(!std::get<0>(r1));
         BOOST_TEST_EQ(std::get<1>(r1), 1);
@@ -128,7 +128,7 @@ struct io_result_test
         BOOST_TEST_EQ(d, true);
 
         // Default construction
-        io_result<int, double, std::string, bool> r2;
+        results<int, double, std::string, bool> r2;
         BOOST_TEST(!std::get<0>(r2));
         BOOST_TEST_EQ(std::get<1>(r2), 0);
         BOOST_TEST_EQ(std::get<4>(r2), false);
@@ -141,18 +141,18 @@ struct io_result_test
         // avoids structured bindings entirely
         std::error_code ec;
         std::size_t n = 0;
-        std::tie(ec, n) = io_result<std::size_t>{std::error_code(), 42};
+        std::tie(ec, n) = results<std::size_t>{std::error_code(), 42};
         BOOST_TEST(!ec);
         BOOST_TEST_EQ(n, 42u);
 
-        std::tie(ec, n) = io_result<std::size_t>{
+        std::tie(ec, n) = results<std::size_t>{
             make_error_code(std::errc::invalid_argument), 7};
         BOOST_TEST(ec);
         BOOST_TEST_EQ(n, 7u);
 
         // Partial rebinding with std::ignore
         std::tie(ec, std::ignore) =
-            io_result<std::size_t>{std::error_code(), 99};
+            results<std::size_t>{std::error_code(), 99};
         BOOST_TEST(!ec);
         BOOST_TEST_EQ(n, 7u);
     }
@@ -160,7 +160,7 @@ struct io_result_test
     void
     testApply()
     {
-        io_result<std::size_t> r{std::error_code(), 42};
+        results<std::size_t> r{std::error_code(), 42};
         auto sum = std::apply(
             [](std::error_code ec, std::size_t n)
             {
@@ -173,8 +173,8 @@ struct io_result_test
     testTupleInterop()
     {
         // Comparison
-        io_result<std::size_t> r1{std::error_code(), 42};
-        io_result<std::size_t> r2{std::error_code(), 42};
+        results<std::size_t> r1{std::error_code(), 42};
+        results<std::size_t> r2{std::error_code(), 42};
         BOOST_TEST(r1 == r2);
 
         // Assignment from a plain tuple
@@ -194,15 +194,15 @@ struct io_result_test
     {
         // Outcome detection is structural: any tuple with a
         // leading error_code qualifies, no others do
-        static_assert(detail::is_io_result_v<io_result<>>);
-        static_assert(detail::is_io_result_v<
-            io_result<std::size_t>>);
-        static_assert(detail::is_io_result_v<
+        static_assert(detail::is_results_v<results<>>);
+        static_assert(detail::is_results_v<
+            results<std::size_t>>);
+        static_assert(detail::is_results_v<
             std::tuple<std::error_code, int, double>>);
-        static_assert(!detail::is_io_result_v<
+        static_assert(!detail::is_results_v<
             std::tuple<int, std::error_code>>);
-        static_assert(!detail::is_io_result_v<std::tuple<>>);
-        static_assert(!detail::is_io_result_v<std::error_code>);
+        static_assert(!detail::is_results_v<std::tuple<>>);
+        static_assert(!detail::is_results_v<std::error_code>);
     }
 
     void
@@ -220,7 +220,7 @@ struct io_result_test
     }
 };
 
-TEST_SUITE(io_result_test, "boost.capy.io_result");
+TEST_SUITE(results_test, "boost.capy.results");
 
 } // namespace capy
 } // namespace boost

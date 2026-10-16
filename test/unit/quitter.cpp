@@ -14,11 +14,11 @@
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/async_waker.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
-#include <boost/capy/io_task.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 #include <boost/capy/test/stream.hpp>
@@ -43,10 +43,10 @@
 namespace boost {
 namespace capy {
 
-static_assert(IoAwaitable<quitter<void>>);
-static_assert(IoAwaitable<quitter<int>>);
-static_assert(IoRunnable<quitter<void>>);
-static_assert(IoRunnable<quitter<int>>);
+static_assert(ContextAwaitable<quitter<void>>);
+static_assert(ContextAwaitable<quitter<int>>);
+static_assert(ContextRunnable<quitter<void>>);
+static_assert(ContextRunnable<quitter<int>>);
 
 struct quitter_test
 {
@@ -72,7 +72,7 @@ struct quitter_test
             parked slot;
             int n = 0;
             test_executor ex(n);
-            io_env env{executor_ref(ex), {}, nullptr};
+            await_context env{executor_ref(ex), {}, nullptr};
             auto t = [](parked* s) -> quitter<void> {
                 co_await park_awaitable{s};
             }(&slot);
@@ -87,7 +87,7 @@ struct quitter_test
             parked slot;
             int n = 0;
             test_executor ex(n);
-            io_env env{executor_ref(ex), {}, nullptr};
+            await_context env{executor_ref(ex), {}, nullptr};
             auto body = [](parked* s) -> quitter<void> {
                 co_await park_awaitable{s};
             };
@@ -105,7 +105,7 @@ struct quitter_test
             { auto t = body(); }               // never started
             int n = 0;
             test_executor ex(n);
-            io_env env{executor_ref(ex), {}, nullptr};
+            await_context env{executor_ref(ex), {}, nullptr};
             auto t = body();
             lend(t, env);                     // runs to final_suspend
             return t.handle().done();
@@ -531,7 +531,7 @@ struct quitter_test
     {
         int dispatch_count = 0;
         test_executor ex(dispatch_count);
-        io_env env{executor_ref(ex), {}, nullptr};
+        await_context env{executor_ref(ex), {}, nullptr};
 
         // move constructor
         {
@@ -606,12 +606,12 @@ struct quitter_test
             test_exception);
     }
 
-    // An IoAwaitable whose await_suspend returns bool, to drive the
+    // A ContextAwaitable whose await_suspend returns bool, to drive the
     // non-handle branch of the quitter transform_awaiter.
     struct bool_resume_awaitable
     {
         bool await_ready() const noexcept { return false; }
-        bool await_suspend(std::coroutine_handle<>, io_env const*) noexcept
+        bool await_suspend(std::coroutine_handle<>, await_context const*) noexcept
         {
             return false;  // do not suspend
         }
@@ -677,7 +677,7 @@ struct quitter_test
     //----------------------------------------------------------
     // 7. Stop propagation with when_all
     //
-    //    Two quitter<io_result<size_t>> children inside when_all.
+    //    Two quitter<results<size_t>> children inside when_all.
     //    Both block on stop_only_awaitable.  when_all creates a
     //    child stop_source; when the parent stop fires, when_all
     //    propagates it.  Each quitter child intercepts the stop
@@ -686,14 +686,14 @@ struct quitter_test
     //    co_return.  Verify both stop and when_all completes.
     //----------------------------------------------------------
 
-    static quitter<io_result<std::size_t>>
+    static quitter<results<std::size_t>>
     quitter_pending_size(bool& reached_co_return)
     {
         co_await stop_only_awaitable{};
         // If quitter's transform_awaiter intercepted the stop,
         // we never reach here.
         reached_co_return = true;
-        co_return io_result<std::size_t>{
+        co_return results<std::size_t>{
             make_error_code(error::canceled), 0};
     }
 
@@ -742,10 +742,10 @@ struct quitter_test
     //    intercepts the stop and exits cleanly.
     //----------------------------------------------------------
 
-    static quitter<io_result<std::size_t>>
+    static quitter<results<std::size_t>>
     quitter_success_size(std::size_t n)
     {
-        co_return io_result<std::size_t>{std::error_code(), n};
+        co_return results<std::size_t>{std::error_code(), n};
     }
 
     void

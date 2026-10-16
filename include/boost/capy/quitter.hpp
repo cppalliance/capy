@@ -13,9 +13,9 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/stop_requested_exception.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/ex/io_awaitable_promise_base.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
+#include <boost/capy/ex/context_awaitable_promise_base.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
 
@@ -122,11 +122,11 @@ struct quitter_return_base<void>
     quitter must not be awaited twice.
 
     @par Remarks
-    Supports _IoAwaitable cancellation_.
+    Supports _ContextAwaitable cancellation_.
 
     @tparam T The result type.  Use `quitter<>` for `quitter<void>`.
 
-    @see task, IoRunnable, IoAwaitable
+    @see task, ContextRunnable, ContextAwaitable
 */
 template<typename T = void>
 struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
@@ -137,7 +137,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         This is the promise object the compiler associates with a
         `quitter<T>` coroutine. It satisfies the coroutine promise
         requirements and participates in the I/O awaitable protocol via
-        @ref io_awaitable_promise_base. Unlike @ref task::promise_type,
+        @ref context_awaitable_promise_base. Unlike @ref task::promise_type,
         its `transform_awaitable` checks the stop token before each
         awaited result reaches the body. A pending stop request throws an
         internal sentinel exception that unwinds to a "stopped"
@@ -147,10 +147,10 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         Result storage and `return_value`/`return_void` are provided by
         `detail::quitter_return_base<T>`.
 
-        @see io_awaitable_promise_base, IoRunnable
+        @see context_awaitable_promise_base, ContextRunnable
     */
     struct promise_type
-        : io_awaitable_promise_base<promise_type>
+        : context_awaitable_promise_base<promise_type>
         , detail::quitter_return_base<T>
     {
     private:
@@ -325,7 +325,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         // transform_awaitable — the key difference from task<T>
         //------------------------------------------------------
 
-        /** Awaiter wrapping a nested `co_await` of an @ref IoAwaitable.
+        /** Awaiter wrapping a nested `co_await` of an @ref ContextAwaitable.
 
             Forwards the environment to the inner awaitable's
             environment-taking `await_suspend` and restores the
@@ -395,7 +395,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
                 This is the plain `await_suspend` the compiler calls for the
                 nested `co_await`. It forwards to the wrapped awaitable's
-                @ref IoAwaitable overload, supplying the promise's stored
+                @ref ContextAwaitable overload, supplying the promise's stored
                 environment as the second argument. It then hands back
                 that call's result unchanged, so the wrapped awaitable's
                 suspension decision, whatever form it takes, is preserved.
@@ -431,10 +431,10 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
         /** Transform a nested awaitable before `co_await`.
 
-            Wraps an @ref IoAwaitable in a @ref transform_awaiter so the
+            Wraps an @ref ContextAwaitable in a @ref transform_awaiter so the
             coroutine's environment is propagated into it and the stop
             token is checked on resumption. A diagnostic is emitted if the
-            awaitable does not satisfy @ref IoAwaitable.
+            awaitable does not satisfy @ref ContextAwaitable.
 
             @param a The awaitable expression from `co_await a`.
 
@@ -444,7 +444,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         auto transform_awaitable(Awaitable&& a)
         {
             using A = std::decay_t<Awaitable>;
-            if constexpr (IoAwaitable<A>)
+            if constexpr (ContextAwaitable<A>)
             {
                 return transform_awaiter<Awaitable>{
                     std::forward<Awaitable>(a), this};
@@ -452,7 +452,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             else
             {
                 static_assert(sizeof(A) == 0,
-                    "requires IoAwaitable");
+                    "requires ContextAwaitable");
             }
         }
     };
@@ -535,7 +535,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     */
     std::coroutine_handle<> await_suspend(
         std::coroutine_handle<> cont,
-        io_env const* env)
+        await_context const* env)
     {
         h_.promise().set_continuation(cont);
         h_.promise().set_environment(env);

@@ -10,8 +10,8 @@
 // Test that header file is self-contained.
 #include <boost/capy/ex/this_coro.hpp>
 
-#include <boost/capy/ex/io_awaitable_promise_base.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/ex/context_awaitable_promise_base.hpp>
 
 #include "test_suite.hpp"
 
@@ -24,7 +24,7 @@ namespace capy {
 
 struct env_test_coro
 {
-    struct promise_type : io_awaitable_promise_base<promise_type>
+    struct promise_type : context_awaitable_promise_base<promise_type>
     {
         env_test_coro get_return_object()
         {
@@ -68,7 +68,7 @@ struct this_coro_environment_access_test
     {
         auto c = []() -> env_test_coro { co_return; }();
 
-        io_env env;
+        await_context env;
         c.h_.promise().set_environment(&env);
 
         auto awaiter = c.h_.promise().await_transform(this_coro::environment);
@@ -76,7 +76,7 @@ struct this_coro_environment_access_test
         BOOST_TEST(awaiter.await_ready());
 
         auto retrieved = awaiter.await_resume();
-        static_assert(std::is_same_v<decltype(retrieved), io_env const*>);
+        static_assert(std::is_same_v<decltype(retrieved), await_context const*>);
         (void)retrieved;
     }
 
@@ -86,7 +86,7 @@ struct this_coro_environment_access_test
         auto c = []() -> env_test_coro { co_return; }();
 
         std::stop_source source;
-        io_env env;
+        await_context env;
         env.stop_token = source.get_token();
 
         c.h_.promise().set_environment(&env);
@@ -105,7 +105,7 @@ struct this_coro_environment_access_test
     testEnvironmentAwaiterNeverSuspends()
     {
         auto c = []() -> env_test_coro { co_return; }();
-        io_env env;
+        await_context env;
         c.h_.promise().set_environment(&env);
         auto awaiter = c.h_.promise().await_transform(this_coro::environment);
 
@@ -119,7 +119,7 @@ struct this_coro_environment_access_test
         auto c = []() -> env_test_coro { co_return; }();
 
         std::stop_source source;
-        io_env env;
+        await_context env;
         env.stop_token = source.get_token();
         c.h_.promise().set_environment(&env);
 
@@ -139,7 +139,7 @@ struct this_coro_environment_access_test
     {
         auto c = []() -> env_test_coro { co_return; }();
 
-        io_env env;
+        await_context env;
         c.h_.promise().set_environment(&env);
 
         auto awaiter = c.h_.promise().await_transform(this_coro::executor);
@@ -155,7 +155,7 @@ struct this_coro_environment_access_test
         auto c = []() -> env_test_coro { co_return; }();
 
         auto* mr = std::pmr::new_delete_resource();
-        io_env env;
+        await_context env;
         env.frame_allocator = mr;
         c.h_.promise().set_environment(&env);
 

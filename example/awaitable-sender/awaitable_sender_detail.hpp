@@ -10,13 +10,13 @@
 #ifndef BOOST_CAPY_EXAMPLE_AWAITABLE_SENDER_DETAIL_HPP
 #define BOOST_CAPY_EXAMPLE_AWAITABLE_SENDER_DETAIL_HPP
 
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/ex/abandon.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 
 #include <stdexec/execution.hpp>
 
@@ -39,7 +39,7 @@ namespace ex = stdexec;
 // CPO: query a receiver environment for a Capy executor
 // -------------------------------------------------------
 
-struct get_io_executor_t
+struct get_context_executor_t
     : ex::forwarding_query_t
 {
     // Derive from forwarding_query_t so env-wrapping adaptors
@@ -48,28 +48,28 @@ struct get_io_executor_t
     // forwarding_query, filtering out the rest by default.
     template<class Env>
     auto operator()(Env const& env) const noexcept
-        -> decltype(env.query(std::declval<get_io_executor_t const&>()))
+        -> decltype(env.query(std::declval<get_context_executor_t const&>()))
     {
         return env.query(*this);
     }
 };
 
-inline constexpr get_io_executor_t get_io_executor{};
+inline constexpr get_context_executor_t get_context_executor{};
 
 // -------------------------------------------------------
 // Environment that carries a Capy executor + stop token
 // -------------------------------------------------------
 
-struct io_sender_env
+struct context_sender_env
 {
-    executor_ref io_executor;
+    executor_ref context_executor;
     std::stop_token stop_token;
 
     auto query(
-        get_io_executor_t const&) const noexcept
+        get_context_executor_t const&) const noexcept
         -> executor_ref
     {
-        return io_executor;
+        return context_executor;
     }
 
     auto query(
@@ -162,7 +162,7 @@ auto make_sigs()
 
     static_assert(
         !is_compound_ec_result_v<R>,
-        "IoAwaitables whose result destructures into "
+        "ContextAwaitables whose result destructures into "
         "(error_code, ...) cannot be senders: completion "
         "channels are exclusive, so a partial success "
         "(error_code plus payload) would be silently dropped. "
@@ -230,7 +230,7 @@ struct is_polymorphic_allocator<
 // Bridges a std::execution scheduler to capy's Executor concept so
 // ops can run under receivers that provide only get_scheduler
 // (e.g. sync_wait's run_loop). Each post allocates a small holder
-// for the schedule operation; receivers supplying get_io_executor
+// for the schedule operation; receivers supplying get_context_executor
 // never pay this.
 template<class Sched>
 class scheduler_executor
@@ -345,7 +345,7 @@ struct awaitable_op_state
     using stop_token_type =
         typename env_stop_token<env_type>::type;
 
-    // io_env only carries std::stop_token, so any other
+    // await_context only carries std::stop_token, so any other
     // stoppable token needs an owned std::stop_source relayed
     // through a stop_callback; unstoppable tokens need neither.
     // The stoppable_token conjunct keeps stop_callback_for_t
@@ -380,8 +380,8 @@ struct awaitable_op_state
             return std::type_identity<no_stop_callback>{};
     }
 
-    static constexpr bool has_io_executor =
-        requires(env_type const& e) { get_io_executor(e); };
+    static constexpr bool has_context_executor =
+        requires(env_type const& e) { get_context_executor(e); };
     static constexpr bool has_scheduler =
         requires(env_type const& e) { ex::get_scheduler(e); };
 
@@ -390,7 +390,7 @@ struct awaitable_op_state
     struct no_scheduler_bridge {};
     static auto sched_ex_storage()
     {
-        if constexpr (!has_io_executor && has_scheduler)
+        if constexpr (!has_context_executor && has_scheduler)
             return std::type_identity<scheduler_executor<
                 std::remove_cvref_t<decltype(ex::get_scheduler(
                     std::declval<env_type const&>()))>>>{};
@@ -401,7 +401,7 @@ struct awaitable_op_state
     // Reset to destroy the segment when it is abandoned.
     std::optional<Aw> aw_;
     Receiver rcvr_;
-    io_env env_;
+    await_context env_;
     frame_cb cb_;
     // The segment's owner, with cb_ as its coroutine.
     chain_owner owner_;
@@ -550,16 +550,16 @@ struct awaitable_op_state
     {
         auto renv = ex::get_env(rcvr_);
 
-        static_assert(has_io_executor || has_scheduler,
+        static_assert(has_context_executor || has_scheduler,
             "the receiver's environment must provide "
-            "capy::get_io_executor or a scheduler via "
+            "capy::get_context_executor or a scheduler via "
             "std::execution::get_scheduler");
 
         executor_ref io_ex = [&]() -> executor_ref
         {
-            if constexpr (has_io_executor)
+            if constexpr (has_context_executor)
             {
-                return get_io_executor(renv);
+                return get_context_executor(renv);
             }
             else
             {
@@ -582,7 +582,7 @@ struct awaitable_op_state
                 on_stop{stop_src_});
             st = stop_src_.get_token();
         }
-        // Map the environment's allocator into io_env when it
+        // Map the environment's allocator into await_context when it
         // speaks pmr; other allocator types have no
         // memory_resource to lend.
         std::pmr::memory_resource* fa = nullptr;
@@ -594,7 +594,7 @@ struct awaitable_op_state
                 fa = alloc.resource();
         }
 
-        env_ = io_env{io_ex, st, fa};
+        env_ = await_context{io_ex, st, fa};
         env_.owner = &owner_;
 
         if(aw_->await_ready())

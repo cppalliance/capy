@@ -22,29 +22,29 @@ Capy formally defines what makes a task type conforming. Two {cpp}20 concepts fo
 
 [role=figure]
 ....
-IoAwaitable
+ContextAwaitable
     |
     v
-IoRunnable
+ContextRunnable
 ....
 
-cpp:IoAwaitable[] is the base. It describes what operations a type must provide
+cpp:ContextAwaitable[] is the base. It describes what operations a type must provide
 to be able to be ``co_await``ed inside a Capy-coroutine:
 
  * `await_ready` -- tells if the coroutine needs to be suspended.
  * `await_suspend` -- invoked immediately after the coroutine is suspended.
-   Obtains the execution environment via an cpp:io_env[] parameter and tells which coroutine needs to be now resumed.
+   Obtains the execution environment via an cpp:await_context[] parameter and tells which coroutine needs to be now resumed.
  * `await_resume` -- tells what value shall be returned when the coroutine is resumed.
 
 
-cpp:IoRunnable[] refines cpp:IoAwaitable[] with operations needed to start a task from non-coroutine contexts: cpp:IoRunnable::handle[handle()], cpp:IoRunnable::release[release()], cpp:IoRunnable::exception[exception()], cpp:IoRunnable::result[result()], and the promise-level cpp:IoRunnable::set_continuation[set_continuation()] and cpp:IoRunnable::set_environment[set_environment()].
+cpp:ContextRunnable[] refines cpp:ContextAwaitable[] with operations needed to start a task from non-coroutine contexts: cpp:ContextRunnable::handle[handle()], cpp:ContextRunnable::release[release()], cpp:ContextRunnable::exception[exception()], cpp:ContextRunnable::result[result()], and the promise-level cpp:ContextRunnable::set_continuation[set_continuation()] and cpp:ContextRunnable::set_environment[set_environment()].
 
 [source,cpp]
 ----
-include::example$include/boost/capy/concept/io_runnable.hpp[tag=io_runnable_concept]
+include::example$include/boost/capy/concept/context_runnable.hpp[tag=context_runnable_concept]
 ----
 
-Context injection (cpp:IoRunnable::set_environment[set_environment], cpp:IoRunnable::set_continuation[set_continuation]) consists of `noexcept` requirements that cpp:IoRunnable[] places on `T::promise_type`; launcher functions invoke them through the typed handle returned by cpp:IoRunnable::handle[handle()] before resuming the frame.
+Context injection (cpp:ContextRunnable::set_environment[set_environment], cpp:ContextRunnable::set_continuation[set_continuation]) consists of `noexcept` requirements that cpp:ContextRunnable[] places on `T::promise_type`; launcher functions invoke them through the typed handle returned by cpp:ContextRunnable::handle[handle()] before resuming the frame.
 
 Each concept has documented syntactic requirements, semantic requirements, conforming signatures, and examples. A user who wants to create a custom task type can read the concept definition and know exactly what to provide. The compiler enforces the syntactic requirements at constraint-check time.
 
@@ -93,7 +93,7 @@ Each awaitable probes for the associators independently using `if constexpr`. Th
 | Aspect | Capy | Cobalt
 
 | Task requirements
-| Named concepts (cpp:IoAwaitable[], cpp:IoRunnable[])
+| Named concepts (cpp:ContextAwaitable[], cpp:ContextRunnable[])
 | Implicit associators probed via `if constexpr`
 
 | Specification
@@ -117,14 +117,14 @@ Each awaitable probes for the associators independently using `if constexpr`. Th
 
 The task requirements directly determine how executor and cancellation context reach child operations.
 
-Capy's cpp:IoAwaitable[] protocol passes the execution environment as an explicit parameter to `await_suspend`:
+Capy's cpp:ContextAwaitable[] protocol passes the execution environment as an explicit parameter to `await_suspend`:
 
 [source,cpp]
 ----
 include::example$snippets/9o_why_not_cobalt_concepts.cpp[tag=await_suspend_env,indent=0]
 ----
 
-The executor and stop token flow forward structurally through the call chain via cpp:io_env[]. If a task's machinery does not provide them, the code does not compile. There is no fallback.
+The executor and stop token flow forward structurally through the call chain via cpp:await_context[]. If a task's machinery does not provide them, the code does not compile. There is no fallback.
 
 Cobalt's approach probes the calling promise. The relevant code from `cobalt/detail/task.hpp`:
 
@@ -477,7 +477,7 @@ This separation is the architectural root of the differences examined in this do
 | Design Choice | Capy | Cobalt
 
 | Task requirements
-| Named concept hierarchy (cpp:IoAwaitable[] -> cpp:IoRunnable[])
+| Named concept hierarchy (cpp:ContextAwaitable[] -> cpp:ContextRunnable[])
 | Implicit associators (`get_executor`, `get_cancellation_slot`, `get_allocator`)
 
 | Context propagation

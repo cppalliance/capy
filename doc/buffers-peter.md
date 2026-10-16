@@ -75,7 +75,7 @@ This doesn't increase the total implementation complexity compared to the user p
 At the moment, read_some is specified as
 
 template<MutableBufferSequence Buffers>
-IoAwaitable auto read_some(Buffers buffers);
+ContextAwaitable auto read_some(Buffers buffers);
 That is, it takes buffers by value.
 
 This doesn't seem correct. It would imply that std::vector<mutable_buffer> is required to be copied by read_some, which is unnecessary.

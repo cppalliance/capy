@@ -10,7 +10,7 @@
 // Test that header file is self-contained.
 #include <boost/capy/ex/run.hpp>
 
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -36,14 +36,14 @@
 namespace boost {
 namespace capy {
 
-static_assert(IoAwaitable<detail::run_awaitable_ex<task<void>, executor_ref, true>>);
-static_assert(IoAwaitable<detail::run_awaitable_ex<task<int>, executor_ref, true>>);
-static_assert(IoAwaitable<detail::run_awaitable<task<void>, true>>);
-static_assert(IoAwaitable<detail::run_awaitable<task<int>, true>>);
+static_assert(ContextAwaitable<detail::run_awaitable_ex<task<void>, executor_ref, true>>);
+static_assert(ContextAwaitable<detail::run_awaitable_ex<task<int>, executor_ref, true>>);
+static_assert(ContextAwaitable<detail::run_awaitable<task<void>, true>>);
+static_assert(ContextAwaitable<detail::run_awaitable<task<int>, true>>);
 
 using test::custom_task;
 
-// Destroys its frame even while lent, as a non-conforming IoRunnable
+// Destroys its frame even while lent, as a non-conforming ContextRunnable
 // may.
 struct lax_task : custom_task<void>
 {
@@ -64,7 +64,7 @@ struct lax_task : custom_task<void>
     }
 };
 
-static_assert(IoRunnable<lax_task>);
+static_assert(ContextRunnable<lax_task>);
 
 // custom_task passes no environment to what it awaits.
 struct park_plain
@@ -137,7 +137,7 @@ struct run_test
     void
     testCustomTaskType()
     {
-        // Proves run works with any IoRunnable, not just capy::task
+        // Proves run works with any ContextRunnable, not just capy::task
         int dispatch_count = 0;
         test_executor ex(1, dispatch_count);
         int result = 0;
@@ -1057,7 +1057,7 @@ struct run_test
         int work = 0, child_down = 0;
         bool caught = false;
         counting_queue_executor caller{&q, &work};
-        io_env env{executor_ref(caller), {}, nullptr};
+        await_context env{executor_ref(caller), {}, nullptr};
         auto child = [](destroy_count_t) -> task<void> { co_return; };
         {
             auto aw = capy::run(throwing_post_executor{})(
@@ -1087,7 +1087,7 @@ struct run_test
     {
         int n = 0;
         test_executor caller(n);
-        io_env env{executor_ref(caller), {}, nullptr};
+        await_context env{executor_ref(caller), {}, nullptr};
         auto t = parent();
         t.handle().promise().set_environment(&env);
         t.handle().resume();

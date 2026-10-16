@@ -14,7 +14,7 @@
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/cond.hpp>
 #include <boost/capy/ex/abandon.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/fuse.hpp>
@@ -75,11 +75,11 @@ public:
 
             void await_suspend(
                 std::coroutine_handle<>,
-                io_env const*) const noexcept
+                await_context const*) const noexcept
             {
             }
 
-            io_result<std::size_t>
+            results<std::size_t>
             await_resume()
             {
                 auto ec = self_->f_.maybe_fail();
@@ -114,11 +114,11 @@ public:
 
             void await_suspend(
                 std::coroutine_handle<>,
-                io_env const*) const noexcept
+                await_context const*) const noexcept
             {
             }
 
-            io_result<std::size_t>
+            results<std::size_t>
             await_resume()
             {
                 auto ec = self_->f_.maybe_fail();

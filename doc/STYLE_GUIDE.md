@@ -154,7 +154,7 @@ as vocabulary is added — extend it rather than letting synonyms drift.)*
 | callback passed to `run_async` | **completion handler** | handler (bare), callback |
 | a `task<T>` value | **task** | coroutine (the language feature), coro |
 | the C++20 language feature | **coroutine** | coro, async function |
-| awaitable satisfying `IoAwaitable` | **I/O awaitable** | awaitable (bare, when the concept is meant) |
+| awaitable satisfying `ContextAwaitable` | **I/O awaitable** | awaitable (bare, when the concept is meant) |
 
 Approved technical names (need no paraphrase): coroutine, task, promise, awaiter,
 awaitable, executor, execution context, strand, thread pool, allocator, frame, buffer,

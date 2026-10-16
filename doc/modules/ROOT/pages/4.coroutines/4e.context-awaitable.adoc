@@ -1,4 +1,4 @@
-= The IoAwaitable Protocol
+= The ContextAwaitable Protocol
 :page-mode: explanation
 
 == The Problem: Context Propagation
@@ -7,7 +7,7 @@ Standard {cpp}20 coroutines define awaiters with this `await_suspend` signature:
 
 [source,cpp]
 ----
-include::example$snippets/4e_io_awaitable.cpp[tag=std_await_suspend,indent=0]
+include::example$snippets/4e_context_awaitable.cpp[tag=std_await_suspend,indent=0]
 ----
 
 The awaiter receives only a handle to the suspended coroutine. But real applications need more:
@@ -20,7 +20,7 @@ The awaiter receives only a handle to the suspended coroutine. But real applicat
 ====
 *Nothing on this page is specific to I/O.* An executor, a stop token, and an allocator are what any asynchronous operation needs. It makes no difference whether the operation waits on a socket, a GPU queue, a timer, or another thread.
 
-The `Io` in cpp:IoAwaitable[] reflects where the protocol was first used, Corosio's I/O types, rather than a restriction on where it applies. Read the name as "an awaitable that carries its execution environment."
+The `Io` in cpp:ContextAwaitable[] reflects where the protocol was first used, Corosio's I/O types, rather than a restriction on where it applies. Read the name as "an awaitable that carries its execution environment."
 ====
 
 === Backward Query Approach
@@ -42,16 +42,16 @@ the execution environment:
 
 [source,cpp]
 ----
-include::example$snippets/4e_io_awaitable.cpp[tag=two_arg_await_suspend,indent=0]
+include::example$snippets/4e_context_awaitable.cpp[tag=two_arg_await_suspend,indent=0]
 ----
 
 This signature receives:
 
 * `h` — The coroutine handle (as in standard awaiters)
 * `env` — The execution environment containing:
-** cpp:io_env::executor[env->executor] — The caller's executor for dispatching completions
-** cpp:io_env::stop_token[env->stop_token] — A stop token for cooperative cancellation
-** cpp:io_env::frame_allocator[env->frame_allocator] — An optional frame allocator
+** cpp:await_context::executor[env->executor] — The caller's executor for dispatching completions
+** cpp:await_context::stop_token[env->stop_token] — A stop token for cooperative cancellation
+** cpp:await_context::frame_allocator[env->frame_allocator] — An optional frame allocator
 
 Following the convention of awaiters in C++, the return type of the function has to be one of:
 
@@ -59,28 +59,28 @@ Following the convention of awaiters in C++, the return type of the function has
 * `bool`,
 * `std::coroutine_handle<P>` for any type `P`.
 
-Many types modelling cpp:IoAwaitable[] return `std::coroutine_handle<>` to enable
+Many types modelling cpp:ContextAwaitable[] return `std::coroutine_handle<>` to enable
 xref:2.cpp20-coroutines/2d.advanced.adoc#_symmetric_transfer[symmetric transfer].
 
-== IoAwaitable Concept
+== ContextAwaitable Concept
 
-Concept cpp:IoAwaitable[] specifies all requirements on a type that can be ``co_await``ed
+Concept cpp:ContextAwaitable[] specifies all requirements on a type that can be ``co_await``ed
 in Capy-coroutines. Apart from the two-argument `await_suspend`, the type also needs to 
 provide the two member functions specific to awaiters: `await_ready` and `await_resume`.    
 
-In order to model cpp:IoAwaitable[] a type need not be associated with any coroutine. In fact,
-this is the case for a number of cpp:IoAwaitable[]s in Corosio.
+In order to model cpp:ContextAwaitable[] a type need not be associated with any coroutine. In fact,
+this is the case for a number of cpp:ContextAwaitable[]s in Corosio.
 
-== IoRunnable Concept
+== ContextRunnable Concept
 
-For tasks that can be started from non-coroutine contexts, the cpp:IoRunnable[] concept refines cpp:IoAwaitable[] and requires a `promise_type` plus the following:
+For tasks that can be started from non-coroutine contexts, the cpp:ContextRunnable[] concept refines cpp:ContextAwaitable[] and requires a `promise_type` plus the following:
 
 * `handle()`: Access the typed coroutine handle
 * `release()`: Transfer ownership of the frame
 * `exception()`: Check for captured exceptions (on the promise)
 * `result()`: Access the result value (on the promise, for non-void tasks)
 * `set_continuation()`: Set the continuation handle (on the promise)
-* `set_environment()`: Inject the `io_env` (on the promise)
+* `set_environment()`: Inject the `await_context` (on the promise)
 
 These methods exist because launcher functions like cpp:run_async[] cannot `co_await` the task directly. The trampoline must be allocated before the task type is known, so it type-erases the task through function pointers. The trampoline therefore needs a common API to manage lifetime and extract results.
 
@@ -97,7 +97,7 @@ When you write `co_await child_task()` inside a cpp:task[task<T>]:
 
 [source,cpp]
 ----
-include::example$snippets/4e_io_awaitable.cpp[tag=context_flow,indent=0]
+include::example$snippets/4e_context_awaitable.cpp[tag=context_flow,indent=0]
 ----
 
 The child receives the parent's executor and stop token automatically.
@@ -107,29 +107,29 @@ The child receives the parent's executor and stop token automatically.
 Forward propagation offers several advantages:
 
 * *Decoupling* — Awaitables don't need to know caller's promise type
-* *Composability* — Any IoAwaitable works with any IoRunnable task
+* *Composability* — Any ContextAwaitable works with any ContextRunnable task
 * *Explicit flow* — Context flows downward through the call chain, not queried upward
 
 This design enables Capy's type-erased wrappers (cpp:any_stream[], etc.) to work without knowing the concrete executor type.
 
 == A Vocabulary for Coroutine Interop
 
-Because the protocol is just a two-argument `await_suspend`, cpp:IoAwaitable[] is more than an internal mechanism—it is a _vocabulary type_ for interoperation. Any coroutine library that speaks the protocol can propagate execution environment across a `co_await` boundary without knowing the other side's concrete task type.
+Because the protocol is just a two-argument `await_suspend`, cpp:ContextAwaitable[] is more than an internal mechanism—it is a _vocabulary type_ for interoperation. Any coroutine library that speaks the protocol can propagate execution environment across a `co_await` boundary without knowing the other side's concrete task type.
 
 This is the interop problem framed on the xref:index.adoc[home page]. A shared protocol replaces the set of pairwise adapters that separate coroutine libraries would otherwise need to talk to one another. Capy is the reference implementation of that protocol.
 
-== Implementing Custom IoAwaitables
+== Implementing Custom ContextAwaitables
 
-To create a custom IoAwaitable:
+To create a custom ContextAwaitable:
 
 [source,cpp]
 ----
-include::example$snippets/4e_io_awaitable.cpp[tag=my_awaitable]
+include::example$snippets/4e_context_awaitable.cpp[tag=my_awaitable]
 ----
 
 The key points:
 
-1. Store the `io_env` as a pointer (`io_env const*`), never a copy. Launcher functions guarantee the `io_env` outlives the awaitable's operation.
+1. Store the `await_context` as a pointer (`await_context const*`), never a copy. Launcher functions guarantee the `await_context` outlives the awaitable's operation.
 2. To resume the caller, wrap its handle in a cpp:continuation[] and pass that to the executor's `post` (or `dispatch`). These take a `continuation&`, not a raw `coroutine_handle`. Store the `continuation` in the awaitable so it keeps a stable address until the executor dequeues and resumes it. The executor links continuations intrusively, so a temporary would dangle.
 3. Respect the stop token for cancellation
 
@@ -146,34 +146,34 @@ Post the resume through the executor instead of resuming inline:
 
 [source,cpp]
 ----
-include::example$snippets/4e_io_awaitable.cpp[tag=stoppable_awaitable]
+include::example$snippets/4e_context_awaitable.cpp[tag=stoppable_awaitable]
 ----
 
 The incorrect pattern—which compiles and appears to work but causes memory corruption—looks like this:
 
 [source,cpp]
 ----
-include::example$snippets/4e_io_awaitable.cpp[tag=wrong_stop_callback,indent=0]
+include::example$snippets/4e_context_awaitable.cpp[tag=wrong_stop_callback,indent=0]
 ----
 
 See xref:4.coroutines/4f.cancellation.adoc#stoppable-awaitables[Implementing Stoppable Awaitables] for a complete example.
 
 For a production implementation of this exact pattern, read the source of cpp:async_waker::wait_awaiter[]. It registers a stop callback that posts the resume through the executor, and arbitrates between wakeup and cancellation with a single atomic claim.
 
-== Running a Custom IoAwaitable
+== Running a Custom ContextAwaitable
 
 This awaitable produces a value and resumes the caller by posting its cpp:continuation[] through the caller's executor:
 
 [source,cpp]
 ----
-include::example$snippets/4e_io_awaitable.cpp[tag=runnable_awaitable]
+include::example$snippets/4e_context_awaitable.cpp[tag=runnable_awaitable]
 ----
 
 To run that task from ordinary, non-coroutine code, hand it to cpp:run_async[] with an executor and a completion handler:
 
 [source,cpp]
 ----
-include::example$snippets/4e_io_awaitable.cpp[tag=run_awaitable,indent=0]
+include::example$snippets/4e_context_awaitable.cpp[tag=run_awaitable,indent=0]
 ----
 
 The task runs on the cpp:thread_pool[] executor. When the awaitable posts its continuation, the pool resumes the task, `await_resume` returns the value, and it arrives at the completion handler—here, `5`.
@@ -187,16 +187,16 @@ Capy rejects it at compile time:
 
 [source,cpp]
 ----
-include::example$snippets/4e_io_awaitable.cpp[tag=reject_plain,indent=0]
+include::example$snippets/4e_context_awaitable.cpp[tag=reject_plain,indent=0]
 ----
 
 This is intentional. A plain awaitable receives only the coroutine handle; it can resume the coroutine on any thread by calling `handle.resume()` directly. That silently breaks the xref:4.coroutines/4d.executors.adoc#the-same-executor-invariant[same-executor invariant]—the coroutine could wake on a foreign completion thread, leaving shared state you believed was strand-protected exposed to races. Rejecting such an awaitable at compile time prevents that. The constraint does not lock you in; it requires environment propagation to be explicit rather than silently dropped.
 
-The escape hatch is to wrap the foreign awaitable (or callback, or future) in a small cpp:IoAwaitable[]. That awaitable captures the executor and re-posts the resumption through it:
+The escape hatch is to wrap the foreign awaitable (or callback, or future) in a small cpp:ContextAwaitable[]. That awaitable captures the executor and re-posts the resumption through it:
 
 [source,cpp]
 ----
-include::example$snippets/4e_io_awaitable.cpp[tag=foreign_bridge]
+include::example$snippets/4e_context_awaitable.cpp[tag=foreign_bridge]
 ----
 
 The single rule that makes any bridge correct: *on completion, post through `env->executor` instead of resuming the handle inline.*
@@ -209,6 +209,6 @@ Capy does not provide a generic `co_await foreign_awaitable(x)` that adapts _arb
 
 Two complete, buildable bridges live in the examples:
 
-* xref:8.examples/8o.sender-bridge.adoc[Bridging a P2300 Sender] — `await_sender` adapts a `std::execution` sender, mapping its completion channels onto cpp:io_result[] and posting the resumption through the executor.
-* xref:8.examples/8p.asio-use-capy.adoc[Calling Asio from a Capy Coroutine] — the `use_capy` completion token turns any Asio async operation into an cpp:IoAwaitable[].
+* xref:8.examples/8o.sender-bridge.adoc[Bridging a P2300 Sender] — `await_sender` adapts a `std::execution` sender, mapping its completion channels onto cpp:results[] and posting the resumption through the executor.
+* xref:8.examples/8p.asio-use-capy.adoc[Calling Asio from a Capy Coroutine] — the `use_capy` completion token turns any Asio async operation into a cpp:ContextAwaitable[].
 

@@ -25,7 +25,7 @@ Regenerate the Capy documentation following this structure and style guide.
   - Protocols — no HTTP, WebSocket, or TLS; see the Http and Beast2 libraries
   - Platform event loops — no io_uring, IOCP, epoll, or kqueue; Capy is the layer above
   - Callbacks or futures — coroutine-only means no other continuation styles
-  - Sender/receiver — Capy uses the IoAwaitable protocol, not `std::execution`
+  - Sender/receiver — Capy uses the ContextAwaitable protocol, not `std::execution`
 4. **Target Audience** (verbatim):
   - Users of Corosio — portable coroutine networking
   - Users of Http — sans-I/O HTTP/1.1 clients and servers
@@ -153,10 +153,10 @@ This section transitions from general C++ knowledge to Capy-specific library usa
   - `execution_context` — base class for custom contexts
   - `strand` — serialization without mutexes
   - Single-threaded vs multi-threaded patterns
-- **The IoAwaitable Protocol** (`coroutines/io-awaitable.adoc`)
+- **The ContextAwaitable Protocol** (`coroutines/context-awaitable.adoc`)
   - The three-argument `await_suspend` signature
   - Forward context propagation vs backward queries
-  - `IoAwaitable`, `IoAwaitableTask`, `IoLaunchableTask` concepts
+  - `ContextAwaitable` and `ContextRunnable` concepts
   - Why affinity matters for I/O
 - **Stop Tokens and Cancellation** (`coroutines/cancellation.adoc`)
   **Teach from the ground up for complete beginners:**
@@ -215,7 +215,7 @@ This section transitions from general C++ knowledge to Capy-specific library usa
   - Capy's answer: stop tokens flow downward through `co_await`
   - `get_stop_token()` — retrieve the current stop token inside a task
   - Automatic propagation: child tasks inherit parent's stop token
-  - No manual threading: the IoAwaitable protocol handles it
+  - No manual threading: the ContextAwaitable protocol handles it
   *Part 4: Responding to Cancellation*
   - Checking: `if (token.stop_requested()) co_return;`
   - Cleanup: RAII ensures resources are released on early exit
@@ -248,7 +248,7 @@ This section transitions from general C++ knowledge to Capy-specific library usa
 - `<capy/ex/run.hpp>`, `<capy/ex/run_async.hpp>`
 - `<capy/ex/thread_pool.hpp>`, `<capy/ex/execution_context.hpp>`
 - `<capy/ex/executor_ref.hpp>`, `<capy/ex/strand.hpp>`
-- `<capy/concept/io_awaitable.hpp>`, `<capy/concept/io_awaitable_task.hpp>`
+- `<capy/concept/context_awaitable.hpp>`, `<capy/concept/context_awaitable_task.hpp>`
 - `<capy/concept/frame_allocator.hpp>`
 - `<capy/when_all.hpp>`, `<capy/when_any.hpp>`
 

@@ -89,13 +89,13 @@ run_async( ioc.get_executor(), tp.get_executor() )( my_task() );
    at a point where they may lack the contextual information to choose
    well.
 
-### Position C: Propagate via `io_env` (the Coroutine Environment)
+### Position C: Propagate via `await_context` (the Coroutine Environment)
 
 Add a second executor slot to the coroutine environment that is
 propagated implicitly, like the I/O executor already is:
 
 ```cpp
-struct io_env {
+struct await_context {
     executor_ref executor;
     executor_ref compute_executor;   // new
     std::stop_token stop_token;
@@ -126,21 +126,21 @@ co_await run( ex )( bcrypt() );
 
 **Arguments against:**
 
-1. Sets a precedent for adding cross-cutting concerns to `io_env`.
+1. Sets a precedent for adding cross-cutting concerns to `await_context`.
    If we add a compute executor, why not a logger? An allocator?
    A TLS context? Each addition increases the overhead of every
    `run` and `run_async` call.
-2. The `IoAwaitable` concept must grow to accommodate each new
-   `io_env` member.
+2. The `ContextAwaitable` concept must grow to accommodate each new
+   `await_context` member.
 3. It is unclear what the default should be when the user does not
    set the compute executor (see below).
 
-### Position D: Extensible `io_env` via Type-Erased Storage
+### Position D: Extensible `await_context` via Type-Erased Storage
 
 Add a general-purpose extensibility mechanism rather than named fields:
 
 ```cpp
-struct io_env {
+struct await_context {
     executor_ref executor;
     std::stop_token stop_token;
     std::pmr::memory_resource* frame_allocator = nullptr;
@@ -164,7 +164,7 @@ struct io_env {
 
 ## The Default Value Problem
 
-If the compute executor lives in `io_env`, what happens when the user
+If the compute executor lives in `await_context`, what happens when the user
 does not set it?
 
 | Option              | Behavior                                              | Trade-off                                       |
@@ -203,10 +203,10 @@ There is no consensus on the right default.
    non-standard library (where it can be removed after experience
    proves it harmful) but must not enter the standard (where removal
    is effectively impossible).
-2. **`io_env` propagation is the least-bad option** *if* we accept
+2. **`await_context` propagation is the least-bad option** *if* we accept
    that explicit parameter threading does not scale. Both sides
    acknowledge this is more principled than a global, though one
-   side worries about `io_env` scope creep.
+   side worries about `await_context` scope creep.
 3. **Practical servers almost always need a compute pool.** This
    weakens the "propagated by all, used by none" objection but
    does not eliminate it.
@@ -222,22 +222,22 @@ There is no consensus on the right default.
    both but document the global as the convenience fallback. The
    other says the global's existence will undermine the propagation
    mechanism because developers will always take the easier path.
-3. **Whether adding a second executor to `io_env` is acceptable
+3. **Whether adding a second executor to `await_context` is acceptable
    scope.** One position views it as the principled solution. The
    other views it as the first step on a slippery slope of
    ever-growing coroutine environment state.
 
 ## Summary of Alternatives
 
-| #   | Approach                        | Global? | Propagation  | `io_env` growth | User burden          |
+| #   | Approach                        | Global? | Propagation  | `await_context` growth | User burden          |
 | --- | ------------------------------- | ------- | ------------ | --------------- | -------------------- |
 | A   | Global system executor          | Yes     | N/A          | None            | Minimal              |
 | B   | Explicit parameter threading    | No      | Manual       | None            | High (every call)    |
-| C   | Named slot in `io_env`          | No      | Automatic    | +1 field        | Low (at launch site) |
-| D   | Extensible `io_env` (polystore) | No      | Automatic    | Unbounded       | Low (at launch site) |
-| A+C | Global + `io_env` slot          | Yes     | Automatic    | +1 field        | Minimal              |
+| C   | Named slot in `await_context`          | No      | Automatic    | +1 field        | Low (at launch site) |
+| D   | Extensible `await_context` (polystore) | No      | Automatic    | Unbounded       | Low (at launch site) |
+| A+C | Global + `await_context` slot          | Yes     | Automatic    | +1 field        | Minimal              |
 
 The design decision hinges on which cost the committee finds least
 acceptable: the existence of a global singleton that cannot be removed,
 the ergonomic burden of manual propagation, or the precedent of
-expanding `io_env` with cross-cutting concerns.
+expanding `await_context` with cross-cutting concerns.

@@ -13,12 +13,12 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/concept/executor.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
-#include <boost/capy/ex/io_awaitable_promise_base.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
+#include <boost/capy/ex/context_awaitable_promise_base.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 
 #include <exception>
 #include <optional>
@@ -111,27 +111,27 @@ struct task_return_base<void>
 
     @tparam T The result type. Use `task<>` for `task<void>`.
 
-    @see IoRunnable, IoAwaitable, run, run_async
+    @see ContextRunnable, ContextAwaitable, run, run_async
 */
 template<typename T = void>
 struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     task
 {
-    /** Stores `task<T>`'s result and joins the I/O awaitable protocol via `io_awaitable_promise_base`.
+    /** Stores `task<T>`'s result and joins the I/O awaitable protocol via `context_awaitable_promise_base`.
 
         This is the promise object the compiler associates with a
         `task<T>` coroutine. It satisfies the coroutine promise
         requirements and participates in the I/O awaitable protocol via
-        @ref io_awaitable_promise_base. It is part of the coroutine
+        @ref context_awaitable_promise_base. It is part of the coroutine
         machinery and is not intended to be used directly by callers.
 
         Result storage and `return_value`/`return_void` are provided by
         `detail::task_return_base<T>`.
 
-        @see io_awaitable_promise_base, IoRunnable
+        @see context_awaitable_promise_base, ContextRunnable
     */
     struct promise_type
-        : io_awaitable_promise_base<promise_type>
+        : context_awaitable_promise_base<promise_type>
         , detail::task_return_base<T>
     {
     private:
@@ -253,7 +253,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             has_ep_ = true;
         }
 
-        /** Awaiter wrapping a nested `co_await` of an @ref IoAwaitable.
+        /** Awaiter wrapping a nested `co_await` of an @ref ContextAwaitable.
 
             Forwards the environment to the inner awaitable's
             environment-taking `await_suspend` and restores the
@@ -303,7 +303,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
                 This is the plain `await_suspend` the compiler calls for the
                 nested `co_await`. It forwards to the wrapped awaitable's
-                @ref IoAwaitable overload, supplying the promise's stored
+                @ref ContextAwaitable overload, supplying the promise's stored
                 environment as the second argument. It then hands back
                 that call's result unchanged, so the wrapped awaitable's
                 suspension decision, whatever form it takes, is preserved.
@@ -332,9 +332,9 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
         /** Transform a nested awaitable before `co_await`.
 
-            Wraps an @ref IoAwaitable in a @ref transform_awaiter so the
+            Wraps an @ref ContextAwaitable in a @ref transform_awaiter so the
             coroutine's environment is propagated into it. A diagnostic
-            is emitted if the awaitable does not satisfy @ref IoAwaitable.
+            is emitted if the awaitable does not satisfy @ref ContextAwaitable.
 
             @param a The awaitable expression from `co_await a`.
 
@@ -344,14 +344,14 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         auto transform_awaitable(Awaitable&& a)
         {
             using A = std::decay_t<Awaitable>;
-            if constexpr (IoAwaitable<A>)
+            if constexpr (ContextAwaitable<A>)
             {
                 return transform_awaiter<Awaitable>{
                     std::forward<Awaitable>(a), this};
             }
             else
             {
-                static_assert(IoAwaitable<A>, "requires IoAwaitable");
+                static_assert(ContextAwaitable<A>, "requires ContextAwaitable");
             }
         }
     };
@@ -400,11 +400,11 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
         @throws The exception captured by the coroutine body, if any.
 
-        @note Discarding an `io_result` silently drops the error
+        @note Discarding a `results` silently drops the error
         code, so that overload is marked `[[nodiscard]]`.
     */
     [[nodiscard]] auto await_resume()
-        requires detail::is_io_result_v<T>
+        requires detail::is_results_v<T>
     {
         lent_ = false;
         if(h_.promise().has_ep_)
@@ -413,7 +413,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     }
 
     auto await_resume()
-        requires (! detail::is_io_result_v<T>)
+        requires (! detail::is_results_v<T>)
     {
         lent_ = false;
         if(h_.promise().has_ep_)
@@ -439,7 +439,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
         @return The task's coroutine handle, for symmetric transfer.
     */
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, io_env const* env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, await_context const* env)
     {
         h_.promise().set_continuation(cont);
         h_.promise().set_environment(env);

@@ -18,8 +18,8 @@
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <boost/capy/cond.hpp>
-#include <boost/capy/io_task.hpp>
 #include <boost/capy/read.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/fuse.hpp>
 #include <boost/capy/test/read_stream.hpp>
@@ -44,7 +44,7 @@ namespace composed {
 // tag::read_signature[]
 auto read(capy::ReadStream auto& stream,
           capy::MutableBufferSequence auto buffers)
-    -> capy::io_task<std::size_t>;
+    -> capy::task<capy::results<std::size_t>>;
 // end::read_signature[]
 
 } // namespace composed

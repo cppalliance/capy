@@ -7,9 +7,9 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Reference examples for boost::capy::io_awaitable_promise_base, injected into its documentation by
+// Reference examples for boost::capy::context_awaitable_promise_base, injected into its documentation by
 // doc/addons/extensions/reference-snippets.lua. Declared in:
-//   include/boost/capy/ex/io_awaitable_promise_base.hpp
+//   include/boost/capy/ex/context_awaitable_promise_base.hpp
 //
 // The tagged regions are what the reference renders; the includes,
 // suppressions and namespaces around them are scaffolding. Each region gets
@@ -37,7 +37,7 @@ namespace ex_1 {
 // variations on promise plumbing.
 struct my_task
 {
-    struct promise_type : capy::io_awaitable_promise_base<promise_type>
+    struct promise_type : capy::context_awaitable_promise_base<promise_type>
     {
         my_task get_return_object()
         {
@@ -91,7 +91,7 @@ my_task example()
 
 namespace ex_2 {
 // tag::example_2[]
-struct promise_type : capy::io_awaitable_promise_base<promise_type>
+struct promise_type : capy::context_awaitable_promise_base<promise_type>
 {
     template<typename A>
     auto transform_awaitable(A&& a)
@@ -109,7 +109,7 @@ namespace ex_3 {
 // section's point is the await_suspend overload below, not the promise.
 struct my_task
 {
-    struct promise_type : capy::io_awaitable_promise_base<promise_type>
+    struct promise_type : capy::context_awaitable_promise_base<promise_type>
     {
         my_task get_return_object()
         {
@@ -147,9 +147,9 @@ struct my_task
 
     std::coroutine_handle<promise_type> h_;
 
-    // IoAwaitable await_suspend receives and stores the environment,
+    // ContextAwaitable await_suspend receives and stores the environment,
     // then resumes into the coroutine body via symmetric transfer
-    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, capy::io_env const* env)
+    std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, capy::await_context const* env)
     {
         h_.promise().set_continuation(cont);
         h_.promise().set_environment(env);

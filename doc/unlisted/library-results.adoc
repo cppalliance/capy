@@ -7,9 +7,9 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-= Error Handling with io_result
+= Error Handling with `results`
 
-This section explains how to handle errors from I/O operations using `io_result`
+This section explains how to handle errors from I/O operations using `results`
 and structured bindings.
 
 == The Problem: Exceptions vs Error Codes
@@ -42,13 +42,13 @@ Explicit, but:
 * Easy to forget to check
 * Clutters the API
 
-== io_result: The Best of Both
+== `results`: The Best of Both
 
-`io_result<Args...>` combines an error code with optional result values:
+`results<Args...>` combines an error code with optional result values:
 
 [source,cpp]
 ----
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/results.hpp>
 
 // Returns error code + bytes transferred
 auto [ec, n] = co_await stream.read_some(buffer);
@@ -87,11 +87,11 @@ if (ec)
     co_return ec;
 ----
 
-== io_result Variants
+== `results` Variants
 
-`io_result` supports 0-3 additional values:
+`results` supports 0-3 additional values:
 
-=== io_result<> (Error Only)
+=== `results<>` (Error Only)
 
 Operations that succeed or fail without a result value:
 
@@ -102,7 +102,7 @@ if (ec)
     co_return handle_connection_error(ec);
 ----
 
-=== io_result<T1> (Error + One Value)
+=== `results<T1>` (Error + One Value)
 
 Operations returning a single value, like bytes transferred:
 
@@ -114,7 +114,7 @@ if (ec)
 buffer.commit(n);  // n bytes were read
 ----
 
-=== io_result<T1, T2> (Error + Two Values)
+=== `results<T1, T2>` (Error + Two Values)
 
 Operations returning two values:
 
@@ -123,7 +123,7 @@ Operations returning two values:
 auto [ec, bytes_read, endpoint] = co_await socket.receive_from(buffer);
 ----
 
-=== io_result<T1, T2, T3> (Error + Three Values)
+=== `results<T1, T2, T3>` (Error + Three Values)
 
 Operations returning three values:
 
@@ -134,7 +134,7 @@ auto [ec, v1, v2, v3] = co_await complex_operation();
 
 == Using Structured Bindings
 
-{cpp}17 structured bindings make `io_result` ergonomic:
+{cpp}17 structured bindings make `results` ergonomic:
 
 [source,cpp]
 ----
@@ -149,9 +149,9 @@ The binding order matches the template parameters:
 
 [source,cpp]
 ----
-io_result<std::size_t>           → [ec, n]
-io_result<std::size_t, endpoint> → [ec, n, ep]
-io_result<>                      → [ec]
+results<std::size_t>           → [ec, n]
+results<std::size_t, endpoint> → [ec, n, ep]
+results<>                      → [ec]
 ----
 
 == Error Checking Idioms
@@ -191,13 +191,13 @@ if (ec)
     throw system_error(ec);
 ----
 
-== Returning io_result from Functions
+== Returning `results` from Functions
 
-Custom awaitables can return `io_result`:
+Custom awaitables can return `results`:
 
 [source,cpp]
 ----
-io_task<std::size_t> read_all(stream& s, buffer& buf)
+task<results<std::size_t>> read_all(stream& s, buffer& buf)
 {
     std::size_t total = 0;
     while (buf.size() < buf.max_size())
@@ -226,7 +226,7 @@ io_task<std::size_t> read_all(stream& s, buffer& buf)
 * Error handling is centralized (top-level catch)
 * Code would be cluttered with error checks
 
-**Capy's recommendation:** Use `io_result` for I/O operations (errors are
+**Capy's recommendation:** Use `results` for I/O operations (errors are
 common) and exceptions for programmer errors (bugs, invariant violations).
 
 == Converting Between Styles
@@ -246,7 +246,7 @@ if (ec)
 [source,cpp]
 ----
 template<typename... Args>
-auto throw_on_error(io_result<Args...> result)
+auto throw_on_error(results<Args...> result)
 {
     auto& [ec, rest...] = result;
     if (ec)
@@ -282,7 +282,7 @@ task<void> read_all(stream& s, mutable_buffer buf)
 
 [source,cpp]
 ----
-io_task<> write_with_retry(stream& s, const_buffer data, int retries)
+task<results<>> write_with_retry(stream& s, const_buffer data, int retries)
 {
     for (int i = 0; i < retries; ++i)
     {
@@ -307,16 +307,16 @@ io_task<> write_with_retry(stream& s, const_buffer data, int retries)
 |===
 | Type | Contents
 
-| `io_result<>`
+| `results<>`
 | Error code only
 
-| `io_result<T1>`
+| `results<T1>`
 | Error code + one value
 
-| `io_result<T1, T2>`
+| `results<T1, T2>`
 | Error code + two values
 
-| `io_result<T1, T2, T3>`
+| `results<T1, T2, T3>`
 | Error code + three values
 
 | Structured bindings

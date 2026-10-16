@@ -16,8 +16,8 @@
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/ex/io_env.hpp>
-#include <boost/capy/io_result.hpp>
+#include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/results.hpp>
 
 #include <stop_token>
 
@@ -234,7 +234,7 @@ public:
 
         /** Enqueue the awaiting coroutine until the event is set.
 
-            This is the @ref IoAwaitable overload of `await_suspend`.
+            This is the @ref ContextAwaitable overload of `await_suspend`.
 
             If a stop request is already pending on `env->stop_token`, the
             awaiter records the cancellation and does not enqueue.
@@ -263,7 +263,7 @@ public:
         std::coroutine_handle<>
         await_suspend(
             std::coroutine_handle<> h,
-            io_env const* env) noexcept
+            await_context const* env) noexcept
         {
             if(env->stop_token.stop_requested())
             {
@@ -288,10 +288,10 @@ public:
             unlinks it. `set()` pops every waiter, so a canceled waiter may
             or may not still be linked when it resumes.
 
-            @return An empty `io_result<>` if the event was set, or one
+            @return An empty `results<>` if the event was set, or one
             holding `error::canceled` if the stop token fired first.
         */
-        [[nodiscard]] io_result<> await_resume() noexcept
+        [[nodiscard]] results<> await_resume() noexcept
         {
             if(active_)
             {

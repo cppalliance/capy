@@ -9,7 +9,7 @@
 
 // One GPU completion, three notification mechanisms.
 //
-// The IoAwaitable protocol does not care how completion is detected. The
+// The ContextAwaitable protocol does not care how completion is detected. The
 // same pipeline (fill a device buffer, copy it back, await the stream)
 // runs once per mechanism (host-function callback, event polling,
 // deferred blocking synchronize) and all three must produce the same
@@ -19,7 +19,7 @@
 #include "notification_strategies.hpp"
 
 #include <boost/capy.hpp>
-#include <boost/capy/concept/io_awaitable.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 
 #include <chrono>
@@ -38,10 +38,10 @@ namespace ex   = boost::capy::example;
 static_assert(std::is_same_v<
     decltype(ex::make_cuda_error(cudaSuccess)), std::error_code>);
 
-// The whole point: three different mechanisms, all IoAwaitables.
-static_assert(capy::IoAwaitable<ex::callback_awaitable>);
-static_assert(capy::IoAwaitable<ex::poll_awaitable>);
-static_assert(capy::IoAwaitable<ex::deferred_sync_awaitable>);
+// The whole point: three different mechanisms, all ContextAwaitables.
+static_assert(capy::ContextAwaitable<ex::callback_awaitable>);
+static_assert(capy::ContextAwaitable<ex::poll_awaitable>);
+static_assert(capy::ContextAwaitable<ex::deferred_sync_awaitable>);
 
 namespace {
 

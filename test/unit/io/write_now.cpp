@@ -13,8 +13,8 @@
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/abandon.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
-#include <boost/capy/ex/io_env.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/test/fuse.hpp>
 #include <boost/capy/test/run_blocking.hpp>
@@ -40,9 +40,9 @@ struct suspending_write_awaitable
 {
     bool await_ready() const noexcept { return false; }
     std::coroutine_handle<>
-    await_suspend(std::coroutine_handle<> h, io_env const*) noexcept
+    await_suspend(std::coroutine_handle<> h, await_context const*) noexcept
         { return h; }
-    io_result<std::size_t> await_resume() { return {std::error_code(), 5}; }
+    results<std::size_t> await_resume() { return {std::error_code(), 5}; }
 };
 
 struct suspending_write_stream
@@ -61,13 +61,13 @@ struct parking_stream
         parked* slot;
         bool await_ready() const noexcept { return false; }
         std::coroutine_handle<>
-        await_suspend(std::coroutine_handle<> h, io_env const* env) noexcept
+        await_suspend(std::coroutine_handle<> h, await_context const* env) noexcept
         {
             slot->h = h;
             slot->owner = env->owner;
             return std::noop_coroutine();
         }
-        io_result<std::size_t> await_resume() const noexcept
+        results<std::size_t> await_resume() const noexcept
         {
             return {std::error_code(), 1};
         }
@@ -394,7 +394,7 @@ public:
             };
             int n = 0;
             test_executor caller(n);
-            io_env env{executor_ref(caller), {}, nullptr};
+            await_context env{executor_ref(caller), {}, nullptr};
             // Started by hand, not lent, so this destroys it from above.
             auto t = parent();
             t.handle().promise().set_environment(&env);

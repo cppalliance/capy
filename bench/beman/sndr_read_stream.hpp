@@ -45,7 +45,7 @@ struct sndr_read_stream
 
         sender_thread_pool* pool_;
 
-        // awaitable path (co_awaited from io_task via as_awaitable)
+        // awaitable path (co_awaited from task<results<...>> via as_awaitable)
         template <typename Promise>
         struct awaitable : work_item
         {

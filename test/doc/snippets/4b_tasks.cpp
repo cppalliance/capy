@@ -77,22 +77,22 @@ capy::task<> log_message(std::string msg)
 
 } // namespace returning
 
-namespace io_results {
+namespace reporting_errors {
 
-// tag::io_task[]
-// io_result<Ts...> holds an error code `ec` plus zero or more payload
-// values. io_task<Ts...> is just an alias for task<io_result<Ts...>>.
+// tag::results[]
+// `results<Ts...>` holds an error code `ec` plus zero or more payload
+// values. A task returning one reports failure without throwing.
 
-capy::io_task<> ensure_ready(bool ready)
+capy::task<capy::results<>> ensure_ready(bool ready)
 {
     if(! ready)
         co_return std::make_error_code(std::errc::not_connected);  // ec converts
     co_return {};                                             // success
 }
 
-capy::io_task<std::size_t> count_ready(bool ready)
+capy::task<capy::results<std::size_t>> count_ready(bool ready)
 {
-    using result = capy::io_result<std::size_t>;
+    using result = capy::results<std::size_t>;
     if(! ready)
         co_return result{std::make_error_code(std::errc::not_connected), 0};
     co_return result{std::error_code(), 42};  // success, carrying a value
@@ -100,15 +100,15 @@ capy::io_task<std::size_t> count_ready(bool ready)
 
 capy::task<> use_them()
 {
-    // io_result models the tuple protocol: ec first, then the payloads.
+    // `results` models the tuple protocol: ec first, then the payloads.
     auto [ec, n] = co_await count_ready(true);
     if(ec)
         co_return;  // always check ec first
     (void)n;        // n is only meaningful when ec is falsy
 }
-// end::io_task[]
+// end::results[]
 
-} // namespace io_results
+} // namespace reporting_errors
 
 namespace awaiting {
 

@@ -12,7 +12,7 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/ex/abandon.hpp>
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 
 #include <optional>
 #include <type_traits>
@@ -44,7 +44,7 @@ struct abandonable
     }
 
     template<class H>
-    auto await_suspend(H h, io_env const* env)
+    auto await_suspend(H h, await_context const* env)
     {
         owner_ = env->owner;
         return a_.await_suspend(h, env);

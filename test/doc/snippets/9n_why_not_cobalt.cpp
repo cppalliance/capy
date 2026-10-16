@@ -12,7 +12,7 @@
 
 #include "../doc_warnings.hpp"
 
-#include <boost/capy/ex/io_env.hpp>
+#include <boost/capy/ex/await_context.hpp>
 
 #include <coroutine>
 
@@ -20,11 +20,11 @@ namespace capy = boost::capy;
 
 namespace {
 
-// Shows the IoAwaitable protocol signature used for context propagation.
+// Shows the ContextAwaitable protocol signature used for context propagation.
 struct context_propagating_op
 {
     // tag::await_suspend_env[]
-    auto await_suspend(std::coroutine_handle<> h, capy::io_env const* env);
+    auto await_suspend(std::coroutine_handle<> h, capy::await_context const* env);
     // end::await_suspend_env[]
 };
 

@@ -34,7 +34,7 @@ Representative blocks (chosen to show the range, not cherry-picked for compilabi
 @code
 task<void> example()
 {
-    std::vector<io_task<size_t>> reads;
+    std::vector<task<results<size_t>>> reads;
     for (auto& buf : buffers)
         reads.push_back(stream.read_some(buf));
     auto result = co_await when_any(std::move(reads));
@@ -259,7 +259,7 @@ not a hypothetical risk. Two of the twelve were not drift but active misinformat
   in one TU (`async_mutex`), a comment-only `if` body followed by `else` (`cond`, plain syntax
   error), `.data()` called on a value that has no such member for the sequence concepts in play
   (`test::buffer_to_string`), symbols (`route_params`, `route::next`) that exist in none of
-  capy, corosio, or burl (`io_task`), a mock object constructed outside the `fuse::armed` retry
+  capy, corosio, or burl (`task<results<...>>`), a mock object constructed outside the `fuse::armed` retry
   loop so state leaked across rounds and the trailing comment went stale (`test::stream`,
   `test::write_stream`), a discarded partial-write result under a concept that documents
   partial writes as normal (`Stream`), and a redeclared local plus undeclared placeholder names
