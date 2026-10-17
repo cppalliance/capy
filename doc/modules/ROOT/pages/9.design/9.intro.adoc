@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -27,3 +28,4 @@ Each page examines one concept or facility in depth: the rationale behind its de
 * xref:9.design/9n.WhyNotCobalt.adoc[Why Not Cobalt?] -- How Capy's foundation differs from Boost.Cobalt's Asio-based design.
 * xref:9.design/9o.WhyNotCobaltConcepts.adoc[Why Not Cobalt Concepts?] -- A side-by-side look at type-erased write-stream algorithms in both libraries.
 * xref:9.design/9p.WhyNotTMC.adoc[Why Not TooManyCooks?] -- Choosing between Capy and TooManyCooks by workload: network I/O versus compute.
+* xref:9.design/9q.WhyNotStdExecution.adoc[Why Not std::execution?] -- Why Capy carries context forward instead of building on P2300 senders, and how to use both.

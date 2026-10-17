@@ -126,11 +126,11 @@ When you write a coroutine, three questions arise immediately. Where does it run
 
 *How do you cancel it?* A user clicks Cancel. A timeout expires. The server is shutting down. Your coroutine needs to stop—gracefully, without leaking resources. {cpp}20 gives us `std::stop_token`, a beautiful one-shot notification mechanism. But how does a nested coroutine receive the token? Pass it explicitly? More API clutter. And what about pending I/O operations—can they be cancelled at the OS level, or do you wait for them to complete naturally?
 
-*How is its frame allocated?* Coroutine frames live on the heap by default. For high-throughput servers handling thousands of concurrent operations, allocation overhead matters. You want to reuse frames. You want custom allocators. But here's the catch: the frame is allocated before the coroutine body runs. The allocator can't be a parameter—parameters live in the frame.
+*How is its frame allocated?* Coroutine frames live on the heap by default. For high-throughput servers handling thousands of concurrent operations, allocation overhead matters. You want to reuse frames. You want custom allocators. But here's the catch: the frame is allocated before the coroutine body runs. The allocator must be known before the frame exists. Either every coroutine in the chain takes it as a parameter, or it arrives some other way.
 
 Asio has answers to these questions, but they're constrained. Asio must support callbacks and futures alongside coroutines. It cannot build an execution model optimized for coroutines alone. And it bundles everything together—execution model, networking, timers, platform abstractions—in one monolithic library.
 
-The standard has `std::execution` (P2300), the sender/receiver model. It's powerful and general. It's also complex, academic, and not designed for coroutines first. It has the "late binding problem"—allocators flow backward, determined at the point of connection rather than at the point of creation. Ergonomic allocator control is difficult. P3552R3 proposes a `task` type, but it's built on sender/receiver and inherits its limitations.
+The {cpp}26 working draft has `std::execution` (P2300), the sender/receiver model. It's powerful and general. It's also complex, academic, and not designed for coroutines first. Its context flows backward, from receiver to sender, so it arrives after a coroutine frame is already allocated. P3552R3 adds a `task` type to it, but it's built on sender/receiver and inherits its limitations. xref:9.design/9q.WhyNotStdExecution.adoc[Why Not std::execution?] compares the two models in full.
 
 Capy builds an execution model purpose-built for coroutines and I/O.
 
@@ -138,7 +138,7 @@ The *ContextAwaitable protocol* solves context propagation. When you `co_await`,
 
 *Stop tokens propagate automatically.* Cancel at the top of your coroutine tree, and every nested operation receives the signal. Capy integrates with OS-level cancellation—`CancelIoEx` on Windows, `IORING_OP_ASYNC_CANCEL` on Linux. Pending I/O operations cancel immediately.
 
-*Frame allocation uses forward flow.* The two-call syntax of cpp:run_async[]`(executor)(my_task())` sets a thread-local allocator before the task is evaluated. The task's `operator new` reads it. No late binding. No backward flow. Ergonomic control over where every frame is allocated.
+*Frame allocation uses forward flow.* The two-call syntax of cpp:run_async[]`(executor)(my_task())` sets a thread-local allocator before the task is evaluated. The task's `operator new` reads it. No backward flow. Ergonomic control over where every frame is allocated.
 
 And Capy *separates execution from platform*. The execution model—executors, cancellation, allocation—lives in Capy. Platform abstractions—sockets, `io_uring`, IOCP—live in Corosio. Clean boundaries. Testable components. You can use Capy's execution model with a different I/O backend if you choose.
 
@@ -229,7 +229,7 @@ cpp:strand[], cpp:thread_pool[] and cpp:execution_context[] carry the same names
 
 *Asio's are not extensible, no concept taxonomy
 
-**P3552R3 is sender/receiver based, has allocator timing issue
+**P3552R3 is sender/receiver based, has allocator timing issue; see xref:9.design/9q.WhyNotStdExecution.adoc#frame-allocation[Why Not std::execution?]
 
 ***std has the token but no automatic propagation
 

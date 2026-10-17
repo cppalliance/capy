@@ -1,0 +1,134 @@
+//
+// Copyright (c) 2026 Michael Vandeberg
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Capy and std::execution: A Comparison
+:page-mode: explanation
+
+The {cpp}26 working draft includes `std::execution` (https://wg21.link/P2300[P2300]), the sender/receiver model, and `std::execution::task` (https://wg21.link/P3552[P3552]), a coroutine type built on it. Readers who know senders ask first why Capy defines its own protocol instead.
+
+The short answer is direction. Both models carry the same three things to an operation: where to resume, how to stop, and how to allocate. `std::execution` moves them from the consumer back to the producer, after the two are connected. Capy moves them from the caller forward to the callee: the frame allocator before the call, the executor and stop token at the `co_await`. The allocator's timing matters most, because calling a coroutine allocates its frame.
+
+== Which Way Context Flows
+
+In the sender/receiver model, an operation learns its context by querying the receiver's environment. The query happens after `connect()` has joined sender and receiver:
+
+[source,cpp,role=external]
+----
+template <receiver R>
+void state<R>::start() & noexcept {
+    auto sched = get_scheduler(get_env(rcvr));   // query the receiver
+    auto token = get_stop_token(get_env(rcvr));  // query the receiver
+    // ...
+}
+----
+
+P2300R10 states the principle directly: contextual information "is most naturally propagated from the consumer to the producer." That suits a work graph that is built first, connected to a receiver that knows the target context, and started last.
+
+Capy reverses the direction. When a coroutine awaits a child, the caller hands its environment to the child through a second `await_suspend` parameter:
+
+[source,cpp]
+----
+include::example$snippets/4e_context_awaitable.cpp[tag=two_arg_await_suspend,indent=0]
+----
+
+The cpp:await_context[] carries the caller's executor, stop token, and frame allocator. The child's own frame already exists by then. The child installs that allocator as the thread-local allocator when its body resumes, so its own children allocate from it. The child needs no receiver type and makes no query. xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol] describes the mechanics.
+
+[#frame-allocation]
+== When the Frame Is Allocated
+
+Direction matters most for allocation. A coroutine's frame is allocated before its body runs. The compiler calls `operator new`, constructs the promise, and only then begins execution. Context delivered after the call is too late for that `operator new`:
+
+[source,cpp,role=external]
+----
+auto sndr = async_work();            // frame allocated here
+auto op = connect(sndr, receiver);   // environment available here
+start(op);                           // too late for the frame
+----
+
+P3552 therefore does not take the frame allocator from the environment. A coroutine that wants one accepts it as an argument after `std::allocator_arg`, and the promise's `operator new` finds it there:
+
+[source,cpp,role=external]
+----
+sync_wait(fun(17, std::allocator_arg, my_allocator));
+----
+
+That works, but each coroutine that should use the allocator must receive it as an argument. Every function along a call chain carries it in its signature, even when it never uses it.
+
+Capy sets the allocator before the coroutine is called. The two-call syntax of cpp:run_async[] installs a thread-local frame allocator first and evaluates the task expression second:
+
+[source,cpp]
+----
+include::example$snippets/4h_allocators.cpp[tag=run_async_pmr_alloc,indent=0]
+----
+
+The task's `operator new` reads the thread-local allocator, and child tasks created along the chain inherit it. Signatures carry no allocator parameters. xref:9.design/9l.RunApi.adoc[Run API] explains why {cpp}17 sequencing guarantees the order. xref:4.coroutines/4h.allocators.adoc[Frame Allocators] covers usage.
+
+The cost is a dependency on thread-local storage, and the allocator is chosen where a task starts rather than at every call. A coroutine that needs a different allocator for one child starts that child with cpp:run[]`(alloc)`, which keeps the caller's executor.
+
+== Executors and Schedulers
+
+A P2300 scheduler has one operation, `schedule()`, which returns a sender that completes on that scheduler. A Capy cpp:Executor[] has two scheduling operations. cpp:Executor::dispatch[dispatch] returns the continuation's handle for symmetric transfer when running inline is safe, and queues it otherwise. cpp:Executor::post[post] always queues. xref:9.design/9k.Executor.adoc[Executor] gives the rationale for both.
+
+P3552's `task` transfers execution back to its scheduler when an awaited operation completes. Capy gives the same guarantee by a different route. The xref:4.coroutines/4d.executors.adoc#the-same-executor-invariant[same-executor invariant] holds because each I/O awaitable captures the caller's executor at initiation and dispatches its completion through it.
+
+== Stop Tokens
+
+P3552's `task` queries the receiver for a stop token in `start()` and links a stop source of its own to it. Each task environment can name its own stop source type, so the link is made again at every task boundary.
+
+Capy passes one `std::stop_token` in cpp:await_context[]. A child awaited with `co_await` receives its caller's token unchanged. The combinators cpp:when_all[] and cpp:when_any[] are the exception. Each links a stop source of its own to the caller's token, so it can stop the remaining children when one fails or wins. Corosio's I/O objects register a `std::stop_callback` on that token to cancel pending operations at the operating-system level. xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation] covers the rules.
+
+== What You Give Up
+
+* *Capy tasks are not senders.* Sender algorithms such as `let_value` do not accept a cpp:task[] directly. Use Capy's own combinators, cpp:when_all[] and cpp:when_any[], or a bridge.
+* *Frame allocation depends on thread-local storage.* xref:4.coroutines/4h.allocators.adoc#_tls_preservation[TLS Preservation] describes the save-and-restore protocol this requires.
+* *A different target.* P2300 is designed for general work graphs, including heterogeneous dispatch to accelerators. Capy is designed around coroutines and I/O.
+
+== Using Both
+
+Adopting Capy does not mean leaving senders behind. Bridges run in both directions. Both build when `BOOST_CAPY_BUILD_P2300_EXAMPLES=ON` and the {cpp} standard is 23 or later:
+
+* xref:8.examples/8o.sender-bridge.adoc[Bridging a P2300 Sender] -- `co_await` a sender from a Capy coroutine. The bridge posts the resumption through the caller's executor, so the same-executor invariant holds across it.
+* https://github.com/cppalliance/capy/tree/develop/example/awaitable-sender[`example/awaitable-sender/`] -- the reverse direction. It wraps a Capy cpp:ContextAwaitable[] as a sender for https://github.com/NVIDIA/stdexec[`stdexec`], NVIDIA's P2300 implementation, so a sender pipeline can consume it.
+
+== Further Reading
+
+* https://github.com/cppalliance/capy/blob/develop/papers/B1001.comparison-to-p3552-task.md[BOOST1001] -- a section-by-section comparison of P3552 `task` and IoAwaitable for asynchronous I/O, written for WG21. It predates some protocol changes, including the rename of `IoAwaitable` to cpp:ContextAwaitable[] and `io_env` to cpp:await_context[]. Where it differs from this documentation, for example on which executor a coroutine resumes on, this documentation describes current behavior.
+* https://wg21.link/P2300[P2300, `std::execution`]
+* https://wg21.link/P3552[P3552, _Add a Coroutine Task Type_]
+
+== Summary
+
+[cols="1,2,2"]
+|===
+| | `std::execution` with P3552 `task` | Capy
+
+| Context direction
+| Backward: the receiver's environment, queried after `connect()`
+| Forward: cpp:await_context[] passed to `await_suspend`
+
+| Frame allocator
+| `std::allocator_arg` in each coroutine's arguments
+| Thread-local, set by cpp:run_async[] or cpp:run[] before the call
+
+| Scheduling primitive
+| `schedule()` returns a sender
+| cpp:Executor::dispatch[dispatch] and cpp:Executor::post[post] take a cpp:continuation[]
+
+| Where a coroutine resumes
+| Transferred back to the task's scheduler
+| The same-executor invariant
+
+| Stop token
+| Queried from the receiver, linked per task
+| One `std::stop_token` in cpp:await_context[], linked again only by combinators
+
+| Composition
+| Sender algorithms
+| `co_await`, cpp:when_all[], cpp:when_any[]
+|===
