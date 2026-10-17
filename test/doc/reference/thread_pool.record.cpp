@@ -40,7 +40,7 @@ void run_on_pool()
     auto ex = pool.get_executor();
     capy::run_async(ex)(some_task());  // start work; tracked so join() waits for it
     pool.join();  // wait for outstanding work to complete
-    // pool destructor stops the pool, discarding any pending work
+    // pool destructor stops the pool and abandons any work still queued
 }
 // end::example[]
 } // namespace ex_1
