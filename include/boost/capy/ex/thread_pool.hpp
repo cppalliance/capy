@@ -54,16 +54,37 @@ public:
 
     /** Destroy the thread pool.
 
-        Signals all worker threads to stop, waits for them to
-        finish, and destroys any pending work items.
+        Stops the pool, joins its worker threads, then abandons any
+        work that has not started:
+
+        @li Calls @ref stop. Each worker thread finishes the item it
+            is running and exits; queued work is not run.
+        @li Joins the worker threads. Unlike @ref join, this does not
+            wait for outstanding work. If @ref join was already called,
+            the threads are already joined and this step does nothing.
+        @li Shuts down the pool's services, abandons every coroutine
+            still queued on the pool or its strands, then destroys the
+            services.
+            Each abandoned chain is unwound, without delivering a
+            result, on the executor of the coroutine that started it.
+            That happens during this destructor when the executor is
+            this pool, and later when it belongs to another execution
+            context.
+            See @ref chain_owner.
+
+        To let queued work finish first, call @ref join before the
+        pool is destroyed.
 
         @pre No thread outside this pool may post or dispatch work to it
         (or to a strand built on it) concurrently with, or after,
         destruction. Doing so is undefined behavior. Submit such work
-        through @ref run_async or @ref run and call @ref join before
-        the pool is destroyed, so it has completed first. A thread
-        owned by one of this pool's services may post or dispatch
-        until that service's `shutdown()` returns.
+        through @ref run_async and call @ref join, without calling
+        @ref stop, before the pool is destroyed, so it has completed
+        first. A thread owned by one of this pool's services may post
+        or dispatch until that service's `shutdown()` returns.
+
+        @pre Must not be called from a thread in this pool. A worker
+        thread cannot join itself, so this calls `std::terminate`.
     */
     ~thread_pool();
 
@@ -103,8 +124,8 @@ public:
 
     /** Wait for all outstanding work to complete.
 
-        Releases the internal work guard, then blocks the calling
-        thread until all outstanding work tracked by
+        Blocks the calling thread until all outstanding work
+        tracked by
         @ref executor_type::on_work_started and
         @ref executor_type::on_work_finished completes. After all
         work finishes, joins the worker threads.
@@ -115,15 +136,16 @@ public:
         exit; `join()` still waits for all threads to be joined
         before returning.
 
-        This function is idempotent. The first call performs the
-        join; subsequent calls return immediately.
+        Only the first call performs the join. A later call returns
+        immediately, even while the first call is still blocking on
+        another thread.
 
         @pre Must not be called from a thread in this pool (undefined
         behavior).
 
         @par Postconditions
-        All worker threads have been joined. The pool cannot be
-        reused.
+        If this call performed the join, all worker threads have
+        been joined. The pool cannot be reused.
 
         @par Thread Safety
         May be called from any thread not in this pool.
@@ -158,7 +180,7 @@ public:
     get_executor() const noexcept;
 };
 
-/** An executor that submits work to a thread_pool.
+/** Runs continuations on the worker threads of a thread_pool.
 
     Executors are lightweight handles that can be copied and stored.
     All copies refer to the same underlying thread pool.
@@ -228,16 +250,22 @@ public:
 
         If the calling thread is a worker of this pool, returns
         `c.h` for symmetric transfer so the caller can resume the
-        continuation inline. Otherwise, posts the continuation to
-        the pool for execution on a worker thread and returns
-        `std::noop_coroutine()`.
+        continuation inline. Otherwise, posts the continuation as
+        @ref post does and returns `std::noop_coroutine()`. On that
+        path, the continuation is not run if the pool stops first,
+        and a call that races with @ref thread_pool::stop can go
+        either way. See @ref post.
 
         @param c The continuation to execute. On the post path,
-                 must remain at a stable address until dequeued
-                 and resumed.
+                 must remain at a stable address until resumed or
+                 abandoned.
 
         @return `c.h` when the calling thread is a pool worker;
                 `std::noop_coroutine()` otherwise.
+
+        @throws std::system_error If this call posts and must start
+            the pool's worker threads, and a thread cannot be started.
+            `c` is not queued.
     */
     BOOST_CAPY_DECL
     std::coroutine_handle<>
@@ -245,11 +273,26 @@ public:
 
     /** Post a continuation to the thread pool.
 
-        The continuation is resumed on one of the pool's
-        worker threads. The continuation must remain at a stable
-        address until it is dequeued and resumed.
+        The continuation is resumed on one of the pool's worker
+        threads, unless the pool stops first. The pool stops when
+        @ref thread_pool::stop is called, or when
+        @ref thread_pool::join has finished waiting for outstanding
+        work. A continuation still queued when the pool stops, or
+        posted after it stops, is not run. It stays queued until
+        the pool is destroyed, which abandons it.
+
+        A call that races with @ref thread_pool::stop on another
+        thread can therefore go either way, and nothing in the call
+        tells the caller which.
+
+        The continuation must remain at a stable address until it
+        is resumed or abandoned.
 
         @param c The continuation to execute.
+
+        @throws std::system_error If this call must start the pool's
+            worker threads, and a thread cannot be started. `c` is not
+            queued.
     */
     BOOST_CAPY_DECL
     void

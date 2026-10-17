@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -38,7 +39,7 @@ int main()
     capy::run_async(pool.get_executor())(greet());
 
     // join() waits for outstanding work to complete; the pool
-    // destructor only stops the pool and discards pending work
+    // destructor does not wait, and abandons any work still queued
     pool.join();
 }
 // end::full[]

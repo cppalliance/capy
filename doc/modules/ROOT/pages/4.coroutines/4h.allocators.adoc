@@ -63,7 +63,7 @@ Run the same task eight times through it, one run at a time:
 include::example$snippets/4h_allocators.cpp[tag=recycling_observe,indent=0]
 ----
 
-The first run finds an empty pool and takes its coroutine frames from the heap. Each `pool.join()` returns those frames to the resource, so the next cpp:run_async[] call reuses them. Once the pool is warm, the upstream count stops climbing while the task keeps running -- the seven warm runs allocate nothing new. cpp:recycling_memory_resource[] does the same thing with size-class freelists and a lock-free thread-local cache.
+The first run finds an empty pool and takes its coroutine frames from the heap. Each `pool.join()` returns after the task has finished and its frames are back in the resource, so the next cpp:run_async[] call reuses them. Once the pool is warm, the upstream count stops climbing while the task keeps running -- the seven warm runs allocate nothing new. cpp:recycling_memory_resource[] does the same thing with size-class freelists and a lock-free thread-local cache.
 
 == HALO Optimization
 
