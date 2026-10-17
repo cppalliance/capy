@@ -48,3 +48,4 @@ result: 1764
 
 * xref:4.coroutines/4e.context-awaitable.adoc#bridging-a-foreign-awaitable[Bridging a Foreign Awaitable] — the general pattern and why there is no universal bridge
 * xref:8.examples/8p.asio-use-capy.adoc[Calling Asio from a Capy Coroutine] — the same technique for Asio operations
+* xref:9.design/9q.WhyNotStdExecution.adoc[Why Not std::execution?] — why Capy carries context forward instead of building on senders

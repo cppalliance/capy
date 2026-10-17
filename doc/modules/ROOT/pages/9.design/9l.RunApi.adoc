@@ -254,15 +254,7 @@ The solution is to store a _copy_ of the allocator in the awaitable returned by 
 
 === Comparison with `std::execution`
 
-In `std::execution` (P2300), context flows _backward_ from receiver to sender via queries _after_ `connect()`:
-
-[source,cpp,role=external]
-----
-task<int> async_work();              // Frame allocated NOW
-auto sndr = async_work();
-auto op = connect(sndr, receiver);   // Allocator available NOW -- too late
-start(op);
-----
+In `std::execution` (P2300), an operation queries the receiver for its context after `connect()`, when a coroutine's frame already exists. xref:9.design/9q.WhyNotStdExecution.adoc#frame-allocation[Why Not std::execution?] works through that ordering.
 
 In the _ContextAwaitable_ model, context flows _forward_ from launcher to task:
 

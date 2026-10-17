@@ -112,6 +112,8 @@ Forward propagation offers several advantages:
 
 This design enables Capy's type-erased wrappers (cpp:any_stream[], etc.) to work without knowing the concrete executor type.
 
+xref:9.design/9q.WhyNotStdExecution.adoc[Why Not std::execution?] contrasts forward propagation with the backward queries of senders and receivers.
+
 == A Vocabulary for Coroutine Interop
 
 Because the protocol is just a two-argument `await_suspend`, cpp:ContextAwaitable[] is more than an internal mechanism—it is a _vocabulary type_ for interoperation. Any coroutine library that speaks the protocol can propagate execution environment across a `co_await` boundary without knowing the other side's concrete task type.
