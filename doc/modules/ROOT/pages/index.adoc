@@ -1,9 +1,11 @@
 = Capy
 :page-mode: explanation
 
-Capy is a compiled C++20 library providing abstractions, vocabulary types, and idioms necessary
-to write programs with event-driven control flows
--- such as I/O -- in a way that makes them efficient and manageable: structured and hard to get wrong.
+include::partial$diagram-style.adoc[]
+
+Capy is a compiled C++20 library providing abstractions, vocabulary types, and idioms needed
+to write programs with event-driven control flows, such as I/O.
+It makes those programs efficient and manageable: structured and hard to get wrong.
 
 Coroutines are used to represent the control flow. The program logic is described in a sequential way,
 familiar to programmers,
@@ -13,12 +15,13 @@ I/O operations are represented via the concept of a _stream_ which consumes and 
 You also get type-erased wrappers for streams, so that programs can compile quickly, without triggering
 excessive template instantiations.
 
-It offers a number of task synchronization mechanisms, ranging from low-level, like async mutexes and events,
-to high-level, like _strands_, `when_all`/`when_any` "joins", and the resume-on-the-same-executor guarantee.
+It offers task synchronization mechanisms at several levels.
+Low-level ones include async mutexes and events.
+High-level ones include _strands_, cpp:when_all[]/cpp:when_any[] "joins", and the resume-on-the-same-executor guarantee.
 
-Libraries that want to provide concrete I/O implementations -- like those based on `epoll` or `io_uring` --
-can plug into Capy's system via the `ContextAwaitable` protocol, which describes how tasks can be scheduled, 
-cancelled, and allocated in memory.
+Libraries that want to provide concrete I/O implementations, like those based on `epoll` or `io_uring`,
+can plug into Capy through the cpp:ContextAwaitable[] protocol.
+The protocol describes how tasks can be scheduled, cancelled, and allocated in memory.
 
 You also get the testing tools that allow you to test your asynchronous flows in a deterministic way.
 
@@ -27,7 +30,7 @@ You also get the testing tools that allow you to test your asynchronous flows in
 
 While Capy offers algorithms and interfaces for dealing with I/O, 
 it does not itself provide any I/O backend (like a wrapper over `epoll` or `io_uring`).
-For that, you will need to use Capy in tandem with a Capy-conformant library. 
+For that, you need to use Capy in tandem with a Capy-conformant library. 
 This can be either your home-grown one or Corosio.
 
 
@@ -44,10 +47,217 @@ include::example$programs/index_page_echo.cpp[tag=full]
 <.> The condition `cond::eof` indicates reaching the end of the stream.
 
 
-== Next Steps
+[#protocol-anatomy]
+== Protocol Anatomy
 
-* xref:quick-start.adoc[Quick Start] — Set up your first Capy project
-* xref:2.cpp20-coroutines/2a.foundations.adoc[{cpp}20 Coroutines Tutorial] — Learn coroutines from the ground up
-* xref:4.coroutines/4b.tasks.adoc[Coroutines in Capy] — Deep dive into cpp:task[task<T>] and the ContextAwaitable protocol
-* xref:5.buffers/5.intro.adoc[Buffer Sequences] — Contiguous buffers, composite buffers, system I/O, and the algorithms over them
-* xref:6.streams/6a.concepts.adoc[Stream Concepts] — Understand the three stream concepts
+Capy serves three audiences:
+
+* *Application developers* write tasks that do the work of a program.
+  Some of them write protocol libraries, such as HTTP or WebSocket, on top of streams.
+* *Framework authors* write task types and the functions that start them.
+* *I/O library authors* write the I/O awaitables that connect Capy to an I/O backend, an event loop, or another async library.
+
+All three share one model of how a task runs.
+This section shows that model, and then what each audience needs from it.
+
+[#how-a-task-runs]
+=== How a Task Runs
+
+The diagram follows one task from start to finish.
+The task, `my_task`, awaits a child task.
+The child awaits an I/O operation, such as a socket read.
+
+[mermaid]
+----
+sequenceDiagram
+    autonumber
+    accTitle: How a task runs
+    accDescr: A caller starts my_task through run_async. my_task awaits a child task, which awaits an I/O awaitable. The thread returns to the executor while the operation is pending. When the I/O backend completes the operation, the I/O awaitable posts the child to the executor, which resumes it. The child returns to my_task, and my_task's result goes to the completion handler.
+    participant C as Caller
+    participant R as run_async
+    participant X as Executor
+    participant P as my_task
+    participant K as child
+    participant A as I/O awaitable
+    participant B as I/O backend
+    C->>R: run_async(ex)(my_task())
+    R->>X: dispatch(my_task)
+    X->>P: resume
+    P->>K: co_await child()
+    K->>A: co_await read_some(buf)
+    A->>B: start the operation
+    A-->>X: suspend, the thread is free
+    B->>A: the operation completes
+    A->>X: post(child)
+    X->>K: resume with the result
+    K->>P: co_return
+    P->>R: co_return
+    R->>R: call the completion handler
+----
+
+. The caller passes an executor and a task to cpp:run_async[].
+  The task does not run yet, because every task starts suspended.
+. cpp:run_async[] gives the task its environment, an cpp:await_context[].
+  The environment holds the executor, a stop token, a frame allocator, and the owner of the chain.
+  The owner unwinds the chain if it is abandoned, as xref:4.coroutines/4j.lifetimes.adoc#_who_owns_a_suspended_coroutine[Who Owns a Suspended Coroutine] explains.
+  Then cpp:run_async[] calls cpp:Executor::dispatch[dispatch] on the executor.
+. The executor resumes `my_task`.
+  If it is safe to resume the task at once, for example because the call is on the executor's own thread, the executor does so.
+  If it is not safe, the executor queues the task to resume later.
+. `my_task` awaits `child()`.
+  The child gets the same environment.
+  Control transfers directly to the child, without the executor.
+  This direct transfer is called _symmetric transfer_.
+. The child awaits an I/O awaitable.
+  The I/O awaitable keeps the executor from the environment.
+. The I/O awaitable starts the operation in the I/O backend.
+. The child suspends, and the thread goes back to the executor.
+  The executor can run other work while the operation is pending.
+. Later, the I/O backend reports that the operation is complete.
+  This report can arrive on any thread.
+. The I/O awaitable posts the child to the executor with cpp:Executor::post[post].
+  It never resumes the child directly.
+. The executor resumes the child.
+  The `co_await` expression gives the result of the operation to the child.
+. The child finishes, and control transfers directly back to `my_task`.
+  `my_task` is on the same executor, because the child used the environment of `my_task`.
+. `my_task` finishes, and control goes back to cpp:run_async[].
+. cpp:run_async[] calls the completion handler with the result of `my_task`.
+
+Steps 9 and 10 keep the
+xref:4.coroutines/4d.executors.adoc#the-same-executor-invariant[same-executor invariant]:
+a task always resumes on the executor it started with.
+Cancellation follows the same path, with a stop request in place of the completion.
+xref:4.coroutines/4f.cancellation.adoc#the-cancellation-sequence[The Cancellation Sequence]
+shows it.
+
+The program below runs this sequence and prints one line for each arrow.
+It exits with an error if the order differs from the diagram, so the test suite checks the diagram.
+
+.A program that runs the sequence
+[%collapsible]
+====
+[source,cpp]
+----
+include::example$programs/index_page_trace.cpp[tag=full]
+----
+====
+
+=== Application Developers
+
+You write `my_task` and `child`.
+The rest of the diagram is Capy, or an I/O library such as Corosio.
+
+* Code between two `co_await` expressions runs like ordinary sequential code.
+  Each `co_await` is a point where the task can suspend.
+* A task resumes on the executor it started with.
+  State that only one task uses needs no lock.
+  State that tasks share on a thread pool needs a strand or an cpp:async_mutex[].
+* Start top-level work from `main` with cpp:run_async[].
+  Inside a task, await other tasks directly.
+  To run a child task on a different executor, await it through cpp:run[].
+* Run tasks concurrently with cpp:when_all[] and cpp:when_any[].
+* To cancel work, pass a stop token to cpp:run_async[].
+  Operations that stop early report cpp:cond::canceled[cond::canceled].
+  To check for a stop request inside a task, read the token with `co_await` cpp:this_coro::stop_token[this_coro::stop_token].
+* An object that a task refers to must stay alive until the task finishes.
+  xref:4.coroutines/4j.lifetimes.adoc[Lifetime and Ownership] gives the rules for parameters, lambda captures, and buffers.
+* Stop work and wait for it to finish before you destroy the execution context that it runs on.
+  Destroying the context abandons the chains that are still suspended in it.
+  Their frames are destroyed without resuming, so they deliver no result and call no completion handler.
+
+Read next:
+
+* xref:4.coroutines/4b.tasks.adoc[The task Type]
+* xref:4.coroutines/4c.launching.adoc[Starting Coroutines]
+* xref:4.coroutines/4g.composition.adoc[Concurrent Composition]
+* xref:4.coroutines/4i.lambda-captures.adoc[Lambda Coroutine Captures]
+* xref:4.coroutines/4j.lifetimes.adoc[Lifetime and Ownership]
+* The xref:8.examples/8a.hello-task.adoc[Hello Task], xref:8.examples/8g.parallel-fetch.adoc[Parallel Fetch], and xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation] examples
+
+==== Protocol Libraries
+
+If you write a protocol library, such as HTTP or WebSocket, your `child` implements the protocol on a stream.
+Your caller supplies the stream, and an I/O library supplies the I/O awaitables.
+
+* Write the protocol against the cpp:ReadStream[] and cpp:WriteStream[] concepts.
+  To keep the protocol out of headers, write it against the type-erased cpp:any_stream[] instead.
+* The executor and the stop token reach your task through `co_await`.
+  Your functions do not take them as parameters.
+* Each stream operation returns a cpp:results[] that holds an error code and a byte count.
+  A read can return bytes and an error together.
+  The stream only reports what happened.
+  Your protocol decides whether the result is a success or a failure, for example whether a partial message is usable.
+* Compare the error code with the conditions in cpp:cond[], for example cpp:cond::eof[cond::eof] at the end of the data.
+* When a stop is requested, a pending operation fails with an error that compares equal to cpp:cond::canceled[cond::canceled].
+  This error means that a caller asked for the stop, not that the protocol failed.
+  Do not retry the operation.
+  Return the error to your caller.
+* Test the protocol with the mock streams in `capy::test`.
+  The mock streams run without an I/O backend and can inject errors.
+
+Read next:
+
+* xref:6.streams/6a.concepts.adoc[Stream Concepts]
+* xref:6.streams/6b.wrappers.adoc[Type-Erased Wrappers]
+* xref:7.testing/7.intro.adoc[Testing]
+* xref:9.design/9a.CapyLayering.adoc[Layered Abstractions]
+* The xref:8.examples/8d.mock-stream-testing.adoc[Mock Stream Testing] and xref:8.examples/8e.type-erased-echo.adoc[Type-Erased Echo] examples
+
+=== Framework Authors
+
+You write the task type, such as cpp:task[task<T>], and the functions that start tasks, such as cpp:run_async[].
+In the diagram, you write the `run_async` participant and the transfers between tasks: steps 2, 4, and 11 to 13.
+
+* A task type is an cpp:ContextAwaitable[], so that other tasks can await it.
+  It is also an cpp:ContextRunnable[], so that functions such as cpp:run_async[] can start it.
+* Derive the promise type from cpp:context_awaitable_promise_base[].
+  The base allocates the coroutine frame with the current frame allocator and stores the environment.
+  It also answers `co_await this_coro::...` queries, and passes every other awaitable to the `transform_awaitable` of your promise.
+* In `transform_awaitable`, pass the environment to each I/O awaitable through its two-argument `await_suspend`.
+* An awaited child task gets the same environment, and it returns to its parent by symmetric transfer.
+  So the parent continues on the same executor.
+* A function that starts tasks creates the environment: an executor, a stop token, a frame allocator, and an owner.
+  It must set the frame allocator before the task's frame is allocated.
+  xref:4.coroutines/4h.allocators.adoc#two-call-rationale[Frame Allocators] explains why cpp:run_async[] uses two calls for this.
+* The function must also own the chain that it starts, by binding a cpp:chain_owner[], so that a holder can abandon the chain.
+  The alternative is to make sure that nothing awaits a coroutine that could be abandoned.
+  cpp:run_async[], cpp:run[] on another executor, and each branch of cpp:when_all[] and cpp:when_any[] own their chains already.
+* To store an executor without its type, use cpp:executor_ref[].
+
+Read next:
+
+* xref:4.coroutines/4b.tasks.adoc[The task Type]
+* xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol]
+* xref:4.coroutines/4h.allocators.adoc[Frame Allocators]
+* xref:4.coroutines/4j.lifetimes.adoc#_who_owns_a_suspended_coroutine[Who Owns a Suspended Coroutine]
+* xref:9.design/9l.RunApi.adoc[Run API]
+
+=== I/O Library Authors
+
+In the diagram, you write the I/O awaitable, and sometimes the I/O backend and the executor.
+
+* The I/O awaitable implements the cpp:ContextAwaitable[] protocol.
+  Its `await_suspend` receives the coroutine handle and the cpp:await_context[].
+* Keep the executor from the environment.
+  When the operation completes, resume the coroutine through that executor.
+  Wrap the handle in a cpp:continuation[] that lives in the awaitable, and pass it to cpp:Executor::post[post] or cpp:Executor::dispatch[dispatch].
+  Copy the `owner` of the environment into cpp:continuation::owner[owner], so that the chain can be abandoned while the coroutine waits.
+  Never call `resume()` on the handle directly.
+* Register a `std::stop_callback` on the stop token of the environment.
+  The callback runs on the thread that requests the stop.
+  If a stop was already requested, it runs at once, inside the constructor of the callback.
+  It can run at the same time as the completion of the operation.
+  Only one of them may resume the coroutine, so each one must first win an atomic claim.
+* An executor implements the cpp:Executor[] concept.
+  Its `context()` returns the cpp:execution_context[] that created it.
+  An event loop that runs coroutines resumes them with cpp:safe_resume[], so that each coroutine keeps its own frame allocator.
+* An execution context that is destroyed with work still queued passes each queued continuation to cpp:abandon[] instead of resuming it.
+* To start Capy tasks from another event loop, use cpp:run_async[] with an executor for that loop.
+
+Read next:
+
+* xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol]
+* xref:4.coroutines/4f.cancellation.adoc#stoppable-awaitables[Implementing Stoppable Awaitables]
+* xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts]
+* The xref:8.examples/8n.custom-executor.adoc[Custom Executor], xref:8.examples/8q.gui-integration.adoc[GUI Integration], xref:8.examples/8o.sender-bridge.adoc[Bridging a P2300 Sender], and xref:8.examples/8p.asio-use-capy.adoc[Calling Asio from a Capy Coroutine] examples

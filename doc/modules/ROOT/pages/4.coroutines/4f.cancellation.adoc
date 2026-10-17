@@ -1,6 +1,8 @@
 = Stop Tokens and Cancellation
 :page-mode: explanation
 
+include::partial$diagram-style.adoc[]
+
 == The Problem
 
 * A user clicks "Cancel" on a download dialog
@@ -197,6 +199,85 @@ When Capy's I/O is provided by Corosio, requesting stop cancels work in progress
 
 The mechanism depends on the backend. Completion-based backends (Windows IOCP, and io_uring when enabled on Linux) cancel the operation in the kernel. Readiness-based backends (Linux epoll, kqueue on the BSDs and macOS, and the portable select fallback) remove it from the reactor before its system call runs. Either way the operation is reported as cancelled instead of blocking until the I/O would have completed.
 
+[#the-cancellation-sequence]
+== The Cancellation Sequence
+
+The diagram follows a stop request from the caller to a suspended task.
+The task awaits an I/O awaitable that observes the stop token.
+xref:index.adoc#how-a-task-runs[How a Task Runs] shows the same task when it completes normally.
+
+[mermaid]
+----
+sequenceDiagram
+    autonumber
+    accTitle: Cancelling a task with a stop token
+    accDescr: The caller starts a task with a stop token from a stop_source. The task awaits an I/O awaitable, which registers a stop callback on the token and suspends. The caller requests a stop, and the stop callback runs on the caller's thread. If the stop request claims the operation, the I/O awaitable posts the task to the executor, which resumes it with a canceled result. If the operation completed first, the stop callback does nothing. The task finishes, and the completion handler receives its result.
+    participant C as Caller
+    participant R as run_async
+    participant X as Executor
+    participant T as my_task
+    participant A as I/O awaitable
+    C->>R: run_async(ex, source.get_token())(my_task())
+    R->>T: start, with the stop token in the environment
+    T->>A: co_await an I/O operation
+    A->>A: register a stop callback on the stop token
+    A-->>X: suspend, the thread is free
+    C->>A: source.request_stop() runs the stop callback
+    alt the stop request claims the operation
+        A->>X: post(my_task)
+        X->>T: resume, the result is cond::canceled
+    else the operation completed first
+        Note over A: the stop callback does nothing
+    end
+    T->>R: co_return
+    R->>R: call the completion handler
+----
+
+. The caller owns a `std::stop_source`.
+  It passes the token of the source to cpp:run_async[], which puts the token in the environment of the task.
+. The task starts, as in xref:index.adoc#how-a-task-runs[How a Task Runs].
+  Every task that it awaits gets the same stop token.
+. The task awaits an I/O awaitable.
+. The I/O awaitable registers a `std::stop_callback` on the stop token.
+. The task suspends, and the thread goes back to the executor.
+. The caller calls `request_stop()` on the source.
+  The stop callback runs at once, on the thread of the caller.
+. The stop request and the completion of the operation race.
+  The I/O awaitable uses one atomic claim to pick the winner.
+  If the stop request wins, the I/O awaitable posts the task to the executor.
+  It does not resume the task on the thread of the caller.
+. The executor resumes the task.
+  The result of the operation compares equal to cpp:cond::canceled[cond::canceled].
+. The task finishes.
+  It can return the error, throw, or handle the cancellation itself.
+. cpp:run_async[] calls the completion handler with the result of the task.
+
+If the operation completed first, the stop callback does nothing.
+The completion resumes the task with the result of the operation, as in
+xref:index.adoc#how-a-task-runs[How a Task Runs].
+
+In both cases the task resumes and returns through its own code.
+Abandoning a chain is different: its frames are destroyed without resuming.
+xref:4.coroutines/4j.lifetimes.adoc#_who_owns_a_suspended_coroutine[Who Owns a Suspended Coroutine] explains when that happens.
+
+[WARNING]
+====
+The stop callback runs on the thread that calls `request_stop()`, at the same time as code on the executor.
+Do not assume that all code in an I/O awaitable runs on the executor.
+
+* In the stop callback, touch the state of the I/O awaitable only through the atomic claim.
+* Only the side that wins the claim posts the task.
+  The side that loses does not touch the I/O awaitable again.
+  If both sides post the task, the task resumes twice.
+* After the operation can be claimed, the winner can resume the task on another thread before `await_suspend` returns.
+  The task can then finish and destroy the I/O awaitable and its environment while `await_suspend` still uses them.
+  The example in the next section makes the winner wait until `await_suspend` is done.
+====
+
+cpp:async_waker[] is a complete I/O awaitable that implements this sequence, including the atomic claim.
+It does not make the winner wait for `await_suspend`, so it requires a single-threaded executor or a strand.
+The next section shows the stop callback in detail.
+
 [[stoppable-awaitables]]
 == Implementing Stoppable Awaitables
 
@@ -204,25 +285,44 @@ The examples above show *polling* for cancellation with `token.stop_requested()`
 
 === The Dangerous Pattern
 
-A `std::stop_callback` fires synchronously on whatever thread calls `request_stop()`. If the callback resumes the coroutine directly, the coroutine runs on the wrong thread:
+A `std::stop_callback` fires synchronously on whatever thread calls `request_stop()`.
+The callback must not call `resume()` on the coroutine handle, because every resumption goes through the executor.
+xref:4.coroutines/4e.context-awaitable.adoc#stop-callbacks-must-post-not-resume[Stop Callbacks Must Post, Not Resume] explains why.
+
+The next obvious solution, posting the coroutine through the executor, is also wrong:
 
 [source,cpp]
 ----
-include::example$snippets/4f_cancellation.cpp[tag=inline_resume_wrong,indent=0]
+include::example$snippets/4f_cancellation.cpp[tag=post_without_claim,indent=0]
 ----
 
-When an external thread calls `request_stop()`, `h.resume()` executes the coroutine on that thread. The coroutine machinery sets the thread-local frame allocator to the executor's allocator—poisoning the calling thread's TLS. When the executor's pool destructs, the TLS pointer becomes dangling. The next coroutine allocation on that thread dereferences freed memory.
+The stop callback posts the coroutine without checking whether the read already completed.
+The completion posts it without checking whether a stop request already did.
+When the read completes at about the same time as a stop request, both post, and the coroutine resumes twice.
+The second resumption runs a coroutine that has already moved on, or whose frame is already destroyed.
 
-This bug is deterministic, not a race condition. It manifests as a heap-use-after-free in *unrelated* code—wherever the next coroutine frame happens to be allocated on the poisoned thread.
+This bug is a race.
+Tests rarely trigger it, and under load it shows up as a crash or as memory corruption in unrelated code.
 
-=== The Correct Pattern: Post Through the Executor
+=== The Correct Pattern: Claim, Then Post
 
-Post the coroutine handle through the executor instead of resuming it inline. This ensures the coroutine runs on the correct thread:
+Posting the coroutine through the executor is necessary, but it is not enough.
+The stop callback and the completion of the operation race, so each one must first win the claim:
 
+* `read_op::claim` is the atomic claim. Only the winner writes the result.
+* `arrivals_` makes the winner wait for `await_suspend`.
+  The winner and the end of `await_suspend` both arrive, and the second to arrive resumes the coroutine.
+  If `await_suspend` arrives second, it resumes the coroutine directly, because it already runs on the executor.
+  If the winner arrives second, it posts the coroutine through the executor.
+
+.A stoppable I/O awaitable that claims, then posts
+[%collapsible]
+====
 [source,cpp]
 ----
 include::example$snippets/4f_cancellation.cpp[tag=stoppable_awaitable,indent=0]
 ----
+====
 
 NOTE: Capy's built-in I/O awaitables (via Corosio) already use the post-back pattern internally. This guidance applies when writing your own custom awaitables.
 

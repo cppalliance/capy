@@ -152,7 +152,7 @@ the gated slice contains 0 `advisory-C2` fingerprints.
 ### Run `selftest.mjs` after touching `sentence-length.mjs` or `doc-lint.mjs`
 
 ```
-node lint/selftest.mjs      # exit 0 = 35 assertions hold; exit 1 names what broke
+node lint/selftest.mjs      # exit 0 = 40 assertions hold; exit 1 names what broke
 ```
 
 It exercises the properties whose failure is **silent**, because nothing in the real corpus
@@ -178,7 +178,8 @@ that `role=output`/`role=figure` clears only a *bare* listing and never a `[sour
 mutation that ORs the clearing-role and non-code-role checks together, ignoring which kind of block
 it is, makes `role=output` a blanket exemption for real C++; this file catches it. It also asserts
 the SHAPE advisory sidecar (doc/STYLE_GUIDE.md B3) fires on a role=output/role=figure block whose
-content looks like code and stays silent on a genuine one.
+content looks like code and stays silent on a genuine one, and that a `[mermaid]` diagram block
+is exempt from both B2 and SHAPE without clearing a `[source,*]` block stacked under it.
 
 ### `sentence_length` is gated, and its backlog is now grandfathered
 

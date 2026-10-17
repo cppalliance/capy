@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -13,6 +14,9 @@
 These examples demonstrate how the pieces you have learned--tasks, buffers, streams, cancellation, composition--fit together in practice.
 
 Every example is self-contained and compiles as a standalone program.
+
+For a reading order for your role, start with xref:index.adoc#protocol-anatomy[Protocol Anatomy].
+It lists what to read next for application developers, framework authors, and I/O library authors.
 
 == What This Section Covers
 

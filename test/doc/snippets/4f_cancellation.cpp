@@ -12,6 +12,13 @@
 
 #include "../doc_warnings.hpp"
 
+// GCC false positive at -O2/-O3: read_op::awaiter lives in a coroutine
+// frame, and GCC cannot prove that std::optional<std::stop_callback>
+// is only destroyed after emplace() has initialized it.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
 #include <boost/capy/cond.hpp>
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/error.hpp>
@@ -27,15 +34,15 @@
 
 #include <atomic>
 #include <coroutine>
-#include <functional>
+#include <cstddef>
 #include <iostream>
-#include <memory>
 #include <optional>
 // tag::include_stop_token[]
 #include <stop_token>
 // end::include_stop_token[]
 #include <string>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -170,58 +177,200 @@ capy::task<std::string> fetch_with_cancel()
 }
 // end::canceled_convention[]
 
-// tag::inline_resume_wrong[]
-// WRONG — causes use-after-free
-std::optional<std::stop_callback<std::coroutine_handle<>>> stop_cb;
+// Compile-only bug demo: running it would resume a coroutine twice, so
+// nothing awaits it. start_read stands in for the I/O backend.
+struct racy_read;
+void start_read(racy_read*) {}
 
-std::coroutine_handle<> await_suspend(
-    std::coroutine_handle<> h, capy::await_context const* env)
+// tag::post_without_claim[]
+// WRONG: the completion and the stop callback can both resume the
+// coroutine.
+struct racy_read
 {
-    stop_cb.emplace(env->stop_token, h);  // Resumes inline!
-    return std::noop_coroutine();
-}
-// end::inline_resume_wrong[]
+    struct cancel_fn
+    {
+        racy_read* self;
 
-// Compile-only bug demo: firing the callback would resume the
-// coroutine on the stopping thread, so nothing ever calls it.
-[[maybe_unused]] std::coroutine_handle<> (* const wrong_pattern)(
-    std::coroutine_handle<>, capy::await_context const*) = &await_suspend;
+        void operator()() const noexcept
+        {
+            self->canceled_ = true;
+            self->ex_.post(self->cont_);  // even if the read completed
+        }
+    };
 
-void start_async_operation(std::coroutine_handle<>, capy::await_context const*) {}
+    capy::continuation cont_;
+    capy::executor_ref ex_;
+    bool canceled_ = false;
+    std::optional<std::stop_callback<cancel_fn>> stop_cb_;
+
+    bool await_ready() const noexcept { return false; }
+
+    std::coroutine_handle<> await_suspend(
+        std::coroutine_handle<> h, capy::await_context const* env)
+    {
+        cont_.h = h;
+        cont_.owner = env->owner;
+        ex_ = env->executor;
+        stop_cb_.emplace(env->stop_token, cancel_fn{this});
+        start_read(this);  // the backend calls on_complete() later
+        return std::noop_coroutine();
+    }
+
+    // Called by the I/O backend, on any thread, when the read finishes.
+    void on_complete() noexcept
+    {
+        ex_.post(cont_);  // even if the stop callback posted already
+    }
+
+    void await_resume() noexcept { stop_cb_.reset(); }
+};
+// end::post_without_claim[]
 
 // tag::stoppable_awaitable[]
-struct my_stoppable_awaitable
+// An I/O object with one pending read. The I/O backend calls complete()
+// from any thread when the read finishes.
+class read_op
 {
-    using stop_cb_t = std::stop_callback<std::function<void()>>;
+public:
+    struct awaiter;
 
-    mutable capy::continuation cont_;
-    std::unique_ptr<stop_cb_t> stop_cb_;
-    // ... other members for the async operation ...
+    awaiter wait() noexcept;
 
-    bool await_ready() { return false; }
+    // Called by the I/O backend. Ignored if no wait is armed, or if a
+    // stop request already claimed the wait.
+    void complete(std::size_t n) noexcept;
+
+    bool waiting() const noexcept
+    {
+        return armed_.load(std::memory_order_acquire);
+    }
+
+private:
+    // The claim: whoever moves armed_ from true to false owns the
+    // result. The loser does not touch the waiter.
+    bool claim() noexcept
+    {
+        bool expected = true;
+        return armed_.compare_exchange_strong(
+            expected, false, std::memory_order_acq_rel);
+    }
+
+    std::atomic<bool> armed_{false};
+    awaiter* waiter_ = nullptr;
+};
+
+struct read_op::awaiter
+{
+    // Runs on the thread that calls request_stop().
+    struct cancel_fn
+    {
+        awaiter* self;
+
+        void operator()() const noexcept
+        {
+            if (!self->op_->claim())
+                return;  // complete() won, or nothing is armed yet
+            self->canceled_ = true;
+            self->arrive();
+        }
+    };
+
+    read_op* op_;
+    capy::continuation cont_;
+    capy::executor_ref ex_;
+    std::size_t bytes_ = 0;
+    bool canceled_ = false;
+    // The winner and the end of await_suspend both arrive here. The
+    // second to arrive resumes the coroutine, so it cannot resume while
+    // await_suspend is still running.
+    std::atomic<int> arrivals_{0};
+    std::optional<std::stop_callback<cancel_fn>> stop_cb_;
+
+    explicit awaiter(read_op* op) noexcept : op_(op) {}
+
+    // co_await can move the awaiter, but only before await_suspend,
+    // when there is no stop callback yet.
+    awaiter(awaiter&& other) noexcept : op_(other.op_) {}
+
+    // Called by the winner. If await_suspend has returned, post the
+    // coroutine; otherwise await_suspend resumes it.
+    void arrive() noexcept
+    {
+        if (arrivals_.fetch_add(1, std::memory_order_acq_rel) == 1)
+            ex_.post(cont_);  // last action: *this can be destroyed now
+    }
+
+    bool await_ready() const noexcept { return false; }
 
     std::coroutine_handle<> await_suspend(
         std::coroutine_handle<> h, capy::await_context const* env)
     {
         if (env->stop_token.stop_requested())
-            return h;  // Already cancelled
+        {
+            canceled_ = true;
+            return h;
+        }
 
+        // 1. Write everything the winner reads, before anyone can win.
+        //    The owner lets a holder abandon the chain while it waits.
         cont_.h = h;
-        auto ex = env->executor;
-        stop_cb_ = std::make_unique<stop_cb_t>(env->stop_token,
-            [this, ex]() mutable noexcept { ex.post(cont_); });
+        cont_.owner = env->owner;
+        ex_ = env->executor;
+        op_->waiter_ = this;
 
-        start_async_operation(h, env);
+        // 2. If a stop is requested now, the callback runs here and
+        //    loses, because nothing is armed yet. Step 4 catches it.
+        stop_cb_.emplace(env->stop_token, cancel_fn{this});
+
+        // 3. Arm. complete() or the stop callback can win from here on.
+        op_->armed_.store(true, std::memory_order_release);
+
+        // 4. Claim a stop request that arrived during step 2.
+        if (env->stop_token.stop_requested() && op_->claim())
+        {
+            canceled_ = true;
+            return h;
+        }
+
+        // 5. Arrive. If the winner came first, resume now, on this
+        //    thread. Otherwise the winner posts the coroutine later.
+        if (arrivals_.fetch_add(1, std::memory_order_acq_rel) == 1)
+            return h;
         return std::noop_coroutine();
     }
 
-    void await_resume() { /* check result or throw */ }
+    capy::results<std::size_t> await_resume() noexcept
+    {
+        // Waits for a stop callback that is still running to return.
+        stop_cb_.reset();
+        if (canceled_)
+            return {capy::make_error_code(capy::error::canceled), 0};
+        return {std::error_code(), bytes_};
+    }
 };
+
+inline read_op::awaiter read_op::wait() noexcept
+{
+    return awaiter{this};
+}
+
+inline void read_op::complete(std::size_t n) noexcept
+{
+    if (!claim())
+        return;
+    waiter_->bytes_ = n;
+    waiter_->arrive();
+}
 // end::stoppable_awaitable[]
 
-capy::task<> use_stoppable()
+capy::task<> read_once(
+    read_op& op, std::atomic<int>& resumed, std::atomic<int>& canceled)
 {
-    co_await my_stoppable_awaitable{};
+    auto [ec, n] = co_await op.wait();
+    if (ec == capy::cond::canceled)
+        canceled.fetch_add(1);
+    else if (!ec && n == 5)
+        resumed.fetch_add(1);
 }
 
 // tag::racing_deadline[]
@@ -453,15 +602,48 @@ struct cancellation_test
     void
     testStoppableAwaitable()
     {
-        // A pre-signaled token exercises the already-cancelled fast
-        // path; the armed path would wait on an operation that this
-        // sketch never starts.
-        capy::thread_pool pool(1);
-        std::stop_source source;
-        source.request_stop();
-        capy::run_async(
-            pool.get_executor(), source.get_token())(use_stoppable());
+        // Declared before the pool, so they outlive its work.
+        std::atomic<int> resumed{0};
+        std::atomic<int> canceled{0};
+        read_op stopped_op;
+        std::stop_source stopped;
+        int const rounds = 500;
+
+        capy::thread_pool pool(2);
+
+        // Stop requested before the wait: the fast path.
+        stopped.request_stop();
+        capy::run_async(pool.get_executor(), stopped.get_token())(
+            read_once(stopped_op, resumed, canceled));
+
+        // complete() racing request_stop(). Exactly one of them wins
+        // each round, so every round resumes the task exactly once.
+        for (int i = 0; i < rounds; ++i)
+        {
+            read_op op;
+            std::stop_source source;
+            std::atomic<bool> done{false};
+            // The backend completes the read the moment the wait is
+            // armed, which can be before await_suspend returns.
+            std::thread backend([&op, &done] {
+                while (!op.waiting() && !done.load())
+                    ;
+                op.complete(5);  // a no-op if the stop request won
+            });
+            capy::run_async(pool.get_executor(), source.get_token(),
+                [&done] { done.store(true); })(
+                    read_once(op, resumed, canceled));
+            while (!op.waiting() && !done.load())
+                std::this_thread::yield();
+            source.request_stop();
+            backend.join();
+            while (!done.load())
+                std::this_thread::yield();
+        }
+
         pool.join();
+        BOOST_TEST_EQ(resumed.load() + canceled.load(), rounds + 1);
+        BOOST_TEST(canceled.load() >= 1);
     }
 
     void

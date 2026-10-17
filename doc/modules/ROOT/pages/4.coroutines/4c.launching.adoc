@@ -10,6 +10,8 @@ Capy tasks are lazy—they do not execute until something drives them. Two mecha
 
 When a task is awaited, the awaiting coroutine provides context: an executor for dispatching completion and a stop token for cancellation. Non-coroutine code must start the first task in a chain explicitly.
 
+xref:index.adoc#how-a-task-runs[How a Task Runs] shows both mechanisms as a sequence diagram.
+
 == run_async: Entry from Non-Coroutine Code
 
 cpp:run_async[] takes an executor, creates the necessary context, and starts the task executing.
