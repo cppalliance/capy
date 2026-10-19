@@ -23,6 +23,10 @@ execution_context()
 execution_context::
 ~execution_context()
 {
+    // A service created after a derived destructor destroyed the
+    // services would be destroyed here, after the derived members it
+    // may still reach.
+    BOOST_CAPY_ASSERT(!destroyed_ || !head_);
     shutdown();
     destroy();
 }
@@ -54,6 +58,7 @@ destroy() noexcept
         head_ = p->next_;
         delete p;
     }
+    destroyed_ = true;
 }
 
 execution_context::service*

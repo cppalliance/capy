@@ -89,30 +89,25 @@ public:
         // are unwound. An unwind posted here is given up in turn.
         auto drain = [this]
         {
-            bool any = false;
             for(;;)
             {
                 capy::continuation c;
                 {
                     std::lock_guard<std::mutex> lock(m_);
                     if(queue_.empty())
-                        return any;
+                        return;
                     c = queue_.front();
                     queue_.pop_front();
                 }
-                any = true;
                 capy::abandon(c);
             }
         };
         shutdown();
         drain();
-        // A service's destructor may post too: repeat until nothing
-        // is left of either.
-        do
-        {
-            destroy();
-        }
-        while(drain());
+        destroy();
+        // Services give up their work in shutdown(), but anything a
+        // destructor posts anyway is still given up.
+        drain();
     }
 
     gui_app(gui_app const&) = delete;

@@ -46,36 +46,32 @@ blocking_context::blocking_context()
 
 blocking_context::~blocking_context()
 {
-    // Nothing will run these now; abandon them as their holder. The
-    // services may post while they shut down or are destroyed, so the
-    // queue outlives both. Each is taken under the lock, as other
-    // threads may still post, and abandoned outside it.
+    // Nothing will run these now; abandon them as their holder. Each is
+    // taken under the lock and abandoned outside it, since abandoning
+    // one may post another.
     auto drain = [this]
     {
-        bool any = false;
         for(;;)
         {
             continuation c;
             {
                 std::lock_guard<std::mutex> lock(impl_->mtx);
                 if(impl_->queue.empty())
-                    return any;
+                    return;
                 c = impl_->queue.front();
                 impl_->queue.pop();
             }
-            any = true;
             capy::abandon(c);
         }
     };
     shutdown();
+    // Takes what the unwinds post too, and the work of any service they
+    // create, which is shut down as it is created.
     drain();
-    // A frame the drain unwinds can create a service, whose destructor
-    // can post again: repeat until nothing is left of either.
-    do
-    {
-        destroy();
-    }
-    while(drain());
+    destroy();
+    // Services give up their work in shutdown(), but anything a
+    // destructor posts anyway is still destroyed.
+    drain();
     delete impl_;
 }
 

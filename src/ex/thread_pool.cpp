@@ -115,16 +115,12 @@ public:
         return current_.get() == this;
     }
 
-    // Abandon queued coroutines. Called after the services shut down,
-    // since their shutdown can post more, and again after they are
-    // destroyed, for anything their destructors post. Each is taken
-    // under the lock, as other threads may still post, and abandoned
-    // outside it, as abandoning can post. Returns whether there was
-    // anything to abandon.
-    bool
+    // Abandon queued coroutines. Each is taken under the lock, as other
+    // threads may still post, and abandoned outside it, as abandoning
+    // can post.
+    void
     drain_abandoned() noexcept
     {
-        bool any = false;
         for(;;)
         {
             continuation* c;
@@ -133,8 +129,7 @@ public:
                 c = pop();
             }
             if(!c)
-                return any;
-            any = true;
+                return;
             if(c->h && c->h != std::noop_coroutine())
                 capy::abandon(*c);
         }
@@ -302,14 +297,13 @@ thread_pool::
     impl_->stop();
     impl_->join();
     shutdown();
+    // Takes what the unwinds post too, and the work of any service they
+    // create, which is shut down as it is created.
     impl_->drain_abandoned();
-    // A frame the drain unwinds can create a service, whose destructor
-    // can post again: repeat until nothing is left of either.
-    do
-    {
-        destroy();
-    }
-    while(impl_->drain_abandoned());
+    destroy();
+    // Services give up their work in shutdown(), but anything a
+    // destructor posts anyway is still destroyed.
+    impl_->drain_abandoned();
     delete impl_;
 }
 

@@ -11,6 +11,7 @@
 #include <boost/capy/ex/execution_context.hpp>
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 
+#include "death_test.hpp"
 #include "test_helpers.hpp"
 
 #include <atomic>
@@ -519,6 +520,28 @@ struct execution_context_test
         BOOST_TEST_NE(new_mr, default_mr);
     }
 
+#if !defined(_WIN32) && !defined(NDEBUG)
+    // Once a context has destroyed its services, a service created
+    // later would outlive the derived context's members, so a debug
+    // build stops the program.
+    void
+    testServiceCreatedAfterDestroyAsserts()
+    {
+        struct late_creating_context : execution_context
+        {
+            ~late_creating_context()
+            {
+                shutdown();
+                destroy();
+                make_service<simple_service>();
+            }
+        };
+        BOOST_TEST(aborts([] {
+            late_creating_context ctx;
+        }));
+    }
+#endif
+
     void
     run()
     {
@@ -542,6 +565,9 @@ struct execution_context_test
         testGetFrameAllocator();
         testSetFrameAllocatorRawPointer();
         testSetFrameAllocatorTemplate();
+#if !defined(_WIN32) && !defined(NDEBUG)
+        testServiceCreatedAfterDestroyAsserts();
+#endif
     }
 };
 

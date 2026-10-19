@@ -38,10 +38,12 @@ namespace capy {
     execution facilities like event loops and thread pools. Derived
     class destructors must call `shutdown()` and `destroy()` to ensure
     proper service cleanup before member destruction. Between the two,
-    a context that queues work abandons what is still queued. Since a
-    service's destructor can post and an unwound chain can create a
-    service, it then repeats `destroy()` and that drain until the
-    drain finds nothing.
+    a context that queues work abandons what is still queued, including
+    work posted while it does so. A service created by an unwound chain
+    is shut down as it is created, so its work is taken too. Services
+    do not post from their destructors. A context may drain once more
+    after `destroy()`, so that stray work is still destroyed, but no
+    service may be created after `destroy()` returns.
 
     @par Service Lifecycle
     Services are created on first use via `use_service()` or explicitly
@@ -106,8 +108,14 @@ public:
 
         Derived classes must implement the pure virtual `shutdown()` member
         function, which is called when the owning execution context is
-        being destroyed. The `shutdown()` function should release resources
-        and cancel outstanding operations without blocking.
+        being destroyed. The `shutdown()` function gives up all of the
+        service's work, releases resources and cancels outstanding
+        operations. It does not block, except to wait for work the
+        service already started, such as its own threads or operations
+        it submitted to the system, so that nothing that work posts
+        arrives later. The
+        destructor must not post: by the time it runs, the context has
+        already drained its queue.
 
         @par Deriving from service
         @li Implement `shutdown()` to perform cleanup.
@@ -133,10 +141,13 @@ public:
 
         /** Called when the owning execution context shuts down.
 
-            Implementations should release resources and cancel any
-            outstanding asynchronous operations. This function must
-            not block and must not throw exceptions. Services are
-            shut down in reverse order of creation.
+            Implementations give up all of the service's work here,
+            release resources and cancel any outstanding asynchronous
+            operations, rather than in the destructor. This function
+            must not throw exceptions, and must not block except to
+            wait for work the service already started, such as threads
+            it owns. Services are shut down in
+            reverse order of creation.
 
             @par Exception Safety
             No-throw guarantee.
@@ -472,8 +483,9 @@ protected:
     /** Destroy all services.
 
         Deletes all services in reverse order of creation. Derived
-        classes should call this as the final step of destruction.
-        This function is idempotent; subsequent calls have no effect.
+        classes call this after giving up the work still queued, so
+        that work is destroyed while every service exists. This
+        function is idempotent; subsequent calls have no effect.
 
         @par Preconditions
         @li `shutdown()` was called.
@@ -496,6 +508,11 @@ protected:
         @par Thread Safety
         Not thread-safe. Must not be called concurrently with other
         operations on this execution_context.
+
+        @note No service may be created after this returns. It would
+        outlive the derived context's members, which its destructor
+        may still reach. Debug builds check this when the context is
+        destroyed.
     */
     void destroy() noexcept;
 
@@ -536,6 +553,7 @@ private:
     std::pmr::memory_resource* frame_alloc_ = nullptr;
     service* head_ = nullptr;
     bool shutdown_ = false;
+    bool destroyed_ = false;
 };
 
 template< typename Derived >

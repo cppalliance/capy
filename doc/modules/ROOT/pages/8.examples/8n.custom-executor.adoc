@@ -33,7 +33,7 @@ target_link_libraries(custom_executor PRIVATE Boost::capy)
 include::example$custom-executor/custom_executor.cpp[tag=inherit]
 ----
 
-The destructor must call `shutdown()`, give up any work still queued with cpp:abandon[], then call `destroy()`. Destroying a service can post more work, and unwinding an abandoned chain can create a service, so the destructor repeats `destroy()` and the drain until a drain finds nothing. The queue holds copies of each cpp:continuation[], so the owner that cpp:abandon[] needs travels with the handle.
+The destructor must call `shutdown()`, give up any work still queued with cpp:abandon[], then call `destroy()`. The drain also takes work posted while it runs. That includes the work of a service an unwound chain creates, which is shut down as it is created. Services give up their work in `shutdown()`, so destroying them posts nothing. The destructor drains once more for stray work a destructor posts anyway. No service may be created after `destroy()`. The queue holds copies of each cpp:continuation[], so the owner that cpp:abandon[] needs travels with the handle.
 
 === The Executor Concept
 

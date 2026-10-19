@@ -15,6 +15,7 @@
 #include <boost/capy/ex/await_context.hpp>
 
 #include <coroutine>
+#include <csignal>
 #include <exception>
 #include <type_traits>
 
@@ -68,6 +69,15 @@ terminates(F fn)
 {
     int status = run_in_child(fn);
     return WIFEXITED(status) && WEXITSTATUS(status) == terminated_status;
+}
+
+/// Return true when `fn` aborts, as a failed assertion does.
+template<class F>
+bool
+aborts(F fn)
+{
+    int status = run_in_child(fn);
+    return WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
 }
 
 /// Return true when `fn` returns, and returns true if it returns a bool.

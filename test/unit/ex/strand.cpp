@@ -1067,6 +1067,44 @@ struct strand_test
             BOOST_TEST_EQ(d, 1);
     }
 
+    // The strand service gives up every strand's queued work in its
+    // shutdown(), so a strand dropped afterwards has nothing left to
+    // give up, and destroying the services posts nothing.
+    void
+    testShutdownLeavesNothingForStrandDestructor()
+    {
+        int down[2] = {};
+        continuation conts[2] = {};
+        std::queue<continuation> q;
+        auto probe = [](destroy_count_t) -> task<void> { co_return; };
+        for(std::size_t i = 0; i < 2; ++i)
+        {
+            auto t = probe(destroy_count_t(down[i]));
+            conts[i].h = t.handle();
+            t.release();
+        }
+        auto ctx = std::make_unique<closable_test_context>();
+        queuing_executor qe(q);
+        qe.ctx_ = ctx.get();
+        auto s = std::make_unique<strand<queuing_executor>>(qe);
+        s->post(conts[0]);
+        s->post(conts[1]);
+        BOOST_TEST_EQ(q.size(), 1u);
+        capy::abandon(q.front());
+        q.pop();
+        for(int d : down)
+            BOOST_TEST_EQ(d, 0);
+
+        ctx->shutdown();
+        for(int d : down)
+            BOOST_TEST_EQ(d, 1);
+        s.reset();
+        ctx.reset();
+        for(int d : down)
+            BOOST_TEST_EQ(d, 1);
+        BOOST_TEST(q.empty());
+    }
+
     void
     testShutdownReleasesLiveStrand()
     {
@@ -1571,6 +1609,7 @@ struct strand_test
     run()
     {
         testShutdownDestroysQueuedAcrossStrands();
+        testShutdownLeavesNothingForStrandDestructor();
         testShutdownDestroysQueuedParentedChain();
         testShutdownReleasesLiveStrand();
         testConstruct();

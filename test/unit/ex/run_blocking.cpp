@@ -105,13 +105,12 @@ struct dtor_poster : execution_context::service
     void shutdown() override {}
 };
 
-// Starts posting from another thread when the context's services shut
-// down, while the context drains, and joins that thread when destroyed.
+// Posts from a thread of its own while the context's services shut down,
+// and joins that thread before its shutdown() returns.
 struct shutdown_poster : execution_context::service
 {
     blocking_executor ex_;
     std::vector<continuation>* cs_;
-    std::thread t_;
 
     shutdown_poster(
         execution_context&,
@@ -122,18 +121,14 @@ struct shutdown_poster : execution_context::service
     {
     }
 
-    ~shutdown_poster()
-    {
-        t_.join();
-    }
-
     void shutdown() override
     {
-        t_ = std::thread([this]
+        std::thread t([this]
         {
             for(auto& c : *cs_)
                 ex_.post(c);
         });
+        t.join();
     }
 };
 
@@ -158,13 +153,54 @@ struct shutdown_dispatcher : execution_context::service
     }
 };
 
-// A second dtor_poster, so one can be created while the first exists.
-struct late_dtor_poster : dtor_poster
+// Posts when the context's services shut down, as a service giving up
+// its work would.
+struct late_poster : execution_context::service
 {
-    using dtor_poster::dtor_poster;
+    blocking_executor ex_;
+    continuation* c_;
+
+    late_poster(execution_context&, blocking_executor ex, continuation& c)
+        : ex_(ex)
+        , c_(&c)
+    {
+    }
+
+    void shutdown() override
+    {
+        ex_.post(*c_);
+    }
 };
 
-// Creates a late_dtor_poster on the context when destroyed.
+// A second late_poster, so one can be created while the first exists.
+struct later_poster : late_poster
+{
+    using late_poster::late_poster;
+};
+
+// Records, when the context destroys it, how many probes were already
+// destroyed. Made after the services the test creates, it is destroyed
+// before them.
+struct teardown_witness : execution_context::service
+{
+    int const* down_;
+    int* seen_;
+
+    teardown_witness(execution_context&, int const& down, int& seen)
+        : down_(&down)
+        , seen_(&seen)
+    {
+    }
+
+    ~teardown_witness()
+    {
+        *seen_ = *down_;
+    }
+
+    void shutdown() override {}
+};
+
+// Creates a later_poster on the context when destroyed.
 struct poster_maker
 {
     blocking_context* ctx;
@@ -185,7 +221,7 @@ struct poster_maker
     ~poster_maker()
     {
         if(ctx)
-            ctx->make_service<late_dtor_poster>(ctx->get_executor(), *c);
+            ctx->make_service<later_poster>(ctx->get_executor(), *c);
     }
 };
 
@@ -470,12 +506,12 @@ struct run_blocking_test
         BOOST_TEST_EQ(down, 1);
     }
 
-    // Work posted from another thread while the context drains is
-    // neither lost nor torn from the queue.
+    // Work a service's own thread posts while the service shuts down is
+    // destroyed with the context, none of it lost.
     void
-    testPostDuringDrain()
+    testPostFromServiceThreadAtShutdown()
     {
-        constexpr int n = 2000;
+        constexpr int n = 16;
         int down = 0;
         auto probe = [](destroy_count_t) -> task<void> { co_return; };
         std::vector<continuation> cs;
@@ -541,7 +577,8 @@ struct run_blocking_test
         BOOST_TEST_EQ(down, 1);
     }
 
-    // Work posted while the services are destroyed is destroyed too.
+    // A service should not post from its destructor, but work one posts
+    // anyway is still destroyed with the context.
     void
     testPostFromServiceDestructor()
     {
@@ -556,12 +593,15 @@ struct run_blocking_test
         BOOST_TEST_EQ(down, 1);
     }
 
-    // A frame destroyed by the context's last drain may create a service
-    // whose destructor posts again; that work is destroyed too.
+    // A frame destroyed while the context shuts down may create a service.
+    // That service is shut down as it is created, and the drain destroys
+    // the work it gives up before the services made before the teardown
+    // are destroyed.
     void
-    testServiceCreatedByLastDrainDestroyed()
+    testServiceCreatedDuringDrain()
     {
         int down = 0;
+        int seen = -1;
         auto maker = [](poster_maker) -> task<void> { co_return; };
         auto t = plain_probe(destroy_count_t(down));
         continuation probe_c{t.handle()};
@@ -572,8 +612,10 @@ struct run_blocking_test
             auto m = maker(poster_maker(ctx, probe_c));
             maker_c.h = m.handle();
             m.release();
-            ctx.make_service<dtor_poster>(ctx.get_executor(), maker_c);
+            ctx.make_service<late_poster>(ctx.get_executor(), maker_c);
+            ctx.make_service<teardown_witness>(down, seen);
         }
+        BOOST_TEST_EQ(seen, 1);
         BOOST_TEST_EQ(down, 1);
     }
 
@@ -643,10 +685,10 @@ struct run_blocking_test
         testDestroyedContextDestroysQueued();
         testDispatchDuringShutdown();
         testAbandonedChainThrows();
-        testPostDuringDrain();
+        testPostFromServiceThreadAtShutdown();
         testPostDuringServiceShutdown();
         testPostFromServiceDestructor();
-        testServiceCreatedByLastDrainDestroyed();
+        testServiceCreatedDuringDrain();
     }
 };
 

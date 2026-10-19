@@ -18,6 +18,7 @@
 #include <boost/capy/ex/work_guard.hpp>
 #include <boost/capy/task.hpp>
 
+#include "death_test.hpp"
 #include "test_helpers.hpp"
 
 #include <array>
@@ -189,13 +190,12 @@ struct dtor_poster : execution_context::service
     void shutdown() override {}
 };
 
-// Starts posting from another thread when the pool's services shut
-// down, while the pool drains, and joins that thread when destroyed.
+// Posts from a thread of its own while the pool's services shut down,
+// and joins that thread before its shutdown() returns.
 struct shutdown_poster : execution_context::service
 {
     thread_pool::executor_type ex_;
     std::vector<continuation>* cs_;
-    std::thread t_;
 
     shutdown_poster(
         execution_context&,
@@ -206,28 +206,46 @@ struct shutdown_poster : execution_context::service
     {
     }
 
-    ~shutdown_poster()
-    {
-        t_.join();
-    }
-
     void shutdown() override
     {
-        t_ = std::thread([this]
+        std::thread t([this]
         {
             for(auto& c : *cs_)
                 ex_.post(c);
         });
+        t.join();
     }
 };
 
-// A second dtor_poster, so one can be created while the first exists.
-struct late_dtor_poster : dtor_poster
+// A second late_poster, so one can be created while the first exists.
+struct later_poster : late_poster
 {
-    using dtor_poster::dtor_poster;
+    using late_poster::late_poster;
 };
 
-// Creates a late_dtor_poster on the pool when destroyed.
+// Records, when the pool destroys it, how many probes were already
+// destroyed. Made after the services the test creates, it is destroyed
+// before them.
+struct teardown_witness : execution_context::service
+{
+    int const* down_;
+    int* seen_;
+
+    teardown_witness(execution_context&, int const& down, int& seen)
+        : down_(&down)
+        , seen_(&seen)
+    {
+    }
+
+    ~teardown_witness()
+    {
+        *seen_ = *down_;
+    }
+
+    void shutdown() override {}
+};
+
+// Creates a later_poster on the pool when destroyed.
 struct poster_maker
 {
     thread_pool* pool;
@@ -248,9 +266,36 @@ struct poster_maker
     ~poster_maker()
     {
         if(pool)
-            pool->make_service<late_dtor_poster>(pool->get_executor(), *c);
+            pool->make_service<later_poster>(pool->get_executor(), *c);
     }
 };
+
+#if !defined(_WIN32) && !defined(NDEBUG)
+// Creates a dtor_poster on the pool when destroyed.
+struct dtor_poster_maker
+{
+    thread_pool* pool;
+    continuation* c;
+
+    dtor_poster_maker(thread_pool& p, continuation& cont) noexcept
+        : pool(&p)
+        , c(&cont)
+    {
+    }
+
+    dtor_poster_maker(dtor_poster_maker&& o) noexcept
+        : pool(std::exchange(o.pool, nullptr))
+        , c(o.c)
+    {
+    }
+
+    ~dtor_poster_maker()
+    {
+        if(pool)
+            pool->make_service<dtor_poster>(pool->get_executor(), *c);
+    }
+};
+#endif
 
 // Parks the awaiting coroutine in a slot and signals that it did.
 struct signal_park
@@ -1026,12 +1071,15 @@ struct thread_pool_test
         BOOST_TEST(st.balanced());
     }
 
-    // A frame destroyed by the pool's last drain may create a service
-    // whose destructor posts again; that work is destroyed too.
+    // A frame destroyed while the pool shuts down may create a service.
+    // That service is shut down as it is created, and the drain destroys
+    // the work it gives up before the services made before the teardown
+    // are destroyed.
     void
-    testServiceCreatedByLastDrainDestroyed()
+    testServiceCreatedDuringDrain()
     {
         int down = 0;
+        int seen = -1;
         auto probe = [](destroy_count_t) -> task<void> { co_return; };
         auto maker = [](poster_maker) -> task<void> { co_return; };
         auto p = probe(destroy_count_t(down));
@@ -1043,10 +1091,37 @@ struct thread_pool_test
             auto m = maker(poster_maker(pool, probe_c));
             maker_c.h = m.handle();
             m.release();
-            pool.make_service<dtor_poster>(pool.get_executor(), maker_c);
+            pool.make_service<late_poster>(pool.get_executor(), maker_c);
+            pool.make_service<teardown_witness>(down, seen);
         }
+        BOOST_TEST_EQ(seen, 1);
         BOOST_TEST_EQ(down, 1);
     }
+
+#if !defined(_WIN32) && !defined(NDEBUG)
+    // A service whose destructor posts breaks the contract, and the work
+    // it posts is still destroyed. If destroying that work creates a
+    // service whose destructor posts too, that service would outlive the
+    // pool's queue, so a debug build stops the program instead.
+    void
+    testServiceCreatedAfterDestroyAsserts()
+    {
+        BOOST_TEST(aborts([] {
+            auto probe = [](destroy_count_t) -> task<void> { co_return; };
+            auto maker = [](dtor_poster_maker) -> task<void> { co_return; };
+            int down = 0;
+            auto p = probe(destroy_count_t(down));
+            continuation probe_c{p.handle()};
+            p.release();
+            continuation maker_c;
+            thread_pool pool(1);
+            auto m = maker(dtor_poster_maker(pool, probe_c));
+            maker_c.h = m.handle();
+            m.release();
+            pool.make_service<dtor_poster>(pool.get_executor(), maker_c);
+        }));
+    }
+#endif
 
     // A started chain whose leaf is queued when the pool is destroyed
     // comes down there, on another thread than its child was made on,
@@ -1103,8 +1178,8 @@ struct thread_pool_test
         BOOST_TEST_EQ(down, 1);
     }
 
-    // Work posted while the pool's services are destroyed is destroyed
-    // with the pool.
+    // A service should not post from its destructor, but work one posts
+    // anyway is still destroyed with the pool.
     void
     testPostFromServiceDestructorDestroyed()
     {
@@ -1120,12 +1195,12 @@ struct thread_pool_test
         BOOST_TEST_EQ(down, 1);
     }
 
-    // Work posted from another thread while the pool drains is neither
-    // lost nor torn from the queue.
+    // Work a service's own thread posts while the service shuts down is
+    // destroyed with the pool, none of it lost.
     void
-    testPostDuringDrain()
+    testPostFromServiceThreadAtShutdown()
     {
-        constexpr int n = 2000;
+        constexpr int n = 16;
         int down = 0;
         auto probe = [](destroy_count_t) -> task<void> { co_return; };
         std::vector<continuation> cs;
@@ -1175,9 +1250,12 @@ struct thread_pool_test
         testForeignPostAfterJoin();
         testPostDuringShutdownDestroyed();
         testPostFromServiceDestructorDestroyed();
-        testPostDuringDrain();
+        testPostFromServiceThreadAtShutdown();
         testDestroyDrainsParentedChain();
-        testServiceCreatedByLastDrainDestroyed();
+        testServiceCreatedDuringDrain();
+#if !defined(_WIN32) && !defined(NDEBUG)
+        testServiceCreatedAfterDestroyAsserts();
+#endif
         testTeardownFromAnotherThreadWithLiveRoot();
         testJoinRacesFirstPost();
         testJoinWaitingThenFirstPost();

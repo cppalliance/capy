@@ -52,25 +52,19 @@ public:
         // are unwound. An unwind posted here is given up in turn.
         auto drain = [this]
         {
-            bool any = false;
             while (!queue_.empty())
             {
                 auto c = queue_.front();
                 queue_.pop();
-                any = true;
                 capy::abandon(c);
             }
-            return any;
         };
         shutdown();
         drain();
-        // A service's destructor may post too: repeat until nothing
-        // is left of either.
-        do
-        {
-            destroy();
-        }
-        while (drain());
+        destroy();
+        // Services give up their work in shutdown(), but anything a
+        // destructor posts anyway is still given up.
+        drain();
     }
 
     run_loop(run_loop const&) = delete;
