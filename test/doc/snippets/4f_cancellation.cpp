@@ -627,7 +627,7 @@ struct cancellation_test
             // armed, which can be before await_suspend returns.
             std::thread backend([&op, &done] {
                 while (!op.waiting() && !done.load())
-                    ;
+                    std::this_thread::yield();
                 op.complete(5);  // a no-op if the stop request won
             });
             capy::run_async(pool.get_executor(), source.get_token(),
