@@ -8,6 +8,9 @@
 #
 
 file(GLOB_RECURSE PFILES CONFIGURE_DEPENDS *.cpp *.hpp)
+
+# The fault harness shadows libc symbols; it links into its own target.
+list(FILTER PFILES EXCLUDE REGEX "/fault/")
 list(APPEND PFILES
     CMakeLists.txt
     Jamfile)
@@ -32,3 +35,5 @@ boost_capy_test_suite_discover_tests(boost_capy_tests)
 
 # Add the main test target to Boost's test suite
 add_dependencies(tests boost_capy_tests)
+
+add_subdirectory(fault)

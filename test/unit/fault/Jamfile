@@ -1,0 +1,36 @@
+#
+# Copyright (c) 2026 Michael Vandeberg
+#
+# Distributed under the Boost Software License, Version 1.0. (See accompanying
+# file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+#
+# Official repository: https://github.com/cppalliance/capy
+#
+
+import ac ;
+import os ;
+import testing ;
+
+project
+    : requirements
+      $(c20-requires)
+      <library>/boost/capy//boost_capy
+      <source>../../../extra/test_suite/test_main.cpp
+      <source>../../../extra/test_suite/test_suite.cpp
+      <include>../../../extra/test_suite
+      <warnings>extra
+      <warnings-as-errors>on
+      <target-os>linux:<linkflags>-ldl
+      # Interposition only works if the shadows land in the executable's
+      # dynamic symbol table; Boost builds tests with hidden visibility.
+      # <local-visibility> so the flag stays on these targets instead of
+      # propagating into a private rebuild of capy.
+      <local-visibility>global
+    ;
+
+# The shadows are written against glibc, so nothing is built anywhere
+# else; the CMake side gates the same way.
+if [ os.name ] = LINUX
+{
+    run thread_pool_faults.cpp fault_posix.cpp ;
+}

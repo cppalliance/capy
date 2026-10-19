@@ -248,8 +248,10 @@ private:
         std::lock_guard<std::mutex> lock(mutex_);
         if(started_.load(std::memory_order_relaxed) || stop_)
             return;
+        // Start at the threads already running: if an earlier call
+        // threw partway, this one adds only the missing ones.
         threads_.reserve(num_threads_);
-        for(std::size_t i = 0; i < num_threads_; ++i)
+        for(std::size_t i = threads_.size(); i < num_threads_; ++i)
             threads_.emplace_back([this, i]{ run(i); });
         started_.store(true, std::memory_order_release);
     }

@@ -266,6 +266,8 @@ public:
         @throws std::system_error If this call posts and must start
             the pool's worker threads, and a thread cannot be started.
             `c` is not queued.
+            Threads that did start keep running, and a later call
+            starts only the missing ones.
     */
     BOOST_CAPY_DECL
     std::coroutine_handle<>
@@ -293,6 +295,8 @@ public:
         @throws std::system_error If this call must start the pool's
             worker threads, and a thread cannot be started. `c` is not
             queued.
+            Threads that did start keep running, and a later call
+            starts only the missing ones.
     */
     BOOST_CAPY_DECL
     void

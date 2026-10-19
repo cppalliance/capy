@@ -24,7 +24,9 @@ project
       <target-os>darwin,<undefined-sanitizer>norecover:<link>static
     ;
 
-for local f in [ glob-tree-ex . : *.cpp : file*.cpp ]
+# `fault` excludes the whole directory: its shadows replace libc
+# functions, so it builds its own executables (see fault/Jamfile).
+for local f in [ glob-tree-ex . : *.cpp : file*.cpp fault ]
 {
     local parts = [ SPLIT_BY_CHARACTERS $(f:S=) : / ] ;
     local name = $(parts:J=_) ;
@@ -57,3 +59,5 @@ for local f in [ glob-tree-ex . : file*.cpp ]
           <warnings>off <undefined-sanitizer>norecover:<link>static
         ;
 }
+
+build-project fault ;
