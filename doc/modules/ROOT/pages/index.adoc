@@ -42,7 +42,7 @@ This can be either your home-grown one or Corosio.
 include::example$programs/index_page_echo.cpp[tag=full]
 ----
 <.> The cpp:task[task<>] return type defines a coroutine that starts suspended. `any_stream` is a type-erased wrapper that works with any concrete stream implementation.
-<.> Each `co_await` suspends until the I/O operation completes.
+<.> Each `co_await` suspends until the I/O operation completes. The result is a cpp:results[], which the structured binding unpacks into `ec` and `n`. See xref:4.coroutines/4k.results.adoc[The results Type].
 <.> You can signal failures by throwing an exception, or by returning a `std::error_code`.
 <.> The condition `cond::eof` indicates reaching the end of the stream.
 
@@ -184,7 +184,7 @@ Your caller supplies the stream, and an I/O library supplies the I/O awaitables.
   To keep the protocol out of headers, write it against the type-erased cpp:any_stream[] instead.
 * The executor and the stop token reach your task through `co_await`.
   Your functions do not take them as parameters.
-* Each stream operation returns a cpp:results[] that holds an error code and a byte count.
+* Each stream operation returns a cpp:results[] that holds an error code and a byte count. See xref:4.coroutines/4k.results.adoc[The results Type].
   A read can return bytes and an error together.
   The stream only reports what happened.
   Your protocol decides whether the result is a success or a failure, for example whether a partial message is usable.

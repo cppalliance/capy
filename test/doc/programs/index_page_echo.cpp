@@ -20,6 +20,7 @@ capy::task<void> echo(capy::any_stream& stream)   // <.>
     char buf[1024];
     for(;;)
     {
+        // read_some returns results<std::size_t>: an error code, then a byte count
         auto [ec, n] = co_await stream.read_some(capy::make_buffer(buf));   // <.>
 
         auto [wec, _] = co_await capy::write(stream, capy::const_buffer(buf, n));

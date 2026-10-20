@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -18,6 +19,8 @@ Capy's coroutine model is built around a single principle: asynchronous code sho
   address the needs of asynchronous I/O in Capy.
 * xref:4.coroutines/4b.tasks.adoc[The task Type] -- Declaring, returning values from, and
   awaiting cpp:task[task<T>] coroutines.
+* xref:4.coroutines/4k.results.adoc[The results Type] -- How operations report expected
+  failures as an error code plus payload, without throwing.
 * xref:4.coroutines/4c.launching.adoc[Starting Coroutines] -- Starting coroutines with
   cpp:run_async[], and binding child tasks with cpp:run[].
 * xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] -- Executors,

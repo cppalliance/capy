@@ -46,20 +46,8 @@ For cpp:task[task<void>], you can either use `co_return;` explicitly or let exec
 [#reporting-errors]
 == Reporting Errors: results
 
-I/O operations report an expected failure as a value rather than an exception. They return the error alongside the result, in a cpp:results[results<Ts...>]: a `std::tuple` holding a `std::error_code` followed by zero or more payload values. Exceptions remain for genuine errors, such as a failed frame allocation.
-
-A coroutine that reports errors this way returns cpp:task[task]`<results<Ts...>>`:
-
-[source,cpp]
-----
-include::example$snippets/4b_tasks.cpp[tag=results]
-----
-
-Because cpp:results[] is a `std::tuple`, the whole standard tuple API applies: structured bindings, `std::tie`, `std::apply`, `std::get`, `std::tuple_cat`, comparisons, and tuple assignment. The error code is the first element, so `auto [ec, n] = co_await s.read_some(buf);` destructures it directly, and `std::tie` rebinds into existing variables without introducing new ones. Always test the error code before reading a payload; a payload's meaning when it is set is defined by the operation that produced it.
-
-For cpp:results[results<>] -- no payload -- a `std::error_code` converts implicitly, so `co_return some_ec;` compiles. With payloads present you must supply the whole result, as `count_ready` shows.
-
-This is the vocabulary the stream concepts and the concurrent combinators are written in. xref:4.coroutines/4g.composition.adoc[Concurrent Composition] and xref:6.streams/6.intro.adoc[Streams] both assume them.
+I/O operations report an expected failure as a value rather than an exception, and a coroutine that reports errors this way returns cpp:task[task]`<results<Ts...>>`.
+xref:4.coroutines/4k.results.adoc[The results Type] explains how to consume and produce a cpp:results[], which the stream concepts and the concurrent combinators all use.
 
 == Running a Task
 

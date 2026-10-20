@@ -1,0 +1,83 @@
+//
+// Copyright (c) 2026 Michael Vandeberg
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= The results Type
+:page-mode: explanation
+
+I/O operations in Capy report an expected failure, such as reaching the end of a stream, as a value.
+Exceptions are kept for genuine errors, such as a failed frame allocation.
+The value is a cpp:results[results<Ts...>], declared in:
+
+[source,cpp]
+----
+include::example$snippets/4k_results.cpp[tag=include_results]
+----
+
+`results<Ts...>` is an alias for `std::tuple<std::error_code, Ts...>`.
+The error code always comes first. Zero or more payload values follow it.
+Stream operations return `results<std::size_t>`: an error code, then a byte count.
+
+== Consuming results
+
+Unpack the result with a structured binding, then test the error code before using the payload:
+
+[source,cpp]
+----
+include::example$snippets/4k_results.cpp[tag=consume]
+----
+
+Compare the error code against a condition, not an exact error value.
+For example, cpp:cond::eof[cond::eof] matches the end-of-stream error that Capy's streams and Corosio's sockets report.
+
+== Payload Alongside an Error
+
+Whether a payload is meaningful when the error code is set depends on the operation that produced it.
+Many I/O operations report a meaningful partial result alongside the error.
+cpp:read[] and cpp:write[] report the bytes transferred before the condition stopped them:
+
+[source,cpp]
+----
+include::example$snippets/4k_results.cpp[tag=partial]
+----
+
+Given a stream that holds only `"hi"`, this read stops with cpp:cond::eof[cond::eof] and `n == 2`.
+Other operations leave the payload unspecified on error, so check each operation's reference page.
+
+== Reusing Variables with std::tie
+
+Because `results` is a `std::tuple`, `std::tie` assigns into variables that already exist.
+This suits a loop, where a structured binding would introduce new names on every pass:
+
+[source,cpp]
+----
+include::example$snippets/4k_results.cpp[tag=tie]
+----
+
+The rest of the standard tuple API applies too: `std::get`, `std::apply`, `std::tuple_cat`, comparisons, and tuple assignment.
+
+[#producing]
+== Producing results
+
+A coroutine that reports errors this way returns cpp:task[task]`<results<Ts...>>`:
+
+[source,cpp]
+----
+include::example$snippets/4k_results.cpp[tag=produce]
+----
+
+For `results<>`, with no payload, a `std::error_code` converts implicitly, so `co_return some_ec;` compiles.
+With payloads present you must supply the whole tuple, as `count_ready` shows.
+
+== Where results Appears
+
+* xref:6.streams/6.intro.adoc[Streams] -- `read_some`, `write_some`, cpp:read[] and cpp:write[] return `results<std::size_t>`.
+* xref:4.coroutines/4g.composition.adoc[Concurrent Composition] -- cpp:when_all[] flattens its children's payloads into one `results`.
+  cpp:when_any[] returns a `std::variant` whose first alternative is the error code and whose others are the children's payloads.
+* xref:8.examples/8l.async-mutex.adoc[Async Mutex] -- cpp:async_mutex[]'s `scoped_lock()` returns an error code and a lock guard.
+* xref:A.specification-methods/Ac.contingencies.adoc[Contingencies] -- What a contingency is, and how `ec` signals one.

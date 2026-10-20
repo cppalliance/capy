@@ -3,7 +3,7 @@
 
 Headers: `<boost/capy/when_all.hpp>` and `<boost/capy/when_any.hpp>`. cpp:async_waker[] on this page is `<boost/capy/ex/async_waker.hpp>`.
 
-Both combinators take cpp:task[task]`<results<...>>` children and return their results as a single cpp:results[]. If that type is new, read xref:4.coroutines/4b.tasks.adoc#reporting-errors[Reporting Errors] first -- everything below is expressed in them.
+Both combinators take cpp:task[task]`<results<...>>` children. cpp:when_all[] returns a single cpp:results[], and cpp:when_any[] returns a `std::variant` of the error code and the children's payloads. If that type is new, read xref:4.coroutines/4k.results.adoc[The results Type] first -- everything below is expressed in them.
 
 == Overview
 

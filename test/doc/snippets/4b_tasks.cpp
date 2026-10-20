@@ -77,39 +77,6 @@ capy::task<> log_message(std::string msg)
 
 } // namespace returning
 
-namespace reporting_errors {
-
-// tag::results[]
-// `results<Ts...>` holds an error code `ec` plus zero or more payload
-// values. A task returning one reports failure without throwing.
-
-capy::task<capy::results<>> ensure_ready(bool ready)
-{
-    if(! ready)
-        co_return std::make_error_code(std::errc::not_connected);  // ec converts
-    co_return {};                                             // success
-}
-
-capy::task<capy::results<std::size_t>> count_ready(bool ready)
-{
-    using result = capy::results<std::size_t>;
-    if(! ready)
-        co_return result{std::make_error_code(std::errc::not_connected), 0};
-    co_return result{std::error_code(), 42};  // success, carrying a value
-}
-
-capy::task<> use_them()
-{
-    // `results` models the tuple protocol: ec first, then the payloads.
-    auto [ec, n] = co_await count_ready(true);
-    if(ec)
-        co_return;  // always check ec first
-    (void)n;        // n is only meaningful when ec is falsy
-}
-// end::results[]
-
-} // namespace reporting_errors
-
 namespace awaiting {
 
 // tag::awaiting[]

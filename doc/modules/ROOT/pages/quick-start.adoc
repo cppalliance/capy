@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -102,9 +103,23 @@ Exceptions propagate through coroutine chains. To handle them at the top level:
 include::example$snippets/quick_start.cpp[tag=errors,indent=0]
 ----
 
+== Error Codes Instead of Exceptions
+
+I/O operations do not throw for expected failures, such as reaching the end of a stream.
+They report the failure as a value instead: a cpp:results[], holding an error code followed by the payload.
+A task of your own can do the same, and the caller unpacks the error code first:
+
+[source,cpp]
+----
+include::example$snippets/quick_start.cpp[tag=error_codes,indent=0]
+----
+
+See xref:4.coroutines/4k.results.adoc[The results Type].
+
 == Next Steps
 
 * xref:2.cpp20-coroutines/2.intro.adoc[Introduction To {cpp}20 Coroutines] — If you need to refresh the C++ coroutines basics
 * xref:4.coroutines/4b.tasks.adoc[Tasks] — Learn how lazy tasks work
+* xref:4.coroutines/4k.results.adoc[The results Type] — How operations report errors without throwing
 * xref:4.coroutines/4c.launching.adoc[Starting Tasks] — Understand cpp:run_async[] in detail
 * xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] — Control where coroutines execute
