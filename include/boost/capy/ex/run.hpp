@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -806,8 +807,8 @@ namespace boost::capy {
 
     @return A wrapper that accepts a task for execution.
 
-    @see task
-    @see Executor
+    @see @ref task
+    @see @ref Executor
 */
 template<Executor Ex>
 [[nodiscard]] auto
@@ -818,12 +819,14 @@ run(Ex ex)
 
 /** Bind a task to an executor with a stop token.
 
+    @ref run(Ex) describes teardown and preconditions.
+
     @param ex The executor on which the task should run.
     @param st The stop token for cooperative cancellation.
 
     @return A wrapper that accepts a task for execution.
 
-    @see run(Ex), which describes teardown and its precondition.
+    @see @ref run(Ex)
 */
 template<Executor Ex>
 [[nodiscard]] auto
@@ -835,12 +838,14 @@ run(Ex ex, std::stop_token st)
 
 /** Bind a task to an executor with a memory resource.
 
+    @ref run(Ex) describes teardown and preconditions.
+
     @param ex The executor on which the task should run.
     @param mr The memory resource for frame allocation.
 
     @return A wrapper that accepts a task for execution.
 
-    @see run(Ex), which describes teardown and its precondition.
+    @see @ref run(Ex)
 */
 template<Executor Ex>
 [[nodiscard]] auto
@@ -856,12 +861,14 @@ run(Ex ex, std::pmr::memory_resource* mr)
     `co_await run(ex, alloc)(task())`: the task's frame is allocated from
     memory the wrapper holds until the end of that expression.
 
+    @ref run(Ex) describes teardown and preconditions.
+
     @param ex The executor on which the task should run.
     @param alloc The allocator for frame allocation.
 
     @return A wrapper that accepts a task for execution.
 
-    @see run(Ex), which describes teardown and its precondition.
+    @see @ref run(Ex)
 */
 template<Executor Ex, detail::Allocator Alloc>
 [[nodiscard]] auto
@@ -873,13 +880,15 @@ run(Ex ex, Alloc alloc)
 
 /** Bind a task to an executor with stop token and memory resource.
 
+    @ref run(Ex) describes teardown and preconditions.
+
     @param ex The executor on which the task should run.
     @param st The stop token for cooperative cancellation.
     @param mr The memory resource for frame allocation.
 
     @return A wrapper that accepts a task for execution.
 
-    @see run(Ex), which describes teardown and its precondition.
+    @see @ref run(Ex)
 */
 template<Executor Ex>
 [[nodiscard]] auto
@@ -895,13 +904,15 @@ run(Ex ex, std::stop_token st, std::pmr::memory_resource* mr)
     `co_await run(ex, alloc)(task())`: the task's frame is allocated from
     memory the wrapper holds until the end of that expression.
 
+    @ref run(Ex) describes teardown and preconditions.
+
     @param ex The executor on which the task should run.
     @param st The stop token for cooperative cancellation.
     @param alloc The allocator for frame allocation.
 
     @return A wrapper that accepts a task for execution.
 
-    @see run(Ex), which describes teardown and its precondition.
+    @see @ref run(Ex)
 */
 template<Executor Ex, detail::Allocator Alloc>
 [[nodiscard]] auto

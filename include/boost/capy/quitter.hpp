@@ -126,7 +126,7 @@ struct quitter_return_base<void>
 
     @tparam T The result type.  Use `quitter<>` for `quitter<void>`.
 
-    @see task, ContextRunnable, ContextAwaitable
+    @see @ref task, @ref ContextRunnable, @ref ContextAwaitable
 */
 template<typename T = void>
 struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
@@ -147,7 +147,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         Result storage and `return_value`/`return_void` are provided by
         `detail::quitter_return_base<T>`.
 
-        @see context_awaitable_promise_base, ContextRunnable
+        @see @ref context_awaitable_promise_base, @ref ContextRunnable
     */
     struct promise_type
         : context_awaitable_promise_base<promise_type>

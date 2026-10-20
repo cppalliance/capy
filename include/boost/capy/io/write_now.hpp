@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -83,7 +84,7 @@ namespace capy {
     }
     @endcode
 
-    @see write, write_some, WriteStream, ConstBufferSequence
+    @see @ref write, @ref write_some, @ref WriteStream, @ref ConstBufferSequence
 */
 template<class Stream>
     requires WriteStream<Stream>
@@ -343,7 +344,7 @@ public:
             detail::throw_system_error( ec );
         @endcode
 
-        @see write, write_some, WriteStream
+        @see @ref write, @ref write_some, @ref WriteStream
     */
 // GCC falsely warns that the coroutine promise's
 // placement operator new(size_t, write_now&, auto&)

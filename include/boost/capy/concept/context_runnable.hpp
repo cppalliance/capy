@@ -97,7 +97,7 @@ namespace capy {
     @par !example example
 
 
-    @see ContextAwaitable, run, run_async
+    @see @ref ContextAwaitable, @ref run, @ref run_async
 */
 // tag::context_runnable_concept[]
 template<typename T>

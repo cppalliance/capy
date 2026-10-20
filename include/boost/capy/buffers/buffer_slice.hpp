@@ -63,7 +63,7 @@ using slice_type = std::conditional_t<
     @par !example example
 
 
-    @see slice_type, consuming_buffers
+    @see @ref slice_type, @ref consuming_buffers
 */
 template<class BufferSequence>
     requires MutableBufferSequence<BufferSequence>

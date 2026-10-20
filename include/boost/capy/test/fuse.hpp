@@ -602,7 +602,7 @@ public:
 
         @return The @ref result of the armed run.
 
-        @see armed
+        @see @ref armed
     */
     template<class F>
     result
@@ -617,7 +617,7 @@ public:
 
         @return The @ref result of the armed run.
 
-        @see armed
+        @see @ref armed
     */
     template<class F>
         requires ContextRunnable<std::invoke_result_t<F, fuse&>>

@@ -186,7 +186,7 @@ jobs:
       # Individual check steps below stay non-blocking (continue-on-error: true): they
       # print each tool's raw findings for review. Enforcement is done by the
       # no-new-violations comparator, which diffs a fresh run against baseline.json.
-      # The gated rules are A1/A6/A7/B2/D2/ANCHOR + MrDocs-no-warnings + C2/C4/C9/C10.
+      # The gated rules are A1/A6/A7/B2/B6/D2/ANCHOR + MrDocs-no-warnings + C2/C4/C9/C10.
       # The gate step below names them via --gate and REPORTS them: it prints each with
       # file, line and an excerpt, and annotates it on the diff, but runs without
       # --strict, so it does not fail the job. It keeps continue-on-error: false so a
@@ -358,7 +358,7 @@ jobs:
           # job (no --strict). The two when_any.hpp C2 refusals this once expected are
           # gone — resolved before #383 — and the live gated findings are #383's own.
           node lint/check-no-new-violations.mjs \
-            --gate 'doc_lint:^(A1|A6|B2|D2|ANCHOR):' \
+            --gate 'doc_lint:^(A1|A6|B2|B6|D2|ANCHOR):' \
             --gate 'vale_adoc:Capy\.PartHeadings$' \
             --gate 'mrdocs_warnings:.*' \
             --gate 'sentence_length:^C2:' \

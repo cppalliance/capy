@@ -78,7 +78,7 @@ namespace capy {
     @tparam Ex The type of the underlying executor. Must
         satisfy the `Executor` concept.
 
-    @see Executor
+    @see @ref Executor
 */
 template<typename Ex>
 class strand

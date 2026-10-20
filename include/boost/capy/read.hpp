@@ -78,7 +78,7 @@ namespace capy {
     @par !example example
 
 
-    @see ReadStream, MutableBufferSequence
+    @see @ref ReadStream, @ref MutableBufferSequence
 */
 template <typename S, typename MB>
   requires ReadStream<S> && MutableBufferSequence<MB>

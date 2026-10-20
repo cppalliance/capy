@@ -42,7 +42,7 @@ namespace capy {
     @par !example example_2
 
 
-    @see ready, results
+    @see @ref ready, @ref results
 */
 template<class T>
 struct immediate
@@ -115,7 +115,7 @@ struct immediate
 
     @return An immediate awaitable containing a successful `results`.
 
-    @see immediate, results
+    @see @ref immediate, @ref results
 */
 inline
 immediate<results<>>
@@ -179,7 +179,7 @@ ready(T1 t1, T2 t2, T3 t3)
 
     @return An immediate awaitable containing a failed `results`.
 
-    @see immediate, results
+    @see @ref immediate, @ref results
 */
 inline
 immediate<results<>>

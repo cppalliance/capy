@@ -96,7 +96,7 @@ namespace capy {
     @par !example example
 
 
-    @see write, WriteStream, ConstBufferSequence
+    @see @ref write, @ref WriteStream, @ref ConstBufferSequence
 */
 template <WriteStream S, ConstBufferSequence CB>
 auto

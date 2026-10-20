@@ -60,7 +60,7 @@ namespace capy {
     @par !example example
 
 
-    @see service, ExecutionContext
+    @see @ref service, @ref ExecutionContext
 */
 class BOOST_CAPY_DECL
     execution_context
@@ -126,7 +126,7 @@ public:
         @par !example example
 
 
-        @see execution_context
+        @see @ref boost::capy::execution_context
     */
     class BOOST_CAPY_DECL
         service
@@ -359,7 +359,7 @@ public:
 
         @return Pointer to the frame allocator.
 
-        @see set_frame_allocator
+        @see @ref set_frame_allocator
     */
     std::pmr::memory_resource*
     get_frame_allocator() const noexcept
@@ -379,7 +379,7 @@ public:
 
         @param mr Pointer to the memory resource.
 
-        @see get_frame_allocator
+        @see @ref get_frame_allocator
     */
     void
     set_frame_allocator(std::pmr::memory_resource* mr) noexcept
@@ -404,7 +404,7 @@ public:
 
         @param a The allocator to use.
 
-        @see get_frame_allocator
+        @see @ref get_frame_allocator
     */
     template<class Allocator>
         requires (!std::is_pointer_v<Allocator>)

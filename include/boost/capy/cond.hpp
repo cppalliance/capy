@@ -29,7 +29,7 @@ namespace capy {
     @par !example example
 
 
-    @see error
+    @see @ref error
 */
 enum class cond
 {

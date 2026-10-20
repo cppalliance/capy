@@ -774,7 +774,7 @@ public:
     @par !example example_1
 
 
-    @see ContextAwaitableRange, when_any
+    @see @ref ContextAwaitableRange, @ref when_any
 */
 template<ContextAwaitableRange R>
     requires detail::is_results_v<
@@ -899,7 +899,7 @@ template<ContextAwaitableRange R>
     @par !example example_2
 
 
-    @see ContextAwaitableRange, when_any
+    @see @ref ContextAwaitableRange, @ref when_any
 */
 template<ContextAwaitableRange R>
     requires detail::is_results_v<

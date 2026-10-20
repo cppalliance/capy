@@ -45,7 +45,7 @@ class blocking_context;
     @par Thread Safety
     All member functions are safe to call from any thread.
 
-    @see blocking_context, run_blocking
+    @see @ref blocking_context, @ref run_blocking
 */
 struct BOOST_CAPY_DECL blocking_executor
 {
@@ -132,7 +132,7 @@ private:
     `signal_done()`, `signal_abandoned()`, and `enqueue()` are safe
     to call from any thread.
 
-    @see blocking_executor, run_blocking
+    @see @ref blocking_executor, @ref run_blocking
 */
 class BOOST_CAPY_DECL blocking_context
     : public execution_context
@@ -225,7 +225,7 @@ public:
     @par Thread Safety
     Safe to invoke from any thread.
 
-    @see run_blocking, blocking_context
+    @see @ref run_blocking, @ref blocking_context
 */
 template<class H1, class H2>
 struct blocking_handler_wrapper
@@ -359,7 +359,7 @@ struct blocking_handler_wrapper
     run_blocking([&](int v) { result = v; })(my_task());
     @endcode
 
-    @see run_blocking, run_async
+    @see @ref run_blocking, @ref run_async
 */
 template<class H1, class H2>
 class [[nodiscard]] run_blocking_wrapper
@@ -469,7 +469,7 @@ public:
 
     @return A wrapper that accepts a task for blocking execution.
 
-    @see run_async
+    @see @ref run_async
 */
 [[nodiscard]] inline auto
 run_blocking()
@@ -504,7 +504,7 @@ run_blocking()
 
     @return A wrapper that accepts a task for blocking execution.
 
-    @see run_async
+    @see @ref run_async
 */
 template<class H1>
 [[nodiscard]] auto
@@ -537,7 +537,7 @@ run_blocking(H1 h1)
 
     @return A wrapper that accepts a task for blocking execution.
 
-    @see run_async
+    @see @ref run_async
 */
 template<class H1, class H2>
 [[nodiscard]] auto
@@ -564,7 +564,7 @@ run_blocking(H1 h1, H2 h2)
 
     @return A wrapper that accepts a task for blocking execution.
 
-    @see run_async
+    @see @ref run_async
 */
 [[nodiscard]] inline auto
 run_blocking(std::stop_token st)
@@ -584,7 +584,7 @@ run_blocking(std::stop_token st)
 
     @return A wrapper that accepts a task for blocking execution.
 
-    @see run_async
+    @see @ref run_async
 */
 template<class H1>
 [[nodiscard]] auto
@@ -606,7 +606,7 @@ run_blocking(std::stop_token st, H1 h1)
 
     @return A wrapper that accepts a task for blocking execution.
 
-    @see run_async
+    @see @ref run_async
 */
 template<class H1, class H2>
 [[nodiscard]] auto

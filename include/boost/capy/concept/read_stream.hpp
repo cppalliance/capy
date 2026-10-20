@@ -102,7 +102,7 @@ namespace capy {
     @par !example example_2
 
 
-    @see ContextAwaitable, MutableBufferSequence, awaitable_decomposes_to
+    @see @ref ContextAwaitable, @ref MutableBufferSequence, @ref awaitable_decomposes_to
 */
 // tag::read_stream_concept[]
 template<typename T>

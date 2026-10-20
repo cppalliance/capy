@@ -94,7 +94,7 @@ namespace capy {
     @tparam BS The buffer sequence type. Must satisfy either
         ConstBufferSequence or MutableBufferSequence.
 
-    @see ConstBufferSequence, MutableBufferSequence
+    @see @ref ConstBufferSequence, @ref MutableBufferSequence
 */
 template<class BS, bool MakeConst = false>
     requires ConstBufferSequence<BS> || MutableBufferSequence<BS>

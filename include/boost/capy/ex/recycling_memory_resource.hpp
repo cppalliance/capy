@@ -42,8 +42,8 @@ namespace capy {
     @par !example example
 
 
-    @see get_recycling_memory_resource
-    @see run_async
+    @see @ref get_recycling_memory_resource
+    @see @ref run_async
 */
 BOOST_CAPY_MSVC_WARNING_PUSH
 BOOST_CAPY_MSVC_WARNING_DISABLE(4275) // non dll-interface base class
@@ -301,8 +301,8 @@ BOOST_CAPY_MSVC_WARNING_POP
 
     @return Pointer to the recycling memory resource.
 
-    @see recycling_memory_resource
-    @see run_async
+    @see @ref recycling_memory_resource
+    @see @ref run_async
 */
 BOOST_CAPY_DECL
 std::pmr::memory_resource*

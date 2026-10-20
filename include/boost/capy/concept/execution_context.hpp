@@ -60,7 +60,7 @@ namespace capy {
     @par !example example_2
 
 
-    @see Executor, execution_context
+    @see @ref Executor, @ref execution_context
 */
 template<class X>
 concept ExecutionContext =

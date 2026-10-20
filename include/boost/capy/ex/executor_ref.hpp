@@ -98,7 +98,7 @@ inline constexpr executor_vtable vtable_for = {
     @par !example example
 
 
-    @see any_executor, Executor
+    @see @ref any_executor, @ref Executor
 */
 class executor_ref
 {

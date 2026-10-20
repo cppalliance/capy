@@ -111,7 +111,7 @@ struct task_return_base<void>
 
     @tparam T The result type. Use `task<>` for `task<void>`.
 
-    @see ContextRunnable, ContextAwaitable, run, run_async
+    @see @ref ContextRunnable, @ref ContextAwaitable, @ref run, @ref run_async
 */
 template<typename T = void>
 struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
@@ -128,7 +128,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         Result storage and `return_value`/`return_void` are provided by
         `detail::task_return_base<T>`.
 
-        @see context_awaitable_promise_base, ContextRunnable
+        @see @ref context_awaitable_promise_base, @ref ContextRunnable
     */
     struct promise_type
         : context_awaitable_promise_base<promise_type>

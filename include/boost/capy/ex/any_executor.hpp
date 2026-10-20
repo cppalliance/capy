@@ -75,7 +75,7 @@ struct is_strand_type<strand<E>> : std::true_type {};
     @par !example example
 
 
-    @see executor_ref, Executor
+    @see @ref executor_ref, @ref Executor
 */
 class any_executor
 {

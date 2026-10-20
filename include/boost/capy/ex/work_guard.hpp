@@ -55,7 +55,7 @@ namespace capy {
 
     @tparam Ex A type satisfying the Executor concept.
 
-    @see make_work_guard, Executor
+    @see @ref make_work_guard, @ref Executor
 */
 template<Executor Ex>
 class work_guard
@@ -220,7 +220,7 @@ public:
 
     @return A `work_guard` holding work on `ex`.
 
-    @see work_guard
+    @see @ref work_guard
 */
 template<Executor Ex>
 work_guard<Ex>

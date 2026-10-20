@@ -41,7 +41,7 @@ class chain_owner;
     The referenced executor and allocator must remain valid
     for the lifetime of any coroutine using this environment.
 
-    @see ContextAwaitable, ContextRunnable
+    @see @ref ContextAwaitable, @ref ContextRunnable
 */
 struct await_context
 {

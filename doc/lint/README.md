@@ -14,7 +14,7 @@ site build. Node built-ins only, no dependencies of their own.
 
 | Script | What it checks |
 |---|---|
-| `doc-lint.mjs` | Structural AsciiDoc/nav rules (A1, A6, B2, ANCHOR, D2, …). JSON on stdout. |
+| `doc-lint.mjs` | Structural AsciiDoc/nav rules (A1, A6, B2, ANCHOR, D2, …), plus B6 (`@see` without `@ref`) over the public headers. JSON on stdout. |
 | `extract-docstrings.mjs` | Extracts header docstrings into `.docstrings/*.adoc` so Vale can lint them. |
 | `sentence-length.mjs` | **The authority for C2** (no sentence over 25 words), over both corpora. JSON on stdout. |
 | ↳ | Emits `C2` (hard slice), `advisory-C2` (design essays) and `BACKTICK` (unbalanced code span). |
@@ -113,7 +113,7 @@ the rule at the head. Verified by planting a violation and confirming the finger
 inside a delimited block `[[` is literal and renders fine, and that negative was bite-tested too.
 
 `doc-lint.mjs` also emits a `SHAPE` rule alongside `A1`/`A6`/`B2`/`ANCHOR`/`D2` — deliberately outside the
-gate spec's `^(A1|A6|B2|D2|ANCHOR):` alternation, the same way `advisory-C2` sits outside
+gate spec's `^(A1|A6|B2|B6|D2|ANCHOR):` alternation, the same way `advisory-C2` sits outside
 `sentence_length`'s `^C2:`. SHAPE is a content-shape heuristic over every `role=output`/
 `role=figure` bare listing (doc/STYLE_GUIDE.md B3): those roles are a permanent B2 exemption, so a
 block wrongly tagged non-code would otherwise be permanently invisible. A SHAPE finding never
@@ -124,7 +124,7 @@ fingerprint, and for the Vale checks the check name is at the **tail**, so `^Cap
 matches nothing and the comparator then reports `gated: true, gatedNew: 0` — a gate that
 announces it is gating while checking nothing, at exit 0. Measured twice on this branch. The
 head-anchored shape is correct only for the two rule-at-the-head checks (`doc_lint`,
-`sentence_length`), which is why the live spec mixes `^(A1|A6|B2|D2|ANCHOR):` and `^C2:` with
+`sentence_length`), which is why the live spec mixes `^(A1|A6|B2|B6|D2|ANCHOR):` and `^C2:` with
 `Capy\.PartHeadings$` and `(Capy\.SimpleTense|Capy\.NoFluff|Capy\.Terminology)$`. When you add
 a gate, plant a violation of that exact rule and watch the step fail before you believe it.
 

@@ -111,7 +111,7 @@ namespace capy {
     @par !example example_2
 
 
-    @see ContextAwaitable, ConstBufferSequence, awaitable_decomposes_to
+    @see @ref ContextAwaitable, @ref ConstBufferSequence, @ref awaitable_decomposes_to
 */
 // tag::write_stream_concept[]
 template<typename T>

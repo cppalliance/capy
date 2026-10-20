@@ -105,7 +105,7 @@ current_frame_allocator_ref() noexcept
     @return The thread-local memory_resource pointer,
     or `nullptr` if none is set.
 
-    @see set_current_frame_allocator, ContextAwaitable
+    @see @ref set_current_frame_allocator, @ref ContextAwaitable
 */
 inline
 std::pmr::memory_resource*
@@ -129,7 +129,7 @@ get_current_frame_allocator() noexcept
     @param mr The memory_resource to install, or
     `nullptr` to clear.
 
-    @see get_current_frame_allocator, ContextAwaitable
+    @see @ref get_current_frame_allocator, @ref ContextAwaitable
 */
 inline void
 set_current_frame_allocator(
@@ -161,7 +161,7 @@ set_current_frame_allocator(
 
     @param h The coroutine handle to resume.
 
-    @see get_current_frame_allocator, set_current_frame_allocator
+    @see @ref get_current_frame_allocator, @ref set_current_frame_allocator
 */
 // tag::safe_resume[]
 inline void

@@ -78,7 +78,7 @@ class chain_owner;
     `h.resume()`. The executor's internal locking provides
     the necessary synchronization between these two accesses.
 
-    @see Executor, executor_ref
+    @see @ref Executor, @ref executor_ref
 */
 struct continuation
 {

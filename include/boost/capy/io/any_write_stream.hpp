@@ -66,7 +66,7 @@ namespace capy {
     @par !example example
 
 
-    @see any_read_stream, any_stream, WriteStream
+    @see @ref any_read_stream, @ref any_stream, @ref WriteStream
 */
 class any_write_stream
 {

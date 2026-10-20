@@ -96,10 +96,10 @@ namespace capy {
     the teardown of an armed waker's frame on its executor thread is a
     precondition violation.
 
-    @see this_coro::environment, this_coro::executor,
-         this_coro::stop_token, this_coro::frame_allocator
-    @see await_context
-    @see ContextAwaitable
+    @see @ref this_coro::environment, @ref this_coro::executor,
+         @ref this_coro::stop_token, @ref this_coro::frame_allocator
+    @see @ref await_context
+    @see @ref ContextAwaitable
 */
 template<typename Derived>
 class context_awaitable_promise_base

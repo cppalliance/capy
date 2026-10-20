@@ -27,7 +27,7 @@ namespace capy {
     @par !example example
 
 
-    @see context_awaitable_promise_base, await_context
+    @see @ref context_awaitable_promise_base, @ref await_context
 */
 namespace this_coro {
 
@@ -37,8 +37,8 @@ namespace this_coro {
     yield the coroutine's current execution environment. The tag itself
     carries no data; it serves only as a sentinel for compile-time dispatch.
 
-    @see environment
-    @see context_awaitable_promise_base
+    @see @ref environment
+    @see @ref context_awaitable_promise_base
 */
 struct environment_tag {};
 
@@ -48,8 +48,8 @@ struct environment_tag {};
     yield the coroutine's current executor. The tag itself carries no
     data; it serves only as a sentinel for compile-time dispatch.
 
-    @see executor
-    @see context_awaitable_promise_base
+    @see @ref executor
+    @see @ref context_awaitable_promise_base
 */
 struct executor_tag {};
 
@@ -59,8 +59,8 @@ struct executor_tag {};
     yield the coroutine's current stop token. The tag itself carries
     no data; it serves only as a sentinel for compile-time dispatch.
 
-    @see stop_token
-    @see context_awaitable_promise_base
+    @see @ref stop_token
+    @see @ref context_awaitable_promise_base
 */
 struct stop_token_tag {};
 
@@ -70,8 +70,8 @@ struct stop_token_tag {};
     yield the coroutine's current frame allocator. The tag itself carries
     no data; it serves only as a sentinel for compile-time dispatch.
 
-    @see frame_allocator
-    @see context_awaitable_promise_base
+    @see @ref frame_allocator
+    @see @ref context_awaitable_promise_base
 */
 struct frame_allocator_tag {};
 
@@ -96,9 +96,9 @@ struct frame_allocator_tag {};
     @li Returns a pointer to the stored `await_context`
     @li This operation never suspends; `await_ready()` always returns `true`
 
-    @see environment_tag
-    @see context_awaitable_promise_base
-    @see await_context
+    @see @ref environment_tag
+    @see @ref context_awaitable_promise_base
+    @see @ref await_context
 */
 inline constexpr environment_tag environment{};
 
@@ -125,8 +125,8 @@ inline constexpr environment_tag environment{};
         returns `false`).
     @li This operation never suspends; `await_ready()` always returns `true`.
 
-    @see executor_tag
-    @see context_awaitable_promise_base
+    @see @ref executor_tag
+    @see @ref context_awaitable_promise_base
 */
 inline constexpr executor_tag executor{};
 
@@ -154,8 +154,8 @@ inline constexpr executor_tag executor{};
     @li The returned token remains valid for the coroutine's lifetime.
     @li This operation never suspends; `await_ready()` always returns `true`.
 
-    @see stop_token_tag
-    @see context_awaitable_promise_base
+    @see @ref stop_token_tag
+    @see @ref context_awaitable_promise_base
 */
 inline constexpr stop_token_tag stop_token{};
 
@@ -180,8 +180,8 @@ inline constexpr stop_token_tag stop_token{};
         `nullptr` when the default allocator is in use.
     @li This operation never suspends; `await_ready()` always returns `true`.
 
-    @see frame_allocator_tag
-    @see context_awaitable_promise_base
+    @see @ref frame_allocator_tag
+    @see @ref context_awaitable_promise_base
 */
 inline constexpr frame_allocator_tag frame_allocator{};
 

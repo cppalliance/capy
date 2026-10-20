@@ -48,7 +48,7 @@ namespace capy {
     The allocation fast path uses thread-local storage and requires
     no synchronization. The global pool fallback is mutex-protected.
 
-    @see context_awaitable_promise_base, frame_allocator, recycling_memory_resource
+    @see @ref context_awaitable_promise_base, @ref recycling_memory_resource
 */
 struct frame_alloc_mixin
 {

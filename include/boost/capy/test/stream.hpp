@@ -63,7 +63,7 @@ namespace test {
     @par !example example
 
 
-    @see make_stream_pair, fuse
+    @see @ref make_stream_pair, @ref fuse
 */
 class stream
 {
@@ -233,7 +233,7 @@ public:
         `error::canceled`. A read that can complete immediately from
         buffered data is unaffected by the stop token.
 
-        @see fuse, close
+        @see @ref fuse, @ref close
     */
     template<MutableBufferSequence MB>
     auto
@@ -441,7 +441,7 @@ public:
         data. An empty buffer sequence is a no-op that completes
         successfully regardless of the stop token.
 
-        @see fuse, close
+        @see @ref fuse, @ref close
     */
     template<ConstBufferSequence CB>
     auto
@@ -514,7 +514,7 @@ public:
 
         @param sv The data to inject.
 
-        @see make_stream_pair
+        @see @ref make_stream_pair
     */
     void
     provide(std::string_view sv)
@@ -537,7 +537,7 @@ public:
             is set if a read error occurs (e.g. fuse injection).
             The bool is true if the data matches.
 
-        @see provide
+        @see @ref provide
     */
     std::pair<std::error_code, bool>
     expect(std::string_view expected)
@@ -573,7 +573,7 @@ public:
 
         @return A view of the pending data.
 
-        @see provide, expect
+        @see @ref provide, @ref expect
     */
     std::string_view
     data() const noexcept
@@ -595,7 +595,7 @@ public:
 
     @return A pair of connected streams.
 
-    @see stream, fuse
+    @see @ref stream, @ref fuse
 */
 inline std::pair<stream, stream>
 make_stream_pair(fuse f = {})

@@ -36,7 +36,7 @@ namespace capy {
     @par !example example
 
 
-    @see ReadStream, WriteStream
+    @see @ref ReadStream, @ref WriteStream
 */
 template<typename T>
 concept Stream = ReadStream<T> && WriteStream<T>;

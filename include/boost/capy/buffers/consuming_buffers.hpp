@@ -38,7 +38,7 @@ namespace capy {
     @par !example example
 
 
-    @see buffer_slice, slice_of
+    @see @ref buffer_slice
 */
 template<class Seq>
     requires MutableBufferSequence<Seq> || ConstBufferSequence<Seq>

@@ -40,7 +40,7 @@ class mutable_buffer;
     single-element sequence) and is implicitly convertible to
     `const_buffer`.
 
-    @see const_buffer, MutableBufferSequence
+    @see @ref const_buffer, @ref MutableBufferSequence
 */
 class mutable_buffer
 {
@@ -130,7 +130,7 @@ public:
     single-element sequence). Implicitly constructible from
     `mutable_buffer`.
 
-    @see mutable_buffer, ConstBufferSequence
+    @see @ref mutable_buffer, @ref ConstBufferSequence
 */
 class const_buffer
 {
@@ -233,7 +233,7 @@ public:
     @li Convertible to `const_buffer`, OR
     @li A bidirectional range with value type convertible to `const_buffer`
 
-    @see const_buffer, MutableBufferSequence
+    @see @ref const_buffer, @ref MutableBufferSequence
 */
 // tag::const_buffer_sequence_concept[]
 template<typename T>
@@ -258,7 +258,7 @@ concept ConstBufferSequence =
     @li Convertible to `mutable_buffer`, OR
     @li A bidirectional range with value type convertible to `mutable_buffer`
 
-    @see mutable_buffer, ConstBufferSequence
+    @see @ref mutable_buffer, @ref ConstBufferSequence
 */
 // tag::mutable_buffer_sequence_concept[]
 template<typename T>
@@ -474,7 +474,7 @@ length_impl(It first, It last, long)
 
     @return The number of buffers in `bs`.
 
-    @see buffer_size
+    @see @ref buffer_size
 */
 template<ConstBufferSequence CB>
 std::size_t

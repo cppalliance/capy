@@ -86,7 +86,7 @@ namespace capy {
     @par !example example
 
 
-    @see WriteStream, ConstBufferSequence, ContextAwaitable, results, cond.
+    @see @ref WriteStream, @ref ConstBufferSequence, @ref ContextAwaitable, @ref results, @ref cond
 */
 template <WriteStream S, ConstBufferSequence CB>
 auto write(S& stream, CB buffers) -> task<results<std::size_t>>

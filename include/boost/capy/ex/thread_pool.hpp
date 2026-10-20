@@ -204,7 +204,7 @@ public:
         Increments the outstanding work count. Must be paired
         with a subsequent call to @ref on_work_finished.
 
-        @see on_work_finished, work_guard
+        @see @ref on_work_finished, @ref work_guard
     */
     BOOST_CAPY_DECL
     void
@@ -218,7 +218,7 @@ public:
 
         @pre A preceding call to @ref on_work_started was made.
 
-        @see on_work_started, work_guard
+        @see @ref on_work_started, @ref work_guard
     */
     BOOST_CAPY_DECL
     void

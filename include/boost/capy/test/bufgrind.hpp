@@ -56,7 +56,7 @@ namespace test {
     @par !example example_3
 
 
-    @see buffer_slice
+    @see @ref buffer_slice
 */
 template<ConstBufferSequence BS>
 class bufgrind

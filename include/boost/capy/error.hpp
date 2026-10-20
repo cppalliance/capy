@@ -26,7 +26,7 @@ namespace capy {
     @ref cond error conditions instead. These enum values are
     implementation details subject to change.
 
-    @see cond
+    @see @ref cond
 */
 enum class error
 {

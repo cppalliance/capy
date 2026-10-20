@@ -45,7 +45,7 @@ namespace test {
     @par !example example
 
 
-    @see fuse, ReadStream
+    @see @ref fuse, @ref ReadStream
 */
 class read_stream
 {
@@ -133,7 +133,7 @@ public:
         @throws std::system_error When the attached @ref fuse is in
         exception mode and reaches its failure point.
 
-        @see fuse
+        @see @ref fuse
     */
     template<MutableBufferSequence MB>
     auto
