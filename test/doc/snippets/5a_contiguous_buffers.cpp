@@ -16,9 +16,11 @@
 #include <boost/capy/io/any_read_stream.hpp>
 #include <boost/capy/io/any_write_stream.hpp>
 #include <boost/capy/task.hpp>
+#include <boost/capy/test/stream.hpp>
 // tag::make_buffer_hpp[]
 #include <boost/capy/buffers/make_buffer.hpp>
 // end::make_buffer_hpp[]
+#include <boost/capy/write.hpp>
 
 #include <array>
 #include <span>
@@ -26,13 +28,47 @@
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
+
+#if __has_include(<sys/mman.h>)
+#include <sys/mman.h>
+#endif
 
 #include "test_suite.hpp"
 
 namespace capy = boost::capy;
 
 namespace {
+
+
+#if __has_include(<sys/mman.h>)
+
+template <typename F>
+struct scope_guard
+{
+  F fun;
+  scope_guard(F f) : fun(std::move(f)) {}
+  scope_guard(scope_guard&&) = delete;
+  ~scope_guard() { fun(); }
+};
+
+[[maybe_unused]] capy::task<>
+send_mapped_file(capy::test::stream& socket, int fd, std::size_t file_size)
+{
+  // tag::mmap_buffer[]
+  void* mapped = ::mmap(nullptr, file_size, PROT_READ, MAP_PRIVATE, fd, 0); //<1>
+  if (mapped != MAP_FAILED) {
+    scope_guard _ = [&]{ ::munmap(mapped, file_size); };  //<2>
+
+    capy::const_buffer file_buf(mapped, file_size);       //<3>
+    co_await capy::write(socket, file_buf);               //<4>
+  }
+  // end::mmap_buffer[]
+}
+
+#endif // __has_include(<sys/mman.h>)
+
 
 struct contiguous_buffers_test
 {

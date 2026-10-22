@@ -25,6 +25,11 @@ cpp:buffer_empty[] reports whether a sequence carries no data,
 either because it holds no buffers or because every buffer has size zero.
 It is a shorthand for `buffer_size(bufseq) == 0`.
 
+[source,cpp]
+----
+include::example$snippets/5d_buffer_algo.cpp[tag=buffer_empty_example,indent=0]
+----
+
 Capy allows passing zero-size buffers to read and write operations. 
 This is to cover the situations where the size of the buffer is determined dynamically,
 based on incoming messages. A protocol may require that a sender first communicates the size of a
@@ -44,7 +49,41 @@ A three-buffer sequence of 100 bytes each has a cpp:buffer_size[] of 300 and a c
 ====
 
 
-== buffer_slice
+== Copying Bytes
+
+cpp:buffer_copy[] copies bytes from one buffer sequence to another and returns the number of bytes copied:
+
+[source,cpp]
+----
+include::example$snippets/5d_buffer_algo.cpp[tag=buffer_copy_example,indent=0]
+----
+
+The number of copied bytes is the size (in bytes) of the smaller buffer:
+
+[source,cpp]
+----
+include::example$snippets/5d_buffer_algo.cpp[tag=bigger_buffer_copy_example,indent=0]
+----
+
+You can additionally cap the number of copied bytes in the third function argument,
+which is useful for protocols with size limits:
+
+[source,cpp]
+----
+include::example$snippets/5d_buffer_algo.cpp[tag=buffer_copy_at_most,indent=0]
+----
+
+Source and target need not have the same shape:
+
+[source,cpp]
+----
+include::example$snippets/5d_buffer_algo.cpp[tag=buffer_copy_cross,indent=0]
+----
+
+The algorithm fills target buffers in order, reading from source buffers as needed. It handles a source buffer spanning several targets, and the reverse.
+
+
+== Slicing
 
 cpp:buffer_slice[] returns a byte sub-range of a buffer sequence, as a value:
 
@@ -59,7 +98,7 @@ cpp:buffer_slice[]`(seq, offset, length)` returns a value that is itself a buffe
 
 Capy creates and manages buffer handles on your behalf. Those are the sub-range a cpp:buffer_slice[] produces, and the descriptors a type-erased stream passes to the OS. Each is valid only for the window its API documents.
 
-== consuming_buffers
+== Cursor Interface
 
 When transferring data incrementally, cpp:consuming_buffers[] is a cursor that tracks progress:
 
@@ -87,55 +126,10 @@ xref:4.coroutines/4g.composition.adoc[Concurrent Composition] takes its item by
 value: it collects its tasks first, then awaits them together.
 ====
 
-== Copying
-
-cpp:buffer_copy[] copies data from one xref:glossary.adoc#buffer-sequence[buffer sequence] to another and returns the number of bytes copied:
-
-[source,cpp]
-----
-include::example$snippets/5d_buffer_algo.cpp[tag=buffer_copy_example,indent=0]
-----
-
-Its `at_most` parameter caps the transfer, which is useful for protocols with size limits:
-
-[source,cpp]
-----
-include::example$snippets/5d_buffer_algo.cpp[tag=buffer_copy_at_most,indent=0]
-----
-
-Source and target need not have the same shape:
-
-[source,cpp]
-----
-include::example$snippets/5d_buffer_algo.cpp[tag=buffer_copy_cross,indent=0]
-----
-
-The algorithm fills target buffers in order, reading from source buffers as needed. It handles a source buffer spanning several targets, and the reverse.
-
-== Partial Transfer Loops
-
-Real transfers move some of the bytes, not all of them. Drive the loop with a cpp:consuming_buffers[] cursor, described in <<_consuming_buffers>>.
-
-[source,cpp]
-----
-include::example$snippets/5d_buffer_algo.cpp[tag=read_loop]
-----
-
-[source,cpp]
-----
-include::example$snippets/5d_buffer_algo.cpp[tag=write_loop]
-----
 
 == Custom Buffer Types
 
-Any memory region can be a buffer, including a memory-mapped one:
-
-[source,cpp]
-----
-include::example$snippets/5d_buffer_algo.cpp[tag=mmap_buffer,indent=0]
-----
-
-You can also define your own type satisfying the concepts:
+You can define your own type satisfying the concepts:
 
 [source,cpp]
 ----

@@ -14,12 +14,9 @@
 
 #include "../doc_warnings.hpp"
 
-// tag::include_buffers[]
 #include <boost/capy/buffers.hpp>
-// end::include_buffers[]
-// tag::make_buffer_include[]
 #include <boost/capy/buffers/make_buffer.hpp>
-// end::make_buffer_include[]
+
 // tag::buffer_slice_include[]
 #include <boost/capy/buffers/buffer_slice.hpp>
 // end::buffer_slice_include[]
@@ -56,9 +53,6 @@
 #include <liburing.h>
 #endif
 
-#if __has_include(<sys/mman.h>)
-#include <sys/mman.h>
-#endif
 
 #include "test_suite.hpp"
 
@@ -109,99 +103,6 @@ capy::task<> send_sliced(
     BOOST_TEST(capy::buffer_size(rest) == capy::buffer_size(bufs) - 16384);
 }
 
-// tag::read_loop[]
-template<capy::ReadStream Stream, capy::MutableBufferSequence Buffers>
-capy::task<std::size_t> read_full(Stream& stream, Buffers buffers)
-{
-    capy::consuming_buffers remaining(buffers);
-    std::size_t const total_size = capy::buffer_size(buffers);
-    std::size_t total = 0;
-
-    while (total < total_size)
-    {
-        auto [ec, n] = co_await stream.read_some(remaining.data());
-        remaining.consume(n);
-        total += n;
-        if (ec)
-            co_return total;
-    }
-
-    co_return total;
-}
-// end::read_loop[]
-
-// tag::write_loop[]
-template<capy::WriteStream Stream, capy::ConstBufferSequence Buffers>
-capy::task<std::size_t> write_full(Stream& stream, Buffers buffers)
-{
-    capy::consuming_buffers remaining(buffers);
-    std::size_t const total_size = capy::buffer_size(buffers);
-    std::size_t total = 0;
-
-    while (total < total_size)
-    {
-        auto [ec, n] = co_await stream.write_some(remaining.data());
-        remaining.consume(n);
-        total += n;
-        if (ec)
-            co_return total;
-    }
-
-    co_return total;
-}
-// end::write_loop[]
-
-std::string
-build_header()
-{
-    return "header: ";
-}
-
-std::vector<char>
-load_body()
-{
-    return {'b', 'o', 'd', 'y'};
-}
-
-[[maybe_unused]] capy::task<>
-zero_copy_write(capy::test::stream& stream)
-{
-    // tag::zero_copy[]
-    std::string header = build_header();
-    std::vector<char> body = load_body();
-
-    // No copyingâ€”header and body are written directly
-    std::array buffers = {capy::make_buffer(header), capy::make_buffer(body)};
-    co_await capy::write(stream, buffers);
-    // end::zero_copy[]
-}
-
-[[maybe_unused]] capy::task<>
-scatter_gather_write(
-    capy::test::stream& stream,
-    capy::const_buffer header_buf, capy::const_buffer separator_buf,
-    capy::const_buffer body_buf, capy::const_buffer footer_buf)
-{
-    // tag::scatter_gather[]
-    std::array buffers = {header_buf, separator_buf, body_buf, footer_buf};
-    co_await capy::write(stream, buffers);  // Single system call
-    // end::scatter_gather[]
-}
-
-#if __has_include(<sys/mman.h>)
-
-[[maybe_unused]] capy::task<>
-send_mapped_file(capy::test::stream& socket, int fd, std::size_t file_size)
-{
-    // tag::mmap_buffer[]
-    // Memory-mapped file
-    void* mapped = mmap(nullptr, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    capy::const_buffer file_buf(mapped, file_size);
-    co_await capy::write(socket, file_buf);  // Zero-copy network transmission
-    // end::mmap_buffer[]
-}
-
-#endif // __has_include(<sys/mman.h>)
 
 // Bidirectional iterator presenting each chunk as a const_buffer. Kept
 // out of the page fragment, which focuses on the sequence shape.
@@ -269,23 +170,6 @@ public:
 
 static_assert(capy::ConstBufferSequence<chunked_buffer_sequence>);
 
-capy::task<>
-read_full_driver(
-    capy::test::stream& wr, capy::test::stream& rd,
-    std::array<capy::mutable_buffer, 2> bufs, std::size_t& got)
-{
-    co_await capy::write(wr, capy::make_buffer("hello world"sv));
-    got = co_await read_full(rd, bufs);
-}
-
-capy::task<>
-write_full_driver(
-    capy::test::stream& wr, std::array<capy::const_buffer, 2> bufs,
-    std::size_t& put)
-{
-    put = co_await write_full(wr, bufs);
-}
-
 struct buffer_algo_test
 {
     void
@@ -303,19 +187,42 @@ struct buffer_algo_test
     }
 
     void
+    testBufferEmpty()
+    {
+        // tag::buffer_empty_example[]
+        auto buf = capy::make_buffer(""sv);  // 0 bytes
+        assert(capy::buffer_empty(buf));
+        // end::buffer_empty_example[]
+        BOOST_TEST(capy::buffer_empty(buf));
+    }
+
+    void
     testBufferCopy()
     {
         // tag::buffer_copy_example[]
-        char source_data[] = "hello world";
+        const char source_data[] = "hello world";
         char dest_data[20];
 
         capy::const_buffer src(source_data, 11);
         capy::mutable_buffer dst(dest_data, 20);
 
-        std::size_t copied = capy::buffer_copy(dst, src);  // 11
+        std::size_t copied = capy::buffer_copy(dst, src);
+        assert(copied == 11);
         // end::buffer_copy_example[]
         BOOST_TEST(copied == 11);
         BOOST_TEST(std::memcmp(dest_data, "hello world", 11) == 0);
+
+        {
+            // tag::bigger_buffer_copy_example[]
+            capy::const_buffer src(source_data, 11);
+            capy::mutable_buffer dst(dest_data, 5);
+
+            std::size_t copied = capy::buffer_copy(dst, src);
+            assert(copied == 5);
+            // end::bigger_buffer_copy_example[]
+            BOOST_TEST(copied == 5);
+            BOOST_TEST(std::memcmp(dest_data, "hello", 5) == 0);
+        }
     }
 
     void
@@ -326,11 +233,11 @@ struct buffer_algo_test
         capy::const_buffer src(source_data, 11);
         capy::mutable_buffer dst(dest_data, 20);
         // tag::buffer_copy_at_most[]
-        // Copy at most 5 bytes
-        std::size_t copied = capy::buffer_copy(dst, src, 5);
+        std::size_t copied = capy::buffer_copy(dst, src, 4);
+        assert(copied == 4);
         // end::buffer_copy_at_most[]
-        BOOST_TEST(copied == 5);
-        BOOST_TEST(std::memcmp(dest_data, "hello", 5) == 0);
+        BOOST_TEST(copied == 4);
+        BOOST_TEST(std::memcmp(dest_data, "hell", 4) == 0);
     }
 
     void
@@ -356,35 +263,6 @@ struct buffer_algo_test
         BOOST_TEST(copied == 8);
         BOOST_TEST(std::memcmp(big_data, "abcdef", 6) == 0);
         BOOST_TEST(std::memcmp(small_data, "gh", 2) == 0);
-    }
-
-    void
-    testReadFull()
-    {
-        auto [a, b] = capy::test::make_stream_pair();
-        char storage1[6] = {};
-        char storage2[5] = {};
-        std::array<capy::mutable_buffer, 2> bufs = {
-            capy::mutable_buffer(storage1, 6),
-            capy::mutable_buffer(storage2, 5)};
-        std::size_t got = 0;
-        capy::test::run_blocking()(read_full_driver(a, b, bufs, got));
-        BOOST_TEST(got == 11);
-        BOOST_TEST(std::memcmp(storage1, "hello ", 6) == 0);
-        BOOST_TEST(std::memcmp(storage2, "world", 5) == 0);
-    }
-
-    void
-    testWriteFull()
-    {
-        auto [a, b] = capy::test::make_stream_pair();
-        std::array<capy::const_buffer, 2> bufs = {
-            capy::make_buffer("hello "sv),
-            capy::make_buffer("world"sv)};
-        std::size_t put = 0;
-        capy::test::run_blocking()(write_full_driver(a, bufs, put));
-        BOOST_TEST(put == 11);
-        BOOST_TEST(b.data() == "hello world");
     }
 
     void
@@ -425,11 +303,10 @@ struct buffer_algo_test
     run()
     {
         testBufferSize();
+        testBufferEmpty();
         testBufferCopy();
         testPartialCopy();
         testCrossSequenceCopy();
-        testReadFull();
-        testWriteFull();
         testReadAll();
         testBufferSlice();
     }

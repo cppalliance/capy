@@ -23,12 +23,6 @@ struct iovec {
 
 POSIX uses `iovec` with `readv()`, `writev()`, `recvmsg()`, and `sendmsg()`. Capy's buffer types place the pointer first and the size second, matching `iovec` in both order and width. Filling an `iovec` is therefore a field-for-field copy, with no conversion.
 
-[WARNING]
-====
-*Matching layout does not license a cast.* Do not `reinterpret_cast` an array of cpp:mutable_buffer[] or cpp:const_buffer[] to `iovec*` and hand it to the OS, even though the fields line up. No object of the target type exists in that storage, so the access is undefined behavior. These are not implicit-lifetime types either, so `std::start_lifetime_as_array` cannot rescue it.
-
-Copy field by field into a real platform array, which is what Capy does internally.
-====
 
 [source,c,role=external]
 ----

@@ -146,7 +146,7 @@ In the snippet above nothing dangles: `items` outlives the cpp:when_all[]. The
 hazard is what a caller could do -- passing a temporary would leave the stored
 task holding a reference to it. Awaiting a task immediately, as function `read_all` 
 from section 
-xref:5.buffers/5d.buffer-algo.adoc#_consuming_buffers[Buffer Algorithms] does, 
+xref:5.buffers/5d.buffer-algo.adoc#_cursor_interface[Buffer Algorithms] does, 
 is the case where a reference parameter is safe.
 ====
 

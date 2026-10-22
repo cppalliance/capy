@@ -174,3 +174,19 @@ include::example$snippets/5a_contiguous_buffers.cpp[tag=buf_from_nested,indent=0
 
 The `const`-ness of `.data()` on the source type determines if the factory produces
 cpp:const_buffer[] or cpp:mutable_buffer[].
+
+== Representing Any Memory Region
+
+Any memory region can be represented via cpp:const_buffer[]/cpp:mutable_buffer[], 
+including a memory-mapped one:
+
+[source,cpp]
+----
+include::example$snippets/5a_contiguous_buffers.cpp[tag=mmap_buffer,indent=0]
+----
+<1> A memory-mapped file
+<2> A scope guard will unmap the memory at the end of the scope.
+    Note that cpp:write[] can throw, and the coroutine can be destroyed
+    while suspended on cpp:co_await[].
+<3> Represent it as cpp:const_buffer[].
+<4> Sends the mapped pages directly, with no intermediate read into user-provided storage.
