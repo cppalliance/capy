@@ -60,15 +60,24 @@ namespace detail {
 
     On ARM64 the workaround does not retire at 19.50, because
     that target has a second, unrelated defect. With a real
-    symmetric transfer, MSVC 19.51 release loses the handler for
-    a `try` region that spans the suspend point: after the
-    coroutine is resumed from another call stack, a `throw`
+    symmetric transfer, MSVC ARM64 release loses the handler for
+    a `try` region that spans the suspend point: a `throw`
     inside that region is not caught by the `catch` beside it and
     escapes to the promise's `unhandled_exception`. A `catch(...)`
     misses it too, so the region is not found at all rather than
-    the handler failing to match. Debug builds are unaffected, as
-    is x64 at the same toolset. `testCatchAfterDeferredResume` in
-    test/unit/task.cpp covers this.
+    the handler failing to match. Any `await_suspend` that returns
+    a handle triggers it, whether the coroutine resumes at once
+    or later from another call stack, and whether the throw comes
+    from `await_resume` or from the body after it. A standalone
+    program without capy reproduces it on 19.44 and 19.51; the
+    first clause of the gate already covers 19.44. Debug builds
+    are unaffected, as is x64 at the same toolset.
+    `testCatchAfterDeferredResume` in test/unit/task.cpp covers
+    this.
+
+    The void-returning transfer alone does not cover every case on
+    19.51. See `await_ready_then_suspend` below for the second
+    safeguard that `task` and `quitter` apply where this one is on.
 
     `_M_ARM64EC` is included conservatively. It generates ARM64
     code and has not been tested here; keeping the workaround on
@@ -109,6 +118,72 @@ inline std::coroutine_handle<>
 symmetric_transfer(std::coroutine_handle<> h) noexcept
 {
     return h;
+}
+#endif
+
+#if BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND
+/** Ask whether an awaitable is ready, and suspend on it if not.
+
+    Used by the `transform_awaiter` of `task` and `quitter` where the
+    symmetric-transfer workaround is on. There the awaiter's own
+    `await_ready` returns `false`, and its `await_suspend` calls this
+    instead, so the wrapped awaitable's `await_ready` runs inside
+    `await_suspend` rather than at the start of the `co_await`.
+
+    This avoids a second MSVC ARM64 release defect. When the wrapped
+    `await_ready` is evaluated at the start of the `co_await`, and
+    performs an atomic read-modify-write (as
+    `async_waker::wait_awaiter` does to consume a latched wakeup), a
+    `try` region spanning the `co_await` can lose its handler if a
+    call precedes the `try`. This happens even with the workaround
+    above in place. Observed on 19.51; not on 19.44. A plain or
+    atomic load in `await_ready` was not affected. The regression
+    tests are `testCatchAfterRmwAwaitReady` and
+    `testCatchAroundWakerWait` in test/unit/task.cpp, and
+    `testCatchAfterRmwAwaitReady` and
+    `testCatchStopAfterRmwAwaitReady` in test/unit/quitter.cpp.
+
+    The awaiting coroutine continues without suspending when the
+    wrapped awaitable is ready, or when its `await_suspend` returns
+    `false`. When the wrapped `await_suspend` returns a handle, that
+    handle is resumed through `symmetric_transfer` and the awaiting
+    coroutine stays suspended. Returning `false` instead of resuming
+    inline keeps immediate completions from growing the stack.
+
+    @param a The wrapped awaitable.
+
+    @param h The coroutine performing the `co_await`.
+
+    @param env The execution environment to pass to the wrapped
+    awaitable's `await_suspend`.
+
+    @return `false` to continue without suspending, otherwise `true`.
+*/
+template<class Awaitable>
+bool
+await_ready_then_suspend(
+    Awaitable& a,
+    std::coroutine_handle<> h,
+    await_context const* env) noexcept
+{
+    // Called exactly once: await_ready may consume state.
+    if(a.await_ready())
+        return false;
+    using R = decltype(a.await_suspend(h, env));
+    if constexpr (std::is_same_v<R, bool>)
+    {
+        return a.await_suspend(h, env);
+    }
+    else if constexpr (std::is_void_v<R>)
+    {
+        a.await_suspend(h, env);
+        return true;
+    }
+    else
+    {
+        symmetric_transfer(a.await_suspend(h, env));
+        return true;
+    }
 }
 #endif
 

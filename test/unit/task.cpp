@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -11,6 +12,7 @@
 #include <boost/capy/task.hpp>
 
 #include <boost/capy/ex/abandon.hpp>
+#include <boost/capy/ex/async_waker.hpp>
 #include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -1631,6 +1633,50 @@ struct task_test
         int await_resume() noexcept { return 7; }
     };
 
+    // Not ready, and await_suspend returns void: the coroutine stays
+    // suspended until the test resumes it. Where the symmetric-transfer
+    // workaround is on, this is the void branch of
+    // detail::await_ready_then_suspend.
+    struct void_suspend_awaitable
+    {
+        std::coroutine_handle<>& slot;
+
+        bool await_ready() const noexcept { return false; }
+
+        void await_suspend(
+            std::coroutine_handle<> h, await_context const*) noexcept
+        {
+            slot = h;
+        }
+
+        int await_resume() const noexcept { return 7; }
+    };
+
+    static task<int>
+    void_suspend_session(std::coroutine_handle<>& slot)
+    {
+        co_return co_await void_suspend_awaitable{slot};
+    }
+
+    void
+    testVoidSuspendAwaitable()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+
+        std::coroutine_handle<> parked;
+        int result = 0;
+
+        run_async(ex, [&](int v) { result = v; })(
+            void_suspend_session(parked));
+
+        BOOST_TEST(static_cast<bool>(parked));
+        BOOST_TEST_EQ(result, 0);
+        if(parked)
+            parked.resume();
+        BOOST_TEST_EQ(result, 7);
+    }
+
     void
     testBoolSuspendAwaitable()
     {
@@ -1732,6 +1778,155 @@ struct task_test
         BOOST_TEST(completed);
     }
 
+    // An opaque call placed before the try in the two tests below.
+    // The MSVC ARM64 defect they cover needs a call there.
+    static BOOST_CAPY_NOINLINE void
+    call_before_try(bool& marker)
+    {
+        marker = true;
+    }
+
+    // Parks like parking_awaitable, but its await_ready performs an
+    // atomic read-modify-write that never succeeds here, as
+    // async_waker's does to consume a latched wakeup. await_resume
+    // throws.
+    struct rmw_ready_awaitable
+    {
+        std::coroutine_handle<>& slot;
+        std::atomic<int>& state;
+
+        bool await_ready() noexcept
+        {
+            int expected = 1;
+            return state.compare_exchange_strong(
+                expected, 0,
+                std::memory_order_acq_rel,
+                std::memory_order_acquire);
+        }
+
+        std::coroutine_handle<>
+        await_suspend(
+            std::coroutine_handle<> h, await_context const*) noexcept
+        {
+            slot = h;
+            return std::noop_coroutine();
+        }
+
+        void await_resume() const
+        {
+            throw_test_exception("rmw ready");
+        }
+    };
+
+    static task<void>
+    rmw_ready_session(
+        std::coroutine_handle<>& slot,
+        std::atomic<int>& state,
+        bool& marker,
+        bool& caught)
+    {
+        call_before_try(marker);
+        try
+        {
+            co_await rmw_ready_awaitable{slot, state};
+        }
+        catch(test_exception const&)
+        {
+            caught = true;
+        }
+    }
+
+    // Regression test for a second MSVC 14.51 ARM64 release defect,
+    // which the void-returning symmetric_transfer does not cover.
+    //
+    // With a call before the try, and an awaiter whose await_ready
+    // performs an atomic read-modify-write, the throw from
+    // await_resume was not caught by the catch beside it. It
+    // escaped to run_async's error handler. A plain or atomic load
+    // in await_ready did not trigger it. transform_awaiter avoids it
+    // by asking the wrapped await_ready from inside await_suspend
+    // (detail::await_ready_then_suspend).
+    //
+    // As with testCatchAfterDeferredResume, the escape is checked
+    // through the error handler so it cannot terminate the binary.
+    void
+    testCatchAfterRmwAwaitReady()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+
+        std::coroutine_handle<> parked;
+        std::atomic<int> state{0};
+        bool marker = false;
+        bool caught = false;
+        bool escaped = false;
+        bool completed = false;
+
+        run_async(ex,
+            [&]() { completed = true; },
+            [&](std::exception_ptr) { escaped = true; })(
+                rmw_ready_session(parked, state, marker, caught));
+
+        BOOST_TEST(static_cast<bool>(parked));
+        BOOST_TEST(marker);
+        if(parked)
+            parked.resume();
+
+        BOOST_TEST(caught);
+        BOOST_TEST(!escaped);
+        BOOST_TEST(completed);
+    }
+
+    static task<void>
+    waker_session(
+        async_waker& w,
+        bool& marker,
+        bool& caught)
+    {
+        call_before_try(marker);
+        try
+        {
+            auto [ec] = co_await w.wait();
+            (void)ec;
+            throw_test_exception("woken");
+        }
+        catch(test_exception const&)
+        {
+            caught = true;
+        }
+    }
+
+    // The same defect through async_waker, the shape that first
+    // exposed it: a call before the try, then a wait. On MSVC 14.51
+    // ARM64 release the throw after a successful wait escaped the
+    // catch. test_executor posts inline, so wake() resumes the
+    // session on this stack.
+    void
+    testCatchAroundWakerWait()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+
+        async_waker w;
+        bool marker = false;
+        bool caught = false;
+        bool escaped = false;
+        bool completed = false;
+
+        run_async(ex,
+            [&]() { completed = true; },
+            [&](std::exception_ptr) { escaped = true; })(
+                waker_session(w, marker, caught));
+
+        BOOST_TEST(marker);
+        BOOST_TEST(!caught);
+        w.wake();
+
+        BOOST_TEST(caught);
+        BOOST_TEST(!escaped);
+        BOOST_TEST(completed);
+    }
+
     void
     run()
     {
@@ -1742,7 +1937,10 @@ struct task_test
         testDestroyUnstartedOrFinishedTaskIsFine();
 #endif
         testCatchAfterDeferredResume();
+        testCatchAfterRmwAwaitReady();
+        testCatchAroundWakerWait();
         testBoolSuspendAwaitable();
+        testVoidSuspendAwaitable();
         testReturnValue();
         testException();
         testTaskAwaitsTask();

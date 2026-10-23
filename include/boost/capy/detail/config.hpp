@@ -77,8 +77,14 @@
 
    - MSVC 19.34 through 19.44, every target: the returned handle
      is stored on the coroutine frame.
-   - MSVC 19.50 and later, ARM64 and ARM64EC, release builds: a
-     try region spanning the suspend point loses its handler.
+   - MSVC ARM64 and ARM64EC, release builds: a try region spanning
+     the suspend point loses its handler. Reproduced on 19.44 and
+     19.51; the first clause already covers 19.44.
+
+   Where it is on, task's and quitter's transform_awaiter also defer
+   the wrapped await_ready into await_suspend, through
+   detail::await_ready_then_suspend. That works around a related
+   ARM64 release defect the void-returning transfer does not cover.
 
    Not a configuration option: translation units that disagree on it
    get different definitions of symmetric_transfer. To check whether

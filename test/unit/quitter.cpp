@@ -867,6 +867,138 @@ struct quitter_test
     }
 
     //----------------------------------------------------------
+    // 15. Catch around a co_await whose await_ready does an atomic
+    //     read-modify-write (MSVC 14.51 ARM64 release regression)
+    //
+    //    quitter's transform_awaiter gets the same safeguard as
+    //    task's: where the symmetric-transfer workaround is on, the
+    //    wrapped await_ready is asked from inside await_suspend. See
+    //    testCatchAfterRmwAwaitReady in test/unit/task.cpp. Both
+    //    tests below pass on every other build with or without it.
+    //----------------------------------------------------------
+
+    // An opaque call before the try; the defect needs one there.
+    static BOOST_CAPY_NOINLINE void
+    call_before_try(bool& marker)
+    {
+        marker = true;
+    }
+
+    // Parks; await_ready performs a compare-exchange that never
+    // succeeds here, as async_waker's does. await_resume throws when
+    // throw_on_resume is set.
+    struct rmw_ready_awaitable
+    {
+        std::coroutine_handle<>& slot;
+        std::atomic<int>& state;
+        bool throw_on_resume;
+
+        bool await_ready() noexcept
+        {
+            int expected = 1;
+            return state.compare_exchange_strong(
+                expected, 0,
+                std::memory_order_acq_rel,
+                std::memory_order_acquire);
+        }
+
+        std::coroutine_handle<>
+        await_suspend(
+            std::coroutine_handle<> h, await_context const*) noexcept
+        {
+            slot = h;
+            return std::noop_coroutine();
+        }
+
+        void await_resume() const
+        {
+            if(throw_on_resume)
+                throw test_exception("rmw ready");
+        }
+    };
+
+    static quitter<>
+    rmw_ready_quitter(
+        std::coroutine_handle<>& slot,
+        std::atomic<int>& state,
+        bool throw_on_resume,
+        bool& marker,
+        bool& caught)
+    {
+        call_before_try(marker);
+        try
+        {
+            co_await rmw_ready_awaitable{slot, state, throw_on_resume};
+        }
+        catch(...)
+        {
+            caught = true;
+        }
+    }
+
+    // The awaitable's own await_resume throws.
+    void
+    testCatchAfterRmwAwaitReady()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+
+        std::coroutine_handle<> parked;
+        std::atomic<int> state{0};
+        bool marker = false;
+        bool caught = false;
+        bool escaped = false;
+        bool completed = false;
+
+        run_async(ex,
+            [&]() { completed = true; },
+            [&](std::exception_ptr) { escaped = true; })(
+                rmw_ready_quitter(parked, state, true, marker, caught));
+
+        BOOST_TEST(static_cast<bool>(parked));
+        BOOST_TEST(marker);
+        if(parked)
+            parked.resume();
+
+        BOOST_TEST(caught);
+        BOOST_TEST(!escaped);
+        BOOST_TEST(completed);
+    }
+
+    // A stop request while parked: quitter's await_resume throws its
+    // stop sentinel, which the catch(...) in the body takes, as in
+    // the documentation's catch(...) pitfall.
+    void
+    testCatchStopAfterRmwAwaitReady()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+
+        std::stop_source source;
+        std::coroutine_handle<> parked;
+        std::atomic<int> state{0};
+        bool marker = false;
+        bool caught = false;
+        bool escaped = false;
+        bool completed = false;
+
+        run_async(ex, source.get_token(),
+            [&]() { completed = true; },
+            [&](std::exception_ptr) { escaped = true; })(
+                rmw_ready_quitter(parked, state, false, marker, caught));
+
+        BOOST_TEST(static_cast<bool>(parked));
+        BOOST_TEST(marker);
+        source.request_stop();
+        if(parked)
+            parked.resume();
+
+        BOOST_TEST(caught);
+        BOOST_TEST(!escaped);
+        BOOST_TEST(completed);
+    }
+
+    //----------------------------------------------------------
     // 13. Echo server with shutdown
     //
     //    A quitter echo loop over a mock stream pair.
@@ -989,6 +1121,8 @@ struct quitter_test
         testWhenAllWithStop();
         testWhenAnyWithStop();
         testWakerCancellation();
+        testCatchAfterRmwAwaitReady();
+        testCatchStopAfterRmwAwaitReady();
         testEchoWithShutdown();
     }
 };

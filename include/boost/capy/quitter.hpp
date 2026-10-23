@@ -351,12 +351,22 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                 arrives before an already-complete operation is observed by
                 @ref await_resume, which runs in either case.
 
+                Where `BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND` is on,
+                this always returns `false`, and @ref await_suspend asks
+                the wrapped awaitable instead. See
+                `detail::await_ready_then_suspend`.
+
                 @return The wrapped awaitable's own `await_ready` result:
-                `true` if no suspension is needed.
+                `true` if no suspension is needed. Always `false` where
+                the workaround is on.
             */
             bool await_ready() noexcept
             {
+#if BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND
+                return false;
+#else
                 return a_.await_ready();
+#endif
             }
 
             /** Restore the frame allocator, check for stop, then resume the
@@ -407,16 +417,24 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                 @return Whatever the wrapped awaitable's `await_suspend`
                 returns. When that is a `std::coroutine_handle<>`, the
                 handle is routed through `detail::symmetric_transfer`.
-                On MSVC that helper resumes the handle on the current
-                stack, and this function returns `void`, so the awaiting
-                coroutine suspends unconditionally. On every other
-                compiler the handle is returned unchanged for symmetric
-                transfer.
+                Where `BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND` is on,
+                this function instead returns `bool` from
+                `detail::await_ready_then_suspend`. It first asks the
+                wrapped awaitable's `await_ready`. When that reports
+                ready, it returns `false` to continue without
+                suspending. Otherwise it resumes any returned handle on
+                the current stack and returns `true`. Where the
+                workaround is off, a returned handle is passed back
+                unchanged for symmetric transfer.
             */
             template<class Promise>
             auto await_suspend(
                 std::coroutine_handle<Promise> h) noexcept
             {
+#if BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND
+                return detail::await_ready_then_suspend(
+                    a_, h, p_->environment());
+#else
                 using R = decltype(
                     a_.await_suspend(h, p_->environment()));
                 if constexpr (std::is_same_v<
@@ -426,6 +444,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                 else
                     return a_.await_suspend(
                         h, p_->environment());
+#endif
             }
         };
 
