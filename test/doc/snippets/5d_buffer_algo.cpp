@@ -196,6 +196,18 @@ struct buffer_algo_test
         BOOST_TEST(capy::buffer_empty(buf));
     }
 
+    // tag::bigger_buffer_copy_example[]
+    void copy_test(capy::MutableBufferSequence auto target, 
+                   capy::ConstBufferSequence   auto source)
+    {
+        size_t smaller_count = std::min(capy::buffer_size(target),
+                                        capy::buffer_size(source));
+
+        std::size_t copied = capy::buffer_copy(target, source);
+        assert(copied == smaller_count);
+    }
+    // end::bigger_buffer_copy_example[]
+
     void
     testBufferCopy()
     {
@@ -213,15 +225,10 @@ struct buffer_algo_test
         BOOST_TEST(std::memcmp(dest_data, "hello world", 11) == 0);
 
         {
-            // tag::bigger_buffer_copy_example[]
             capy::const_buffer src(source_data, 11);
             capy::mutable_buffer dst(dest_data, 5);
 
-            std::size_t copied = capy::buffer_copy(dst, src);
-            assert(copied == 5);
-            // end::bigger_buffer_copy_example[]
-            BOOST_TEST(copied == 5);
-            BOOST_TEST(std::memcmp(dest_data, "hello", 5) == 0);
+            copy_test(dst, src);
         }
     }
 

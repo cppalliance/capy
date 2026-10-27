@@ -120,7 +120,7 @@ include::example$snippets/5b_composite_buffers.cpp[tag=begin_end_uniform,indent=
 ----
 
 Function cpp:buffer_length[] says how many contiguous buffers are present in the buffer
-sequence. It is equivalent to
+sequence. It is equivalent to:
 
 [source,cpp]
 ----

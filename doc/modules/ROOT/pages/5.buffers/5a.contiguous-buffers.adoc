@@ -15,7 +15,7 @@ While it is not always possible to efficiently compose a full message in a singl
 it is certainly a good default. Capy offers two types for this purpose:
 
  * cpp:const_buffer[] -- a handle to a contiguous sequence of bytes. I/O operations will never modify these bytes.
- * cpp:mutable_buffer[] -- a handle to a contiguous region for sttoring bytes; I/O operations will fill it.
+ * cpp:mutable_buffer[] -- a handle to a contiguous region for storing bytes; I/O operations will fill it.
 
 Both types are present in header `<boost/capy/buffers.hpp>`. 
 
@@ -81,7 +81,7 @@ include::example$snippets/5a_contiguous_buffers.cpp[tag=good_management,indent=0
 ----
 include::example$snippets/5a_contiguous_buffers.cpp[tag=bad_management,indent=0]
 ----
-<1> Bug: the awaitable, rather than being `co_await`ed, is returned to be used later.
+<1> Bug: the awaitable, rather than being ``co_await``ed, is returned to be used later.
     At that later time the array will no longer be alive. 
 
 
@@ -187,6 +187,6 @@ include::example$snippets/5a_contiguous_buffers.cpp[tag=mmap_buffer,indent=0]
 <1> A memory-mapped file
 <2> A scope guard will unmap the memory at the end of the scope.
     Note that cpp:write[] can throw, and the coroutine can be destroyed
-    while suspended on cpp:co_await[].
+    while suspended on `co_await`.
 <3> Represent it as cpp:const_buffer[].
 <4> Sends the mapped pages directly, with no intermediate read into user-provided storage.

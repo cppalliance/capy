@@ -58,7 +58,7 @@ cpp:buffer_copy[] copies bytes from one buffer sequence to another and returns t
 include::example$snippets/5d_buffer_algo.cpp[tag=buffer_copy_example,indent=0]
 ----
 
-The number of copied bytes is the size (in bytes) of the smaller buffer:
+The number of copied bytes is the smaller byte count of the source and target buffer sequences:
 
 [source,cpp]
 ----
