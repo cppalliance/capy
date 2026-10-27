@@ -21,7 +21,7 @@ threads so that multi-threaded test output is readable.
 `run_blocking` bridges async coroutine code into a synchronous test body.
 It creates a single-threaded event loop on the calling thread, starts the
 coroutine through it, and blocks until the coroutine finishes or throws.
-No real executor or thread pool is involved.
+No real xref:glossary.adoc#executor[executor] or thread pool is involved.
 
 [source,cpp]
 ----
@@ -42,31 +42,31 @@ include::example$snippets/7a_drivers.cpp[tag=run_blocking_overloads,indent=0]
 === How It Works
 
 `run_blocking` creates a cpp:test::blocking_context[blocking_context], an internal single-threaded
-execution context. Work posted to it is queued and processed on the calling
+xref:glossary.adoc#execution-context[execution context]. Work posted to it is queued and processed on the calling
 thread until the coroutine signals completion, then control returns to the
-caller. The inline executor performs symmetric transfer for `dispatch` calls
+caller. The inline executor performs xref:glossary.adoc#symmetric-transfer[symmetric transfer] for `dispatch` calls
 so that the coroutine chain runs without unnecessary context switches.
 Use this only in test code. Production code should use a real execution
 context such as a thread pool.
 
 See cpp:test::run_blocking[] for the complete overload set. Each
 overload optionally takes a success handler, an error handler, or an
-external stop token.
+external xref:glossary.adoc#stop-token[stop token].
 
 === Exercising Cancellation
 
 The stop token supplied to `run_blocking` propagates through the execution
-environment to every `capy::test` awaitable. When the token is requested, the
+environment to every `capy::test` xref:glossary.adoc#awaitable[awaitable]. When the token is requested, the
 next awaited test operation resolves to cpp:error::canceled[error::canceled] instead of
 performing its work. Code under test can therefore be driven down its
-cancellation paths without real I/O.
+xref:glossary.adoc#cancellation[cancellation] paths without real I/O.
 
 [source,cpp]
 ----
 include::example$snippets/7a_drivers.cpp[tag=run_blocking_cancellation,indent=0]
 ----
 
-The mock streams and buffer adapters complete synchronously, so they
+The xref:glossary.adoc#mock-stream[mock streams] and buffer adapters complete synchronously, so they
 check the token up front. A connected cpp:test::stream[stream] whose `read_some` is *blocked*
 waiting for its peer is resumed with `error::canceled` when the token fires. A
 read that can satisfy from already-buffered data is unaffected.
@@ -231,7 +231,7 @@ BOOST_TEST(r.success);
 ----
 
 `run_one` must *return* the exception rather than rethrow it. An exception
-escaping a cpp:run_async[] completion handler calls `std::terminate`. The
+escaping a cpp:run_async[] xref:glossary.adoc#completion-handler[completion handler] calls `std::terminate`. The
 handler therefore captures it, and the runner hands it back once the run loop
 is done.
 A fresh `io_context` per iteration (as above) needs no `restart()`; reuse one

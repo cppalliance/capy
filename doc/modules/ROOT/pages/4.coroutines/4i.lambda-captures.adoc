@@ -16,7 +16,7 @@ include::example$snippets/4i_lambda_captures.cpp[tag=dangling_capture]
 
 == Why It Fails
 
-In {cpp}20, lambda coroutine captures are stored in the lambda closure object, *not* in the coroutine frame. Here is what happens:
+In {cpp}20, lambda coroutine captures are stored in the lambda closure object, *not* in the xref:glossary.adoc#coroutine-frame[coroutine frame]. Here is what happens:
 
 1. The lambda closure is created, capturing `sock` by reference
 2. The lambda's `operator()()` is called

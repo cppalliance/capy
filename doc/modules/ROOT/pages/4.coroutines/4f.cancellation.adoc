@@ -135,7 +135,7 @@ The "stop" naming obscures the mechanism's generality. `stop_token` implements *
 
 == Stop Tokens in Coroutines
 
-Coroutines have a propagation problem: passing a stop token explicitly to every function clutters your APIs.
+Coroutines have a propagation problem: passing a xref:glossary.adoc#stop-token[stop token] explicitly to every function clutters your APIs.
 
 === Capy's Answer: Automatic Propagation
 
@@ -157,9 +157,9 @@ include::example$snippets/4f_cancellation.cpp[tag=access_stop_token,indent=0]
 
 === Why Not `coroutine_handle::destroy()`?
 
-`std::coroutine_handle::destroy()` is the {cpp}20 primitive that frees a coroutine frame. It is not a cancellation mechanism. It has the same flaw as forceful thread interruption. The coroutine is torn down with no opportunity to complete pending I/O, release locks, or run RAII destructors in the expected order.
+`std::coroutine_handle::destroy()` is the {cpp}20 primitive that frees a xref:glossary.adoc#coroutine-frame[coroutine frame]. It is not a cancellation mechanism. It has the same flaw as forceful thread interruption. The coroutine is torn down with no opportunity to complete pending I/O, release locks, or run RAII destructors in the expected order.
 
-Capy exposes cpp:task::handle[handle]`()` and cpp:quitter::handle[handle]`()` so that Capy's own launchers (cpp:run_async[], cpp:run[]) and custom integrations can dispatch coroutines through executors. Calling `destroy()` on such a handle while the coroutine is being awaited by a parent produces undefined behavior: the parent still holds the frame and will destroy it again. A holder that must give up a suspended coroutine for good, such as an execution context being torn down, passes its continuation to cpp:abandon[] instead, which unwinds the chain from the top on its owner's executor.
+Capy exposes cpp:task::handle[handle]`()` and cpp:quitter::handle[handle]`()` so that Capy's own launchers (cpp:run_async[], cpp:run[]) and custom integrations can dispatch coroutines through xref:glossary.adoc#executor[executors]. Calling `destroy()` on such a handle while the coroutine is being awaited by a parent produces undefined behavior: the parent still holds the frame and will destroy it again. A holder that must give up a suspended coroutine for good, such as an xref:glossary.adoc#execution-context[execution context] being torn down, passes its xref:glossary.adoc#continuation[continuation] to cpp:abandon[] instead, which unwinds the chain from the top on its owner's executor.
 
 The rule:
 
@@ -203,7 +203,7 @@ The mechanism depends on the backend. Completion-based backends (Windows IOCP, a
 == The Cancellation Sequence
 
 The diagram follows a stop request from the caller to a suspended task.
-The task awaits an I/O awaitable that observes the stop token.
+The task awaits an xref:glossary.adoc#io-awaitable[I/O awaitable] that observes the stop token.
 xref:index.adoc#how-a-task-runs[How a Task Runs] shows the same task when it completes normally.
 
 [mermaid]
@@ -250,14 +250,14 @@ sequenceDiagram
   The result of the operation compares equal to cpp:cond::canceled[cond::canceled].
 . The task finishes.
   It can return the error, throw, or handle the cancellation itself.
-. cpp:run_async[] calls the completion handler with the result of the task.
+. cpp:run_async[] calls the xref:glossary.adoc#completion-handler[completion handler] with the result of the task.
 
 If the operation completed first, the stop callback does nothing.
 The completion resumes the task with the result of the operation, as in
 xref:index.adoc#how-a-task-runs[How a Task Runs].
 
 In both cases the task resumes and returns through its own code.
-Abandoning a chain is different: its frames are destroyed without resuming.
+xref:glossary.adoc#abandon[Abandoning] a chain is different: its frames are destroyed without resuming.
 xref:4.coroutines/4j.lifetimes.adoc#_who_owns_a_suspended_coroutine[Who Owns a Suspended Coroutine] explains when that happens.
 
 [WARNING]
@@ -275,18 +275,18 @@ Do not assume that all code in an I/O awaitable runs on the executor.
 ====
 
 cpp:async_waker[] is a complete I/O awaitable that implements this sequence, including the atomic claim.
-It does not make the winner wait for `await_suspend`, so it requires a single-threaded executor or a strand.
+It does not make the winner wait for `await_suspend`, so it requires a single-threaded executor or a xref:glossary.adoc#strand[strand].
 The next section shows the stop callback in detail.
 
 [[stoppable-awaitables]]
 == Implementing Stoppable Awaitables
 
-The examples above show *polling* for cancellation with `token.stop_requested()`. For awaitables that suspend indefinitely—waiting for I/O, a lock, or an external event—you need a `std::stop_callback` to wake the coroutine when cancellation arrives.
+The examples above show *polling* for cancellation with `token.stop_requested()`. For xref:glossary.adoc#awaitable[awaitables] that suspend indefinitely—waiting for I/O, a lock, or an external event—you need a `std::stop_callback` to wake the coroutine when cancellation arrives.
 
 === The Dangerous Pattern
 
 A `std::stop_callback` fires synchronously on whatever thread calls `request_stop()`.
-The callback must not call `resume()` on the coroutine handle, because every resumption goes through the executor.
+The callback must not call `resume()` on the xref:glossary.adoc#coroutine-handle[coroutine handle], because every resumption goes through the executor.
 xref:4.coroutines/4e.context-awaitable.adoc#stop-callbacks-must-post-not-resume[Stop Callbacks Must Post, Not Resume] explains why.
 
 The next obvious solution, posting the coroutine through the executor, is also wrong:
@@ -352,7 +352,7 @@ thread. They schedule against the platform event loop instead of a
 
 === User Cancellation
 
-Connect UI cancellation to stop tokens. Pass the token through cpp:run_async[] so it propagates automatically via the execution environment. The task accesses it with `co_await this_coro::stop_token` instead of receiving it as a function argument:
+Connect UI cancellation to stop tokens. Pass the token through cpp:run_async[] so it propagates automatically via the xref:glossary.adoc#environment[execution environment]. The task accesses it with `co_await this_coro::stop_token` instead of receiving it as a function argument:
 
 [source,cpp]
 ----

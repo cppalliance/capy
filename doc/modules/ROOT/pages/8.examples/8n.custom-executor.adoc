@@ -1,7 +1,7 @@
 = Custom Executor
 :page-mode: how-to
 
-Implementing the Executor concept with a single-threaded run loop.
+Implementing the xref:glossary.adoc#executor[Executor] concept with a single-threaded run loop.
 
 == What This Example Shows
 
@@ -57,7 +57,7 @@ include::example$custom-executor/custom_executor.cpp[tag=concept_check]
 include::example$custom-executor/custom_executor.cpp[tag=dispatch,indent=0]
 ----
 
-`dispatch` takes a `continuation&` and checks whether the caller is already running on the loop's thread. If so, it returns `c.h` directly for inline resumption via symmetric transfer. Otherwise it enqueues a copy of `c` and returns `noop_coroutine` so the caller continues without blocking.
+`dispatch` takes a `continuation&` and checks whether the caller is already running on the loop's thread. If so, it returns `c.h` directly for inline resumption via xref:glossary.adoc#symmetric-transfer[symmetric transfer]. Otherwise it enqueues a copy of `c` and returns `noop_coroutine` so the caller continues without blocking.
 
 `post` always enqueues, even if already on the right thread.
 
@@ -70,7 +70,7 @@ include::example$custom-executor/custom_executor.cpp[tag=drive,indent=0]
 
 cpp:run_async[] enqueues the initial coroutine. `loop.run()` drains the queue, resuming coroutines one by one until all work completes.
 
-`run()` uses `capy::safe_resume(h)` instead of `h.resume()`. This saves and restores the thread-local frame allocator around each resumption, preventing coroutines from spoiling each other's allocator. All custom executor event loops must use cpp:safe_resume[] -- see xref:4.coroutines/4h.allocators.adoc#_tls_preservation[TLS Preservation] for details.
+`run()` uses `capy::safe_resume(h)` instead of `h.resume()`. This saves and restores the thread-local xref:glossary.adoc#frame-allocator[frame allocator] around each resumption, preventing coroutines from spoiling each other's allocator. All custom executor event loops must use cpp:safe_resume[] -- see xref:4.coroutines/4h.allocators.adoc#_tls_preservation[TLS Preservation] for details.
 
 == Output
 

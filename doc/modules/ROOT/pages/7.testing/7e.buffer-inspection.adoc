@@ -42,7 +42,7 @@ pos=4: b1="hell"  b2="o"
 pos=5: b1="hello" b2=""
 ----
 
-An empty buffer sequence yields one position where both pieces are empty,
+An empty xref:glossary.adoc#buffer-sequence[buffer sequence] yields one position where both pieces are empty,
 so the loop body always executes at least once.
 
 === Step Size

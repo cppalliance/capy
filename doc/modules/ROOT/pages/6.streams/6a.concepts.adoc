@@ -99,7 +99,7 @@ full buffer write, it will be reported in the subsequent call to `write_some`.fo
 
 Note that for a common case where `n < buffer_size(buffer)` you need to rearrange the buffer, 
 so that the first `n` bytes is removed, before requesting another chunked write. Unlike with the read case,
-writing a long content, which does not fit into a single buffer sequence, requires a nested loop.
+writing a long content, which does not fit into a single xref:glossary.adoc#buffer-sequence[buffer sequence], requires a nested loop.
 This is why in the xref:index.adoc[Introduction] section the "echo" example reads:
 
 [source,cpp]

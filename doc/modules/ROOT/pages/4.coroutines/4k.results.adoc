@@ -25,7 +25,7 @@ Stream operations return `results<std::size_t>`: an error code, then a byte coun
 
 == Consuming results
 
-Unpack the result with a structured binding, then test the error code before using the payload:
+Unpack the result with a xref:glossary.adoc#structured-bindings[structured binding], then test the error code before using the payload:
 
 [source,cpp]
 ----

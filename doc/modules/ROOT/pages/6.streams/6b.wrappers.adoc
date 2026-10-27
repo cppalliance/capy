@@ -35,7 +35,7 @@ indirect calls and a possible allocator use. In return, you get:
 Note that this runtime cost is dwarfed by the cost of I/O itself. 
 
 The allocation strategy used by the wrapper is very efficient. There is only one
-when the wrapper is created. The same allocation is reused when an awaitable 
+when the wrapper is created. The same allocation is reused when an xref:glossary.adoc#awaitable[awaitable] 
 (also type-erased) is created by the call to `read_some`.
 
 You decide whether the wrapper will exclusively own the stream, or if it will

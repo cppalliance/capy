@@ -15,7 +15,7 @@ The promise type must provide these methods:
 Called to create the object returned to the caller of the coroutine.
 
 `initial_suspend()`::
-Called immediately after `get_return_object()`. Returns an awaiter that determines whether the coroutine should suspend before running any of its body. Return `std::suspend_never{}` to start executing immediately, or `std::suspend_always{}` to suspend before the first statement.
+Called immediately after `get_return_object()`. Returns an xref:glossary.adoc#awaiter[awaiter] that determines whether the coroutine should suspend before running any of its body. Return `std::suspend_never{}` to start executing immediately, or `std::suspend_always{}` to suspend before the first statement.
 
 `final_suspend()`::
 Called when the coroutine completes (either normally or via exception). Returns an awaiter that determines whether to suspend one last time or destroy the coroutine state immediately. This method must be `noexcept`.
@@ -58,7 +58,7 @@ NOTE: The `co_await` keywords below are intentional. This mirrors the {cpp} stan
 Important observations:
 
 * The return object is created before `initial_suspend()` runs, so it is available even if the coroutine suspends immediately
-* `final_suspend()` determines whether the coroutine frame persists after completion. If it returns `suspend_always`, you must manually destroy the coroutine; if it returns `suspend_never`, the frame is destroyed automatically
+* `final_suspend()` determines whether the xref:glossary.adoc#coroutine-frame[coroutine frame] persists after completion. If it returns `suspend_always`, you must manually destroy the coroutine; if it returns `suspend_never`, the frame is destroyed automatically
 
 === Tracing Promise Behavior
 
@@ -83,7 +83,7 @@ destroying coroutine handle
 promise destroyed
 ----
 
-The promise is constructed first, then `get_return_object()` creates the return value, then `initial_suspend()` runs. Since `initial_suspend()` returns `suspend_never`, the coroutine body executes immediately. Since `final_suspend()` returns `suspend_always`, the coroutine suspends one last time, and the promise is not destroyed until the coroutine handle is explicitly destroyed.
+The promise is constructed first, then `get_return_object()` creates the return value, then `initial_suspend()` runs. Since `initial_suspend()` returns `suspend_never`, the coroutine body executes immediately. Since `final_suspend()` returns `suspend_always`, the coroutine suspends one last time, and the promise is not destroyed until the xref:glossary.adoc#coroutine-handle[coroutine handle] is explicitly destroyed.
 
 [WARNING]
 ====

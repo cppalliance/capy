@@ -3,7 +3,7 @@
 
 == The Problem: Context Propagation
 
-Standard {cpp}20 coroutines define awaiters with this `await_suspend` signature:
+Standard {cpp}20 coroutines define xref:glossary.adoc#awaiter[awaiters] with this `await_suspend` signature:
 
 [source,cpp]
 ----
@@ -13,19 +13,17 @@ include::example$snippets/4e_context_awaitable.cpp[tag=std_await_suspend,indent=
 The awaiter receives only a handle to the suspended coroutine. But real applications need more:
 
 * *Executor* — Where should completions be dispatched?
-* *Stop token* — Should this operation support cancellation?
+* *Stop token* — Should this operation support xref:glossary.adoc#cancellation[cancellation]?
 * *Allocator* — Where should memory be allocated?
 
 [NOTE]
 ====
 *Nothing on this page is specific to I/O.* An executor, a stop token, and an allocator are what any asynchronous operation needs. It makes no difference whether the operation waits on a socket, a GPU queue, a timer, or another thread.
-
-The `Io` in cpp:ContextAwaitable[] reflects where the protocol was first used, Corosio's I/O types, rather than a restriction on where it applies. Read the name as "an awaitable that carries its execution environment."
 ====
 
 === Backward Query Approach
 
-One approach: the awaitable queries the calling coroutine's promise for context. This requires the awaitable to know the promise type, creating tight coupling.
+One approach: the xref:glossary.adoc#awaitable[awaitable] queries the calling coroutine's promise for context. This requires the awaitable to know the promise type, creating tight coupling.
 
 === Forward Propagation Approach
 
@@ -35,7 +33,7 @@ Capy uses *forward propagation*: the caller passes context to the awaitable thro
 
 In order to make sure — and statically enforce — that every awaitable ``co_await``ed in Capy-coroutines
 footnote:[The only awaitables excluded from this constraint are "tag objects" from namespace cpp:this_coro[]: cpp:this_coro::environment[environment], cpp:this_coro::executor[executor], cpp:this_coro::frame_allocator[frame_allocator] and cpp:this_coro::stop_token[stop_token].]
-participates in the execution environment propagation, the awaitables
+participates in the xref:glossary.adoc#environment[execution environment] propagation, the awaitables
 are required to provide member function `await_suspend`, similar
 to the one present in C++ awaiters, which takes the second parameter representing
 the execution environment:
@@ -47,11 +45,11 @@ include::example$snippets/4e_context_awaitable.cpp[tag=two_arg_await_suspend,ind
 
 This signature receives:
 
-* `h` — The coroutine handle (as in standard awaiters)
+* `h` — The xref:glossary.adoc#coroutine-handle[coroutine handle] (as in standard awaiters)
 * `env` — The execution environment containing:
 ** cpp:await_context::executor[env->executor] — The caller's executor for dispatching completions
 ** cpp:await_context::stop_token[env->stop_token] — A stop token for cooperative cancellation
-** cpp:await_context::frame_allocator[env->frame_allocator] — An optional frame allocator
+** cpp:await_context::frame_allocator[env->frame_allocator] — An optional xref:glossary.adoc#frame-allocator[frame allocator]
 
 Following the convention of awaiters in C++, the return type of the function has to be one of:
 
@@ -79,7 +77,7 @@ For tasks that can be started from non-coroutine contexts, the cpp:ContextRunnab
 * `release()`: Transfer ownership of the frame
 * `exception()`: Check for captured exceptions (on the promise)
 * `result()`: Access the result value (on the promise, for non-void tasks)
-* `set_continuation()`: Set the continuation handle (on the promise)
+* `set_continuation()`: Set the xref:glossary.adoc#continuation[continuation] handle (on the promise)
 * `set_environment()`: Inject the `await_context` (on the promise)
 
 These methods exist because launcher functions like cpp:run_async[] cannot `co_await` the task directly. The trampoline must be allocated before the task type is known, so it type-erases the task through function pointers. The trampoline therefore needs a common API to manage lifetime and extract results.
@@ -110,9 +108,9 @@ Forward propagation offers several advantages:
 * *Composability* — Any ContextAwaitable works with any ContextRunnable task
 * *Explicit flow* — Context flows downward through the call chain, not queried upward
 
-This design enables Capy's type-erased wrappers (cpp:any_stream[], etc.) to work without knowing the concrete executor type.
+This design enables Capy's xref:glossary.adoc#type-erased[type-erased] wrappers (cpp:any_stream[], etc.) to work without knowing the concrete executor type.
 
-xref:9.design/9q.WhyNotStdExecution.adoc[Why Not std::execution?] contrasts forward propagation with the backward queries of senders and receivers.
+xref:9.design/9q.WhyNotStdExecution.adoc[Why Not std::execution?] contrasts forward propagation with the backward queries of xref:glossary.adoc#sender[senders] and receivers.
 
 == A Vocabulary for Coroutine Interop
 
@@ -157,7 +155,7 @@ The incorrect pattern—which compiles and appears to work but causes memory cor
 include::example$snippets/4e_context_awaitable.cpp[tag=wrong_stop_callback,indent=0]
 ----
 
-For a production implementation of the claim, read the source of cpp:async_waker::wait_awaiter[]. It registers a stop callback that posts the resume through the executor, and arbitrates between wakeup and cancellation with a single atomic claim. Unlike the example in xref:4.coroutines/4f.cancellation.adoc#stoppable-awaitables[Implementing Stoppable Awaitables], it does not make the winner wait for `await_suspend`. It requires a single-threaded executor or a strand instead, because each resumes one coroutine at a time.
+For a production implementation of the claim, read the source of cpp:async_waker::wait_awaiter[]. It registers a stop callback that posts the resume through the executor, and arbitrates between wakeup and cancellation with a single atomic claim. Unlike the example in xref:4.coroutines/4f.cancellation.adoc#stoppable-awaitables[Implementing Stoppable Awaitables], it does not make the winner wait for `await_suspend`. It requires a single-threaded executor or a xref:glossary.adoc#strand[strand] instead, because each resumes one coroutine at a time.
 
 == Running a Custom ContextAwaitable
 
@@ -168,7 +166,7 @@ This awaitable produces a value and resumes the caller by posting its cpp:contin
 include::example$snippets/4e_context_awaitable.cpp[tag=runnable_awaitable]
 ----
 
-To run that task from ordinary, non-coroutine code, hand it to cpp:run_async[] with an executor and a completion handler:
+To run that task from ordinary, non-coroutine code, hand it to cpp:run_async[] with an executor and a xref:glossary.adoc#completion-handler[completion handler]:
 
 [source,cpp]
 ----

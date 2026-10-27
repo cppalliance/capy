@@ -11,7 +11,7 @@ One was designed for network I/O. The other was designed for compute tasks. Choo
 
 * Built for waiting on things (network, files, timers)
 * When data arrives, your code wakes up in the right place automatically
-* Cancellation works - if you stop waiting, pending operations stop too
+* xref:glossary.adoc#cancellation[Cancellation] works - if you stop waiting, pending operations stop too
 * Handles data buffers natively - the bytes flowing through your program
 
 *TMC:*
@@ -19,7 +19,7 @@ One was designed for network I/O. The other was designed for compute tasks. Choo
 * Built for doing things (calculations, parallel work)
 * Multi-threaded work pool that keeps CPUs busy
 * Priority levels so important work runs first (16 of them, to be precise)
-* Mid-coroutine executor switching for flexible work migration
+* Mid-coroutine xref:glossary.adoc#executor[executor] switching for flexible work migration
 * No built-in I/O - you add that separately (via Asio integration)
 
 If you're building a network server, one of these is swimming upstream.
@@ -72,13 +72,13 @@ This is powerful for compute workloads where work can migrate between thread poo
 * File handles on Windows IOCP must complete on the same context they were initiated
 * Timer state is executor-specific
 
-Allowing a coroutine holding I/O objects to hop executors mid-body would break these invariants. TMC doesn't face this constraint because it's a compute scheduler - work items don't carry I/O state with executor affinity.
+Allowing a coroutine holding I/O objects to hop executors mid-body would break these invariants. TMC doesn't face this constraint because it's a compute scheduler - work items don't carry I/O state with executor xref:glossary.adoc#affinity[affinity].
 
 == Stopping Things
 
 What happens when you need to cancel an operation?
 
-*Capy:* Stop tokens propagate automatically through the call chain.
+*Capy:* xref:glossary.adoc#stop-token[Stop tokens] propagate automatically through the call chain.
 
 * Cancel at the top, everything below receives the signal
 * Pending I/O operations cancel at the OS level (`CancelIoEx`, `IORING_OP_ASYNC_CANCEL`)
@@ -96,7 +96,7 @@ The TMC author acknowledged that automatic cancellation propagation is an "excel
 
 Sometimes you need guarantees: "these operations must not overlap."
 
-*Capy's strand:*
+*Capy's xref:glossary.adoc#strand[strand]:*
 
 * Wraps any executor
 * Coroutines dispatched through a strand never run concurrently
@@ -118,10 +118,10 @@ NOTE: Neither library prevents the caller from initiating multiple concurrent I/
 
 *Capy provides:*
 
-* Buffer sequences (scatter/gather I/O without copying)
+* xref:glossary.adoc#buffer-sequence[Buffer sequences] (xref:glossary.adoc#scatter-gather-io[scatter/gather I/O] without copying)
 * Algorithms: slice, copy, concatenate, consume
 * Dynamic buffers that grow as needed
-* Type-erased streams: write code once, use with any stream type
+* xref:glossary.adoc#type-erased[Type-erased] streams: write code once, use with any stream type
 
 *TMC provides:*
 
@@ -130,7 +130,7 @@ NOTE: Neither library prevents the caller from initiating multiple concurrent I/
 
 == Memory Allocation Control
 
-HALO (Heap Allocation Lowering Optimization) lets compilers eliminate coroutine frame allocations when the frame's lifetime doesn't escape the caller. But I/O operations always escape - the awaitable must live until the kernel/reactor completes the operation.
+HALO (Heap Allocation Lowering Optimization) lets compilers eliminate xref:glossary.adoc#coroutine-frame[coroutine frame] allocations when the frame's lifetime doesn't escape the caller. But I/O operations always escape - the xref:glossary.adoc#awaitable[awaitable] must live until the kernel/reactor completes the operation.
 
 *Capy provides:*
 
@@ -175,7 +175,7 @@ include::example$snippets/9p_why_not_tmc.cpp[tag=await_suspend_env,indent=0]
 The awaitable receives:
 
 * `h` — The handle (for resumption)
-* `env` — The execution environment containing:
+* `env` — The xref:glossary.adoc#environment[execution environment] containing:
 ** cpp:await_context::executor[env->executor] — The executor (where to resume)
 ** cpp:await_context::stop_token[env->stop_token] — A stop token (for cancellation)
 ** cpp:await_context::frame_allocator[env->frame_allocator] — An optional `std::pmr::memory_resource*` for coroutine frame allocation (null selects the default allocator)
@@ -321,7 +321,7 @@ The critical path difference is completion. TMC+Asio goes through `resume_contin
 
 * cpp:any_stream[], cpp:any_read_stream[], cpp:any_write_stream[]
 * Write a function taking `any_stream&` - it compiles once
-* Up to five vtable calls per I/O operation (four when synchronous), not one per continuation
+* Up to five vtable calls per I/O operation (four when synchronous), not one per xref:glossary.adoc#continuation[continuation]
 * Clean ABI boundaries
 
 *TMC:*

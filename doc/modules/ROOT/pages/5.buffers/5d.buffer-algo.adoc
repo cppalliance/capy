@@ -46,7 +46,7 @@ include::example$snippets/5d_buffer_algo.cpp[tag=buffer_empty_example,indent=0]
 
 == Copying
 
-cpp:buffer_copy[] copies data from one buffer sequence to another and returns the number of bytes copied:
+cpp:buffer_copy[] copies data from one xref:glossary.adoc#buffer-sequence[buffer sequence] to another and returns the number of bytes copied:
 
 [source,cpp]
 ----

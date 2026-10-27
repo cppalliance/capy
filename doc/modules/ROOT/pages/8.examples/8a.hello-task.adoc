@@ -6,7 +6,7 @@ The minimal Capy program: a task that prints a message.
 == What This Example Shows
 
 * Creating a cpp:task[task<>] coroutine
-* Using cpp:thread_pool[] as an execution context
+* Using cpp:thread_pool[] as an xref:glossary.adoc#execution-context[execution context]
 * Starting tasks with cpp:run_async[]
 
 == Source Code
@@ -35,7 +35,7 @@ include::example$hello-task/hello_task.cpp[tag=say_hello]
 
 cpp:task[task<>] is equivalent to `task<void>`—a coroutine that completes without returning a value. The `co_return` keyword marks this as a coroutine.
 
-Tasks are lazy: calling `say_hello()` creates a task object but does not execute the body. The `"Hello"` message is not printed until the task is started.
+Tasks are xref:glossary.adoc#lazy[lazy]: calling `say_hello()` creates a task object but does not execute the body. The `"Hello"` message is not printed until the task is started.
 
 === The Thread Pool
 
@@ -57,7 +57,7 @@ include::example$hello-task/hello_task.cpp[tag=launch,indent=0]
 
 cpp:run_async[] bridges non-coroutine code (like `main`) to coroutine code. The two-call syntax:
 
-1. cpp:run_async[]`(pool.get_executor())` — Creates a launcher with the executor
+1. cpp:run_async[]`(pool.get_executor())` — Creates a launcher with the xref:glossary.adoc#executor[executor]
 2. `(say_hello())` — Accepts the task and starts execution
 
 The task runs on one of the pool's worker threads.

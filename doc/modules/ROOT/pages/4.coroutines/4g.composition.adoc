@@ -72,7 +72,7 @@ include::example$snippets/4g_composition.cpp[tag=when_all_exception,indent=0]
 
 === Stop Propagation
 
-Well-behaved tasks should check their stop token and exit promptly:
+Well-behaved tasks should check their xref:glossary.adoc#stop-token[stop token] and exit promptly:
 
 [source,cpp]
 ----
@@ -170,7 +170,7 @@ For timed I/O against a socket, prefer Corosio's own timed operations: they sche
 
 === Task Storage
 
-cpp:when_all[] stores all tasks in its coroutine frame. Tasks are moved from the arguments, so the original task objects become empty after the call.
+cpp:when_all[] stores all tasks in its xref:glossary.adoc#coroutine-frame[coroutine frame]. Tasks are moved from the arguments, so the original task objects become empty after the call.
 
 === Completion Tracking
 
@@ -180,7 +180,7 @@ A shared atomic counter tracks how many tasks remain. Each task completion decre
 
 Each child task is wrapped in a "runner" coroutine that:
 
-1. Receives context (executor, stop token) from cpp:when_all[]
+1. Receives context (xref:glossary.adoc#executor[executor], stop token) from cpp:when_all[]
 2. Awaits the child task
 3. Stores the result in shared state
 4. Signals completion

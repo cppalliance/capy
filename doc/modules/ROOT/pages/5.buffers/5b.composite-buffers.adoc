@@ -129,7 +129,7 @@ include::example$snippets/5b_composite_buffers.cpp[tag=buffer_slice,indent=0]
 
 cpp:buffer_slice[]`(seq, offset, length)` returns a value that is itself a buffer sequence, so you can pass it to any operation expecting one. Both `offset` and `length` are optional, which makes it a general byte sub-range primitive. Except in the single-buffer case the result borrows `seq`, so the sequence must outlive the slice.
 
-Capy creates and manages buffer handles on your behalf. Those are the sub-range a cpp:buffer_slice[] produces, and the descriptors a type-erased stream passes to the OS. Each is valid only for the window its API documents.
+Capy creates and manages buffer handles on your behalf. Those are the sub-range a cpp:buffer_slice[] produces, and the descriptors a xref:glossary.adoc#type-erased[type-erased] stream passes to the OS. Each is valid only for the window its API documents.
 
 
 === consuming_buffers

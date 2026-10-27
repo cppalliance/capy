@@ -21,7 +21,7 @@ include::example$snippets/4h_allocators.cpp[tag=run_async_memory_resource,indent
 
 === Default Allocator
 
-When no allocator is specified, cpp:run_async[] uses the execution context's default frame allocator, typically a recycling allocator optimized for coroutine frame sizes.
+When no allocator is specified, cpp:run_async[] uses the xref:glossary.adoc#execution-context[execution context]'s default frame allocator, typically a recycling allocator optimized for xref:glossary.adoc#coroutine-frame[coroutine frame] sizes.
 
 == Custom Allocator Requirements
 
@@ -113,8 +113,8 @@ include::example$snippets/4h_allocators.cpp[tag=batch_allocator]
 ----
 
 The resource must outlive every task started with it, including the unwind of
-any that are abandoned. This function returns only after its tasks have
-finished when the executor runs each one to completion before `run_async`
+any that are xref:glossary.adoc#abandon[abandoned]. This function returns only after its tasks have
+finished when the xref:glossary.adoc#executor[executor] runs each one to completion before `run_async`
 returns. With an executor that queues the work, keep the resource alive until
 the tasks have finished. See
 xref:4.coroutines/4j.lifetimes.adoc#_shutdown_ordering[Shutdown Ordering].
@@ -230,14 +230,14 @@ After the window closes (at the first suspension), the TLS allocator may be rest
 
 Between a coroutine's `await_resume` (which sets TLS to the correct allocator) and the next child coroutine invocation (whose `operator new` reads TLS), arbitrary user code runs. That code can call `.resume()` directly, pump a completion queue, or run nested dispatch. If it resumes a coroutine from a different chain on the same thread, the other coroutine's `await_resume` overwrites TLS with its own allocator. The original coroutine's next child would then allocate from the wrong resource.
 
-To prevent this, any code that calls `.resume()` on a coroutine handle must use cpp:safe_resume[] from `<boost/capy/ex/frame_allocator.hpp>`:
+To prevent this, any code that calls `.resume()` on a xref:glossary.adoc#coroutine-handle[coroutine handle] must use cpp:safe_resume[] from `<boost/capy/ex/frame_allocator.hpp>`:
 
 [source,cpp]
 ----
 include::example$snippets/4h_allocators.cpp[tag=safe_resume,indent=0]
 ----
 
-cpp:safe_resume[] saves the current thread-local allocator, calls `h.resume()`, then restores the saved value. This makes TLS behave like a stack: nested resumes cannot spoil the outer value. All of Capy's built-in executors (cpp:thread_pool[], strands, cpp:test::blocking_context[blocking_context]) use `safe_resume` internally. Custom executor event loops must do the same -- see xref:8.examples/8n.custom-executor.adoc[Custom Executor] for an example.
+cpp:safe_resume[] saves the current thread-local allocator, calls `h.resume()`, then restores the saved value. This makes TLS behave like a stack: nested resumes cannot spoil the outer value. All of Capy's built-in executors (cpp:thread_pool[], xref:glossary.adoc#strand[strands], cpp:test::blocking_context[blocking_context]) use `safe_resume` internally. Custom executor event loops must do the same -- see xref:8.examples/8n.custom-executor.adoc[Custom Executor] for an example.
 
 [NOTE]
 ====
@@ -258,7 +258,7 @@ Two `.resume()` call sites intentionally do _not_ use cpp:safe_resume[]:
 
 == Frame Allocator Mixin
 
-Most users never need to allocate coroutine frames manually -- cpp:task[task<T>] and the built-in awaitable types already participate in TLS frame allocation. When you write your own coroutine promise type and want it to use the same fast path, inherit from cpp:frame_alloc_mixin[]:
+Most users never need to allocate coroutine frames manually -- cpp:task[task<T>] and the built-in xref:glossary.adoc#awaitable[awaitable] types already participate in TLS frame allocation. When you write your own coroutine promise type and want it to use the same fast path, inherit from cpp:frame_alloc_mixin[]:
 
 [source,cpp]
 ----
@@ -271,4 +271,4 @@ cpp:frame_alloc_mixin[] (in `<boost/capy/ex/frame_alloc_mixin.hpp>`) supplies `o
 * Bypass virtual dispatch when that allocator is the default recycling memory resource.
 * Store the resolved allocator pointer at the tail of each frame, so deallocation uses the correct resource even if the thread-local allocator has since changed.
 
-This is the same strategy used internally by cpp:context_awaitable_promise_base[]. Use the mixin directly when your promise type does not need the full environment and continuation support that `context_awaitable_promise_base` provides. The allocation fast path uses thread-local storage and needs no synchronization; the global pool fallback is mutex-protected.
+This is the same strategy used internally by cpp:context_awaitable_promise_base[]. Use the mixin directly when your promise type does not need the full environment and xref:glossary.adoc#continuation[continuation] support that `context_awaitable_promise_base` provides. The allocation fast path uses thread-local storage and needs no synchronization; the global pool fallback is mutex-protected.

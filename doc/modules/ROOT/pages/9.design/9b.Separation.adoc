@@ -17,7 +17,7 @@ The answer is physical design. Capy and Corosio sit at different levels of the p
 
 == What Lives Where
 
-**Capy** provides the foundational abstractions for coroutine-based I/O. Tasks. Buffers. Stream concepts. Executors. The ContextAwaitable protocol. Type-erased streams. Composition primitives like cpp:when_all[] and cpp:when_any[]. It is pure {cpp}20. It has no platform-specific I/O code. No sockets. No file descriptors. No OS event loop.
+**Capy** provides the foundational abstractions for coroutine-based I/O. Tasks. Buffers. Stream concepts. xref:glossary.adoc#executor[Executors]. The ContextAwaitable protocol. xref:glossary.adoc#type-erased[Type-erased] streams. Composition primitives like cpp:when_all[] and cpp:when_any[]. It is pure {cpp}20. It has no platform-specific I/O code. No sockets. No file descriptors. No OS event loop.
 
 **Corosio** provides platform networking. TCP sockets. TLS streams. DNS resolution. Delays and timeouts. Signal handling. It implements five platform-specific event loop backends: epoll and io_uring on Linux, kqueue on macOS/BSD, IOCP on Windows, and POSIX select as a fallback. Corosio depends on Capy. Capy does not depend on Corosio.
 
@@ -50,7 +50,7 @@ ____
 
 Knowing that logical designs must be levelized, you alter the logical designs accordingly.
 
-Capy sits at a lower level. It provides tasks, buffers, stream concepts, and executors - abstractions that do not depend on any particular I/O backend. Corosio sits at a higher level. It provides sockets, TLS, and event loops that depend on Capy's abstractions.
+Capy sits at a lower level. It provides tasks, buffers, stream concepts, and executors - abstractions that do not depend on any particular xref:glossary.adoc#io-backend[I/O backend]. Corosio sits at a higher level. It provides sockets, TLS, and event loops that depend on Capy's abstractions.
 
 Components at different levels belong in different packages. This is a structural requirement, not a style preference.
 
@@ -93,7 +93,7 @@ The best modules are those that provide powerful functionality,
 but have a simple interface.
 ____
 
-Capy is a deep module. Its public surface is narrow: a handful of concepts (cpp:ReadStream[], cpp:WriteStream[], cpp:Stream[]), a task type, an executor model, and buffer utilities. Behind that surface lives a substantial implementation: coroutine frame allocation, forward propagation of executors and stop tokens, type-erased stream machinery, and composition primitives.
+Capy is a deep module. Its public surface is narrow: a handful of concepts (cpp:ReadStream[], cpp:WriteStream[], cpp:Stream[]), a task type, an executor model, and buffer utilities. Behind that surface lives a substantial implementation: xref:glossary.adoc#coroutine-frame[coroutine frame] allocation, forward propagation of executors and xref:glossary.adoc#stop-token[stop tokens], type-erased stream machinery, and composition primitives.
 
 Corosio is also a deep module, but a different one. It hides platform-specific event loop complexity (IOCP, epoll, io_uring, kqueue, select) behind a uniform socket and timer interface.
 
@@ -115,7 +115,7 @@ If you can express your algorithm using Capy instead of Corosio, you depend on f
 
 Boost.Http is a sans-I/O HTTP/1.1 protocol library. It is written entirely against Capy. It has zero dependency on Corosio.
 
-It is a real library, shipping today. It works with any I/O backend that satisfies Capy's stream concepts. You could plug in Corosio's TCP sockets, or Asio's sockets, or a mock stream for testing. The protocol logic does not care.
+It is a real library, shipping today. It works with any I/O backend that satisfies Capy's stream concepts. You could plug in Corosio's TCP sockets, or Asio's sockets, or a xref:glossary.adoc#mock-stream[mock stream] for testing. The protocol logic does not care.
 
 If Capy were merged into Corosio, Boost.Http would be forced to depend on platform networking it never touches. Every user who wants to parse HTTP headers would need to link against IOCP on Windows, epoll on Linux, and kqueue on macOS. The HTTP parser does not use sockets. It should not pay for sockets.
 

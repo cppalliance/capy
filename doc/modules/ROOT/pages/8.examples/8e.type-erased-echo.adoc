@@ -94,4 +94,4 @@ Echo output: Hello, World!
 
 == Next Steps
 
-* xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation] — Stop tokens for timeout
+* xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation] — xref:glossary.adoc#stop-token[Stop tokens] for timeout

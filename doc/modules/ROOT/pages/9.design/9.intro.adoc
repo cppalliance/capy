@@ -22,10 +22,10 @@ Each page examines one concept or facility in depth: the rationale behind its de
 * xref:9.design/9c.ReadStream.adoc[ReadStream] -- Why `read_some` is the fundamental partial-read primitive.
 * xref:9.design/9f.WriteStream.adoc[WriteStream] -- Why `write_some` is the fundamental partial-write primitive, and when it outperforms `write_now`.
 * xref:9.design/9i.TypeEraseAwaitable.adoc[Type-Erasing Awaitables] -- How the `any_*` wrappers achieve zero steady-state allocation.
-* xref:9.design/9k.Executor.adoc[Executor] -- The `Executor` concept's relationship to Asio, and why `dispatch` returns a coroutine handle.
+* xref:9.design/9k.Executor.adoc[Executor] -- The `Executor` concept's relationship to Asio, and why `dispatch` returns a xref:glossary.adoc#coroutine-handle[coroutine handle].
 * xref:9.design/9l.RunApi.adoc[Run API] -- Why `run_async` and `run` use a two-phase `f(context)(task)` call syntax.
-* xref:9.design/9m.WhyNotAsio.adoc[Why Not Asio?] -- What Capy keeps from Boost.Asio, and what changes once the continuation is always a coroutine.
+* xref:9.design/9m.WhyNotAsio.adoc[Why Not Asio?] -- What Capy keeps from Boost.Asio, and what changes once the xref:glossary.adoc#continuation[continuation] is always a coroutine.
 * xref:9.design/9n.WhyNotCobalt.adoc[Why Not Cobalt?] -- How Capy's foundation differs from Boost.Cobalt's Asio-based design.
-* xref:9.design/9o.WhyNotCobaltConcepts.adoc[Why Not Cobalt Concepts?] -- A side-by-side look at type-erased write-stream algorithms in both libraries.
+* xref:9.design/9o.WhyNotCobaltConcepts.adoc[Why Not Cobalt Concepts?] -- A side-by-side look at xref:glossary.adoc#type-erased[type-erased] write-stream algorithms in both libraries.
 * xref:9.design/9p.WhyNotTMC.adoc[Why Not TooManyCooks?] -- Choosing between Capy and TooManyCooks by workload: network I/O versus compute.
-* xref:9.design/9q.WhyNotStdExecution.adoc[Why Not std::execution?] -- Why Capy carries context forward instead of building on P2300 senders, and how to use both.
+* xref:9.design/9q.WhyNotStdExecution.adoc[Why Not std::execution?] -- Why Capy carries context forward instead of building on P2300 xref:glossary.adoc#sender[senders], and how to use both.

@@ -11,7 +11,7 @@
 = Coroutines in Capy
 :page-mode: explanation
 
-Capy's coroutine model is built around a single principle: asynchronous code should look like synchronous code. The code reads top to bottom, with local variables and normal control flow. Capy handles suspension, resumption, thread scheduling, and cancellation behind the scenes. The result is code that is both easier to read and harder to get wrong.
+Capy's coroutine model is built around a single principle: asynchronous code should look like synchronous code. The code reads top to bottom, with local variables and normal control flow. Capy handles suspension, resumption, thread scheduling, and xref:glossary.adoc#cancellation[cancellation] behind the scenes. The result is code that is both easier to read and harder to get wrong.
 
 == What This Section Covers
 
@@ -23,15 +23,15 @@ Capy's coroutine model is built around a single principle: asynchronous code sho
   failures as an error code plus payload, without throwing.
 * xref:4.coroutines/4c.launching.adoc[Starting Coroutines] -- Starting coroutines with
   cpp:run_async[], and binding child tasks with cpp:run[].
-* xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] -- Executors,
-  execution contexts, thread pools, and strands.
+* xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] -- xref:glossary.adoc#executor[Executors],
+  xref:glossary.adoc#execution-context[execution contexts], thread pools, and xref:glossary.adoc#strand[strands].
 * xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol] -- How the executor and
-  stop token propagate through a chain of awaited coroutines.
+  xref:glossary.adoc#stop-token[stop token] propagate through a chain of awaited coroutines.
 * xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation] -- Cooperative
   cancellation with `std::stop_token`, and how Capy tasks observe it.
 * xref:4.coroutines/4g.composition.adoc[Concurrent Composition] -- Running tasks
   concurrently with cpp:when_all[] and cpp:when_any[].
-* xref:4.coroutines/4h.allocators.adoc[Frame Allocators] -- How coroutine frames are
+* xref:4.coroutines/4h.allocators.adoc[Frame Allocators] -- How xref:glossary.adoc#coroutine-frame[coroutine frames] are
   allocated, and how to customize the allocator.
 * xref:4.coroutines/4i.lambda-captures.adoc[Lambda Coroutine Captures] -- A critical
   pitfall: lambda captures versus coroutine frame lifetime.

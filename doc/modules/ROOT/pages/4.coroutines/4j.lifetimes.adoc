@@ -33,7 +33,7 @@ What the frame copies is the parameter, not what the parameter refers to. A
 parameter is a reference the frame holds to a string someone else owns, and
 nothing keeps that string alive.
 
-A cpp:task[] is lazy: the coroutine does not start until it is awaited or
+A cpp:task[] is xref:glossary.adoc#lazy[lazy]: the coroutine does not start until it is awaited or
 launched. The `task` object owns the frame. Awaiting a task lends the frame to
 the awaiting coroutine, which resumes when it finishes; destroying an unstarted
 or finished task destroys its frame.
@@ -68,7 +68,7 @@ include::example$snippets/4j_lifetimes.cpp[tag=value_param]
 ----
 
 Tasks are stored more often than it looks. Every launch stores one:
-cpp:run_async[] starts the task through its executor, which can run it after
+cpp:run_async[] starts the task through its xref:glossary.adoc#executor[executor], which can run it after
 the full expression that launched it has ended:
 
 [source,cpp]
@@ -110,12 +110,12 @@ failure and the safe patterns.
 
 An I/O operation does not copy the memory a buffer refers to. The storage must
 outlive the operation, which it does when the operation is awaited from the
-frame that owns the storage. Returning or storing the awaitable instead of
+frame that owns the storage. Returning or storing the xref:glossary.adoc#awaitable[awaitable] instead of
 awaiting it lets the storage go first.
 xref:5.buffers/5a.contiguous-buffers.adoc#_lifetime_management[Lifetime Management]
 shows both cases.
 
-Take a buffer sequence by value in a coroutine that stores it, for the same
+Take a xref:glossary.adoc#buffer-sequence[buffer sequence] by value in a coroutine that stores it, for the same
 reason as any other parameter. The buffer descriptors are copied; the memory
 they describe is not.
 
@@ -140,8 +140,8 @@ branch of cpp:when_all[] or cpp:when_any[]. The coroutine that started the
 segment is its _owner_. It is suspended above the segment until the
 segment's top task finishes.
 
-While the chain is suspended, whatever it waits on holds its continuation: an
-executor's queue, a strand, a mutex, a pending I/O operation. Normally the
+While the chain is suspended, whatever it waits on holds its xref:glossary.adoc#continuation[continuation]: an
+executor's queue, a xref:glossary.adoc#strand[strand], a mutex, a pending I/O operation. Normally the
 holder resumes it. A holder that will never resume it, because it is being torn
 down, passes the continuation to cpp:abandon[] instead. The segment's owner
 then destroys the segment from its top frame down, on its own executor, and
@@ -160,7 +160,7 @@ include::example$snippets/4j_lifetimes.cpp[tag=unwind]
 <2> Not reached if the chain is abandoned while waiting: the frame is destroyed
     without being resumed.
 
-Abandoning is not cancellation. To stop work, request a stop on the token the
+Abandoning is not xref:glossary.adoc#cancellation[cancellation]. To stop work, request a stop on the token the
 work observes: it resumes with an error and returns through its own code.
 Abandoning is what teardown does to work that was not stopped first. See
 xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation].
@@ -172,7 +172,7 @@ chain, calls `std::terminate`.
 
 == Shutdown Ordering
 
-Destroying an execution context, such as a cpp:thread_pool[], abandons the
+Destroying an xref:glossary.adoc#execution-context[execution context], such as a cpp:thread_pool[], abandons the
 coroutines still queued or suspended in it, including those queued on its
 strands. Each chain is unwound
 on the executor of the coroutine that started it. When that executor belongs to

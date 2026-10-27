@@ -21,13 +21,13 @@ number of bytes.
 
 Each stream operation that may encounter a contingency await-returns
 a type which is a specialization of cpp:capy::results[capy::results]. These objects can be _destructured_
-using a structured binding. The first binding of such destructuring is of type
+using a xref:glossary.adoc#structured-bindings[structured binding]. The first binding of such destructuring is of type
 `std::error_code`. This binding, call it `ec`, is used to signal if and which
 contingency occurred:
 
  * If `ec == std::error_code{}`, no contingency occurred.
  * Otherwise a contingency occurred. To determine which contingency occurred,
-   compare `ec` to error conditions, in particular to cpp:capy::cond[capy::cond].
+   compare `ec` to xref:glossary.adoc#error-condition[error conditions], in particular to cpp:capy::cond[capy::cond].
 
 NOTE: Reaching the end of stream is also a contingency
       (which can be interpreted as preventing an infinite read
@@ -36,7 +36,7 @@ NOTE: Reaching the end of stream is also a contingency
 NOTE: The stream operations can still throw exceptions to indicate conditions,
       unrelated to stream state, that prevent these operations from satisfying
       their postconditions, such as failures to grow a buffer, or 
-      failure to allocate a coroutine frame.
+      failure to allocate a xref:glossary.adoc#coroutine-frame[coroutine frame].
 
 NOTE: Operations on streams often await-return cpp:capy::results[capy::results<std::size_t>]
       destructuring to `[ec, n]`, where `n` represents the number of processed bytes.

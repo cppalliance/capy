@@ -2,7 +2,7 @@
 :page-mode: how-to
 
 Racing a slow operation against a deadline, and cancelling work directly
-with a stop token.
+with a xref:glossary.adoc#stop-token[stop token].
 
 == What This Example Shows
 
@@ -10,7 +10,7 @@ with a stop token.
 * Using `async_waker` as the escape hatch for external timing
 * Racing a fetch against a deadline with cpp:when_any[]
 * Checking `stop_requested()` in coroutines
-* Direct cancellation with `std::stop_source`
+* Direct xref:glossary.adoc#cancellation[cancellation] with `std::stop_source`
 
 == Source Code
 
@@ -79,7 +79,7 @@ cpp:when_any[] requests stop on the loser, which is exactly how `await_fetch`
 learns to set `cancelled` and let the fetch worker thread bail out early.
 
 cpp:async_waker::wait[wait]`()` must only be awaited on a single-threaded
-executor, so both children run on cpp:thread_pool[]`(1)`. The slow, blocking
+xref:glossary.adoc#executor[executor], so both children run on cpp:thread_pool[]`(1)`. The slow, blocking
 work itself still happens off that thread, on the two `std::thread`
 objects the demo owns directly.
 

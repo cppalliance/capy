@@ -12,7 +12,7 @@ cpp:ReadStream[] is the fundamental partial-read primitive among Capy's stream c
 include::example$include/boost/capy/concept/read_stream.hpp[tag=read_stream_concept,indent=0]
 ----
 
-The `requires` clause checks `read_some` against a single representative buffer, cpp:mutable_buffer_archetype[], because a {cpp} concept cannot quantify over "every buffer sequence." The contract is stronger than what the compiler verifies: a cpp:ReadStream[] must accept *any* cpp:MutableBufferSequence[]—a single buffer or a range of them—and the archetype stands in for that universally-quantified requirement.
+The `requires` clause checks `read_some` against a single representative buffer, cpp:mutable_buffer_archetype[], because a {cpp} concept cannot quantify over "every xref:glossary.adoc#buffer-sequence[buffer sequence]." The contract is stronger than what the compiler verifies: a cpp:ReadStream[] must accept *any* cpp:MutableBufferSequence[]—a single buffer or a range of them—and the archetype stands in for that universally-quantified requirement.
 
 A cpp:ReadStream[] provides a single operation:
 
@@ -90,7 +90,7 @@ This flexibility permits zero-length operations to serve as probes (fd validatio
 
 EOF is reported as an error code (cpp:cond::eof[cond::eof]) rather than as a success with `n == 0`, for two reasons:
 
-*Composed operations need EOF-as-error to report early termination.* The composed cpp:read[]`(stream, make_buffer(buf, 100))` promises to fill exactly 100 bytes. If the stream ends after 50, the operation did not fulfill its contract. Reporting `{success, 50}` would be misleading. Reporting `{eof, 50}` tells the caller both what happened (50 bytes landed in the buffer) and why the operation stopped (the stream ended).
+*xref:glossary.adoc#composed-operation[Composed operations] need EOF-as-error to report early termination.* The composed cpp:read[]`(stream, make_buffer(buf, 100))` promises to fill exactly 100 bytes. If the stream ends after 50, the operation did not fulfill its contract. Reporting `{success, 50}` would be misleading. Reporting `{eof, 50}` tells the caller both what happened (50 bytes landed in the buffer) and why the operation stopped (the stream ended).
 
 *EOF-as-error disambiguates the empty-buffer case from the end of a stream.* Without EOF-as-error, both `read_some(empty_buffer)` on a live stream and `read_some(non_empty_buffer)` on an exhausted stream could produce `{success, 0}`. The caller could not distinguish "I passed no buffer" from "the stream is done."
 
@@ -127,7 +127,7 @@ Concrete cpp:ReadStream[] implementations are free to report `n == 0` or `n > 0`
 - **Memory source**: returns `min(requested, remaining)` bytes. May report `(eof, n)` on the final call when remaining is known, or `(eof, 0)` on a subsequent call.
 - **QUIC streams**: `read_some` returns data from received QUIC frames. Stream FIN may arrive with the last data, allowing `(eof, n)`.
 - **Buffered read streams**: `read_some` returns data from an internal buffer. EOF propagates from the underlying stream.
-- **Test mock streams**: `read_some` returns configurable data and error sequences for testing.
+- **Test xref:glossary.adoc#mock-stream[mock streams]**: `read_some` returns configurable data and error sequences for testing.
 
 No source is forced into an unnatural pattern.
 

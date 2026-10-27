@@ -1,7 +1,7 @@
 = Mock Stream Testing
 :page-mode: how-to
 
-Unit testing protocol code with mock streams and error injection.
+Unit testing protocol code with xref:glossary.adoc#mock-stream[mock streams] and error injection.
 
 == What This Example Shows
 

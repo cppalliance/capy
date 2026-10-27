@@ -6,7 +6,7 @@ Running multiple operations concurrently with cpp:when_all[].
 == What This Example Shows
 
 * Using cpp:when_all[] to run tasks in parallel
-* Structured bindings for results
+* xref:glossary.adoc#structured-bindings[Structured bindings] for results
 * Error propagation in concurrent tasks
 
 == Source Code
@@ -51,7 +51,7 @@ cpp:task[task]`<results<>>` children return cpp:results[results<>] (an error cod
 include::example$parallel-fetch/parallel_fetch.cpp[tag=when_all_errors,indent=0]
 ----
 
-I/O errors are reported via `ec` in the cpp:results[results]. Thrown exceptions are captured separately. Upon error, cancellation is requested and the first exception is rethrown after all tasks complete.
+I/O errors are reported via `ec` in the cpp:results[results]. Thrown exceptions are captured separately. Upon error, xref:glossary.adoc#cancellation[cancellation] is requested and the first exception is rethrown after all tasks complete.
 
 == Output
 

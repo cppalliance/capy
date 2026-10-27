@@ -5,7 +5,7 @@
 
 When a coroutine completes or awaits another coroutine, control must transfer somewhere. The naive approach—calling `handle.resume()`—has a problem: each nested coroutine adds a frame to the call stack. With deep nesting, you risk stack overflow.
 
-*Symmetric transfer* solves this by returning a coroutine handle from `await_suspend`. Instead of resuming the target coroutine via a function call, the compiler generates a tail call that transfers control without growing the stack.
+*Symmetric transfer* solves this by returning a xref:glossary.adoc#coroutine-handle[coroutine handle] from `await_suspend`. Instead of resuming the target coroutine via a function call, the compiler generates a tail call that transfers control without growing the stack.
 
 === The Problem: Stack Accumulation
 
@@ -18,7 +18,7 @@ include::example$snippets/2d_advanced.cpp[tag=task_chain,indent=0]
 
 Without symmetric transfer, when `a` awaits `b`:
 
-1. `a` calls into the awaiter's `await_suspend`
+1. `a` calls into the xref:glossary.adoc#awaiter[awaiter]'s `await_suspend`
 2. `await_suspend` calls `b.handle.resume()`
 3. `b` runs, calls into its awaiter's `await_suspend`
 4. That calls `c.handle.resume()`
@@ -197,4 +197,4 @@ This generator:
 * Manages coroutine lifetime with RAII
 * Supports move semantics
 
-These fundamentals prepare you for understanding Capy's cpp:task[task<T>] type and the ContextAwaitable protocol. Both build on standard coroutine machinery with executor affinity and stop token propagation.
+These fundamentals prepare you for understanding Capy's cpp:task[task<T>] type and the ContextAwaitable protocol. Both build on standard coroutine machinery with xref:glossary.adoc#executor[executor] xref:glossary.adoc#affinity[affinity] and xref:glossary.adoc#stop-token[stop token] propagation.

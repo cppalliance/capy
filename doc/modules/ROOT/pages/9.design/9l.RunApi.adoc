@@ -3,7 +3,7 @@
 
 == Overview
 
-Capy has two launcher functions: cpp:run_async[] (fire-and-forget from non-coroutine code) and cpp:run[] (awaitable within a coroutine). Both use a deliberate **two-phase invocation** pattern -- `f(context)(task)` -- that exists for a mechanical reason rooted in coroutine frame allocation timing.
+Capy has two launcher functions: cpp:run_async[] (fire-and-forget from non-coroutine code) and cpp:run[] (xref:glossary.adoc#awaitable[awaitable] within a coroutine). Both use a deliberate **two-phase invocation** pattern -- `f(context)(task)` -- that exists for a mechanical reason rooted in xref:glossary.adoc#coroutine-frame[coroutine frame] allocation timing.
 
 == Usage
 
@@ -18,7 +18,7 @@ include::example$snippets/9l_run_api.cpp[tag=run_async_usage,indent=0]
 
 === `run` -- Awaitable Within a Coroutine
 
-cpp:run[] is the coroutine-side counterpart. It binds any _ContextRunnable_ to a (possibly different) executor and returns the result to the caller via `co_await`. It also supports overloads that customize stop token or allocator while inheriting the caller's executor.
+cpp:run[] is the coroutine-side counterpart. It binds any _ContextRunnable_ to a (possibly different) xref:glossary.adoc#executor[executor] and returns the result to the caller via `co_await`. It also supports overloads that customize xref:glossary.adoc#stop-token[stop token] or allocator while inheriting the caller's executor.
 
 [source,cpp]
 ----
@@ -27,7 +27,7 @@ include::example$snippets/9l_run_api.cpp[tag=run_usage]
 
 === `run_async` on a Strand
 
-A common pattern for starting per-connection coroutines on a strand, ensuring serialized access to connection state:
+A common pattern for starting per-connection coroutines on a xref:glossary.adoc#strand[strand], ensuring serialized access to connection state:
 
 [source,cpp]
 ----

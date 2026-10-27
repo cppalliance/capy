@@ -23,16 +23,16 @@ The first layer is concepts. These are the template-based interfaces: cpp:ReadSt
 
 The cost is that templates propagate. Every caller sees the full implementation. Compile times grow. You cannot hide this behind a `.cpp` file.
 
-The second layer is type-erased wrappers. cpp:any_stream[], cpp:any_read_stream[], cpp:any_write_stream[]. These use a vtable internally, similar to `std::function` but specialized for I/O. You can write an algorithm against `any_stream&` and it compiles once, lives in a single translation unit, and works with any stream type:
+The second layer is xref:glossary.adoc#type-erased[type-erased] wrappers. cpp:any_stream[], cpp:any_read_stream[], cpp:any_write_stream[]. These use a vtable internally, similar to `std::function` but specialized for I/O. You can write an algorithm against `any_stream&` and it compiles once, lives in a single translation unit, and works with any stream type:
 
 [source,cpp]
 ----
 include::example$snippets/9a_capy_layering.cpp[tag=any_stream_echo,indent=0]
 ----
 
-The cost is up to five vtable calls per I/O operation, not one per continuation -- four when the read or write completes synchronously, since `await_suspend` is skipped whenever `await_ready` returns `true`. For operations dominated by syscalls and network latency, this cost is invisible. For tight loops over in-memory buffers, it matters.
+The cost is up to five vtable calls per I/O operation, not one per xref:glossary.adoc#continuation[continuation] -- four when the read or write completes synchronously, since `await_suspend` is skipped whenever `await_ready` returns `true`. For operations dominated by syscalls and network latency, this cost is invisible. For tight loops over in-memory buffers, it matters.
 
-The third layer is coroutine type erasure via cpp:task[task<>]. This is the most powerful form of type erasure in the language. Inside a coroutine, when you write `co_await`, everything in the awaitable becomes type-erased from the perspective of the caller. The caller sees a `task<>`. A pure virtual function returning `task<>` hides the stream type, the buffer strategy, the algorithm, the error handling - everything:
+The third layer is coroutine type erasure via cpp:task[task<>]. This is the most powerful form of type erasure in the language. Inside a coroutine, when you write `co_await`, everything in the xref:glossary.adoc#awaitable[awaitable] becomes type-erased from the perspective of the caller. The caller sees a `task<>`. A pure virtual function returning `task<>` hides the stream type, the buffer strategy, the algorithm, the error handling - everything:
 
 [source,cpp]
 ----
@@ -57,7 +57,7 @@ The user chooses where the boundary falls. Not the library.
 
 == Symmetric Transfer and the Pump
 
-Symmetric transfer is the mechanism that allows Corosio to match or beat ASIO callback throughput. When one coroutine completes and its continuation is ready to run, symmetric transfer reuses the same coroutine frame without allocation and bypasses the global work queue entirely. ASIO callbacks always go through the queue.
+xref:glossary.adoc#symmetric-transfer[Symmetric transfer] is the mechanism that allows Corosio to match or beat ASIO callback throughput. When one coroutine completes and its continuation is ready to run, symmetric transfer reuses the same xref:glossary.adoc#coroutine-frame[coroutine frame] without allocation and bypasses the global work queue entirely. ASIO callbacks always go through the queue.
 
 The pump mechanism extends this by allowing multiple inline completions before returning to the queue. For throughput-sensitive workloads like HTTP servers, this is significant.
 

@@ -5,7 +5,7 @@ Running a Capy coroutine on a GUI framework's event loop, and resuming on the GU
 
 == What This Example Shows
 
-* Wrapping a GUI toolkit's "run this on the main thread" primitive as an executor
+* Wrapping a GUI toolkit's "run this on the main thread" primitive as an xref:glossary.adoc#executor[executor]
 * Moving slow work off the GUI thread with cpp:run[], and coming back
 * Awaiting an operation the toolkit completes on a thread of its own
 * Why widget access stays on the GUI thread with no hop written by hand
@@ -36,7 +36,7 @@ The program links no GUI library. It uses a stand-in instead.
 include::example$gui-integration/gui_integration.cpp[tag=gui_app]
 ----
 
-`gui_app` records the thread it is constructed on, holds a queue of continuations, and exposes `post_to_gui_thread`. That last operation is the one primitive every toolkit already provides. Qt names it `QMetaObject::invokeMethod`, GTK `g_idle_add`, wxWidgets `wxEvtHandler::CallAfter`, Win32 `PostMessage`.
+`gui_app` records the thread it is constructed on, holds a queue of xref:glossary.adoc#continuation[continuations], and exposes `post_to_gui_thread`. That last operation is the one primitive every toolkit already provides. Qt names it `QMetaObject::invokeMethod`, GTK `g_idle_add`, wxWidgets `wxEvtHandler::CallAfter`, Win32 `PostMessage`.
 
 === The Event Loop
 
@@ -47,7 +47,7 @@ include::example$gui-integration/gui_integration.cpp[tag=run,indent=0]
 
 The loop blocks while the queue is empty. A GUI loop must do this: the background operation is still running, and an empty queue does not mean the program is finished. `quit()` sets the flag that lets the loop return once the queue drains.
 
-Resumption goes through cpp:safe_resume[] rather than `h.resume()`. This saves and restores the thread-local frame allocator around each resumption. See xref:4.coroutines/4h.allocators.adoc#_tls_preservation[TLS Preservation].
+Resumption goes through cpp:safe_resume[] rather than `h.resume()`. This saves and restores the thread-local xref:glossary.adoc#frame-allocator[frame allocator] around each resumption. See xref:4.coroutines/4h.allocators.adoc#_tls_preservation[TLS Preservation].
 
 === Wrapping the Primitive as an Executor
 
@@ -104,7 +104,7 @@ cpp:run[] is what moves the work. It starts the inner task on the executor you n
 Three contracts combine to put that boundary on the GUI thread:
 
 * cpp:run_async[] builds one cpp:await_context[] holding the executor it was given, and passes the task a pointer to it.
-* cpp:task[] propagates that pointer into every `co_await` in its body. A task completes by symmetric transfer and never posts, so nothing in the chain substitutes a different executor.
+* cpp:task[] propagates that pointer into every `co_await` in its body. A task completes by xref:glossary.adoc#symmetric-transfer[symmetric transfer] and never posts, so nothing in the chain substitutes a different executor.
 * cpp:run[] records the caller's executor and posts the caller back through it when the inner task completes. That post runs on a pool thread and lands in the GUI queue.
 
 This is the xref:4.coroutines/4d.executors.adoc#the-same-executor-invariant[same-executor invariant] seen from a GUI application. Start the task on the GUI executor, and every line of the body runs on the GUI thread, whatever thread the awaited work ran on.
@@ -115,7 +115,7 @@ Two conditions carry the invariant, and both are contracts rather than magic.
 
 The executor must resume handles on one thread only. A GUI loop does, by construction.
 
-Every awaitable in the chain must honor the cpp:ContextAwaitable[] requirement to resume through cpp:await_context::executor[env->executor]. Capy's own types do: cpp:when_all[] and cpp:when_any[] return control to the caller through the caller's executor, and cpp:run[] does the same at an executor boundary. An awaitable that resumes the handle directly from a foreign thread breaks the invariant, and no other part of the library can repair it. <<toolkit-completion,The next section>> shows one that honors it.
+Every xref:glossary.adoc#awaitable[awaitable] in the chain must honor the cpp:ContextAwaitable[] requirement to resume through cpp:await_context::executor[env->executor]. Capy's own types do: cpp:when_all[] and cpp:when_any[] return control to the caller through the caller's executor, and cpp:run[] does the same at an executor boundary. An awaitable that resumes the handle directly from a foreign thread breaks the invariant, and no other part of the library can repair it. <<toolkit-completion,The next section>> shows one that honors it.
 ====
 
 [#toolkit-completion]
@@ -128,7 +128,7 @@ cpp:run[] covers work you hand to Capy. A toolkit also completes operations of i
 include::example$gui-integration/gui_integration.cpp[tag=dialog]
 ----
 
-Awaiting that needs a cpp:ContextAwaitable[]. xref:4.coroutines/4e.context-awaitable.adoc#bridging-a-foreign-awaitable[Bridging a Foreign Awaitable] covers the protocol. One line of it decides thread affinity:
+Awaiting that needs a cpp:ContextAwaitable[]. xref:4.coroutines/4e.context-awaitable.adoc#bridging-a-foreign-awaitable[Bridging a Foreign Awaitable] covers the protocol. One line of it decides thread xref:glossary.adoc#affinity[affinity]:
 
 [source,cpp]
 ----
@@ -152,7 +152,7 @@ The GUI thread is whichever thread constructs `gui_app`. Real toolkits impose th
 
 cpp:run_async[] is called on that thread, so `dispatch` resumes the task inline and the body reaches its `co_await` before `app.run()` is called. Nothing is lost if the pool finishes first: the continuation waits in the queue, and the loop picks it up when it starts.
 
-The completion handler runs on the GUI thread, because the task completed there. It calls `quit()`, the loop drains and returns, and `main` checks the final text. The program needs no sleep and no timeout to exit.
+The xref:glossary.adoc#completion-handler[completion handler] runs on the GUI thread, because the task completed there. It calls `quit()`, the loop drains and returns, and `main` checks the final text. The program needs no sleep and no timeout to exit.
 
 === Substituting a Real Toolkit
 

@@ -28,11 +28,11 @@ the source code examples in this documentation assume the following:
 include::example$snippets/conventions.cpp[tag=convention]
 ----
 
-The examples deliberately leave some operation results and structured bindings unused,
+The examples deliberately leave some operation results and xref:glossary.adoc#structured-bindings[structured bindings] unused,
 so that the surrounding prose can explain them. Do not build them with `-Wall` or
 `-Werror`.
 
 The library is targeting two kinds of audience:
 
  * Regular users, who build their applications by composing building blocks offered by this library.
- * I/O Specialists, who extend this framework by providing their own I/O backends.
+ * I/O Specialists, who extend this framework by providing their own xref:glossary.adoc#io-backend[I/O backends].

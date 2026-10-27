@@ -6,7 +6,7 @@ Using Boost.Asio async operations directly inside a Capy coroutine through a `us
 == What This Example Shows
 
 * How a completion token adapts _any_ Asio async operation into an xref:4.coroutines/4e.context-awaitable.adoc[ContextAwaitable]
-* How the token bridges `std::stop_token` to Asio's cancellation slot
+* How the token bridges `std::stop_token` to Asio's xref:glossary.adoc#cancellation[cancellation] slot
 * How the bridge preserves the xref:4.coroutines/4d.executors.adoc#the-same-executor-invariant[same-executor invariant]
 
 [NOTE]
@@ -16,7 +16,7 @@ This example is built when a `Boost::asio` target is available. The full source 
 
 == The Completion Token
 
-Asio async operations accept a _completion token_ that decides what the call returns. `use_capy` is a token whose `async_result` returns a cpp:ContextAwaitable[]. When co-awaited, its `await_suspend` starts the Asio operation and arranges the completion handler to post the resumption through the caller's executor. The coroutine therefore resumes on the executor it was started with, never on whatever thread Asio completed on. From `example/asio/api/use_capy.hpp`:
+Asio async operations accept a _completion token_ that decides what the call returns. `use_capy` is a token whose `async_result` returns a cpp:ContextAwaitable[]. When co-awaited, its `await_suspend` starts the Asio operation and arranges the xref:glossary.adoc#completion-handler[completion handler] to post the resumption through the caller's xref:glossary.adoc#executor[executor]. The coroutine therefore resumes on the executor it was started with, never on whatever thread Asio completed on. From `example/asio/api/use_capy.hpp`:
 
 [source,cpp]
 ----
@@ -49,4 +49,4 @@ example complete!
 == See Also
 
 * xref:4.coroutines/4e.context-awaitable.adoc#bridging-a-foreign-awaitable[Bridging a Foreign Awaitable] — the general pattern
-* xref:8.examples/8o.sender-bridge.adoc[Bridging a P2300 Sender] — the same technique for `std::execution` senders
+* xref:8.examples/8o.sender-bridge.adoc[Bridging a P2300 Sender] — the same technique for `std::execution` xref:glossary.adoc#sender[senders]

@@ -11,7 +11,7 @@
 = Example Programs
 :page-mode: explanation
 
-These examples demonstrate how the pieces you have learned--tasks, buffers, streams, cancellation, composition--fit together in practice.
+These examples demonstrate how the pieces you have learned--tasks, buffers, streams, xref:glossary.adoc#cancellation[cancellation], composition--fit together in practice.
 
 Every example is self-contained and compiles as a standalone program.
 
@@ -23,15 +23,15 @@ It lists what to read next for application developers, framework authors, and I/
 * xref:8.examples/8a.hello-task.adoc[Hello Task] -- The minimal Capy program: a task that
   prints a message.
 * xref:8.examples/8b.producer-consumer.adoc[Producer-Consumer] -- Two tasks communicating
-  via an async event, with strand serialization.
+  via an async event, with xref:glossary.adoc#strand[strand] serialization.
 * xref:8.examples/8c.buffer-composition.adoc[Buffer Composition] -- Composing buffer
-  sequences without allocation for scatter/gather I/O.
+  sequences without allocation for xref:glossary.adoc#scatter-gather-io[scatter/gather I/O].
 * xref:8.examples/8d.mock-stream-testing.adoc[Mock Stream Testing] -- Unit testing protocol
-  code with mock streams and error injection.
+  code with xref:glossary.adoc#mock-stream[mock streams] and error injection.
 * xref:8.examples/8e.type-erased-echo.adoc[Type-Erased Echo] -- An echo server
   demonstrating the compilation firewall pattern.
 * xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation] -- Racing a slow
-  operation against a deadline, and cancelling it with a stop token.
+  operation against a deadline, and cancelling it with a xref:glossary.adoc#stop-token[stop token].
 * xref:8.examples/8g.parallel-fetch.adoc[Parallel Fetch] -- Running multiple operations
   concurrently with cpp:when_all[].
 * xref:8.examples/8k.strand-serialization.adoc[Strand Serialization] -- Protecting shared
@@ -43,7 +43,7 @@ It lists what to read next for application developers, framework authors, and I/
 * xref:8.examples/8n.custom-executor.adoc[Custom Executor] -- Implementing the `Executor`
   concept with a single-threaded run loop.
 * xref:8.examples/8o.sender-bridge.adoc[Bridging a P2300 Sender] -- Awaiting a
-  `std::execution` (P2300) sender from a Capy coroutine.
+  `std::execution` (P2300) xref:glossary.adoc#sender[sender] from a Capy coroutine.
 * xref:8.examples/8p.asio-use-capy.adoc[Calling Asio from a Capy Coroutine] -- Using
   Boost.Asio operations directly through a `use_capy` completion token.
 * xref:8.examples/8q.gui-integration.adoc[GUI Integration] -- Running a Capy coroutine on

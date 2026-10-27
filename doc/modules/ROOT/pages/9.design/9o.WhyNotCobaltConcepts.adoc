@@ -1,7 +1,7 @@
 = Write Stream Design: A Side-by-Side Analysis
 :page-mode: explanation
 
-Both Capy and Cobalt allow you to write a non-template coroutine algorithm that operates on a type-erased write stream. The function signatures look similar:
+Both Capy and Cobalt allow you to write a non-template coroutine algorithm that operates on a xref:glossary.adoc#type-erased[type-erased] write stream. The function signatures look similar:
 
 [source,cpp]
 ----
@@ -33,7 +33,7 @@ to be able to be ``co_await``ed inside a Capy-coroutine:
 
  * `await_ready` -- tells if the coroutine needs to be suspended.
  * `await_suspend` -- invoked immediately after the coroutine is suspended.
-   Obtains the execution environment via an cpp:await_context[] parameter and tells which coroutine needs to be now resumed.
+   Obtains the xref:glossary.adoc#environment[execution environment] via an cpp:await_context[] parameter and tells which coroutine needs to be now resumed.
  * `await_resume` -- tells what value shall be returned when the coroutine is resumed.
 
 
@@ -61,9 +61,9 @@ ____
 
 `cobalt` uses concepts to check if those are present in its `await_suspend` functions.
 
-That way custom coroutines can support cancellation, executors and allocators.
+That way custom coroutines can support xref:glossary.adoc#cancellation[cancellation], xref:glossary.adoc#executor[executors] and allocators.
 
-In a custom awaitable you can obtain them like this:
+In a custom xref:glossary.adoc#awaitable[awaitable] you can obtain them like this:
 ____
 
 [source,cpp,role=external]
@@ -124,7 +124,7 @@ Capy's cpp:ContextAwaitable[] protocol passes the execution environment as an ex
 include::example$snippets/9o_why_not_cobalt_concepts.cpp[tag=await_suspend_env,indent=0]
 ----
 
-The executor and stop token flow forward structurally through the call chain via cpp:await_context[]. If a task's machinery does not provide them, the code does not compile. There is no fallback.
+The executor and xref:glossary.adoc#stop-token[stop token] flow forward structurally through the call chain via cpp:await_context[]. If a task's machinery does not provide them, the code does not compile. There is no fallback.
 
 Cobalt's approach probes the calling promise. The relevant code from `cobalt/detail/task.hpp`:
 
@@ -209,7 +209,7 @@ struct const_buffer_sequence
 };
 ----
 
-This is a subset of Asio's full `ConstBufferSequence` concept. Buffer sequence types that do not convert to `const_buffer` or `span<const asio::const_buffer>` cannot be passed through this interface.
+This is a subset of Asio's full `ConstBufferSequence` concept. xref:glossary.adoc#buffer-sequence[Buffer sequence] types that do not convert to `const_buffer` or `span<const asio::const_buffer>` cannot be passed through this interface.
 
 Capy's cpp:WriteStream[] concept requires `write_some` to accept any cpp:ConstBufferSequence[]:
 
@@ -376,7 +376,7 @@ In Capy, the implementation contract lives in the cpp:WriteStream[] concept defi
 
 == Awaitable Allocation
 
-Every `co_await` on a `write_op` in Cobalt allocates a fixed-size buffer in the coroutine frame. The chain is:
+Every `co_await` on a `write_op` in Cobalt allocates a fixed-size buffer in the xref:glossary.adoc#coroutine-frame[coroutine frame]. The chain is:
 
 1. `write_stream::write_some` returns `write_op`
 2. `write_op final : op<system::error_code, std::size_t>`

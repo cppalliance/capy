@@ -1,7 +1,7 @@
 = Producer-Consumer
 :page-mode: how-to
 
-Two tasks communicating via an async event, with strand serialization.
+Two tasks communicating via an async event, with xref:glossary.adoc#strand[strand] serialization.
 
 == What This Example Shows
 
@@ -34,7 +34,7 @@ target_link_libraries(producer_consumer PRIVATE Boost::capy)
 include::example$producer-consumer/producer_consumer.cpp[tag=strand,indent=0]
 ----
 
-A cpp:strand[] is an executor adaptor that serializes execution. All coroutines dispatched through a strand are guaranteed not to run concurrently, making it safe to access shared state without explicit locking. cpp:async_event[] is not thread-safe.
+A cpp:strand[] is an xref:glossary.adoc#executor[executor] adaptor that serializes execution. All coroutines dispatched through a strand are guaranteed not to run concurrently, making it safe to access shared state without explicit locking. cpp:async_event[] is not thread-safe.
 
 === The Event
 

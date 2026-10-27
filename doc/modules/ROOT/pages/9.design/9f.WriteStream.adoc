@@ -12,7 +12,7 @@ cpp:WriteStream[] is the fundamental partial-write primitive among Capy's stream
 include::example$include/boost/capy/concept/write_stream.hpp[tag=write_stream_concept]
 ----
 
-The `requires` clause checks `write_some` against a single representative buffer, cpp:const_buffer_archetype[], because a {cpp} concept cannot quantify over "every buffer sequence." The contract is stronger than what the compiler verifies: a cpp:WriteStream[] must accept *any* cpp:ConstBufferSequence[]—a single buffer or a range of them—and the archetype stands in for that universally-quantified requirement.
+The `requires` clause checks `write_some` against a single representative buffer, cpp:const_buffer_archetype[], because a {cpp} concept cannot quantify over "every xref:glossary.adoc#buffer-sequence[buffer sequence]." The contract is stronger than what the compiler verifies: a cpp:WriteStream[] must accept *any* cpp:ConstBufferSequence[]—a single buffer or a range of them—and the archetype stands in for that universally-quantified requirement.
 
 A cpp:WriteStream[] provides a single operation:
 
@@ -43,7 +43,7 @@ include::example$snippets/9f_write_stream.cpp[tag=write_now_sketch]
 Loops `write_some` until the entire buffer sequence is consumed, with two advantages over the free function:
 
 1. **Eager completion**: if every `write_some` returns synchronously (its `await_ready` returns `true`), the entire operation completes in `await_ready` with zero coroutine suspensions.
-2. **Frame caching**: the internal coroutine frame is allocated once and reused across calls.
+2. **Frame caching**: the internal xref:glossary.adoc#coroutine-frame[coroutine frame] is allocated once and reused across calls.
 
 == Buffer Top-Up: Why `write_some` Can Outperform `write_now`
 
@@ -116,7 +116,7 @@ Examples of types that satisfy cpp:WriteStream[]:
 - **TLS streams**: `write_some` encrypts and sends one TLS record.
 - **Buffered write streams**: `write_some` appends to an internal buffer and returns immediately when space is available, or drains to the underlying stream when full.
 - **QUIC streams**: `write_some` sends one or more QUIC frames.
-- **Test mock streams**: `write_some` records data and returns configurable results for testing.
+- **Test xref:glossary.adoc#mock-stream[mock streams]**: `write_some` records data and returns configurable results for testing.
 
 == Relationship to `ReadStream`
 

@@ -17,8 +17,8 @@ Key characteristics:
 
 * *Lazy execution* — The coroutine does not start until awaited
 * *Symmetric transfer* — Efficient resumption without stack accumulation
-* *Executor inheritance* — Inherits the caller's executor unless explicitly bound
-* *Stop token propagation* — Forward-propagates cancellation signals
+* *xref:glossary.adoc#executor[Executor] inheritance* — Inherits the caller's executor unless explicitly bound
+* *xref:glossary.adoc#stop-token[Stop token] propagation* — Forward-propagates xref:glossary.adoc#cancellation[cancellation] signals
 * *xref:4.coroutines/4h.allocators.adoc#_halo_optimization[HALO] support* — Enables Heap Allocation eLision Optimization when possible
 
 == Declaring task Coroutines
@@ -51,7 +51,7 @@ xref:4.coroutines/4k.results.adoc[The results Type] explains how to consume and 
 
 == Running a Task
 
-A cpp:task[task] is lazy, so declaring one does not run it. To run a task to completion from ordinary (non-coroutine) code, pass it to cpp:run_async[] with an executor and a completion handler. The task runs on the executor, and its result is delivered to the handler:
+A cpp:task[task] is lazy, so declaring one does not run it. To run a task to completion from ordinary (non-coroutine) code, pass it to cpp:run_async[] with an executor and a xref:glossary.adoc#completion-handler[completion handler]. The task runs on the executor, and its result is delivered to the handler:
 
 [source,cpp]
 ----
@@ -98,7 +98,7 @@ Lazy execution enables efficient composition—tasks that are never awaited neve
 
 == Symmetric Transfer
 
-When a task completes, control transfers directly to its continuation (the coroutine that awaited it) using *symmetric transfer*. This avoids stack accumulation even with deep chains of coroutine calls.
+When a task completes, control transfers directly to its xref:glossary.adoc#continuation[continuation] (the coroutine that awaited it) using *symmetric transfer*. This avoids stack accumulation even with deep chains of coroutine calls.
 
 [source,cpp]
 ----
@@ -107,7 +107,7 @@ include::example$snippets/4b_tasks.cpp[tag=chain]
 
 Without symmetric transfer, each `co_await` would add a stack frame, potentially causing stack overflow with deep nesting. With symmetric transfer, `c` returning to `b` returning to `a` uses constant stack space regardless of depth.
 
-This is implemented through the `await_suspend` returning a coroutine handle rather than `void`:
+This is implemented through the `await_suspend` returning a xref:glossary.adoc#coroutine-handle[coroutine handle] rather than `void`:
 
 [source,cpp]
 ----
@@ -116,7 +116,7 @@ include::example$snippets/4b_tasks.cpp[tag=final_suspend,indent=0]
 
 == Move Semantics
 
-Tasks are move-only. Copying a task would create aliasing problems where multiple handles reference the same coroutine frame.
+Tasks are move-only. Copying a task would create aliasing problems where multiple handles reference the same xref:glossary.adoc#coroutine-frame[coroutine frame].
 
 [source,cpp]
 ----

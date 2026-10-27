@@ -3,12 +3,12 @@
 
 == The Execution Model
 
-Capy tasks are lazy—they do not execute until something drives them. Two mechanisms exist:
+Capy tasks are xref:glossary.adoc#lazy[lazy]—they do not execute until something drives them. Two mechanisms exist:
 
 * *Awaiting* — One coroutine awaits another (`co_await task`)
 * *Starting* — Non-coroutine code initiates execution (cpp:run_async[])
 
-When a task is awaited, the awaiting coroutine provides context: an executor for dispatching completion and a stop token for cancellation. Non-coroutine code must start the first task in a chain explicitly.
+When a task is awaited, the awaiting coroutine provides context: an xref:glossary.adoc#executor[executor] for dispatching completion and a xref:glossary.adoc#stop-token[stop token] for xref:glossary.adoc#cancellation[cancellation]. Non-coroutine code must start the first task in a chain explicitly.
 
 xref:index.adoc#how-a-task-runs[How a Task Runs] shows both mechanisms as a sequence diagram.
 
@@ -31,7 +31,7 @@ Notice the unusual syntax: cpp:run_async[]`(executor)(task)`. This is intentiona
 2. `b` is evaluated second
 3. The callable is invoked with `b`
 
-This ordering matters because the task's coroutine frame is allocated during step 2, and cpp:run_async[] sets up thread-local allocator state in step 1. The task inherits that allocator.
+This ordering matters because the task's xref:glossary.adoc#coroutine-frame[coroutine frame] is allocated during step 2, and cpp:run_async[] sets up thread-local allocator state in step 1. The task inherits that allocator.
 
 [WARNING]
 ====
@@ -97,7 +97,7 @@ include::example$snippets/4c_launching.cpp[tag=run_hop]
 
 By default, a task inherits its caller's executor. This means completions are dispatched through that executor, ensuring thread affinity for thread-sensitive code.
 
-cpp:run[] overrides this inheritance for a specific child task, binding it to a different executor. When it completes, the parent task resumes on its original executor.
+A cpp:run[] overload that takes an executor overrides this inheritance for a specific child task, binding it to that executor. When it completes, the parent task resumes on its original executor.
 
 This pattern is useful for:
 

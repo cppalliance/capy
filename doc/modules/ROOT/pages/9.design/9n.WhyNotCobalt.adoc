@@ -5,7 +5,7 @@ Both libraries use {cpp}20 coroutines for asynchronous programming.
 
 Cobalt is a coroutine layer built on Boost.Asio. It adds coroutine syntax — `promise`, `task`, `generator` — on top of Asio's existing I/O infrastructure. Asio is not coroutines-only. It supports callbacks, futures, and coroutines equally. Cobalt can add coroutine types on top, but it cannot change what lies beneath.
 
-Capy is a coroutine-native I/O foundation. The design started from the ideal use case and worked backward to the implementation. The flat concept set, the type-erased wrappers, the allocator model — these fell out naturally from use-case-first design, without compromise.
+Capy is a coroutine-native I/O foundation. The design started from the ideal use case and worked backward to the implementation. The flat concept set, the xref:glossary.adoc#type-erased[type-erased] wrappers, the allocator model — these fell out naturally from use-case-first design, without compromise.
 
 == The Dimovian Ideal
 
@@ -37,7 +37,7 @@ Asio appears only as a forward declaration. The context uses pimpl. The factory 
 include::example$asio/any_stream.cpp[tag=writer_reader]
 ----
 
-`writer()` and `reader()` operate on cpp:capy::any_stream[capy::any_stream]`&`. They don't know what I/O backend produced the stream. They never need to know.
+`writer()` and `reader()` operate on cpp:capy::any_stream[capy::any_stream]`&`. They don't know what xref:glossary.adoc#io-backend[I/O backend] produced the stream. They never need to know.
 
 === What Cobalt Does Instead
 
@@ -101,9 +101,9 @@ Capy's concepts form a small, flat set: cpp:ReadStream[] and cpp:WriteStream[] e
 
 == Type-Erased Streams
 
-Traditional approaches to type erasure in Asio focus on the lowest-level elements: the completion handler, the executor, the allocator. This is not the right layer. Type-erasing these individually adds overhead at every customization point while still leaving the stream type concrete and visible.
+Traditional approaches to type erasure in Asio focus on the lowest-level elements: the xref:glossary.adoc#completion-handler[completion handler], the xref:glossary.adoc#executor[executor], the allocator. This is not the right layer. Type-erasing these individually adds overhead at every customization point while still leaving the stream type concrete and visible.
 
-Capy type-erases the stream itself. This is possible because coroutines provide structural type erasure — the continuation is always a handle, not a template parameter. When the library is coroutines-only, up to five vtable calls per I/O operation is the total cost — not one per continuation. A synchronously completed operation costs four; `await_suspend` is skipped whenever `await_ready` returns `true`. The completion handler, executor, and allocator do not need individual erasure because they are not part of the stream's operation signature.
+Capy type-erases the stream itself. This is possible because coroutines provide structural type erasure — the xref:glossary.adoc#continuation[continuation] is always a handle, not a template parameter. When the library is coroutines-only, up to five vtable calls per I/O operation is the total cost — not one per continuation. A synchronously completed operation costs four; `await_suspend` is skipped whenever `await_ready` returns `true`. The completion handler, executor, and allocator do not need individual erasure because they are not part of the stream's operation signature.
 
 Cobalt defines stream abstractions (`write_stream`, `read_stream`, `stream`) as abstract base classes in `cobalt/io/stream.hpp`, taking a different approach from Capy's concept + type-erased wrapper model.
 
@@ -218,14 +218,14 @@ Capy supports multi-threaded execution. cpp:thread_pool[] distributes work acros
 
 Cobalt stores executor context in thread-local variables. Coroutines access it via `this_coro::executor`. This design is scoped to single-threaded, single-executor configurations.
 
-Capy introduces the https://wg21.link/P4003[ContextAwaitable protocol] and uses it for context propagation. When you `co_await`, the caller passes its execution environment to the child structurally:
+Capy introduces the https://wg21.link/P4003[ContextAwaitable protocol] and uses it for context propagation. When you `co_await`, the caller passes its xref:glossary.adoc#environment[execution environment] to the child structurally:
 
 [source,cpp]
 ----
 include::example$snippets/9n_why_not_cobalt.cpp[tag=await_suspend_env,indent=0]
 ----
 
-No thread-local state. No ambient context. The executor and stop token flow forward through the call chain via the cpp:await_context[] parameter.
+No thread-local state. No ambient context. The executor and xref:glossary.adoc#stop-token[stop token] flow forward through the call chain via the cpp:await_context[] parameter.
 
 [cols="1,1,1"]
 |===
@@ -235,7 +235,7 @@ No thread-local state. No ambient context. The executor and stop token flow forw
 | `await_suspend(h, env)`
 | Thread-local variables
 
-| Works with strands
+| Works with xref:glossary.adoc#strand[strands]
 | Yes
 | No
 
@@ -250,7 +250,7 @@ No thread-local state. No ambient context. The executor and stop token flow forw
 
 == Cancellation
 
-Both libraries propagate cancellation automatically through coroutine chains. Both support OS-level cancellation of pending I/O operations (`CancelIoEx` on Windows, `IORING_OP_ASYNC_CANCEL` on Linux).
+Both libraries propagate xref:glossary.adoc#cancellation[cancellation] automatically through coroutine chains. Both support OS-level cancellation of pending I/O operations (`CancelIoEx` on Windows, `IORING_OP_ASYNC_CANCEL` on Linux).
 
 Capy uses `std::stop_token`, propagated via the ContextAwaitable protocol's cpp:await_context[] parameter. The token flows forward structurally alongside the executor.
 
@@ -279,7 +279,7 @@ Cobalt uses Asio's `cancellation_signal` and `cancellation_slot`. Propagation is
 
 == Buffer Sequences
 
-Capy adopts Asio's buffer sequence model — cpp:ConstBufferSequence[], cpp:MutableBufferSequence[] — because it works. The optional `<boost/capy/buffers/asio.hpp>` header adapts between the two with `to_asio()`/`from_asio()` wrapper sequences — not an implicit conversion, but not a copy of the underlying memory either. Capy extends the model with additional types and algorithms, while still achieving the Dimovian Ideal.
+Capy adopts Asio's xref:glossary.adoc#buffer-sequence[buffer sequence] model — cpp:ConstBufferSequence[], cpp:MutableBufferSequence[] — because it works. The optional `<boost/capy/buffers/asio.hpp>` header adapts between the two with `to_asio()`/`from_asio()` wrapper sequences — not an implicit conversion, but not a copy of the underlying memory either. Capy extends the model with additional types and algorithms, while still achieving the Dimovian Ideal.
 
 Cobalt does not provide buffer sequence types. Users who need these features use Asio's types directly.
 
@@ -310,7 +310,7 @@ Cobalt does not provide buffer sequence types. Users who need these features use
 
 == Allocator Control
 
-Cobalt sets up a thread-local PMR resource via `main` or `thread`. All coroutines on that thread share it. Every awaitable embeds a fixed SBO buffer:
+Cobalt sets up a thread-local PMR resource via `main` or `thread`. All coroutines on that thread share it. Every xref:glossary.adoc#awaitable[awaitable] embeds a fixed SBO buffer:
 
 [source,cpp,role=external]
 ----
@@ -490,7 +490,7 @@ std::string serialize_capy_task(json::value const& jv) {
 }
 ----
 
-Every `co_await ws.write(...)` call creates a coroutine frame, suspends, resumes, and destroys. This is the worst case for coroutine overhead — many tiny operations that complete synchronously. In a real application where I/O operations take microseconds or milliseconds, the coroutine machinery becomes negligible.
+Every `co_await ws.write(...)` call creates a xref:glossary.adoc#coroutine-frame[coroutine frame], suspends, resumes, and destroys. This is the worst case for coroutine overhead — many tiny operations that complete synchronously. In a real application where I/O operations take microseconds or milliseconds, the coroutine machinery becomes negligible.
 
 == Summary
 
@@ -514,7 +514,7 @@ Every `co_await ws.write(...)` call creates a coroutine frame, suspends, resumes
 | 3 wrappers
 | None
 
-| Mock streams
+| xref:glossary.adoc#mock-stream[Mock streams]
 | 3 mock types + `fuse`
 | None
 

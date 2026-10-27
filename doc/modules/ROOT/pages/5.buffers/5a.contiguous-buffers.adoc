@@ -81,7 +81,7 @@ include::example$snippets/5a_contiguous_buffers.cpp[tag=good_management,indent=0
 ----
 include::example$snippets/5a_contiguous_buffers.cpp[tag=bad_management,indent=0]
 ----
-<1> Bug: the awaitable rather than `co_await`-ed is returned to be used later.
+<1> Bug: the xref:glossary.adoc#awaitable[awaitable] rather than `co_await`-ed is returned to be used later.
     At that later time the array will no longer be alive. 
 
 

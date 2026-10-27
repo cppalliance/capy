@@ -42,7 +42,7 @@ Windows uses `WSABUF` with `WSARecv()` and `WSASend()`. The field order is rever
 
 == Translation Process
 
-When you call an I/O function with a buffer sequence:
+When you call an I/O function with a xref:glossary.adoc#buffer-sequence[buffer sequence]:
 
 [source,cpp]
 ----

@@ -3,7 +3,7 @@
 
 == Overview
 
-The cpp:Executor[] concept exists to answer one question: when a coroutine is ready to run, _where_ does it run? Every I/O awaitable in Corosio -- sockets, acceptors, timers, resolvers -- depends on this concept to dispatch completions back to the correct executor.
+The cpp:Executor[] concept exists to answer one question: when a coroutine is ready to run, _where_ does it run? Every xref:glossary.adoc#io-awaitable[I/O awaitable] in Corosio -- sockets, acceptors, timers, resolvers -- depends on this concept to dispatch completions back to the correct xref:glossary.adoc#executor[executor].
 
 == Definition
 
@@ -16,7 +16,7 @@ An cpp:Executor[] provides exactly two scheduling operations:
 
 === `dispatch(c)` -- Execute If Safe
 
-If the executor determines it is safe (e.g., the current thread is already associated with the executor's context), returns `c.h` for symmetric transfer. Otherwise, posts the continuation for later execution and returns `std::noop_coroutine()`. The caller uses the returned handle for symmetric transfer from `await_suspend`, or calls `.resume()` at the event loop pump level.
+If the executor determines it is safe (e.g., the current thread is already associated with the executor's context), returns `c.h` for xref:glossary.adoc#symmetric-transfer[symmetric transfer]. Otherwise, posts the xref:glossary.adoc#continuation[continuation] for later execution and returns `std::noop_coroutine()`. The caller uses the returned handle for symmetric transfer from `await_suspend`, or calls `.resume()` at the event loop pump level.
 
 === `post(c)` -- Always Queue
 
@@ -24,7 +24,7 @@ Queues the continuation for later execution without ever executing it inline. Ne
 
 === `context()` -- Access the Execution Context
 
-Returns an lvalue reference to the cpp:execution_context[] that created this executor. The context provides service infrastructure, frame allocators, and shutdown coordination.
+Returns an lvalue reference to the cpp:execution_context[] that created this executor. The context provides service infrastructure, xref:glossary.adoc#frame-allocator[frame allocators], and shutdown coordination.
 
 === `on_work_started()` / `on_work_finished()` -- Track Work
 
@@ -54,7 +54,7 @@ Capy retains the core elements of this model:
 Capy removes or changes:
 
 - **`defer`.** Dropped entirely. See <<why-not-defer>>.
-- **Function object submission.** Asio executors accept arbitrary callables. Capy executors accept cpp:continuation[]`&` -- a coroutine handle wrapped with an intrusive queue pointer. This removes the need for allocator-aware function erasure, eliminates per-post heap allocation, and enables a simpler, cheaper type-erased wrapper (cpp:executor_ref[]).
+- **Function object submission.** Asio executors accept arbitrary callables. Capy executors accept cpp:continuation[]`&` -- a xref:glossary.adoc#coroutine-handle[coroutine handle] wrapped with an intrusive queue pointer. This removes the need for allocator-aware function erasure, eliminates per-post heap allocation, and enables a simpler, cheaper xref:glossary.adoc#type-erased[type-erased] wrapper (cpp:executor_ref[]).
 - **cpp:Executor::dispatch[dispatch] return type.** Asio's `dispatch` returns void. Capy's cpp:Executor::dispatch[dispatch] returns `std::coroutine_handle<>` for symmetric transfer. See <<why-dispatch-returns-handle>>.
 
 [[why-dispatch-returns-handle]]
@@ -73,7 +73,7 @@ This design enables the common fast path -- same-executor dispatch at `final_sus
 
 === I/O Awaitables and Symmetric Transfer
 
-I/O awaitables return `std::noop_coroutine()` from `await_suspend` rather than a handle for symmetric transfer. The I/O operation is initiated during `await_suspend`, but completion comes from the reactor or proactor asynchronously. The awaitable cannot know which coroutine to transfer to at suspension time.
+I/O awaitables return `std::noop_coroutine()` from `await_suspend` rather than a handle for symmetric transfer. The I/O operation is initiated during `await_suspend`, but completion comes from the reactor or proactor asynchronously. The xref:glossary.adoc#awaitable[awaitable] cannot know which coroutine to transfer to at suspension time.
 
 Symmetric transfer from cpp:Executor::dispatch[dispatch] is used at a different level: when a child coroutine completes and its `final_suspend` dispatches the parent's continuation through the executor. If the parent is on the same executor, cpp:Executor::dispatch[dispatch] returns the parent's handle for direct symmetric transfer.
 
@@ -107,9 +107,9 @@ ____
 
 === Why Coroutines Make `defer` Redundant
 
-In a callback-based library, when an asynchronous operation completes, the completion handler must be submitted to the executor as a function object. If the handler is the caller's continuation, `defer` tells the executor "this is my next step; optimize accordingly."
+In a callback-based library, when an asynchronous operation completes, the xref:glossary.adoc#completion-handler[completion handler] must be submitted to the executor as a function object. If the handler is the caller's continuation, `defer` tells the executor "this is my next step; optimize accordingly."
 
-In a coroutine-native library, this optimization is provided by the language itself. https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p0913r1.html[P0913R1] introduced symmetric transfer specifically to eliminate the need for queues and schedulers in coroutine-to-coroutine control transfer:
+In a coroutine-native library, this optimization is provided by the language itself. https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2018/p0913r1.html[P0913R1] introduced symmetric transfer specifically to eliminate the need for queues and xref:glossary.adoc#scheduler[schedulers] in coroutine-to-coroutine control transfer:
 
 [quote]
 ____
@@ -139,7 +139,7 @@ This design has three consequences:
 
 - **Type erasure remains possible.** cpp:executor_ref[] wraps any executor behind a uniform vtable. The vtable function pointers accept cpp:continuation[]`&`, which is a concrete type. No templates on promise type are needed.
 
-- **I/O operation structures stay simple.** Every I/O awaitable embeds a cpp:continuation[] for the caller's handle and an cpp:executor_ref[] for the executor. Both are non-templated, keeping I/O backend code non-generic and out of headers.
+- **I/O operation structures stay simple.** Every I/O awaitable embeds a cpp:continuation[] for the caller's handle and an cpp:executor_ref[] for the executor. Both are non-templated, keeping xref:glossary.adoc#io-backend[I/O backend] code non-generic and out of headers.
 
 The handle within the cpp:continuation[] is still type-erased (`std::coroutine_handle<>`) for the same reasons that applied before: executor implementations are independent of coroutine internals, and the type-erased handle provides exactly the right interface (`resume()` and nothing else).
 
@@ -149,7 +149,7 @@ The concept requires `std::is_nothrow_copy_constructible_v<E>` and `std::is_noth
 
 Executors propagate through coroutine machinery at points where exceptions cannot be handled: inside `await_suspend`, during promise construction, and through type-erased wrappers like cpp:executor_ref[]. An exception thrown from an executor copy at any of these points would leave the coroutine in an unrecoverable state -- suspended but with no executor to resume it through.
 
-The nothrow requirement eliminates this failure mode entirely. In practice, executors are lightweight handles -- a pointer to the execution context and perhaps a strand pointer or a priority value. The requirement does not impose a burden; it documents what is already true of every reasonable executor implementation.
+The nothrow requirement eliminates this failure mode entirely. In practice, executors are lightweight handles -- a pointer to the xref:glossary.adoc#execution-context[execution context] and perhaps a xref:glossary.adoc#strand[strand] pointer or a priority value. The requirement does not impose a burden; it documents what is already true of every reasonable executor implementation.
 
 == Work Tracking, Shutdown, and Executor Validity
 
@@ -181,7 +181,7 @@ Once a context's cpp:execution_context::shutdown[shutdown()] has begun, it runs 
 
 Calling any member after the context is destroyed is undefined behavior.
 
-This model exists because teardown races with work that is still in flight. A coroutine finishing on another thread may post to a context that is shutting down; refusing the post would leave its chain suspended forever, while abandoning it unwinds the chain the same way as work that was already queued.
+This model exists because teardown races with work that is still in flight. A coroutine finishing on another thread may post to a context that is shutting down; refusing the post would leave its chain suspended forever, while xref:glossary.adoc#abandon[abandoning] it unwinds the chain the same way as work that was already queued.
 
 == Why `context()` Returns `execution_context&`
 
@@ -273,7 +273,7 @@ NOTE: For the TLS save/restore protocol required around `.resume()` calls (cpp:s
 
 Capy's launchers, cpp:run_async[] and cpp:run[], bind the executor before the task runs. The task's promise stores the executor and propagates it to nested awaitables via `await_transform`. Context flows from caller to callee at every level, never backward.
 
-A P2300 sender takes the opposite direction: it queries its receiver for a scheduler after `connect()`. xref:9.design/9q.WhyNotStdExecution.adoc[Why Not std::execution?] compares the two models, including why the direction decides whether a coroutine frame's allocator is known before the frame is allocated.
+A P2300 xref:glossary.adoc#sender[sender] takes the opposite direction: it queries its receiver for a scheduler after `connect()`. xref:9.design/9q.WhyNotStdExecution.adoc[Why Not std::execution?] compares the two models, including why the direction decides whether a xref:glossary.adoc#coroutine-frame[coroutine frame]'s allocator is known before the frame is allocated.
 
 == Conforming Signatures
 

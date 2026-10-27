@@ -20,7 +20,7 @@ only difference is the type of the stream you pass in.
 == What This Section Covers
 
 * xref:7.testing/7a.drivers.adoc[Driving Tests] -- cpp:test::run_blocking[run_blocking] drives a
-  coroutine to completion on the calling thread without a real executor.
+  coroutine to completion on the calling thread without a real xref:glossary.adoc#executor[executor].
   cpp:test::fuse[fuse] runs the test body repeatedly, injecting an error at each
   `maybe_fail()` site in turn until every failure path is covered.
   The `thread_name` header's cpp:set_current_thread_name[] function labels
@@ -34,7 +34,7 @@ only difference is the type of the stream you pass in.
   socket.
 
 * xref:7.testing/7e.buffer-inspection.adoc[Buffer Inspection] -- cpp:test::bufgrind[bufgrind]
-  iterates every split point of a buffer sequence, exercising every
+  iterates every split point of a xref:glossary.adoc#buffer-sequence[buffer sequence], exercising every
   chunk-boundary condition; cpp:test::buffer_to_string[buffer_to_string] concatenates buffer sequences
   into a `std::string` for easy assertion.
 

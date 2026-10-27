@@ -10,9 +10,9 @@
 = Capy and std::execution: A Comparison
 :page-mode: explanation
 
-The {cpp}26 working draft includes `std::execution` (https://wg21.link/P2300[P2300]), the sender/receiver model, and `std::execution::task` (https://wg21.link/P3552[P3552]), a coroutine type built on it. Readers who know senders ask first why Capy defines its own protocol instead.
+The {cpp}26 working draft includes `std::execution` (https://wg21.link/P2300[P2300]), the sender/receiver model, and `std::execution::task` (https://wg21.link/P3552[P3552]), a coroutine type built on it. Readers who know xref:glossary.adoc#sender[senders] ask first why Capy defines its own protocol instead.
 
-The short answer is direction. Both models carry the same three things to an operation: where to resume, how to stop, and how to allocate. `std::execution` moves them from the consumer back to the producer, after the two are connected. Capy moves them from the caller forward to the callee: the frame allocator before the call, the executor and stop token at the `co_await`. The allocator's timing matters most, because calling a coroutine allocates its frame.
+The short answer is direction. Both models carry the same three things to an operation: where to resume, how to stop, and how to allocate. `std::execution` moves them from the consumer back to the producer, after the two are connected. Capy moves them from the caller forward to the callee: the xref:glossary.adoc#frame-allocator[frame allocator] before the call, the xref:glossary.adoc#executor[executor] and xref:glossary.adoc#stop-token[stop token] at the `co_await`. The allocator's timing matters most, because calling a coroutine allocates its frame.
 
 == Which Way Context Flows
 
@@ -73,9 +73,9 @@ The cost is a dependency on thread-local storage, and the allocator is chosen wh
 
 == Executors and Schedulers
 
-A P2300 scheduler has one operation, `schedule()`, which returns a sender that completes on that scheduler. A Capy cpp:Executor[] has two scheduling operations. cpp:Executor::dispatch[dispatch] returns the continuation's handle for symmetric transfer when running inline is safe, and queues it otherwise. cpp:Executor::post[post] always queues. xref:9.design/9k.Executor.adoc[Executor] gives the rationale for both.
+A P2300 xref:glossary.adoc#scheduler[scheduler] has one operation, `schedule()`, which returns a sender that completes on that scheduler. A Capy cpp:Executor[] has two scheduling operations. cpp:Executor::dispatch[dispatch] returns the xref:glossary.adoc#continuation[continuation]'s handle for xref:glossary.adoc#symmetric-transfer[symmetric transfer] when running inline is safe, and queues it otherwise. cpp:Executor::post[post] always queues. xref:9.design/9k.Executor.adoc[Executor] gives the rationale for both.
 
-P3552's `task` transfers execution back to its scheduler when an awaited operation completes. Capy gives the same guarantee by a different route. The xref:4.coroutines/4d.executors.adoc#the-same-executor-invariant[same-executor invariant] holds because each I/O awaitable captures the caller's executor at initiation and dispatches its completion through it.
+P3552's `task` transfers execution back to its scheduler when an awaited operation completes. Capy gives the same guarantee by a different route. The xref:4.coroutines/4d.executors.adoc#the-same-executor-invariant[same-executor invariant] holds because each xref:glossary.adoc#io-awaitable[I/O awaitable] captures the caller's executor at initiation and dispatches its completion through it.
 
 == Stop Tokens
 

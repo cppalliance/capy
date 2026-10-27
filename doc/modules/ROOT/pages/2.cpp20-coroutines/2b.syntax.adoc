@@ -91,7 +91,7 @@ counter: 3
 
 Study this execution flow:
 
-1. `main` calls `counter`, passing the address of a coroutine handle
+1. `main` calls `counter`, passing the address of a xref:glossary.adoc#coroutine-handle[coroutine handle]
 2. `counter` begins executing, prints "counter: 0", and reaches `co_await awaiter`
 3. `await_ready()` returns `false`, so suspension proceeds
 4. `await_suspend` receives a handle to the suspended coroutine and stores it in `main`'s variable `h`

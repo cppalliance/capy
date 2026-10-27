@@ -3,7 +3,7 @@
 
 == Overview
 
-The `any_*` wrappers type-erase stream and source concepts so that algorithms can operate on heterogeneous concrete types through a uniform interface. Each wrapper preallocates storage for the type-erased awaitable at construction time, achieving zero steady-state allocation.
+The `any_*` wrappers type-erase stream and source concepts so that algorithms can operate on heterogeneous concrete types through a uniform interface. Each wrapper preallocates storage for the xref:glossary.adoc#type-erased[type-erased] xref:glossary.adoc#awaitable[awaitable] at construction time, achieving zero steady-state allocation.
 
 The vtable layout depends on how many async operations the wrapper exposes and whether those operations share an await-return type.
 

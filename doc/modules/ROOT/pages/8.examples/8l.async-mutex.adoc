@@ -43,7 +43,7 @@ cpp:async_mutex[] is a coroutine-aware mutex. Unlike `std::mutex`, it suspends t
 include::example$async-mutex/async_mutex.cpp[tag=scoped_lock,indent=0]
 ----
 
-`scoped_lock()` returns a cpp:results[] with an error code and an RAII guard. The guard automatically releases the lock when it goes out of scope. If the operation is canceled (e.g., via a stop token), `ec` is set.
+`scoped_lock()` returns a cpp:results[] with an error code and an RAII guard. The guard automatically releases the lock when it goes out of scope. If the operation is canceled (e.g., via a xref:glossary.adoc#stop-token[stop token]), `ec` is set.
 
 === FIFO Fairness
 
@@ -51,7 +51,7 @@ Unlike `std::mutex`, which has no fairness guarantees, cpp:async_mutex[] ensures
 
 === Strand vs Async Mutex
 
-The strand serialization example showed how a strand can protect shared state by running all coroutines sequentially. cpp:async_mutex[] provides finer-grained control: coroutines run concurrently and only serialize when entering the critical section.
+The xref:glossary.adoc#strand[strand] serialization example showed how a strand can protect shared state by running all coroutines sequentially. cpp:async_mutex[] provides finer-grained control: coroutines run concurrently and only serialize when entering the critical section.
 
 == Output
 

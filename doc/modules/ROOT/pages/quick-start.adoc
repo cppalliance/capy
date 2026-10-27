@@ -76,18 +76,18 @@ The answer is 42
 
 1. `answer()` creates a suspended coroutine that returns 42
 2. `greet()` creates a suspended coroutine that awaits `answer()`
-3. cpp:run_async[]`(executor)(greet())` starts `greet()` on the pool's executor
+3. cpp:run_async[]`(executor)(greet())` starts `greet()` on the pool's xref:glossary.adoc#executor[executor]
 4. `greet()` runs until it hits `co_await answer()`
 5. `answer()` runs and returns 42
 6. `greet()` resumes with the result and prints it
 7. `greet()` completes, `pool.join()` returns, and `main()` exits
 
-Both coroutines ran on the same executor because affinity propagated
+Both coroutines ran on the same executor because xref:glossary.adoc#affinity[affinity] propagated
 automatically through the `co_await`.
 
 == Handling Results
 
-To receive a task's result outside a coroutine, provide a completion handler:
+To receive a task's result outside a coroutine, provide a xref:glossary.adoc#completion-handler[completion handler]:
 
 [source,cpp]
 ----
@@ -119,7 +119,7 @@ See xref:4.coroutines/4k.results.adoc[The results Type].
 == Next Steps
 
 * xref:2.cpp20-coroutines/2.intro.adoc[Introduction To {cpp}20 Coroutines] — If you need to refresh the C++ coroutines basics
-* xref:4.coroutines/4b.tasks.adoc[Tasks] — Learn how lazy tasks work
+* xref:4.coroutines/4b.tasks.adoc[Tasks] — Learn how xref:glossary.adoc#lazy[lazy] tasks work
 * xref:4.coroutines/4k.results.adoc[The results Type] — How operations report errors without throwing
 * xref:4.coroutines/4c.launching.adoc[Starting Tasks] — Understand cpp:run_async[] in detail
 * xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] — Control where coroutines execute
