@@ -1,0 +1,271 @@
+//
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Benchmarks
+:page-mode: explanation
+
+Capy ships four benchmark suites in
+https://github.com/cppalliance/capy/tree/develop/bench[`bench/`]. They measure
+the cost of the library's own machinery. That covers starting and chaining
+coroutines, allocating their frames, and moving a `read_some` through each
+layer of stream abstraction. None of them performs real I/O. The numbers
+bound what Capy itself adds to an operation; they do not predict application
+throughput.
+
+== Suites
+
+`boost_capy_bench` (`bench/bench.cpp`)::
+Time to start coroutine chains of depth one to four with cpp:run_async[],
+and of depth one and four through a cpp:strand[]. Two final cases switch executors with
+cpp:run[] and await a foreign awaitable midway, once with plain executors
+and once with strands. The executor dispatches inline, so the figures
+isolate coroutine overhead from scheduling.
+
+`boost_capy_bench_allocation` (`bench/allocation.cpp`)::
+Frame allocation cost. A four-level cpp:task[] chain that creates 66
+frames per pass runs two million times with the default recycling memory
+resource, with mimalloc, and with `std::allocator`. The last uses the
+system `malloc`; mimalloc does not replace it. The coroutines are marked
+`noinline` so the compiler cannot elide the frame allocations.
+
+`boost_capy_bench_stdexec` (`bench/stdexec/`)::
+Twenty million `read_some` calls per cell, comparing three execution
+models: cpp:task[], a P2300 sender pipeline, and `exec::task`. Each model
+consumes four stream kinds: a concrete stream, one behind a virtual
+interface, a type-erased stream, and a stream that completes synchronously.
+Each model runs its native I/O type and, in a second column, the other
+model's type through a bridge. The suite reports allocations per operation
+alongside time. A fourth table repeats the `exec::task` cells with scheduler
+affinity turned off. By default `exec::task` reschedules onto its start
+scheduler after each awaited sender that does not report completing there.
+That table shows the share of time the reschedule takes. The public
+stdexec API has no way to turn affinity off, so this table relies on a
+stdexec internal name.
+
+`boost_capy_bench_beman` (`bench/beman/`)::
+The first three tables of the stdexec suite, against the Beman `execution`
+and `task` reference implementations in place of stdexec.
+
+== Methodology
+
+`boost_capy_bench` runs each case once at full length without timing it,
+then times it. The allocation suite times each allocator from a cold start.
+The stdexec and Beman suites discard a full warm-up pass, then repeat every
+cell five times and report the mean and standard deviation.
+
+In those two suites, `al/op` counts calls to the global `operator new`.
+Cells that install a counting frame allocator also count each call into it,
+even when the recycling resource serves the frame from its free list. The
+figure reflects allocator traffic rather than heap growth.
+
+All suites run on a single worker thread except the stdexec sender
+pipeline. It needs a second worker so that `exec::repeat_until` cannot
+deadlock while it queues the next iteration.
+
+Run the suites on an otherwise-idle machine and pin them to a physical core.
+Competing load moves the numbers by more than the differences being measured.
+On Linux, `lscpu -e` lists each logical CPU with its `CORE`. Pin to the logical
+CPUs that share one core. They are not always numbered next to each other:
+
+[source,bash,role=external]
+----
+lscpu -e=CPU,CORE
+taskset -c 0,1 ./build/bench/boost_capy_bench_stdexec  # if CPUs 0 and 1 share a core
+----
+
+== Building and Running
+
+The first two suites build by default when Capy is the top-level project.
+The paths below assume a static build with a single-configuration generator;
+multi-configuration generators add a `Release` directory.
+
+[source,bash,role=external]
+----
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBOOST_CAPY_BENCH_MIMALLOC=ON
+cmake --build build --config Release \
+    --target boost_capy_bench boost_capy_bench_allocation
+./build/bench/boost_capy_bench
+./build/bench/boost_capy_bench_allocation
+----
+
+`BOOST_CAPY_BENCH_MIMALLOC=ON` adds the mimalloc row to the allocation suite
+and fetches mimalloc at configure time. The option defaults to the value of
+`BUILD_SHARED_LIBS`. Measure the allocators in a static build: a shared Capy
+library slows the recycling allocator more than the others. The suite
+prints a warning when it runs against one.
+
+The P2300 comparison suites fetch their dependencies at pinned revisions and
+need {cpp}23:
+
+[source,bash,role=external]
+----
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_STANDARD=23 \
+    -DBOOST_CAPY_BUILD_STDEXEC_EXAMPLES=ON \
+    -DBOOST_CAPY_BUILD_P2300_EXAMPLES=ON
+cmake --build build --config Release \
+    --target boost_capy_bench_stdexec boost_capy_bench_beman
+./build/bench/boost_capy_bench_stdexec
+./build/bench/boost_capy_bench_beman
+----
+
+== Results
+
+Measured on an Intel Core i9-13900H running Linux 7.2.8, built with
+Clang 23.1.1 at `-O3` against a static Capy library. Each suite ran pinned
+to one performance core on an otherwise idle machine. Absolute figures vary
+with hardware; the ratios within a table are the useful part.
+
+=== Starting Coroutines and Switching Executors
+
+Median of five runs of `boost_capy_bench`.
+
+[%autowidth,cols="3,1",options="header"]
+|===
+| Case | ns/op
+
+| cpp:run_async[] depth 1 | 19.3
+| cpp:run_async[] depth 2 | 29.1
+| cpp:run_async[] depth 3 | 39.7
+| cpp:run_async[] depth 4 | 49.6
+| cpp:strand[] depth 1 | 56.6
+| cpp:strand[] depth 4 | 84.8
+| Executor switch with a foreign awaitable | 65.3
+| Strand switch with a foreign awaitable | 169.1
+|===
+
+Each additional level of `co_await` adds about 10 ns.
+
+=== Frame Allocation
+
+Median of three runs of `boost_capy_bench_allocation`, two million passes
+of the 66-frame chain.
+
+[%autowidth,cols="2,1,1",options="header"]
+|===
+| Allocator | ms | vs. `std::allocator`
+
+| Recycling memory resource | 1650 | +25.8%
+| mimalloc | 2203 | -5.8%
+| `std::allocator` | 2075 | baseline
+|===
+
+The last column is what the suite prints: how much longer `std::allocator`
+takes than that allocator. A negative figure means `std::allocator` is
+faster.
+
+=== Read Stream: stdexec
+
+Mean ± standard deviation over five runs of `boost_capy_bench_stdexec`.
+Column A uses each model's native I/O type; column B goes through a bridge.
+
+.`capy::task`
+[%autowidth,cols="2,2,1,2,1",options="header"]
+|===
+| | Awaitable (native) ns/op | al/op | Sender (bridge) ns/op | al/op
+
+| Native | 30.5 ± 0.0 | 0 | 34.0 ± 0.1 | 0
+| Abstract | 31.2 ± 0.1 | 0 | 88.6 ± 0.0 | 2
+| Type-erased | 34.9 ± 0.0 | 0 | 88.8 ± 0.0 | 2
+| Synchronous | 0.9 ± 0.0 | 0 | 18.5 ± 0.1 | 0
+|===
+
+.sender/receiver pipeline
+[%autowidth,cols="2,2,1,2,1",options="header"]
+|===
+| | Sender (native) ns/op | al/op | Awaitable (bridge) ns/op | al/op
+
+| Native | 27.9 ± 0.3 | 0 | 36.9 ± 0.9 | 1
+| Abstract | 76.3 ± 1.3 | 2 | 37.9 ± 0.3 | 1
+| Type-erased | 76.0 ± 0.4 | 2 | 42.4 ± 0.3 | 1
+| Synchronous | 9.0 ± 0.1 | 0 | 11.7 ± 0.1 | 0
+|===
+
+.`exec::task`
+[%autowidth,cols="2,2,1,2,1",options="header"]
+|===
+| | Sender (native) ns/op | al/op | Awaitable (bridge) ns/op | al/op
+
+| Native | 174.5 ± 0.5 | 1 | 185.5 ± 1.0 | 2
+| Abstract | 257.1 ± 0.7 | 3 | 185.4 ± 0.1 | 2
+| Type-erased | 257.5 ± 0.7 | 3 | 233.2 ± 0.5 | 2
+| Synchronous | 1.8 ± 0.2 | 0 | 156.3 ± 0.1 | 1
+|===
+
+.`exec::task`, no scheduler affinity
+[%autowidth,cols="2,2,1,2,1",options="header"]
+|===
+| | Sender (native) ns/op | al/op | Awaitable (bridge) ns/op | al/op
+
+| Native | 24.5 ± 4.3 | 0 | 37.5 ± 4.2 | 1
+| Abstract | 81.3 ± 4.7 | 2 | 35.5 ± 0.6 | 1
+| Type-erased | 83.9 ± 5.6 | 2 | 59.3 ± 0.6 | 1
+| Synchronous | 2.1 ± 0.0 | 0 | 10.8 ± 0.0 | 0
+|===
+
+The last two tables differ only in scheduler affinity. With it, `exec::task`
+adds a type-erased reschedule and one allocation to every read whose sender
+does not report completing on the task's scheduler. Only the native
+synchronous stream avoids it.
+
+=== Read Stream: Beman
+
+Mean ± standard deviation over five runs of `boost_capy_bench_beman`.
+
+.`capy::task`
+[%autowidth,cols="2,2,1,2,1",options="header"]
+|===
+| | Awaitable (native) ns/op | al/op | Sender (bridge) ns/op | al/op
+
+| Native | 30.6 ± 0.0 | 0 | 47.5 ± 0.0 | 0
+| Abstract | 31.0 ± 0.0 | 0 | 71.1 ± 0.0 | 1
+| Type-erased | 35.3 ± 0.0 | 0 | 71.4 ± 0.0 | 1
+| Synchronous | 1.1 ± 0.0 | 0 | 18.0 ± 0.0 | 0
+|===
+
+.sender/receiver pipeline
+[%autowidth,cols="2,2,1,2,1",options="header"]
+|===
+| | Sender (native) ns/op | al/op | Awaitable (bridge) ns/op | al/op
+
+| Native | 34.2 ± 0.0 | 0 | 46.0 ± 0.0 | 1
+| Abstract | 45.4 ± 0.0 | 1 | 46.0 ± 0.0 | 1
+| Type-erased | 56.8 ± 0.0 | 1 | 55.5 ± 0.0 | 1
+| Synchronous | 2.4 ± 0.0 | 0 | 4.5 ± 0.0 | 0
+|===
+
+.`beman::execution::task`
+[%autowidth,cols="2,2,1,2,1",options="header"]
+|===
+| | Sender (native) ns/op | al/op | Awaitable (bridge) ns/op | al/op
+
+| Native | 31.7 ± 0.0 | 0 | 41.9 ± 0.0 | 1
+| Abstract | 54.6 ± 0.0 | 1 | 42.8 ± 0.0 | 1
+| Type-erased | 54.6 ± 0.0 | 1 | 51.8 ± 0.0 | 1
+| Synchronous | 0.8 ± 0.0 | 0 | 2.4 ± 0.0 | 0
+|===
+
+== Further Analysis
+
+https://github.com/cppalliance/capy/blob/develop/doc/io-benchmark-analysis.md[I/O Read Stream Benchmark Analysis]
+walks through the read-stream comparison cell by cell and traces each gap to
+the protocol step that causes it. Its tables come from an earlier run of the
+Beman suite, so compare them with the Beman results above.
+
+== Downstream Benchmarks
+
+Libraries built on Capy keep their benchmarks in their own repositories, where
+the benchmarks can exercise real I/O. This page links to them:
+
+* *Corosio*:
+https://github.com/cppalliance/corosio/tree/develop/bench[`bench/`] compares
+Corosio's sockets, connection accept, fan-out, I/O context, and an HTTP server
+against Boost.Asio, with generated reports for Linux, Windows, and macOS.
+
+To add a library, open a pull request against this page that links its
+benchmark suite and says what the suite measures.

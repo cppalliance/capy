@@ -31,6 +31,9 @@
 (?i)http
 (?i)traccc
 (?i)tcmalloc
+(?i)mimalloc
+(?i)stdexec
+(?i)beman
 (?i)wxwidgets
 (?i)javadoc
 

@@ -98,6 +98,7 @@ Adopting Capy does not mean leaving senders behind. Bridges run in both directio
 
 == Further Reading
 
+* xref:benchmarks.adoc[Benchmarks] -- the stdexec and Beman suites time `read_some` under senders, cpp:task[], and a P2300 task. Each model also consumes the other's I/O type through a bridge.
 * https://github.com/cppalliance/capy/blob/develop/papers/B1001.comparison-to-p3552-task.md[BOOST1001] -- a section-by-section comparison of P3552 `task` and IoAwaitable for asynchronous I/O, written for WG21. It predates some protocol changes, including the rename of `IoAwaitable` to cpp:ContextAwaitable[] and `io_env` to cpp:await_context[]. Where it differs from this documentation, for example on which executor a coroutine resumes on, this documentation describes current behavior.
 * https://wg21.link/P2300[P2300, `std::execution`]
 * https://wg21.link/P3552[P3552, _Add a Coroutine Task Type_]

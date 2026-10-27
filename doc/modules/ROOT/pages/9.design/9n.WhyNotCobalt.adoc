@@ -388,7 +388,7 @@ Capy separates them. The execution model — executors, cancellation, allocation
 
 To measure the overhead that coroutines add to a real workload, an experimental JSON serializer drives output through a chain of `co_await` calls instead of direct function calls. Each JSON value type — null, bool, integer, double, string, array, object — is handled by a coroutine that writes fragments through a `write_sink`. The baseline is `boost::json::serialize`, a highly optimized non-coroutine implementation.
 
-The input is `numbers.json` from the Boost.JSON benchmark suite. Results are best-of-four runs, Clang 20, `-O3`, Windows x64:
+The input is `numbers.json` from the Boost.JSON benchmark suite. Results are best-of-four runs, Clang 20, `-O3`, Windows x64. The serializer is an experiment, not one of the suites Capy ships; xref:benchmarks.adoc[Benchmarks] covers those.
 
 [cols="1,1,1"]
 |===

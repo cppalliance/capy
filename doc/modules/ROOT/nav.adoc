@@ -53,6 +53,7 @@
 ** xref:9.design/9o.WhyNotCobaltConcepts.adoc[Why Not Cobalt Concepts?]
 ** xref:9.design/9p.WhyNotTMC.adoc[Why Not TooManyCooks?]
 ** xref:9.design/9q.WhyNotStdExecution.adoc[Why Not std::execution?]
+* xref:benchmarks.adoc[Benchmarks]
 * xref:A.specification-methods/A.intro.adoc[Methods of API Description]
 ** xref:A.specification-methods/Ab.cancellation.adoc[Cancellation]
 ** xref:A.specification-methods/Ac.contingencies.adoc[Contingencies]
