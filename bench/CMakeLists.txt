@@ -9,7 +9,22 @@
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} PREFIX "" FILES
     CMakeLists.txt bench.cpp allocation.cpp
-    beman/main.cpp beman/beman_env.hpp beman/bench_pool.hpp
+    beman/main.cpp
+    beman/allocation_tracker.hpp
+    beman/awaitable_sender.hpp
+    beman/ctxaw_io_read_stream.hpp
+    beman/ctxaw_read_stream.hpp
+    beman/ctxaw_sync_read_stream.hpp
+    beman/repeat_until.hpp
+    beman/sender_await_context.hpp
+    beman/sender_awaitable.hpp
+    beman/sender_thread_pool.hpp
+    beman/sndr_any_read_sender.hpp
+    beman/sndr_any_read_stream.hpp
+    beman/sndr_io_read_stream.hpp
+    beman/sndr_read_stream.hpp
+    beman/sndr_sync_read_stream.hpp
+    beman/thread_pool.hpp
     stdexec/main.cpp
     stdexec/allocation_tracker.hpp
     stdexec/awaitable_sender.hpp
@@ -66,13 +81,15 @@ if(BOOST_CAPY_BUILD_STDEXEC_EXAMPLES)
         Boost::capy STDEXEC::stdexec)
 endif()
 
-if(BUILD_SHARED_LIBS)
+if(BOOST_CAPY_BENCH_MIMALLOC)
     include(FetchContent)
     FetchContent_Declare(mimalloc
         GIT_REPOSITORY https://github.com/microsoft/mimalloc
         GIT_TAG v2.2.7
         GIT_SHALLOW TRUE)
     set(MI_BUILD_TESTS OFF CACHE BOOL "Disable mimalloc tests" FORCE)
+    # Keep std::allocator on the system malloc, or it measures mimalloc too
+    set(MI_OVERRIDE OFF CACHE BOOL "Do not replace malloc" FORCE)
     FetchContent_MakeAvailable(mimalloc)
     target_link_libraries(boost_capy_bench_allocation PRIVATE mimalloc-static)
     target_compile_definitions(boost_capy_bench_allocation PRIVATE BOOST_CAPY_HAS_MIMALLOC=1)

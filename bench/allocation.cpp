@@ -116,6 +116,15 @@ int main()
 {
     constexpr std::size_t iterations = 2000000;
 
+#if (defined(BOOST_CAPY_DYN_LINK) || defined(BOOST_ALL_DYN_LINK)) && \
+    !defined(BOOST_CAPY_STATIC_LINK)
+    // Calls into a shared library cost the recycling allocator far
+    // more than the others, which reverses the comparison
+    std::cerr <<
+        "warning: Capy is a shared library; "
+        "measure allocators in a static build\n\n";
+#endif
+
     // With recycling allocator
     counter.store(0);
     auto t0 = std::chrono::steady_clock::now();
@@ -163,26 +172,27 @@ int main()
         std::chrono::duration<double, std::milli>(t5 - t4).count();
 
     auto pct_rc_std = std::round(
-        (ms_standard / ms_recycling - 1.0) * 1000.0) / 10.0;
+        (ms_standard / ms_recycling - 1.0) * 1000.0) / 10.0 + 0.0;
 
     std::ostringstream os;
     os << std::fixed << std::setprecision(1);
     os << iterations << " iterations, "
         << "4-deep coroutine chain\n\n"
         << "  Recycling allocator: "
-        << ms_recycling << " ms  (+"
-        << pct_rc_std << "% vs std";
+        << ms_recycling << " ms  ("
+        << std::showpos << pct_rc_std << std::noshowpos << "% vs std";
 #if BOOST_CAPY_HAS_MIMALLOC
     auto ms_mimalloc =
         std::chrono::duration<double, std::milli>(t3 - t2).count();
     auto pct_mi_std = std::round(
-        (ms_standard / ms_mimalloc - 1.0) * 1000.0) / 10.0;
+        (ms_standard / ms_mimalloc - 1.0) * 1000.0) / 10.0 + 0.0;
     auto pct_rc_mi = std::round(
-        (ms_mimalloc / ms_recycling - 1.0) * 1000.0) / 10.0;
-    os  << ", +" << pct_rc_mi << "% vs mimalloc)\n"
+        (ms_mimalloc / ms_recycling - 1.0) * 1000.0) / 10.0 + 0.0;
+    os  << ", " << std::showpos << pct_rc_mi << std::noshowpos
+        << "% vs mimalloc)\n"
         << "  mimalloc:            "
-        << ms_mimalloc << " ms  (+"
-        << pct_mi_std << "% vs std)\n";
+        << ms_mimalloc << " ms  ("
+        << std::showpos << pct_mi_std << std::noshowpos << "% vs std)\n";
 #else
     os << ")\n";
 #endif

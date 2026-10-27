@@ -10,17 +10,18 @@
 //
 // I/O Read Stream Benchmark
 //
-// Compares three execution models across three stream abstraction
+// Compares three execution models across four stream abstraction
 // levels. 20M read_some calls per cell, single thread.
 //
 // Table 1: sender pipeline   (connect/start)
 // Table 2: capy::task        (capy::thread_pool)
 // Table 3: bex::task         (sender_thread_pool)
 //
-// Each table has three rows:
-//   Native      — concrete stream, full visibility
-//   Abstract    — virtual dispatch, implementation hidden
-//   Type erased — value-type erasure
+// Each table has four rows:
+//   Native      - concrete stream, full visibility
+//   Abstract    - virtual dispatch, implementation hidden
+//   Type erased - value-type erasure
+//   Synchronous - no scheduler trip
 //
 
 #include "allocation_tracker.hpp"

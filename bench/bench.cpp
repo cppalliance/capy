@@ -241,8 +241,9 @@ void run_benchmark(
     std::size_t iterations,
     F&& f)
 {
-    // Warmup
-    for(std::size_t i = 0; i < 1000; ++i)
+    // A full-length warmup lets the core reach its steady clock;
+    // a short one leaves the first benchmark measuring the ramp
+    for(std::size_t i = 0; i < iterations; ++i)
         f();
 
     auto start = std::chrono::high_resolution_clock::now();

@@ -17,6 +17,7 @@
 // Table 1: sender pipeline   (connect/start)
 // Table 2: capy::task        (capy::thread_pool)
 // Table 3: exec::task        (exec::static_thread_pool)
+// Table 4: exec::task without scheduler affinity
 //
 // Each table has four rows:
 //   Native      - concrete stream, full visibility
@@ -74,13 +75,14 @@ static constexpr int OUTER_LOOPS  = 2'000;
 static constexpr int INNER_LOOPS  = 10'000;
 
 static constexpr int NUM_RUNS    = 5;
-static constexpr int NUM_TABLES  = 3;
+static constexpr int NUM_TABLES  = 4;
 static constexpr int NUM_STREAMS = 4;
 static constexpr int NUM_COLUMNS = 2;
 
 static constexpr int SENDER_RECEIVER = 0;
 static constexpr int CAPY_TASK       = 1;
 static constexpr int EXEC_TASK       = 2;
+static constexpr int EXEC_TASK_INLINE = 3;
 
 static constexpr int NATIVE_STREAM      = 0;
 static constexpr int ABSTRACT_STREAM    = 1;
@@ -153,8 +155,8 @@ capy::task<> capy_accept_sndr(Stream& stream, cell_result& out)
 // Table 3: exec::task - Column A (sender, native)
 // -----------------------------------------------------------
 
-template <class Stream>
-auto exec_session(Stream& stream) -> exec::task<void>
+template <class Task, class Stream>
+auto exec_session(Stream& stream) -> Task
 {
     char buf[64];
     for (int i = 0; i < INNER_LOOPS; ++i)
@@ -162,15 +164,15 @@ auto exec_session(Stream& stream) -> exec::task<void>
             capy::mutable_buffer(buf, sizeof(buf)));
 }
 
-template <class Stream>
+template <class Task, class Stream>
 auto exec_accept(Stream& stream, cell_result& out)
-    -> exec::task<void>
+    -> Task
 {
     auto before = g_alloc_count.load(std::memory_order_relaxed);
     auto start = std::chrono::steady_clock::now();
 
     for (int i = 0; i < OUTER_LOOPS; ++i)
-        co_await exec_session(stream);
+        co_await exec_session<Task>(stream);
 
     auto elapsed = std::chrono::steady_clock::now() - start;
     auto after = g_alloc_count.load(std::memory_order_relaxed);
@@ -189,10 +191,10 @@ auto exec_accept(Stream& stream, cell_result& out)
 // via write_env so the awaitable_sender bridge can find it.
 // -----------------------------------------------------------
 
-template <class Stream>
+template <class Task, class Stream>
 auto exec_session_ctxaw(
     Stream& stream,
-    sender_as_capy_executor ex) -> exec::task<void>
+    sender_as_capy_executor ex) -> Task
 {
     char buf[64];
     for (int i = 0; i < INNER_LOOPS; ++i)
@@ -203,23 +205,165 @@ auto exec_session_ctxaw(
             stdexec::prop{capy::get_io_executor, ex});
 }
 
-template <class Stream>
+template <class Task, class Stream>
 auto exec_accept_ctxaw(
     Stream& stream,
     sender_as_capy_executor ex,
-    cell_result& out) -> exec::task<void>
+    cell_result& out) -> Task
 {
     auto before = g_alloc_count.load(std::memory_order_relaxed);
     auto start = std::chrono::steady_clock::now();
 
     for (int i = 0; i < OUTER_LOOPS; ++i)
-        co_await exec_session_ctxaw(stream, ex);
+        co_await exec_session_ctxaw<Task>(stream, ex);
 
     auto elapsed = std::chrono::steady_clock::now() - start;
     auto after = g_alloc_count.load(std::memory_order_relaxed);
     out = {std::chrono::duration_cast<
         std::chrono::nanoseconds>(elapsed).count(),
         after - before};
+}
+
+// -----------------------------------------------------------
+// Tables 3 and 4: one exec task type across all eight cells
+//
+// exec::task resumes on its start scheduler after every
+// co_await of a sender that does not report completing there,
+// which costs a type-erased reschedule per read_some. Table 4
+// turns that affinity off to show its share of Table 3. The
+// public API has no way to do that, so this names a stdexec
+// internal and may need updating when the pinned revision moves.
+// -----------------------------------------------------------
+
+using inline_exec_task = exec::basic_task<
+    void, exec::__task::inline_task_context<void>>;
+
+template <class Task>
+void run_exec_task_table(
+    cell_result (&cells)[NUM_STREAMS][NUM_COLUMNS])
+{
+    // Col A: Sender (native)
+
+    // Native - sndr_read_stream
+    {
+        exec::static_thread_pool pool(1);
+        static_pool_context ctx;
+        pool_scheduler sched{&pool, &ctx};
+        sndr_read_stream stream{&pool};
+        stdexec::sync_wait(stdexec::starts_on(sched,
+            exec_accept<Task>(stream,
+                cells[NATIVE_STREAM][NATIVE_EXEC_MODEL])));
+        pool.request_stop();
+    }
+
+    // Abstract - sndr_io_read_stream
+    {
+        exec::static_thread_pool pool(1);
+        static_pool_context ctx;
+        pool_scheduler sched{&pool, &ctx};
+        sndr_io_read_stream_impl stream{&pool};
+        auto* mr = get_counting_resource();
+        std::pmr::polymorphic_allocator<std::byte> alloc(mr);
+        stdexec::sync_wait(
+            stdexec::write_env(
+                stdexec::starts_on(sched,
+                    exec_accept<Task>(
+                        static_cast<sndr_io_read_stream&>(stream),
+                        cells[ABSTRACT_STREAM][NATIVE_EXEC_MODEL])),
+                stdexec::prop{exec::get_frame_allocator, alloc}));
+        pool.request_stop();
+    }
+
+    // Type erased - sndr_any_read_stream
+    {
+        exec::static_thread_pool pool(1);
+        static_pool_context ctx;
+        pool_scheduler sched{&pool, &ctx};
+        sndr_any_read_stream stream(sndr_read_stream{&pool});
+        auto* mr = get_counting_resource();
+        std::pmr::polymorphic_allocator<std::byte> alloc(mr);
+        stdexec::sync_wait(
+            stdexec::write_env(
+                stdexec::starts_on(sched,
+                    exec_accept<Task>(stream,
+                        cells[TYPE_ERASED_STREAM][NATIVE_EXEC_MODEL])),
+                stdexec::prop{exec::get_frame_allocator, alloc}));
+        pool.request_stop();
+    }
+
+    // Synchronous - sndr_sync_read_stream
+    {
+        exec::static_thread_pool pool(1);
+        static_pool_context ctx;
+        pool_scheduler sched{&pool, &ctx};
+        sndr_sync_read_stream stream;
+        stdexec::sync_wait(stdexec::starts_on(sched,
+            exec_accept<Task>(stream,
+                cells[SYNC_STREAM][NATIVE_EXEC_MODEL])));
+        pool.request_stop();
+    }
+
+    // Col B: Awaitable (via as_sender_lossy bridge)
+
+    // Native - ctxaw_read_stream
+    {
+        exec::static_thread_pool pool(1);
+        static_pool_context ctx;
+        pool_scheduler sched{&pool, &ctx};
+        sender_as_capy_executor adapter{&pool, &ctx};
+        ctxaw_read_stream stream;
+        stdexec::sync_wait(stdexec::starts_on(sched,
+            exec_accept_ctxaw<Task>(stream, adapter,
+                cells[NATIVE_STREAM][BRIDGED_EXEC_MODEL])));
+        pool.request_stop();
+    }
+
+    // Abstract - ctxaw_io_read_stream
+    {
+        exec::static_thread_pool pool(1);
+        static_pool_context ctx;
+        pool_scheduler sched{&pool, &ctx};
+        sender_as_capy_executor adapter{&pool, &ctx};
+        ctxaw_io_read_stream_impl stream;
+        stdexec::sync_wait(stdexec::starts_on(sched,
+            exec_accept_ctxaw<Task>(
+                static_cast<ctxaw_io_read_stream&>(stream),
+                adapter,
+                cells[ABSTRACT_STREAM][BRIDGED_EXEC_MODEL])));
+        pool.request_stop();
+    }
+
+    // Type erased - capy::any_read_stream
+    {
+        exec::static_thread_pool pool(1);
+        static_pool_context ctx;
+        pool_scheduler sched{&pool, &ctx};
+        sender_as_capy_executor adapter{&pool, &ctx};
+        ctxaw_read_stream concrete;
+        capy::any_read_stream stream(&concrete);
+        auto* mr = get_counting_resource();
+        std::pmr::polymorphic_allocator<std::byte> alloc(mr);
+        stdexec::sync_wait(
+            stdexec::write_env(
+                stdexec::starts_on(sched,
+                    exec_accept_ctxaw<Task>(stream, adapter,
+                        cells[TYPE_ERASED_STREAM][BRIDGED_EXEC_MODEL])),
+                stdexec::prop{exec::get_frame_allocator, alloc}));
+        pool.request_stop();
+    }
+
+    // Synchronous - ctxaw_sync_read_stream
+    {
+        exec::static_thread_pool pool(1);
+        static_pool_context ctx;
+        pool_scheduler sched{&pool, &ctx};
+        sender_as_capy_executor adapter{&pool, &ctx};
+        ctxaw_sync_read_stream stream;
+        stdexec::sync_wait(stdexec::starts_on(sched,
+            exec_accept_ctxaw<Task>(stream, adapter,
+                cells[SYNC_STREAM][BRIDGED_EXEC_MODEL])));
+        pool.request_stop();
+    }
 }
 
 int main()
@@ -239,7 +383,7 @@ int main()
     // iteration N's set_value cascade. With a single-worker pool the
     // worker is stuck in that cascade and can't dispatch the post the
     // cascade just queued, deadlocking. A second worker drains the
-    // queue while the first is in the cascade. Tables 2 and 3 stay at
+    // queue while the first is in the cascade. Tables 2-4 stay at
     // pool(1) because co_await suspension releases the worker between
     // iterations and avoids the issue.
     // -----------------------------------------------------------
@@ -595,130 +739,11 @@ int main()
 
     // -----------------------------------------------------------
     // Table 3: exec::task (exec::static_thread_pool)
+    // Table 4: the same with scheduler affinity turned off
     // -----------------------------------------------------------
 
-    // Col A: Sender (native)
-
-    // Native - sndr_read_stream
-    {
-        exec::static_thread_pool pool(1);
-        static_pool_context ctx;
-        pool_scheduler sched{&pool, &ctx};
-        sndr_read_stream stream{&pool};
-        stdexec::sync_wait(stdexec::starts_on(sched,
-            exec_accept(stream,
-                grid[run][EXEC_TASK][NATIVE_STREAM][NATIVE_EXEC_MODEL])));
-        pool.request_stop();
-    }
-
-    // Abstract - sndr_io_read_stream
-    {
-        exec::static_thread_pool pool(1);
-        static_pool_context ctx;
-        pool_scheduler sched{&pool, &ctx};
-        sndr_io_read_stream_impl stream{&pool};
-        auto* mr = get_counting_resource();
-        std::pmr::polymorphic_allocator<std::byte> alloc(mr);
-        stdexec::sync_wait(
-            stdexec::write_env(
-                stdexec::starts_on(sched,
-                    exec_accept(
-                        static_cast<sndr_io_read_stream&>(stream),
-                        grid[run][EXEC_TASK][ABSTRACT_STREAM][NATIVE_EXEC_MODEL])),
-                stdexec::prop{exec::get_frame_allocator, alloc}));
-        pool.request_stop();
-    }
-
-    // Type erased - sndr_any_read_stream
-    {
-        exec::static_thread_pool pool(1);
-        static_pool_context ctx;
-        pool_scheduler sched{&pool, &ctx};
-        sndr_any_read_stream stream(sndr_read_stream{&pool});
-        auto* mr = get_counting_resource();
-        std::pmr::polymorphic_allocator<std::byte> alloc(mr);
-        stdexec::sync_wait(
-            stdexec::write_env(
-                stdexec::starts_on(sched,
-                    exec_accept(stream,
-                        grid[run][EXEC_TASK][TYPE_ERASED_STREAM][NATIVE_EXEC_MODEL])),
-                stdexec::prop{exec::get_frame_allocator, alloc}));
-        pool.request_stop();
-    }
-
-    // Synchronous - sndr_sync_read_stream
-    {
-        exec::static_thread_pool pool(1);
-        static_pool_context ctx;
-        pool_scheduler sched{&pool, &ctx};
-        sndr_sync_read_stream stream;
-        stdexec::sync_wait(stdexec::starts_on(sched,
-            exec_accept(stream,
-                grid[run][EXEC_TASK][SYNC_STREAM][NATIVE_EXEC_MODEL])));
-        pool.request_stop();
-    }
-
-    // Col B: Awaitable (via as_sender_lossy bridge)
-
-    // Native - ctxaw_read_stream
-    {
-        exec::static_thread_pool pool(1);
-        static_pool_context ctx;
-        pool_scheduler sched{&pool, &ctx};
-        sender_as_capy_executor adapter{&pool, &ctx};
-        ctxaw_read_stream stream;
-        stdexec::sync_wait(stdexec::starts_on(sched,
-            exec_accept_ctxaw(stream, adapter,
-                grid[run][EXEC_TASK][NATIVE_STREAM][BRIDGED_EXEC_MODEL])));
-        pool.request_stop();
-    }
-
-    // Abstract - ctxaw_io_read_stream
-    {
-        exec::static_thread_pool pool(1);
-        static_pool_context ctx;
-        pool_scheduler sched{&pool, &ctx};
-        sender_as_capy_executor adapter{&pool, &ctx};
-        ctxaw_io_read_stream_impl stream;
-        stdexec::sync_wait(stdexec::starts_on(sched,
-            exec_accept_ctxaw(
-                static_cast<ctxaw_io_read_stream&>(stream),
-                adapter,
-                grid[run][EXEC_TASK][ABSTRACT_STREAM][BRIDGED_EXEC_MODEL])));
-        pool.request_stop();
-    }
-
-    // Type erased - capy::any_read_stream
-    {
-        exec::static_thread_pool pool(1);
-        static_pool_context ctx;
-        pool_scheduler sched{&pool, &ctx};
-        sender_as_capy_executor adapter{&pool, &ctx};
-        ctxaw_read_stream concrete;
-        capy::any_read_stream stream(&concrete);
-        auto* mr = get_counting_resource();
-        std::pmr::polymorphic_allocator<std::byte> alloc(mr);
-        stdexec::sync_wait(
-            stdexec::write_env(
-                stdexec::starts_on(sched,
-                    exec_accept_ctxaw(stream, adapter,
-                        grid[run][EXEC_TASK][TYPE_ERASED_STREAM][BRIDGED_EXEC_MODEL])),
-                stdexec::prop{exec::get_frame_allocator, alloc}));
-        pool.request_stop();
-    }
-
-    // Synchronous - ctxaw_sync_read_stream
-    {
-        exec::static_thread_pool pool(1);
-        static_pool_context ctx;
-        pool_scheduler sched{&pool, &ctx};
-        sender_as_capy_executor adapter{&pool, &ctx};
-        ctxaw_sync_read_stream stream;
-        stdexec::sync_wait(stdexec::starts_on(sched,
-            exec_accept_ctxaw(stream, adapter,
-                grid[run][EXEC_TASK][SYNC_STREAM][BRIDGED_EXEC_MODEL])));
-        pool.request_stop();
-    }
+    run_exec_task_table<exec::task<void>>(grid[run][EXEC_TASK]);
+    run_exec_task_table<inline_exec_task>(grid[run][EXEC_TASK_INLINE]);
 
     } // for (run)
 
@@ -808,6 +833,12 @@ int main()
     print_table(
         "exec::task",
         EXEC_TASK,
+        "A: sender (native)",
+        "B: awaitable (bridge)");
+
+    print_table(
+        "exec::task, no scheduler affinity",
+        EXEC_TASK_INLINE,
         "A: sender (native)",
         "B: awaitable (bridge)");
 
