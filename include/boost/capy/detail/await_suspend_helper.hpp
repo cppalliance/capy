@@ -150,12 +150,23 @@ symmetric_transfer(std::coroutine_handle<> h) noexcept
     coroutine stays suspended. Returning `false` instead of resuming
     inline keeps immediate completions from growing the stack.
 
+    When `completed` is given, a returned handle equal to `h` is
+    treated as a synchronous completion as well: it is not resumed,
+    `*completed` is set, and `false` is returned. `*completed` is set
+    on every synchronous completion and is never written after a real
+    suspension, when the frame may already be running elsewhere.
+    `quitter` uses this to hand over a synchronous result even if a
+    stop arrives. `task` passes nothing and keeps the inline resume.
+
     @param a The wrapped awaitable.
 
     @param h The coroutine performing the `co_await`.
 
     @param env The execution environment to pass to the wrapped
     awaitable's `await_suspend`.
+
+    @param completed If not null, set to `true` when the wrapped
+    awaitable completes synchronously.
 
     @return `false` to continue without suspending, otherwise `true`.
 */
@@ -164,15 +175,24 @@ bool
 await_ready_then_suspend(
     Awaitable& a,
     std::coroutine_handle<> h,
-    await_context const* env) noexcept
+    await_context const* env,
+    bool* completed = nullptr) noexcept
 {
     // Called exactly once: await_ready may consume state.
     if(a.await_ready())
+    {
+        if(completed)
+            *completed = true;
         return false;
+    }
     using R = decltype(a.await_suspend(h, env));
     if constexpr (std::is_same_v<R, bool>)
     {
-        return a.await_suspend(h, env);
+        if(a.await_suspend(h, env))
+            return true;
+        if(completed)
+            *completed = true;
+        return false;
     }
     else if constexpr (std::is_void_v<R>)
     {
@@ -181,7 +201,13 @@ await_ready_then_suspend(
     }
     else
     {
-        symmetric_transfer(a.await_suspend(h, env));
+        std::coroutine_handle<> next = a.await_suspend(h, env);
+        if(completed && next == h)
+        {
+            *completed = true;
+            return false;
+        }
+        symmetric_transfer(next);
         return true;
     }
 }

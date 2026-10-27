@@ -11,8 +11,10 @@
 #include <boost/capy/quitter.hpp>
 
 #include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
 #include <boost/capy/ex/abandon.hpp>
+#include <boost/capy/ex/async_mutex.hpp>
 #include <boost/capy/ex/async_waker.hpp>
 #include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/run_async.hpp>
@@ -32,13 +34,18 @@
 
 #include <atomic>
 #include <latch>
-#include <semaphore>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <thread>
 #include <type_traits>
 #include <variant>
+
+// GCC gives false positive -Wmaybe-uninitialized on structured bindings
+// via the tuple protocol inside coroutine frames.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 
 namespace boost {
 namespace capy {
@@ -250,11 +257,57 @@ struct quitter_test
     // 5. Stop during I/O
     //----------------------------------------------------------
 
+    // stop_only_awaitable as the tests below need it.
+    //
+    // A stop that stop_only_awaitable sees in await_suspend makes it
+    // return the awaiting coroutine: a synchronous completion, whose
+    // result quitter inspects. So await_resume reports that stop as
+    // canceled, as capy's own awaitables do, and quitter unwinds the
+    // body there, just as for a stop that arrives while suspended.
+    //
+    // `registered`, when given, is counted down once the awaitable has
+    // registered for the stop, so a stop the test requests after
+    // waiting on it always finds the frame suspended.
+    struct parked_until_stop : stop_only_awaitable
+    {
+        std::latch* registered;
+        bool canceled = false;
+
+        explicit parked_until_stop(
+            std::latch* r = nullptr) noexcept
+            : registered(r)
+        {
+        }
+
+        std::coroutine_handle<>
+        await_suspend(
+            std::coroutine_handle<> h, await_context const* env)
+        {
+            // Copied out: once the latch lets the stop in, this
+            // frame may be resumed and destroyed before
+            // await_suspend returns.
+            std::latch* r = registered;
+            auto next = stop_only_awaitable::await_suspend(h, env);
+            if(next == h)
+                canceled = true;
+            if(r)
+                r->count_down();
+            return next;
+        }
+
+        results<> await_resume() noexcept
+        {
+            if(canceled)
+                return {make_error_code(error::canceled)};
+            return {{}};
+        }
+    };
+
     void
     testStopDuringIO()
     {
         std::atomic<int> state = 0;
-        std::binary_semaphore suspended{0};
+        std::latch suspended(1);
 
         int dtor_count = 0;
 
@@ -262,8 +315,7 @@ struct quitter_test
         {
             raii_counter guard(dtor_count);
             state = 1;
-            suspended.release();
-            co_await stop_only_awaitable{};
+            co_await parked_until_stop{&suspended};
             // Should never reach here when stopped
             state = 99;
         };
@@ -277,7 +329,7 @@ struct quitter_test
                     run_async(ex, st)(q());
                 }
             );
-            suspended.acquire();
+            suspended.wait();
             BOOST_TEST(state == 1);
             // jthread destructor calls request_stop() then join()
         }
@@ -295,11 +347,10 @@ struct quitter_test
     inner_quitter(
         int& dtor_count,
         bool& reached_end,
-        std::binary_semaphore& suspended)
+        std::latch& suspended)
     {
         raii_counter guard(dtor_count);
-        suspended.release();
-        co_await stop_only_awaitable{};
+        co_await parked_until_stop{&suspended};
         reached_end = true;
     }
 
@@ -307,7 +358,7 @@ struct quitter_test
     middle_quitter(
         int& dtor_count,
         bool& reached_end,
-        std::binary_semaphore& suspended)
+        std::latch& suspended)
     {
         raii_counter guard(dtor_count);
         co_await inner_quitter(dtor_count, reached_end, suspended);
@@ -318,7 +369,7 @@ struct quitter_test
     outer_quitter(
         int& dtor_count,
         bool& reached_end,
-        std::binary_semaphore& suspended)
+        std::latch& suspended)
     {
         raii_counter guard(dtor_count);
         co_await middle_quitter(dtor_count, reached_end, suspended);
@@ -328,7 +379,7 @@ struct quitter_test
     void
     testStopPropagationChain()
     {
-        std::binary_semaphore suspended{0};
+        std::latch suspended(1);
         int dtor_count = 0;
         bool reached_end = false;
 
@@ -348,7 +399,7 @@ struct quitter_test
                     run_async(ex, st)(top());
                 }
             );
-            suspended.acquire();
+            suspended.wait();
         }
 
         // 3 guards from outer/middle/inner
@@ -448,7 +499,7 @@ struct quitter_test
         // Body starts, constructs guards, then stop is requested
         // during the co_await.  All guard destructors must run.
         // The body must NOT continue past co_await.
-        std::binary_semaphore suspended{0};
+        std::latch suspended(1);
         int dtor_count = 0;
         bool reached_end = false;
 
@@ -457,8 +508,7 @@ struct quitter_test
             raii_counter g1(dtor_count);
             raii_counter g2(dtor_count);
             raii_counter g3(dtor_count);
-            suspended.release();
-            co_await stop_only_awaitable{};
+            co_await parked_until_stop{&suspended};
             reached_end = true;
         };
 
@@ -471,7 +521,7 @@ struct quitter_test
                     run_async(ex, st)(q());
                 }
             );
-            suspended.acquire();
+            suspended.wait();
         }
 
         BOOST_TEST_EQ(dtor_count, 3);
@@ -485,13 +535,12 @@ struct quitter_test
     static quitter<int>
     quitter_multi_await(
         std::atomic<int>& progress,
-        std::binary_semaphore& sem)
+        std::latch& sem)
     {
         progress = 1;
         co_await yield_awaitable{};
         progress = 2;
-        sem.release();
-        co_await stop_only_awaitable{};
+        co_await parked_until_stop{&sem};
         // Should not reach here
         progress = 3;
         co_return 0;
@@ -501,7 +550,7 @@ struct quitter_test
     testMultipleCoAwait()
     {
         std::atomic<int> progress{0};
-        std::binary_semaphore sem{0};
+        std::latch sem(1);
 
         {
             std::jthread jt(
@@ -513,7 +562,7 @@ struct quitter_test
                         quitter_multi_await(progress, sem));
                 }
             );
-            sem.acquire();
+            sem.wait();
             BOOST_TEST(progress == 2);
             // jthread destructor requests stop
         }
@@ -633,6 +682,58 @@ struct quitter_test
         BOOST_TEST_EQ(result, 7);
     }
 
+    // A ContextAwaitable whose bool await_suspend really suspends,
+    // parking the awaiting coroutine for the test to resume.
+    struct bool_park_awaitable
+    {
+        std::coroutine_handle<>& parked;
+        bool& resumed;
+
+        bool await_ready() const noexcept { return false; }
+        bool await_suspend(
+            std::coroutine_handle<> h, await_context const*) noexcept
+        {
+            parked = h;
+            return true;
+        }
+        void await_resume() noexcept { resumed = true; }
+    };
+
+    static quitter<>
+    co_awaits_bool_park(
+        std::coroutine_handle<>& parked, bool& resumed)
+    {
+        co_await bool_park_awaitable{parked, resumed};
+    }
+
+    // A stop that arrives while the wrapped awaitable is suspended
+    // takes effect at the resumption, as for a handle await_suspend.
+    void
+    testBoolSuspendThenStop()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+
+        std::stop_source source;
+        std::coroutine_handle<> parked;
+        bool resumed = false;
+        bool completed = false;
+        int stopped = 0;
+
+        run_async(ex, source.get_token(),
+            [&]() { completed = true; },
+            [&](std::exception_ptr) { ++stopped; })(
+                co_awaits_bool_park(parked, resumed));
+
+        BOOST_TEST(parked);
+        source.request_stop();
+        parked.resume();
+
+        BOOST_TEST(!resumed);
+        BOOST_TEST(!completed);
+        BOOST_TEST_EQ(stopped, 1);
+    }
+
     static quitter<>
     plain_void_quitter()
     {
@@ -678,7 +779,7 @@ struct quitter_test
     // 7. Stop propagation with when_all
     //
     //    Two quitter<results<size_t>> children inside when_all.
-    //    Both block on stop_only_awaitable.  when_all creates a
+    //    Both block on parked_until_stop.  when_all creates a
     //    child stop_source; when the parent stop fires, when_all
     //    propagates it.  Each quitter child intercepts the stop
     //    in transform_awaiter::await_resume and short-circuits
@@ -687,9 +788,11 @@ struct quitter_test
     //----------------------------------------------------------
 
     static quitter<results<std::size_t>>
-    quitter_pending_size(bool& reached_co_return)
+    quitter_pending_size(
+        bool& reached_co_return,
+        std::latch* registered = nullptr)
     {
-        co_await stop_only_awaitable{};
+        co_await parked_until_stop{registered};
         // If quitter's transform_awaiter intercepted the stop,
         // we never reach here.
         reached_co_return = true;
@@ -702,7 +805,7 @@ struct quitter_test
     {
         thread_pool pool(2);
         std::latch done(1);
-        std::latch suspended(1);
+        std::latch registered(2);
         std::stop_source source;
 
         bool child1_returned = false;
@@ -710,10 +813,9 @@ struct quitter_test
 
         auto outer = [&]() -> task<>
         {
-            suspended.count_down();
             auto result = co_await when_all(
-                quitter_pending_size(child1_returned),
-                quitter_pending_size(child2_returned));
+                quitter_pending_size(child1_returned, &registered),
+                quitter_pending_size(child2_returned, &registered));
             (void)result;
         };
 
@@ -722,9 +824,7 @@ struct quitter_test
             [&](std::exception_ptr) { done.count_down(); })(
                 outer());
 
-        suspended.wait();
-        std::this_thread::sleep_for(
-            std::chrono::milliseconds(10 * failsafe_scale));
+        registered.wait();
         source.request_stop();
 
         done.wait();
@@ -790,7 +890,7 @@ struct quitter_test
         {
             thread_pool pool(2);
             std::latch done(1);
-            std::latch suspended(1);
+            std::latch registered(2);
             std::stop_source source;
 
             bool child1_returned = false;
@@ -798,10 +898,9 @@ struct quitter_test
 
             auto outer = [&]() -> task<>
             {
-                suspended.count_down();
                 auto result = co_await when_any(
-                    quitter_pending_size(child1_returned),
-                    quitter_pending_size(child2_returned));
+                    quitter_pending_size(child1_returned, &registered),
+                    quitter_pending_size(child2_returned, &registered));
                 (void)result;
             };
 
@@ -811,9 +910,7 @@ struct quitter_test
                     done.count_down();
                 })(outer());
 
-            suspended.wait();
-            std::this_thread::sleep_for(
-                std::chrono::milliseconds(10 * failsafe_scale));
+            registered.wait();
             source.request_stop();
 
             done.wait();
@@ -1031,7 +1128,7 @@ struct quitter_test
         int dtor_count = 0;
         bool reached_end = false;
         std::size_t total_echoed = 0;
-        std::binary_semaphore suspended{0};
+        std::latch suspended(1);
 
         auto echo_server = [&]() -> quitter<>
         {
@@ -1049,11 +1146,9 @@ struct quitter_test
             if(ec2)
                 co_return;
 
-            // Signal that echo is done, then wait for
-            // shutdown.  stop_only_awaitable suspends until
-            // the stop token fires.
-            suspended.release();
-            co_await stop_only_awaitable{};
+            // Wait for shutdown, signalling once suspended
+            // until the stop token fires.
+            co_await parked_until_stop{&suspended};
 
             // Should never reach here — quitter intercepts
             reached_end = true;
@@ -1068,7 +1163,7 @@ struct quitter_test
                     run_async(ex, st)(echo_server());
                 }
             );
-            suspended.acquire();
+            suspended.wait();
 
             // Verify the echo happened
             BOOST_TEST_EQ(total_echoed, std::size_t(5));
@@ -1086,6 +1181,265 @@ struct quitter_test
 
         BOOST_TEST_EQ(dtor_count, 1);
         BOOST_TEST(!reached_end);
+    }
+
+    //----------------------------------------------------------
+    // 16. A stop never discards what the inner await_ready acquired
+    //
+    //    async_mutex's await_ready takes the lock when the mutex is
+    //    free. A stop pending at the co_await must leave the inner
+    //    awaitable untouched, and once the inner awaitable reports
+    //    ready, its await_resume must run so that what it acquired is
+    //    handed over. Only a result canceled by the stop, which
+    //    acquired nothing, unwinds the body there.
+    //----------------------------------------------------------
+
+    static quitter<>
+    lock_after_stop(async_mutex& mtx, std::stop_source& source)
+    {
+        source.request_stop();
+        auto [ec, guard] = co_await mtx.scoped_lock();
+        (void)ec;
+    }
+
+    // The stop is already pending when the body reaches the co_await.
+    void
+    testStopPendingLeavesMutexUntouched()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+
+        async_mutex mtx;
+        std::stop_source source;
+        bool completed = false;
+        int stopped = 0;
+
+        run_async(ex, source.get_token(),
+            [&]() { completed = true; },
+            [&](std::exception_ptr) { ++stopped; })(
+                lock_after_stop(mtx, source));
+
+        BOOST_TEST(!mtx.is_locked());
+        BOOST_TEST(!completed);
+        BOOST_TEST_EQ(stopped, 1);
+    }
+
+    // Reports ready, and requests the stop from inside await_ready, so
+    // the stop arrives after the inner awaitable has completed.
+    struct stop_while_ready_awaitable
+    {
+        std::stop_source& source;
+        bool& resumed;
+
+        bool await_ready() noexcept
+        {
+            source.request_stop();
+            return true;
+        }
+
+        std::coroutine_handle<>
+        await_suspend(
+            std::coroutine_handle<> h, await_context const*) noexcept
+        {
+            return h; // LCOV_EXCL_LINE never called: await_ready is true
+        }
+
+        void await_resume() noexcept
+        {
+            resumed = true;
+        }
+    };
+
+    static quitter<>
+    ready_then_stop(std::stop_source& source, bool& resumed)
+    {
+        co_await stop_while_ready_awaitable{source, resumed};
+    }
+
+    void
+    testReadyThenStopRunsAwaitResume()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+
+        std::stop_source source;
+        bool resumed = false;
+        bool completed = false;
+        int stopped = 0;
+
+        run_async(ex, source.get_token(),
+            [&]() { completed = true; },
+            [&](std::exception_ptr) { ++stopped; })(
+                ready_then_stop(source, resumed));
+
+        BOOST_TEST(resumed);
+        // Nothing suspends after the co_await, so the body finishes.
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(stopped, 0);
+    }
+
+    // Not ready, and await_suspend returns the awaiting coroutine
+    // itself, after requesting the stop: a synchronous completion
+    // through the returned handle, as async_waker's await_suspend does
+    // when it consumes a wakeup that was latched after its await_ready.
+    struct stop_then_return_self_awaitable
+    {
+        std::stop_source& source;
+        bool& resumed;
+
+        bool await_ready() const noexcept
+        {
+            return false;
+        }
+
+        std::coroutine_handle<>
+        await_suspend(
+            std::coroutine_handle<> h, await_context const*) noexcept
+        {
+            source.request_stop();
+            return h;
+        }
+
+        void await_resume() noexcept
+        {
+            resumed = true;
+        }
+    };
+
+    static quitter<>
+    return_self_then_stop(std::stop_source& source, bool& resumed)
+    {
+        co_await stop_then_return_self_awaitable{source, resumed};
+    }
+
+    void
+    testReturnSelfThenStopRunsAwaitResume()
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+
+        std::stop_source source;
+        bool resumed = false;
+        bool completed = false;
+        int stopped = 0;
+
+        run_async(ex, source.get_token(),
+            [&]() { completed = true; },
+            [&](std::exception_ptr) { ++stopped; })(
+                return_self_then_stop(source, resumed));
+
+        BOOST_TEST(resumed);
+        // Nothing suspends after the co_await, so the body finishes.
+        BOOST_TEST(completed);
+        BOOST_TEST_EQ(stopped, 0);
+    }
+
+    // Reports ready, after requesting the stop when given a source,
+    // with a results holding `ec`: a synchronous completion like
+    // async_mutex's or async_event's when they see the stop first.
+    // The payload counts its destruction, as a lock_guard releases.
+    struct ready_results_awaitable
+    {
+        std::stop_source* source;
+        std::error_code ec;
+        bool& resumed;
+        int& destroyed;
+
+        bool await_ready() noexcept
+        {
+            if(source)
+                source->request_stop();
+            return true;
+        }
+
+        std::coroutine_handle<>
+        await_suspend(
+            std::coroutine_handle<> h, await_context const*) noexcept
+        {
+            return h; // LCOV_EXCL_LINE never called: await_ready is true
+        }
+
+        results<raii_counter> await_resume() noexcept
+        {
+            resumed = true;
+            return {ec, raii_counter(destroyed)};
+        }
+    };
+
+    struct ready_results_outcome
+    {
+        bool resumed = false;
+        bool continued = false;
+        std::error_code seen;
+        int stopped = 0;
+        int destroyed = 0;
+    };
+
+    static quitter<>
+    ready_results_body(
+        std::stop_source* source,
+        std::error_code ec,
+        ready_results_outcome& out)
+    {
+        auto [seen, n] = co_await ready_results_awaitable{
+            source, ec, out.resumed, out.destroyed};
+        (void)n;
+        out.seen = seen;
+        out.continued = true;
+    }
+
+    static ready_results_outcome
+    run_ready_results(bool stop, std::error_code ec)
+    {
+        int dispatch_count = 0;
+        test_executor ex(dispatch_count);
+
+        std::stop_source source;
+        ready_results_outcome out;
+
+        run_async(ex, source.get_token(),
+            []() {},
+            [&](std::exception_ptr) { ++out.stopped; })(
+                ready_results_body(
+                    stop ? &source : nullptr, ec, out));
+        return out;
+    }
+
+    // A canceled result under our stop acquired nothing, so the body
+    // is unwound at that co_await.
+    void
+    testReadyCanceledThenStopStops()
+    {
+        auto out = run_ready_results(
+            true, make_error_code(error::canceled));
+        BOOST_TEST(out.resumed);
+        BOOST_TEST(!out.continued);
+        BOOST_TEST_EQ(out.stopped, 1);
+        // The dropped result is destroyed, not leaked.
+        BOOST_TEST_EQ(out.destroyed, 1);
+    }
+
+    // A successful result is handed over even with a stop pending.
+    void
+    testReadySuccessThenStopDelivers()
+    {
+        auto out = run_ready_results(true, {});
+        BOOST_TEST(out.continued);
+        BOOST_TEST(!out.seen);
+        BOOST_TEST_EQ(out.stopped, 0);
+        BOOST_TEST_EQ(out.destroyed, 1);
+    }
+
+    // A canceled result with no stop of ours is the body's to handle.
+    void
+    testReadyCanceledWithoutStopDelivers()
+    {
+        auto out = run_ready_results(
+            false, make_error_code(error::canceled));
+        BOOST_TEST(out.continued);
+        BOOST_TEST(out.seen == cond::canceled);
+        BOOST_TEST_EQ(out.stopped, 0);
+        BOOST_TEST_EQ(out.destroyed, 1);
     }
 
     //----------------------------------------------------------
@@ -1116,6 +1470,7 @@ struct quitter_test
         testReturnString();
         testExceptionInValueQuitter();
         testBoolSuspendAwaitable();
+        testBoolSuspendThenStop();
         testCoAwaitVoidQuitter();
         testCoAwaitThrowingQuitter();
         testWhenAllWithStop();
@@ -1123,6 +1478,12 @@ struct quitter_test
         testWakerCancellation();
         testCatchAfterRmwAwaitReady();
         testCatchStopAfterRmwAwaitReady();
+        testStopPendingLeavesMutexUntouched();
+        testReadyThenStopRunsAwaitResume();
+        testReturnSelfThenStopRunsAwaitResume();
+        testReadyCanceledThenStopStops();
+        testReadySuccessThenStopDelivers();
+        testReadyCanceledWithoutStopDelivers();
         testEchoWithShutdown();
     }
 };
