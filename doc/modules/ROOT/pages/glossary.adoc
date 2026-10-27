@@ -1,0 +1,344 @@
+//
+// Copyright (c) 2026 Steve Gerbino
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Glossary
+:page-mode: reference
+
+This glossary defines terms used throughout the Capy documentation.
+
+== A
+
+[[abandon]]Abandon::
+To give up a suspended coroutine that its holder cannot resume, for example
+when the execution context or strand holding it is destroyed. The coroutine's
+segment is unwound from its owner without any frame delivering a result. See
+cpp:abandon[] and xref:4.coroutines/4j.lifetimes.adoc[Lifetime and Ownership].
+
+[[affinity]]Affinity::
+The binding of a coroutine to a specific executor. A coroutine with affinity
+to executor `ex` has all its resumptions dispatched through `ex`. A task
+inherits its caller's executor unless it is started with a cpp:run[] overload
+that takes an executor.
+See xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts].
+
+[[any-executor]]`any_executor`::
+A type-erased owning wrapper for executors. See cpp:any_executor[] and
+cpp:executor_ref[].
+
+[[await]]Await::
+To apply `co_await` to an awaitable to obtain its result. The coroutine
+suspends unless the result is already available.
+
+[[awaitable]]Awaitable::
+A type that can be used with `co_await`. It either provides the awaiter
+functions `await_ready()`, `await_suspend()`, and `await_resume()` directly,
+or yields an awaiter through `operator co_await`.
+
+[[awaiter]]Awaiter::
+The object whose `await_ready()`, `await_suspend()`, and `await_resume()`
+the compiler calls when a coroutine awaits.
+
+== B
+
+[[buffer]]Buffer::
+A contiguous region of memory. See cpp:mutable_buffer[] (writable) and
+cpp:const_buffer[] (read-only).
+
+[[buffer-sequence]]Buffer Sequence::
+A collection of buffers that can be iterated. Enables scatter/gather I/O
+with a single operation. See xref:5.buffers/5.intro.adoc[Buffer Sequences].
+
+== C
+
+[[cancellation]]Cancellation::
+Asking an in-progress asynchronous operation to stop early through a stop
+token. Operations complete with an error code that compares equal to
+`cond::canceled`. See xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation].
+
+[[completion-handler]]Completion Handler::
+The callable passed to cpp:run_async[] that receives the task's result or
+exception when the task finishes.
+
+[[composed-operation]]Composed Operation::
+An operation built from multiple primitive operations. For example,
+cpp:read[] repeatedly calls `read_some()` until the buffer is full.
+
+[[contextawaitable]]ContextAwaitable::
+The concept for awaitables whose `await_suspend` takes the execution
+environment as a second argument. Every awaitable a Capy coroutine awaits
+must satisfy it. See cpp:ContextAwaitable[] and
+xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol].
+
+[[continuation]]Continuation::
+The code that runs after an asynchronous operation completes. In Capy it is
+always a suspended coroutine, whose handle is wrapped in a cpp:continuation[]
+that executors can queue without allocating.
+
+[[coroutine]]Coroutine::
+A function that can suspend and resume execution. Uses the `co_await`,
+`co_yield`, or `co_return` keywords.
+See xref:2.cpp20-coroutines/2.intro.adoc[Introduction To {cpp}20 Coroutines].
+
+[[coroutine-frame]]Coroutine Frame::
+The memory holding a coroutine's local variables, parameters, and promise
+across suspensions. Capy allocates it through the frame allocator.
+
+[[coroutine-handle]]Coroutine Handle::
+A low-level handle to a suspended coroutine, represented by
+`std::coroutine_handle<>`.
+
+== D
+
+[[dispatch]]Dispatch::
+Running a coroutine on an executor, inline when the caller is already on
+that executor, otherwise queued like a post.
+
+== E
+
+[[environment]]Environment::
+The executor, stop token, and frame allocator that a coroutine chain passes
+to each awaitable it awaits. It also names the owner of the current segment.
+Represented by cpp:await_context[].
+
+[[eof]]EOF (End of File/Stream)::
+A condition indicating no more data is available. Signaled by
+`cond::eof`.
+
+[[error-code]]Error Code::
+A lightweight error indicator. See `std::error_code`.
+
+[[error-condition]]Error Condition::
+A portable error classification. Enables comparing errors across categories.
+See cpp:cond[].
+
+[[event]]Event::
+A primitive that suspends any number of coroutines until it is set, then
+resumes all of them. See cpp:async_event[].
+
+[[execution-context]]Execution Context::
+An object that owns the resources work runs on, such as threads, and the
+services attached to them. It provides an executor. See
+cpp:execution_context[] and cpp:thread_pool[].
+
+[[executor]]Executor::
+An object that can dispatch or post coroutines for execution. Satisfies the
+cpp:Executor[] concept.
+
+[[executor-ref]]`executor_ref`::
+A type-erased, non-owning reference to an executor. It is the type tasks use
+to store the executor they resume on. See cpp:executor_ref[].
+
+== F
+
+[[frame-allocator]]Frame Allocator::
+The memory resource used to allocate coroutine frames. It travels with the
+environment and is installed in a thread-local slot while a coroutine runs.
+See xref:4.coroutines/4h.allocators.adoc[Frame Allocators].
+
+[[fuse]]Fuse::
+A test utility that injects errors at controlled points and reruns the test
+body, so every error path is exercised. See cpp:test::fuse[].
+
+== I
+
+[[io-awaitable]]I/O Awaitable::
+An awaitable that satisfies the cpp:ContextAwaitable[] concept.
+
+[[io-backend]]I/O Backend::
+The code that performs I/O and reports completions, such as a wrapper over
+`epoll`, `io_uring`, or IOCP. Capy provides none. A library such as Corosio
+supplies one, and a type-erased stream hides which one is in use.
+
+[[immediate]]Immediate::
+An awaitable that already holds its result and never suspends. Lets a
+function that sometimes completes synchronously return an awaitable without
+creating a coroutine. See cpp:immediate[].
+
+== L
+
+[[lazy]]Lazy::
+A coroutine that does not run until it is awaited or started. cpp:task[] is
+lazy.
+
+== M
+
+[[mock-stream]]Mock Stream::
+A test double that satisfies the stream concepts and lets a test control the
+data and errors each read or write sees. See cpp:test::stream[],
+cpp:test::read_stream[], cpp:test::write_stream[], and
+xref:7.testing/7b.mock-streams.adoc[Mock Streams].
+
+[[move-only]]Move-Only::
+A type that can be moved but not copied. Tasks and type-erased streams are
+move-only.
+
+[[mutex]]Mutex::
+A primitive that lets one coroutine at a time hold a lock, suspending the
+others instead of blocking their threads. See cpp:async_mutex[].
+
+== O
+
+[[owner]]Owner::
+The coroutine that started a segment. It stays suspended above the segment
+until the segment's top task finishes, and it unwinds the segment if the
+segment is abandoned. See cpp:chain_owner[].
+
+== P
+
+[[post]]Post::
+Queuing a coroutine on an executor to run later, never inline.
+
+[[primitive-operation]]Primitive Operation::
+A basic I/O operation like `read_some()` or `write_some()` that may transfer
+any amount of data.
+
+[[promise]]Promise::
+The object inside a coroutine frame that controls the coroutine's behavior,
+such as how it starts, finishes, and stores its result.
+
+== Q
+
+[[quitter]]Quitter::
+A task-like coroutine type that unwinds early when its stop token is
+triggered, instead of completing its body. See cpp:quitter[].
+
+== R
+
+[[result]]Result::
+The value a coroutine produces when it completes.
+
+[[results]]`results`::
+The result type for Capy operations: a `std::tuple` of an error code
+followed by optional payload values. Supports structured bindings. See
+cpp:results[] and xref:4.coroutines/4k.results.adoc[The results Type].
+
+[[resume]]Resume::
+Continuing execution of a suspended coroutine.
+
+[[run]]`run`::
+Awaiting a task from inside a coroutine with a different executor, stop
+token, or frame allocator. When the executor differs, the parent resumes on
+its own executor after the task finishes. See cpp:run[].
+
+[[run-async]]`run_async`::
+Starting a task from outside a coroutine, such as from `main`. See
+cpp:run_async[] and xref:4.coroutines/4c.launching.adoc[Starting Coroutines].
+
+== S
+
+[[safe-resume]]Safe Resume::
+Resuming a coroutine while saving and restoring the thread-local frame
+allocator, so coroutines do not overwrite each other's allocator. Custom
+executor event loops must use cpp:safe_resume[].
+
+[[scatter-gather-io]]Scatter/Gather I/O::
+Reading into or writing from multiple non-contiguous buffers in a single
+operation.
+
+[[scheduler]]Scheduler::
+The P2300 `std::execution` concept for objects that create senders. In
+Capy, the object that schedules work is an executor.
+
+[[segment]]Segment::
+A run of coroutines started together. One segment is the task
+cpp:run_async[] starts and everything it awaits. A task cpp:run[] starts on
+another executor forms its own segment, as does each branch of cpp:when_all[]
+or cpp:when_any[].
+See xref:4.coroutines/4j.lifetimes.adoc[Lifetime and Ownership].
+
+[[sender]]Sender::
+A P2300 `std::execution` object describing asynchronous work, connected to a
+receiver to run it. See xref:8.examples/8o.sender-bridge.adoc[Bridging a P2300 Sender].
+
+[[service]]Service::
+A polymorphic component owned by an execution context. Provides shared
+functionality. See `execution_context::use_service()`.
+
+[[start]]Start::
+To begin executing a task. See cpp:run_async[] and cpp:run[].
+
+[[stop-token]]Stop Token::
+A mechanism for requesting cancellation. See `std::stop_token`.
+
+[[strand]]Strand::
+An executor adaptor that ensures coroutines dispatched through it never run
+concurrently, even on a multi-threaded execution context. Eliminates data
+races without mutexes. See cpp:strand[] and
+xref:8.examples/8k.strand-serialization.adoc[Strand Serialization].
+
+[[stream]]Stream::
+A sequence of bytes that can be read or written incrementally. See the
+cpp:ReadStream[], cpp:WriteStream[], and cpp:Stream[] concepts and
+xref:6.streams/6.intro.adoc[Streams].
+
+[[structured-bindings]]Structured Bindings::
+{cpp}17 feature for unpacking tuple-like types: `auto [a, b] = expr;`
+
+[[suspend]]Suspend::
+Pausing execution of a coroutine, yielding control to the caller or resumer.
+
+[[symmetric-transfer]]Symmetric Transfer::
+Resuming another coroutine directly from `await_suspend` by returning its
+handle, so that the stack does not grow. A finished task returns to its
+parent this way.
+
+[[system-context]]System Context::
+The process-wide thread pool used when no explicit execution context is
+supplied. See cpp:get_system_context[].
+
+== T
+
+[[task]]Task::
+A lazy coroutine that produces a result. See cpp:task[] and
+xref:4.coroutines/4b.tasks.adoc[The task Type].
+
+[[thread-pool]]Thread Pool::
+An execution context that runs work on a fixed number of threads. See
+cpp:thread_pool[].
+
+[[thread-safety]]Thread Safety::
+The ability to use an object safely from multiple threads.
+
+[[type-erased]]Type-Erased::
+Describes a type that hides its concrete type behind a fixed interface,
+enabling runtime polymorphism without templates. See cpp:any_stream[],
+cpp:any_read_stream[], cpp:any_write_stream[], and
+xref:6.streams/6b.wrappers.adoc[Type-Erased Wrappers].
+
+== W
+
+[[waker]]Waker::
+A single-slot primitive that suspends one coroutine until a wakeup arrives
+from any thread. A wakeup that arrives before the coroutine waits is kept for
+its next wait. Used to connect external events, such as timers, to
+coroutines.
+See cpp:async_waker[].
+
+[[when-all]]`when_all`::
+Awaiting several tasks concurrently and completing when all of them have
+finished. The first failure requests stop on the other tasks. See cpp:when_all[] and
+xref:4.coroutines/4g.composition.adoc[Concurrent Composition].
+
+[[when-any]]`when_any`::
+Awaiting several tasks concurrently and completing with the first one that
+succeeds. Stop is requested for the others, and all of them finish before it
+returns. A failing task does not stop the others. If every task fails, it
+completes with one of the failures. See cpp:when_any[] and
+xref:4.coroutines/4g.composition.adoc[Concurrent Composition].
+
+[[work]]Work::
+Pending operations that keep an execution context running.
+
+[[work-guard]]Work Guard::
+An object that keeps an execution context's work count raised for its
+lifetime, so the execution context does not stop running. See cpp:work_guard[].
+
+== See Also
+
+* xref:reference:boost/capy.adoc[Reference]: API reference documentation

@@ -56,6 +56,7 @@
 * xref:A.specification-methods/A.intro.adoc[Methods of API Description]
 ** xref:A.specification-methods/Ab.cancellation.adoc[Cancellation]
 ** xref:A.specification-methods/Ac.contingencies.adoc[Contingencies]
+* xref:glossary.adoc[Glossary]
 * xref:reference:boost/capy.adoc[Reference]
 * xref:2.cpp20-coroutines/2.intro.adoc[Introduction To {cpp}20 Coroutines]
 ** xref:2.cpp20-coroutines/2a.foundations.adoc[Coroutine Foundations]
