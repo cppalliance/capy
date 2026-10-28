@@ -155,7 +155,7 @@ struct promise_new_sketch
         auto* mr = capy::get_current_frame_allocator();
         if(!mr)
             mr = std::pmr::get_default_resource();
-        return mr->allocate(size, alignof(std::max_align_t));
+        return mr->allocate(size, __STDCPP_DEFAULT_NEW_ALIGNMENT__);
     }
     // end::operator_new[]
 };

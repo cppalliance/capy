@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -51,7 +52,8 @@ get_current_frame_allocator() / set_current_frame_allocator()
     allocation. Tasks read this in operator new and capture it in initial_suspend.
 
 frame_memory_resource<Alloc>
-    Adapts a standard Allocator to memory_resource interface. Rebinds to std::byte.
+    Adapts a standard Allocator to memory_resource interface. Rebinds to
+    frame_unit, so every block is aligned for any frame.
     Stored by value in trampoline's promise, ensuring lifetime exceeds all tasks.
 
 recycling_memory_resource

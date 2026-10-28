@@ -11,6 +11,7 @@
 #define BOOST_CAPY_EX_FRAME_ALLOC_MIXIN_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/detail/frame_memory_resource.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 
@@ -82,9 +83,9 @@ struct frame_alloc_mixin
         void* raw;
         if(mr == rmr)
             raw = static_cast<recycling_memory_resource*>(mr)
-                ->allocate_fast(total, alignof(std::max_align_t));
+                ->allocate_fast(total, detail::frame_alignment);
         else
-            raw = mr->allocate(total, alignof(std::max_align_t));
+            raw = mr->allocate(total, detail::frame_alignment);
         std::memcpy(static_cast<char*>(raw) + size, &mr, sizeof(mr));
         return raw;
     }
@@ -110,9 +111,9 @@ struct frame_alloc_mixin
         auto total = size + sizeof(std::pmr::memory_resource*);
         if(mr == rmr)
             static_cast<recycling_memory_resource*>(mr)
-                ->deallocate_fast(ptr, total, alignof(std::max_align_t));
+                ->deallocate_fast(ptr, total, detail::frame_alignment);
         else
-            mr->deallocate(ptr, total, alignof(std::max_align_t));
+            mr->deallocate(ptr, total, detail::frame_alignment);
     }
 };
 
@@ -127,14 +128,14 @@ struct process_frame_mixin
     {
         return static_cast<recycling_memory_resource*>(
             get_recycling_memory_resource())
-                ->allocate_fast(size, alignof(std::max_align_t));
+                ->allocate_fast(size, detail::frame_alignment);
     }
 
     static void operator delete(void* ptr, std::size_t size) noexcept
     {
         static_cast<recycling_memory_resource*>(
             get_recycling_memory_resource())
-                ->deallocate_fast(ptr, size, alignof(std::max_align_t));
+                ->deallocate_fast(ptr, size, detail::frame_alignment);
     }
 };
 

@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -73,7 +74,7 @@ struct own_delete_task
             if(!mr)
                 mr = std::pmr::get_default_resource();
             auto total = size + sizeof(std::pmr::memory_resource*);
-            void* raw = mr->allocate(total, alignof(std::max_align_t));
+            void* raw = mr->allocate(total, detail::frame_alignment);
             std::memcpy(
                 static_cast<char*>(raw) + size, &mr,
                 sizeof(std::pmr::memory_resource*));
@@ -88,7 +89,7 @@ struct own_delete_task
                 sizeof(std::pmr::memory_resource*));
             mr->deallocate(
                 p, size + sizeof(std::pmr::memory_resource*),
-                alignof(std::max_align_t));
+                detail::frame_alignment);
         }
 
         own_delete_task get_return_object()
