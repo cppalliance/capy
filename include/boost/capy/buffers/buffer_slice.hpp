@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Michael Vandeberg
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -31,7 +32,7 @@ namespace capy {
 */
 template<class BS>
 using slice_type = std::conditional_t<
-    std::convertible_to<BS, const_buffer>,
+    ConstBuffer<BS>,
     buffer_type<BS>,
     detail::slice_of<BS>>;
 
@@ -66,8 +67,7 @@ using slice_type = std::conditional_t<
     @see @ref slice_type, @ref consuming_buffers
 */
 template<class BufferSequence>
-    requires MutableBufferSequence<BufferSequence>
-          || ConstBufferSequence<BufferSequence>
+    requires ConstBufferSequence<BufferSequence>
 slice_type<BufferSequence>
 buffer_slice(
     BufferSequence const& seq,
@@ -75,7 +75,7 @@ buffer_slice(
     std::size_t length =
         (std::numeric_limits<std::size_t>::max)()) noexcept
 {
-    if constexpr (std::convertible_to<BufferSequence, const_buffer>)
+    if constexpr (ConstBuffer<BufferSequence>)
     {
         // A single buffer is its own slice: advance and (maybe) truncate.
         buffer_type<BufferSequence> b = seq;
@@ -97,8 +97,7 @@ buffer_slice(
     first.
 */
 template<class BufferSequence>
-    requires MutableBufferSequence<BufferSequence>
-          || ConstBufferSequence<BufferSequence>
+    requires ConstBufferSequence<BufferSequence>
 slice_type<BufferSequence>
 buffer_slice(
     BufferSequence const&& seq,

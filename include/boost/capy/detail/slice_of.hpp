@@ -42,7 +42,7 @@ namespace detail {
     sequence.
 */
 template<class BS>
-    requires MutableBufferSequence<BS> || ConstBufferSequence<BS>
+    requires ConstBufferSequence<BS>
 class slice_of
 {
 public:

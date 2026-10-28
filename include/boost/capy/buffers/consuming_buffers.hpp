@@ -41,7 +41,7 @@ namespace capy {
     @see @ref buffer_slice
 */
 template<class Seq>
-    requires MutableBufferSequence<Seq> || ConstBufferSequence<Seq>
+    requires ConstBufferSequence<Seq>
 class consuming_buffers
 {
 public:

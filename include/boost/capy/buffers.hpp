@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Michael Vandeberg
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -223,49 +224,88 @@ public:
     }
 };
 
-/** Requires a type to convert to `const_buffer`, or be a range of such buffers.
+/** Requires a type to convert to `const_buffer`.
+
+    This is the element requirement of @ref ConstBufferSequence.
+
+    For a `T const` lvalue `x`, both `const_buffer b = x;` and
+    `const_buffer(x)` must be valid, since algorithms convert elements
+    through a const reference and may use either form. A conversion
+    operator must therefore be `const`.
+
+    @note Algorithms that read buffer sequences are `noexcept`, so a
+    conversion that throws terminates the program. Conversion operators
+    should be `noexcept`.
+
+    @see @ref const_buffer, @ref MutableBuffer
+*/
+template<typename T>
+concept ConstBuffer =
+    std::convertible_to<T const&, const_buffer>;
+
+/** Requires a type to convert to both `mutable_buffer` and `const_buffer`.
+
+    This is the element requirement of @ref MutableBufferSequence.
+
+    A type that converts only to `mutable_buffer` does not qualify.
+    Reaching `const_buffer` from it takes two user-defined conversions,
+    and an implicit conversion sequence allows one. Such a type must
+    also provide a conversion to `const_buffer`.
+
+    As with @ref ConstBuffer, the conversion is from a `T const` lvalue,
+    and conversion operators should be `noexcept`.
+
+    @see @ref mutable_buffer, @ref ConstBuffer
+*/
+template<typename T>
+concept MutableBuffer =
+    ConstBuffer<T> && std::convertible_to<T const&, mutable_buffer>;
+
+/** Requires a type to be a @ref ConstBuffer, or a range of them.
 
     A type satisfies `ConstBufferSequence` if it represents one or more
     contiguous memory regions that can be read. This includes single
-    buffers (convertible to `const_buffer`) and ranges of buffers.
+    buffers and ranges of buffers.
 
     @par Syntactic Requirements
-    @li Convertible to `const_buffer`, OR
-    @li A bidirectional range with value type convertible to `const_buffer`
+    @li @ref ConstBuffer, OR
+    @li A bidirectional range whose value type is a @ref ConstBuffer
 
     @see @ref const_buffer, @ref MutableBufferSequence
 */
 // tag::const_buffer_sequence_concept[]
 template<typename T>
 concept ConstBufferSequence =
-    std::is_convertible_v<T, const_buffer> || (
+    ConstBuffer<T> || (
         std::ranges::bidirectional_range<T> &&
-        std::is_convertible_v<std::ranges::range_value_t<T>, const_buffer>);
+        ConstBuffer<std::ranges::range_value_t<T>>);
 // end::const_buffer_sequence_concept[]
 
-/** Requires a type to convert to `mutable_buffer`, or be a range of such buffers.
+/** Requires a type to be a @ref MutableBuffer, or a range of them.
 
     A type satisfies `MutableBufferSequence` if it represents one or more
     contiguous memory regions that can be written. This includes single
-    buffers (convertible to `mutable_buffer`) and ranges of buffers.
+    buffers and ranges of buffers.
 
-    This does not imply `ConstBufferSequence`. A type reaching
-    `mutable_buffer` through its own conversion operator would need a
-    second conversion, to `const_buffer`. An implicit conversion
-    sequence allows only one user-defined step.
+    Every `MutableBufferSequence` is also a @ref ConstBufferSequence.
+
+    A @ref ConstBuffer is a single buffer, even if it is also a range,
+    so only its own conversion to `mutable_buffer` is considered.
 
     @par Syntactic Requirements
-    @li Convertible to `mutable_buffer`, OR
-    @li A bidirectional range with value type convertible to `mutable_buffer`
+    @li @ref MutableBuffer, OR
+    @li A bidirectional range, not a @ref ConstBuffer, whose value type
+        is a @ref MutableBuffer
 
     @see @ref mutable_buffer, @ref ConstBufferSequence
 */
 // tag::mutable_buffer_sequence_concept[]
 template<typename T>
 concept MutableBufferSequence =
-    std::is_convertible_v<T, mutable_buffer> || (
+    ConstBufferSequence<T> && (MutableBuffer<T> || (
+        !ConstBuffer<T> &&
         std::ranges::bidirectional_range<T> &&
-        std::is_convertible_v<std::ranges::range_value_t<T>, mutable_buffer>);
+        MutableBuffer<std::ranges::range_value_t<T>>));
 // end::mutable_buffer_sequence_concept[]
 
 /** Return an iterator to the first buffer in a sequence.
@@ -280,7 +320,7 @@ constexpr struct
 
         @return A pointer to `b`.
     */
-    template<std::convertible_to<const_buffer> ConvertibleToBuffer>
+    template<ConstBuffer ConvertibleToBuffer>
     auto operator()(ConvertibleToBuffer const& b) const noexcept -> ConvertibleToBuffer const*
     {
         return std::addressof(b);
@@ -293,7 +333,7 @@ constexpr struct
         @return An iterator to the first buffer of `bs`.
     */
     template<ConstBufferSequence BS>
-        requires (!std::convertible_to<BS, const_buffer>)
+        requires (!ConstBuffer<BS>)
     auto operator()(BS const& bs) const noexcept
     {
         return std::ranges::begin(bs);
@@ -306,7 +346,7 @@ constexpr struct
         @return An iterator to the first buffer of `bs`.
     */
     template<ConstBufferSequence BS>
-        requires (!std::convertible_to<BS, const_buffer>)
+        requires (!ConstBuffer<BS>)
     auto operator()(BS& bs) const noexcept
     {
         return std::ranges::begin(bs);
@@ -325,7 +365,7 @@ constexpr struct
 
         @return A pointer one past `b`.
     */
-    template<std::convertible_to<const_buffer> ConvertibleToBuffer>
+    template<ConstBuffer ConvertibleToBuffer>
     auto operator()(ConvertibleToBuffer const& b) const noexcept -> ConvertibleToBuffer const*
     {
         return std::addressof(b) + 1;
@@ -338,7 +378,7 @@ constexpr struct
         @return An iterator one past the last buffer of `bs`.
     */
     template<ConstBufferSequence BS>
-        requires (!std::convertible_to<BS, const_buffer>)
+        requires (!ConstBuffer<BS>)
     auto operator()(BS const& bs) const noexcept
     {
         return std::ranges::end(bs);
@@ -351,7 +391,7 @@ constexpr struct
         @return An iterator one past the last buffer of `bs`.
     */
     template<ConstBufferSequence BS>
-        requires (!std::convertible_to<BS, const_buffer>)
+        requires (!ConstBuffer<BS>)
     auto operator()(BS& bs) const noexcept
     {
         return std::ranges::end(bs);

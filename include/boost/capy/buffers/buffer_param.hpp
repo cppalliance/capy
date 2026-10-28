@@ -1,6 +1,7 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Michael Vandeberg
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -91,13 +92,13 @@ namespace capy {
     @par !example example_3
 
 
-    @tparam BS The buffer sequence type. Must satisfy either
-        ConstBufferSequence or MutableBufferSequence.
+    @tparam BS The buffer sequence type. Must satisfy
+        @ref ConstBufferSequence.
 
     @see @ref ConstBufferSequence, @ref MutableBufferSequence
 */
 template<class BS, bool MakeConst = false>
-    requires ConstBufferSequence<BS> || MutableBufferSequence<BS>
+    requires ConstBufferSequence<BS>
 class buffer_param
 {
 public:

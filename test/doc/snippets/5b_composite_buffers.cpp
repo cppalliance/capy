@@ -108,6 +108,37 @@ static_assert(capy::ConstBufferSequence<std::array<capy::const_buffer, 4>>);
 static_assert(capy::ConstBufferSequence<std::array<capy::mutable_buffer, 4>>);
 // end::test_const_buffer[]
 
+// tag::user_buffer_type[]
+struct page
+{
+    std::array<char, 4096>* bytes;
+
+    operator capy::mutable_buffer() const noexcept
+    {
+        return { bytes->data(), bytes->size() };
+    }
+
+    operator capy::const_buffer() const noexcept
+    {
+        return { bytes->data(), bytes->size() };
+    }
+};
+
+static_assert(capy::MutableBufferSequence<page>);
+static_assert(capy::ConstBufferSequence<page>);
+static_assert(capy::MutableBufferSequence<std::array<page, 2>>);
+// end::user_buffer_type[]
+
+// tag::mutable_only_type[]
+struct mutable_only
+{
+    operator capy::mutable_buffer() const noexcept;
+};
+
+static_assert(! capy::ConstBufferSequence<mutable_only>);
+static_assert(! capy::MutableBufferSequence<mutable_only>);
+// end::mutable_only_type[]
+
 // tag::send_signature[]
 template<capy::ConstBufferSequence Buffers>
 void send(Buffers const& bufs);
