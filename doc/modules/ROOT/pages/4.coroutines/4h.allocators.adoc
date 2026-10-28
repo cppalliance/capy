@@ -35,6 +35,8 @@ a.allocate(n)        // -> A::value_type*
 a.deallocate(p, n);
 ----
 
+Frames allocated through a value-type allocator are aligned to the default new alignment (`__STDCPP_DEFAULT_NEW_ALIGNMENT__`, 16 bytes on common platforms). Capy rebinds the allocator to another `value_type` and requests whole multiples of that alignment, so each request's size is rounded up. Frames that need more alignment are not supported.
+
 == Recycling Allocator
 
 Capy provides cpp:recycling_memory_resource[], a memory resource optimized for coroutine frames:
@@ -45,7 +47,7 @@ Capy provides cpp:recycling_memory_resource[], a memory resource optimized for c
 
 This allocator is used by default for cpp:thread_pool[] and other execution contexts.
 
-NOTE: cpp:recycling_memory_resource[] honors only the default new alignment (`__STDCPP_DEFAULT_NEW_ALIGNMENT__`, typically `alignof(std::max_align_t)`). The alignment argument passed to cpp:recycling_memory_resource::do_allocate[do_allocate]/cpp:recycling_memory_resource::do_deallocate[do_deallocate] is ignored, so over-aligned requests are not satisfied. This is sufficient for coroutine frames but means the resource is not a drop-in replacement where over-aligned allocations are required.
+NOTE: cpp:recycling_memory_resource[] honors only the default new alignment (`__STDCPP_DEFAULT_NEW_ALIGNMENT__`, 16 bytes on common platforms). The alignment argument passed to cpp:recycling_memory_resource::do_allocate[do_allocate]/cpp:recycling_memory_resource::do_deallocate[do_deallocate] is ignored, so over-aligned requests are not satisfied. This is sufficient for coroutine frames but means the resource is not a drop-in replacement where over-aligned allocations are required.
 
 === Observing Reuse
 

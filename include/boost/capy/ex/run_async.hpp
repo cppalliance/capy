@@ -23,7 +23,6 @@
 #include <boost/capy/ex/recycling_memory_resource.hpp>
 #include <boost/capy/ex/work_guard.hpp>
 
-#include <algorithm>
 #include <coroutine>
 #include <cstring>
 #include <exception>
@@ -56,12 +55,12 @@ using dealloc_fn = void(*)(void*, std::size_t);
 template<class Alloc>
 void dealloc_impl(void* raw, std::size_t total)
 {
-    static_assert(std::is_same_v<typename Alloc::value_type, std::byte>);
+    static_assert(std::is_same_v<typename Alloc::value_type, frame_unit>);
     auto* a = std::launder(reinterpret_cast<Alloc*>(
         static_cast<char*>(raw) + total - sizeof(Alloc)));
-    Alloc ba(std::move(*a));
+    Alloc ua(std::move(*a));
     a->~Alloc();
-    ba.deallocate(static_cast<std::byte*>(raw), total);
+    ua.deallocate(static_cast<frame_unit*>(raw), frame_units(total));
 }
 
 /// Awaiter to access the promise from within the coroutine.
@@ -134,39 +133,62 @@ struct run_async_trampoline
         {
         }
 
+        // Allocates whole frame units: a standard allocator takes no
+        // alignment argument, and one rebound to std::byte may place
+        // this frame at byte alignment.
+        using unit_alloc = typename std::allocator_traits<Alloc>
+            ::template rebind_alloc<frame_unit>;
+
+        static_assert(
+            alignof(unit_alloc) <= frame_alignment,
+            "Alloc must not be over-aligned");
+
+        static constexpr std::size_t
+        round_up(std::size_t n, std::size_t align) noexcept
+        {
+            return (n + align - 1) & ~(align - 1);
+        }
+
+        // The block holds the frame, then the deallocator, then the
+        // allocator copy, each at its own alignment. The copy comes
+        // last, where dealloc_impl looks for it.
+        static constexpr std::size_t
+        fn_offset(std::size_t size) noexcept
+        {
+            return round_up(size, alignof(dealloc_fn));
+        }
+
+        static constexpr std::size_t
+        block_size(std::size_t size) noexcept
+        {
+            return round_up(
+                fn_offset(size) + sizeof(dealloc_fn),
+                alignof(unit_alloc)) + sizeof(unit_alloc);
+        }
+
         static void* operator new(
             std::size_t size, Ex const&, Handlers const&, Alloc a)
         {
-            using byte_alloc = typename std::allocator_traits<Alloc>
-                ::template rebind_alloc<std::byte>;
+            auto const total = block_size(size);
 
-            constexpr auto footer_align =
-                (std::max)(alignof(dealloc_fn), alignof(Alloc));
-            auto padded = (size + footer_align - 1) & ~(footer_align - 1);
-            auto total = padded + sizeof(dealloc_fn) + sizeof(Alloc);
-
-            byte_alloc ba(std::move(a));
-            void* raw = ba.allocate(total);
+            unit_alloc ua(std::move(a));
+            void* raw = ua.allocate(frame_units(total));
 
             auto* fn_loc = reinterpret_cast<dealloc_fn*>(
-                static_cast<char*>(raw) + padded);
-            *fn_loc = &dealloc_impl<byte_alloc>;
+                static_cast<char*>(raw) + fn_offset(size));
+            *fn_loc = &dealloc_impl<unit_alloc>;
 
-            new (fn_loc + 1) byte_alloc(std::move(ba));
+            new (static_cast<char*>(raw) + total - sizeof(unit_alloc))
+                unit_alloc(std::move(ua));
 
             return raw;
         }
 
         static void operator delete(void* ptr, std::size_t size)
         {
-            constexpr auto footer_align =
-                (std::max)(alignof(dealloc_fn), alignof(Alloc));
-            auto padded = (size + footer_align - 1) & ~(footer_align - 1);
-            auto total = padded + sizeof(dealloc_fn) + sizeof(Alloc);
-
             auto* fn = reinterpret_cast<dealloc_fn*>(
-                static_cast<char*>(ptr) + padded);
-            (*fn)(ptr, total);
+                static_cast<char*>(ptr) + fn_offset(size));
+            (*fn)(ptr, block_size(size));
         }
 
         std::pmr::memory_resource* get_resource() noexcept
@@ -265,7 +287,7 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
             std::pmr::memory_resource* mr)
         {
             auto total = size + sizeof(mr);
-            void* raw = mr->allocate(total, alignof(std::max_align_t));
+            void* raw = mr->allocate(total, frame_alignment);
             std::memcpy(static_cast<char*>(raw) + size, &mr, sizeof(mr));
             return raw;
         }
@@ -275,7 +297,7 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
             std::pmr::memory_resource* mr;
             std::memcpy(&mr, static_cast<char*>(ptr) + size, sizeof(mr));
             auto total = size + sizeof(mr);
-            mr->deallocate(ptr, total, alignof(std::max_align_t));
+            mr->deallocate(ptr, total, frame_alignment);
         }
 
         std::pmr::memory_resource* get_resource() noexcept
