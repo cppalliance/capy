@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Steve Gerbino
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -14,6 +15,7 @@
 #include <array>
 #include <ranges>
 #include <span>
+#include <vector>
 
 #include "test_buffers.hpp"
 
@@ -51,6 +53,127 @@ static_assert(  ConstBufferSequence<const_buffer[3]>);
 static_assert(  ConstBufferSequence<mutable_buffer[3]>);
 static_assert(! MutableBufferSequence<const_buffer[3]>);
 static_assert(  MutableBufferSequence<mutable_buffer[3]>);
+
+// User types with conversion operators
+
+namespace {
+
+struct converts_to_const
+{
+    operator const_buffer() const noexcept { return {}; }
+};
+
+// Reaching const_buffer would take two user-defined conversions
+struct converts_to_mutable_only
+{
+    operator mutable_buffer() const noexcept { return {}; }
+};
+
+struct converts_to_both
+{
+    operator mutable_buffer() const noexcept { return {}; }
+    operator const_buffer() const noexcept { return {}; }
+};
+
+// A single buffer that is also a range of mutable buffers
+struct converts_to_const_range_of_mutable
+    : std::vector<mutable_buffer>
+{
+    const_buffer whole;
+
+    operator const_buffer() const noexcept { return whole; }
+};
+
+// GCC and Clang find const_buffer(x) ambiguous, so this is only a range
+// of const_buffer. MSVC resolves it, so there it is one mutable buffer.
+struct ambiguous_range_of_const
+    : std::vector<const_buffer>
+{
+    mutable_buffer whole;
+    const_buffer whole_const;
+
+    operator const_buffer const&() const noexcept { return whole_const; }
+    operator mutable_buffer() const noexcept { return whole; }
+};
+
+// The library converts elements through a const reference
+struct converts_non_const
+{
+    operator mutable_buffer() noexcept { return {}; }
+    operator const_buffer() noexcept { return {}; }
+};
+
+struct user_buffer
+{
+    char* p;
+    std::size_t n;
+
+    operator mutable_buffer() const noexcept { return { p, n }; }
+    operator const_buffer() const noexcept { return { p, n }; }
+};
+
+} // namespace
+
+static_assert(  ConstBuffer<const_buffer>);
+static_assert(  ConstBuffer<mutable_buffer>);
+static_assert(! MutableBuffer<const_buffer>);
+static_assert(  MutableBuffer<mutable_buffer>);
+
+static_assert(  ConstBuffer<converts_to_const>);
+static_assert(! MutableBuffer<converts_to_const>);
+static_assert(! ConstBuffer<converts_to_mutable_only>);
+static_assert(! MutableBuffer<converts_to_mutable_only>);
+static_assert(  ConstBuffer<converts_to_both>);
+static_assert(  MutableBuffer<converts_to_both>);
+
+static_assert(  ConstBufferSequence<converts_to_const>);
+static_assert(! MutableBufferSequence<converts_to_const>);
+static_assert(! ConstBufferSequence<converts_to_mutable_only>);
+static_assert(! MutableBufferSequence<converts_to_mutable_only>);
+static_assert(! MutableBufferSequence<std::array<converts_to_mutable_only, 2>>);
+static_assert(! ConstBufferSequence<converts_non_const>);
+static_assert(! MutableBufferSequence<converts_non_const>);
+static_assert(  ConstBufferSequence<converts_to_both>);
+static_assert(  MutableBufferSequence<converts_to_both>);
+static_assert(  MutableBufferSequence<std::array<converts_to_both, 2>>);
+
+static_assert(  ConstBuffer<converts_to_const_range_of_mutable>);
+static_assert(  ConstBufferSequence<converts_to_const_range_of_mutable>);
+static_assert(! MutableBufferSequence<converts_to_const_range_of_mutable>);
+static_assert(  ConstBufferSequence<ambiguous_range_of_const>);
+static_assert(
+    MutableBufferSequence<ambiguous_range_of_const> ==
+    MutableBuffer<ambiguous_range_of_const>);
+
+// MutableBufferSequence refines ConstBufferSequence, so overloads on
+// the two concepts resolve instead of being ambiguous
+namespace {
+
+template<ConstBufferSequence B>
+constexpr int pick_sequence(B const&) { return 1; }
+
+template<MutableBufferSequence B>
+constexpr int pick_sequence(B const&) { return 2; }
+
+} // namespace
+
+static_assert(pick_sequence(const_buffer()) == 1);
+static_assert(pick_sequence(mutable_buffer()) == 2);
+static_assert(pick_sequence(std::array<converts_to_both, 2>()) == 2);
+
+// The read entry points reject a type that converts only to mutable_buffer
+template<class B>
+constexpr bool can_read =
+    requires(any_read_stream& s, B b)
+    {
+        s.read_some(b);
+        read(s, b);
+    };
+
+static_assert(  can_read<converts_to_both>);
+static_assert(  can_read<std::array<converts_to_both, 2>>);
+static_assert(! can_read<converts_to_mutable_only>);
+static_assert(! can_read<std::array<converts_to_mutable_only, 2>>);
 
 // std::ranges concepts for span<const_buffer>
 
@@ -484,6 +607,48 @@ struct buffer_test
         }
     }
 
+    void testUserBuffer()
+    {
+        char data[8] = {};
+        user_buffer const ub{ data, 4 };
+        BOOST_TEST_EQ(buffer_size(ub), 4);
+
+        std::array<user_buffer, 2> const arr{{
+            { data, 4 }, { data + 4, 4 } }};
+        BOOST_TEST_EQ(buffer_size(arr), 8);
+
+        char const src[] = "abcdefgh";
+        BOOST_TEST_EQ(buffer_copy(arr, const_buffer(src, 8)), 8);
+        BOOST_TEST_EQ(std::string_view(data, 8), "abcdefgh");
+
+        consuming_buffers cb(arr);
+        cb.consume(5);
+        BOOST_TEST_EQ(buffer_size(cb.data()), 3);
+
+        // A single buffer takes precedence over its elements
+        converts_to_const_range_of_mutable one;
+        one.whole = const_buffer(src, 8);
+        one.push_back(mutable_buffer(data, 2));
+        BOOST_TEST_EQ(buffer_size(one), 8);
+        BOOST_TEST_EQ(buffer_size(buffer_slice(one, 3)), 5);
+
+        // Algorithms follow the concepts, however the compiler
+        // classifies the type
+        char bytes[] = "abcdefgh";
+        ambiguous_range_of_const range;
+        range.whole = mutable_buffer(bytes, 8);
+        range.whole_const = const_buffer(bytes, 8);
+        range.push_back(const_buffer(src, 3));
+        range.push_back(const_buffer(src + 3, 2));
+        constexpr bool single = ConstBuffer<ambiguous_range_of_const>;
+        BOOST_TEST_EQ(buffer_size(range), single ? 8 : 5);
+        BOOST_TEST_EQ(buffer_size(buffer_slice(range, 1)), single ? 7 : 4);
+        char out[8] = {};
+        BOOST_TEST_EQ(
+            buffer_copy(mutable_buffer(out, 8), range), single ? 8 : 5);
+        BOOST_TEST_EQ(std::string_view(out, 5), "abcde");
+    }
+
     void testEmpty()
     {
         char data[9] = "12345678";
@@ -605,6 +770,7 @@ struct buffer_test
         testConstBuffer();
         testMutableBuffer();
         testSize();
+        testUserBuffer();
         testEmpty();
         testViews();
     }

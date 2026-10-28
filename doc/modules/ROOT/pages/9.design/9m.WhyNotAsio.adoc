@@ -99,7 +99,7 @@ But we improve on it. Need to trim bytes from the front of a buffer sequence? As
 
 === Comparison
 
-Capy adopts cpp:ConstBufferSequence[], cpp:MutableBufferSequence[], cpp:const_buffer[] and cpp:mutable_buffer[] from Asio unchanged. What it adds is byte-level slicing:
+Capy adopts cpp:ConstBufferSequence[], cpp:MutableBufferSequence[], cpp:const_buffer[] and cpp:mutable_buffer[] from Asio with one change. An element of a mutable buffer sequence must also convert to cpp:const_buffer[], so every mutable buffer sequence is also a const buffer sequence. What Capy adds is byte-level slicing:
 
 [cols="1,1"]
 |===

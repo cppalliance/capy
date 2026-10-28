@@ -96,7 +96,38 @@ suitable for write algorithms. It can be one of:
 include::example$snippets/5b_composite_buffers.cpp[tag=test_const_buffer,indent=0]
 ----
 
-These concepts are present in header `<boost/capy/buffers.hpp>`. 
+These concepts are present in header `<boost/capy/buffers.hpp>`.
+
+Every cpp:MutableBufferSequence[] is also a cpp:ConstBufferSequence[].
+
+=== Your Own Buffer Types
+
+A type of your own can act as a buffer when it converts to the buffer types.
+To act as a const buffer, it converts to cpp:const_buffer[].
+To act as a mutable buffer, it converts to cpp:mutable_buffer[] and to cpp:const_buffer[]:
+
+[source,cpp]
+----
+include::example$snippets/5b_composite_buffers.cpp[tag=user_buffer_type,indent=0]
+----
+
+A conversion to cpp:mutable_buffer[] alone is not enough.
+Reaching cpp:const_buffer[] from it takes two user-defined conversions, and C++ allows one in an implicit conversion.
+Algorithms read every mutable buffer sequence through cpp:const_buffer[], so the concepts reject such a type:
+
+[source,cpp]
+----
+include::example$snippets/5b_composite_buffers.cpp[tag=mutable_only_type,indent=0]
+----
+
+Algorithms convert through a const reference, using both `const_buffer b = x;` and `const_buffer(x)`, and the concepts require both to compile.
+Conversion operators that are `const` and return the buffer by value, as above, satisfy both.
+
+A type that converts to cpp:const_buffer[] is treated as one buffer, even if it is also a range of buffers.
+Its elements are ignored, and so are any conversions they provide.
+
+Mark the conversions `noexcept`.
+Algorithms call them inside `noexcept` functions, so a conversion that throws terminates the program.
 
 
 === Navigating Buffer Sequences
