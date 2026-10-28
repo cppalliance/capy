@@ -103,8 +103,8 @@ Every cpp:MutableBufferSequence[] is also a cpp:ConstBufferSequence[].
 === Your Own Buffer Types
 
 A type of your own can act as a buffer when it converts to the buffer types.
-To act as a const buffer, it converts to cpp:const_buffer[].
-To act as a mutable buffer, it converts to cpp:mutable_buffer[] and to cpp:const_buffer[]:
+To act as a const buffer, it satisfies cpp:ConstBuffer[] by converting to cpp:const_buffer[].
+To act as a mutable buffer, it satisfies cpp:MutableBuffer[] by converting to cpp:mutable_buffer[] and to cpp:const_buffer[]:
 
 [source,cpp]
 ----
