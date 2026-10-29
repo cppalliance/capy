@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -135,8 +136,9 @@ lists these rules, and the rules for stop callbacks.
 
 A chain of coroutines awaiting one another is split into _segments_. A segment
 is the run of coroutines started together: the task cpp:run_async[] launches
-and everything it awaits, a task cpp:run[] starts on another executor, or one
-branch of cpp:when_all[] or cpp:when_any[]. The coroutine that started the
+and everything it awaits, a task cpp:run[] starts on another executor, one
+branch of cpp:when_all[] or cpp:when_any[], or a cpp:quitter[] awaited by a
+coroutine that is not a quitter. The coroutine that started the
 segment is its _owner_. It is suspended above the segment until the
 segment's top task finishes.
 
@@ -145,9 +147,17 @@ executor's queue, a xref:glossary.adoc#strand[strand], a mutex, a pending I/O op
 holder resumes it. A holder that will never resume it, because it is being torn
 down, passes the continuation to cpp:abandon[] instead. The segment's owner
 then destroys the segment from its top frame down, on its own executor, and
-passes the unwind to the segment above. Nothing in an abandoned chain is
-resumed: no code after a suspension point runs, no result is delivered, and
+passes the unwind to the segment above. Nothing in a chain abandoned this way
+is resumed: no code after a suspension point runs, no result is delivered, and
 cpp:run_async[] calls neither of its handlers.
+
+A stopped cpp:quitter[] is abandoned too, but the unwind stops at the owner of
+its segment. The quitter frames are destroyed without being resumed. The owner
+then resumes the coroutine that awaited the quitter, which receives the
+stopped value that cpp:quitter[] describes. When cpp:run_async[] or cpp:run[]
+started the quitter, the launcher reports the stop in the same way: through
+`co_await run(ex)(q)`, or to the handlers of cpp:run_async[] as cpp:quitter[]
+describes.
 
 What does run is destructors. Each frame's locals are destroyed in the usual
 order, so RAII still releases what the chain held:

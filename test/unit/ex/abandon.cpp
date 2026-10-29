@@ -291,6 +291,34 @@ struct counting_executor
     }
 };
 
+// Counts posts and records the thread that made the last one.
+struct recording_executor
+{
+    int* posts;
+    std::thread::id* poster;
+
+    bool operator==(recording_executor const& o) const noexcept
+    {
+        return posts == o.posts;
+    }
+    test_io_context& context() const noexcept
+    {
+        return default_test_io_context();
+    }
+    void on_work_started() const noexcept {}
+    void on_work_finished() const noexcept {}
+    std::coroutine_handle<> dispatch(continuation& c) const
+    {
+        post(c);
+        return std::noop_coroutine();
+    }
+    void post(continuation&) const
+    {
+        ++*posts;
+        *poster = std::this_thread::get_id();
+    }
+};
+
 } // namespace
 
 struct abandon_test
@@ -597,6 +625,58 @@ struct abandon_test
         BOOST_TEST_EQ(posts, 1);
     }
 
+    // An abandon caused by a stop is recorded as one.
+    void testAbandonForStopSetsStopped()
+    {
+        int posts = 0;
+        counting_executor ex{&posts};
+        chain_owner owner;
+        owner.bind(std::noop_coroutine(), ex);
+        owner.abandon_for_stop();
+        BOOST_TEST(owner.abandoned());
+        BOOST_TEST(owner.stopped());
+        BOOST_TEST_EQ(posts, 1);
+    }
+
+    // A teardown abandon is not a stop.
+    void testAbandonLeavesStoppedFalse()
+    {
+        int posts = 0;
+        counting_executor ex{&posts};
+        chain_owner owner;
+        owner.bind(std::noop_coroutine(), ex);
+        owner.abandon();
+        BOOST_TEST(owner.abandoned());
+        BOOST_TEST(!owner.stopped());
+        owner.abandon_for_stop();
+        BOOST_TEST(!owner.stopped());
+        BOOST_TEST_EQ(posts, 1);
+    }
+
+    // A stop and a teardown racing on one segment unwind it once, and
+    // the cause is whichever came first.
+    void testStopAndTeardownRace()
+    {
+        for(int i = 0; i < 10000; ++i)
+        {
+            int posts = 0;
+            std::thread::id poster;
+            recording_executor ex{&posts, &poster};
+            chain_owner owner;
+            owner.bind(std::noop_coroutine(), ex);
+            std::thread::id stop_thread;
+            std::thread teardown([&]{ owner.abandon(); });
+            std::thread stop([&]{ owner.abandon_for_stop(); });
+            stop_thread = stop.get_id();
+            teardown.join();
+            stop.join();
+            BOOST_TEST_EQ(posts, 1);
+            BOOST_TEST_EQ(owner.stopped(), poster == stop_thread);
+            if(posts != 1)
+                break;
+        }
+    }
+
     // A continuation with no owner is destroyed directly.
     void testAbandonWithoutOwnerDestroys()
     {
@@ -622,6 +702,9 @@ struct abandon_test
         testUnwindAcrossRunBoundary();
         testSecondAbandonDoesNothing();
         testAbandonWithoutOwnerDestroys();
+        testAbandonForStopSetsStopped();
+        testAbandonLeavesStoppedFalse();
+        testStopAndTeardownRace();
     }
 };
 

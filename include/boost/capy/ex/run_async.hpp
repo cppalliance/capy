@@ -28,6 +28,7 @@
 #include <exception>
 #include <memory_resource>
 #include <new>
+#include <optional>
 #include <stop_token>
 #include <type_traits>
 
@@ -50,6 +51,53 @@ concept RunAsyncHandler =
 
 /// Function pointer type for type-erased frame deallocation.
 using dealloc_fn = void(*)(void*, std::size_t);
+
+// Report a stopped quitter to the handlers: its stopped value to the
+// value handler, or what computing that value threw to the error
+// handler. default_handler drops a quitter_stopped. A handler that
+// throws is not caught here.
+template<class Task, class Handlers>
+void invoke_stopped(Handlers& h)
+{
+    using P = typename Task::promise_type;
+    using R = decltype(std::declval<Task&>().await_resume());
+    if constexpr(std::is_void_v<R>)
+    {
+        // A stopped quitter<> has no value: stopped_result only throws.
+        // Nothing follows the call, or MSVC warns it is unreachable
+        // (C4702).
+#if defined(__cpp_exceptions)
+        try
+        {
+            P::stopped_result();
+        }
+        catch(...)
+        {
+            h(std::current_exception());
+        }
+#else
+        P::stopped_result();
+#endif
+    }
+    else
+    {
+        std::optional<R> v;
+#if defined(__cpp_exceptions)
+        try
+        {
+            v.emplace(P::stopped_result());
+        }
+        catch(...)
+        {
+            h(std::current_exception());
+            return;
+        }
+#else
+        v.emplace(P::stopped_result());
+#endif
+        h(std::move(*v));
+    }
+}
 
 /// Type-erased deallocator implementation for trampoline frames.
 template<class Alloc>
@@ -83,6 +131,12 @@ struct get_promise_awaiter
     }
 };
 
+// The promise holds Ex, Handlers and the allocator by value. Whether
+// an over-aligned one pads the promise depends on the other members'
+// sizes, so C4324 is off for both trampolines.
+BOOST_CAPY_MSVC_WARNING_PUSH
+BOOST_CAPY_MSVC_WARNING_DISABLE(4324) // padded due to alignas
+
 /** Internal run_async_trampoline coroutine for run_async.
 
     The run_async_trampoline is allocated BEFORE the task (via C++17 postfix evaluation
@@ -99,7 +153,7 @@ struct get_promise_awaiter
 template<class Ex, class Handlers, class Alloc>
 struct run_async_trampoline
 {
-    using invoke_fn = void(*)(void*, Handlers&);
+    using invoke_fn = void(*)(void*, Handlers&, bool);
 
     struct promise_type
     {
@@ -110,13 +164,16 @@ struct run_async_trampoline
         invoke_fn invoke_ = nullptr;
         void* task_promise_ = nullptr;
         // task_h_: raw handle for frame_guard cleanup in make_trampoline.
-        // task_cont_: continuation wrapping the same handle for executor dispatch.
-        // Both must reference the same coroutine and be kept in sync.
+        // task_cont_: continuation dispatched to start the task: the same
+        // handle, or for a quitter the gate that starts it.
         std::coroutine_handle<> task_h_;
         continuation task_cont_;
         // Owns the task's segment: abandoning it resumes this
         // trampoline, or has it destroyed, to unwind the task.
         chain_owner owner_;
+        // The task reports a stop-caused abandon (a quitter). For any
+        // other task such an abandon is torn down like any other.
+        bool stoppable_ = false;
 
         ~promise_type()
         {
@@ -218,17 +275,26 @@ struct run_async_trampoline
 
         // An exception reaches here only by escaping a handler: a handler
         // that threw, or the default handler rethrowing an otherwise
-        // unhandled task exception. Cancellation is filtered out earlier
-        // by default_handler, so this is always a genuine error with no
-        // owner to receive it: fail fast.
+        // unhandled task exception. default_handler drops a quitter's
+        // stop, so this is always a genuine error with no owner to
+        // receive it: fail fast.
         void unhandled_exception() noexcept { std::terminate(); } // LCOV_EXCL_LINE
     };
 
     std::coroutine_handle<promise_type> h_;
 
     template<ContextRunnable Task>
-    static void invoke_impl(void* p, Handlers& h)
+    static void invoke_impl(void* p, Handlers& h, bool stopped)
     {
+        if constexpr(stops_by_abandonment<Task>)
+        {
+            if(stopped)
+            {
+                invoke_stopped<Task>(h);
+                return;
+            }
+        }
+        (void)stopped;
         using R = decltype(std::declval<Task&>().await_resume());
         auto& promise = *static_cast<typename Task::promise_type*>(p);
         if(promise.exception())
@@ -247,7 +313,7 @@ struct run_async_trampoline
 template<class Ex, class Handlers>
 struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
 {
-    using invoke_fn = void(*)(void*, Handlers&);
+    using invoke_fn = void(*)(void*, Handlers&, bool);
 
     struct promise_type
     {
@@ -258,13 +324,16 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
         invoke_fn invoke_ = nullptr;
         void* task_promise_ = nullptr;
         // task_h_: raw handle for frame_guard cleanup in make_trampoline.
-        // task_cont_: continuation wrapping the same handle for executor dispatch.
-        // Both must reference the same coroutine and be kept in sync.
+        // task_cont_: continuation dispatched to start the task: the same
+        // handle, or for a quitter the gate that starts it.
         std::coroutine_handle<> task_h_;
         continuation task_cont_;
         // Owns the task's segment: abandoning it resumes this
         // trampoline, or has it destroyed, to unwind the task.
         chain_owner owner_;
+        // The task reports a stop-caused abandon (a quitter). For any
+        // other task such an abandon is torn down like any other.
+        bool stoppable_ = false;
 
         ~promise_type()
         {
@@ -332,8 +401,17 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
     std::coroutine_handle<promise_type> h_;
 
     template<ContextRunnable Task>
-    static void invoke_impl(void* p, Handlers& h)
+    static void invoke_impl(void* p, Handlers& h, bool stopped)
     {
+        if constexpr(stops_by_abandonment<Task>)
+        {
+            if(stopped)
+            {
+                invoke_stopped<Task>(h);
+                return;
+            }
+        }
+        (void)stopped;
         using R = decltype(std::declval<Task&>().await_resume());
         auto& promise = *static_cast<typename Task::promise_type*>(p);
         if(promise.exception())
@@ -344,6 +422,7 @@ struct run_async_trampoline<Ex, Handlers, std::pmr::memory_resource*>
             h(std::move(promise.result()));
     }
 };
+BOOST_CAPY_MSVC_WARNING_POP
 
 /// Coroutine body for run_async_trampoline - invokes handlers then destroys task.
 template<class Ex, class Handlers, class Alloc>
@@ -359,13 +438,28 @@ make_trampoline(Ex, Handlers, Alloc)
     struct frame_guard
     {
         std::coroutine_handle<>& h;
-        ~frame_guard() { std::exchange(h, nullptr).destroy(); }
+        ~frame_guard()
+        {
+            if(h)
+                std::exchange(h, nullptr).destroy();
+        }
     } guard{p.task_h_};
 
-    // Resumed with the task unfinished: the segment was abandoned, and
-    // destroying the task unwinds it without calling a handler.
-    if(!p.owner_.abandoned())
-        p.invoke_(p.task_promise_, p.handlers_);
+    // Resumed with the task unfinished: the segment was abandoned. A
+    // teardown destroys the task without calling a handler; a quitter's
+    // stop reports its stopped value.
+    // A stopped quitter's frames are destroyed before its handler runs,
+    // as a finished task's destructors have run by then.
+    // Only a quitter run by this trampoline is stopped through its
+    // owner. A quitter driven through its handle() in a task's segment
+    // would tear the task down here with no handler called.
+    BOOST_CAPY_ASSERT((p.stoppable_ || !p.owner_.stopped()) &&
+        "a quitter stopped a task's segment: see quitter::handle");
+    bool const stopped = p.stoppable_ && p.owner_.stopped();
+    if(stopped)
+        std::exchange(p.task_h_, nullptr).destroy();
+    if(!p.owner_.abandoned() || stopped)
+        p.invoke_(p.task_promise_, p.handlers_, stopped);
 }
 
 } // namespace detail
@@ -527,9 +621,10 @@ public:
         in its chain. Awaitables may store `await_context const*` without concern
         for dangling references.
 
-        @throws Any exception thrown by the executor's `dispatch`. The
-            task is then destroyed without running, and the executor's
-            work is released.
+        @throws Any exception thrown by the executor's `dispatch`, or
+            `std::bad_alloc` if the gate of a @ref quitter cannot be
+            allocated. The task is then destroyed without running, and
+            the executor's work is released.
 
         @tparam Task The ContextRunnable type.
 
@@ -549,6 +644,7 @@ public:
         p.invoke_ = detail::run_async_trampoline<Ex, Handlers, Alloc>::template invoke_impl<Task>;
         p.task_promise_ = &task_promise;
         p.task_h_ = task_h;
+        p.stoppable_ = detail::stops_by_abandonment<Task>;
 
         // Setup task's continuation to return to run_async_trampoline
         task_promise.set_continuation(tr_.h_);
@@ -561,8 +657,14 @@ public:
         // constructor (saved_tls_) and restored in the destructor.
         p.task_cont_.h = task_h;
         p.task_cont_.owner = &p.owner_;
-        // If dispatch throws, the destructor destroys the trampoline
-        // and the unstarted task with it.
+
+        // A quitter starts through its gate, which checks the stop when
+        // the body would start: a stopped quitter's segment is abandoned
+        // for the stop, and the trampoline reports the stopped value.
+        // If this or dispatch throws, the destructor destroys the
+        // trampoline and the unstarted task with it.
+        if constexpr(detail::stops_by_abandonment<Task>)
+            p.task_cont_.h = task_promise.launch_handle();
         auto next = p.wg_.executor().dispatch(p.task_cont_);
         // From here the trampoline destroys itself when the task ends.
         tr_.h_ = nullptr;
@@ -582,7 +684,11 @@ public:
     With no handlers, the result is discarded. An unhandled exception
     thrown by the task calls `std::terminate`. To catch it instead, pass
     an error handler that receives it as an `exception_ptr`, or `co_await`
-    the work inside a coroutine.
+    the work inside a coroutine. A stopped @ref quitter whose `T` is not
+    `results` or `std::error_code` reports its stop to the error
+    handler as a `std::system_error` whose `code()` compares equal to
+    `cond::canceled`. With no error handler, that stop is discarded,
+    also when it escapes a task that awaited the quitter.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
@@ -618,7 +724,9 @@ run_async(Ex ex)
 
     The handler `h1` is called with the task's result on success. If `h1`
     is also invocable with `std::exception_ptr`, it handles exceptions too.
-    Otherwise, an unhandled exception calls `std::terminate`.
+    Otherwise, an unhandled exception calls `std::terminate`, except a
+    @ref quitter's stop, which is discarded. That includes a stop that
+    escapes a task that awaited the quitter.
     If the task is abandoned before it completes, as a context's teardown
     does, no handler is called; the handlers are destroyed with it.
 
@@ -702,7 +810,8 @@ run_async(Ex ex, H1 h1, H2 h2)
 
     The stop token is propagated to the task, enabling cooperative
     cancellation. With no handlers, the result is discarded and an
-    unhandled exception calls `std::terminate`.
+    unhandled exception calls `std::terminate`. A stopped @ref quitter
+    reports its stopped value to the handlers: see @ref quitter.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
@@ -741,6 +850,9 @@ run_async(Ex ex, std::stop_token st)
     The handler `h1` is called with the result on success, and optionally
     with exception_ptr if it accepts that type.
 
+    A stopped @ref quitter reports its stopped value to the handlers:
+    see @ref quitter.
+
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
@@ -775,6 +887,9 @@ run_async(Ex ex, std::stop_token st, H1 h1)
 
     The stop token is propagated to the task for cooperative cancellation.
     The handler `h1` is called on success, `h2` on failure.
+
+    A stopped @ref quitter reports its stopped value to the handlers:
+    see @ref quitter.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
@@ -910,6 +1025,9 @@ run_async(Ex ex, std::pmr::memory_resource* mr, H1 h1, H2 h2)
 
 /** Bind an executor, a stop token, and a memory resource to produce a launcher. Invoke the launcher with a task to start it.
 
+    A stopped @ref quitter reports its stopped value to the handlers:
+    see @ref quitter.
+
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
@@ -940,6 +1058,9 @@ run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr)
 }
 
 /** Bind an executor, a stop token, a memory resource, and a result handler to produce a launcher. Invoke the launcher with a task to start it.
+
+    A stopped @ref quitter reports its stopped value to the handlers:
+    see @ref quitter.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
@@ -973,6 +1094,9 @@ run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr, H1 h1)
 }
 
 /** Bind an executor, a stop token, a memory resource, and separate result and error handlers to produce a launcher. Invoke the launcher with a task to start it.
+
+    A stopped @ref quitter reports its stopped value to the handlers:
+    see @ref quitter.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
@@ -1104,6 +1228,9 @@ run_async(Ex ex, Alloc alloc, H1 h1, H2 h2)
 
 /** Bind an executor, a stop token, and an allocator to produce a launcher. Invoke the launcher with a task to start it.
 
+    A stopped @ref quitter reports its stopped value to the handlers:
+    see @ref quitter.
+
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
@@ -1132,6 +1259,9 @@ run_async(Ex ex, std::stop_token st, Alloc alloc)
 }
 
 /** Bind an executor, a stop token, an allocator, and a result handler to produce a launcher. Invoke the launcher with a task to start it.
+
+    A stopped @ref quitter reports its stopped value to the handlers:
+    see @ref quitter.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
@@ -1163,6 +1293,9 @@ run_async(Ex ex, std::stop_token st, Alloc alloc, H1 h1)
 }
 
 /** Bind an executor, a stop token, an allocator, and separate result and error handlers to produce a launcher. Invoke the launcher with a task to start it.
+
+    A stopped @ref quitter reports its stopped value to the handlers:
+    see @ref quitter.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.

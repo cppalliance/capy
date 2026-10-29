@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -24,7 +25,8 @@ namespace capy {
 
     A segment is a run of coroutines started together: the task
     `run_async` launches and everything it awaits, a task `run` starts
-    on another executor, or one branch of `when_all` or `when_any`. Its
+    on another executor, one branch of `when_all` or `when_any`, or a
+    @ref quitter awaited by a coroutine that is not a quitter. Its
     owner is the coroutine that started it, suspended above the
     segment's top frame until that frame completes. Every coroutine in
     the segment reaches the owner through its @ref await_context.
@@ -32,21 +34,42 @@ namespace capy {
     When the holder of a suspended coroutine in the segment gives it up
     with @ref abandon, the owner posts its own continuation to its
     executor. There it unwinds the segment from the top: it destroys
-    the frame it awaits, which destroys the frames below it in turn, and
-    finishes without delivering a result. An executor that destroys the
-    posted continuation instead, as a closed one does, unwinds the
-    segment the same way.
+    the frame it awaits, which destroys the frames below it in turn.
+    After this teardown, the owner delivers no result. An executor that
+    destroys the posted continuation instead, as a closed one does,
+    unwinds the segment the same way.
+
+    The owner also records why the segment was abandoned. Teardown
+    calls @ref abandon. A stopped @ref quitter calls
+    @ref abandon_for_stop instead. Its owner unwinds the segment the
+    same way, then reports the stop to its parent. An owner that never
+    asks @ref stopped treats a stop as teardown: it delivers nothing. A
+    launcher written by a user must therefore check @ref stopped if it
+    runs quitters and has to report their stops.
 
     @par Thread Safety
-    @ref abandon may be called from any thread. Only one holder can
-    abandon a segment, since it is suspended at one point; a repeated
-    call before the unwind runs does nothing.
+    @ref abandon and @ref abandon_for_stop may be called from any
+    thread. Only the first call takes effect, and decides the cause; a
+    later call of either before the unwind runs does nothing.
 */
 class chain_owner
 {
-    std::atomic<bool> abandoned_{false};
+    enum : unsigned char { not_abandoned, by_teardown, by_stop };
+
+    std::atomic<unsigned char> cause_{not_abandoned};
     continuation self_;
     executor_ref ex_;
+
+    void abandon_as(unsigned char cause) noexcept
+    {
+        unsigned char expected = not_abandoned;
+        if(!cause_.compare_exchange_strong(
+            expected, cause,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire))
+            return;
+        ex_.post(self_);
+    }
 
 public:
     /** Bind the owner to its coroutine and executor.
@@ -67,7 +90,17 @@ public:
     /// Return true once the segment has been abandoned.
     bool abandoned() const noexcept
     {
-        return abandoned_.load(std::memory_order_acquire);
+        return cause_.load(std::memory_order_acquire) != not_abandoned;
+    }
+
+    /** Return true if the segment was abandoned because of a stop.
+
+        @return `true` only if the first abandon of the segment was
+            @ref abandon_for_stop.
+    */
+    bool stopped() const noexcept
+    {
+        return cause_.load(std::memory_order_acquire) == by_stop;
     }
 
     /** Unwind the segment on the owner's executor.
@@ -80,9 +113,23 @@ public:
     */
     void abandon() noexcept
     {
-        if(abandoned_.exchange(true, std::memory_order_acq_rel))
-            return;
-        ex_.post(self_);
+        abandon_as(by_teardown);
+    }
+
+    /** Unwind the segment on the owner's executor, as stopped.
+
+        The same as @ref abandon, but records the cause as a stop, so
+        @ref stopped returns `true` if this call was the first. Called
+        when a @ref quitter in the segment is stopped: at a `co_await`
+        in its body, when an operation completes into its segment's
+        gate, or when the gate through which `run_async` or `run`
+        starts a quitter does not start it.
+
+        @note A post that throws calls `std::terminate`.
+    */
+    void abandon_for_stop() noexcept
+    {
+        abandon_as(by_stop);
     }
 };
 
@@ -92,8 +139,10 @@ public:
     it, such as an execution context, strand or primitive being torn
     down. The coroutine's segment is unwound from its owner: on the
     owner's executor, from the top frame down to this coroutine, without
-    any frame delivering a result. Ordinary cancellation does not use
-    this; it resumes the coroutine with an error instead.
+    any frame delivering a result. Ordinary cancellation of a @ref task
+    does not use this; it resumes the coroutine with an error instead.
+    A @ref quitter's stop does use abandonment, through
+    @ref chain_owner::abandon_for_stop.
 
     A continuation with no owner, such as an owner's own continuation,
     is destroyed directly.

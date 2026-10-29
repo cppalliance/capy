@@ -9,7 +9,7 @@ Capy has two launcher functions: cpp:run_async[] (fire-and-forget from non-corou
 
 === `run_async` -- Fire-and-Forget
 
-cpp:run_async[] starts any _ContextRunnable_ from non-coroutine code: `main()`, callback handlers, event loops. cpp:task[task<T>] is the most common conforming type, but any user-defined type satisfying the concept works. The function does not return a value to the caller. Handlers receive the task's result or exception after completion, as data; they should not throw. An exception that no handler consumes (none was supplied, or a handler let one escape) calls `std::terminate`; it is never silently discarded. To catch an error instead, `co_await` the work inside a coroutine.
+cpp:run_async[] starts any _ContextRunnable_ from non-coroutine code: `main()`, callback handlers, event loops. cpp:task[task<T>] is the most common conforming type, but any user-defined type satisfying the concept works. The function does not return a value to the caller. Handlers receive the task's result or exception after completion, as data; they should not throw. An exception that no handler consumes (none was supplied, or a handler let one escape) calls `std::terminate`; it is never silently discarded. Only a cpp:quitter[]'s stop is discarded, because a stop is not an error. A stopped quitter of `void` or a plain `T` reports its stop to the error handler as a `std::system_error` whose code compares equal to `cond::canceled`. With no error handler, the stop is discarded, also when it escapes a task that awaited the quitter. To catch an error instead, `co_await` the work inside a coroutine.
 
 [source,cpp]
 ----
