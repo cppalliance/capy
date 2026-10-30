@@ -65,15 +65,15 @@ class consumer_param : public consumer<
     is_mutable_buffer_sequence_v<BufferSequence>>
 {
     BufferSequence bs_;
-    decltype(begin(bs_)) it_;
-    decltype(end(bs_)) end_;
+    decltype(buffer_sequence_begin(bs_)) it_;
+    decltype(buffer_sequence_end(bs_)) end_;
 
 public:
     template<class T>
     consumer_param(T&& t)
         : bs_(std::forward<T>(t))
-        , it_(begin(bs_))
-        , end_(end(bs_))
+        , it_(buffer_sequence_begin(bs_))
+        , end_(buffer_sequence_end(bs_))
     {
     }
 

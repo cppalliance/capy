@@ -8,7 +8,7 @@
 //
 
 // Test that the header is self-contained.
-#include <boost/capy/buffers/consuming_buffers.hpp>
+#include <boost/capy/detail/consuming_buffers.hpp>
 
 #include <boost/capy/buffers.hpp>
 
@@ -20,6 +20,7 @@
 
 namespace boost {
 namespace capy {
+namespace detail {
 
 namespace {
 
@@ -28,7 +29,8 @@ std::string
 flatten(Seq const& s)
 {
     std::string out;
-    for (auto it = capy::begin(s); it != capy::end(s); ++it)
+    for (auto it = capy::buffer_sequence_begin(s);
+         it != capy::buffer_sequence_end(s); ++it)
     {
         const_buffer b(*it);
         out.append(static_cast<char const*>(b.data()), b.size());
@@ -127,7 +129,7 @@ struct consuming_buffers_test
         consuming_buffers consuming(bufs);
         consuming.consume(1000);  // clamped to 10
         BOOST_TEST_EQ(buffer_size(consuming.data()), 0u);
-        BOOST_TEST(buffer_empty(consuming.data()));
+        BOOST_TEST(buffers_empty(consuming.data()));
     }
 
     void
@@ -142,9 +144,10 @@ struct consuming_buffers_test
     }
 };
 
-TEST_SUITE(consuming_buffers_test, "boost.capy.buffers.consuming_buffers");
+TEST_SUITE(consuming_buffers_test, "boost.capy.detail.consuming_buffers");
 
 } // (anon)
 
+} // namespace detail
 } // namespace capy
 } // namespace boost

@@ -29,7 +29,8 @@ std::string
 flatten(Seq const& s)
 {
     std::string out;
-    for (auto it = capy::begin(s); it != capy::end(s); ++it)
+    for (auto it = capy::buffer_sequence_begin(s);
+         it != capy::buffer_sequence_end(s); ++it)
     {
         const_buffer b(*it);
         out.append(static_cast<char const*>(b.data()), b.size());

@@ -167,7 +167,7 @@ public:
             {
                 // Empty buffer is a no-op regardless of
                 // stream state, stop token, or fuse.
-                if(buffer_empty(buffers_))
+                if(buffers_empty(buffers_))
                     return {std::error_code(), 0};
 
                 if(canceled_)

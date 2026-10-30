@@ -295,15 +295,7 @@ Cobalt does not provide buffer sequence types. Users who need these features use
 | Yes
 | Via Asio
 
-| cpp:front[]
-| Yes
-|
-
-| cpp:buffer_slice[]
-| Yes
-|
-
-| Byte-level trimming
+| cpp:buffers_front[]
 | Yes
 |
 |===
@@ -531,7 +523,7 @@ Every `co_await ws.write(...)` call creates a xref:glossary.adoc#coroutine-frame
 | `cancellation_signal`, automatic, OS-level
 
 | Buffer sequences
-| Extended (cpp:buffer_slice[], cpp:front[])
+| Extended (cpp:buffers_front[])
 | None (use Asio directly)
 
 | Allocator control

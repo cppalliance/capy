@@ -187,7 +187,7 @@ public:
             [[nodiscard]] results<std::size_t>
             await_resume()
             {
-                if(buffer_empty(buffers_))
+                if(buffers_empty(buffers_))
                     return {std::error_code(), 0};
 
                 if(canceled_)

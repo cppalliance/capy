@@ -109,8 +109,8 @@ public:
     buffer_array(BS const& bs) noexcept
         : dummy_(0)
     {
-        auto it = capy::begin(bs);
-        auto const last = capy::end(bs);
+        auto it = capy::buffer_sequence_begin(bs);
+        auto const last = capy::buffer_sequence_end(bs);
         while(it != last && n_ < N)
         {
             value_type b(*it);
@@ -138,8 +138,8 @@ public:
     buffer_array(std::in_place_t, BS const& bs)
         : dummy_(0)
     {
-        auto it = capy::begin(bs);
-        auto const last = capy::end(bs);
+        auto it = capy::buffer_sequence_begin(bs);
+        auto const last = capy::buffer_sequence_end(bs);
         while(it != last)
         {
             value_type b(*it);

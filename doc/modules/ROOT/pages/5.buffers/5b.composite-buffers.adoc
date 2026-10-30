@@ -135,7 +135,7 @@ Algorithms call them inside `noexcept` functions, so a conversion that throws te
 Header `<boost/capy/buffers.hpp>` also provides a couple of function objects for navigating buffer sequences.
 
 In order to iterate over contiguous buffers themselves (as opposed to bytes),
-use cpp:begin[capy::begin] and cpp:end[capy::end]:
+use cpp:buffer_sequence_begin[] and cpp:buffer_sequence_end[]:
 
 [source,cpp]
 ----
@@ -150,10 +150,27 @@ These functions treat single contiguous buffers as a one-element range of contig
 include::example$snippets/5b_composite_buffers.cpp[tag=begin_end_uniform,indent=0]
 ----
 
-Function cpp:buffer_length[] says how many contiguous buffers are present in the buffer
+Function cpp:buffers_count[] says how many contiguous buffers are present in the buffer
 sequence. It is equivalent to:
 
 [source,cpp]
 ----
 include::example$snippets/5b_composite_buffers.cpp[tag=length_equivalent,indent=0]
 ----
+
+=== Iterating Over Bytes
+
+To treat a buffer sequence as one run of bytes, use cpp:buffers_begin[] and
+cpp:buffers_end[]. They return a cpp:buffers_iterator[], a random access
+iterator that crosses buffer boundaries and skips empty buffers, so standard
+algorithms can scan the data without copying it into contiguous storage:
+
+[source,cpp]
+----
+include::example$snippets/5b_composite_buffers.cpp[tag=buffers_iterator_include]
+
+include::example$snippets/5b_composite_buffers.cpp[tag=iterate_bytes,indent=0]
+----
+
+Moving the iterator by `n` bytes walks the buffers it crosses, so jumps are
+linear in the number of buffers. The sequence must outlive the iterators.

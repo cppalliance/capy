@@ -330,8 +330,9 @@ public:
             {
                 // Enqueue the whole sequence before the host function so
                 // the stream runs the batch back to back.
-                auto const end = capy::end(buffers);
-                for(auto it = capy::begin(buffers); it != end; ++it)
+                auto const end = capy::buffer_sequence_end(buffers);
+                for(auto it = capy::buffer_sequence_begin(buffers);
+                    it != end; ++it)
                 {
                     const_buffer b = *it;
                     auto err = cudaMemcpyAsync(

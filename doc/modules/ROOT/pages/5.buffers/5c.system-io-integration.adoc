@@ -55,8 +55,8 @@ auto platform_write(Buffers const& buffers)
 {
     iovec iovecs[16];  // fixed on-frame window, never heap-allocated
 
-    auto it = begin(buffers);
-    auto last = end(buffers);
+    auto it = capy::buffer_sequence_begin(buffers);
+    auto last = capy::buffer_sequence_end(buffers);
     while (it != last)
     {
         std::size_t count = fill_iovecs(iovecs, it, last, 16);  // up to 16

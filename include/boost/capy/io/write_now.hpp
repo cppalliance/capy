@@ -14,7 +14,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/consuming_buffers.hpp>
+#include <boost/capy/detail/consuming_buffers.hpp>
 #include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 #include <coroutine>
@@ -362,7 +362,7 @@ public:
     {
         std::size_t const total_size = buffer_size(buffers);
         std::size_t total_written = 0;
-        consuming_buffers cb(buffers);
+        detail::consuming_buffers cb(buffers);
         while(total_written < total_size)
         {
             auto r =
@@ -387,7 +387,7 @@ public:
         // GCC ICE in expand_expr_real_1 (expr.cc:11376)
         // when the buffer slice spans a co_yield, so
         // the GCC path uses a separate simple coroutine.
-        consuming_buffers cb(buffers);
+        detail::consuming_buffers cb(buffers);
         while(total_written < total_size)
         {
             auto inner = stream_.write_some(cb.data());

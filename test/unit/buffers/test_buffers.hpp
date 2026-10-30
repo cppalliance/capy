@@ -11,7 +11,7 @@
 #define BOOST_CAPY_BUFFERS_TEST_BUFFERS_HPP
 
 #include <boost/capy/buffers/buffer_copy.hpp>
-#include <boost/capy/buffers/buffer_slice.hpp>
+#include <boost/capy/detail/slice_of.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 #include <string>
 #include <string_view>
@@ -104,8 +104,8 @@ check_iterators(
     {
         s.clear();
         s.reserve(pat.size() + 1);
-        auto it = begin(bs);
-        auto const end_ = end(bs);
+        auto it = buffer_sequence_begin(bs);
+        auto const end_ = buffer_sequence_end(bs);
         while(it != end_)
         {
             auto b = *it;
@@ -121,8 +121,8 @@ check_iterators(
     {
         s.clear();
         s.reserve(pat.size() + 1);
-        auto it = begin(bs);
-        auto const end_ = end(bs);
+        auto it = buffer_sequence_begin(bs);
+        auto const end_ = buffer_sequence_end(bs);
         while(it != end_)
         {
             auto b = *it;
@@ -138,8 +138,8 @@ check_iterators(
     {
         s.clear();
         s.reserve(pat.size() + 1);
-        auto it = begin(ct);
-        auto const end_ = end(ct);
+        auto it = buffer_sequence_begin(ct);
+        auto const end_ = buffer_sequence_end(ct);
         while(it != end_)
         {
             auto b = *it;
@@ -155,8 +155,8 @@ check_iterators(
     {
         s.clear();
         s.reserve(pat.size() + 1);
-        auto it = begin(ct);
-        auto const end_ = end(ct);
+        auto it = buffer_sequence_begin(ct);
+        auto const end_ = buffer_sequence_end(ct);
         while(it != end_)
         {
             auto b = *it;
@@ -172,8 +172,8 @@ check_iterators(
     {
         s.clear();
         s.reserve(pat.size() + 1);
-        auto it = end(bs);
-        auto const begin_ = begin(bs);
+        auto it = buffer_sequence_end(bs);
+        auto const begin_ = buffer_sequence_begin(bs);
         while(it != begin_)
         {
             --it;
@@ -189,8 +189,8 @@ check_iterators(
     {
         s.clear();
         s.reserve(pat.size() + 1);
-        auto it = end(bs);
-        auto const begin_ = begin(bs);
+        auto it = buffer_sequence_end(bs);
+        auto const begin_ = buffer_sequence_begin(bs);
         while(it != begin_)
         {
             it--;
@@ -206,8 +206,8 @@ check_iterators(
     {
         s.clear();
         s.reserve(pat.size() + 1);
-        auto it = end(ct);
-        auto const begin_ = begin(ct);
+        auto it = buffer_sequence_end(ct);
+        auto const begin_ = buffer_sequence_begin(ct);
         while(it != begin_)
         {
             --it;
@@ -223,8 +223,8 @@ check_iterators(
     {
         s.clear();
         s.reserve(pat.size() + 1);
-        auto it = end(ct);
-        auto const begin_ = begin(ct);
+        auto it = buffer_sequence_end(ct);
+        auto const begin_ = buffer_sequence_begin(ct);
         while(it != begin_)
         {
             it--;
@@ -268,7 +268,7 @@ grind_front(
         {
             // sans_prefix: drop the first n bytes (value-returning)
             auto pat = trimmed_front(pat0, n);
-            auto bs = buffer_slice(bs0, n);
+            auto bs = detail::slice_of<ConstBufferSequence>(bs0, n);
             check_eq(bs, pat);
             check_iterators(bs, pat, tmp);
 
@@ -279,7 +279,8 @@ grind_front(
                 for(std::size_t m = 0; m <= pat.size() + 1; ++m)
                 {
                     auto pat2 = trimmed_front(pat0, n + m);
-                    auto bs2 = buffer_slice(bs0, n + m);
+                    auto bs2 =
+                        detail::slice_of<ConstBufferSequence>(bs0, n + m);
                     check_eq(bs2, pat2);
                 }
             }
@@ -288,7 +289,7 @@ grind_front(
             // prefix: keep only the first n bytes
             auto pat = kept_front(pat0, n);
             std::size_t const len = (n < total) ? n : total;
-            auto bs = buffer_slice(bs0, 0, len);
+            auto bs = detail::slice_of<ConstBufferSequence>(bs0, 0, len);
             check_eq(bs, pat);
             check_iterators(bs, pat, tmp);
         }
@@ -311,7 +312,7 @@ grind_back(
             // sans_suffix: drop the last n bytes (keep first total - n)
             auto pat = trimmed_back(pat0, n);
             std::size_t const len = (n < total) ? total - n : 0;
-            auto bs = buffer_slice(bs0, 0, len);
+            auto bs = detail::slice_of<ConstBufferSequence>(bs0, 0, len);
             check_eq(bs, pat);
             check_iterators(bs, pat, tmp);
             if(deep)
@@ -323,7 +324,8 @@ grind_back(
                     auto pat2 = trimmed_back(pat0, n + m);
                     std::size_t const new_len =
                         (n + m < total) ? total - (n + m) : 0;
-                    auto bs2 = buffer_slice(bs0, 0, new_len);
+                    auto bs2 = detail::slice_of<ConstBufferSequence>(
+                        bs0, 0, new_len);
                     check_eq(bs2, pat2);
                 }
             }
@@ -332,7 +334,7 @@ grind_back(
             // suffix: keep only the last n bytes
             auto pat = kept_back(pat0, n);
             std::size_t const offset = (n < total) ? total - n : 0;
-            auto bs = buffer_slice(bs0, offset);
+            auto bs = detail::slice_of<ConstBufferSequence>(bs0, offset);
             check_eq(bs, pat);
             check_iterators(bs, pat, tmp);
         }
