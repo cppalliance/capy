@@ -1,5 +1,6 @@
 #
 # Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+# Copyright (c) 2026 Michael Vandeberg
 #
 # Distributed under the Boost Software License, Version 1.0. (See accompanying
 # file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -8,7 +9,7 @@
 #
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} PREFIX "" FILES
-    CMakeLists.txt bench.cpp allocation.cpp
+    CMakeLists.txt bench.cpp allocation.cpp quitter.cpp
     beman/main.cpp
     beman/allocation_tracker.hpp
     beman/awaitable_sender.hpp
@@ -44,6 +45,10 @@ target_include_directories(boost_capy_bench PRIVATE .)
 
 add_executable(boost_capy_bench_allocation allocation.cpp)
 target_link_libraries(boost_capy_bench_allocation PRIVATE Boost::capy)
+
+add_executable(boost_capy_bench_quitter quitter.cpp)
+target_link_libraries(boost_capy_bench_quitter PRIVATE Boost::capy)
+target_include_directories(boost_capy_bench_quitter PRIVATE .)
 
 if(BOOST_CAPY_BUILD_P2300_EXAMPLES)
     include(FetchContent)

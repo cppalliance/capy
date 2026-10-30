@@ -1,5 +1,6 @@
 //
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
+// Copyright (c) 2026 Michael Vandeberg
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -13,12 +14,23 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/detail/frame_memory_resource.hpp>
 
+#include <concepts>
+#include <coroutine>
 #include <cstddef>
 #include <memory_resource>
 
 namespace boost {
 namespace capy {
 namespace detail {
+
+// A runnable that a stop ends by abandonment (quitter): its promise
+// says what it delivers instead of its own result, and gives the
+// handle a launcher resumes to start it.
+template<class Task>
+concept stops_by_abandonment = requires(typename Task::promise_type& p) {
+    Task::promise_type::stopped_result();
+    { p.launch_handle() } -> std::convertible_to<std::coroutine_handle<>>;
+};
 
 /// Concept for standard Allocator types.
 template<class A>

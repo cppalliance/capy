@@ -76,6 +76,9 @@ struct boundary_trampoline
         executor_ref caller_ex_;
         continuation parent_;
         chain_owner segment_;
+        // The inner task reports a stop-caused abandon (a quitter). For
+        // any other task such an abandon is torn down like any other.
+        bool stoppable_ = false;
         // The awaitable's trampoline object until the inner task
         // completes or is unwound; null afterward.
         boundary_trampoline* owner_ = nullptr;
@@ -125,12 +128,25 @@ struct boundary_trampoline
                 {
                     // Nothing here touches p_ after the post or the
                     // unwind: either can destroy this frame.
-                    if(p_->segment_.abandoned())
+                    auto& segment = p_->segment_;
+                    // See run_async's trampoline: only a quitter run
+                    // here is stopped through this owner.
+                    BOOST_CAPY_ASSERT(
+                        (p_->stoppable_ || !segment.stopped()) &&
+                        "a quitter stopped a task's segment: "
+                        "see quitter::handle");
+                    if(segment.abandoned() &&
+                        !(p_->stoppable_ && segment.stopped()))
                     {
                         p_->unwind();
                     }
                     else
                     {
+                        // A quitter's stop: its frames are destroyed
+                        // here, and the parent resumes to receive the
+                        // stopped value.
+                        if(segment.abandoned())
+                            p_->destroy_inner_(p_->awaitable_);
                         p_->owner_ = nullptr;
                         auto ex = p_->caller_ex_;
                         ex.post(p_->parent_);
@@ -291,6 +307,11 @@ struct [[nodiscard]] run_awaitable_ex
     {
         if(std::exchange(holds_work_, false))
             caller_ex_.on_work_finished();
+        if constexpr(stops_by_abandonment<Task>)
+        {
+            if(tr_.h_ && tr_.h_.promise().segment_.stopped())
+                return Task::promise_type::stopped_result();
+        }
         return inner_.await_resume();
     }
 
@@ -305,6 +326,7 @@ struct [[nodiscard]] run_awaitable_ex
         tp.destroy_inner_ = &run_awaitable_ex::destroy_inner;
         tp.awaitable_ = this;
         tp.segment_.bind(tr_.h_, ex_);
+        tp.stoppable_ = stops_by_abandonment<Task>;
         caller_ex_ = caller_env->executor;
         // Released once the parent resumes or is unwound. Not on the
         // post back: the parent's chain may own the executor object and
@@ -329,10 +351,17 @@ struct [[nodiscard]] run_awaitable_ex
             env_.frame_allocator = caller_env->frame_allocator;
 
         p.set_environment(&env_);
+
         task_cont_.h = h;
         task_cont_.owner = &tp.segment_;
         try
         {
+            // A quitter starts through its gate, which checks the stop
+            // when the body would start: a stopped quitter's segment is
+            // abandoned for the stop, and the parent receives the
+            // stopped value.
+            if constexpr(stops_by_abandonment<Task>)
+                task_cont_.h = p.launch_handle();
             ex_.post(task_cont_);
         }
         catch(...)
@@ -437,11 +466,6 @@ struct [[nodiscard]] run_awaitable
 
     std::coroutine_handle<> await_suspend(std::coroutine_handle<> cont, await_context const* caller_env)
     {
-        auto h = inner_.handle();
-        auto& p = h.promise();
-        p.set_continuation(cont);
-        lent_ = true;
-
         env_.owner = caller_env->owner;
         env_.executor = caller_env->executor;
         if constexpr (InheritStopToken)
@@ -454,8 +478,26 @@ struct [[nodiscard]] run_awaitable
         else
             env_.frame_allocator = caller_env->frame_allocator;
 
-        p.set_environment(&env_);
-        return h;
+        // A quitter opens a segment of its own, so a stop on this run's
+        // token never abandons the caller's segment.
+        if constexpr(stops_by_abandonment<Task>)
+        {
+            // Lent only once the segment is open: opening it can throw
+            // into a quitter's body, and a lent inner task terminates
+            // in our destructor.
+            auto h = inner_.await_suspend(cont, &env_);
+            lent_ = true;
+            return h;
+        }
+        else
+        {
+            auto h = inner_.handle();
+            auto& p = h.promise();
+            p.set_continuation(cont);
+            p.set_environment(&env_);
+            lent_ = true;
+            return h;
+        }
     }
 
     // Non-copyable
@@ -794,6 +836,11 @@ namespace boost::capy {
     abandoned too: it is unwound by its owner, on the owner's executor,
     without the caller resuming. The awaitable holds work on the
     caller's executor until the caller resumes or is unwound.
+
+    A @ref quitter's stop is not such an abandon. When the inner task
+    is a quitter and a stop ends it, the caller resumes on its own
+    executor, and the `co_await` yields the quitter's stopped value, as
+    described in @ref quitter's Await-returns.
 
     @par Preconditions
     The caller's execution context outlives the inner task and the

@@ -11,48 +11,94 @@
 #define BOOST_CAPY_QUITTER_HPP
 
 #include <boost/capy/detail/config.hpp>
-#include <boost/capy/detail/stop_requested_exception.hpp>
-#include <boost/capy/cond.hpp>
-#include <boost/capy/results.hpp>
 #include <boost/capy/concept/executor.hpp>
 #include <boost/capy/concept/context_awaitable.hpp>
+#include <boost/capy/cond.hpp>
+#include <boost/capy/continuation.hpp>
+#include <boost/capy/error.hpp>
+#include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/context_awaitable_promise_base.hpp>
 #include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/ex/frame_alloc_mixin.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/detail/await_suspend_helper.hpp>
+#include <boost/capy/detail/quitter_stopped.hpp>
+#include <boost/capy/results.hpp>
 
+#include <coroutine>
 #include <exception>
 #include <optional>
-#include <tuple>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 
 /* Stop-aware coroutine task.
 
-   quitter<T> is identical to task<T> except that a stop request ends
-   the body without the body checking an error code.  The promise's
-   transform_awaiter checks the stop token before it touches an awaited
-   operation, and again when an operation that completed
-   asynchronously resumes the body.  A pending stop there throws a
-   sentinel exception that unwinds through RAII destructors to
-   final_suspend, and the parent sees a "stopped" completion.  An
-   operation that completes synchronously always has its await_resume
-   called, because its await_ready or await_suspend may already have
-   acquired something.  A results<> it returns holding cond::canceled
-   while the stop is pending acquired nothing, so the stop throws there;
-   any other result reaches the body, and the stop takes effect at the
-   next co_await.
+   quitter<T> is task<T>, except that a stop request ends its frames
+   by abandonment instead of resuming them. Nothing in the body runs
+   after the stop, so nothing can intercept it, and no exception is
+   thrown inside the quitter.
 
-   See doc/quitter.md for the full design rationale. */
+   Segment. A quitter awaited by anything other than a quitter opens a
+   segment in its await_suspend. The segment is one coroutine frame,
+   quitter_segment, that is both the segment's owner (its chain_owner is
+   the await_context::owner every frame in the segment sees) and the
+   gate. A quitter awaited by a quitter joins the parent's segment. A
+   quitter started directly by a launcher (run_async, run(ex)) runs in
+   the launcher's segment; it still gets a gate, and the launcher's
+   chain_owner is the one the gate abandons. The launcher creates the
+   gate with launch_handle() and resumes the gate, not the quitter, so
+   the gate checks the stop before the body starts. A launcher that
+   resumes the quitter's own handle instead gets a gate when the body
+   starts, with no such check.
+
+   Gate. A quitter frame never hands its own handle to an operation. Its
+   transform_awaiter records the frame as the gate's target and passes
+   the gate's handle instead, so an operation completes into the gate.
+   The gate then resumes the target, or, if a stop was requested,
+   abandons the segment with chain_owner::abandon_for_stop. The
+   operation has finished with the frame by then (the corosio rule: no
+   frame is destroyed while an operation holds its continuation).
+
+   Synchronous completions. The stop is checked before the
+   inner await_ready, so a pending stop starts no work. An inner
+   awaitable that completes without going through the gate (ready,
+   await_suspend returning false or the gate's own handle) always has
+   its await_resume called, so anything it acquired is handed over; the
+   stop takes effect at the next suspension. The exception is a
+   results<> holding cond::canceled while our stop is pending: the
+   inner awaitable saw the stop first and acquired nothing (async_mutex,
+   async_event and async_waker all answer a stop that lands between our
+   check and theirs this way), so the segment is abandoned there. That
+   result is taken early and kept in the awaiter, because await_resume
+   runs in the resumed body, too late to abandon.
+
+   Unwind. When the segment's owner is resumed after an abandon, it
+   releases the opening quitter's handle and destroys the top frame,
+   which destroys the frames below it. After a stop it then resumes the
+   parent, whose co_await yields the stopped value (stopped_value<T>).
+   After a teardown it abandons the parent, as run's boundary_trampoline
+   does. A segment frame destroyed instead of resumed (posted to a
+   closed executor) unwinds as teardown from its destructor.
+
+   Why the gate is never resumed while it runs. Its body is
+   `for(;;) co_await hop{}`, and every decision is made in
+   hop::await_suspend, after the frame has suspended. Its handle is
+   reachable only from the one operation a quitter frame of the segment
+   is waiting on, and from the owner's post, which happens only when no
+   operation holds it. Once await_suspend has handed the handle on, by
+   returning it, resuming a target inline or posting, it touches nothing
+   of the frame again, because another thread may already be running or
+   destroying it. */
 
 namespace boost {
 namespace capy {
 
+template<typename T>
+struct quitter;
+
 namespace detail {
 
-// Reuse the same return-value storage as task<T>.
-// task_return_base is defined in task.hpp, but quitter needs its own
-// copy to avoid a header dependency on task.hpp.
 template<typename T>
 struct quitter_return_base
 {
@@ -77,95 +123,334 @@ struct quitter_return_base<void>
     }
 };
 
+/* What a stopped quitter<T> delivers to its parent.
+
+   results<Ts...>: canceled, with each payload value-initialized.
+   std::error_code: canceled.
+   Any other T, void included: quitter_stopped, a std::system_error
+   with canceled, thrown at the boundary. A void return would read as
+   success. */
+template<class T>
+struct stopped_value
+{
+    static T get()
+    {
+#if defined(__cpp_exceptions)
+        throw quitter_stopped();
+#else
+        // sizeof(T*): T may be void.
+        static_assert(sizeof(T*) == 0,
+            "a stopped quitter<T> for a T other than results or "
+            "std::error_code reports the stop by throwing, "
+            "which needs exceptions");
+#endif
+    }
+};
+
+template<class... Ts>
+struct stopped_value<results<Ts...>>
+{
+    static_assert(
+        (std::is_default_constructible_v<Ts> && ...),
+        "a stopped quitter<results<Ts...>> value-initializes every Ts");
+
+    static results<Ts...> get()
+    {
+        return results<Ts...>(make_error_code(error::canceled), Ts{}...);
+    }
+};
+
+template<>
+struct stopped_value<std::error_code>
+{
+    static std::error_code get() noexcept
+    {
+        return make_error_code(error::canceled);
+    }
+};
+
+template<class T>
+struct is_quitter : std::false_type {};
+
+template<class T>
+struct is_quitter<quitter<T>> : std::true_type {};
+
+// A stop that can be carried out: requested, with an owner to abandon.
+// With no owner a quitter cannot stop, and runs on as a task would; a
+// launcher that runs quitters must bind a chain_owner.
+inline bool
+quitter_stop_pending(await_context const* env) noexcept
+{
+    if(!env->stop_token.stop_requested())
+        return false;
+    BOOST_CAPY_ASSERT(env->owner &&
+        "a quitter's environment needs an owner to stop");
+    return env->owner != nullptr;
+}
+
+struct quitter_opener;
+
+// One per segment: the owner and the gate in one coroutine frame.
+struct quitter_segment
+{
+    struct promise_type;
+
+    std::coroutine_handle<promise_type> h_;
+};
+
+// The part of a quitter that opened a segment, without its T.
+struct quitter_opener
+{
+    // Takes the quitter's frame handle, leaving the quitter empty.
+    std::coroutine_handle<> (*release_top_)(quitter_opener&) noexcept =
+        nullptr;
+    quitter_segment seg_{};
+    bool stopped_ = false;
+    // Set while a parent is suspended awaiting the quitter.
+    bool lent_ = false;
+};
+
+// Not the chain's frame allocator: after a teardown this frame is freed
+// once the parent has been abandoned, when that allocator may be gone.
+// run's boundary_trampoline does the same.
+struct quitter_segment::promise_type
+    : process_frame_mixin
+{
+    // The segment's owner, when a quitter opened the segment.
+    chain_owner owner_;
+    // The environment of the segment's frames, when a quitter opened it.
+    await_context env_;
+    // The environment the frames run in: env_, or the launcher's.
+    await_context const* frame_env_ = nullptr;
+    // The awaiting coroutine, and its own owner for a teardown.
+    continuation parent_;
+    // The quitter frame waiting in the gate.
+    std::coroutine_handle<> target_;
+    // The quitter that opened the segment; null for a gate only.
+    quitter_opener* opener_ = nullptr;
+    // An unwind is still owed. Cleared when the top frame completes,
+    // when the unwind runs, and by the quitter when it destroys this.
+    bool active_ = false;
+
+    ~promise_type()
+    {
+        // Destroyed instead of resumed: a closed executor discarded the
+        // owner's post. That is teardown, whatever the cause.
+        if(active_)
+        {
+            active_ = false;
+            // This frame is going away; the quitter must not destroy it
+            // again when the parent's unwind reaches it.
+            opener_->seg_.h_ = nullptr;
+            opener_->release_top_(*opener_).destroy();
+            auto parent = parent_;
+            capy::abandon(parent);
+        }
+    }
+
+    quitter_segment get_return_object() noexcept
+    {
+        return quitter_segment{
+            std::coroutine_handle<promise_type>::from_promise(*this)};
+    }
+
+    std::suspend_always initial_suspend() noexcept { return {}; }
+    std::suspend_always final_suspend() noexcept { return {}; } // LCOV_EXCL_LINE the body never ends
+    void return_void() noexcept {} // LCOV_EXCL_LINE the body never ends
+    void unhandled_exception() noexcept { std::terminate(); } // LCOV_EXCL_LINE the body never throws
+
+    std::coroutine_handle<> handle() noexcept
+    {
+        return std::coroutine_handle<promise_type>::from_promise(*this);
+    }
+
+    // Abandon the segment for a stop. The caller holds the waiting
+    // frame and touches nothing of it afterwards.
+    void stop() noexcept
+    {
+        frame_env_->owner->abandon_for_stop();
+    }
+
+    std::coroutine_handle<> decide() noexcept
+    {
+        if(opener_ && owner_.abandoned())
+        {
+            active_ = false;
+            auto* op = opener_;
+            op->release_top_(*op).destroy();
+            if(owner_.stopped())
+            {
+                op->stopped_ = true;
+                return parent_.h;
+            }
+            auto parent = parent_;
+            capy::abandon(parent);
+            return std::noop_coroutine();
+        }
+        if(quitter_stop_pending(frame_env_))
+        {
+            stop();
+            return std::noop_coroutine();
+        }
+        return target_;
+    }
+};
+
+struct quitter_hop
+{
+    bool await_ready() const noexcept { return false; }
+
+    auto await_suspend(
+        std::coroutine_handle<quitter_segment::promise_type> h) noexcept
+    {
+        return detail::symmetric_transfer(h.promise().decide());
+    }
+
+    void await_resume() const noexcept {}
+};
+
+inline quitter_segment
+make_quitter_segment()
+{
+    for(;;)
+        co_await quitter_hop{};
+}
+
 } // namespace detail
 
-/** Defers a coroutine body until awaited, then unwinds it early on a stop request.
+/** Defers a coroutine body until awaited, and ends it on a stop request without resuming it.
 
-    When the stop token is triggered, the body is unwound at a
-    `co_await` instead of resuming, and RAII destructors run normally.
-    Await-effects below says at which one.  The parent observes a "stopped"
-    completion via @ref promise_type::stopped.
+    A `quitter` is a @ref task whose author has chosen that a stop
+    request ends it. When the stop token fires, the quitter's frames are
+    not resumed: they are destroyed, from the top down, as an abandoned
+    chain is (see @ref abandon). Only destructors run. Nothing in the
+    body can observe or intercept the stop, not even `catch(...)`, and no
+    exception is thrown inside the quitter. The stop is reported to the
+    first coroutine above that is not a quitter, as a value: see
+    Await-returns.
 
-    Everything else — frame allocation, environment propagation,
-    symmetric transfer, move semantics — is identical to @ref task.
+    A quitter stops only quitter frames. A @ref task below a quitter
+    receives the stop request as usual, and returns through its own code
+    before the quitter is destroyed. A task above a quitter receives the
+    stopped value from `co_await`. A quitter awaited by a quitter is
+    stopped together with it.
+
+    Everything else (frame allocation, environment propagation,
+    symmetric transfer, move semantics) is as for @ref task.
 
     @par Await-effects
 
-    Let `q` be a `quitter<T>`. `co_await q` always suspends the awaiting
-    coroutine, then transfers control directly into the quitter's
-    coroutine body on the current thread; no executor operation is
-    posted. The quitter records the caller's environment (executor, stop
-    token, and frame allocator) by pointer rather than copying it. It
-    propagates that environment to every `co_await` inside the body.
+    Let `q` be a `quitter<T>`. If the stop token in the awaiting
+    environment has already been triggered, `co_await q` does not start
+    the body, and await-returns the stopped value. Otherwise it suspends
+    the awaiting coroutine and transfers control directly into the
+    quitter's body on the current thread; no executor operation is
+    posted. The quitter propagates the caller's executor, stop token and
+    frame allocator to every `co_await` inside the body.
 
-    Unlike @ref task, the stop token is checked before the body's first
-    statement, before each awaited operation is started, and when an
-    operation that completed asynchronously resumes the body. If a stop
-    request is pending at those points, the body is not resumed. An
-    internal sentinel exception unwinds it instead, so RAII destructors
-    run, and the coroutine completes as stopped.
+    At every `co_await` in the body, the stop token is checked before
+    the awaited operation is started. An operation that completes
+    asynchronously does not resume the body directly: the stop token is
+    checked again first. If either check finds a stop, the body is not
+    resumed. The quitter's frames are destroyed on the executor, and
+    the coroutine that awaited the quitter is resumed with the stopped
+    value. When `run_async` started the quitter, it reports the stop to
+    its handlers instead, as Await-returns describes.
 
-    An awaited operation that completes synchronously always has its
-    `await_resume` called, even if a stop request arrives at the same
-    time. Its `await_ready` or `await_suspend` may already have acquired
-    a resource, such as `async_mutex`'s lock, that only its
-    `await_resume` hands over. If that result is a @ref results holding
-    `cond::canceled` while a stop is pending, the operation saw the stop
-    first and acquired nothing, so the body is unwound there. Any other
-    result is handed to the body, and the stop takes effect at the next
-    `co_await`. An operation whose result is not a @ref results can
+    An operation that completes without suspending always has
+    its `await_resume` called, because its `await_ready` or
+    `await_suspend` may already have acquired a resource, such as
+    `async_mutex`'s lock, that only its `await_resume` hands over. If
+    that result is a @ref results holding `cond::canceled` while a stop
+    is pending, the operation saw the stop first and acquired nothing,
+    so the quitter is stopped at that `co_await`. Any other result is
+    handed to the body, and the stop takes effect at the next
+    suspension. An operation whose result is not a @ref results can
     therefore hand the body one result it produced after seeing the
     stop.
 
-    The body runs until it returns, exits via an exception, or is unwound
-    by a stop request. Control then transfers directly back to the
-    awaiting coroutine, again without an executor operation.
+    When the body returns or exits via an exception, control transfers
+    directly back to the awaiting coroutine.
 
     @par Await-returns
+
     The value the body passed to `co_return`, moved out of the quitter,
-    or nothing when `T` is `void`.
+    or nothing when `T` is `void`. If the body exits via an unhandled
+    exception, that exception is rethrown instead.
 
-    If the body exits via an unhandled exception, that exception is
-    rethrown instead.
+    If the quitter was stopped, the stopped value instead:
 
-    If the coroutine completed as stopped, the internal sentinel
-    exception is thrown instead of await-returning. Awaiting a stopped
-    `quitter` from another `quitter` therefore stops that one too. A
-    @ref task awaiting it sees the sentinel as an unhandled exception in
-    its own body. When a quitter is started by `run_async`, a stopped
-    completion reaches the error handler as the sentinel
-    `std::exception_ptr`, not the value handler.
+    @li for `results<Ts...>`: `make_error_code(error::canceled)` with
+        each `Ts` value-initialized; it compares equal to
+        `cond::canceled`. Every `Ts` must be default-constructible.
+    @li for `std::error_code`: `make_error_code(error::canceled)`.
+    @li for any other `T`, `void` included: no value; an exception of
+        an unspecified type derived from `std::system_error`, whose
+        `code()` compares equal to `cond::canceled`, is thrown. A `void`
+        return would read as success. Such a `quitter<T>` cannot be used
+        where exceptions are disabled: use `quitter<results<>>` there.
+
+    `co_await run(ex)(q)`, and the other @ref run overloads, yield the
+    same stopped value. A quitter started by `run_async` reports a stop
+    the same way. For `results<Ts...>` and `std::error_code`, the value
+    handler receives the stopped value. For any other `T`, the error
+    handler receives the exception. With no error handler, no handler
+    is called and the stop is discarded. This also holds when the
+    exception escapes a @ref task that awaited the quitter: the task is
+    unwound, and with no error handler `run_async` discards the stop.
+    Any other exception, a `std::system_error` with `cond::canceled`
+    included, still calls `std::terminate`. That includes a
+    `std::system_error` copy of the stop that a task throws.
 
     @par Await-postcondition
-    The quitter's coroutine has run to completion and is suspended at its
-    final suspend point; the body's RAII destructors have run. Exactly
-    one of the following holds: the body returned a value; the body
-    exited via an exception; or `handle().promise().stopped()` returns
-    `true`. When the body returned a value, the await moved it out, so a
-    quitter must not be awaited twice.
+    The quitter's coroutine has completed, has been destroyed by a
+    stop, or, when the stop was requested before it was awaited, was
+    never started. A quitter must not be awaited twice.
 
     @par Remarks
-    Supports _ContextAwaitable cancellation_.
+    Supports _ContextAwaitable cancellation_. A quitter stops through the
+    owner of its segment (@ref await_context::owner). A launcher that
+    starts a quitter in an environment with no owner cannot stop it: a
+    debug build asserts, and otherwise the quitter runs on as a
+    @ref task would. A stop that arrives while
+    the execution context is being shut down may end the quitter as a
+    teardown instead, with nothing delivered. Stop the work, wait for it
+    to finish, and only then destroy the context.
 
-    @tparam T The result type.  Use `quitter<>` for `quitter<void>`.
+    A stop destroys quitter frames that are suspended at a `co_await`.
+    GCC 15.2, and GCC 16 before 2026-07-02, at `-O0`, miscompile such a
+    destruction when the `co_await` initializes a structured binding
+    with an element that is not trivially destructible: the destructor
+    of the never-constructed binding runs (GCC PR c++/124584). Bind the
+    result to a named variable, and destructure it after the
+    `co_await`:
 
-    @see @ref task, @ref ContextRunnable, @ref ContextAwaitable
+    @code
+    auto r = co_await mtx.scoped_lock();
+    auto& [ec, guard] = r;
+    @endcode
+
+    @tparam T The result type. Use `quitter<>` for `quitter<void>`.
+
+    @see @ref task, @ref ContextRunnable, @ref ContextAwaitable,
+    @ref chain_owner
 */
 template<typename T = void>
 struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     quitter
+    : private detail::quitter_opener
 {
-    /** Stores `quitter<T>`'s result and unwinds the body when the stop token fires.
+    /** Stores `quitter<T>`'s result and routes its awaits through the segment's gate.
 
         This is the promise object the compiler associates with a
         `quitter<T>` coroutine. It satisfies the coroutine promise
         requirements and participates in the I/O awaitable protocol via
         @ref context_awaitable_promise_base. Unlike @ref task::promise_type,
         its `transform_awaitable` checks the stop token before each
-        awaited result reaches the body. A pending stop request throws an
-        internal sentinel exception that unwinds to a "stopped"
-        completion. It is part of the coroutine machinery and is not
-        intended to be used directly by callers.
+        awaited operation starts. It hands the operation the segment's
+        gate as the continuation, not this coroutine. It is part of
+        the coroutine machinery and is not intended to be used directly
+        by callers.
 
         Result storage and `return_value`/`return_void` are provided by
         `detail::quitter_return_base<T>`.
@@ -179,55 +464,89 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     private:
         friend quitter;
 
-        enum class completion { running, value, exception, stopped };
+        template<class>
+        friend struct quitter;
 
-        union { std::exception_ptr ep_; };
-        completion state_;
+        std::exception_ptr ep_;
+
+        // The gate of the segment this frame runs in.
+        detail::quitter_segment::promise_type* seg_ = nullptr;
+
+        // The gate this frame owns, when a launcher started it.
+        detail::quitter_segment own_gate_{};
+
+        // This frame opened its segment.
+        bool top_ = false;
+
+        void open_gate()
+        {
+            own_gate_ = detail::make_quitter_segment();
+            seg_ = &own_gate_.h_.promise();
+            seg_->frame_env_ = this->environment();
+        }
 
     public:
-        /// Construct the promise in the running state.
-        promise_type() noexcept
-            : state_(completion::running)
-        {
-        }
+        /// Construct the promise.
+        promise_type() noexcept = default;
 
-        /// Destroy the promise, releasing any stored exception.
+        /// Destroy the promise, and the gate it owns, if any.
         ~promise_type()
         {
-            if(state_ == completion::exception ||
-               state_ == completion::stopped)
-                ep_.~exception_ptr();
+            if(own_gate_.h_)
+                own_gate_.h_.destroy();
         }
 
-        /** Return a non-null exception_ptr when the coroutine threw
-            or was stopped.
-
-            Stopped quitters report the sentinel
-            stop_requested_exception so that run_async routes to
-            the error handler instead of accessing a non-existent
-            result.
+        /** Return the exception the body exited with, if any.
 
             @return The stored exception if the coroutine exited via an
-            exception or was stopped, otherwise a null
-            `std::exception_ptr`.
+            exception, otherwise a null `std::exception_ptr`.
         */
         std::exception_ptr exception() const noexcept
         {
-            if(state_ == completion::exception ||
-               state_ == completion::stopped)
-                return ep_;
-            return {};
+            return ep_;
         }
 
-        /** True when the coroutine was stopped via the stop token.
+        /** Return what a stopped `quitter<T>` delivers.
 
-            @return `true` if the body was unwound by a stop request;
-            `false` if it returned a value or exited via any other
-            exception.
+            Launchers that start a quitter directly call this when its
+            segment was abandoned for a stop: see
+            @ref chain_owner::stopped. Its result, or the exception it
+            throws, is reported in place of the coroutine's own result.
+
+            @return `make_error_code(error::canceled)` with value-initialized
+            payloads for `results<Ts...>`, or
+            `make_error_code(error::canceled)` for `std::error_code`.
+
+            @throws std::system_error For any other `T`, `void` included,
+            with a `code()` that compares equal to `cond::canceled`.
         */
-        bool stopped() const noexcept
+        static T stopped_result()
         {
-            return state_ == completion::stopped;
+            return detail::stopped_value<T>::get();
+        }
+
+        /** Return the handle a launcher resumes to start the quitter.
+
+            Launchers that start a quitter directly resume this handle,
+            not the coroutine's own, so the stop is checked when the body
+            would start rather than when the launcher was called. The
+            handle is the quitter's gate, which either starts the body
+            or, if a stop was requested by then, abandons the segment for
+            the stop: see @ref chain_owner::abandon_for_stop.
+
+            @par Preconditions
+            The coroutine has not started, and its environment is set.
+
+            @return The handle of the quitter's gate.
+
+            @throws std::bad_alloc If the gate cannot be allocated.
+        */
+        std::coroutine_handle<> launch_handle()
+        {
+            open_gate();
+            seg_->target_ =
+                std::coroutine_handle<promise_type>::from_promise(*this);
+            return seg_->handle();
         }
 
         /** Return the owning `quitter` for this coroutine.
@@ -246,11 +565,11 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         /** Return the initial-suspend awaiter.
 
             The coroutine always suspends at the initial suspend point,
-            so the body does not start until the quitter is awaited. When
-            the body is resumed, the awaiter restores the thread-local
-            frame allocator. It then throws the internal sentinel
-            exception if stop is already requested, so the body never
-            runs and the coroutine completes as stopped.
+            so the body does not start until the quitter is awaited or
+            started. When the body is resumed, the awaiter restores the
+            thread-local frame allocator. A quitter started directly by a
+            launcher that did not call @ref launch_handle creates its
+            gate at that point.
 
             @return An awaiter that suspends unconditionally.
         */
@@ -269,14 +588,15 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                 {
                 }
 
-                // Potentially-throwing: checks the stop token before
-                // the coroutine body executes its first statement.
+                // Allocates the gate of a quitter that a launcher started
+                // without launch_handle(); a failure is reported as the
+                // body's exception.
                 void await_resume() const
                 {
                     set_current_frame_allocator(
                         p_->environment()->frame_allocator);
-                    if(p_->environment()->stop_token.stop_requested())
-                        throw detail::stop_requested_exception{};
+                    if(!p_->seg_)
+                        p_->open_gate();
                 }
             };
             return awaiter{this};
@@ -305,6 +625,10 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
                 std::coroutine_handle<> await_suspend(
                     std::coroutine_handle<>) const noexcept
                 {
+                    // The top frame completed: its segment owes no
+                    // unwind.
+                    if(p_->top_)
+                        p_->seg_->active_ = false;
                     return p_->continuation();
                 }
 
@@ -316,49 +640,23 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         /** Capture the in-flight exception from the coroutine body.
 
             Called by the compiler when the coroutine body exits via an
-            unhandled exception. The internal stop sentinel is recorded as
-            a stopped completion; any other exception is recorded as an
-            exception completion. The stored exception is surfaced (or
-            routed to the error handler) when the quitter is awaited or run.
+            unhandled exception. The exception is rethrown when the
+            quitter is awaited, or routed to the error handler when it is
+            run.
         */
-        void unhandled_exception()
+        void unhandled_exception() noexcept
         {
-            try
-            {
-                throw;
-            }
-            catch(detail::stop_requested_exception const&)
-            {
-                // Store the exception_ptr so that run_async's
-                // invoke_impl routes to the error handler
-                // instead of accessing a non-existent result.
-                new (&ep_) std::exception_ptr(
-                    std::current_exception());
-                state_ = completion::stopped;
-            }
-            catch(...)
-            {
-                new (&ep_) std::exception_ptr(
-                    std::current_exception());
-                state_ = completion::exception;
-            }
+            ep_ = std::current_exception();
         }
-
-        //------------------------------------------------------
-        // transform_awaitable — the key difference from task<T>
-        //------------------------------------------------------
 
         /** Awaiter wrapping a nested `co_await` of an @ref ContextAwaitable.
 
             Forwards the environment to the inner awaitable's
-            environment-taking `await_suspend` and restores the
+            environment-taking `await_suspend`, and restores the
             thread-local frame allocator before the body resumes. Unlike
-            `task`'s, it also checks the stop token. A stop pending before
-            the wrapped awaitable is touched, or on resumption after an
-            asynchronous completion, throws the internal sentinel. The
-            body then unwinds before it observes the operation's result.
-            A synchronous completion is always handed over through the
-            wrapped awaitable's `await_resume`.
+            `task`'s, it checks the stop token before the inner awaitable
+            is touched. It passes the inner awaitable the segment's gate
+            as the continuation, not this coroutine.
 
             @tparam Awaitable The awaitable being transformed.
         */
@@ -371,207 +669,307 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             /// The promise of the coroutine performing the `co_await`.
             promise_type* p_;
 
-            /// True when a stop was pending at the `co_await`, so the
-            /// wrapped awaitable was never touched.
-            bool skipped_ = false;
+            /// The wrapped awaitable's await-result type.
+            using result_type = decltype(
+                std::declval<std::decay_t<Awaitable>&>().await_resume());
 
-            /// True when the wrapped awaitable completed synchronously, so
-            /// its `await_resume` must run to hand over what it acquired.
-            bool completed_ = false;
+            /// True when the await-result is a @ref results, which is
+            /// checked for a canceled stop after a synchronous completion.
+            static constexpr bool checks_canceled =
+                detail::is_results_v<result_type>;
+
+            /// True when the checks that may call the wrapped awaitable's
+            /// `await_resume` early cannot throw.
+            static constexpr bool checks_noexcept =
+                !checks_canceled || noexcept(
+                    std::declval<std::decay_t<Awaitable>&>().await_resume());
+
+            /// Empty stand-in for @ref result_ when nothing is checked.
+            struct no_result {};
+
+            /// The result of a synchronous completion, taken early by
+            /// @ref stops_on_sync_completion and handed over by
+            /// @ref await_resume.
+            std::conditional_t<checks_canceled,
+                std::optional<result_type>, no_result> result_{};
+
+            /// True when the stop takes effect at this `co_await` without
+            /// suspending: a stop was pending before the wrapped awaitable
+            /// was touched, or it completed synchronously with a result
+            /// canceled by that stop.
+            bool stop_here_ = false;
+
+            /** Take the result of a synchronous completion, and report
+                whether the stop takes effect here instead.
+
+                The wrapped awaitable's `await_resume` is always called,
+                because its `await_ready` or `await_suspend` may already
+                have acquired something that only `await_resume` hands
+                over. A @ref results holding `cond::canceled` while our
+                stop is pending saw the stop first and acquired nothing,
+                so the quitter can be abandoned. Any other result is kept
+                for @ref await_resume. A result that is not a
+                @ref results is not taken early.
+
+                @return `true` if the quitter is abandoned at this
+                `co_await`.
+            */
+            bool stops_on_sync_completion() noexcept(checks_noexcept)
+            {
+                if constexpr (checks_canceled)
+                {
+                    result_.emplace(a_.await_resume());
+                    // The stop check first: comparing with
+                    // cond::canceled goes through the error category's
+                    // virtual calls, and a stop is rarely pending.
+                    return detail::quitter_stop_pending(p_->environment()) &&
+                        std::get<0>(*result_) == cond::canceled;
+                }
+                else
+                {
+                    return false;
+                }
+            }
 
             /** Report whether the `co_await` can continue without
                 suspending.
 
                 The stop token is checked first. If a stop is pending, the
-                wrapped awaitable is never touched: this returns `true`, and
-                @ref await_resume throws. Otherwise the wrapped awaitable's
-                own `await_ready` decides. A `true` result there means it
-                completed synchronously, so @ref await_resume calls its
-                `await_resume` even if a stop arrives afterwards. That hands
-                over anything it acquired, such as `async_mutex`'s lock.
+                wrapped awaitable is never touched: this returns `false`,
+                and @ref await_suspend ends the quitter. Otherwise the
+                wrapped awaitable's own `await_ready` decides. A `true`
+                result means it completed synchronously. Its
+                `await_resume` then hands over its result, even if a stop
+                arrives afterwards, unless that result is a @ref results
+                canceled by the stop (see @ref stops_on_sync_completion).
 
                 Where `BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND` is on,
                 this always returns `false`, and @ref await_suspend does both
                 steps instead. See `detail::await_ready_then_suspend`.
 
-                @return `true` if no suspension is needed. Always `false`
-                where the workaround is on.
+                @return `true` if no suspension is needed.
             */
-            bool await_ready() noexcept
+            bool await_ready() noexcept(checks_noexcept)
             {
 #if BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND
                 return false;
 #else
-                if(p_->environment()->stop_token.stop_requested())
+                if(detail::quitter_stop_pending(p_->environment()))
                 {
-                    skipped_ = true;
-                    return true;
+                    stop_here_ = true;
+                    return false;
                 }
-                completed_ = a_.await_ready();
-                return completed_;
+                if(!a_.await_ready())
+                    return false;
+                stop_here_ = stops_on_sync_completion();
+                return !stop_here_;
 #endif
             }
 
-            /** Restore the frame allocator, check for stop, then resume the
-                wrapped awaitable.
+            /** Restore the frame allocator, then return the wrapped
+                awaitable's result.
 
-                Reinstalls the thread-local frame allocator from the stored
-                environment. The internal sentinel exception is then thrown
-                in three cases: a stop was pending before the wrapped
-                awaitable was touched; a stop is pending now and the
-                wrapped awaitable completed asynchronously; or a stop is
-                pending now and the wrapped awaitable's result is a
-                @ref results holding `cond::canceled`. The body therefore
-                never observes that operation's result, and unwinds through
-                its RAII destructors to a stopped completion. A wrapped
-                awaitable that completed synchronously always has its
-                `await_resume` called, and any other result it gives is
-                returned, with the stop taking effect at the next
-                `co_await`. This is the one place `quitter` differs from
-                @ref task::promise_type::transform_awaiter.
-
-                After an asynchronous completion with a stop pending, the
-                operation's result is dropped. Releasing anything it held is
-                then the wrapped awaiter's destructor's job: `async_mutex`
-                releases a lock it granted, and `async_waker` drops the
-                wakeup. The body is unwinding, so nothing observes the loss.
+                The body is resumed only when the wrapped awaitable
+                completed synchronously, or completed through the gate
+                with no stop requested.
 
                 @return The wrapped awaitable's await-result, forwarded
-                unchanged, when no sentinel is thrown.
-
-                @par Exception Safety
-                Throws the library's internal stop sentinel in the three
-                cases above. The wrapped awaitable's `await_resume` is not
-                called in the first two; in the third, its canceled result
-                is dropped.
+                unchanged, or the result already taken from it.
             */
             decltype(auto) await_resume()
             {
                 set_current_frame_allocator(
                     p_->environment()->frame_allocator);
-                if(skipped_ ||
-                    (!completed_ &&
-                     p_->environment()->stop_token.stop_requested()))
-                    throw detail::stop_requested_exception{};
-                using R = decltype(a_.await_resume());
-                if constexpr (detail::is_results_v<R>)
+                if constexpr (checks_canceled)
                 {
-                    // A result canceled by our own stop acquired
-                    // nothing, so the stop can take effect here.
-                    R r = a_.await_resume();
-                    if(std::get<0>(r) == cond::canceled &&
-                        p_->environment()->stop_token.stop_requested())
-                        throw detail::stop_requested_exception{};
-                    return r;
+                    if(result_)
+                        return result_type(std::move(*result_));
                 }
-                else
-                {
-                    return a_.await_resume();
-                }
+                return a_.await_resume();
             }
 
-            /** Suspend by calling the wrapped awaitable with the
-                environment.
+            /** Start the wrapped awaitable with the gate as its
+                continuation, or end the quitter on a pending stop.
 
-                This is the plain `await_suspend` the compiler calls for the
-                nested `co_await`. It forwards to the wrapped awaitable's
-                @ref ContextAwaitable overload, supplying the promise's stored
-                environment as the second argument. It keeps the wrapped
-                awaitable's suspension decision, whatever form it takes.
-                When that decision is to continue without suspending, the
-                wrapped awaitable completed synchronously, and
-                @ref await_resume will call its `await_resume`. Returning
-                `h` itself counts as continuing without suspending.
+                If a stop is pending, the segment is abandoned for the
+                stop and this coroutine stays suspended until it is
+                destroyed. Otherwise this coroutine becomes the gate's
+                target, and the wrapped awaitable's @ref ContextAwaitable
+                overload is called with the gate's handle and the
+                promise's environment. If that call completes without
+                suspending (returning `false`, or the gate's own handle),
+                this coroutine continues to @ref await_resume without
+                passing through the gate, unless its result is a
+                @ref results canceled by the stop (see
+                @ref stops_on_sync_completion).
 
                 @param h The coroutine performing the `co_await`.
 
-                @return Whatever the wrapped awaitable's `await_suspend`
-                returns. When that is a `std::coroutine_handle<>`, the
-                handle is routed through `detail::symmetric_transfer`.
-                Where `BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND` is on,
-                this function instead returns `bool`. It first checks the
-                stop token, as @ref await_ready does where the workaround is
-                off, and returns `false` without touching the wrapped
-                awaitable if a stop is pending. Otherwise it returns the
-                result of `detail::await_ready_then_suspend`. Where the
-                workaround is off, a returned handle is passed back
-                unchanged for symmetric transfer.
+                @return Where the workaround is off, the handle to resume:
+                `h` to continue, a handle the wrapped awaitable returned,
+                or `std::noop_coroutine()`. Where
+                `BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND` is on, `false`
+                to continue and `true` to stay suspended; the stop check
+                and the wrapped awaitable's `await_ready` both run here,
+                through `detail::await_ready_then_suspend`.
             */
             template<class Promise>
             auto await_suspend(
-                std::coroutine_handle<Promise> h) noexcept
+                std::coroutine_handle<Promise> h) noexcept(checks_noexcept)
             {
-                // completed_ is written only where nothing else can have
-                // resumed this frame: a frame that really suspended may
-                // already be running, or gone, on another thread.
+                // After the wrapped awaitable's await_suspend, the gate
+                // may already have run and destroyed this frame on
+                // another thread: only locals are used from then on,
+                // except after a synchronous completion, which leaves
+                // the frame to us.
+                auto* seg = p_->seg_;
+                auto const* env = p_->environment();
 #if BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND
-                if(p_->environment()->stop_token.stop_requested())
+                if(detail::quitter_stop_pending(env))
                 {
-                    skipped_ = true;
-                    return false;
-                }
-                return detail::await_ready_then_suspend(
-                    a_, h, p_->environment(), &completed_);
-#else
-                using R = decltype(
-                    a_.await_suspend(h, p_->environment()));
-                if constexpr (std::is_same_v<
-                    R, std::coroutine_handle<>>)
-                {
-                    std::coroutine_handle<> next =
-                        a_.await_suspend(h, p_->environment());
-                    // Returning h means no one else can resume this
-                    // frame: a synchronous completion.
-// GCC falsely warns that writing completed_ overruns the noop
-// coroutine's frame: when the wrapped await_suspend returns
-// std::noop_coroutine(), it assumes the branch below can be taken
-// and treats this frame as the noop frame. A noop handle never
-// equals h, so the branch is dead on that path.
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#endif
-                    if(next == h)
-                        completed_ = true;
-#if defined(__GNUC__) && !defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-                    return detail::symmetric_transfer(next);
-                }
-                else if constexpr (std::is_same_v<R, bool>)
-                {
-                    if(!a_.await_suspend(h, p_->environment()))
-                    {
-                        completed_ = true;
-                        return false;
-                    }
+                    seg->stop();
                     return true;
+                }
+                seg->target_ = h;
+                if(detail::await_ready_then_suspend(
+                    a_, seg->handle(), env))
+                    return true;
+                if(stops_on_sync_completion())
+                {
+                    seg->stop();
+                    return true;
+                }
+                return false;
+#else
+                if(stop_here_)
+                {
+                    seg->stop();
+                    return std::coroutine_handle<>(std::noop_coroutine());
+                }
+                seg->target_ = h;
+                std::coroutine_handle<> gate = seg->handle();
+                using R = decltype(a_.await_suspend(gate, env));
+                if constexpr (std::is_same_v<R, bool>)
+                {
+                    if(!a_.await_suspend(gate, env))
+                        return continue_or_stop(h);
+                    return std::coroutine_handle<>(std::noop_coroutine());
+                }
+                else if constexpr (std::is_void_v<R>)
+                {
+                    a_.await_suspend(gate, env);
+                    return std::coroutine_handle<>(std::noop_coroutine());
                 }
                 else
                 {
-                    return a_.await_suspend(
-                        h, p_->environment());
+                    std::coroutine_handle<> r = a_.await_suspend(gate, env);
+                    if(r == gate)
+                        return continue_or_stop(h);
+                    return r;
                 }
 #endif
+            }
+
+#if !BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND
+            /** After a synchronous completion in @ref await_suspend,
+                continue to @ref await_resume, or end the quitter.
+
+                @param h The coroutine performing the `co_await`.
+
+                @return `h`, or `std::noop_coroutine()` when the quitter is
+                abandoned here (see @ref stops_on_sync_completion).
+            */
+            std::coroutine_handle<>
+            continue_or_stop(std::coroutine_handle<> h)
+                noexcept(checks_noexcept)
+            {
+                if(!stops_on_sync_completion())
+                    return h;
+                p_->seg_->stop();
+                return std::noop_coroutine();
+            }
+#endif
+        };
+
+        /** Awaiter for a nested `co_await` of a quitter.
+
+            The awaited quitter joins this coroutine's segment instead of
+            opening one: it runs in the same environment and gate, and a
+            stop ends both together. Its completion transfers straight
+            back to this coroutine.
+
+            @tparam Q The awaited quitter type.
+        */
+        template<class Q>
+        struct join_awaiter
+        {
+            /// The awaited quitter, stored by value.
+            Q q_;
+
+            /// The promise of the coroutine performing the `co_await`.
+            promise_type* p_;
+
+            /// Return `false`; the joined quitter has not started.
+            bool await_ready() const noexcept
+            {
+                return false;
+            }
+
+            /** Start the joined quitter, or end the segment on a pending
+                stop.
+
+                @param h The coroutine performing the `co_await`.
+
+                @return The joined quitter's handle, for symmetric
+                transfer, or `std::noop_coroutine()` after a stop. Where
+                the workaround is on, `void`.
+            */
+            template<class Promise>
+            auto await_suspend(std::coroutine_handle<Promise> h) noexcept
+            {
+                auto const* env = p_->environment();
+                if(detail::quitter_stop_pending(env))
+                {
+                    p_->seg_->stop();
+                    return detail::symmetric_transfer(
+                        std::noop_coroutine());
+                }
+                return detail::symmetric_transfer(
+                    q_.join(h, p_->seg_, env));
+            }
+
+            /** Restore the frame allocator, then return the joined
+                quitter's result.
+
+                @return The joined quitter's await-result.
+            */
+            decltype(auto) await_resume()
+            {
+                set_current_frame_allocator(
+                    p_->environment()->frame_allocator);
+                return q_.await_resume();
             }
         };
 
         /** Transform a nested awaitable before `co_await`.
 
-            Wraps an @ref ContextAwaitable in a @ref transform_awaiter so the
-            coroutine's environment is propagated into it and the stop
-            token is checked on resumption. A diagnostic is emitted if the
-            awaitable does not satisfy @ref ContextAwaitable.
+            A quitter is wrapped in a @ref join_awaiter. Any other
+            @ref ContextAwaitable is wrapped in a @ref transform_awaiter.
+            A diagnostic is emitted for anything else.
 
             @param a The awaitable expression from `co_await a`.
 
-            @return A @ref transform_awaiter wrapping `a`.
+            @return The awaiter wrapping `a`.
         */
         template<class Awaitable>
         auto transform_awaitable(Awaitable&& a)
         {
             using A = std::decay_t<Awaitable>;
-            if constexpr (ContextAwaitable<A>)
+            if constexpr (detail::is_quitter<A>::value)
+            {
+                return join_awaiter<A>{std::forward<Awaitable>(a), this};
+            }
+            else if constexpr (ContextAwaitable<A>)
             {
                 return transform_awaiter<Awaitable>{
                     std::forward<Awaitable>(a), this};
@@ -586,9 +984,10 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
     /** Handle to the owned coroutine frame.
 
-        Null when the quitter is empty (for example after a move or after
-        @ref release). Prefer @ref handle to read this; the member is
-        public for use by the coroutine machinery.
+        Null when the quitter is empty (for example after a move, after
+        @ref release, or once a stop has destroyed the frame). Prefer
+        @ref handle to read this; the member is public for use by the
+        coroutine machinery.
     */
     std::coroutine_handle<promise_type> h_;
 
@@ -618,54 +1017,79 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         return false;
     }
 
-    /** Return the result, rethrow exception, or propagate stop.
-
-        When stopped, throws stop_requested_exception so that a
-        parent quitter also stops.  A parent task<T> sees this
-        as an unhandled exception — by design.
+    /** Return the result, rethrow the body's exception, or deliver the stopped value.
 
         @return The result value for non-void `T`, moved out of the
-        quitter; otherwise `void`.
+        quitter, or the stopped value if the quitter was stopped.
 
         @par Exception Safety
-        If the coroutine was stopped, the library's internal stop sentinel
-        is thrown. If the body exited via any other exception, that
-        exception is rethrown.
+        If the body exited via an exception, that exception is rethrown.
+        If the quitter was stopped and `T` is not `results<Ts...>` or
+        `std::error_code`, a `std::system_error` whose `code()`
+        compares equal to `cond::canceled` is thrown.
     */
-    auto await_resume()
+    T await_resume()
     {
         lent_ = false;
-        if(h_.promise().stopped())
-            throw detail::stop_requested_exception{};
-        if(h_.promise().state_ == promise_type::completion::exception)
-            std::rethrow_exception(h_.promise().ep_);
+        if(stopped_)
+            return promise_type::stopped_result();
+        auto& p = h_.promise();
+        if(p.ep_)
+            std::rethrow_exception(p.ep_);
         if constexpr (! std::is_void_v<T>)
-            return std::move(*h_.promise().result_);
-        else
-            return;
+            return std::move(*p.result_);
     }
 
-    /** Start execution with the caller's context.
+    /** Open a segment and start the quitter with the caller's context.
 
-        Stores `cont` as the continuation to resume on completion.
-        Stores `env` as the execution environment propagated to nested
-        `co_await` expressions. Then transfers control into the quitter's
-        coroutine body via the returned handle.
+        If the stop token in `env` has already been triggered, the body
+        is not started. `cont` is returned, so the caller resumes at once
+        with the stopped value.
+
+        Otherwise the quitter opens a segment of its own. The segment's
+        owner destroys the quitter's frames if the segment is abandoned.
+        Its gate is what the quitter's awaits complete through. The body
+        runs with `env`'s executor, stop token and frame allocator, and
+        the segment's owner. Control then transfers into the body.
 
         @param cont The awaiting coroutine to resume when the quitter
-        completes.
+        completes or is stopped.
 
-        @param env The execution environment (executor, stop token, and
-        frame allocator). It must outlive the quitter.
+        @param env The execution environment. It must outlive the
+        quitter.
 
-        @return The quitter's coroutine handle, for symmetric transfer.
+        @return The quitter's coroutine handle for symmetric transfer, or
+        `cont`.
+
+        @throws std::bad_alloc If the segment's frame cannot be
+        allocated. When the awaiting coroutine is a @ref task, its
+        awaiter's `await_suspend` is `noexcept`, so `std::terminate` is
+        called instead.
     */
     std::coroutine_handle<> await_suspend(
         std::coroutine_handle<> cont,
         await_context const* env)
     {
-        h_.promise().set_continuation(cont);
-        h_.promise().set_environment(env);
+        if(env->stop_token.stop_requested())
+        {
+            stopped_ = true;
+            return cont;
+        }
+        seg_ = detail::make_quitter_segment();
+        auto& sp = seg_.h_.promise();
+        sp.owner_.bind(seg_.h_, env->executor);
+        sp.env_ = *env;
+        sp.env_.owner = &sp.owner_;
+        sp.frame_env_ = &sp.env_;
+        sp.parent_.h = cont;
+        sp.parent_.owner = env->owner;
+        sp.opener_ = this;
+        sp.active_ = true;
+        auto& p = h_.promise();
+        p.seg_ = &sp;
+        p.top_ = true;
+        p.set_environment(&sp.env_);
+        p.set_continuation(cont);
         lent_ = true;
         return h_;
     }
@@ -680,12 +1104,20 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         move-assigning over the quitter object itself while its frame is
         lent is a different operation, and calls `std::terminate`.)
         The quitter's lifetime is normally managed by `run_async`, `run`,
-        or the awaiting parent. For cooperative cancellation, use
-        `std::stop_token`.
+        or the awaiting parent.
 
         @note The operation, queue or primitive holding a suspended
         coroutine gives it up by passing the continuation it keeps to
         @ref abandon. `handle()` belongs to the owning quitter object.
+
+        @note To run the quitter for an awaiting coroutine, call its
+        `await_suspend`, which opens a segment for it. Do not resume
+        this handle with the awaiting coroutine's environment: a stop
+        then abandons the awaiting coroutine's segment, and a @ref task
+        chain in it is torn down with no handler called. When
+        `run_async` or `run` owns that segment, a debug build asserts.
+        A launcher that resumes the handle itself must own the segment:
+        see @ref await_context::owner.
 
         @return The coroutine handle.
     */
@@ -727,6 +1159,9 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
     /** Construct by moving, transferring ownership.
 
+        @par Preconditions
+        `other` is not being awaited.
+
         @par Postconditions
         `other` is empty and must not be awaited.
 
@@ -735,6 +1170,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     quitter(quitter&& other) noexcept
         : h_(std::exchange(other.h_, nullptr))
     {
+        release_top_ = other.release_top_;
     }
 
     /** Assign by moving, transferring ownership.
@@ -745,6 +1181,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         @par Preconditions
         The frame being replaced is not lent: no parent is suspended
         awaiting it. Replacing a lent frame calls `std::terminate`.
+        `other` is not being awaited.
 
         @par Postconditions
         `other` is empty and must not be awaited.
@@ -759,32 +1196,60 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         {
             destroy_frame();
             h_ = std::exchange(other.h_, nullptr);
+            stopped_ = false;
         }
         return *this;
     }
 
 private:
-    // Set while a parent is suspended awaiting this quitter.
-    bool lent_ = false;
+    template<class>
+    friend struct quitter;
 
     explicit quitter(std::coroutine_handle<promise_type> h)
         : h_(h)
     {
+        release_top_ = &release_top;
+    }
+
+    static std::coroutine_handle<>
+    release_top(detail::quitter_opener& o) noexcept
+    {
+        return std::exchange(static_cast<quitter&>(o).h_, nullptr);
+    }
+
+    // Start as a quitter joining the segment of the quitter `parent`.
+    std::coroutine_handle<> join(
+        std::coroutine_handle<> parent,
+        detail::quitter_segment::promise_type* seg,
+        await_context const* env) noexcept
+    {
+        auto& p = h_.promise();
+        p.seg_ = seg;
+        p.set_environment(env);
+        p.set_continuation(parent);
+        lent_ = true;
+        return h_;
     }
 
     void destroy_frame() noexcept
     {
-        if(!h_)
-            return;
-        if(lent_ && !h_.done())
+        if(h_)
         {
-            // Only the unwind of an abandoned chain destroys a frame
-            // that is still awaited.
-            auto* owner = h_.promise().environment()->owner;
-            if(!owner || !owner->abandoned())
-                std::terminate(); // LCOV_EXCL_LINE reached only in a death test's child process
+            if(lent_ && !h_.done())
+            {
+                // Only the unwind of an abandoned chain destroys a frame
+                // that is still awaited.
+                auto* owner = h_.promise().environment()->owner;
+                if(!owner || !owner->abandoned())
+                    std::terminate(); // LCOV_EXCL_LINE reached only in a death test's child process
+            }
+            std::exchange(h_, nullptr).destroy();
         }
-        std::exchange(h_, nullptr).destroy();
+        if(seg_.h_)
+        {
+            seg_.h_.promise().active_ = false;
+            std::exchange(seg_.h_, nullptr).destroy();
+        }
         lent_ = false;
     }
 };

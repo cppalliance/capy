@@ -31,8 +31,9 @@
        if(ec) co_return;            // <-- cancellation boilerplate
      This is repeated at every suspension point.
 
-     With quitter<>, the promise intercepts the stop token
-     automatically.  The worker body is pure business logic.
+     With quitter<>, a stop request ends the worker without
+     resuming it: its frame is destroyed, its RAII guards run, and
+     the handler is called.  The worker body is pure business logic.
 */
 
 #include <boost/capy.hpp>
@@ -123,7 +124,7 @@ capy::quitter<> worker(
     }
 
     // Never reached — the loop is infinite.
-    // quitter exits at the next co_await after stop is requested.
+    // A stop request ends the worker at the co_await it is waiting in.
 }
 
 int main()

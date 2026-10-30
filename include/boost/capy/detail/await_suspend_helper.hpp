@@ -145,18 +145,13 @@ symmetric_transfer(std::coroutine_handle<> h) noexcept
 
     The awaiting coroutine continues without suspending when the
     wrapped awaitable is ready, or when its `await_suspend` returns
-    `false`. When the wrapped `await_suspend` returns a handle, that
-    handle is resumed through `symmetric_transfer` and the awaiting
-    coroutine stays suspended. Returning `false` instead of resuming
-    inline keeps immediate completions from growing the stack.
-
-    When `completed` is given, a returned handle equal to `h` is
-    treated as a synchronous completion as well: it is not resumed,
-    `*completed` is set, and `false` is returned. `*completed` is set
-    on every synchronous completion and is never written after a real
-    suspension, when the frame may already be running elsewhere.
-    `quitter` uses this to hand over a synchronous result even if a
-    stop arrives. `task` passes nothing and keeps the inline resume.
+    `false` or returns `h` itself. When the wrapped `await_suspend`
+    returns any other handle, that handle is resumed through
+    `symmetric_transfer` and the awaiting coroutine stays suspended.
+    Returning `false` instead of resuming inline keeps immediate
+    completions from growing the stack. `quitter` passes its gate as
+    `h`, so a wrapped awaitable that completes by returning the gate is
+    a synchronous completion, not a pass through the gate.
 
     @param a The wrapped awaitable.
 
@@ -165,9 +160,6 @@ symmetric_transfer(std::coroutine_handle<> h) noexcept
     @param env The execution environment to pass to the wrapped
     awaitable's `await_suspend`.
 
-    @param completed If not null, set to `true` when the wrapped
-    awaitable completes synchronously.
-
     @return `false` to continue without suspending, otherwise `true`.
 */
 template<class Awaitable>
@@ -175,24 +167,15 @@ bool
 await_ready_then_suspend(
     Awaitable& a,
     std::coroutine_handle<> h,
-    await_context const* env,
-    bool* completed = nullptr) noexcept
+    await_context const* env) noexcept
 {
     // Called exactly once: await_ready may consume state.
     if(a.await_ready())
-    {
-        if(completed)
-            *completed = true;
         return false;
-    }
     using R = decltype(a.await_suspend(h, env));
     if constexpr (std::is_same_v<R, bool>)
     {
-        if(a.await_suspend(h, env))
-            return true;
-        if(completed)
-            *completed = true;
-        return false;
+        return a.await_suspend(h, env);
     }
     else if constexpr (std::is_void_v<R>)
     {
@@ -202,11 +185,8 @@ await_ready_then_suspend(
     else
     {
         std::coroutine_handle<> next = a.await_suspend(h, env);
-        if(completed && next == h)
-        {
-            *completed = true;
+        if(next == h)
             return false;
-        }
         symmetric_transfer(next);
         return true;
     }
