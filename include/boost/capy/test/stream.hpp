@@ -328,7 +328,7 @@ public:
 
             bool await_ready() const noexcept
             {
-                if(buffer_empty(buffers_))
+                if(buffers_empty(buffers_))
                     return true;
                 auto* st = self_->state_.get();
                 auto& side = st->sides[self_->index_];
@@ -374,7 +374,7 @@ public:
                     stop_cb_active_ = false;
                 }
 
-                if(buffer_empty(buffers_))
+                if(buffers_empty(buffers_))
                     return {std::error_code(), 0};
 
                 if(canceled_)

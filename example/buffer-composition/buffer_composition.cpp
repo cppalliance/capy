@@ -55,7 +55,7 @@ void demonstrate_two_buffer_scatter()
     // Calculate total size
     std::size_t total = capy::buffer_size(message);
     std::cout << "Total message size: " << total << " bytes\n";
-    std::cout << "Buffer count: " << capy::buffer_length(message) << "\n";
+    std::cout << "Buffer count: " << capy::buffers_count(message) << "\n";
     
     // Iterate through buffers
     std::cout << "\nBuffer contents:\n";
@@ -90,7 +90,7 @@ void demonstrate_buffer_array()
     
     std::size_t total = capy::buffer_size(http_response);
     std::cout << "HTTP response size: " << total << " bytes\n";
-    std::cout << "Buffer count: " << capy::buffer_length(http_response) << "\n";
+    std::cout << "Buffer count: " << capy::buffers_count(http_response) << "\n";
     
     // In real code with streams:
     // co_await write(stream, http_response);
@@ -110,7 +110,7 @@ void demonstrate_mutable_buffers()
         capy::mutable_buffer(buf2, sizeof(buf2))
     }};
     
-    std::cout << "Prepared " << capy::buffer_length(recv_buffers) 
+    std::cout << "Prepared " << capy::buffers_count(recv_buffers) 
               << " buffers with " << capy::buffer_size(recv_buffers) 
               << " bytes total capacity\n";
     

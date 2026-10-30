@@ -38,4 +38,4 @@ At type-erasure boundaries the tradeoff reverses. Virtual functions need concret
 The concepts require bidirectional ranges, not merely forward ranges, for two reasons:
 
 1. Some algorithms traverse buffers backwards
-2. The slice views from cpp:buffer_slice[] and cpp:consuming_buffers::data[]`()` must adjust the first and last buffers' bounds
+2. Composed operations such as cpp:read[] and cpp:write[] resume partway through a sequence, through a view that must adjust the first buffer's bounds

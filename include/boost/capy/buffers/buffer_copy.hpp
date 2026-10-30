@@ -52,10 +52,10 @@ constexpr struct
         std::size_t total = 0;
         std::size_t pos0 = 0;
         std::size_t pos1 = 0;
-        auto const end0 = end(src);
-        auto const end1 = end(dest);
-        auto it0 = begin(src);
-        auto it1 = begin(dest);
+        auto const end0 = buffer_sequence_end(src);
+        auto const end1 = buffer_sequence_end(dest);
+        auto it0 = buffer_sequence_begin(src);
+        auto it1 = buffer_sequence_begin(dest);
         while(
             total < at_most &&
             it0 != end0 &&

@@ -126,7 +126,7 @@ If `buffer_size(buffers) > 0`:
 * If `!ec`: `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were read.
 * If `ec`: `n >= 0 && n \<= buffer_size(buffers)`. `n` is the number of bytes read before the I/O condition arose.
 
-If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
+If `buffers_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
 
 ==== Example
 
@@ -180,7 +180,7 @@ If `buffer_size(buffers) > 0`:
 * If `!ec`: `n >= 1 && n \<= buffer_size(buffers)`. `n` bytes were written.
 * If `ec`: `n >= 0 && n \<= buffer_size(buffers)`. `n` is the number of bytes written before the I/O condition arose.
 
-If `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
+If `buffers_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
 
 ==== Example
 

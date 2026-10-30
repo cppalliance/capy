@@ -20,12 +20,6 @@
 // tag::make_buffer_include[]
 #include <boost/capy/buffers/make_buffer.hpp>
 // end::make_buffer_include[]
-// tag::buffer_slice_include[]
-#include <boost/capy/buffers/buffer_slice.hpp>
-// end::buffer_slice_include[]
-// tag::consuming_buffers_include[]
-#include <boost/capy/buffers/consuming_buffers.hpp>
-// end::consuming_buffers_include[]
 
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/concept/read_stream.hpp>

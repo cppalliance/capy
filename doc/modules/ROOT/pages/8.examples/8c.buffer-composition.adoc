@@ -51,7 +51,7 @@ Capy's buffer-sequence concepts accept any range of cpp:const_buffer[] or cpp:mu
 include::example$buffer-composition/buffer_composition.cpp[tag=multi_buffer,indent=0]
 ----
 
-For more than two buffers, the same pattern works with a larger `std::array`. Buffer sequences support `buffer_size()` and `buffer_length()` for querying total bytes and buffer count.
+For more than two buffers, the same pattern works with a larger `std::array`. Buffer sequences support `buffer_size()` and `buffers_count()` for querying total bytes and buffer count.
 
 === Scatter/Gather I/O
 

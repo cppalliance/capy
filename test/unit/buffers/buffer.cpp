@@ -12,6 +12,7 @@
 #include <boost/capy/buffers.hpp>
 
 #include <boost/capy.hpp>
+#include <boost/capy/detail/consuming_buffers.hpp>
 #include <array>
 #include <ranges>
 #include <span>
@@ -621,7 +622,7 @@ struct buffer_test
         BOOST_TEST_EQ(buffer_copy(arr, const_buffer(src, 8)), 8);
         BOOST_TEST_EQ(std::string_view(data, 8), "abcdefgh");
 
-        consuming_buffers cb(arr);
+        detail::consuming_buffers cb(arr);
         cb.consume(5);
         BOOST_TEST_EQ(buffer_size(cb.data()), 3);
 
@@ -630,7 +631,9 @@ struct buffer_test
         one.whole = const_buffer(src, 8);
         one.push_back(mutable_buffer(data, 2));
         BOOST_TEST_EQ(buffer_size(one), 8);
-        BOOST_TEST_EQ(buffer_size(buffer_slice(one, 3)), 5);
+        detail::consuming_buffers one_cb(one);
+        one_cb.consume(3);
+        BOOST_TEST_EQ(buffer_size(one_cb.data()), 5);
 
         // Algorithms follow the concepts, however the compiler
         // classifies the type
@@ -642,7 +645,9 @@ struct buffer_test
         range.push_back(const_buffer(src + 3, 2));
         constexpr bool single = ConstBuffer<ambiguous_range_of_const>;
         BOOST_TEST_EQ(buffer_size(range), single ? 8 : 5);
-        BOOST_TEST_EQ(buffer_size(buffer_slice(range, 1)), single ? 7 : 4);
+        detail::consuming_buffers range_cb(range);
+        range_cb.consume(1);
+        BOOST_TEST_EQ(buffer_size(range_cb.data()), single ? 7 : 4);
         char out[8] = {};
         BOOST_TEST_EQ(
             buffer_copy(mutable_buffer(out, 8), range), single ? 8 : 5);
@@ -654,35 +659,35 @@ struct buffer_test
         char data[9] = "12345678";
 
         // empty const_buffer
-        BOOST_TEST(buffer_empty(const_buffer()));
-        BOOST_TEST(buffer_empty(const_buffer(data, 0)));
+        BOOST_TEST(buffers_empty(const_buffer()));
+        BOOST_TEST(buffers_empty(const_buffer(data, 0)));
 
         // non-empty const_buffer
-        BOOST_TEST(! buffer_empty(const_buffer(data, 1)));
-        BOOST_TEST(! buffer_empty(const_buffer(data, 5)));
+        BOOST_TEST(! buffers_empty(const_buffer(data, 1)));
+        BOOST_TEST(! buffers_empty(const_buffer(data, 5)));
 
         // empty mutable_buffer
-        BOOST_TEST(buffer_empty(mutable_buffer()));
-        BOOST_TEST(buffer_empty(mutable_buffer(data, 0)));
+        BOOST_TEST(buffers_empty(mutable_buffer()));
+        BOOST_TEST(buffers_empty(mutable_buffer(data, 0)));
 
         // non-empty mutable_buffer
-        BOOST_TEST(! buffer_empty(mutable_buffer(data, 1)));
-        BOOST_TEST(! buffer_empty(mutable_buffer(data, 5)));
+        BOOST_TEST(! buffers_empty(mutable_buffer(data, 1)));
+        BOOST_TEST(! buffers_empty(mutable_buffer(data, 5)));
 
         // empty buffer_pair (both empty)
         {
             std::array<const_buffer, 2> cbp{{ {data, 0}, {data, 0} }};
-            BOOST_TEST(buffer_empty(cbp));
+            BOOST_TEST(buffers_empty(cbp));
         }
 
         // non-empty buffer_pair (one non-empty)
         {
             std::array<const_buffer, 2> cbp{{ {data, 0}, {data, 3} }};
-            BOOST_TEST(! buffer_empty(cbp));
+            BOOST_TEST(! buffers_empty(cbp));
         }
         {
             std::array<const_buffer, 2> cbp{{ {data, 3}, {data, 0} }};
-            BOOST_TEST(! buffer_empty(cbp));
+            BOOST_TEST(! buffers_empty(cbp));
         }
 
         // buffer sequence: all empty
@@ -693,7 +698,7 @@ struct buffer_test
                 { data, 0 }
             };
             std::span<const_buffer const> s(cb, 3);
-            BOOST_TEST(buffer_empty(s));
+            BOOST_TEST(buffers_empty(s));
         }
 
         // buffer sequence: some empty, one non-empty
@@ -704,7 +709,7 @@ struct buffer_test
                 { data, 0 }
             };
             std::span<const_buffer const> s(cb, 3);
-            BOOST_TEST(! buffer_empty(s));
+            BOOST_TEST(! buffers_empty(s));
         }
 
         // buffer sequence: none empty
@@ -715,13 +720,13 @@ struct buffer_test
                 { data, 3 }
             };
             std::span<const_buffer const> s(cb, 3);
-            BOOST_TEST(! buffer_empty(s));
+            BOOST_TEST(! buffers_empty(s));
         }
 
         // empty span (zero elements)
         {
             std::span<const_buffer const> s;
-            BOOST_TEST(buffer_empty(s));
+            BOOST_TEST(buffers_empty(s));
         }
     }
 

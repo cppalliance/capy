@@ -55,7 +55,7 @@ namespace capy {
     This lets generic composition algorithms such as `when_all` and
     `when_any` distinguish a completed transfer from a failure.
 
-    If `buffer_empty( buffers )` is `true`, `n` is 0. The empty
+    If `buffers_empty( buffers )` is `true`, `n` is 0. The empty
     buffer is not itself a cause for error, but `ec` may reflect
     the state of the stream.
 

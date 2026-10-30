@@ -14,7 +14,7 @@
 #include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/consuming_buffers.hpp>
+#include <boost/capy/detail/consuming_buffers.hpp>
 #include <boost/capy/concept/write_stream.hpp>
 
 #include <cstddef>
@@ -102,7 +102,7 @@ template <WriteStream S, ConstBufferSequence CB>
 auto
 write_at_least(S& stream, CB buffers, std::size_t n) -> task<results<std::size_t>>
 {
-    consuming_buffers consuming(buffers);
+    detail::consuming_buffers consuming(buffers);
     std::size_t const total_size = buffer_size(buffers);
 
     if(n > total_size)

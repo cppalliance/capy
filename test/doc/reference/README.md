@@ -66,7 +66,7 @@ Overload sets and duplicated records can share a `<scope>.<kind>` name. Give
 each region a declaration naming the symbols it belongs to:
 
 ```cpp
-// mrdocs::for buffer_param-0e buffer_param-0c
+// mrdocs::for <anchor> <anchor>
 ```
 
 The names are MrDocs anchors, which you can read from the generated reference.

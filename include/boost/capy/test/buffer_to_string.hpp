@@ -41,8 +41,8 @@ buffer_to_string(Buffers const&... bufs)
     std::string result;
     result.reserve((buffer_size(bufs) + ...));
     auto append = [&](auto const& bs) {
-        auto const e = end(bs);
-        for(auto it = begin(bs); it != e; ++it)
+        auto const e = buffer_sequence_end(bs);
+        for(auto it = buffer_sequence_begin(bs); it != e; ++it)
         {
             const_buffer b(*it);
             result.append(

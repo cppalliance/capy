@@ -143,7 +143,7 @@ Corosio contains five platform backends, each a substantial body of platform-spe
 * *kqueue* on macOS and BSD
 * *select* as a POSIX fallback
 
-Merging these into Capy would mean that a developer who wants a cpp:task[task<>] type or a cpp:buffer_slice[] must compile against platform I/O headers. Keeping Capy separate ensures that none of the headers a consumer includes transitively pull in anything from the platform I/O layer.
+Merging these into Capy would mean that a developer who wants a cpp:task[task<>] type or a cpp:buffer_copy[] must compile against platform I/O headers. Keeping Capy separate ensures that none of the headers a consumer includes transitively pull in anything from the platform I/O layer.
 
 
 == Conclusion

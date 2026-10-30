@@ -88,34 +88,45 @@ Asio got xref:glossary.adoc#buffer-sequence[buffer sequences] right. The concept
 
 We adopt Asio's buffer sequence model because it works.
 
-But we improve on it. Need to trim bytes from the front of a buffer sequence? Asio makes you work for it. Capy provides cpp:buffer_slice[] and cpp:front[]—byte-range slicing primitives for efficient byte-level manipulation. Need to compose two buffers without copying? Use `std::array<const_buffer, 2>` (or any range of buffers) directly — Capy's buffer-sequence concepts accept arbitrary ranges.
+But we improve on it. Capy states the requirements as C++20 concepts rather than type traits, and cpp:MutableBufferSequence[] refines cpp:ConstBufferSequence[]. A function overloaded on both selects the mutable overload for a mutable sequence instead of being ambiguous. Capy also adds small algorithms that Asio leaves out: cpp:buffers_front[], cpp:buffers_count[] and cpp:buffers_empty[].
 
 `std::ranges` cannot help here. `ranges::size` returns the number of buffers, not the total bytes. Range views can drop entire elements, but buffer sequences need byte-level trimming. Buffer sequences need their own concepts.
 
 === What Capy Offers
 
 * cpp:ConstBufferSequence[], cpp:MutableBufferSequence[] — core concepts (Asio-compatible)
-* cpp:buffer_slice[], cpp:front[] — byte-level manipulation utilities
+* cpp:buffers_front[] — the first buffer of a sequence
+* cpp:buffers_count[] — the number of buffers in a sequence
+* cpp:buffers_empty[] — whether a sequence holds any bytes
 
 === Comparison
 
-Capy adopts cpp:ConstBufferSequence[], cpp:MutableBufferSequence[], cpp:const_buffer[] and cpp:mutable_buffer[] from Asio. Its element requirement is stricter: an element of a mutable buffer sequence must also convert to cpp:const_buffer[]. Every mutable buffer sequence is therefore also a const buffer sequence. What Capy adds is byte-level slicing:
+Capy adopts cpp:ConstBufferSequence[], cpp:MutableBufferSequence[], cpp:const_buffer[] and cpp:mutable_buffer[] from Asio. Its element requirement is stricter: an element of a mutable buffer sequence must also convert to cpp:const_buffer[]. Every mutable buffer sequence is therefore also a const buffer sequence. The buffer algorithms compare as follows:
 
 [cols="1,1"]
 |===
 | Capy | Asio
 
-| cpp:buffer_slice[]
+| cpp:buffer_sequence_begin[], cpp:buffer_sequence_end[]
+| `buffer_sequence_begin`, `buffer_sequence_end`
+
+| cpp:buffers_begin[], cpp:buffers_end[]
+| `buffers_begin`, `buffers_end`
+
+| cpp:buffers_front[]
 ^| -
 
-| cpp:front[]
+| cpp:buffers_count[]
 ^| -
+
+| cpp:buffers_empty[]
+^| -
+
+| cpp:buffer_size[]
+| `buffer_size`
 
 | cpp:buffer_copy[]
 | `buffer_copy`
-
-| Byte-level trimming
-^| -
 |===
 
 == Coroutine Execution Model

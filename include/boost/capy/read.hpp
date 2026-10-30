@@ -16,7 +16,7 @@
 #include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/consuming_buffers.hpp>
+#include <boost/capy/detail/consuming_buffers.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 
 #include <algorithm>
@@ -86,7 +86,7 @@ auto
 read(S& stream, MB buffers) ->
         task<results<std::size_t>>
 {
-    consuming_buffers consuming(buffers);
+    detail::consuming_buffers consuming(buffers);
     std::size_t const total_size = buffer_size(buffers);
     std::size_t total_read = 0;
 

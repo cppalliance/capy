@@ -67,7 +67,7 @@ class buffer_sequence_adaptor
         if constexpr (native_asio)
             return asio::buffer_sequence_begin(bs);
         else
-            return capy::begin(bs);
+            return capy::buffer_sequence_begin(bs);
     }
 
     using source_iterator = decltype(
@@ -243,7 +243,7 @@ public:
                 asio::buffer_sequence_begin(bs_));
         else
             return const_iterator(
-                capy::begin(bs_));
+                capy::buffer_sequence_begin(bs_));
     }
 
     const_iterator
@@ -254,7 +254,7 @@ public:
                 asio::buffer_sequence_end(bs_));
         else
             return const_iterator(
-                capy::end(bs_));
+                capy::buffer_sequence_end(bs_));
     }
 
 private:

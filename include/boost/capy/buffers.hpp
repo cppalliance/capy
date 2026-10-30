@@ -351,7 +351,7 @@ constexpr struct
     {
         return std::ranges::begin(bs);
     }
-} begin {};
+} buffer_sequence_begin {};
 
 /** Return an iterator past the last buffer in a sequence.
 
@@ -396,7 +396,7 @@ constexpr struct
     {
         return std::ranges::end(bs);
     }
-} end {};
+} buffer_sequence_end {};
 
 /** Return the total byte count across all buffers in a sequence.
 
@@ -417,7 +417,7 @@ constexpr struct
     /** Return the total byte count across all buffers in a sequence.
 
         Sums the `size()` of each buffer in the sequence. This differs
-        from `buffer_length` which counts the number of buffer elements.
+        from `buffers_count` which counts the number of buffer elements.
 
         @param bs The buffer sequence.
 
@@ -432,8 +432,8 @@ constexpr struct
         CB const& bs) const noexcept
     {
         std::size_t n = 0;
-        auto const e = capy::end(bs);
-        for(auto it = capy::begin(bs); it != e; ++it)
+        auto const e = capy::buffer_sequence_end(bs);
+        for(auto it = capy::buffer_sequence_begin(bs); it != e; ++it)
             n += const_buffer(*it).size();
         return n;
     }
@@ -464,8 +464,8 @@ constexpr struct
     constexpr bool operator()(
         CB const& bs) const noexcept
     {
-        auto it = begin(bs);
-        auto const end_ = end(bs);
+        auto it = buffer_sequence_begin(bs);
+        auto const end_ = buffer_sequence_end(bs);
         while(it != end_)
         {
             const_buffer b(*it++);
@@ -477,7 +477,7 @@ constexpr struct
 #if defined(__GNUC__) && !defined(__clang__)
 #pragma GCC diagnostic pop
 #endif
-} buffer_empty {};
+} buffers_empty {};
 
 namespace detail {
 
@@ -508,7 +508,7 @@ length_impl(It first, It last, long)
 
     Counts the number of individual buffer objects, not bytes.
     For a single buffer, returns 1. For a range, returns the
-    distance from `begin` to `end`.
+    distance from `buffer_sequence_begin` to `buffer_sequence_end`.
 
     @param bs The buffer sequence.
 
@@ -518,10 +518,10 @@ length_impl(It first, It last, long)
 */
 template<ConstBufferSequence CB>
 std::size_t
-buffer_length(CB const& bs)
+buffers_count(CB const& bs)
 {
     return detail::length_impl(
-        begin(bs), end(bs), 0);
+        buffer_sequence_begin(bs), buffer_sequence_end(bs), 0);
 }
 
 /// Names `mutable_buffer` for a mutable sequence, `const_buffer` otherwise.

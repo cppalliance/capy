@@ -24,9 +24,8 @@ namespace detail {
 
 /** A borrowed view over a byte sub-range of a buffer sequence.
 
-    `slice_of<BS>` is the generic result of `buffer_slice` for a sequence
-    that is not closed under sub-ranging (everything except a single
-    buffer). It models the same buffer-sequence concept as `BS`:
+    `slice_of<BS>` is the view `consuming_buffers::data()` returns. It
+    models the same buffer-sequence concept as `BS`:
     `MutableBufferSequence` if `BS` is mutable, otherwise
     `ConstBufferSequence`. It can therefore be passed anywhere a buffer
     sequence is expected.
@@ -51,7 +50,7 @@ public:
 
     /// The underlying sequence's iterator type.
     using iterator_type =
-        decltype(capy::begin(std::declval<BS const&>()));
+        decltype(capy::buffer_sequence_begin(std::declval<BS const&>()));
 
 private:
     iterator_type first_{};
@@ -147,8 +146,8 @@ public:
         std::size_t length =
             (std::numeric_limits<std::size_t>::max)()) noexcept
     {
-        first_ = capy::begin(bs);
-        last_  = capy::end(bs);
+        first_ = capy::buffer_sequence_begin(bs);
+        last_  = capy::buffer_sequence_end(bs);
 
         // Position first_/front_skip_ at byte `offset` (single forward pass).
         std::size_t skip = offset;
@@ -167,7 +166,7 @@ public:
         if (first_ == last_)
             return;  // offset at or past the end: empty slice
         if (length == (std::numeric_limits<std::size_t>::max)())
-            return;  // to-end: last_ already end(bs), back_skip_ == 0
+            return;  // to-end: last_ already at the end, back_skip_ == 0
 
         // Walk `length` live bytes forward to fix last_/back_skip_.
         std::size_t left = length;

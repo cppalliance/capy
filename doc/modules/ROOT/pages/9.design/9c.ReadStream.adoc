@@ -80,7 +80,7 @@ Deferral is forced only at the boundary, when the final bytes exactly fill the b
 
 === The Empty-Buffer Rule
 
-When `buffer_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
+When `buffers_empty(buffers)` is true, `n` is 0. The empty buffer is not itself a cause for error, but `ec` may reflect the state of the stream.
 
 Whether the implementation performs a system call for a zero-length buffer is unspecified. A concrete type that short-circuits with `(!ec, 0)` conforms. A concrete type that forwards the zero-length call to the OS and reports whatever condition arises also conforms.
 

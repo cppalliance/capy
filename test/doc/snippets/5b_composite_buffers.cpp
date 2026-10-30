@@ -20,6 +20,9 @@
 // tag::make_buffer_include[]
 #include <boost/capy/buffers/make_buffer.hpp>
 // end::make_buffer_include[]
+// tag::buffers_iterator_include[]
+#include <boost/capy/buffers/buffers_iterator.hpp>
+// end::buffers_iterator_include[]
 #include <boost/capy/buffers/buffer_copy.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/concept/write_stream.hpp>
@@ -30,6 +33,7 @@
 #include <boost/capy/test/stream.hpp>
 #include <boost/capy/write.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstddef>
@@ -150,7 +154,7 @@ std::vector<std::size_t> send_lengths;
 template<capy::ConstBufferSequence Buffers>
 void send(Buffers const& bufs)
 {
-    send_lengths.push_back(capy::buffer_length(bufs));
+    send_lengths.push_back(capy::buffers_count(bufs));
 }
 
 // The custom type used by the heterogeneous-composition fragment.
@@ -169,7 +173,8 @@ struct chained_buffers
 template<capy::ConstBufferSequence Buffers>
 void process(Buffers const& bufs)
 {
-    for (auto it = capy::begin(bufs); it != capy::end(bufs); ++it)
+    for (auto it = capy::buffer_sequence_begin(bufs);
+         it != capy::buffer_sequence_end(bufs); ++it)
     {
         capy::const_buffer buf = *it;
         // Process buf.data(), buf.size()
@@ -236,13 +241,13 @@ struct composite_buffers_test
     {
         // tag::begin_end_uniform[]
         capy::const_buffer single;
-        auto it = capy::begin(single);  // Returns pointer to `single`
-        auto e = capy::end(single);     // Returns pointer past `single`
+        auto it = capy::buffer_sequence_begin(single); // pointer to `single`
+        auto e = capy::buffer_sequence_end(single);    // pointer past `single`
         assert(std::distance(it, e) == 1);
 
         std::array<capy::const_buffer, 3> multi;
-        auto it2 = capy::begin(multi);  // Returns multi.begin()
-        auto e2 = capy::end(multi);     // Returns multi.end()
+        auto it2 = capy::buffer_sequence_begin(multi);  // Returns multi.begin()
+        auto e2 = capy::buffer_sequence_end(multi);     // Returns multi.end()
         assert(std::distance(it2, e2) == 3);
         // end::begin_end_uniform[]
         BOOST_TEST(it == &single);
@@ -259,10 +264,11 @@ struct composite_buffers_test
         
         std::size_t len = 
         // tag::length_equivalent[]
-        std::distance(capy::begin(buf), capy::end(buf))
+        std::distance(
+            capy::buffer_sequence_begin(buf), capy::buffer_sequence_end(buf))
         // end::length_equivalent[]
         ;
-        BOOST_TEST(capy::buffer_length(buf) == len);
+        BOOST_TEST(capy::buffers_count(buf) == len);
       };
 
       test_case(capy::const_buffer{});
@@ -298,6 +304,24 @@ struct composite_buffers_test
     }
 
     void
+    testIterateBytes()
+    {
+        // tag::iterate_bytes[]
+        std::array<capy::const_buffer, 2> bufs{
+            capy::make_buffer(std::string_view("GET / HTTP/1.1\r")),
+            capy::make_buffer(std::string_view("\n\r\nbody")) };
+
+        // The terminator straddles the two buffers
+        std::string_view const crlfcrlf = "\r\n\r\n";
+        auto it = std::search(
+            capy::buffers_begin(bufs), capy::buffers_end(bufs),
+            crlfcrlf.begin(), crlfcrlf.end());
+        std::size_t header_size = (it - capy::buffers_begin(bufs)) + 4;
+        // end::iterate_bytes[]
+        BOOST_TEST(header_size == 18);
+    }
+
+    void
     run()
     {
         testConstruction();
@@ -306,6 +330,7 @@ struct composite_buffers_test
         testLength();
         testHeterogeneous();
         testIterate();
+        testIterateBytes();
     }
 };
 

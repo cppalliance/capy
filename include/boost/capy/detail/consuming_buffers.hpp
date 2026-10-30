@@ -8,8 +8,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_BUFFERS_CONSUMING_BUFFERS_HPP
-#define BOOST_CAPY_BUFFERS_CONSUMING_BUFFERS_HPP
+#ifndef BOOST_CAPY_DETAIL_CONSUMING_BUFFERS_HPP
+#define BOOST_CAPY_DETAIL_CONSUMING_BUFFERS_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
@@ -20,6 +20,7 @@
 
 namespace boost {
 namespace capy {
+namespace detail {
 
 /** A cursor that drives consumption of a buffer sequence.
 
@@ -33,12 +34,6 @@ namespace capy {
     **borrows** the underlying sequence (iterators + a consumed-byte offset).
     The sequence must outlive the cursor. That is the natural case when the
     cursor is a local of a composed operation that took its buffers by value.
-
-    @par Example
-    @par !example example
-
-
-    @see @ref buffer_slice
 */
 template<class Seq>
     requires ConstBufferSequence<Seq>
@@ -50,7 +45,7 @@ public:
 
 private:
     using iterator_type =
-        decltype(capy::begin(std::declval<Seq const&>()));
+        decltype(capy::buffer_sequence_begin(std::declval<Seq const&>()));
 
     iterator_type first_{};
     iterator_type last_{};
@@ -62,8 +57,8 @@ public:
         @param s The sequence to consume. Must outlive the cursor.
     */
     explicit consuming_buffers(Seq const& s) noexcept
-        : first_(capy::begin(s))
-        , last_(capy::end(s))
+        : first_(capy::buffer_sequence_begin(s))
+        , last_(capy::buffer_sequence_end(s))
     {
     }
 
@@ -77,10 +72,10 @@ public:
 
         @return The bytes not yet consumed, as a buffer sequence.
     */
-    detail::slice_of<Seq>
+    slice_of<Seq>
     data() const noexcept
     {
-        return detail::slice_of<Seq>(first_, last_, front_skip_, 0);
+        return slice_of<Seq>(first_, last_, front_skip_, 0);
     }
 
     /** Discard `n` bytes from the front, in place.
@@ -115,6 +110,7 @@ public:
 template<class Seq>
 consuming_buffers(Seq const&) -> consuming_buffers<Seq>;
 
+} // namespace detail
 } // namespace capy
 } // namespace boost
 

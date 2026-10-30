@@ -8,8 +8,8 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#ifndef BOOST_CAPY_BUFFERS_FRONT_HPP
-#define BOOST_CAPY_BUFFERS_FRONT_HPP
+#ifndef BOOST_CAPY_BUFFERS_BUFFERS_FRONT_HPP
+#define BOOST_CAPY_BUFFERS_BUFFERS_FRONT_HPP
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
@@ -17,8 +17,9 @@
 namespace boost {
 namespace capy {
 
-// MrDocs 0.8.0 flags this object as `front: variable is undocumented`, as it
-// does the other five buffer CPOs (begin, end, buffer_size, buffer_empty,
+// MrDocs 0.8.0 flags this object as `buffers_front: variable is
+// undocumented`, as it does the other five buffer CPOs
+// (buffer_sequence_begin, buffer_sequence_end, buffer_size, buffers_empty,
 // buffer_copy). The finding is grandfathered in doc/lint/baseline.json.
 // Silencing it buys nothing: on the synthesised overload page MrDocs renders
 // neither the record-level docstring below nor one attached to the variable,
@@ -42,8 +43,8 @@ constexpr struct
     operator()(
         MutableBufferSequence const& bs) const noexcept
     {
-        auto const it = begin(bs);
-        if(it != end(bs))
+        auto const it = buffer_sequence_begin(bs);
+        if(it != buffer_sequence_end(bs))
             return *it;
         return {};
     }
@@ -60,12 +61,12 @@ constexpr struct
     operator()(
         ConstBufferSequence const& bs) const noexcept
     {
-        auto const it = begin(bs);
-        if(it != end(bs))
+        auto const it = buffer_sequence_begin(bs);
+        if(it != buffer_sequence_end(bs))
             return *it;
         return {};
     }
-} const front{};
+} const buffers_front{};
 
 } // capy
 } // boost

@@ -35,10 +35,8 @@
 // Buffers
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/buffers/buffer_copy.hpp>
-#include <boost/capy/buffers/buffer_param.hpp>
-#include <boost/capy/buffers/buffer_slice.hpp>
-#include <boost/capy/buffers/consuming_buffers.hpp>
-#include <boost/capy/buffers/front.hpp>
+#include <boost/capy/buffers/buffers_front.hpp>
+#include <boost/capy/buffers/buffers_iterator.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
 
 // Concepts

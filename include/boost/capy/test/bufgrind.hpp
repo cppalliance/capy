@@ -13,12 +13,13 @@
 
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/buffers.hpp>
-#include <boost/capy/buffers/buffer_slice.hpp>
+#include <boost/capy/detail/slice_of.hpp>
 #include <coroutine>
 #include <boost/capy/ex/await_context.hpp>
 
 #include <algorithm>
 #include <cstddef>
+#include <limits>
 #include <type_traits>
 #include <utility>
 
@@ -36,10 +37,10 @@ namespace test {
     The split type automatically preserves mutability: passing a
     `MutableBufferSequence` yields halves that model
     @ref MutableBufferSequence, while passing a `ConstBufferSequence`
-    yields halves that model @ref ConstBufferSequence. Each half is
-    the buffer-sequence view exposed by a @ref buffer_slice over the
-    corresponding byte range, and can be passed directly to
-    `read_some`, `write_some`, `buffer_size`, etc.
+    yields halves that model @ref ConstBufferSequence. A single buffer
+    splits into two `mutable_buffer` or `const_buffer` values; any other
+    sequence splits into two borrowed views. Either way each half can be
+    passed directly to `read_some`, `write_some`, `buffer_size`, etc.
 
     @par Thread Safety
     Not thread-safe.
@@ -55,8 +56,6 @@ namespace test {
     @par Step Size Example
     @par !example example_3
 
-
-    @see @ref buffer_slice
 */
 template<ConstBufferSequence BS>
 class bufgrind
@@ -67,12 +66,38 @@ class bufgrind
     std::size_t pos_ = 0;
 
 public:
-    /// Names the buffer-sequence type `buffer_slice` yields for each half.
-    using slice_type = std::decay_t<
-        decltype(buffer_slice(std::declval<BS const&>()))>;
+    /// Names the buffer-sequence type of each half.
+    using slice_type = std::conditional_t<
+        ConstBuffer<BS>,
+        buffer_type<BS>,
+        detail::slice_of<BS>>;
 
     /// Pairs the two `slice_type` halves that @ref next yields together.
     using split_type = std::pair<slice_type, slice_type>;
+
+private:
+    static slice_type
+    slice(
+        BS const& bs,
+        std::size_t offset,
+        std::size_t length =
+            (std::numeric_limits<std::size_t>::max)()) noexcept
+    {
+        if constexpr (ConstBuffer<BS>)
+        {
+            slice_type b = bs;
+            b += offset;
+            if(length < b.size())
+                b = slice_type(b.data(), length);
+            return b;
+        }
+        else
+        {
+            return slice_type(bs, offset, length);
+        }
+    }
+
+public:
 
     /** Construct a buffer grinder.
 
@@ -131,8 +156,8 @@ public:
         await_resume()
         {
             split_type result{
-                buffer_slice(self_->bs_, 0, self_->pos_),
-                buffer_slice(self_->bs_, self_->pos_)
+                slice(self_->bs_, 0, self_->pos_),
+                slice(self_->bs_, self_->pos_)
             };
             if(self_->pos_ < self_->size_)
                 self_->pos_ = (std::min)(self_->pos_ + self_->step_, self_->size_);

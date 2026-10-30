@@ -63,7 +63,7 @@ task<void> echo(ReadStream auto& in, WriteStream auto& out)
 | Scatter/gather I/O with multiple buffers
 
 | xref:../buffers/algorithms.adoc[Buffer Algorithms]
-| `buffer_copy`, `buffer_size`, `buffer_empty`
+| `buffer_copy`, `buffer_size`, `buffers_empty`
 |===
 
 == Key Types
@@ -107,8 +107,8 @@ task<void> echo(ReadStream auto& in, WriteStream auto& out)
 | `<boost/capy/buffers/buffer_copy.hpp>`
 | `buffer_copy` algorithm
 
-| `<boost/capy/buffers/buffer_slice.hpp>`
-| Byte sub-range slicing algorithm
+| `<boost/capy/buffers/buffers_iterator.hpp>`
+| `buffers_iterator`, `buffers_begin`, `buffers_end`
 |===
 
 == Navigation

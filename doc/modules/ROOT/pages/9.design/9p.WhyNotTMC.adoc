@@ -119,8 +119,7 @@ NOTE: Neither library prevents the caller from initiating multiple concurrent I/
 *Capy provides:*
 
 * xref:glossary.adoc#buffer-sequence[Buffer sequences] (xref:glossary.adoc#scatter-gather-io[scatter/gather I/O] without copying)
-* Algorithms: slice, copy, concatenate, consume
-* Dynamic buffers that grow as needed
+* Algorithms: copy, count, and inspect buffer sequences
 * xref:glossary.adoc#type-erased[Type-erased] streams: write code once, use with any stream type
 
 *TMC provides:*
