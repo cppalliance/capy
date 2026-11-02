@@ -11,6 +11,12 @@ This library provides facilities which use C++20 coroutines to perform I/O. It i
 
 ## Quick Start
 
+### Requirements
+
+- CMake 3.20 or later
+- C++20 compiler (GCC 12+, Clang 17+, MSVC 14.34+)
+- Ninja (recommended) or other CMake generator
+
 ### Standalone build
 
 ```bash
@@ -36,37 +42,6 @@ FetchContent_MakeAvailable(capy)
 target_link_libraries(my_app Boost::capy)
 ```
 
-## Related Libraries
-
-Capy is the foundation for [Corosio](https://github.com/cppalliance/corosio), a complete networking library built on the facilities that Capy offers. We intend to propose this library as the successor to the immensely popular Boost.Asio library.
-
-- Documentation: https://master.corosio.cpp.al/corosio/index.html
-
-Capy is also the foundation for [Http](https://github.com/cppalliance/http). The Http library uses Capy, yet does not use Corosio. That is because Http is "Sans/IO." It provides the algorithms and data structures which implement the HTTP protocol at a high level, while remaining agnostic to the particular network implementation. This is possible thanks to the powerful stream abstractions which Capy offers.
-
-- Documentation: https://master.http.cpp.al/http/index.html
-
-Capy is also used by [Beast2](https://github.com/cppalliance/beast2), which uses the Capy, Corosio, and Http libraries to implement high-level HTTP servers written in a C++ version of Express JS routers. This is the successor to Boost.Beast (note: Boost.Beast will continue to be maintained as its own separate library, Beast2 is new).
-
-The Beast2 family of libraries includes:
-
-- **[Capy](https://github.com/cppalliance/capy)** — The foundation of I/O.
-- **[Corosio](https://github.com/cppalliance/corosio)** — Coroutine-only portable networking. This is the successor to Boost.Asio.
-- **[Http](https://github.com/cppalliance/http)** — Sans-I/O HTTP/1.1. This is a high-level library: servers, clients, Express JS middleware.
-- **[Websocket](https://github.com/cppalliance/websocket)** — Sans-I/O Websocket. This is also a high-level library.
-- **[Beast2](https://github.com/cppalliance/beast2)** — High-level HTTP and WebSocket servers. Express.js-style routing, multithreaded, idiomatic C++.
-- **[Burl](https://github.com/cppalliance/burl)** — High-level HTTP client. The features of curl, the ergonomics of coroutines, and the design sensibility of Python Requests.
-
-Currently, the C++ Standard does not deliver facilities optimized for networking I/O. We believe that Capy should become a standard library component to fill this gap. Our first paper based on Capy introduces the _IoAwaitable_ family of concepts, which Capy now names _ContextAwaitable_:
-
-- Paper: https://github.com/cppalliance/wg21-papers/blob/master/source/_reserve/d4003-io-awaitables.md
-
-## The Beman Way
-
-We are bringing Capy to Boost because this is what Boost was created for. The project exists to incubate high-quality libraries destined for standardization. Beman Dawes founded Boost on the principle that the best path to the standard is through proven practice: build it, ship it, let users depend on it, learn from real-world feedback, then propose standardization. Smart pointers, regular expressions, filesystem, threading primitives—all followed this path from Boost to the standard library.
-
-Capy represents Boost returning to its role as a leader in C++ standardization efforts. The library addresses a real gap in C++26: there is no standard foundation for coroutine-based I/O. Rather than waiting for a committee to design something in the abstract, or adapting networking to a framework built for different requirements, Capy takes the proven approach. It exists. It works. It powers real networking code today. Now it needs the scrutiny and refinement that only the Boost review process can provide.
-
 ## The Problem Capy Solves
 
 When an I/O operation completes, the operating system wakes up some thread, such as a completion port thread, an epoll reactor, or an io_uring worker. Without affinity tracking, your coroutine resumes on that arbitrary thread, forcing you to add synchronization everywhere or risk data races. This is the fundamental problem that coroutine-based networking must solve.
@@ -91,17 +66,26 @@ Capy is opinionated on the things that matter for I/O:
 - Buffer sequences: `std::ranges` for untyped bytes
 - Type erasure by default: no combinatorial explosion of templates
 
-## Proven Through Boost.Corosio
+## Related Libraries
 
-Capy is not speculation. It powers Boost.Corosio, a coroutine-first networking library that we are developing alongside Capy. Corosio provides real sockets, acceptors, TLS streams, timers, DNS resolution, and multiple implementations of SSL streams, all built on Capy's foundation. This is the successor library to the incredibly popular Boost.Asio. It demonstrates what networking could look like if designed for coroutines from the start rather than adapted from callback-based models.
+Capy is the foundation for [Corosio](https://github.com/cppalliance/corosio), a complete networking library built on the facilities that Capy offers. We intend to propose this library as the successor to the immensely popular Boost.Asio library.
 
-The standardization strategy follows from this layering. Capy is the foundation piece that belongs in the standard: executor model, task types, buffer algorithms, cancellation integration. These are stable abstractions that networking libraries can build upon. Corosio, the networking piece, can remain outside the standard to mitigate risk: sockets and protocol implementations typically experience difficulty achieving consensus even after years of committee attention. Corosio can mature externally where it can evolve based on user feedback, while Capy provides the stable foundation that the standard library lacks.
+- Documentation: https://master.corosio.cpp.al/corosio/index.html
 
-## Requirements
+Capy is also the foundation for [Http](https://github.com/cppalliance/http). The Http library uses Capy, yet does not use Corosio. That is because Http is "Sans/IO." It provides the algorithms and data structures which implement the HTTP protocol at a high level, while remaining agnostic to the particular network implementation. This is possible thanks to the powerful stream abstractions which Capy offers.
 
-- CMake 3.20 or later
-- C++20 compiler (GCC 12+, Clang 17+, MSVC 14.34+)
-- Ninja (recommended) or other CMake generator
+- Documentation: https://master.http.cpp.al/http/index.html
+
+Capy is also used by [Beast2](https://github.com/cppalliance/beast2), which uses the Capy, Corosio, and Http libraries to implement high-level HTTP servers written in a C++ version of Express JS routers. This is the successor to Boost.Beast (note: Boost.Beast will continue to be maintained as its own separate library, Beast2 is new).
+
+The Beast2 family of libraries includes:
+
+- **[Capy](https://github.com/cppalliance/capy)** — The foundation of I/O.
+- **[Corosio](https://github.com/cppalliance/corosio)** — Coroutine-only portable networking. This is the successor to Boost.Asio.
+- **[Http](https://github.com/cppalliance/http)** — Sans-I/O HTTP/1.1. This is a high-level library: servers, clients, Express JS middleware.
+- **[Websocket](https://github.com/cppalliance/websocket)** — Sans-I/O Websocket. This is also a high-level library.
+- **[Beast2](https://github.com/cppalliance/beast2)** — High-level HTTP and WebSocket servers. Express.js-style routing, multithreaded, idiomatic C++.
+- **[Burl](https://github.com/cppalliance/burl)** — High-level HTTP client. The features of curl, the ergonomics of coroutines, and the design sensibility of Python Requests.
 
 ## License
 
