@@ -42,17 +42,7 @@ FetchContent_MakeAvailable(capy)
 target_link_libraries(my_app Boost::capy)
 ```
 
-## The Problem Capy Solves
-
-When an I/O operation completes, the operating system wakes up some thread, such as a completion port thread, an epoll reactor, or an io_uring worker. Without affinity tracking, your coroutine resumes on that arbitrary thread, forcing you to add synchronization everywhere or risk data races. This is the fundamental problem that coroutine-based networking must solve.
-
-Capy's answer is the _ContextAwaitable_ protocol. When you launch a coroutine with a designated executor, every child coroutine inherits that executor affinity automatically. Execution context flows forward through `co_await` chains, not backward through P3826 queries, to ensure every coroutine in the chain runs in the same context. When I/O completes on some OS thread, the _ContextAwaitable_ protocol ensures your coroutine resumes on its designated executor. The data flow is explicit and testable. There are no thread-local globals, no implicit context, no surprises. Capy's `task` type uses the compiler to enforce invariants.
-
-Cancellation follows the same forward-propagation model. Stop tokens flow forward from the launch of a coroutine chain alongside the execution context, to arrive at the platform API boundary, providing a uniform cancellation interface across all operations.
-
-Frame allocation is where coroutine overhead traditionally hurts performance. Capy addresses this with thread-local recycling pools that achieve zero steady-state allocations after warmup. The coroutine launch site controls allocation policy, enabling per-deployment customization: bounded pools for real-time systems, per-tenant budgets for multi-tenant servers, or tracking allocators for debugging.
-
-Buffer handling is essential for networking, and Asio's twenty five years of experience showed us how. Capy provides buffer sequence algorithms: think `std::ranges` but for buffers. These are the vocabulary types and operations that networking code needs: slicing, copying, concatenating, and iterating over discontiguous memory. One million scatter/gather buffers, if you will. The design is driven by real-world usage, not theoretical completeness.
+## Problems Capy Solves
 
 Capy is opinionated on the things that matter for I/O:
 
@@ -65,6 +55,24 @@ Capy is opinionated on the things that matter for I/O:
 - A strand for safe concurrency without mutexes
 - Buffer sequences: `std::ranges` for untyped bytes
 - Type erasure by default: no combinatorial explosion of templates
+
+### Execution affinity
+
+When an I/O operation completes, the operating system wakes up some thread, such as a completion port thread, an epoll reactor, or an io_uring worker. Without affinity tracking, your coroutine resumes on that arbitrary thread, forcing you to add synchronization everywhere or risk data races. This is the fundamental problem that coroutine-based networking must solve.
+
+Capy's answer is the _ContextAwaitable_ protocol. When you launch a coroutine with a designated executor, every child coroutine inherits that executor affinity automatically. Execution context flows forward through `co_await` chains, not backward through P3826 queries, to ensure every coroutine in the chain runs in the same context. When I/O completes on some OS thread, the _ContextAwaitable_ protocol ensures your coroutine resumes on its designated executor. The data flow is explicit and testable. There are no thread-local globals, no implicit context, no surprises. Capy's `task` type uses the compiler to enforce invariants.
+
+### Cancellation
+
+Cancellation follows the same forward-propagation model. Stop tokens flow forward from the launch of a coroutine chain alongside the execution context, to arrive at the platform API boundary, providing a uniform cancellation interface across all operations.
+
+### Allocator customization
+
+Frame allocation is where coroutine overhead traditionally hurts performance. Capy addresses this with thread-local recycling pools that achieve zero steady-state allocations after warmup. The coroutine launch site controls allocation policy, enabling per-deployment customization: bounded pools for real-time systems, per-tenant budgets for multi-tenant servers, or tracking allocators for debugging.
+
+### Zero-copy buffers
+
+Buffer handling is essential for networking, and Asio's twenty five years of experience showed us how. Capy provides buffer sequence algorithms: think `std::ranges` but for buffers. These are the vocabulary types and operations that networking code needs: slicing, copying, concatenating, and iterating over discontiguous memory. One million scatter/gather buffers, if you will. The design is driven by real-world usage, not theoretical completeness.
 
 ## Related Libraries
 
