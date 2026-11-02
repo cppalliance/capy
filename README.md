@@ -72,7 +72,7 @@ Frame allocation is where coroutine overhead traditionally hurts performance. Ca
 
 ### Zero-copy buffers
 
-Buffer handling is essential for networking, and Asio's twenty five years of experience showed us how. Capy provides buffer sequence algorithms: think `std::ranges` but for buffers. These are the vocabulary types and operations that networking code needs: slicing, copying, concatenating, and iterating over discontiguous memory. One million scatter/gather buffers, if you will. The design is driven by real-world usage, not theoretical completeness.
+Buffer handling is essential for networking, and Asio's twenty five years of experience showed us how. Capy provides buffer sequence algorithms: think `std::ranges` but for buffers. These are the vocabulary types and operations that networking code needs: slicing, copying, and iterating over discontiguous memory. One million scatter/gather buffers, if you will. The design is driven by real-world usage, not theoretical completeness.
 
 ## Related Libraries
 
