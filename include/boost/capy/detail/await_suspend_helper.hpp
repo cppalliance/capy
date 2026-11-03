@@ -77,7 +77,7 @@ namespace detail {
 
     The void-returning transfer alone does not cover every case on
     19.51. See `await_ready_then_suspend` below for the second
-    safeguard that `task` and `quitter` apply where this one is on.
+    safeguard that `task` applies where this one is on.
 
     `_M_ARM64EC` is included conservatively. It generates ARM64
     code and has not been tested here; keeping the workaround on
@@ -124,7 +124,7 @@ symmetric_transfer(std::coroutine_handle<> h) noexcept
 #if BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND
 /** Ask whether an awaitable is ready, and suspend on it if not.
 
-    Used by the `transform_awaiter` of `task` and `quitter` where the
+    Used by the `transform_awaiter` of `task` where the
     symmetric-transfer workaround is on. There the awaiter's own
     `await_ready` returns `false`, and its `await_suspend` calls this
     instead, so the wrapped awaitable's `await_ready` runs inside
@@ -139,9 +139,7 @@ symmetric_transfer(std::coroutine_handle<> h) noexcept
     above in place. Observed on 19.51; not on 19.44. A plain or
     atomic load in `await_ready` was not affected. The regression
     tests are `testCatchAfterRmwAwaitReady` and
-    `testCatchAroundWakerWait` in test/unit/task.cpp, and
-    `testCatchAfterRmwAwaitReady` and
-    `testCatchStopAfterRmwAwaitReady` in test/unit/quitter.cpp.
+    `testCatchAroundWakerWait` in test/unit/task.cpp.
 
     The awaiting coroutine continues without suspending when the
     wrapped awaitable is ready, or when its `await_suspend` returns
@@ -150,23 +148,12 @@ symmetric_transfer(std::coroutine_handle<> h) noexcept
     coroutine stays suspended. Returning `false` instead of resuming
     inline keeps immediate completions from growing the stack.
 
-    When `completed` is given, a returned handle equal to `h` is
-    treated as a synchronous completion as well: it is not resumed,
-    `*completed` is set, and `false` is returned. `*completed` is set
-    on every synchronous completion and is never written after a real
-    suspension, when the frame may already be running elsewhere.
-    `quitter` uses this to hand over a synchronous result even if a
-    stop arrives. `task` passes nothing and keeps the inline resume.
-
     @param a The wrapped awaitable.
 
     @param h The coroutine performing the `co_await`.
 
     @param env The execution environment to pass to the wrapped
     awaitable's `await_suspend`.
-
-    @param completed If not null, set to `true` when the wrapped
-    awaitable completes synchronously.
 
     @return `false` to continue without suspending, otherwise `true`.
 */
@@ -175,24 +162,15 @@ bool
 await_ready_then_suspend(
     Awaitable& a,
     std::coroutine_handle<> h,
-    await_context const* env,
-    bool* completed = nullptr) noexcept
+    await_context const* env) noexcept
 {
     // Called exactly once: await_ready may consume state.
     if(a.await_ready())
-    {
-        if(completed)
-            *completed = true;
         return false;
-    }
     using R = decltype(a.await_suspend(h, env));
     if constexpr (std::is_same_v<R, bool>)
     {
-        if(a.await_suspend(h, env))
-            return true;
-        if(completed)
-            *completed = true;
-        return false;
+        return a.await_suspend(h, env);
     }
     else if constexpr (std::is_void_v<R>)
     {
@@ -201,13 +179,7 @@ await_ready_then_suspend(
     }
     else
     {
-        std::coroutine_handle<> next = a.await_suspend(h, env);
-        if(completed && next == h)
-        {
-            *completed = true;
-            return false;
-        }
-        symmetric_transfer(next);
+        symmetric_transfer(a.await_suspend(h, env));
         return true;
     }
 }

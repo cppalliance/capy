@@ -85,8 +85,7 @@ struct task_return_base<void>
 
     `task` never inspects the stop token; it only propagates it. A task
     body observes a stop request through the results of the operations it
-    awaits, or by reading the token itself. See @ref quitter for a task
-    that stops its own body.
+    awaits, or by reading the token itself.
 
     @par Await-returns
     The value the body passed to `co_return`, moved out of the task, or

@@ -19,14 +19,13 @@ exclude-symbols:
   - 'boost::capy::test::bufgrind::next_awaitable'
 # Private members of anonymous unions. `inaccessible-members: never` does not
 # reach variant members of an anonymous union in this MrDocs build, so they
-# leak into the reference as "[variant member]" rows. In the task and quitter
-# promises, `ep_` is the exception_ptr held in a union so it is not constructed
+# leak into the reference as "[variant member]" rows. In the task promise,
+# `ep_` is the exception_ptr held in a union so it is not constructed
 # or destroyed automatically. Its sibling `has_ep_`/`state_` -- private but not
 # in a union -- is correctly filtered, which is what identifies the union as
 # the cause. The `**` spans the unnamed union's own scope, which sits between
 # the class and the members.
   - 'boost::capy::task::**::ep_'
-  - 'boost::capy::quitter::**::ep_'
 implementation-defined:
   - 'boost::capy::detail'
   - 'boost::capy::*::detail'

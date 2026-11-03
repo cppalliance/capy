@@ -218,9 +218,8 @@ struct run_async_trampoline
 
         // An exception reaches here only by escaping a handler: a handler
         // that threw, or the default handler rethrowing an otherwise
-        // unhandled task exception. Cancellation is filtered out earlier
-        // by default_handler, so this is always a genuine error with no
-        // owner to receive it: fail fast.
+        // unhandled task exception. It has no owner to receive it: fail
+        // fast.
         void unhandled_exception() noexcept { std::terminate(); } // LCOV_EXCL_LINE
     };
 

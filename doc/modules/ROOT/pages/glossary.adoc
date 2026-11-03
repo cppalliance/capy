@@ -202,12 +202,6 @@ any amount of data.
 The object inside a coroutine frame that controls the coroutine's behavior,
 such as how it starts, finishes, and stores its result.
 
-== Q
-
-[[quitter]]Quitter::
-A task-like coroutine type that unwinds early when its stop token is
-triggered, instead of completing its body. See cpp:quitter[].
-
 == R
 
 [[result]]Result::

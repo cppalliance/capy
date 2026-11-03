@@ -142,7 +142,7 @@ concept AwaitSuspendResult =
 
     @par Models
 
-    General-purpose class templates that model `ContextAwaitable`: @ref task, @ref quitter, @ref immediate.
+    General-purpose class templates that model `ContextAwaitable`: @ref task, @ref immediate.
 
 
     @see @ref AwaitSuspendResult, @ref ContextRunnable, @ref await_context, @ref executor_ref
