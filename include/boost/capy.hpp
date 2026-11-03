@@ -20,7 +20,6 @@
 // Core types
 #include <boost/capy/cond.hpp>
 #include <boost/capy/error.hpp>
-#include <boost/capy/quitter.hpp>
 #include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 

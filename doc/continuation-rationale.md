@@ -221,7 +221,7 @@ wraps it in the embedded `continuation`, and passes that to
    `co_await`).
 3. Aligns with corosio's pattern, where I/O services already embed
    their operation state (`scheduler_op`) in the awaitable.
-4. Zero burden on task authors. `task<T>`, `quitter<T>`, and future
+4. Zero burden on task authors. `task<T>` and future
    task types are unchanged.
 5. Cancel callbacks store `continuation*` pointing into the
    awaitable, which outlives the suspension.

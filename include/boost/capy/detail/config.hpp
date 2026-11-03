@@ -81,7 +81,7 @@
      the suspend point loses its handler. Reproduced on 19.44 and
      19.51; the first clause already covers 19.44.
 
-   Where it is on, task's and quitter's transform_awaiter also defer
+   Where it is on, task's transform_awaiter also defers
    the wrapped await_ready into await_suspend, through
    detail::await_ready_then_suspend. That works around a related
    ARM64 release defect the void-returning transfer does not cover.
