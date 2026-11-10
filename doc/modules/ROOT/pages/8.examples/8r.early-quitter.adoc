@@ -192,7 +192,7 @@ Its `await_suspend` hands the operation the handle of a gate instead of the hand
 A child quitter receives the same gate handle.
 
 The gate is a small coroutine frame of type `gate`.
-`make_gate` creates it the first time a quitter suspends, and `~promise_base` destroys it.
+`make_gate` creates it the first time an awaited operation is not ready, and `~promise_base` destroys it.
 The gate loops on `decide_awaiter`, which calls `promise_base::decide` each time an operation resumes the gate.
 `decide` resumes the body, unless a stop is pending and the result ends the quitter.
 
@@ -276,8 +276,12 @@ After `done.wait()`, it joins the ticker, then calls `pool.join()`, and only the
 
 `main.cpp` prints its final message without calling `pool.join()`.
 Pool threads can still be destroying frames, so `released` lines can follow that message.
-Only the order of the output depends on this, because `main.cpp` reads no state that the guards update.
-Destroying the strands and the wakers before the pool works here, because the destructor of the pool joins its threads.
+`main.cpp` needs no `pool.join()` for this, because only the order of its output lines depends on it.
+It reads no state that the guards update.
+
+The strands and the wakers are destroyed before the pool, and that is safe here for two reasons.
+Each cpp:run_async[] call keeps its own copy of its strand, and the copies share one reference-counted state.
+A waiter that a wake or a stop already claimed never touches its waker again.
 Real code should still copy the order in `shutdown.cpp`.
 
 [WARNING]
