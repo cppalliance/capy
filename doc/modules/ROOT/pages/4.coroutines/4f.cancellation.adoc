@@ -368,9 +368,16 @@ Cancel all pending work during shutdown:
 include::example$snippets/4f_cancellation.cpp[tag=graceful_shutdown,indent=0]
 ----
 
+[TIP]
+====
+For a task whose body ends at its current `co_await` with no checks, see xref:8.examples/8r.early-quitter.adoc[Writing Your Own Task Type (Early Quitter)].
+That task type is example code, not part of Capy.
+====
+
 === when_any Cancellation
 
-cpp:when_any[] uses stop tokens internally to cancel "losing" tasks when the first task completes. This is covered in xref:4.coroutines/4g.composition.adoc[Concurrent Composition].
+cpp:when_any[] uses stop tokens internally to cancel "losing" tasks when the first task succeeds. This is covered in xref:4.coroutines/4g.composition.adoc[Concurrent Composition].
+xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation] shows a complete race.
 
 == The Standard Library Types
 
