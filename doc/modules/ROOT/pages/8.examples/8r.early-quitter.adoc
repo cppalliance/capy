@@ -312,6 +312,8 @@ Real code should still copy the order in `shutdown.cpp`.
 * `when_all_branches_stop`: two quitters in the branches of cpp:when_all[] both stop, and the task that awaits cpp:when_all[] resumes.
 * `stop_races_wake`: a wake and a stop from two threads race 2000 times against a quitter on a thread pool.
   Each run completes exactly once, and its frame always unwinds.
+  The check awaits the waker directly on the pool, without a strand, which the xref:4.coroutines/4l.synchronization.adoc#threading-model[threading model] leaves undefined.
+  It holds only because that one coroutine is the sole waiter, so no two of its continuations can run at once.
 
 Run them with `ctest --test-dir build -R early_quitter`.
 
