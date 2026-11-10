@@ -61,7 +61,7 @@ include::example$async-mutex/async_mutex.cpp[tag=scoped_lock,indent=0]
 ----
 
 `scoped_lock()` completes with an error code and a guard.
-The error code is set when a stop request arrives while the task waits in the queue.
+The error code is set when the lock is canceled, for example by a stop request that arrives while the task waits in the queue.
 The guard releases the mutex when it leaves its scope.
 
 In this example, the critical section does not suspend.
@@ -165,7 +165,7 @@ include::example$snippets/4j_lifetimes.cpp[tag=shutdown_order,indent=0]
 ----
 <1> The waiting task observes the stop token and finishes through its own code.
 <2> `join` waits for the outstanding work, then for the worker threads.
-<3> The pool, and then `never_set`, are destroyed with no waiter left.
+<3> From here on, nothing waits on `never_set`, so the event and the pool can be destroyed safely.
 
 Destroying a primitive that still has waiters cancels them.
 Each waiter is posted to its executor to resume with cpp:error::canceled[error::canceled].
@@ -183,7 +183,8 @@ xref:4.coroutines/4j.lifetimes.adoc#_shutdown_ordering[Shutdown Ordering] explai
 
 == Allocation and Lifetime
 
-No operation on these primitives allocates memory.
+The primitives allocate nothing themselves.
+Resuming a waiter posts it to its executor, and that executor may allocate.
 Each waiter lives in the frame of the task that awaits.
 
 The primitives can be neither copied nor moved, because suspended waiters point into them.

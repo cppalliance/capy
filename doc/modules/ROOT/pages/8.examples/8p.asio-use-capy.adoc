@@ -53,3 +53,4 @@ example complete!
 * xref:4.coroutines/4e.context-awaitable.adoc#bridging-a-foreign-awaitable[Bridging a Foreign Awaitable] — the general pattern
 * xref:8.examples/8o.sender-bridge.adoc[Bridging a P2300 Sender] — the same technique for `std::execution` xref:glossary.adoc#sender[senders]
 * xref:8.examples/8t.asio-callbacks.adoc[Using a Capy Stream from Asio] — the other direction, a Capy stream driven by Asio completion tokens
+* xref:9.design/9n.WhyNotCobalt.adoc#_the_dimovian_ideal[The Dimovian Ideal] — `any_stream.cpp`, stream algorithms written with no Asio headers

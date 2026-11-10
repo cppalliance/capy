@@ -227,14 +227,6 @@ sequenceDiagram
     R->>K: destroy the top frame, then the frames below it
 ----
 
-[NOTE]
-.Why not an exception
-====
-The quitter that Capy used to contain ended a stopped body by throwing an internal exception.
-In C++, a throw is the only way to reach `final_suspend` from a suspension point.
-This example never resumes the body, so it needs no exception and no support from the library.
-====
-
 === Results That Race a Stop
 
 `transform_awaiter::await_ready` and `transform_awaiter::await_suspend` decide what a stop does to an operation.
@@ -248,7 +240,7 @@ Nothing is delivered, and the run stops.
 
 *A stop arrives while the operation completes.*
 The stop can arrive inside the readiness check of the operation.
-It can also arrive after the operation resumes the gate, but before the gate decides.
+It can also arrive after the operation completes, but before the gate runs.
 In both cases, `stops_on_completion` takes the result early:
 
 * A `canceled` result ends the quitter.
@@ -369,7 +361,8 @@ The stop releases its output file and its worker guard, and nothing more is stor
 In this run, every `released` line came before `Shutdown complete.`, but another run can print some of them after it.
 For code that reads state after shutdown, copy the order in `shutdown.cpp`: `ticker.join()`, then `pool.join()`, then read the state.
 
-`capy_example_early_quitter_shutdown` prints a summary after the cleanup:
+`capy_example_early_quitter_shutdown` prints a summary after the cleanup.
+The block leaves out its last line, which reports the shutdown latency of that run:
 
 [role=output]
 ----
