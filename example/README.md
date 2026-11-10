@@ -41,7 +41,7 @@ table in the manual lists them too.
 | Directory | What it is | How it is built |
 | --- | --- | --- |
 | `awaitable-sender/` | A Capy awaitable wrapped as a `stdexec` sender, the reverse of `sender-bridge/` | `BOOST_CAPY_BUILD_P2300_EXAMPLES=ON` and C++23; fetches NVIDIA stdexec. Test: `capy_example_awaitable_sender_test` |
-| `any-sender-size/` | Measures the `exec::any_sender` operation state and the heap allocation its `connect` performs | The same flag as `awaitable-sender/`. Test: `capy_example_any_sender_size` |
+| `any-sender-size/` | Measures the `exec::any_sender` operation state and the heap allocations made by `connect` and `start` | The same flag as `awaitable-sender/`. Test: `capy_example_any_sender_size` |
 | `fabrics/` | Compile-only listings from P4251R0 for HPC fabric libraries | Default build; each fabric check builds when its library is found |
 | `cuda/batched-write/` | A batched `write_some` to a CUDA device stream | `BOOST_CAPY_BUILD_CUDA_EXAMPLES=ON` and the CUDA toolkit. Test: `capy_example_cuda_batched_write` |
 | `cuda/datamovement/` | Compile-only CUDA data-movement listings from P4251R0 | `BOOST_CAPY_BUILD_CUDA_EXAMPLES=ON` |

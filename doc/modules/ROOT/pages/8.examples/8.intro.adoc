@@ -72,7 +72,7 @@ Some need an optional compiler or library, and some only check that code compile
 |===
 | Directory | What it is | How it is built
 
-| https://github.com/cppalliance/capy/tree/develop/example/asio[`asio/any_stream.cpp`]
+| https://github.com/cppalliance/capy/blob/develop/example/asio/any_stream.cpp[`asio/any_stream.cpp`]
 | Stream algorithms written against a header with no Asio includes.
 xref:9.design/9n.WhyNotCobalt.adoc#_the_dimovian_ideal[The Dimovian Ideal] walks through it.
 | The `capy_example_any_stream` target, when a `Boost::asio` target exists, or the `b2` target `any_stream`
@@ -115,7 +115,7 @@ That flag needs `BOOST_CAPY_BUILD_STDEXEC_EXAMPLES=ON` and C++23.
 | An echo server on Corosio
 | The default build, when a `Boost::corosio` target exists, or its own `Jamfile`
 
-| https://github.com/cppalliance/capy/tree/develop/example/when-any-cancellation[`when-any-cancellation/`]
+| `when-any-cancellation/`
 | A race of three data sources with cpp:when_any[].
 *Out of date:* its comments say that the first child to complete wins, and its losing children report success.
 For the current rules, see xref:4.coroutines/4f.cancellation.adoc#_the_canceled_convention[The canceled Convention] and xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation].
