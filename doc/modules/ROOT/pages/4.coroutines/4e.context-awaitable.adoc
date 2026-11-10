@@ -85,6 +85,7 @@ These methods exist because launcher functions like cpp:run_async[] cannot `co_a
 Launcher functions access `set_continuation` and `set_environment` through the typed handle provided by `handle()`.
 
 Capy's cpp:task[task<T>] satisfies this concept.
+The xref:8.examples/8r.early-quitter.adoc[Writing Your Own Task Type (Early Quitter)] example builds a second task type that satisfies it, outside the library.
 
 == How Context Flows
 

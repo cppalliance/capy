@@ -1,0 +1,410 @@
+//
+// Copyright (c) 2026 TheLingeringWill
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Writing Your Own Task Type (Early Quitter)
+:page-mode: how-to
+
+include::partial$diagram-style.adoc[]
+
+Build a task type whose coroutines end at their current `co_await` when a stop is requested.
+The bodies of these coroutines contain no cancellation checks.
+The type uses only the public cpp:ContextAwaitable[] protocol from xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol].
+
+[NOTE]
+.Example code, not library API
+====
+`early::quitter` lives in `example/early-quitter/quitter.hpp`.
+It is not part of Capy: it has no reference page and no stability guarantee.
+Copy it and adapt it.
+Capy contained a `quitter` type until https://github.com/cppalliance/capy/pull/481[pull request #481] moved it into this example.
+https://github.com/cppalliance/capy/discussions/431[Discussion #431] records that decision.
+====
+
+== What This Example Shows
+
+* A second task type that satisfies cpp:ContextAwaitable[] and cpp:ContextRunnable[], as xref:4.coroutines/4e.context-awaitable.adoc#_contextrunnable_concept[ContextRunnable Concept] defines it
+* A stop policy that ends the body instead of resuming it
+* Shutting down on `Ctrl+C`, with RAII cleanup across a chain of quitters
+* The constraints that a task type built outside the library accepts
+
+[NOTE]
+.Why this example exists
+====
+An application that shuts down wants every task in flight to end cleanly.
+With cpp:task[], each `co_await` that can see the stop needs a check such as `if(ec) co_return;` after it.
+The sender model avoids those checks with `set_stopped`, because the stopped coroutine never resumes.
+A quitter gives a Capy coroutine the same behavior.
+====
+
+== Choosing Between `task` and a Quitter
+
+Capy's only task type is cpp:task[task<T>], and Capy has no separate `io_task`.
+Use cpp:task[] by default.
+
+A quitter fits when a stop always means "drop the work and release its resources."
+Application shutdown is the usual case, especially across call chains with many suspension points.
+The header comment of `shutdown.cpp` shows the alternative: with cpp:task[], each wait needs `if(ec) co_return;` after it.
+
+[cols="1,2,2"]
+|===
+| | `task` | `early::quitter`
+
+| Status
+| A library type with a reference page
+| Example code in namespace `early`
+
+| On a stop
+| The body resumes, and stop-aware operations report `canceled`
+| The body is not resumed: when the pending operation completes, the run of quitters ends
+
+| Checks in the body
+| Wherever the body must react to a stop
+| None
+
+| What the first awaiter outside the quitters receives
+| The result of the task
+| `canceled`, as the result of the quitter
+
+| Result type at that boundary
+| Any `T`
+| `results<...>` or `std::error_code`, checked at compile time
+
+| When the locals of a stopped coroutine are destroyed
+| Before the completion handler runs
+| After the completion handler returns, under cpp:run_async[]
+
+| A stop requested before the start
+| The body runs and sees the stop through its checks and its operations
+| The body runs to its first `co_await`, which stops without starting that operation
+
+| Cost of each `co_await`
+| No stop check of its own
+| Two stop checks; a `co_await` that suspends also resumes a gate frame
+|===
+
+xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation] describes how a cpp:task[] observes a stop.
+
+[NOTE]
+.Why a separate type
+====
+The task type is a policy point.
+A program that wants explicit error handling uses cpp:task[].
+A program that wants a stop to end the work without checks uses a quitter.
+The cpp:ContextAwaitable[] protocol does not require one task type, so both work with the same launchers and combinators.
+xref:9.design/9m.WhyNotAsio.adoc#_coroutine_execution_model[Coroutine Execution Model] lists user-defined task types among the features of the protocol.
+====
+
+== Source Code
+
+[source,cpp]
+----
+include::example$early-quitter/main.cpp[]
+----
+
+.`quitter.hpp`
+[%collapsible]
+====
+[source,cpp]
+----
+include::example$early-quitter/quitter.hpp[]
+----
+====
+
+.`shutdown.cpp`
+[%collapsible]
+====
+[source,cpp]
+----
+include::example$early-quitter/shutdown.cpp[]
+----
+====
+
+The self-checks are in `checks.cpp`, in the https://github.com/cppalliance/capy/tree/develop/example/early-quitter[example directory].
+
+== Build
+
+[source,cmake,role=external]
+----
+add_executable(capy_example_early_quitter main.cpp quitter.hpp)
+target_link_libraries(capy_example_early_quitter Boost::capy)
+
+add_executable(capy_example_early_quitter_shutdown shutdown.cpp quitter.hpp)
+target_link_libraries(capy_example_early_quitter_shutdown Boost::capy)
+
+add_executable(capy_example_early_quitter_checks checks.cpp quitter.hpp)
+target_link_libraries(capy_example_early_quitter_checks Boost::capy)
+add_test(NAME capy_example_early_quitter_checks
+    COMMAND capy_example_early_quitter_checks)
+----
+
+The directory has a `CMakeLists.txt` but no `Jamfile`, so `b2` does not build it.
+CI builds the three programs and runs the checks.
+
+== Walkthrough
+
+=== A Call Chain with No Cancellation Checks
+
+In `main.cpp`, `fetch` and `store` each await the waker twice.
+Each wait stands in for one I/O operation.
+`process_item` awaits `fetch`, then `store`, and `worker` calls `process_item` in an endless loop.
+
+None of these functions looks at a stop token.
+Each `resource_guard` stands in for a connection, a file, or a buffer, and logs its release.
+With cpp:task[], every wait would need the check from xref:8.examples/8f.timeout-cancellation.adoc#_checking_for_cancellation[Checking for Cancellation].
+xref:4.coroutines/4f.cancellation.adoc#_checking_the_token[Checking the Token] describes that check.
+
+Only `worker` returns `early::quitter<std::error_code>`, because it is the top of the run, and its result must carry the stop.
+The other three can return any result type, because only another quitter awaits them.
+
+=== Starting the Workers
+
+The cpp:run_async[] loop at the end of `main` starts one `worker` on each strand.
+The completion handler takes the result of the worker, a `std::error_code`.
+After a stop, that result is `canceled`.
+
+Each worker gets its own strand and its own cpp:async_waker[].
+A waker needs an executor that never runs its continuations concurrently, as xref:4.coroutines/4l.synchronization.adoc#threading-model[The Threading Model] explains.
+
+=== Shutting Down from a Signal
+
+The signal handler `on_signal` only sets `g_signaled`, a lock-free atomic flag.
+It cannot call `request_stop()` on `g_stop`, because that call runs the stop callbacks, which post and allocate.
+Neither is safe inside a signal handler.
+
+The ticker thread in `main` checks the flag every `20 ms`.
+Once the flag is set, the ticker calls `g_stop.request_stop()`.
+On each tick, the ticker also wakes every waker, standing in for I/O completions.
+
+Capy has no signal facility.
+Signal handling needs a platform reactor, so for now it belongs in Corosio, as xref:9.design/9b.Separation.adoc#_what_lives_where[What Lives Where] explains.
+https://github.com/cppalliance/capy/discussions/432[Discussion #432] about signals in Capy is still open.
+
+=== Operations Resume a Gate
+
+The promise of a quitter wraps each awaited operation in a `transform_awaiter`, in `quitter.hpp`.
+Its `await_suspend` hands the operation the handle of a gate instead of the handle of the body.
+A child quitter receives the same gate handle.
+
+The gate is a small coroutine frame of type `gate`.
+`make_gate` creates it the first time a quitter suspends, and `~promise_base` destroys it.
+The gate loops on `decide_awaiter`, which calls `promise_base::decide` each time an operation resumes the gate.
+`decide` resumes the body, unless a stop is pending and the result ends the quitter.
+
+The quitter never abandons an operation in flight.
+It acts when that operation completes.
+A stop-aware operation, such as the `wait()` of an cpp:async_waker[], completes at once with `canceled`, because its stop callback posts the resumption.
+
+=== A Stop Ends the Run from the Top
+
+When `decide` ends the quitter, it calls `promise_base::stop`.
+That function walks the `parent_` pointers to the topmost quitter of the run, and marks each quitter on the way as stopped.
+It stores `canceled` as the result of the top quitter, then returns the continuation of that quitter.
+No body in the run resumes.
+
+[mermaid]
+----
+sequenceDiagram
+    autonumber
+    accTitle: A stop request ends a run of quitters
+    accDescr: The ticker thread requests a stop. The stop callback of the waker posts the gate of the waiting quitter, fetch or store, with a canceled result. The gate decides that the stop ends the quitter. The stop function walks to the topmost quitter, worker, and stores canceled as its result. run_async resumes, and its completion handler receives canceled. run_async then destroys the frame of worker, which destroys the frames below it, so the RAII guards run at every level.
+    participant T as Ticker thread
+    participant W as async_waker
+    participant G as Gate of fetch or store
+    participant K as worker
+    participant R as run_async
+    T->>W: g_stop.request_stop() runs the stop callback
+    W->>G: post the gate, the result is canceled
+    G->>G: decide(): a stop is pending, and the result is canceled
+    G->>K: stop() walks to the top quitter and stores canceled
+    K->>R: resume the continuation of the top quitter
+    R->>R: the completion handler receives canceled
+    R->>K: destroy the top frame, then the frames below it
+----
+
+[NOTE]
+.Why not an exception
+====
+The quitter that Capy used to contain ended a stopped body by throwing an internal exception.
+In C++, a throw is the only way to reach `final_suspend` from a suspension point.
+This example never resumes the body, so it needs no exception and no support from the library.
+====
+
+=== Results That Race a Stop
+
+`transform_awaiter::await_ready` and `transform_awaiter::await_suspend` decide what a stop does to an operation.
+There are two cases.
+
+*A stop is already pending when the `co_await` begins.*
+`await_ready` checks for the stop before it asks the operation anything, and reports that the operation is not ready.
+`await_suspend` then calls `stop()`.
+The operation is never started, so nothing, such as a lock or a buffer, is acquired only to be dropped.
+Nothing is delivered, and the run stops.
+
+*A stop arrives while the operation completes.*
+The stop can arrive inside the readiness check of the operation.
+It can also arrive after the operation resumes the gate, but before the gate decides.
+In both cases, `stops_on_completion` takes the result early:
+
+* A `canceled` result ends the quitter.
+* Any other `results<...>` or `std::error_code` value is delivered to the body.
+  The stop takes effect at the next `co_await`.
+* A result that cannot carry the stop, such as `void`, a reference, or any other type, is dropped, and the quitter ends.
+  The operation still hands the result over, so anything it owns is destroyed.
+* An exception from the operation reaches the body.
+  The stop takes effect at the next `co_await`.
+
+The constant `holds` in `transform_awaiter` decides which results the quitter can keep.
+It uses the trait `carries_stop`, described in the next section.
+
+=== The Boundary Rule
+
+A stop becomes a value at the first awaiter that is not a quitter.
+That awaiter can be a task, cpp:run[], cpp:run_async[], or cpp:when_all[], and it receives `canceled` as the result of the quitter.
+So the result type at that boundary must be able to hold `canceled`.
+
+The trait `carries_stop` accepts `std::error_code` and any `std::tuple<std::error_code, Ts...>`, which includes cpp:results[].
+The `static_assert` in `set_continuation` checks a quitter that a launcher starts.
+A second `static_assert`, in `quitter::await_suspend`, checks a quitter that a task or a combinator awaits.
+A quitter with any other result type at the boundary is a compile error.
+
+=== Cleanup Runs After the Completion Handler
+
+A stopped quitter keeps its locals until its owner destroys the frame.
+Under cpp:run_async[], the completion handler runs first, and then the frame is destroyed.
+So a completion handler that counts down a latch can wake `main` before the resource guards run.
+
+`shutdown.cpp` handles this in `main`.
+After `done.wait()`, it joins the ticker, then calls `pool.join()`, and only then reads the counters that the guards update.
+
+`main.cpp` prints its final message without calling `pool.join()`.
+Pool threads can still be destroying frames, so `released` lines can follow that message.
+Only the order of the output depends on this, because `main.cpp` reads no state that the guards update.
+Destroying the strands and the wakers before the pool is safe here, and the destructor of the pool joins its threads.
+
+[WARNING]
+====
+* Wait for the work of the executor, for example with `thread_pool::join`, before you read state that the destructors of a quitter touch.
+* A quitter that another coroutine or a combinator awaits may be destroyed unfinished in two cases only.
+  Either its run stopped, or an abandoned chain unwinds it.
+  In any other case, `destroy_frame` calls `std::terminate`.
+====
+
+== What the Self-Checks Cover
+
+`checks.cpp` runs 13 checks on a single-threaded queue, except the last one, which uses a thread pool:
+
+* `value_without_stop`: without a stop, the value of a quitter reaches the completion handler unchanged.
+* `deep_stop_while_suspended`: a stop ends three nested quitters at once, no body resumes, and all three guards run.
+* `stop_before_start`: with the stop requested before the start, the body runs up to its first `co_await` and ends there.
+* `ready_success_then_stop_delivers`: a stop arrives while a ready operation completes, the successful result is delivered, and the next `co_await` stops.
+* `ready_canceled_then_stop_stops`: the same race with a `canceled` result ends the quitter at once.
+* `stop_pending_leaves_operation_untouched`: with a stop pending at a `co_await`, the operation is never started.
+* `early_exception_reaches_body`: an exception from a result taken early reaches the body.
+* `stop_after_wake_before_gate`: a stop arrives after a wake posts the gate, but before the gate runs.
+  The wake is delivered, and the next `co_await` stops.
+* `task_between_quitters`: a task between two quitters receives `canceled` as a value, and the outer quitter then ends.
+* `exception_propagates`: an exception from the body of a child quitter reaches the parent quitter.
+* `teardown_through_closed_executor`: the waker posts the gate to a closed executor, which abandons it.
+  The chain unwinds, and no completion handler runs.
+* `when_all_branches_stop`: two quitters in the branches of cpp:when_all[] both stop, and the task that awaits cpp:when_all[] resumes.
+* `stop_races_wake`: a wake and a stop from two threads race 2000 times against a quitter on a thread pool.
+  Each run completes exactly once, and its frame always unwinds.
+
+Run them with `ctest --test-dir build -R early_quitter`.
+
+== Known Limitations
+
+* A stop requested before the start still lets the body run to its first `co_await`.
+* A result that cannot carry the stop is dropped when a stop arrives as the operation completes.
+  That includes a reference result, and a `const` move-only result is moved.
+* A stopped `results<Ts...>` needs default-constructible `Ts`.
+* cpp:task[] works around a symmetric-transfer limit of MSVC, and the quitter does not.
+* The checks do not cover cpp:run[] onto another executor, cpp:when_any[], or a handoff through a strand or a mutex.
+
+== Output
+
+`capy_example_early_quitter`, with `Ctrl+C` pressed after about one second.
+The interleaving of the lines varies from run to run.
+
+[role=output]
+----
+Press Ctrl+C to quit.
+  released connection for item 0
+  released connection for item 0
+  released connection for item 0
+  released connection for item 0
+  stored WORKER 0 ITEM 0
+  stored WORKER 1 ITEM 0
+  released output file
+  released output file
+  stored WORKER 2 ITEM 0
+  released output file
+  stored WORKER 3 ITEM 0
+  released output file
+...
+  released connection for item 8
+  released connection for item 8
+  released connection for item 8
+  released connection for item 8
+  released output file
+  released output file
+  released worker 2
+  released worker 1
+  released output file
+  released worker 3
+  released output file
+  released worker 0
+Shutdown complete.
+----
+
+The last lines show the stop at work.
+Each worker had fetched item 8 and was waiting inside `store`.
+The stop releases its output file and its worker guard, and nothing more is stored.
+In this run, every `released` line came before `Shutdown complete.`, but another run can print some of them after it.
+For code that reads state after shutdown, copy the order in `shutdown.cpp`: `ticker.join()`, then `pool.join()`, then read the state.
+
+`capy_example_early_quitter_shutdown` prints a summary after the cleanup:
+
+[role=output]
+----
+Starting 4 workers.  Press Ctrl+C to quit.
+
+  [worker 0] acquired resources
+  [worker 2] acquired resources
+  [worker 1] acquired resources
+  [worker 3] acquired resources
+  [worker 0] processing item 0
+  [worker 1] processing item 0
+...
+  [worker 1] processing item 7
+  [worker 0] released resources (cleanup)
+  [worker 3] released resources (cleanup)
+  [worker 2] released resources (cleanup)
+  [worker 1] released resources (cleanup)
+
+Shutdown complete.
+  Items processed: 32
+  Workers cleaned up: 4/4
+----
+
+== Exercises
+
+. Rewrite `worker` and the functions it calls as cpp:task[] coroutines, with the checks they then need.
+. Await `worker` from a cpp:task[] and branch on cpp:cond::canceled[cond::canceled].
+. Add `pool.join()` to `main.cpp` before the final message, and compare where the `released` lines appear.
+. Build `checks.cpp` with `-fsanitize=thread` and run it.
+
+== See Also
+
+* xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol] -- the protocol a task type implements
+* xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation] -- how a cpp:task[] observes a stop
+* xref:4.coroutines/4l.synchronization.adoc[Synchronization Primitives] -- the waker that the workers wait on
+* xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation] -- stop handling with cpp:task[]
+* xref:9.design/9b.Separation.adoc[Why Capy Is Separate] -- why signals belong in Corosio
+* xref:9.design/9m.WhyNotAsio.adoc#_coroutine_execution_model[Coroutine Execution Model] -- user-defined task types in the comparison with Boost.Asio
