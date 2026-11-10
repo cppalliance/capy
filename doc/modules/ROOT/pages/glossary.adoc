@@ -335,4 +335,5 @@ lifetime, so the execution context does not stop running. See cpp:work_guard[].
 
 == See Also
 
-* xref:reference:boost/capy.adoc[Reference]: API reference documentation
+* xref:reference-overview.adoc[Reference]: the API grouped by purpose
+* xref:reference:boost/capy.adoc[Index by Kind]: the generated index, grouped by entity kind
