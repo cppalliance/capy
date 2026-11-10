@@ -86,7 +86,7 @@ See xref:4.coroutines/4c.launching.adoc[Starting Coroutines] and xref:4.coroutin
 An executor dispatches or posts continuations to its execution context.
 An execution context, such as cpp:thread_pool[], provides executors bound to its own resources.
 cpp:strand[] serializes the coroutines dispatched through it.
-Authors of custom executors queue cpp:continuation[] objects and resume them with cpp:safe_resume[].
+Authors of custom executors queue cpp:continuation[] objects and resume their handles with cpp:safe_resume[].
 See xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] and xref:8.examples/8n.custom-executor.adoc[Custom Executor].
 
 [cols="1,4"]
@@ -107,7 +107,7 @@ See xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] and xr
 == Coroutine Environment
 
 Each coroutine in a chain receives an cpp:await_context[] that carries its executor, stop token, and frame allocator.
-Inside a task, `co_await` an object from cpp:this_coro[] to read one of them.
+Inside a task, `co_await` an object from cpp:this_coro[] to read one of them, or cpp:this_coro::environment[] to read all three.
 For example, `co_await` cpp:this_coro::stop_token[] fetches the running coroutine's stop token.
 See xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol] and xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation].
 
@@ -169,7 +169,7 @@ See xref:8.examples/8l.async-mutex.adoc[Async Mutex], xref:8.examples/8b.produce
 A task's `operator new` takes its frame from the thread's current frame allocator.
 cpp:run_async[] sets that allocator before it creates the task.
 Without an explicit allocator, it uses the execution context's frame allocator, which is the recycling allocator unless replaced.
-Code that resumes a coroutine handle directly calls cpp:safe_resume[] to keep that allocator intact.
+Code that resumes a coroutine handle directly calls cpp:safe_resume[], which restores the thread's frame allocator after the coroutine yields control.
 Promise types get allocator support from cpp:frame_alloc_mixin[], listed under <<tasks-and-promise-types>>.
 See xref:4.coroutines/4h.allocators.adoc[Frame Allocators].
 
@@ -189,7 +189,8 @@ See xref:4.coroutines/4h.allocators.adoc[Frame Allocators].
 
 Each xref:glossary.adoc#segment[segment] of a coroutine chain has a cpp:chain_owner[].
 A holder that can never resume a suspended coroutine gives it up with cpp:abandon[].
-Execution contexts and primitives do this when they shut down, and strands do it when their execution context shuts down.
+Execution contexts do this when they shut down, and so do strands when their execution context shuts down.
+A destroyed cpp:async_mutex[] or other primitive instead resumes its waiters with a canceled error.
 See xref:4.coroutines/4j.lifetimes.adoc[Lifetime and Ownership].
 
 [cols="1,4"]
