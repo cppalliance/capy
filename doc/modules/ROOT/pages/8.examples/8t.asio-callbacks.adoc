@@ -10,6 +10,8 @@
 = Using a Capy Stream from Asio
 :page-mode: how-to
 
+include::partial$diagram-style.adoc[]
+
 Drive a Capy cpp:any_stream[] with Asio completion tokens, here plain callbacks.
 
 [NOTE]
