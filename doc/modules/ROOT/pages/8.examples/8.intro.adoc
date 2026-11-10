@@ -121,3 +121,10 @@ That flag needs `BOOST_CAPY_BUILD_STDEXEC_EXAMPLES=ON` and C++23.
 For the current rules, see xref:4.coroutines/4f.cancellation.adoc#_the_canceled_convention[The canceled Convention] and xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation].
 | The default build, or `b2`
 |===
+
+[NOTE]
+====
+`BOOST_CAPY_BUILD_CUDA_EXAMPLES=ON` adds all four `cuda/` programs at once, `cuda/pipeline` included.
+So a build with that flag also needs the `cuda/pipeline` flags, or its configure step fails.
+Those flags are `BOOST_CAPY_BUILD_NVEXEC_EXAMPLES=ON` and `BOOST_CAPY_BUILD_STDEXEC_EXAMPLES=ON`, with C++23.
+====

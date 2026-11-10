@@ -50,6 +50,11 @@ table in the manual lists them too.
 | `echo-server-corosio/` | An echo server on Corosio | CMake when a `Boost::corosio` target exists, or its own Jamfile |
 | `when-any-cancellation/` | A race of three data sources with `when_any`. **Out of date:** its comments say that the first child to complete wins, and its losing children report success. For the current rules, see [The canceled Convention](https://develop.capy.cpp.al/capy/4.coroutines/4f.cancellation.html#_the_canceled_convention) and [Timeout with Cancellation](https://develop.capy.cpp.al/capy/8.examples/8f.timeout-cancellation.html) | Default build, or B2 |
 
+`BOOST_CAPY_BUILD_CUDA_EXAMPLES=ON` adds all four `cuda/` programs at once,
+`cuda/pipeline` included. So a build with that flag also needs the
+`cuda/pipeline` flags (`BOOST_CAPY_BUILD_NVEXEC_EXAMPLES=ON` and
+`BOOST_CAPY_BUILD_STDEXEC_EXAMPLES=ON`, with C++23), or its configure step fails.
+
 ## Building
 
 ### CMake
