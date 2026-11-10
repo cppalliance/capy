@@ -179,9 +179,11 @@ on the executor of the coroutine that started it. When that executor belongs to
 the context being destroyed, the unwind runs during the destruction. When it
 belongs to another context, the unwind runs there later.
 
-Destroying an cpp:async_mutex[], cpp:async_event[] or cpp:async_waker[] is
-different: each waiter is resumed with an error, as a stop request would
-resume it, and returns through its own code.
+Destroying an cpp:async_mutex[], cpp:async_event[], or cpp:async_waker[] is
+different. Each waiter resumes with an error, as a stop request would resume
+it, and returns through its own code.
+xref:4.coroutines/4l.synchronization.adoc#destruction[Synchronization Primitives]
+gives the exact rules.
 
 That gives the ordering rules:
 

@@ -88,3 +88,4 @@ Acquisition order: W0 -> W1 -> W2 -> W3 -> W4 -> W5
 == Next Steps
 
 * xref:8.examples/8m.parallel-tasks.adoc[Parallel Tasks] -- Distributing work across a thread pool
+* xref:4.coroutines/4l.synchronization.adoc[Synchronization Primitives] -- Choosing between a strand, a mutex, an event, and a waker

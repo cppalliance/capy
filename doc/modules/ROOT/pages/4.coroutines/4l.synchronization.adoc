@@ -1,0 +1,202 @@
+//
+// Copyright (c) 2026 TheLingeringWill
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Synchronization Primitives
+:page-mode: explanation
+
+Tasks that share state, wait for each other, or wait for an event outside Capy need a way to wait.
+That wait must suspend the task, not block its thread.
+Capy provides one serializing executor and three primitives for this.
+
+== Choosing a Primitive
+
+[cols="2,1,2,1"]
+|===
+| Need | Use | Waiters | Shown in
+
+| One task at a time touches the shared state
+| cpp:strand[]
+| Not applicable: the strand runs everything posted to it, one at a time
+| xref:4.coroutines/4d.executors.adoc#_strand_serialization_without_mutexes[Executors], xref:8.examples/8k.strand-serialization.adoc[Strand Serialization]
+
+| Exclusive access to the state, held across a `co_await`
+| cpp:async_mutex[]
+| Many, resumed one at a time in first-in, first-out order
+| xref:8.examples/8l.async-mutex.adoc[Async Mutex]
+
+| Resume every waiting task when a condition becomes true
+| cpp:async_event[]
+| Many, all resumed by `set()`; the event stays set until `clear()`
+| xref:8.examples/8b.producer-consumer.adoc[Producer-Consumer]
+
+| Resume one task from another thread or library
+| cpp:async_waker[]
+| One at a time, plus one wakeup kept for the next wait
+| xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation], xref:8.examples/8r.early-quitter.adoc[Writing Your Own Task Type (Early Quitter)]
+|===
+
+A strand serializes everything that runs on it.
+A mutex serializes only its critical section, so other work on the same executor keeps running.
+xref:8.examples/8l.async-mutex.adoc#_strand_vs_async_mutex[Strand vs Async Mutex] compares the two.
+
+== Holding a Lock Across a `co_await`
+
+A task that finds the cpp:async_mutex[] held suspends instead of blocking its thread.
+The waiting tasks form a queue, and `unlock()` posts the first one in it.
+
+[source,cpp]
+----
+include::example$async-mutex/async_mutex.cpp[tag=mutex,indent=0]
+----
+
+[source,cpp]
+----
+include::example$async-mutex/async_mutex.cpp[tag=scoped_lock,indent=0]
+----
+
+`scoped_lock()` completes with an error code and a guard.
+The error code is set when a stop request arrives while the task waits in the queue.
+The guard releases the mutex when it leaves its scope.
+
+In this example, the critical section does not suspend.
+A real task often must, for example to write the shared state to a stream.
+The guard stays held across any `co_await` in its scope, and the other tasks stay queued until it is released.
+
+A `std::mutex` cannot do this.
+It blocks its thread while it waits.
+It must also be unlocked on the thread that locked it, but a task on a thread pool can resume on another thread.
+
+== Resuming Many Tasks at Once
+
+An cpp:async_event[] starts unset.
+Every task that awaits `wait()` on an unset event suspends.
+
+[source,cpp]
+----
+include::example$producer-consumer/producer_consumer.cpp[tag=event,indent=0]
+----
+
+The producer calls `set()`, which posts every waiting task to its executor:
+
+[source,cpp]
+----
+include::example$producer-consumer/producer_consumer.cpp[tag=producer,indent=0]
+----
+
+The consumer waits for that call:
+
+[source,cpp]
+----
+include::example$producer-consumer/producer_consumer.cpp[tag=consumer,indent=0]
+----
+
+The event stays set until `clear()` is called.
+A `wait()` on a set event completes at once, so the order of `set()` and `wait()` does not matter.
+
+== Resuming a Task from Another Thread
+
+An cpp:async_waker[] connects a task to an event that Capy does not see.
+That event can be a timer thread, a signal, or a callback from another library.
+One task suspends in `wait()`, and any thread calls cpp:async_waker::wake[wake]`()`.
+
+[source,cpp]
+----
+include::example$timeout-cancellation/timeout_cancellation.cpp[tag=fetch_channel]
+----
+
+[source,cpp]
+----
+include::example$timeout-cancellation/timeout_cancellation.cpp[tag=race_await_fetch]
+----
+
+A worker thread stores the result in the channel, then calls `wake()` on `fetch_ready`.
+xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation] shows the whole program.
+
+`wake()` never resumes the task inline.
+It posts the task to the executor that the task awaited from.
+A wakeup that arrives before the task waits is kept, and the next `wait()` consumes it at once.
+Several wakeups before a wait count as one.
+Only one task may wait on a waker at a time.
+
+[#threading-model]
+== The Threading Model
+
+The three primitives share one threading model.
+Every task that awaits a primitive must run on an executor that never runs its continuations concurrently.
+Use a single-threaded executor, or a strand over a thread pool.
+xref:8.examples/8b.producer-consumer.adoc[Producer-Consumer] and xref:8.examples/8l.async-mutex.adoc[Async Mutex] use a strand for this reason.
+Awaiting a primitive directly on a multi-threaded executor is undefined.
+
+The exception is `wake()`, which any thread may call.
+
+A primitive resumes each waiter by posting it to its executor.
+A stop callback can run on any thread, so it also only posts.
+xref:4.coroutines/4e.context-awaitable.adoc#stop-callbacks-must-post-not-resume[Stop Callbacks Must Post, Not Resume] explains why.
+
+== Cancellation
+
+A waiter observes the stop token of the task that awaits it.
+When a stop request arrives while the task is suspended, the task resumes with cpp:error::canceled[error::canceled].
+Compare the result with cpp:cond::canceled[cond::canceled], as xref:4.coroutines/4f.cancellation.adoc#_the_canceled_convention[The canceled Convention] describes.
+
+Two rules decide what an operation does when a stop is already requested:
+
+* An operation that can complete at once does so, and ignores the stop token.
+  This covers a free mutex, a set event, and a waker that holds a wakeup.
+* An operation that would suspend completes at once with cpp:error::canceled[error::canceled].
+  It does not join the queue.
+
+A wakeup that loses the race against a stop request is kept for the next `wait()`.
+
+[#destruction]
+== Destruction
+
+The usual order is to request a stop, wait for the work to end, and then destroy the primitive:
+
+[source,cpp]
+----
+include::example$snippets/4j_lifetimes.cpp[tag=shutdown_order,indent=0]
+----
+<1> The waiting task observes the stop token and finishes through its own code.
+<2> `join` waits for the outstanding work, then for the worker threads.
+<3> The pool, and then `never_set`, are destroyed with no waiter left.
+
+Destroying a primitive that still has waiters cancels them.
+Each waiter is posted to its executor to resume with cpp:error::canceled[error::canceled].
+An executor that can no longer run the waiter abandons it instead, possibly before the destructor returns.
+A task that the mutex was handed to, but that has not resumed yet, resumes canceled.
+It holds nothing.
+
+Two preconditions apply:
+
+* No task holds the cpp:async_mutex[] when it is destroyed.
+* No call to `wake()` is in progress on the cpp:async_waker[], or made afterward.
+
+The reference page of each destructor gives the exact wording.
+xref:4.coroutines/4j.lifetimes.adoc#_shutdown_ordering[Shutdown Ordering] explains the order in the general case.
+
+== Allocation and Lifetime
+
+No operation on these primitives allocates memory.
+Each waiter lives in the frame of the task that awaits.
+
+The primitives can be neither copied nor moved, because suspended waiters point into them.
+Keep each one at a stable address that outlives its waiters.
+For example, xref:8.examples/8r.early-quitter.adoc[Writing Your Own Task Type (Early Quitter)] keeps its wakers in a `std::array`.
+
+== See Also
+
+* xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] -- strands and the executors they wrap
+* xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation] -- how a stop request reaches a waiting task
+* xref:4.coroutines/4j.lifetimes.adoc[Lifetime and Ownership] -- the order to shut things down in
+* xref:8.examples/8b.producer-consumer.adoc[Producer-Consumer] -- a complete program with an event
+* xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation] -- a waker fed by a timer thread
+* xref:8.examples/8k.strand-serialization.adoc[Strand Serialization] -- a strand instead of a mutex
+* xref:8.examples/8l.async-mutex.adoc[Async Mutex] -- a complete program with a mutex
+* xref:8.examples/8r.early-quitter.adoc[Writing Your Own Task Type (Early Quitter)] -- wakers fed by a ticker thread

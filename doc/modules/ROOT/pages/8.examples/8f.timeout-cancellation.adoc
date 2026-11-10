@@ -146,3 +146,4 @@ Cancelled (returned nullopt)
 == Next Steps
 
 * xref:8.examples/8g.parallel-fetch.adoc[Parallel Fetch] — Concurrent operations with when_all
+* xref:4.coroutines/4l.synchronization.adoc[Synchronization Primitives] — The rules that the waker shares with the mutex and the event
