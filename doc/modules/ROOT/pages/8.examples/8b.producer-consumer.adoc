@@ -102,3 +102,4 @@ Consumer: received value 42
 == Next Steps
 
 * xref:8.examples/8c.buffer-composition.adoc[Buffer Composition] — Zero-allocation buffer composition
+* xref:4.coroutines/4l.synchronization.adoc[Synchronization Primitives] — How the event compares with the other primitives

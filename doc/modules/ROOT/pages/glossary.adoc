@@ -119,7 +119,7 @@ See cpp:cond[].
 
 [[event]]Event::
 A primitive that suspends any number of coroutines until it is set, then
-resumes all of them. See cpp:async_event[].
+resumes all of them. See cpp:async_event[] and xref:4.coroutines/4l.synchronization.adoc[Synchronization Primitives].
 
 [[execution-context]]Execution Context::
 An object that owns the resources work runs on, such as threads, and the
@@ -180,7 +180,7 @@ move-only.
 
 [[mutex]]Mutex::
 A primitive that lets one coroutine at a time hold a lock, suspending the
-others instead of blocking their threads. See cpp:async_mutex[].
+others instead of blocking their threads. See cpp:async_mutex[] and xref:4.coroutines/4l.synchronization.adoc[Synchronization Primitives].
 
 == O
 
@@ -312,7 +312,7 @@ A single-slot primitive that suspends one coroutine until a wakeup arrives
 from any thread. A wakeup that arrives before the coroutine waits is kept for
 its next wait. Used to connect external events, such as timers, to
 coroutines.
-See cpp:async_waker[].
+See cpp:async_waker[] and xref:4.coroutines/4l.synchronization.adoc[Synchronization Primitives].
 
 [[when-all]]`when_all`::
 Awaiting several tasks concurrently and completing when all of them have
