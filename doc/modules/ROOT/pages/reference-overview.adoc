@@ -190,6 +190,7 @@ See xref:4.coroutines/4h.allocators.adoc[Frame Allocators].
 Each xref:glossary.adoc#segment[segment] of a coroutine chain has a cpp:chain_owner[].
 A holder that can never resume a suspended coroutine gives it up with cpp:abandon[].
 Execution contexts do this when they shut down, and so do strands when their execution context shuts down.
+Abandonment also travels up a chain: when a coroutine started by cpp:when_all[], cpp:when_any[], cpp:run[] or cpp:test::run_blocking[] is abandoned, its caller is abandoned too.
 A destroyed cpp:async_mutex[] or other primitive instead resumes its waiters with a canceled error.
 See xref:4.coroutines/4j.lifetimes.adoc[Lifetime and Ownership].
 

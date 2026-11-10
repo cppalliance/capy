@@ -110,4 +110,4 @@ cpp:test::read_stream[read_stream], applying both utilities together:
 include::example$snippets/7e_buffer_inspection.cpp[tag=parser_all_splits,indent=0]
 ----
 
-See xref:reference:boost/capy.adoc[Reference] for the full API browser.
+See the xref:reference:boost/capy.adoc[Index by Kind] for the full API browser.
