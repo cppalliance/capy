@@ -48,7 +48,7 @@ xref:8.examples/8l.async-mutex.adoc#_strand_vs_async_mutex[Strand vs Async Mutex
 == Holding a Lock Across a `co_await`
 
 A task that finds the cpp:async_mutex[] held suspends instead of blocking its thread.
-The waiting tasks form a queue, and `unlock()` posts the first one in it.
+The waiting tasks form a queue, and `unlock()` hands the mutex to the first waiter that a stop has not already claimed, then posts it.
 
 [source,cpp]
 ----
@@ -157,7 +157,8 @@ A wakeup that loses the race against a stop request is kept for the next `wait()
 [#destruction]
 == Destruction
 
-The usual order is to request a stop, wait for the work to end, and then destroy the primitive:
+The usual order is to request a stop, wait for the work to end, and then destroy the primitive.
+In this snippet, the pool has one thread, so it meets the rule in <<threading-model,The Threading Model>>:
 
 [source,cpp]
 ----

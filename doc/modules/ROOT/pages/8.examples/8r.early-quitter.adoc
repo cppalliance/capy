@@ -160,7 +160,7 @@ With cpp:task[], every wait would need the check from xref:8.examples/8f.timeout
 xref:4.coroutines/4f.cancellation.adoc#_checking_the_token[Checking the Token] describes that check.
 
 Only `worker` returns `early::quitter<std::error_code>`, because it is the top of the run, and its result must carry the stop.
-The other three can return any result type, because only another quitter awaits them.
+The other three can use a result type that need not carry the stop, because only another quitter awaits them.
 
 === Starting the Workers
 
@@ -222,7 +222,7 @@ sequenceDiagram
     W->>G: post the gate, the result is canceled
     G->>G: decide(): a stop is pending, and the result is canceled
     G->>K: stop() walks to the top quitter and stores canceled
-    K->>R: resume the continuation of the top quitter
+    G->>R: transfer to the continuation of the top quitter
     R->>R: the completion handler receives canceled
     R->>K: destroy the top frame, then the frames below it
 ----
