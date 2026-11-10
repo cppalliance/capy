@@ -153,6 +153,7 @@ The rest of the diagram is Capy, or an I/O library such as Corosio.
 * A task resumes on the executor it started with.
   State that only one task uses needs no lock.
   State that tasks share on a thread pool needs a strand or an cpp:async_mutex[].
+  xref:4.coroutines/4l.synchronization.adoc[Synchronization Primitives] compares the options.
 * Start top-level work from `main` with cpp:run_async[].
   Inside a task, await other tasks directly.
   To run a child task on a different executor, await it through cpp:run[].
@@ -232,6 +233,7 @@ Read next:
 * xref:4.coroutines/4h.allocators.adoc[Frame Allocators]
 * xref:4.coroutines/4j.lifetimes.adoc#_who_owns_a_suspended_coroutine[Who Owns a Suspended Coroutine]
 * xref:9.design/9l.RunApi.adoc[Run API]
+* xref:8.examples/8r.early-quitter.adoc[Writing Your Own Task Type (Early Quitter)]
 
 === I/O Library Authors
 

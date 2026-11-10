@@ -13,10 +13,19 @@
 
 These examples demonstrate how the pieces you have learned--tasks, buffers, streams, xref:glossary.adoc#cancellation[cancellation], composition--fit together in practice.
 
-Every example is self-contained and compiles as a standalone program.
+Each example builds from its own directory under `example/`.
+Some directories hold several programs that share a header.
+Each page names any optional dependency that its program needs.
 
 For a reading order for your role, start with xref:index.adoc#protocol-anatomy[Protocol Anatomy].
 It lists what to read next for application developers, framework authors, and I/O library authors.
+
+== Library Code and Example Code
+
+The code under `example/`, headers included, is not part of Capy.
+It has no reference page and no stability guarantee, even where it declares names in namespace `boost::capy`.
+Copy it and adapt it to your program.
+For example, the quitter task type on xref:8.examples/8r.early-quitter.adoc[Writing Your Own Task Type (Early Quitter)] is example code, not a Capy type.
 
 == What This Section Covers
 
@@ -46,5 +55,69 @@ It lists what to read next for application developers, framework authors, and I/
   `std::execution` (P2300) xref:glossary.adoc#sender[sender] from a Capy coroutine.
 * xref:8.examples/8p.asio-use-capy.adoc[Calling Asio from a Capy Coroutine] -- Using
   Boost.Asio operations directly through a `use_capy` completion token.
+* xref:8.examples/8t.asio-callbacks.adoc[Using a Capy Stream from Asio] -- Driving a Capy
+  stream with Asio completion tokens, through an adapter built on `async_initiate`.
 * xref:8.examples/8q.gui-integration.adoc[GUI Integration] -- Running a Capy coroutine on
   a GUI event loop, resuming on the GUI thread to update widgets.
+* xref:8.examples/8r.early-quitter.adoc[Writing Your Own Task Type (Early Quitter)] -- A second
+  task type, whose coroutines a stop ends at their current `co_await` with no checks.
+
+[#other-programs-in-the-repository]
+== Other Programs in the Repository
+
+These programs have no page of their own.
+Some need an optional compiler or library, and some only check that code compiles.
+
+[cols="2,3,3"]
+|===
+| Directory | What it is | How it is built
+
+| https://github.com/cppalliance/capy/tree/develop/example/asio[`asio/any_stream.cpp`]
+| Stream algorithms written against a header with no Asio includes.
+xref:9.design/9n.WhyNotCobalt.adoc#_the_dimovian_ideal[The Dimovian Ideal] walks through it.
+| The `capy_example_any_stream` target, when a `Boost::asio` target exists, or the `b2` target `any_stream`
+
+| https://github.com/cppalliance/capy/tree/develop/example/awaitable-sender[`awaitable-sender/`]
+| A Capy awaitable wrapped as a `stdexec` sender, the reverse of xref:8.examples/8o.sender-bridge.adoc[Bridging a P2300 Sender]
+| `BOOST_CAPY_BUILD_P2300_EXAMPLES=ON` and C++23.
+The build fetches NVIDIA stdexec.
+Its test is `capy_example_awaitable_sender_test`.
+
+| https://github.com/cppalliance/capy/tree/develop/example/any-sender-size[`any-sender-size/`]
+| A measurement of the operation state and the allocations of `exec::any_sender`
+| The same flag as `awaitable-sender/`.
+Its test is `capy_example_any_sender_size`.
+
+| https://github.com/cppalliance/capy/tree/develop/example/fabrics[`fabrics/`]
+| Compile-only listings from P4251R0 for HPC fabric libraries
+| The default build.
+Each fabric check builds when the build finds its library.
+
+| https://github.com/cppalliance/capy/tree/develop/example/cuda/batched-write[`cuda/batched-write/`]
+| A batched `write_some` to a CUDA device stream
+| `BOOST_CAPY_BUILD_CUDA_EXAMPLES=ON` and the CUDA toolkit.
+Its test is `capy_example_cuda_batched_write`.
+
+| https://github.com/cppalliance/capy/tree/develop/example/cuda/datamovement[`cuda/datamovement/`]
+| Compile-only CUDA data-movement listings from P4251R0
+| The CUDA flag
+
+| https://github.com/cppalliance/capy/tree/develop/example/cuda/notification-strategies[`cuda/notification-strategies/`]
+| One GPU completion, awaited in three different ways
+| The CUDA flag
+
+| https://github.com/cppalliance/capy/tree/develop/example/cuda/pipeline[`cuda/pipeline/`]
+| Capy tasks and senders on the `stream_scheduler` of NVIDIA `nvexec`
+| The CUDA flag, plus `BOOST_CAPY_BUILD_NVEXEC_EXAMPLES=ON`.
+That flag needs `BOOST_CAPY_BUILD_STDEXEC_EXAMPLES=ON` and C++23.
+
+| https://github.com/cppalliance/capy/tree/develop/example/echo-server-corosio[`echo-server-corosio/`]
+| An echo server on Corosio
+| The default build, when a `Boost::corosio` target exists, or its own `Jamfile`
+
+| https://github.com/cppalliance/capy/tree/develop/example/when-any-cancellation[`when-any-cancellation/`]
+| A race of three data sources with cpp:when_any[].
+*Out of date:* its comments say that the first child to complete wins, and its losing children report success.
+For the current rules, see xref:4.coroutines/4f.cancellation.adoc#_the_canceled_convention[The canceled Convention] and xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation].
+| The default build, or `b2`
+|===
