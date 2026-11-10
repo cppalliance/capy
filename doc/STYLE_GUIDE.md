@@ -218,9 +218,10 @@ it only in the sense the row names. **scheduler** is approved only in its P2300 
   documented with their types; asynchronous operations are distinguishable from synchronous.
   MrDocs groups the generated index by entity kind only, so the hand-written page
   `doc/modules/ROOT/pages/reference-overview.adoc` groups by purpose every symbol on the
-  generated `boost::capy`, `test`, and `this_coro` index pages, except namespaces and operators. Each such
-  symbol appears there once, as a `cpp:` link in one section's table. A change that adds,
-  removes, or renames such a symbol updates that page in the same pull request.
+  generated `boost::capy`, `test`, and `this_coro` index pages, except namespaces and
+  operators. Each such symbol is listed once, as a `cpp:` link in one section's table. A
+  change that adds, removes, or renames such a symbol updates that page in the same pull
+  request.
 - **E4.** The theme passes a contrast check in both light and dark mode. *(Review tier: the
   gated failures were all `color-contrast` on shared Antora theme nav chrome — an external UI
   bundle Capy cannot fix, the same rationale that demoted E2; scan runs non-blocking, verify by

@@ -12,7 +12,7 @@
 
 This page groups the public Capy API by purpose.
 Each name links to its generated reference page.
-The xref:reference:boost/capy.adoc[index by kind] lists the same names by entity kind.
+The xref:reference:boost/capy.adoc[index by kind] lists these names, plus namespaces and operators, by entity kind.
 
 All names are in namespace `boost::capy`.
 Testing tools are in cpp:test[], and the coroutine accessors are in cpp:this_coro[].
@@ -168,7 +168,7 @@ See xref:8.examples/8l.async-mutex.adoc[Async Mutex], xref:8.examples/8b.produce
 
 A task's `operator new` takes its frame from the thread's current frame allocator.
 cpp:run_async[] sets that allocator before it creates the task.
-Without an explicit allocator, it uses the execution context's default, typically a recycling allocator.
+Without an explicit allocator, it uses the execution context's frame allocator, which is the recycling allocator unless replaced.
 Code that resumes a coroutine handle directly calls cpp:safe_resume[] to keep that allocator intact.
 Promise types get allocator support from cpp:frame_alloc_mixin[], listed under <<tasks-and-promise-types>>.
 See xref:4.coroutines/4h.allocators.adoc[Frame Allocators].
@@ -189,7 +189,7 @@ See xref:4.coroutines/4h.allocators.adoc[Frame Allocators].
 
 Each xref:glossary.adoc#segment[segment] of a coroutine chain has a cpp:chain_owner[].
 A holder that can never resume a suspended coroutine gives it up with cpp:abandon[].
-Execution contexts, strands, and primitives do this when they are destroyed.
+Execution contexts and primitives do this when they shut down, and strands do it when their execution context shuts down.
 See xref:4.coroutines/4j.lifetimes.adoc[Lifetime and Ownership].
 
 [cols="1,4"]
@@ -234,7 +234,7 @@ See xref:5.buffers/5.intro.adoc[Buffer Sequences].
 == Streams
 
 A stream reads into or writes from buffer sequences.
-cpp:read[] fills the whole buffer sequence, and cpp:write[] writes all of it.
+cpp:read[] fills the whole buffer sequence, and cpp:write[] writes all of it, unless an error stops them first.
 Each function in this section is awaited with `co_await`.
 The type-erased wrappers accept any stream that satisfies the matching concept and hide its type.
 See xref:6.streams/6.intro.adoc[Streams].
