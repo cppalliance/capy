@@ -102,7 +102,7 @@ A `wait()` on a set event completes at once, so the order of `set()` and `wait()
 == Resuming a Task from Another Thread
 
 An cpp:async_waker[] connects a task to an event that Capy does not see.
-That event can be a timer thread, a signal, or a callback from another library.
+That event can come from a timer thread, a callback from another library, or a thread that watches a flag set by a signal handler.
 One task suspends in `wait()`, and any thread calls cpp:async_waker::wake[wake]`()`.
 
 [source,cpp]

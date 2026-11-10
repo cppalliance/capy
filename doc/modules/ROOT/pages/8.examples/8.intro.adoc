@@ -95,7 +95,7 @@ Each fabric check builds when the build finds its library.
 
 | https://github.com/cppalliance/capy/tree/develop/example/cuda/batched-write[`cuda/batched-write/`]
 | A batched `write_some` to a CUDA device stream
-| `BOOST_CAPY_BUILD_CUDA_EXAMPLES=ON` and the CUDA toolkit.
+| `BOOST_CAPY_BUILD_CUDA_EXAMPLES=ON`, C++20, and the CUDA toolkit.
 Its test is `capy_example_cuda_batched_write`.
 
 | https://github.com/cppalliance/capy/tree/develop/example/cuda/datamovement[`cuda/datamovement/`]

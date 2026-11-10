@@ -16,7 +16,7 @@ Drive a Capy cpp:any_stream[] with Asio completion tokens, here plain callbacks.
 ====
 This example is built when a `Boost::asio` target is available, and CI does not build it.
 The full source is in `example/asio/`: `asio_callbacks.cpp`, and the adapter in `api/uni_stream.hpp`.
-Both use `api/capy_streams.hpp`, which defines `asio_context` and `make_stream_pair`.
+Both use `api/capy_streams.hpp`, which declares `asio_context` and `make_stream_pair`.
 ====
 
 == What This Example Shows
