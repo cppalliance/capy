@@ -277,7 +277,8 @@ After `done.wait()`, it joins the ticker, then calls `pool.join()`, and only the
 `main.cpp` prints its final message without calling `pool.join()`.
 Pool threads can still be destroying frames, so `released` lines can follow that message.
 Only the order of the output depends on this, because `main.cpp` reads no state that the guards update.
-Destroying the strands and the wakers before the pool is safe here, and the destructor of the pool joins its threads.
+Destroying the strands and the wakers before the pool works here, because the destructor of the pool joins its threads.
+Real code should still copy the order in `shutdown.cpp`.
 
 [WARNING]
 ====
@@ -314,7 +315,7 @@ Run them with `ctest --test-dir build -R early_quitter`.
 
 * A stop requested before the start still lets the body run to its first `co_await`.
 * A result that cannot carry the stop is dropped when a stop arrives as the operation completes.
-  That includes a reference result, and a `const` move-only result is moved.
+  That includes a reference result and a `const`-qualified result, because `carries_stop` matches neither.
 * A stopped `results<Ts...>` needs default-constructible `Ts`.
 * cpp:task[] works around a symmetric-transfer limit of MSVC, and the quitter does not.
 * The checks do not cover cpp:run[] onto another executor, cpp:when_any[], or a handoff through a strand or a mutex.
