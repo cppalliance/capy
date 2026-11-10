@@ -84,7 +84,7 @@ The build fetches NVIDIA stdexec.
 Its test is `capy_example_awaitable_sender_test`.
 
 | https://github.com/cppalliance/capy/tree/develop/example/any-sender-size[`any-sender-size/`]
-| A measurement of the operation state and the allocations of `exec::any_sender`
+| A measurement of the operation state of `exec::any_sender`, and of the heap allocations made by `connect` and `start`
 | The same flag as `awaitable-sender/`.
 Its test is `capy_example_any_sender_size`.
 

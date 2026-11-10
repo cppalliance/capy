@@ -14,7 +14,8 @@ Drive a Capy cpp:any_stream[] with Asio completion tokens, here plain callbacks.
 
 [NOTE]
 ====
-This example is built when a `Boost::asio` target is available, and CI does not build it.
+`example/CMakeLists.txt` adds this example only when a `Boost::asio` target is available.
+`b2` builds it through `example/Jamfile`, and CI does not build it.
 The full source is in `example/asio/`: `asio_callbacks.cpp`, and the adapter in `api/uni_stream.hpp`.
 Both use `api/capy_streams.hpp`, which declares `asio_context` and `make_stream_pair`.
 ====
@@ -91,6 +92,8 @@ The chain ends when it has written 1024 bytes.
 The call returns when both chains end and no work remains.
 
 == Output
+
+The two chains run over a local TCP connection, so their lines can interleave differently from run to run.
 
 [role=output]
 ----
