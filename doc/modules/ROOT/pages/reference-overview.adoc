@@ -1,0 +1,274 @@
+//
+// Copyright (c) 2026 TheLingeringWill
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Reference
+:page-mode: reference
+
+This page groups the public Capy API by purpose.
+Each name links to its generated reference page.
+The xref:reference:boost/capy.adoc[index by kind] lists the same names by entity kind.
+
+All names are in namespace `boost::capy`.
+Testing tools are in cpp:test[], and the coroutine accessors are in cpp:this_coro[].
+Operators are listed on the page of their type.
+
+[#tasks-and-promise-types]
+== Tasks and Promise Types
+
+cpp:task[] is Capy's only task type, the return type for coroutines that perform I/O.
+A task's body does not run until the task is awaited or started.
+cpp:run_async[] and cpp:run[] start any type that satisfies cpp:ContextRunnable[].
+Authors of other task types build their promise type from the mixins in this section.
+See xref:4.coroutines/4b.tasks.adoc[The task Type] and xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol].
+
+[cols="1,4"]
+|===
+| Kind | Names
+
+| Concepts
+| cpp:ContextRunnable[]
+
+| Types
+| cpp:task[], cpp:context_awaitable_promise_base[], cpp:frame_alloc_mixin[]
+|===
+
+[#results-and-errors]
+== Results and Errors
+
+A cpp:results[] value bundles an error code with the values an operation produces.
+Test an error code against the portable conditions in cpp:cond[], such as cpp:cond::canceled[cond::canceled].
+Capy's own codes are in cpp:error[].
+See xref:4.coroutines/4k.results.adoc[The results Type].
+
+[cols="1,4"]
+|===
+| Kind | Names
+
+| Type Aliases
+| cpp:results[]
+
+| Enum Types
+| cpp:error[], cpp:cond[]
+
+| Functions
+| cpp:make_error_code[], cpp:make_error_condition[]
+|===
+
+[#starting-and-composing-tasks]
+== Starting and Composing Tasks
+
+cpp:run_async[] starts a task from code that is not a coroutine.
+Inside a coroutine, `co_await` cpp:run[] to execute a task on a chosen executor, or with its own stop token or frame allocator.
+cpp:when_all[] and cpp:when_any[] concurrently run several awaitables that return cpp:results[].
+cpp:when_all[] waits for all of them, and cpp:when_any[] picks the first one that succeeds.
+See xref:4.coroutines/4c.launching.adoc[Starting Coroutines] and xref:4.coroutines/4g.composition.adoc[Concurrent Composition].
+
+[cols="1,4"]
+|===
+| Kind | Names
+
+| Types
+| cpp:run_async_wrapper[]
+
+| Functions
+| cpp:run_async[], cpp:run[], cpp:when_all[], cpp:when_any[]
+|===
+
+[#executors-and-execution-contexts]
+== Executors and Execution Contexts
+
+An executor dispatches or posts continuations to its execution context.
+An execution context, such as cpp:thread_pool[], provides executors bound to its own resources.
+cpp:strand[] serializes the coroutines dispatched through it.
+Authors of custom executors queue cpp:continuation[] objects and resume them with cpp:safe_resume[].
+See xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] and xref:8.examples/8n.custom-executor.adoc[Custom Executor].
+
+[cols="1,4"]
+|===
+| Kind | Names
+
+| Concepts
+| cpp:Executor[], cpp:ExecutionContext[]
+
+| Types
+| cpp:execution_context[], cpp:thread_pool[], cpp:strand[], cpp:executor_ref[], cpp:any_executor[], cpp:work_guard[], cpp:continuation[]
+
+| Functions
+| cpp:get_system_context[], cpp:make_work_guard[]
+|===
+
+[#coroutine-environment]
+== Coroutine Environment
+
+Each coroutine in a chain receives an cpp:await_context[] that carries its executor, stop token, and frame allocator.
+Inside a task, `co_await` an object from cpp:this_coro[] to read one of them.
+For example, `co_await` cpp:this_coro::stop_token[] fetches the running coroutine's stop token.
+See xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol] and xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation].
+
+[cols="1,4"]
+|===
+| Kind | Names
+
+| Types
+| cpp:await_context[], cpp:this_coro::environment_tag[], cpp:this_coro::executor_tag[], cpp:this_coro::stop_token_tag[], cpp:this_coro::frame_allocator_tag[]
+
+| Variables
+| cpp:this_coro::environment[], cpp:this_coro::executor[], cpp:this_coro::stop_token[], cpp:this_coro::frame_allocator[]
+|===
+
+[#awaitable-protocol]
+== The Awaitable Protocol
+
+Authors of awaitables, streams, and combinators use these names.
+A cpp:ContextAwaitable[] receives the coroutine's environment when it suspends.
+cpp:immediate[] and cpp:ready[] wrap a result that is already available.
+See xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol].
+
+[cols="1,4"]
+|===
+| Kind | Names
+
+| Concepts
+| cpp:ContextAwaitable[], cpp:ContextAwaitableRange[], cpp:AwaitSuspendResult[], cpp:awaitable_decomposes_to[], cpp:decomposes_to[]
+
+| Types
+| cpp:immediate[]
+
+| Type Aliases
+| cpp:awaitable_result_t[]
+
+| Functions
+| cpp:ready[]
+|===
+
+[#synchronization]
+== Synchronization
+
+These primitives suspend a task instead of blocking its thread.
+cpp:async_mutex[] grants exclusive access, cpp:async_event[] resumes every waiter, and cpp:async_waker[] hands one wakeup to one waiter.
+To serialize all work without a lock, use the cpp:strand[] from <<executors-and-execution-contexts>>.
+See xref:8.examples/8l.async-mutex.adoc[Async Mutex], xref:8.examples/8b.producer-consumer.adoc[Producer-Consumer], and xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation].
+
+[cols="1,4"]
+|===
+| Kind | Names
+
+| Types
+| cpp:async_mutex[], cpp:async_event[], cpp:async_waker[]
+|===
+
+[#frame-allocators]
+== Frame Allocators
+
+A task's `operator new` takes its frame from the thread's current frame allocator.
+cpp:run_async[] sets that allocator before it creates the task.
+Without an explicit allocator, it uses the execution context's default, typically a recycling allocator.
+Code that resumes a coroutine handle directly calls cpp:safe_resume[] to keep that allocator intact.
+Promise types get allocator support from cpp:frame_alloc_mixin[], listed under <<tasks-and-promise-types>>.
+See xref:4.coroutines/4h.allocators.adoc[Frame Allocators].
+
+[cols="1,4"]
+|===
+| Kind | Names
+
+| Types
+| cpp:recycling_memory_resource[]
+
+| Functions
+| cpp:get_recycling_memory_resource[], cpp:get_current_frame_allocator[], cpp:set_current_frame_allocator[], cpp:safe_resume[]
+|===
+
+[#chain-ownership-and-abandonment]
+== Chain Ownership and Abandonment
+
+Each xref:glossary.adoc#segment[segment] of a coroutine chain has a cpp:chain_owner[].
+A holder that can never resume a suspended coroutine gives it up with cpp:abandon[].
+Execution contexts, strands, and primitives do this when they are destroyed.
+See xref:4.coroutines/4j.lifetimes.adoc[Lifetime and Ownership].
+
+[cols="1,4"]
+|===
+| Kind | Names
+
+| Types
+| cpp:chain_owner[]
+
+| Functions
+| cpp:abandon[]
+|===
+
+[#buffers]
+== Buffers
+
+A buffer refers to a contiguous region of memory.
+A buffer sequence is one buffer or a range of them.
+cpp:make_buffer[] makes a buffer from a region of memory, a string view, or a contiguous range.
+The other functions measure a buffer sequence, copy it, return its first buffer, or iterate over its buffers or bytes.
+Each archetype satisfies its sequence concept but has no default constructor.
+See xref:5.buffers/5.intro.adoc[Buffer Sequences].
+
+[cols="1,4"]
+|===
+| Kind | Names
+
+| Concepts
+| cpp:ConstBuffer[], cpp:MutableBuffer[], cpp:ConstBufferSequence[], cpp:MutableBufferSequence[]
+
+| Types
+| cpp:const_buffer[], cpp:mutable_buffer[], cpp:buffers_iterator[], cpp:const_buffer_archetype[], cpp:mutable_buffer_archetype[]
+
+| Type Aliases
+| cpp:buffer_type[]
+
+| Functions
+| cpp:make_buffer[], cpp:buffer_size[], cpp:buffers_count[], cpp:buffers_empty[], cpp:buffer_copy[], cpp:buffers_front[], cpp:buffers_begin[], cpp:buffers_end[], cpp:buffer_sequence_begin[], cpp:buffer_sequence_end[]
+|===
+
+[#streams]
+== Streams
+
+A stream reads into or writes from buffer sequences.
+cpp:read[] fills the whole buffer sequence, and cpp:write[] writes all of it.
+Each function in this section is awaited with `co_await`.
+The type-erased wrappers accept any stream that satisfies the matching concept and hide its type.
+See xref:6.streams/6.intro.adoc[Streams].
+
+[cols="1,4"]
+|===
+| Kind | Names
+
+| Concepts
+| cpp:ReadStream[], cpp:WriteStream[], cpp:Stream[]
+
+| Types
+| cpp:any_read_stream[], cpp:any_write_stream[], cpp:any_stream[]
+
+| Functions
+| cpp:read[], cpp:read_at_least[], cpp:write[], cpp:write_at_least[]
+|===
+
+[#testing]
+== Testing
+
+The tools in cpp:test[] drive tasks and streams without a real I/O backend.
+cpp:test::run_blocking[] starts a task and waits on the calling thread until it completes.
+cpp:test::fuse[] injects a failure at a different point on each pass.
+cpp:set_current_thread_name[] is in `boost::capy`, but its header is `<boost/capy/test/thread_name.hpp>`.
+See xref:7.testing/7.intro.adoc[Testing].
+
+[cols="1,4"]
+|===
+| Kind | Names
+
+| Types
+| cpp:test::blocking_context[], cpp:test::blocking_executor[], cpp:test::fuse[], cpp:test::read_stream[], cpp:test::write_stream[], cpp:test::stream[], cpp:test::bufgrind[]
+
+| Functions
+| cpp:test::run_blocking[], cpp:test::make_stream_pair[], cpp:test::buffer_to_string[], cpp:set_current_thread_name[]
+|===
