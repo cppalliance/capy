@@ -11,7 +11,7 @@
 :page-mode: explanation
 
 This section describes the conventions used to specify the API of this library in the
-following xref:reference:boost/capy.adoc[Reference] section.
+following xref:reference-overview.adoc[Reference] section.
 
 == What This Section Covers
 
