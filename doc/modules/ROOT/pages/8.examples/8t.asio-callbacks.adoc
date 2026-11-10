@@ -1,0 +1,127 @@
+//
+// Copyright (c) 2026 TheLingeringWill
+//
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+//
+// Official repository: https://github.com/cppalliance/capy
+//
+
+= Using a Capy Stream from Asio
+:page-mode: how-to
+
+Drive a Capy cpp:any_stream[] with Asio completion tokens, here plain callbacks.
+
+[NOTE]
+====
+This example is built when a `Boost::asio` target is available, and CI does not build it.
+The full source is in `example/asio/`: `asio_callbacks.cpp`, and the adapter in `api/uni_stream.hpp`.
+Both use `api/capy_streams.hpp`, which defines `asio_context` and `make_stream_pair`.
+====
+
+== What This Example Shows
+
+* An adapter, `uni_stream`, that gives a cpp:any_stream[] the Asio universal asynchronous model with `net::async_initiate`
+* Each operation starting a Capy task with cpp:run_async[], on an executor that posts through Asio
+* `net::async_write` and `net::async_read` composed over the adapter
+* Two callback chains that share one Asio `io_context`
+
+== Source Code
+
+[source,cpp]
+----
+include::example$asio/asio_callbacks.cpp[]
+----
+
+.`api/uni_stream.hpp`
+[%collapsible]
+====
+[source,cpp]
+----
+include::example$asio/api/uni_stream.hpp[]
+----
+====
+
+== Build
+
+[source,cmake,role=external]
+----
+add_executable(capy_example_asio_callbacks
+    asio_callbacks.cpp
+    api/capy_streams.cpp)
+target_link_libraries(capy_example_asio_callbacks
+    Boost::capy
+    Boost::asio)
+----
+
+`b2` builds the same program as `exe asio_callbacks` from `example/asio/Jamfile`.
+
+== Walkthrough
+
+=== The Initiation
+
+`uni_stream` holds a cpp:any_stream[] and a pointer to the `asio_context`.
+Its `async_read_some` passes three things to `net::async_initiate`: an `initiate_async_read_some` object, the completion token, and the buffers.
+The completion token decides what `async_read_some` returns.
+With a plain callback, it returns nothing.
+
+Asio then calls `initiate_async_read_some` with the completion handler and the buffers.
+The initiation looks up the executor associated with the completion handler.
+The default is the executor of the `io_context`.
+
+The initiation wraps that executor in `asio_executor_wrapper`, a Capy executor that posts every continuation through Asio.
+Then it starts a task with cpp:run_async[] on the wrapper.
+The task converts the buffers with `capy::from_asio`, awaits `read_some` on the cpp:any_stream[], and calls the completion handler with the error code and the byte count.
+
+The wrapper posts even when Capy asks it to dispatch.
+So the completion handler never runs inside the call to `async_read_some`, and it runs on the associated executor, as Asio requires.
+`async_write_some` and `initiate_async_write_some` follow the same pattern for writes.
+
+=== A Callback Chain
+
+`do_write` keeps its state in a `std::shared_ptr`, so every copy of the function object shares it.
+Each call writes one chunk of up to 128 bytes with `net::async_write`.
+That composed operation calls `async_write_some` on the adapter until the whole chunk is written.
+
+The completion handler of each write adds the bytes written, prints the total, and calls a copy of `do_write` again.
+The chain ends when it has written 1024 bytes.
+`do_read` is the same chain for `net::async_read`.
+
+`main` makes a connected pair of adapters with `make_uni_pair`, starts both chains, and calls `ctx.run()`.
+The call returns when both chains end and no work remains.
+
+== Output
+
+[role=output]
+----
+writer: wrote 128 bytes (total 128)
+reader: read 128 bytes (total 128)
+writer: wrote 128 bytes (total 256)
+reader: read 128 bytes (total 256)
+writer: wrote 128 bytes (total 384)
+reader: read 128 bytes (total 384)
+writer: wrote 128 bytes (total 512)
+reader: read 128 bytes (total 512)
+writer: wrote 128 bytes (total 640)
+reader: read 128 bytes (total 640)
+writer: wrote 128 bytes (total 768)
+reader: read 128 bytes (total 768)
+writer: wrote 128 bytes (total 896)
+reader: read 128 bytes (total 896)
+writer: wrote 128 bytes (total 1024)
+writer: done, wrote 1024 bytes
+reader: read 128 bytes (total 1024)
+reader: done, read 1024 bytes
+example complete!
+----
+
+== Exercises
+
+. Rewrite the reader as an Asio coroutine with `net::co_spawn`, using the `net::use_awaitable` form that the comment on `uni_stream` shows.
+. Bind the write handler to an Asio strand with `net::bind_executor`, and confirm that the completion handler runs on that strand.
+
+== See Also
+
+* xref:8.examples/8p.asio-use-capy.adoc[Calling Asio from a Capy Coroutine] -- the other direction, Asio operations awaited from a Capy coroutine
+* xref:9.design/9n.WhyNotCobalt.adoc#_the_dimovian_ideal[The Dimovian Ideal] -- `any_stream.cpp`, stream algorithms written with no Asio headers
+* xref:4.coroutines/4e.context-awaitable.adoc#bridging-a-foreign-awaitable[Bridging a Foreign Awaitable] -- the general pattern for connecting another library
