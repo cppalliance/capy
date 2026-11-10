@@ -106,8 +106,8 @@ See xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] and xr
 [#coroutine-environment]
 == Coroutine Environment
 
-Each coroutine in a chain receives an cpp:await_context[] that carries its executor, stop token, and frame allocator.
-Inside a task, `co_await` an object from cpp:this_coro[] to read one of them, or cpp:this_coro::environment[] to read all three.
+Each coroutine in a chain receives an cpp:await_context[] that carries its executor, stop token, frame allocator, and segment owner.
+Inside a task, `co_await` an object from cpp:this_coro[] to read the executor, stop token, or frame allocator, or cpp:this_coro::environment[] to read them all.
 For example, `co_await` cpp:this_coro::stop_token[] fetches the running coroutine's stop token.
 See xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol] and xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation].
 
@@ -190,7 +190,7 @@ See xref:4.coroutines/4h.allocators.adoc[Frame Allocators].
 Each xref:glossary.adoc#segment[segment] of a coroutine chain has a cpp:chain_owner[].
 A holder that can never resume a suspended coroutine gives it up with cpp:abandon[].
 Execution contexts do this when they shut down, and so do strands when their execution context shuts down.
-Abandonment also travels up a chain: when a coroutine started by cpp:when_all[], cpp:when_any[], cpp:run[] or cpp:test::run_blocking[] is abandoned, its caller is abandoned too.
+Abandonment also travels up a chain: when a coroutine started by cpp:when_all[], cpp:when_any[] or cpp:run[] is abandoned, its caller is abandoned too.
 A destroyed cpp:async_mutex[] or other primitive instead resumes its waiters with a canceled error.
 See xref:4.coroutines/4j.lifetimes.adoc[Lifetime and Ownership].
 
