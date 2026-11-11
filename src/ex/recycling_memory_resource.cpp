@@ -117,13 +117,32 @@ recycling_memory_resource::allocate_slow(
     // Once this thread's pool was drained at exit, take one block and
     // leave the pool empty: nothing would release a refill.
     bool const cache = arm_thread_cleanup();
+    void* p = nullptr;
+    std::size_t refilled = 0;
     {
         std::lock_guard<std::mutex> lock(global_mutex());
         auto& b = global().buckets[idx];
-        if(auto* p = cache ? b.pop(local().buckets[idx]) : b.pop())
-            return p;
+        if(cache)
+        {
+            auto& lb = local().buckets[idx];
+            p = b.pop(lb);
+            refilled = lb.count;
+        }
+        else
+        {
+            p = b.pop();
+        }
     }
-    return ::operator new(rounded);
+    if(p == nullptr)
+        return ::operator new(rounded);
+
+    // A thread that only allocates never frees into its pool, so its
+    // refills are what drive its decay passes.
+    auto& lp = local();
+    lp.arrivals += refilled;
+    if(lp.arrivals >= decay_period)
+        decay(lp);
+    return p;
 }
 
 void
@@ -132,10 +151,71 @@ recycling_memory_resource::deallocate_slow(
 {
     {
         std::lock_guard<std::mutex> lock(global_mutex());
-        if(global().buckets[idx].push(p))
+        if(global().buckets[idx].push(p, bucket_capacity(idx)))
             return;
     }
     ::operator delete(p);
+}
+
+void
+recycling_memory_resource::decay(pool& lp) noexcept
+{
+    lp.arrivals = 0;
+
+    // Unlink each bucket's share before taking the lock, so the walk
+    // through the blocks happens outside it.
+    node* heads[num_classes] = {};
+    node* tails[num_classes] = {};
+    std::size_t counts[num_classes] = {};
+    for(std::size_t i = 0; i < num_classes; ++i)
+    {
+        auto& b = lp.buckets[i];
+        std::size_t const share = (b.low + 1) / 2;
+        if(share > 0)
+        {
+            heads[i] = b.head;
+            node* t = b.head;
+            for(std::size_t k = 1; k < share; ++k)
+                t = t->next;
+            b.head = t->next;
+            b.count -= share;
+            tails[i] = t;
+            counts[i] = share;
+        }
+        b.low = b.count;
+    }
+
+    node* spill = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(global_mutex());
+        auto& gp = global();
+        for(std::size_t i = 0; i < num_classes; ++i)
+        {
+            if(counts[i] == 0)
+                continue;
+            auto& g = gp.buckets[i];
+            // A share that doesn't fit whole is released whole: topping
+            // off a bucket already at least half full would mean walking
+            // the chain under the lock.
+            if(g.count + counts[i] <= bucket_capacity(i))
+            {
+                tails[i]->next = g.head;
+                g.head = heads[i];
+                g.count += counts[i];
+            }
+            else
+            {
+                tails[i]->next = spill;
+                spill = heads[i];
+            }
+        }
+    }
+    while(spill != nullptr)
+    {
+        node* n = spill;
+        spill = n->next;
+        ::operator delete(n);
+    }
 }
 
 void*
