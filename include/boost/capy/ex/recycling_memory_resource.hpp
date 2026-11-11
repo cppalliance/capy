@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <memory_resource>
 #include <mutex>
+#include <new>
 
 namespace boost {
 namespace capy {
@@ -30,6 +31,17 @@ namespace capy {
 
     Size classes: 64, 128, 256, 512, 1024, 2048 bytes.
     Allocations larger than 2048 bytes bypass the pools entirely.
+
+    Each pool caches at most 256 KiB of blocks per size class:
+    4096 blocks of the smallest class, 128 of the largest. A freed
+    block that fits in neither the thread's pool nor the global pool
+    goes back to `::operator delete`.
+
+    Blocks a thread caches but stops using drain back to the global
+    pool. The drain runs as the thread goes on freeing blocks or
+    refilling from the global pool. Other threads can then reuse what a
+    burst leaves behind. Blocks the global pool has no room for go back
+    to `::operator delete`.
 
     This is the default allocator used by run_async when no allocator
     is specified.
@@ -52,7 +64,13 @@ class BOOST_CAPY_DECL recycling_memory_resource : public std::pmr::memory_resour
     static constexpr std::size_t num_classes = 6;
     static constexpr std::size_t min_class_size = 64;   // 2^6
     static constexpr std::size_t max_class_size = 2048; // 2^11
-    static constexpr std::size_t bucket_capacity = 16;
+    static constexpr int min_class_shift = std::countr_zero(min_class_size);
+    static constexpr std::size_t max_cached_bytes = 256 * 1024;
+
+    // Frees on one thread, plus blocks it refills from the global pool,
+    // between decay passes. Allocations served from the thread's pool
+    // aren't counted, which keeps the counter off that path.
+    static constexpr std::size_t decay_period = 4096;
 
     static std::size_t
     round_up_pow2(std::size_t n) noexcept
@@ -63,39 +81,65 @@ class BOOST_CAPY_DECL recycling_memory_resource : public std::pmr::memory_resour
     static std::size_t
     get_class_index(std::size_t rounded) noexcept
     {
-        std::size_t idx = std::countr_zero(rounded) - 6;  // 64 = 2^6
+        auto const idx = static_cast<std::size_t>(
+            std::countr_zero(rounded) - min_class_shift);
         return idx < num_classes ? idx : num_classes;
     }
 
+    static constexpr std::size_t
+    bucket_capacity(std::size_t idx) noexcept
+    {
+        return max_cached_bytes >> (idx + min_class_shift);
+    }
+
+    // Cached blocks are linked through their own storage, so a bucket
+    // holds any number of them without a side array.
+    struct node
+    {
+        node* next;
+    };
+
     struct bucket
     {
+        node* head = nullptr;
         std::size_t count = 0;
-        void* ptrs[bucket_capacity] = {};
+
+        // Fewest blocks cached since the last decay pass: that many sat
+        // unused through the whole period.
+        std::size_t low = 0;
 
         void* pop() noexcept
         {
-            if(count == 0)
+            node* n = head;
+            if(n == nullptr)
                 return nullptr;
-            return ptrs[--count];
+            head = n->next;
+            --count;
+            if(count < low)
+                low = count;
+            return n;
         }
 
         // Peter Dimov's idea
+        // `b` must be empty: its chain is overwritten.
         void* pop(bucket& b) noexcept
         {
-            if(count == 0)
+            if(head == nullptr)
                 return nullptr;
-            for(std::size_t i = 0; i < count; ++i)
-                b.ptrs[i] = ptrs[i];
-            b.count = count - 1;
+            b.head = head;
+            b.count = count;
+            head = nullptr;
             count = 0;
-            return b.ptrs[b.count];
+            low = 0;
+            return b.pop();
         }
 
-        bool push(void* p) noexcept
+        bool push(void* p, std::size_t capacity) noexcept
         {
-            if(count >= bucket_capacity)
+            if(count >= capacity)
                 return false;
-            ptrs[count++] = p;
+            head = ::new(p) node{head};
+            ++count;
             return true;
         }
     };
@@ -103,6 +147,7 @@ class BOOST_CAPY_DECL recycling_memory_resource : public std::pmr::memory_resour
     struct pool
     {
         bucket buckets[num_classes];
+        std::size_t arrivals = 0;
 
         // No destructor: a non-trivial dtor forces a guard variable on the
         // thread_local in local(), checked on every alloc/free. Constant
@@ -131,6 +176,11 @@ class BOOST_CAPY_DECL recycling_memory_resource : public std::pmr::memory_resour
 
     void* allocate_slow(std::size_t rounded, std::size_t idx);
     void deallocate_slow(void* p, std::size_t idx);
+
+    // Move half of each bucket's idle blocks to the global pool, or
+    // release them when it has no room. Halving, rather than emptying,
+    // leaves a burst that skips one period half its blocks.
+    static void decay(pool& lp) noexcept;
 
     // Register a thread-exit callback that drains this thread's local
     // pool back to the OS. Called only off the hot path: unconditionally
@@ -174,6 +224,11 @@ public:
         Every block comes from `::operator new`, so blocks carry the
         implementation's default new alignment and no more.
 
+        @par Complexity
+        Amortized constant. Now and then a call also hands this thread's
+        idle cached blocks to the global pool, or releases them when it
+        has no room.
+
         @param bytes The number of bytes to allocate.
 
         @return A pointer to a block of at least `bytes` bytes. A pooled
@@ -189,8 +244,7 @@ public:
         std::size_t idx = get_class_index(rounded);
         if(idx >= num_classes)
             return ::operator new(bytes);
-        auto& lp = local();
-        if(auto* p = lp.buckets[idx].pop())
+        if(auto* p = local().buckets[idx].pop())
             return p;
         return allocate_slow(rounded, idx);
     }
@@ -206,6 +260,11 @@ public:
 
         The third parameter is the alignment the block was allocated with,
         and it is ignored, as it is on allocation.
+
+        @par Complexity
+        Amortized constant. Now and then a call also hands this thread's
+        idle cached blocks to the global pool, or releases them when it
+        has no room.
 
         @param p The block to return. It must have come from
         @ref allocate_fast or @ref do_allocate on this resource.
@@ -238,7 +297,9 @@ public:
             armed = true;
         }
         auto& lp = local();
-        if(lp.buckets[idx].push(p))
+        if(++lp.arrivals == decay_period)
+            decay(lp);
+        if(lp.buckets[idx].push(p, bucket_capacity(idx)))
             return;
         deallocate_slow(p, idx);
     }
