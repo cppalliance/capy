@@ -128,12 +128,15 @@ Only one task may wait on a waker at a time.
 == The Threading Model
 
 The three primitives share one threading model.
-Every task that awaits a primitive must run on an executor that never runs its continuations concurrently.
-Use a single-threaded executor, or a strand over a thread pool.
-xref:8.examples/8b.producer-consumer.adoc[Producer-Consumer] and xref:8.examples/8l.async-mutex.adoc[Async Mutex] use a strand for this reason.
+Every task that touches a given mutex or event must run on the same executor, and that executor must never run its continuations concurrently.
+Use a single-threaded executor, or one strand over a thread pool that all those tasks share.
+Two tasks on two different strands must not share a mutex or an event.
+xref:8.examples/8b.producer-consumer.adoc[Producer-Consumer] and xref:8.examples/8l.async-mutex.adoc[Async Mutex] run all their tasks on one shared strand for this reason.
 Awaiting a primitive directly on a multi-threaded executor is undefined.
 
-The exception is `wake()`, which any thread may call.
+A waker is the exception.
+Only one task waits on it at a time, and that task's executor follows the same rule.
+`wake()` may be called from any thread.
 
 A primitive resumes each waiter by posting it to its executor.
 A stop callback can run on any thread, so it also only posts.
