@@ -80,7 +80,9 @@ function(boost_capy_test_suite_write_tests_file)
     execute_process(
             COMMAND "${TEST_SUITE_TEST_EXECUTABLE}" ${TEST_SUITE_TEST_SPEC} --list-tests
             OUTPUT_VARIABLE TEST_SUITE_LIST_TESTS_OUTPUT
-            ERROR_VARIABLE TEST_SUITE_LIST_TESTS_OUTPUT
+            # Kept apart from the listing: a diagnostic a static initializer
+            # prints would otherwise be registered as test names
+            ERROR_VARIABLE TEST_SUITE_LIST_TESTS_ERROR
             RESULT_VARIABLE TEST_SUITE_RESULT
             WORKING_DIRECTORY "${TEST_SUITE_TEST_WORKING_DIR}"
     )
@@ -89,14 +91,28 @@ function(boost_capy_test_suite_write_tests_file)
                 "Error listing tests from executable '${TEST_SUITE_TEST_EXECUTABLE}':\n"
                 "  Result: ${TEST_SUITE_RESULT}\n"
                 "  Output: ${TEST_SUITE_LIST_TESTS_OUTPUT}\n"
+                "  Error: ${TEST_SUITE_LIST_TESTS_ERROR}\n"
         )
     endif ()
+    if (TEST_SUITE_LIST_TESTS_ERROR)
+        debug_message("Test executable wrote to stderr: ${TEST_SUITE_LIST_TESTS_ERROR}")
+    endif ()
 
-    # Split lines into a list
+    # One suite name per line
     # Normalize line endings to \n
     string(REPLACE "\r\n" "\n" TEST_SUITE_LIST_TESTS_OUTPUT "${TEST_SUITE_LIST_TESTS_OUTPUT}")
     string(REPLACE "\r" "\n" TEST_SUITE_LIST_TESTS_OUTPUT "${TEST_SUITE_LIST_TESTS_OUTPUT}")
-    separate_arguments(TEST_SUITE_LIST UNIX_COMMAND "${TEST_SUITE_LIST_TESTS_OUTPUT}")
+    # A semicolon in a suite name would otherwise split it into list elements
+    string(REPLACE ";" "\\;" TEST_SUITE_LIST_TESTS_OUTPUT "${TEST_SUITE_LIST_TESTS_OUTPUT}")
+    string(REGEX MATCHALL "[^\n]+" TEST_SUITE_LIST_LINES "${TEST_SUITE_LIST_TESTS_OUTPUT}")
+    set(TEST_SUITE_LIST)
+    foreach (TEST_SUITE_LINE IN LISTS TEST_SUITE_LIST_LINES)
+        string(STRIP "${TEST_SUITE_LINE}" TEST_SUITE_LINE)
+        if (NOT TEST_SUITE_LINE STREQUAL "")
+            string(REPLACE ";" "\\;" TEST_SUITE_LINE "${TEST_SUITE_LINE}")
+            list(APPEND TEST_SUITE_LIST "${TEST_SUITE_LINE}")
+        endif ()
+    endforeach ()
     debug_message("Discovered tests: ${TEST_SUITE_LIST}")
 
     # Exit early if no tests are detected

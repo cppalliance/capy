@@ -626,10 +626,13 @@ run(std::ostream& out)
     // regardless of other arguments
     if (get_command_line_flag("l", "list-tests"))
     {
+        // Test discovery parses stdout; diagnostics a static initializer
+        // writes to stderr would otherwise be read as suite names
         for (any_suite const* e : suites::instance())
         {
-            out << e->name() << "\n";
+            std::cout << e->name() << "\n";
         }
+        std::cout.flush();
         any_runner.log_time_at_exit(false);
         return EXIT_SUCCESS;
     }
