@@ -446,6 +446,8 @@ get_command_line_short_flag(char const* short_name)
     - If no arguments are provided, all test suites are executed.
     - If arguments are provided, only test suites whose names match the arguments are executed.
     - The function also supports a `-h` or `--help` argument to display usage information.
+    - A `-l` or `--list-tests` argument writes the suite names to standard output,
+      one per line, regardless of `out`.
 
     @param out The output stream to log the results.
     @param argc The number of command-line arguments.
