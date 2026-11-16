@@ -71,7 +71,7 @@ function(boost_capy_test_suite_write_tests_file)
 
     # Variables for arguments
     if (NOT EXISTS "${TEST_SUITE_TEST_EXECUTABLE}")
-        debug_message(FATAL_ERROR "Specified test executable '${TEST_SUITE_TEST_EXECUTABLE}' does not exist")
+        message(FATAL_ERROR "Specified test executable '${TEST_SUITE_TEST_EXECUTABLE}' does not exist")
     endif ()
 
     # Run the test executable to get a list of available tests
@@ -86,8 +86,8 @@ function(boost_capy_test_suite_write_tests_file)
             RESULT_VARIABLE TEST_SUITE_RESULT
             WORKING_DIRECTORY "${TEST_SUITE_TEST_WORKING_DIR}"
     )
-    if (NOT ${TEST_SUITE_RESULT} EQUAL 0)
-        debug_message(FATAL_ERROR
+    if (NOT TEST_SUITE_RESULT EQUAL 0)
+        message(FATAL_ERROR
                 "Error listing tests from executable '${TEST_SUITE_TEST_EXECUTABLE}':\n"
                 "  Result: ${TEST_SUITE_RESULT}\n"
                 "  Output: ${TEST_SUITE_LIST_TESTS_OUTPUT}\n"
