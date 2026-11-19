@@ -91,7 +91,10 @@ file(GLOB_RECURSE BOOST_CAPY_HEADERS CONFIGURE_DEPENDS include/boost/*.hpp inclu
 file(GLOB_RECURSE BOOST_CAPY_SOURCES CONFIGURE_DEPENDS src/*.cpp src/*.hpp)
 
 source_group("" FILES "include/boost/capy.hpp" "build/Jamfile")
-source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/include/boost/capy PREFIX "include" FILES ${BOOST_CAPY_HEADERS})
+# TREE rejects files outside its root, and the umbrella header is grouped above.
+set(BOOST_CAPY_TREE_HEADERS ${BOOST_CAPY_HEADERS})
+list(REMOVE_ITEM BOOST_CAPY_TREE_HEADERS ${CMAKE_CURRENT_SOURCE_DIR}/include/boost/capy.hpp)
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/include/boost/capy PREFIX "include" FILES ${BOOST_CAPY_TREE_HEADERS})
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/src PREFIX "src" FILES ${BOOST_CAPY_SOURCES})
 
 find_package(Threads REQUIRED)
