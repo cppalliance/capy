@@ -22,8 +22,10 @@ next one. This single-chunk read is reflected by operation `read_some`:
 include::example$snippets/6a_concepts.cpp[tag=read_some_demo]
 ----
 
-You provide a buffer to fill and await the result. The coroutine is resumed
-as soon as the stream has something to report to you: 
+You provide a buffer to fill and await the result. The stream writes into
+storage you own, so that storage must stay valid until the coroutine resumes.
+The coroutine is resumed
+as soon as the stream has something to report to you:
  
   * either read bytes,
   * or a non-nominal status (xref:A.specification-methods/Ac.contingencies.adoc[__contingency__]),
@@ -84,7 +86,9 @@ written chunk. This is implemented with operation `write_some`:
 include::example$snippets/6a_concepts.cpp[tag=write_some_demo]
 ----
 
-You pass the bytes to write in `buffer`. Upon resume, the write stream has written 
+You pass the bytes to write in `buffer`. The stream reads them from your
+storage rather than copying them first, so the bytes must stay valid until
+the coroutine resumes. Upon resume, the write stream has written
 _a chunk_ (but not necessarily all) of these bytes. The operation result is:
 
  * `ec` -- status of the operation (or stream, depending on the value of `ec`),

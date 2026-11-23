@@ -34,6 +34,10 @@ of a _buffer sequence_:
  * A contiguous buffer is a buffer sequence.
  * Any bidirectional range over contiguous buffers is a buffer sequence.
 
+A range of buffers owns the buffers, not the bytes they refer to. Copying the
+range copies the pointers and sizes, and each region of storage must still
+outlive every operation using the sequence.
+
 This generalizes the notion of a _handle_:
 
 // Figures are sized in rem so they track the reader's font size. The UI

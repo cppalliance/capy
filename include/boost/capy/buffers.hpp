@@ -37,9 +37,11 @@ class mutable_buffer;
 /** A reference to a contiguous region of writable memory.
 
     Represents a pointer and size pair for a modifiable byte range.
-    Does not own the memory. Satisfies `MutableBufferSequence` (as a
-    single-element sequence) and is implicitly convertible to
-    `const_buffer`.
+    Does not own, allocate, or copy the memory: copying a buffer copies
+    the pointer and size only. The memory must stay valid until every
+    operation using the buffer completes. Satisfies
+    `MutableBufferSequence` (as a single-element sequence) and is
+    implicitly convertible to `const_buffer`.
 
     @see @ref const_buffer, @ref MutableBufferSequence
 */
@@ -127,9 +129,11 @@ public:
 /** A reference to a contiguous region of read-only memory.
 
     Represents a pointer and size pair for a non-modifiable byte range.
-    Does not own the memory. Satisfies `ConstBufferSequence` (as a
-    single-element sequence). Implicitly constructible from
-    `mutable_buffer`.
+    Does not own, allocate, or copy the memory: copying a buffer copies
+    the pointer and size only. The memory must stay valid until every
+    operation using the buffer completes. Satisfies
+    `ConstBufferSequence` (as a single-element sequence). Implicitly
+    constructible from `mutable_buffer`.
 
     @see @ref mutable_buffer, @ref ConstBufferSequence
 */

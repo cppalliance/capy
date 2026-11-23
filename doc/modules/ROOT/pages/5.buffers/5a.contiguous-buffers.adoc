@@ -17,6 +17,9 @@ it is certainly a good default. Capy offers two types for this purpose:
  * cpp:const_buffer[] -- a handle to a contiguous sequence of bytes. I/O operations will never modify these bytes.
  * cpp:mutable_buffer[] -- a handle to a contiguous region for storing bytes; I/O operations will fill it.
 
+Neither type owns the bytes. Each refers to storage that your program owns
+and must keep alive.
+
 Both types are present in header `<boost/capy/buffers.hpp>`. 
 
 
@@ -63,11 +66,17 @@ include::example$snippets/5a_contiguous_buffers.cpp[tag=types,indent=0]
 
 == Lifetime Management
 
+A buffer does not own, allocate, or copy the bytes it refers to. Destroying
+the storage leaves every buffer referring to it dangling, just as destroying
+a string leaves a cpp:string_view[std::string_view] dangling.
+
 The contract for read and write operations in Capy is:
 
  * The user manages the lifetime of the byte storage.
  * I/O operations receive a handle to the storage and assume that it will be available for the entire duration
    of the asynchronous operations.
+ * The storage must stay valid until the operation completes, not only until the call that started it returns.
+   An asynchronous operation may touch the bytes at any point before it completes.
 
 [source,cpp]
 ----
@@ -127,9 +136,15 @@ include::example$snippets/5a_contiguous_buffers.cpp[tag=buffer_interface,indent=
 
 == make_buffer
 
-There is a convenience factory function cpp:make_buffer[] that can create either 
+There is a convenience factory function cpp:make_buffer[] that can create either
 a cpp:const_buffer[] or cpp:mutable_buffer[] from your type, as long as it is recognized
 as a contiguous storage of trivially-copyable types.
+
+cpp:make_buffer[] neither allocates nor copies. The result refers to the
+storage of its argument, so that object must outlive every operation using
+the buffer. A buffer made from a temporary, such as a `std::string`
+returned from a function, dangles once the full-expression that created
+the temporary ends.
 
 
 [source,cpp]
