@@ -8,9 +8,11 @@
 //
 
 // Test that header file is self-contained.
-#include <boost/capy/test/thread_name.hpp>
+#include <boost/capy/ex/thread_name.hpp>
 
-#include "test_helpers.hpp"
+#include "../test_helpers.hpp"
+
+#include <string>
 
 namespace boost {
 namespace capy {
@@ -27,10 +29,14 @@ struct thread_name_test
         set_current_thread_name("capy-pool-0");
         BOOST_TEST(check_thread_name("capy-pool-0"));
 
-        // Long name is truncated to 15 chars on Linux/FreeBSD/NetBSD
+        // Long name is truncated to 15 chars on Linux/FreeBSD
         set_current_thread_name(
             "this-is-a-very-long-thread-name-that-exceeds-limits");
-#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__)
+#if defined(__NetBSD__)
+        BOOST_TEST(check_thread_name(std::string(
+            "this-is-a-very-long-thread-name-that-exceeds-limits")
+            .substr(0, PTHREAD_MAX_NAMELEN_NP - 1).c_str()));
+#elif defined(__linux__) || defined(__FreeBSD__)
         BOOST_TEST(check_thread_name("this-is-a-very-"));
 #elif defined(__APPLE__)
         // macOS truncates to 63 chars
@@ -72,7 +78,7 @@ struct thread_name_test
 
 TEST_SUITE(
     thread_name_test,
-    "boost.capy.thread_name");
+    "boost.capy.ex.thread_name");
 
 } // capy
 } // boost

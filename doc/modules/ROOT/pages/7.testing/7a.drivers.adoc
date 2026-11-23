@@ -10,7 +10,7 @@
 = Driving Tests
 :page-mode: how-to
 
-Three utilities work together to run capy code synchronously inside a unit
+Two utilities work together to run capy code synchronously inside a unit
 test. cpp:test::run_blocking[run_blocking] drives a coroutine to completion on the calling
 thread. cpp:test::fuse[fuse] injects errors at controlled points and reruns the test body
 until every failure path is covered. cpp:set_current_thread_name[] labels worker
@@ -171,7 +171,8 @@ worker and you need to identify which worker was involved.
 
 Platform limits on the name length:
 
-* Linux, FreeBSD, NetBSD: 15 characters
+* Linux, FreeBSD: 15 characters
+* NetBSD: `PTHREAD_MAX_NAMELEN_NP - 1` characters
 * macOS: 63 characters
 * Windows: no practical limit
 
@@ -180,9 +181,8 @@ Platform limits on the name length:
 include::example$snippets/7a_drivers.cpp[tag=thread_name,indent=0]
 ----
 
-cpp:set_current_thread_name[] lives in namespace `boost::capy`, not
-`boost::capy::test`, because the function is useful in any context, not only
-tests.
+cpp:set_current_thread_name[] is declared in `<boost/capy/ex/thread_name.hpp>`,
+in namespace `boost::capy`.
 
 [cols="1,2"]
 |===

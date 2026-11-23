@@ -27,7 +27,6 @@
 #include <boost/capy/test/read_stream.hpp>
 #include <boost/capy/test/run_blocking.hpp>
 #include <boost/capy/test/stream.hpp>
-#include <boost/capy/test/thread_name.hpp>
 #include <boost/capy/test/write_stream.hpp>
 
 #endif

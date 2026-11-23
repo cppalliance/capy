@@ -7,7 +7,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-#include <boost/capy/test/thread_name.hpp>
+#include <boost/capy/ex/thread_name.hpp>
 
 #if defined(_WIN32)
 
@@ -35,7 +35,9 @@
     Each platform has a different API and name length limit:
     - Windows: SetThreadDescription with UTF-8 to UTF-16 conversion (no limit)
     - macOS: pthread_setname_np(name) with 63-char limit
-    - Linux/BSD: pthread_setname_np(thread, name) with 15-char limit
+    - Linux/FreeBSD: pthread_setname_np(thread, name) with 15-char limit
+    - NetBSD: pthread_setname_np(thread, format, arg) with a
+      PTHREAD_MAX_NAMELEN_NP limit
 
     All operations are best-effort and silently fail on error, since thread
     naming is purely for debugging visibility and should never affect program
@@ -83,7 +85,15 @@ set_current_thread_name(char const* name) noexcept
 
     // Ignore return value: thread naming is best-effort for debugging.
     (void)pthread_setname_np(truncated);
-#elif defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__)
+#elif defined(__NetBSD__)
+    char truncated[PTHREAD_MAX_NAMELEN_NP];
+    std::strncpy(truncated, name, sizeof(truncated) - 1);
+    truncated[sizeof(truncated) - 1] = '\0';
+
+    // NetBSD takes a printf-style format, so the name is its argument
+    // rather than the format, which a '%' in it would corrupt.
+    (void)pthread_setname_np(pthread_self(), "%s", truncated);
+#elif defined(__linux__) || defined(__FreeBSD__)
     // pthread_setname_np has 16 char limit (15 + null terminator)
     char truncated[16];
     std::strncpy(truncated, name, 15);
