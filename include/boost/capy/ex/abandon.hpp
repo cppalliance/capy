@@ -11,11 +11,15 @@
 #define BOOST_CAPY_EX_ABANDON_HPP
 
 #include <boost/capy/detail/config.hpp>
+#include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/continuation.hpp>
+#include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
 
 #include <atomic>
 #include <coroutine>
+#include <optional>
+#include <type_traits>
 
 namespace boost {
 namespace capy {
@@ -129,6 +133,104 @@ abandon(continuation& c) noexcept
     else if(c.h)
         c.h.destroy();
 }
+
+/** Await an awaitable on behalf of a segment owner.
+
+    An owner, a coroutine that binds a @ref chain_owner and starts a
+    segment beneath it, waits for that segment by awaiting this. It is
+    resumed either when the awaitable completes or to unwind the
+    segment after an @ref abandon. In the second case the awaitable
+    never completed, so there is no result to read: the result is
+    empty, or `false` for an awaitable with no result, and the owner
+    must destroy the awaitable without reading it.
+
+    The awaitable is referenced, not copied, so the caller keeps it
+    alive until the `co_await` completes. Its `await_resume` must
+    return a move-constructible object or `void`: the result is moved
+    into a `std::optional`, which cannot hold a reference.
+
+    @par Preconditions
+    The awaiting coroutine's @ref await_context names, as its `owner`,
+    the @ref chain_owner bound to that coroutine.
+
+    @par Exception Safety
+    An exception from the awaitable's `await_ready`, `await_suspend` or
+    `await_resume` propagates unchanged.
+
+    @note Awaited from a promise built on
+    @ref context_awaitable_promise_base, as an owner usually is, an
+    exception from `await_ready` or `await_suspend` calls
+    `std::terminate` instead.
+
+    @par Example
+    @par !example example
+
+    @see chain_owner, abandon
+*/
+template<ContextAwaitable A>
+class abandonable
+{
+    A& a_;
+    chain_owner* owner_ = nullptr;
+
+public:
+    /// The awaitable's own `await_resume` result.
+    using result_type = decltype(std::declval<A&>().await_resume());
+
+    /** Construct from the awaitable to wait for.
+
+        @param a The awaitable. It is referenced, not copied.
+    */
+    explicit abandonable(A& a) noexcept
+        : a_(a)
+    {
+    }
+
+    /// Check whether the awaitable is already complete.
+    bool await_ready()
+    {
+        return a_.await_ready();
+    }
+
+    /** Suspend on the awaitable, remembering the segment owner.
+
+        @param h The coroutine performing the `co_await`.
+        @param env The environment of that coroutine.
+
+        @return The awaitable's own `await_suspend` result.
+    */
+    template<class H>
+    auto await_suspend(H h, await_context const* env)
+    {
+        owner_ = env->owner;
+        return a_.await_suspend(h, env);
+    }
+
+    /** Return the result, or nothing if the segment was abandoned.
+
+        For an awaitable with no result this returns `bool` instead,
+        `false` when the segment was unwound.
+
+        @return The result, empty when the segment was unwound.
+    */
+    auto await_resume()
+    {
+        bool const unwinding = owner_ && owner_->abandoned();
+        if constexpr(std::is_void_v<result_type>)
+        {
+            if(unwinding)
+                return false;
+            a_.await_resume();
+            return true;
+        }
+        else
+        {
+            if(unwinding)
+                return std::optional<result_type>();
+            return std::optional<result_type>(a_.await_resume());
+        }
+    }
+};
 
 } // namespace capy
 } // namespace boost

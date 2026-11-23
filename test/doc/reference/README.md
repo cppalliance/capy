@@ -44,41 +44,40 @@ only.
    anonymous one: ten examples across the library define `example()`, and this
    is what keeps them from colliding with each other or across files.
 
-3. Add `@par Example` to the docstring where the example belongs:
+3. Add `@par Example` and a marker naming the region to the docstring where
+   the example belongs:
 
    ```text
        @par Example
+       @par !example example
    ```
 
-   The transform inserts the code directly after that heading, which is how the
-   example lands where the docstring says rather than at the bottom. A docstring
-   with `@par Example` and no example, and no file to supply one, fails the docs
-   build.
+   The transform inserts the region named by the `!example` marker in place of
+   the marker, which is consumed rather than rendered, so the example lands
+   under the heading. A heading with no marker gets no example. A marker with
+   no file, or no region of that name, to supply it fails the docs build.
 
 ## Several examples for one symbol
 
-Add more tagged regions to the same file, each in its own namespace. They are
-injected in file order.
+Add more tagged regions to the same file, each in its own namespace, and a
+`@par !example <tag>` marker for each where it belongs in the docstring. They
+are injected in marker order; a region no marker names is not rendered.
 
 ## Symbols that share a file
 
-Overload sets and duplicated records can share a `<scope>.<kind>` name. Give
-each region a declaration naming the symbols it belongs to:
-
-```cpp
-// mrdocs::for <anchor> <anchor>
-```
-
-The names are MrDocs anchors, which you can read from the generated reference.
-Without this, every symbol sharing the file takes every example in it, and an
-overload page shows its siblings' examples.
+Overload sets and duplicated records can share a `<scope>.<kind>` name. The
+transform first looks for `<scope>.<anchor>.cpp`, where the anchor is the
+symbol's MrDocs anchor, which you can read from the generated reference, and
+falls back to `<scope>.<kind>.cpp`. Give an overload its own examples by
+putting them in a file named with its anchor.
 
 ## Checks
 
 - `boost_capy_doc_tests` compiles these files with `-Wall -Wextra -Werror`.
-- The docs workflow asserts the number of injected examples, because a MrDocs
-  without the extension installed ignores the script and renders the reference
-  with no examples at all while still reporting success.
+- The docs workflow checks that one known example reached the rendered
+  reference, because a MrDocs without the extension installed ignores the
+  script and renders the reference with no examples at all while still
+  reporting success.
 - Five `@code` blocks remain in headers: MrDocs does not publish those symbols,
   so there is nothing to inject them into.
 

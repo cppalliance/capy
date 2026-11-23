@@ -23,9 +23,11 @@
 #include <coroutine>
 #include <cstddef>
 #include <cstring>
+#include <exception>
 #include <memory>
 #include <memory_resource>
 #include <new>
+#include <optional>
 #include <queue>
 #include <semaphore>
 #include <stdexcept>
@@ -290,6 +292,79 @@ struct counting_executor
         ++*posts;
     }
 };
+
+// A root coroutine that owns its segment, as a server's per-connection
+// launcher does. The base hands env_ to each awaited operation.
+struct owner_root
+{
+    struct promise_type
+        : context_awaitable_promise_base<promise_type>
+    {
+        chain_owner owner_;
+        await_context env_;
+
+        template<class... Args>
+        promise_type(executor_ref ex, Args&&...)
+            : env_{ex, {}, get_current_frame_allocator(), &owner_}
+        {
+            this->set_environment(&env_);
+        }
+
+        owner_root get_return_object()
+        {
+            auto self =
+                std::coroutine_handle<promise_type>::from_promise(*this);
+            owner_.bind(self, env_.executor);
+            return {self};
+        }
+        std::suspend_always initial_suspend() noexcept { return {}; }
+        std::suspend_never final_suspend() noexcept { return {}; }
+        void return_void() noexcept {}
+        void unhandled_exception() noexcept { std::terminate(); }
+    };
+
+    std::coroutine_handle<promise_type> h;
+
+    owner_root(std::coroutine_handle<promise_type> h_) noexcept : h(h_) {}
+    owner_root(owner_root const&) = delete;
+
+    // Once started, the frame frees itself when it finishes, or is
+    // destroyed by its executor when the segment is abandoned.
+    void start()
+    {
+        std::exchange(h, nullptr).resume();
+    }
+
+    // Only a root that never started is still ours to destroy.
+    ~owner_root()
+    {
+        if(h)
+            h.destroy();
+    }
+};
+
+task<int> parked_child(parked* slot)
+{
+    co_await park_awaitable{slot};
+    co_return 42;
+}
+
+owner_root wait_owned(
+    executor_ref,
+    parked* slot,
+    std::optional<int>* out,
+    int* unwound,
+    destroy_count_t)
+{
+    auto t = parked_child(slot);
+    auto r = co_await abandonable(t);
+    if(!r)
+    {
+        ++*unwound;
+        co_return;
+    }
+    *out = *r;
+}
 
 } // namespace
 
@@ -609,6 +684,57 @@ struct abandon_test
         BOOST_TEST_EQ(down, 1);
     }
 
+    // An owner reads its segment's result once the segment completes.
+    void testAbandonableSeesCompletion()
+    {
+        std::queue<continuation> q;
+        queuing_executor ex(q);
+        parked slot;
+        std::optional<int> out;
+        int unwound = 0;
+        int freed = 0;
+
+        auto root = wait_owned(
+            ex, &slot, &out, &unwound, destroy_count_t(freed));
+        root.start();
+        if(!BOOST_TEST(slot))
+            return;
+
+        slot.resume();
+        BOOST_TEST_EQ(freed, 1);
+        BOOST_TEST(out == 42);
+        BOOST_TEST_EQ(unwound, 0);
+        BOOST_TEST(q.empty());
+    }
+
+    // Abandoning the parked child resumes the owner with no result.
+    void testAbandonableSeesAbandon()
+    {
+        std::queue<continuation> q;
+        queuing_executor ex(q);
+        parked slot;
+        std::optional<int> out;
+        int unwound = 0;
+        int freed = 0;
+
+        auto root = wait_owned(
+            ex, &slot, &out, &unwound, destroy_count_t(freed));
+        root.start();
+        if(!BOOST_TEST(slot))
+            return;
+
+        capy::abandon(slot);
+        if(!BOOST_TEST_EQ(q.size(), 1u))
+            return;
+        auto c = q.front();
+        q.pop();
+        c.h.resume();
+
+        BOOST_TEST_EQ(freed, 1);
+        BOOST_TEST(!out);
+        BOOST_TEST_EQ(unwound, 1);
+    }
+
     void
     run()
     {
@@ -622,6 +748,8 @@ struct abandon_test
         testUnwindAcrossRunBoundary();
         testSecondAbandonDoesNothing();
         testAbandonWithoutOwnerDestroys();
+        testAbandonableSeesCompletion();
+        testAbandonableSeesAbandon();
     }
 };
 

@@ -223,6 +223,7 @@ In the diagram, you write the `run_async` participant and the transfers between 
   It must set the frame allocator before the task's frame is allocated.
   xref:4.coroutines/4h.allocators.adoc#two-call-rationale[Frame Allocators] explains why cpp:run_async[] uses two calls for this.
 * The function must also own the chain that it starts, by binding a cpp:chain_owner[], so that a holder can abandon the chain.
+  It waits for the chain by awaiting cpp:abandonable[], which tells it whether the chain completed or was unwound.
   The alternative is to make sure that nothing awaits a coroutine that could be abandoned.
   cpp:run_async[], cpp:run[] on another executor, and each branch of cpp:when_all[] and cpp:when_any[] own their chains already.
 * To store an executor without its type, use cpp:executor_ref[].

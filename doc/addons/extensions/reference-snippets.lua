@@ -22,10 +22,9 @@
 -- Discovery works symbol-first, opening a predicted path, because MrDocs' Lua
 -- sandbox blocks io.popen and Lua has no directory listing.
 --
--- A file may hold several tagged regions; they are injected in file order.
--- Each is placed directly after the "Example" heading that `@par Example`
--- produces, so the rendered order matches what the docstring declares.
--- Without such a heading the block is appended.
+-- A file may hold several tagged regions. Each `@par !example <tag>` marker
+-- in the docstring names the region injected in its place, so the rendered
+-- order matches what the docstring declares.
 
 local SOURCE_DEFAULT = "test/doc/reference"
 local STRIP_PREFIX = "boost::capy::"
@@ -165,13 +164,6 @@ mrdocs.register_transform("reference-snippets", function(ctx)
         if sym.name ~= nil and sym.doc then
             local doc = sym.doc.document or {}
 
-            -- Anchors are the bare `@par Example` headings, in order, each
-            -- taking exactly one region. A titled heading such as
-            -- `@par Mutable Buffer Example` is a section label, not a position:
-            -- the migration put a bare `@par Example` immediately before every
-            -- block, so the bare ones mark where the code actually was. Pinning
-            -- every region to the first anchor would stack them under one title
-            -- and leave the other sections empty.
             -- Each `@par !example <tag>` marker names the region it wants. The
             -- marker is consumed rather than rendered, so the example lands where
             -- the docstring puts it, and naming the region keeps overloads that
@@ -202,7 +194,8 @@ mrdocs.register_transform("reference-snippets", function(ctx)
                     -- file provides one, so the reference would render an empty
                     -- "Example" section.
                     missing[#missing + 1] = qualified_name(ctx, sym) ..
-                        " (expected " .. base .. "." .. tostring(sym.kind) .. ".cpp)"
+                        " (expected " .. base .. "." .. tostring(sym.anchor) ..
+                        ".cpp or " .. base .. "." .. tostring(sym.kind) .. ".cpp)"
                 else
                     files = files + 1
                     local blocks
@@ -237,7 +230,7 @@ mrdocs.register_transform("reference-snippets", function(ctx)
     end
 
     if #missing > 0 then
-        fail("these symbols document an @par Example with no snippet file:\n    " ..
+        fail("these symbols have an @par !example marker with no snippet file:\n    " ..
              table.concat(missing, "\n    "))
     end
     print(string.format("[reference-snippets] injected %d example(s) from %d file(s) under %s",
