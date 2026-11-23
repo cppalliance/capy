@@ -21,7 +21,7 @@
 /// No-op ReadStream for benchmarking.
 ///
 /// Uses the executor from await_context (passed by capy::task's
-/// transform_awaiter) to post the coroutine back. Satisfies
+/// context_awaiter) to post the coroutine back. Satisfies
 /// ReadStream so it can be wrapped by capy::any_read_stream.
 struct ctxaw_read_stream
 {

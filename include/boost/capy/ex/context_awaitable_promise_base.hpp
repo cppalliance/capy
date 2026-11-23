@@ -14,6 +14,7 @@
 #include <boost/capy/detail/config.hpp>
 #include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/detail/context_awaiter.hpp>
 #include <boost/capy/ex/frame_alloc_mixin.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/this_coro.hpp>
@@ -41,6 +42,9 @@ namespace capy {
        `co_await this_coro::executor`, `co_await this_coro::stop_token`,
        and `co_await this_coro::frame_allocator`.
 
+    4. **Environment propagation** — Each @ref ContextAwaitable the
+       coroutine awaits receives that environment.
+
     @tparam Derived The derived promise type (CRTP pattern).
 
     @par Basic Usage
@@ -53,7 +57,9 @@ namespace capy {
     @par Custom Awaitable Transformation
 
     If your promise needs to transform awaitables (e.g., for affinity or
-    logging), override `transform_awaitable` instead of `await_transform`:
+    logging), override `transform_awaitable` instead of `await_transform`,
+    and hand @ref ContextAwaitable types on to the base's
+    `transform_awaitable` so they still receive the environment:
 
     @par !example example_2
 
@@ -85,7 +91,8 @@ namespace capy {
     unwind, calls `std::terminate`.
 
     @par Thread Safety
-    The environment is stored during `await_suspend` and read during
+    The environment is stored before the coroutine's body runs, from
+    `await_suspend` or the promise's constructor, and read during
     `co_await this_coro::environment`. These occur on the same logical
     thread of execution, so no synchronization is required.
 
@@ -144,9 +151,12 @@ public:
 
     /** Store a pointer to the execution environment.
 
-        Call this from your coroutine type's `await_suspend`
-        overload to make the environment available via
-        `co_await this_coro::environment`. The pointed-to
+        Call this before the coroutine's body runs to make the
+        environment available via `co_await this_coro::environment` and
+        to each awaited @ref ContextAwaitable: from your coroutine
+        type's `await_suspend` overload when it receives the
+        environment from the awaiting coroutine, or from the promise's
+        constructor when the promise holds its own. The pointed-to
         `await_context` must outlive this coroutine.
 
         @param env The environment to store.
@@ -168,9 +178,27 @@ public:
 
     /** Transform an awaitable before co_await.
 
-        Override this in your derived promise type to customize how
-        awaitables are transformed. The default implementation passes
-        the awaitable through unchanged.
+        The default wraps a @ref ContextAwaitable so that it receives
+        this coroutine's environment when the coroutine suspends on it,
+        and the frame allocator is reinstalled when it resumes. The
+        awaitable is moved or copied into the wrapper, so an lvalue is
+        awaited as a copy, and a move-only one must be passed as an
+        rvalue. The wrapper also works around compilers that miscompile
+        symmetric transfer, so a promise relying on the default need
+        not. Any other awaitable passes through unchanged. Override
+        this in your derived promise type to customize how awaitables
+        are transformed; an override that still awaits
+        @ref ContextAwaitable types passes them to this function.
+
+        @par Preconditions
+        @ref set_environment has been called, if `A` satisfies
+        @ref ContextAwaitable. A promise that receives its environment
+        when awaited calls it from its `await_suspend`, before the body
+        runs; one that holds its own environment calls it from its
+        constructor.
+
+        @note An exception from a wrapped awaitable's `await_ready` or
+        `await_suspend` calls `std::terminate`.
 
         @param a The awaitable expression from `co_await a`.
 
@@ -179,7 +207,12 @@ public:
     template<typename A>
     decltype(auto) transform_awaitable(A&& a)
     {
-        return std::forward<A>(a);
+        if constexpr (ContextAwaitable<std::decay_t<A>>)
+            return detail::context_awaiter<
+                std::decay_t<A>, context_awaitable_promise_base>{
+                    std::forward<A>(a), this};
+        else
+            return std::forward<A>(a);
     }
 
     /** Intercept co_await expressions.

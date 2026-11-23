@@ -170,6 +170,8 @@ class write_now
                 using decayed = std::decay_t<A>;
                 if constexpr (ContextAwaitable<decayed>)
                 {
+                    // Not context_awaiter: an exception from the
+                    // stream's await_suspend is the caller's to handle.
                     struct wrapper
                     {
                         decayed inner_;

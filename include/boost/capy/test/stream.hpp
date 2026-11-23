@@ -247,7 +247,7 @@ public:
         // through the executor. Because it owns a std::atomic and a
         // std::stop_callback, the awaitable needs explicit move and
         // destruction (the task promise moves it into its
-        // transform_awaiter before awaiting).
+        // context_awaiter before awaiting).
         struct awaitable
         {
             stream* self_;

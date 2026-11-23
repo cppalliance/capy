@@ -16,8 +16,8 @@
 #include <boost/capy/concept/context_awaitable.hpp>
 #include <boost/capy/ex/context_awaitable_promise_base.hpp>
 #include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/detail/context_awaiter.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-#include <boost/capy/detail/await_suspend_helper.hpp>
 #include <boost/capy/results.hpp>
 
 #include <exception>
@@ -252,110 +252,15 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             has_ep_ = true;
         }
 
-        /** Awaiter wrapping a nested `co_await` of an @ref ContextAwaitable.
-
-            Forwards the environment to the inner awaitable's
-            environment-taking `await_suspend` and restores the
-            thread-local frame allocator before the body resumes.
-
-            @tparam Awaitable The awaitable being transformed.
-        */
-        template<class Awaitable>
-        struct transform_awaiter
-        {
-            /// The wrapped awaitable, decayed and stored by value.
-            std::decay_t<Awaitable> a_;
-
-            /// The promise of the coroutine performing the `co_await`.
-            promise_type* p_;
-
-            /** Report whether the wrapped awaitable is already complete.
-
-                Where `BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND` is on,
-                this always returns `false`, and @ref await_suspend asks
-                the wrapped awaitable instead. See
-                `detail::await_ready_then_suspend`.
-
-                @return The wrapped awaitable's own `await_ready` result:
-                `true` if no suspension is needed. Always `false` where
-                the workaround is on.
-            */
-            bool await_ready() noexcept
-            {
-#if BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND
-                return false;
-#else
-                return a_.await_ready();
-#endif
-            }
-
-            /** Restore the frame allocator, then resume the wrapped
-                awaitable.
-
-                Reinstalls the thread-local frame allocator from the stored
-                environment before the body continues. This is needed
-                because the resumption may arrive on a different thread
-                than the one that suspended.
-
-                @return The wrapped awaitable's await-result, forwarded
-                unchanged.
-            */
-            decltype(auto) await_resume()
-            {
-                // Restore TLS before body resumes
-                set_current_frame_allocator(p_->environment()->frame_allocator);
-                return a_.await_resume();
-            }
-
-            /** Suspend by calling the wrapped awaitable with the
-                environment.
-
-                This is the plain `await_suspend` the compiler calls for the
-                nested `co_await`. It forwards to the wrapped awaitable's
-                @ref ContextAwaitable overload, supplying the promise's stored
-                environment as the second argument. It then hands back
-                that call's result unchanged, so the wrapped awaitable's
-                suspension decision, whatever form it takes, is preserved.
-
-                @param h The coroutine performing the `co_await`.
-
-                @return Whatever the wrapped awaitable's `await_suspend`
-                returns. When that is a `std::coroutine_handle<>`, the
-                handle is routed through `detail::symmetric_transfer`.
-                Where `BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND` is on,
-                this function instead returns `bool` from
-                `detail::await_ready_then_suspend`. It first asks the
-                wrapped awaitable's `await_ready`. When that reports
-                ready, it returns `false` to continue without
-                suspending. Otherwise it resumes any returned handle on
-                the current stack and returns `true`. Where the
-                workaround is off, a returned handle is passed back
-                unchanged for symmetric transfer.
-            */
-            template<class Promise>
-            auto await_suspend(std::coroutine_handle<Promise> h) noexcept
-            {
-#if BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND
-                return detail::await_ready_then_suspend(a_, h, p_->environment());
-#else
-                using R = decltype(a_.await_suspend(h, p_->environment()));
-                if constexpr (std::is_same_v<R, std::coroutine_handle<>>)
-                    return detail::symmetric_transfer(a_.await_suspend(h, p_->environment()));
-                else
-                    return a_.await_suspend(h, p_->environment());
-#endif
-            }
-        };
-
         /** Transform a nested awaitable before `co_await`.
 
-            Wraps an @ref ContextAwaitable in a @ref transform_awaiter so the
+            Wraps an @ref ContextAwaitable in an awaiter so the
             coroutine's environment is propagated into it. A diagnostic
             is emitted if the awaitable does not satisfy @ref ContextAwaitable.
 
             @param a The awaitable expression from `co_await a`.
 
-            @return A @ref transform_awaiter wrapping `a`.
+            @return The wrapped awaitable.
         */
         template<class Awaitable>
         auto transform_awaitable(Awaitable&& a)
@@ -363,7 +268,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
             using A = std::decay_t<Awaitable>;
             if constexpr (ContextAwaitable<A>)
             {
-                return transform_awaiter<Awaitable>{
+                return detail::context_awaiter<A, promise_type>{
                     std::forward<Awaitable>(a), this};
             }
             else

@@ -129,6 +129,7 @@ See xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol] a
 Authors of awaitables, streams, and combinators use these names.
 A cpp:ContextAwaitable[] receives the coroutine's environment when it suspends.
 cpp:immediate[] and cpp:ready[] wrap a result that is already available.
+A promise built on cpp:context_awaitable_promise_base[] passes its environment to each cpp:ContextAwaitable[] it awaits.
 See xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol].
 
 [cols="1,4"]

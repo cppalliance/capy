@@ -171,7 +171,7 @@ public:
 
             // The operation completes synchronously, but await_suspend is
             // the only place await_context is delivered (the promise's
-            // transform_awaiter forwards it here). Returning false means
+            // context_awaiter forwards it here). Returning false means
             // the coroutine does not actually suspend; it resumes
             // immediately, having observed the stop token. See await_context,
             // ContextAwaitable.

@@ -41,7 +41,7 @@ Allocation Flow
    that call get_current_frame_allocator()->allocate/deallocate
 5. task::initial_suspend captures TLS into promise via set_frame_allocator()
 6. task::initial_suspend::await_resume restores TLS when body starts
-7. When task awaits a child, transform_awaiter::await_resume restores TLS
+7. When task awaits a child, the awaiter's await_resume restores TLS
 8. Child tasks repeat steps 4-7, inheriting the same allocator
 
 Key Components
@@ -86,7 +86,7 @@ Trampoline uses default allocation:
 
 TLS restoration on resume:
     After awaiting a child, the parent's TLS may have been changed by the child.
-    transform_awaiter::await_resume restores parent's allocator from its promise.
+    The awaiter's await_resume restores parent's allocator from its promise.
 
 Event loops must use safe_resume:
     Between a coroutine's await_resume (which sets TLS) and the next child

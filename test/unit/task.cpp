@@ -1622,7 +1622,7 @@ struct task_test
     }
 
     // A ContextAwaitable whose await_suspend returns bool, to drive the
-    // non-handle branch of the task transform_awaiter.
+    // non-handle branch of the task's awaiter.
     struct bool_resume_awaitable
     {
         bool await_ready() const noexcept { return false; }
@@ -1843,7 +1843,7 @@ struct task_test
     // performs an atomic read-modify-write, the throw from
     // await_resume was not caught by the catch beside it. It
     // escaped to run_async's error handler. A plain or atomic load
-    // in await_ready did not trigger it. transform_awaiter avoids it
+    // in await_ready did not trigger it. The task's awaiter avoids it
     // by asking the wrapped await_ready from inside await_suspend
     // (detail::await_ready_then_suspend).
     //

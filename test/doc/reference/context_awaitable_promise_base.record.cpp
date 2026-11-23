@@ -93,11 +93,14 @@ namespace ex_2 {
 // tag::example_2[]
 struct promise_type : capy::context_awaitable_promise_base<promise_type>
 {
+    using base = capy::context_awaitable_promise_base<promise_type>;
+
     template<typename A>
-    auto transform_awaitable(A&& a)
+    decltype(auto) transform_awaitable(A&& a)
     {
-        // Your custom transformation logic
-        return std::forward<A>(a);
+        // Your custom transformation logic, then let the base
+        // hand the environment on.
+        return base::transform_awaitable(std::forward<A>(a));
     }
 };
 // end::example_2[]
