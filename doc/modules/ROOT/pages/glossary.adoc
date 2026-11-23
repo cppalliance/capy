@@ -47,12 +47,16 @@ the compiler calls when a coroutine awaits.
 == B
 
 [[buffer]]Buffer::
-A contiguous region of memory. See cpp:mutable_buffer[] (writable) and
-cpp:const_buffer[] (read-only).
+A non-owning handle to a contiguous region of memory: a pointer and a size.
+Copying a buffer copies the handle, not the bytes. The bytes must stay valid
+until every operation using the buffer completes. See cpp:mutable_buffer[]
+(writable), cpp:const_buffer[] (read-only), and
+xref:5.buffers/5a.contiguous-buffers.adoc#_lifetime_management[Lifetime Management].
 
 [[buffer-sequence]]Buffer Sequence::
 A collection of buffers that can be iterated. Enables scatter/gather I/O
-with a single operation. See xref:5.buffers/5.intro.adoc[Buffer Sequences].
+with a single operation. Like a buffer, it does not own the bytes it
+describes. See xref:5.buffers/5.intro.adoc[Buffer Sequences].
 
 == C
 

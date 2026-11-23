@@ -20,6 +20,11 @@ designed with the following criteria in mind:
  * They should enable fast transport (contiguous storage).
  * They should be easy to use from within your program.
 
+A buffer never owns the bytes it refers to. It is a pointer and a size, like
+cpp:string_view[std::string_view], so copying it never copies the bytes. Your
+program owns the storage, and the storage must stay valid until every
+operation using it has completed.
+
 == What This Section Covers
 
 * xref:5.buffers/5a.contiguous-buffers.adoc[Contiguous Buffers] -- cpp:const_buffer[] and
