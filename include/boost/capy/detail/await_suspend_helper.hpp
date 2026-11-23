@@ -77,7 +77,7 @@ namespace detail {
 
     The void-returning transfer alone does not cover every case on
     19.51. See `await_ready_then_suspend` below for the second
-    safeguard that `task` applies where this one is on.
+    safeguard that `context_awaiter` applies where this one is on.
 
     `_M_ARM64EC` is included conservatively. It generates ARM64
     code and has not been tested here; keeping the workaround on
@@ -124,7 +124,7 @@ symmetric_transfer(std::coroutine_handle<> h) noexcept
 #if BOOST_CAPY_SYMMETRIC_TRANSFER_WORKAROUND
 /** Ask whether an awaitable is ready, and suspend on it if not.
 
-    Used by the `transform_awaiter` of `task` where the
+    Used by `context_awaiter` where the
     symmetric-transfer workaround is on. There the awaiter's own
     `await_ready` returns `false`, and its `await_suspend` calls this
     instead, so the wrapped awaitable's `await_ready` runs inside

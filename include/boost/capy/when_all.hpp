@@ -313,6 +313,8 @@ struct when_all_runner
             state_->core_.stop_source_.request_stop();
         }
 
+        // Not context_awaiter: a child whose await_suspend throws has
+        // failed, and must reach unhandled_exception rather than terminate.
         template<class Awaitable>
         struct transform_awaiter
         {

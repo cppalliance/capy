@@ -93,7 +93,7 @@ static constexpr int BRIDGED_EXEC_MODEL = 1;
 //
 // Templated session/accept coroutines instantiated with each
 // stream type. The executor comes from await_context via capy::task's
-// transform_awaiter.
+// context_awaiter.
 // ===================================================================
 
 template <class Stream>

@@ -215,7 +215,8 @@ In the diagram, you write the `run_async` participant and the transfers between 
 * Derive the promise type from cpp:context_awaitable_promise_base[].
   The base allocates the xref:glossary.adoc#coroutine-frame[coroutine frame] with the current frame allocator and stores the environment.
   It also answers `co_await this_coro::...` queries, and passes every other xref:glossary.adoc#awaitable[awaitable] to the `transform_awaitable` of your promise.
-* In `transform_awaitable`, pass the environment to each I/O awaitable through its two-argument `await_suspend`.
+* The base's `transform_awaitable` passes the environment to each I/O awaitable through its two-argument `await_suspend`.
+  An override of `transform_awaitable` hands ContextAwaitables back to the base's.
 * An awaited child task gets the same environment, and it returns to its parent by symmetric transfer.
   So the parent continues on the same executor.
 * A function that starts tasks creates the environment: an executor, a stop token, a frame allocator, and an owner.

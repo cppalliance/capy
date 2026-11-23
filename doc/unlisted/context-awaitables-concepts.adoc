@@ -237,36 +237,10 @@ The mixin provides:
 
 == Using await_transform
 
-The promise's `await_transform` wraps awaitables to inject context:
-
-[source,cpp]
-----
-template<typename Awaitable>
-auto await_transform(Awaitable&& a)
-{
-    return transform_awaiter<Awaitable>{
-        std::forward<Awaitable>(a),
-        this  // Promise pointer for context access
-    };
-}
-
-template<typename Awaitable>
-struct transform_awaiter
-{
-    Awaitable a_;
-    promise_type* p_;
-
-    bool await_ready() { return a_.await_ready(); }
-
-    auto await_suspend(std::coroutine_handle<> h)
-    {
-        // Inject context from promise
-        return a_.await_suspend(h, p_->environment());
-    }
-
-    decltype(auto) await_resume() { return a_.await_resume(); }
-};
-----
+The promise's `await_transform` wraps awaitables to inject context.
+cpp:context_awaitable_promise_base[] does this by default: its
+`transform_awaitable` wraps each ContextAwaitable so that its
+`await_suspend` receives the promise's `environment()`.
 
 Every `co_await` in a task automatically receives context.
 

@@ -324,6 +324,8 @@ struct when_any_results_runner
             state_->record_exception(std::current_exception());
         }
 
+        // Not context_awaiter: a child whose await_suspend throws has
+        // failed, and must reach unhandled_exception rather than terminate.
         template<class Awaitable>
         struct transform_awaiter
         {

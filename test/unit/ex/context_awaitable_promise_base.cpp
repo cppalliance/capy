@@ -11,11 +11,13 @@
 #include <boost/capy/ex/context_awaitable_promise_base.hpp>
 
 #include <boost/capy/ex/await_context.hpp>
+#include <boost/capy/ex/frame_allocator.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
 
 #include "test_suite.hpp"
 
 #include <coroutine>
+#include <memory_resource>
 #include <string>
 #include <utility>
 
@@ -107,6 +109,22 @@ private:
         : h_(h)
     {
     }
+};
+
+// Completes inside await_suspend, recording the environment it was given.
+struct recording_awaitable
+{
+    await_context const** seen;
+
+    bool await_ready() const noexcept { return false; }
+
+    bool await_suspend(std::coroutine_handle<>, await_context const* env)
+    {
+        *seen = env;
+        return false;
+    }
+
+    int await_resume() const noexcept { return 7; }
 };
 
 struct context_awaitable_promise_base_test
@@ -222,10 +240,40 @@ struct context_awaitable_promise_base_test
         BOOST_TEST(retrieved->executor == executor_ref(executor));
     }
 
+    // The default transform hands the coroutine's environment to each
+    // ContextAwaitable it awaits, and reinstalls its frame allocator.
+    void
+    testDefaultTransformPassesEnvironment()
+    {
+        await_context const* seen = nullptr;
+        int result = 0;
+        auto c = [](await_context const** s, int* r) -> test_coro
+        {
+            *r = co_await recording_awaitable{s};
+        }(&seen, &result);
+
+        auto* const before = get_current_frame_allocator();
+        await_context env;
+        env.frame_allocator = std::pmr::null_memory_resource();
+        c.h_.promise().set_environment(&env);
+        set_current_frame_allocator(nullptr);
+        c.h_.resume();
+        auto* const reinstalled = get_current_frame_allocator();
+        set_current_frame_allocator(before);
+
+        BOOST_TEST(seen == &env);
+        BOOST_TEST_EQ(result, 7);
+        BOOST_TEST(c.h_.done());
+        // Resuming from the awaitable reinstalled the environment's
+        // frame allocator.
+        BOOST_TEST(reinstalled == std::pmr::null_memory_resource());
+    }
+
     void
     run()
     {
         testSetAndGetEnvironment();
+        testDefaultTransformPassesEnvironment();
         testDefaultEnvironment();
         testAwaitTransformInterceptsEnvironmentTag();
         testAwaitTransformDelegatesToTransformAwaitable();
