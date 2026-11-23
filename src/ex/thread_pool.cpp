@@ -13,7 +13,7 @@
 #include <boost/capy/detail/thread_local_ptr.hpp>
 #include <boost/capy/ex/abandon.hpp>
 #include <boost/capy/ex/frame_allocator.hpp>
-#include <boost/capy/test/thread_name.hpp>
+#include <boost/capy/ex/thread_name.hpp>
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>

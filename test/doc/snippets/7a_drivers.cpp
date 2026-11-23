@@ -20,7 +20,7 @@
 #include <boost/capy/test/fuse.hpp>
 #include <boost/capy/test/read_stream.hpp>
 #include <boost/capy/test/run_blocking.hpp>
-#include <boost/capy/test/thread_name.hpp>
+#include <boost/capy/ex/thread_name.hpp>
 
 #include <cassert>
 #include <exception>
@@ -344,7 +344,7 @@ struct drivers_test
         #include <boost/capy/ex/run_async.hpp>
         #include <boost/capy/ex/thread_pool.hpp>
         #include <boost/capy/task.hpp>
-        #include <boost/capy/test/thread_name.hpp>
+        #include <boost/capy/ex/thread_name.hpp>
 
         namespace capy = boost::capy;
 

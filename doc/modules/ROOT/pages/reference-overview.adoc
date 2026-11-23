@@ -87,6 +87,7 @@ An executor dispatches or posts continuations to its execution context.
 An execution context, such as cpp:thread_pool[], provides executors bound to its own resources.
 cpp:strand[] serializes the coroutines dispatched through it.
 Authors of custom executors queue cpp:continuation[] objects and resume their handles with cpp:safe_resume[].
+An execution context that owns worker threads can label them for debuggers with cpp:set_current_thread_name[].
 See xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] and xref:8.examples/8n.custom-executor.adoc[Custom Executor].
 
 [cols="1,4"]
@@ -100,7 +101,7 @@ See xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] and xr
 | cpp:execution_context[], cpp:thread_pool[], cpp:strand[], cpp:executor_ref[], cpp:any_executor[], cpp:work_guard[], cpp:continuation[]
 
 | Functions
-| cpp:get_system_context[], cpp:make_work_guard[]
+| cpp:get_system_context[], cpp:make_work_guard[], cpp:set_current_thread_name[]
 |===
 
 [#coroutine-environment]
@@ -261,7 +262,6 @@ See xref:6.streams/6.intro.adoc[Streams].
 The tools in cpp:test[] drive tasks and streams without a real I/O backend.
 cpp:test::run_blocking[] starts a task and waits on the calling thread until it completes.
 cpp:test::fuse[] injects a failure at a different point on each pass.
-cpp:set_current_thread_name[] is in `boost::capy`, but its header is `<boost/capy/test/thread_name.hpp>`.
 See xref:7.testing/7.intro.adoc[Testing].
 
 [cols="1,4"]
@@ -272,5 +272,5 @@ See xref:7.testing/7.intro.adoc[Testing].
 | cpp:test::blocking_context[], cpp:test::blocking_executor[], cpp:test::fuse[], cpp:test::read_stream[], cpp:test::write_stream[], cpp:test::stream[], cpp:test::bufgrind[]
 
 | Functions
-| cpp:test::run_blocking[], cpp:test::make_stream_pair[], cpp:test::buffer_to_string[], cpp:set_current_thread_name[]
+| cpp:test::run_blocking[], cpp:test::make_stream_pair[], cpp:test::buffer_to_string[]
 |===

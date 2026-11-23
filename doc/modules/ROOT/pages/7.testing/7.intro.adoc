@@ -23,9 +23,8 @@ only difference is the type of the stream you pass in.
   coroutine to completion on the calling thread without a real xref:glossary.adoc#executor[executor].
   cpp:test::fuse[fuse] runs the test body repeatedly, injecting an error at each
   `maybe_fail()` site in turn until every failure path is covered.
-  The `thread_name` header's cpp:set_current_thread_name[] function labels
-  worker threads so that failures in multi-threaded tests are easier to
-  attribute.
+  cpp:set_current_thread_name[] labels worker threads so that failures in
+  multi-threaded tests are easier to attribute.
 
 * xref:7.testing/7b.mock-streams.adoc[Mock Streams] -- cpp:test::read_stream[read_stream],
   cpp:test::write_stream[write_stream], and cpp:test::stream[stream] (a connected pair) implement the partial-I/O
