@@ -25,6 +25,7 @@
 
 #include <array>
 #include <coroutine>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -80,6 +81,30 @@ struct parking_stream
     }
 };
 static_assert(WriteStream<parking_stream>);
+
+// A stream whose write fails inside await_suspend.
+struct throwing_stream
+{
+    struct write_awaitable
+    {
+        bool await_ready() const noexcept { return false; }
+        void await_suspend(std::coroutine_handle<>, await_context const*)
+        {
+            throw std::runtime_error("suspend");
+        }
+        results<std::size_t> await_resume() const noexcept
+        {
+            return {};
+        }
+    };
+
+    template<class Buffers>
+    write_awaitable write_some(Buffers const&)
+    {
+        return {};
+    }
+};
+static_assert(WriteStream<throwing_stream>);
 
 class write_now_test
 {
@@ -431,9 +456,31 @@ public:
         BOOST_TEST_EQ(parent_down, 1);
     }
 
+    // An exception from the stream's await_suspend reaches the caller.
+    void
+    testAwaitSuspendThrows()
+    {
+        bool caught = false;
+        throwing_stream s;
+        auto parent = [&]() -> task<void>
+        {
+            write_now wn(s);
+            char c = 'x';
+            std::ignore = co_await wn(const_buffer(&c, 1));
+        };
+        int n = 0;
+        test_executor ex(n);
+        run_async(ex, [] {}, [&](std::exception_ptr ep) {
+            try { std::rethrow_exception(ep); }
+            catch (std::runtime_error const&) { caught = true; }
+        })(parent());
+        BOOST_TEST(caught);
+    }
+
     void
     run()
     {
+        testAwaitSuspendThrows();
         testTeardownOfParkedWriteDestroysChainOnce();
 #if !defined(_WIN32)
         testDestroyParentAwaitingWriteTerminates();

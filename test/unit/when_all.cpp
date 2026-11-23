@@ -207,6 +207,24 @@ results_pending_size()
 
 } // anonymous namespace
 
+namespace {
+
+// A child whose await_suspend throws: the combinator reports the
+// failure as it does an exception from the child's body.
+struct throwing_suspend
+{
+    bool await_ready() const noexcept { return false; }
+
+    void await_suspend(std::coroutine_handle<>, await_context const*)
+    {
+        throw test_exception("suspend");
+    }
+
+    results<std::size_t> await_resume() const noexcept { return {}; }
+};
+
+} // (anon)
+
 struct when_all_range_test
 {
     void
@@ -495,6 +513,29 @@ struct when_all_range_test
     }
 
     void
+    testAwaitSuspendThrows()
+    {
+        int dc = 0;
+        test_executor ex(dc);
+        bool caught = false;
+        std::string msg;
+
+        run_async(ex,
+            [](auto&&) {},
+            [&](std::exception_ptr ep) {
+                try {
+                    std::rethrow_exception(ep);
+                } catch (test_exception const& e) {
+                    caught = true;
+                    msg = e.what();
+                }
+            })(when_all(throwing_suspend{}, results_success_size(1)));
+
+        BOOST_TEST(caught);
+        BOOST_TEST_EQ(msg, "suspend");
+    }
+
+    void
     testVoidRangeError()
     {
         int dc = 0;
@@ -777,6 +818,7 @@ struct when_all_range_test
         testErrorCancelsSiblings();
         testMultipleErrorsFirstWins();
         testException();
+        testAwaitSuspendThrows();
         testVoidRangeError();
         testVoidRangeException();
         testExceptionBeatsError();

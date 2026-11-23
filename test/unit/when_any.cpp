@@ -680,6 +680,24 @@ TEST_SUITE(
 
 // Tests for results-aware when_any behavior per the combinators spec.
 // Each test is labelled with the spec row it verifies.
+namespace {
+
+// A child whose await_suspend throws: the combinator reports the
+// failure as it does an exception from the child's body.
+struct throwing_suspend
+{
+    bool await_ready() const noexcept { return false; }
+
+    void await_suspend(std::coroutine_handle<>, await_context const*)
+    {
+        throw test_exception("suspend");
+    }
+
+    results<std::size_t> await_resume() const noexcept { return {}; }
+};
+
+} // (anon)
+
 struct when_any_results_test
 {
     // Spec Row 1: First task to return !ec
@@ -866,6 +884,29 @@ struct when_any_results_test
         BOOST_TEST(!completed);
         BOOST_TEST(caught);
         BOOST_TEST_EQ(msg, "second");
+    }
+
+    // An exception from a child's await_suspend counts as that child
+    // throwing, not as a crash.
+    void
+    testAwaitSuspendThrows()
+    {
+        int dc = 0;
+        test_executor ex(dc);
+        bool completed = false;
+        bool caught = false;
+
+        run_async(ex,
+            [&](auto&&) { completed = true; },
+            [&](std::exception_ptr ep) {
+                try { std::rethrow_exception(ep); }
+                catch (test_exception const&) { caught = true; }
+            })(when_any(
+                throwing_suspend{},
+                results_throws_size("body")));
+
+        BOOST_TEST(!completed);
+        BOOST_TEST(caught);
     }
 
     // Spec Row 7: Parent stop fires before any completion
@@ -1468,6 +1509,7 @@ struct when_any_results_test
         testAllFail();
         testExceptionDoesNotWin();
         testAllThrow();
+        testAwaitSuspendThrows();
         testCanceledAllFail();
         testEofDoesNotWin();
         testImmediateCompletion();
