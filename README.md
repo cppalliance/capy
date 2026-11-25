@@ -14,7 +14,7 @@ This library provides facilities which use C++20 coroutines to perform I/O. It i
 ### Requirements
 
 - CMake 3.20 or later
-- C++20 compiler (GCC 12+, Clang 17+, MSVC 14.34+)
+- C++20 compiler (GCC 13+, Clang 17+, MSVC 14.44+)
 - Ninja (recommended) or other CMake generator
 
 ### Standalone build

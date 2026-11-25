@@ -44,6 +44,11 @@
     A waiter destroyed or canceled while linked unlinks itself from
     that list, so a post that tears down one claimed waiter, and with
     it another, never leaves set() holding a freed node.
+
+    Only the post is subject to the claim race. A losing stop
+    callback does nothing, but set() unlinks every waiter it pops
+    whether it claims it or not. That is why await_resume unlinks a
+    canceled waiter only when it is still linked.
 */
 
 namespace boost {
@@ -62,10 +67,10 @@ namespace capy {
     token is triggered, the waiter completes with `error::canceled`
     instead of waiting for `set()`.
 
-    Cancellation only applies while the coroutine is suspended in the
-    wait queue. If the event is already set when `wait()` is called,
-    the wait completes immediately even if the stop token is already
-    signaled.
+    If the event is already set, `wait()` completes successfully
+    without consulting the stop token. Otherwise a pending stop request
+    completes the wait with `error::canceled`. When a stop request races
+    with `set()`, whichever reaches the waiter first decides the result.
 
     @par Zero Allocation
 
@@ -183,6 +188,9 @@ public:
             destroys the stop callback and no longer unlinks from the
             event's wait queue.
 
+            @pre The source has not been suspended (its `await_suspend`
+            has not enqueued it).
+
             @param o The awaiter to move from.
         */
         wait_awaiter(wait_awaiter&& o) noexcept
@@ -197,15 +205,13 @@ public:
         {
         }
 
-        /** Copy construction is disabled; a waiter is linked into the
-            event's wait queue by address.
+        /** Deleted: a waiter is linked into the event's queue by address.
 
             @param other The awaiter that would be copied.
         */
         wait_awaiter(wait_awaiter const& other) = delete;
 
-        /** Copy assignment is disabled; a waiter is linked into the
-            event's wait queue by address.
+        /** Deleted: a waiter is linked into the event's queue by address.
 
             @param other The awaiter that would be assigned from.
 
@@ -213,8 +219,7 @@ public:
         */
         wait_awaiter& operator=(wait_awaiter const& other) = delete;
 
-        /** Move assignment is disabled; a waiter is linked into the
-            event's wait queue by address.
+        /** Deleted: a waiter is linked into the event's queue by address.
 
             @param other The awaiter that would be moved from.
 
@@ -222,10 +227,11 @@ public:
         */
         wait_awaiter& operator=(wait_awaiter&& other) = delete;
 
-        /** Report whether the event is already set.
+        /** Check whether the event is already set.
 
-            @return `true` if the event is set, in which case the awaiting
-            coroutine does not suspend; otherwise `false`.
+            If the event is set, the awaiting coroutine does not suspend.
+
+            @return `true` if the event is set; otherwise `false`.
         */
         bool await_ready() const noexcept
         {
@@ -241,12 +247,9 @@ public:
 
             Otherwise it stores `h` and `env->executor`, links itself into
             the event's wait queue, and registers a stop callback on
-            `env->stop_token`. Exactly one of `set()` and that callback posts
-            `h` through the stored executor, whichever claims the waiter
-            first. Only the post is subject to that race. A losing stop
-            callback does nothing at all, but `set()` unlinks every waiter it
-            pops whether it claims it or not. That is why @ref await_resume
-            unlinks a canceled waiter only when it is still linked.
+            `env->stop_token`. Exactly one of `set()`, that callback, and
+            the event's destructor posts `h` through the stored executor.
+            Whichever claims the waiter first does so.
 
             @param h The awaiting coroutine, resumed when the event is set
             or the wait is canceled.
@@ -255,10 +258,11 @@ public:
             resumption and its stop token is watched for the duration of
             the wait. It must outlive the wait.
 
-            @return `h` if a stop request was already pending, which
-            resumes the awaiting coroutine immediately without enqueuing
-            it. Otherwise `std::noop_coroutine()`, which leaves the
+            A returned `h` resumes the awaiting coroutine at once without
+            enqueuing it. A returned `std::noop_coroutine()` leaves the
             coroutine suspended and returns control to the resumer.
+
+            @return `h` if stop was already requested, else `noop_coroutine()`.
         */
         std::coroutine_handle<>
         await_suspend(
@@ -283,13 +287,10 @@ public:
 
         /** Complete the wait and report the outcome.
 
-            Destroys the stop callback if one is registered. If the wait
-            was canceled while still linked into the event's wait queue,
-            unlinks it. `set()` pops every waiter, so a canceled waiter may
-            or may not still be linked when it resumes.
+            Destroys the stop callback if one is registered, and leaves
+            the awaiter unlinked from the event's wait queue.
 
-            @return An empty `results<>` if the event was set, or one
-            holding `error::canceled` if the stop token fired first.
+            @return Empty on set, else `error::canceled` (stop or destruction).
         */
         [[nodiscard]] results<> await_resume() noexcept
         {
@@ -315,15 +316,13 @@ public:
     /// Construct an unset event.
     async_event() = default;
 
-    /** Copy construction is disabled; suspended waiters point into the
-        event's wait queue.
+    /** Deleted: suspended waiters point into the event's wait queue.
 
         @param other The event that would be copied.
     */
     async_event(async_event const& other) = delete;
 
-    /** Copy assignment is disabled; suspended waiters point into the
-        event's wait queue.
+    /** Deleted: suspended waiters point into the event's wait queue.
 
         @param other The event that would be assigned from.
 
@@ -331,15 +330,13 @@ public:
     */
     async_event& operator=(async_event const& other) = delete;
 
-    /** Move construction is disabled; suspended waiters point into the
-        event's wait queue.
+    /** Deleted: suspended waiters point into the event's wait queue.
 
         @param other The event that would be moved from.
     */
     async_event(async_event&& other) = delete;
 
-    /** Move assignment is disabled; suspended waiters point into the
-        event's wait queue.
+    /** Deleted: suspended waiters point into the event's wait queue.
 
         @param other The event that would be moved from.
 
@@ -368,7 +365,7 @@ public:
         }
     }
 
-    /** Returns an awaiter that waits until the event is set.
+    /** Return an awaiter that waits until the event is set.
 
         If the event is already set, completes immediately.
 
@@ -379,9 +376,9 @@ public:
         return wait_awaiter{this};
     }
 
-    /** Resumes every waiting coroutine and marks the event set for later `wait()` calls.
+    /** Post every waiting coroutine to its executor and mark the event set.
 
-        All waiting coroutines are resumed. Canceled waiters
+        Each waiting coroutine is posted to its executor. Canceled waiters
         are skipped. Subsequent calls to wait() complete
         immediately until clear() is called.
 
@@ -402,7 +399,7 @@ public:
         }
     }
 
-    /** Clears the event.
+    /** Clear the event.
 
         Subsequent calls to wait() suspend until
         set() is called again.
@@ -412,7 +409,7 @@ public:
         set_ = false;
     }
 
-    /** Returns true if the event is currently set.
+    /** Check whether the event is currently set.
 
         @return `true` if the event is set; otherwise `false`.
     */

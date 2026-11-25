@@ -7,9 +7,8 @@ Capy is a compiled C++20 library providing abstractions, vocabulary types, and i
 to write programs with event-driven control flows, such as I/O.
 It makes those programs efficient and manageable: structured and hard to get wrong.
 
-Coroutines are used to represent the control flow. The program logic is described in a sequential way,
-familiar to programmers,
-even though there are tasks being pushed to task queues behind the scenes.
+A task describes the control flow as sequential code, familiar to programmers.
+The executor queues and resumes it behind the scenes.
 
 I/O operations are represented via the concept of a _stream_ which consumes and populates _buffer sequences_.
 You also get xref:glossary.adoc#type-erased[type-erased] wrappers for streams, so that programs can compile quickly, without triggering
@@ -21,7 +20,7 @@ High-level ones include _strands_, cpp:when_all[]/cpp:when_any[] "joins", and th
 
 Libraries that want to provide concrete I/O implementations, like those based on `epoll` or `io_uring`,
 can plug into Capy through the cpp:ContextAwaitable[] protocol.
-The protocol describes how tasks can be scheduled, cancelled, and allocated in memory.
+The protocol describes how tasks can be scheduled, canceled, and allocated in memory.
 
 You also get the testing tools that allow you to test your asynchronous flows in a deterministic way.
 
@@ -41,9 +40,9 @@ This can be either your home-grown one or Corosio.
 ----
 include::example$programs/index_page_echo.cpp[tag=full]
 ----
-<.> The cpp:task[task<>] return type defines a coroutine that starts suspended. `any_stream` is a type-erased wrapper that works with any concrete stream implementation.
+<.> The cpp:task[task<>] return type defines a coroutine that starts suspended. cpp:any_stream[] is a type-erased wrapper that works with any concrete stream implementation.
 <.> Each `co_await` suspends until the I/O operation completes. The result is a cpp:results[], which the xref:glossary.adoc#structured-bindings[structured binding] unpacks into `ec` and `n`. See xref:4.coroutines/4k.results.adoc[The results Type].
-<.> You can signal failures by throwing an exception, or by returning a `std::error_code`.
+<.> This example throws. A task can also report the error as a value. See cpp:results[].
 <.> The condition `cond::eof` indicates reaching the end of the stream.
 
 
@@ -98,8 +97,8 @@ sequenceDiagram
 . The caller passes an xref:glossary.adoc#executor[executor] and a task to cpp:run_async[].
   The task does not run yet, because every task starts suspended.
 . cpp:run_async[] gives the task its environment, an cpp:await_context[].
-  The environment holds the executor, a xref:glossary.adoc#stop-token[stop token], a xref:glossary.adoc#frame-allocator[frame allocator], and the owner of the chain.
-  The owner unwinds the chain if it is xref:glossary.adoc#abandon[abandoned], as xref:4.coroutines/4j.lifetimes.adoc#_who_owns_a_suspended_coroutine[Who Owns a Suspended Coroutine] explains.
+  The environment holds the executor, a xref:glossary.adoc#stop-token[stop token], a xref:glossary.adoc#frame-allocator[frame allocator], and the owner of the xref:glossary.adoc#segment[segment].
+  The owner unwinds the segment if it is xref:glossary.adoc#abandon[abandoned], as xref:4.coroutines/4j.lifetimes.adoc#_who_owns_a_suspended_coroutine[Who Owns a Suspended Coroutine] explains.
   Then cpp:run_async[] calls cpp:Executor::dispatch[dispatch] on the executor.
 . The executor resumes `my_task`.
   If it is safe to resume the task at once, for example because the call is on the executor's own thread, the executor does so.
@@ -115,7 +114,7 @@ sequenceDiagram
   The executor can run other work while the operation is pending.
 . Later, the I/O backend reports that the operation is complete.
   This report can arrive on any thread.
-. The I/O awaitable posts the child to the executor with cpp:Executor::post[post].
+. The I/O awaitable posts the child to the executor with cpp:Executor::post[post], or dispatches it with cpp:Executor::dispatch[dispatch].
   It never resumes the child directly.
 . The executor resumes the child.
   The `co_await` expression gives the result of the operation to the child.
@@ -156,7 +155,7 @@ The rest of the diagram is Capy, or an I/O library such as Corosio.
   xref:4.coroutines/4l.synchronization.adoc[Synchronization Primitives] compares the options.
 * Start top-level work from `main` with cpp:run_async[].
   Inside a task, await other tasks directly.
-  To run a child task on a different executor, await it through cpp:run[].
+  To start a child task on a different executor, await it through cpp:run[].
 * Run tasks concurrently with cpp:when_all[] and cpp:when_any[].
 * To cancel work, pass a stop token to cpp:run_async[].
   Operations that stop early report cpp:cond::canceled[cond::canceled].
@@ -210,7 +209,7 @@ Read next:
 You write the task type, such as cpp:task[task<T>], and the functions that start tasks, such as cpp:run_async[].
 In the diagram, you write the `run_async` participant and the transfers between tasks: steps 2, 4, and 11 to 13.
 
-* A task type is an cpp:ContextAwaitable[], so that other tasks can await it.
+* A task type is a cpp:ContextAwaitable[], so that other tasks can await it.
   It is also an cpp:ContextRunnable[], so that functions such as cpp:run_async[] can start it.
 * Derive the promise type from cpp:context_awaitable_promise_base[].
   The base allocates the xref:glossary.adoc#coroutine-frame[coroutine frame] with the current frame allocator and stores the environment.
@@ -222,10 +221,10 @@ In the diagram, you write the `run_async` participant and the transfers between 
 * A function that starts tasks creates the environment: an executor, a stop token, a frame allocator, and an owner.
   It must set the frame allocator before the task's frame is allocated.
   xref:4.coroutines/4h.allocators.adoc#two-call-rationale[Frame Allocators] explains why cpp:run_async[] uses two calls for this.
-* The function must also own the chain that it starts, by binding a cpp:chain_owner[], so that a holder can abandon the chain.
-  It waits for the chain by awaiting cpp:abandonable[], which tells it whether the chain completed or was unwound.
+* The function must also own the xref:glossary.adoc#segment[segment] that it starts, by binding a cpp:chain_owner[], so that a holder can abandon the segment.
+  It waits for the segment by awaiting cpp:abandonable[], which tells it whether the segment completed or was unwound.
   The alternative is to make sure that nothing awaits a coroutine that could be abandoned.
-  cpp:run_async[], cpp:run[] on another executor, and each branch of cpp:when_all[] and cpp:when_any[] own their chains already.
+  cpp:run_async[], cpp:run[] on another executor, and each branch of cpp:when_all[] and cpp:when_any[] own their segments already.
 * To store an executor without its type, use cpp:executor_ref[].
 
 Read next:

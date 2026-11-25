@@ -44,10 +44,11 @@ make_buffer(
 
 /** Return the buffer, clamped to a maximum size.
 
+    The result's size is the smaller of `b.size()` and `max_size`.
+
     @param b The buffer to return.
     @param max_size The maximum size, in bytes, of the result.
-    @return A buffer referring to the storage of `b` whose size
-        is the smaller of `b.size()` and `max_size`.
+    @return A buffer referring to the storage of `b`.
 */
 [[nodiscard]] inline
 mutable_buffer
@@ -78,12 +79,13 @@ make_buffer(
 
 /** Return a buffer referring to a region of memory, clamped to a maximum size.
 
+    The result's size is the smaller of `size` and `max_size`.
+
     @param data A pointer to the start of the region. The region
         must outlive the returned buffer.
     @param size The size of the region, in bytes.
     @param max_size The maximum size, in bytes, of the result.
-    @return A buffer referring to `data` whose size is the smaller
-        of `size` and `max_size`.
+    @return A buffer referring to `data`.
 */
 [[nodiscard]] inline
 mutable_buffer
@@ -112,10 +114,11 @@ make_buffer(
 
 /** Return the buffer, clamped to a maximum size.
 
+    The result's size is the smaller of `b.size()` and `max_size`.
+
     @param b The buffer to return.
     @param max_size The maximum size, in bytes, of the result.
-    @return A buffer referring to the storage of `b` whose size
-        is the smaller of `b.size()` and `max_size`.
+    @return A buffer referring to the storage of `b`.
 */
 [[nodiscard]] inline
 const_buffer
@@ -146,12 +149,13 @@ make_buffer(
 
 /** Return a buffer referring to a region of memory, clamped to a maximum size.
 
+    The result's size is the smaller of `size` and `max_size`.
+
     @param data A pointer to the start of the region. The region
         must outlive the returned buffer.
     @param size The size of the region, in bytes.
     @param max_size The maximum size, in bytes, of the result.
-    @return A buffer referring to `data` whose size is the smaller
-        of `size` and `max_size`.
+    @return A buffer referring to `data`.
 */
 [[nodiscard]] inline
 const_buffer
@@ -169,10 +173,11 @@ make_buffer(
 
 /** Return a buffer from a `std::basic_string_view`.
 
+    The result's size, in bytes, is `data.size() * sizeof(CharT)`.
+
     @param data The view whose characters are referenced. The
         underlying storage must outlive the returned buffer.
-    @return A buffer referring to the view's storage. The size,
-        in bytes, is `data.size() * sizeof(CharT)`.
+    @return A buffer referring to the view's storage.
 */
 template<class CharT, class Traits>
 [[nodiscard]]
@@ -187,11 +192,13 @@ make_buffer(
 
 /** Return a buffer from a `std::basic_string_view`, clamped to a maximum size.
 
+    The result's size is the smaller of `data.size() * sizeof(CharT)`
+    and `max_size`.
+
     @param data The view whose characters are referenced. The
         underlying storage must outlive the returned buffer.
     @param max_size The maximum size, in bytes, of the result.
-    @return A buffer referring to the view's storage whose size is
-        the smaller of `data.size() * sizeof(CharT)` and `max_size`.
+    @return A buffer referring to the view's storage.
 */
 template<class CharT, class Traits>
 [[nodiscard]]
@@ -241,11 +248,15 @@ concept const_contiguous_range =
     refers to the range's storage, which must outlive the buffer.
     Its size, in bytes, is `size() * sizeof(element)`.
 
+    A temporary container's storage ends with the full-expression; keep
+    a buffer made from one only within that expression. A temporary
+    view such as `std::span` is safe when its underlying storage
+    outlives the buffer.
+
     @param data The range whose storage is referenced. It must
         outlive the returned buffer.
 
-    @return A buffer of size `size() * sizeof(element)` referring to
-        the range's storage.
+    @return A buffer referring to the range's storage.
 */
 template<detail::mutable_contiguous_range T>
 [[nodiscard]]
@@ -260,13 +271,13 @@ make_buffer(T&& data) noexcept
 /** Return a buffer from a mutable contiguous range, clamped to a maximum size.
 
     Like the unclamped overload, but the result is no larger than
-    `max_size` bytes.
+    `max_size` bytes. Its size is the smaller of
+    `size() * sizeof(element)` and `max_size`.
 
     @param data The range whose storage is referenced. It must
         outlive the returned buffer.
     @param max_size The maximum size, in bytes, of the result.
-    @return A buffer whose size is the smaller of
-        `size() * sizeof(element)` and `max_size`.
+    @return A buffer referring to the range's storage.
 */
 template<detail::mutable_contiguous_range T>
 [[nodiscard]]
@@ -290,11 +301,13 @@ make_buffer(
     storage, which must outlive the buffer. Its size, in bytes,
     is `size() * sizeof(element)`.
 
+    For a string literal the buffer includes the terminating null
+    character. Use `std::string_view` to exclude it.
+
     @param data The range whose storage is referenced. It must
         outlive the returned buffer.
 
-    @return A buffer of size `size() * sizeof(element)` referring to
-        the range's storage.
+    @return A buffer referring to the range's storage.
 */
 template<detail::non_buffer_contiguous_range T>
 [[nodiscard]]
@@ -309,13 +322,13 @@ make_buffer(T const& data) noexcept
 /** Return a buffer from a const contiguous range, clamped to a maximum size.
 
     Like the unclamped overload, but the result is no larger than
-    `max_size` bytes.
+    `max_size` bytes. Its size is the smaller of
+    `size() * sizeof(element)` and `max_size`.
 
     @param data The range whose storage is referenced. It must
         outlive the returned buffer.
     @param max_size The maximum size, in bytes, of the result.
-    @return A buffer whose size is the smaller of
-        `size() * sizeof(element)` and `max_size`.
+    @return A buffer referring to the range's storage.
 */
 template<detail::non_buffer_contiguous_range T>
 [[nodiscard]]

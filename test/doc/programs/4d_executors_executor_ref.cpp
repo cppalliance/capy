@@ -8,7 +8,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Full program shown in pages/4.coroutines/4c.executors.adoc.
+// Full program shown in pages/4.coroutines/4d.executors.adoc.
 
 #include <boost/capy/continuation.hpp>
 #include <boost/capy/ex/await_context.hpp>

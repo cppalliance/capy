@@ -28,7 +28,10 @@ constexpr struct
 
         Copies bytes from the constant buffer sequence `src` into the
         mutable buffer sequence `dest`, stopping when any limit is
-        reached.
+        reached. The count copied is the smallest of
+        `buffer_size(dest)`, `buffer_size(src)`, and `at_most`.
+
+        @pre The memory regions of `dest` and `src` do not overlap.
 
         @param dest The destination buffer sequence.
 
@@ -37,8 +40,7 @@ constexpr struct
         @param at_most The maximum bytes to copy. Default copies all
         available.
 
-        @return The number of bytes copied, equal to
-        `std::min(size(dest), size(src), at_most)`.
+        @return The number of bytes copied.
     */
     template<
         MutableBufferSequence MB,

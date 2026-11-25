@@ -43,8 +43,10 @@ namespace capy {
     burst leaves behind. Blocks the global pool has no room for go back
     to `::operator delete`.
 
-    This is the default allocator used by run_async when no allocator
-    is specified.
+    This is the default frame allocator of an @ref execution_context.
+    @ref run_async uses the execution context's frame allocator when no
+    allocator is given. Some execution contexts, such as
+    @ref thread_pool, replace that default.
 
     @par Thread Safety
     Thread-safe. The thread-local pool requires no synchronization.
@@ -213,10 +215,6 @@ public:
 
     /** Allocate without virtual dispatch.
 
-        Handles the fast path inline (thread-local bucket pop)
-        and falls through to the slow path for global pool or
-        heap allocation.
-
         A request larger than the largest size class (2048 bytes)
         bypasses the pools and goes straight to `::operator new`.
 
@@ -229,13 +227,14 @@ public:
         idle cached blocks to the global pool, or releases them when it
         has no room.
 
-        @param bytes The number of bytes to allocate.
-
-        @return A pointer to a block of at least `bytes` bytes. A pooled
-        block is rounded up to its size class, so it may be larger than
-        requested.
+        A pooled block is rounded up to its size class, so it may be
+        larger than requested.
 
         @throws std::bad_alloc If the underlying `::operator new` fails.
+
+        @param bytes The number of bytes to allocate.
+
+        @return A pointer to a block of at least `bytes` bytes.
     */
     void*
     allocate_fast(std::size_t bytes, std::size_t)
@@ -250,10 +249,6 @@ public:
     }
 
     /** Deallocate without virtual dispatch.
-
-        Handles the fast path inline (thread-local bucket push)
-        and falls through to the slow path for global pool or
-        heap deallocation.
 
         The block is cached in the pool of the thread that frees it, not
         the thread that allocated it.
@@ -310,13 +305,13 @@ protected:
         Forwards to @ref allocate_fast, so it has that function's contract.
         Call `allocate_fast` directly to skip the virtual dispatch.
 
+        @throws std::bad_alloc If the underlying `::operator new` fails.
+
         @param bytes The number of bytes to allocate.
 
         @param alignment The requested alignment. It is ignored.
 
         @return A pointer to a block of at least `bytes` bytes.
-
-        @throws std::bad_alloc If the underlying `::operator new` fails.
     */
     void*
     do_allocate(std::size_t bytes, std::size_t alignment) override;
@@ -355,10 +350,10 @@ protected:
 };
 BOOST_CAPY_MSVC_WARNING_POP
 
-/** Returns pointer to the default recycling memory resource.
+/** Return a pointer to the process-wide recycling memory resource.
 
     The returned pointer is valid for the lifetime of the program.
-    This is the default allocator used by run_async.
+    This is the default frame allocator of an @ref execution_context.
 
     @return Pointer to the recycling memory resource.
 

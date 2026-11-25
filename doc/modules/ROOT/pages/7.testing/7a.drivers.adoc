@@ -10,7 +10,7 @@
 = Driving Tests
 :page-mode: how-to
 
-Two utilities work together to run capy code synchronously inside a unit
+Two utilities work together to run Capy code synchronously inside a unit
 test. cpp:test::run_blocking[run_blocking] drives a coroutine to completion on the calling
 thread. cpp:test::fuse[fuse] injects errors at controlled points and reruns the test body
 until every failure path is covered. cpp:set_current_thread_name[] labels worker
@@ -21,7 +21,7 @@ threads so that multi-threaded test output is readable.
 `run_blocking` bridges async coroutine code into a synchronous test body.
 It creates a single-threaded event loop on the calling thread, starts the
 coroutine through it, and blocks until the coroutine finishes or throws.
-No real xref:glossary.adoc#executor[executor] or thread pool is involved.
+It uses its own blocking xref:glossary.adoc#executor[executor] in place of a thread pool or I/O context.
 
 [source,cpp]
 ----
@@ -31,7 +31,7 @@ include::example$snippets/7a_drivers.cpp[tag=run_blocking_basic]
 === Result Capture
 
 Call `run_blocking` with a lambda to capture the result. The lambda
-receives the coroutine's return value on success. Separate lambdas can
+receives the coroutine's result on success. Separate lambdas can
 handle the success and error cases independently:
 
 [source,cpp]
@@ -39,26 +39,27 @@ handle the success and error cases independently:
 include::example$snippets/7a_drivers.cpp[tag=run_blocking_overloads,indent=0]
 ----
 
-=== How It Works
-
-`run_blocking` creates a cpp:test::blocking_context[blocking_context], an internal single-threaded
+[NOTE]
+====
+`run_blocking` creates a cpp:test::blocking_context[blocking_context], a single-threaded
 xref:glossary.adoc#execution-context[execution context]. Work posted to it is queued and processed on the calling
-thread until the coroutine signals completion, then control returns to the
-caller. The inline executor performs xref:glossary.adoc#symmetric-transfer[symmetric transfer] for `dispatch` calls
-so that the coroutine chain runs without unnecessary context switches.
+thread until the coroutine signals completion. Then control returns to the caller.
+A `dispatch` call on cpp:test::blocking_executor[blocking_executor] from within that loop performs
+xref:glossary.adoc#symmetric-transfer[symmetric transfer], so the coroutine chain runs without extra queueing.
 Use this only in test code. Production code should use a real execution
 context such as a thread pool.
+====
 
 See cpp:test::run_blocking[] for the complete overload set. Each
-overload optionally takes a success handler, an error handler, or an
+overload optionally takes a function to call on success, a function to call on error, or an
 external xref:glossary.adoc#stop-token[stop token].
 
 === Exercising Cancellation
 
 The stop token supplied to `run_blocking` propagates through the execution
-environment to every `capy::test` xref:glossary.adoc#awaitable[awaitable]. When the token is requested, the
-next awaited test operation resolves to cpp:error::canceled[error::canceled] instead of
-performing its work. Code under test can therefore be driven down its
+environment to the operations of the mock streams. When the token is requested, the
+next awaited mock operation resolves to cpp:error::canceled[error::canceled] instead of
+performing its work, except in the cases listed below. Code under test can therefore be driven down its
 xref:glossary.adoc#cancellation[cancellation] paths without real I/O.
 
 [source,cpp]
@@ -66,10 +67,12 @@ xref:glossary.adoc#cancellation[cancellation] paths without real I/O.
 include::example$snippets/7a_drivers.cpp[tag=run_blocking_cancellation,indent=0]
 ----
 
-The xref:glossary.adoc#mock-stream[mock streams] and buffer adapters complete synchronously, so they
+The xref:glossary.adoc#mock-stream[mock streams] complete synchronously, so they
 check the token up front. A connected cpp:test::stream[stream] whose `read_some` is *blocked*
 waiting for its peer is resumed with `error::canceled` when the token fires. A
-read that can satisfy from already-buffered data is unaffected.
+read that can satisfy from already-buffered data is unaffected. So is a read on a closed
+cpp:test::stream[stream] pair, or after the peer called `close()` with nothing buffered: it returns `error::eof`. An operation on an
+empty buffer sequence completes successfully regardless of the token.
 
 == fuse
 
@@ -104,8 +107,8 @@ The only difference is the `if(ec) co_return;` guard. In `inert()`,
 that guard is dead code (`maybe_fail()` never returns an error); in
 `armed()`, it is essential.
 
-The only way to signal a test failure under `inert()` is to call
-`f.fail()` from inside the body:
+Under `inert()`, the body fails only by calling `f.fail()` or by letting an
+exception escape. To fail explicitly, call `f.fail()` from inside the body:
 
 [source,cpp]
 ----
@@ -176,22 +179,15 @@ Platform limits on the name length:
 * macOS: 63 characters
 * Windows: no practical limit
 
+On other platforms the call does nothing.
+
 [source,cpp]
 ----
 include::example$snippets/7a_drivers.cpp[tag=thread_name,indent=0]
 ----
 
 cpp:set_current_thread_name[] is declared in `<boost/capy/ex/thread_name.hpp>`,
-in namespace `boost::capy`.
-
-[cols="1,2"]
-|===
-| Function | Description
-
-| cpp:set_current_thread_name[]`(char const* name)`
-| Set the OS thread name for the calling thread. Truncated to the
-  platform limit. No-op on unsupported platforms.
-|===
+in namespace `boost::capy`. It sits beside the executors rather than in the testing toolkit.
 
 == Putting It Together
 
@@ -232,18 +228,16 @@ BOOST_TEST(r.success);
 
 `run_one` must *return* the exception rather than rethrow it. An exception
 escaping a cpp:run_async[] xref:glossary.adoc#completion-handler[completion handler] calls `std::terminate`. The
-handler therefore captures it, and the runner hands it back once the run loop
+completion handler therefore captures it, and the runner hands it back once the run loop
 is done.
 A fresh `io_context` per iteration (as above) needs no `restart()`; reuse one
 across iterations only if you call `restart()` between rounds.
 
 === Shared State Across Copies
 
-`fuse` is a value type backed by a `std::shared_ptr<state>`. Every copy
-of a `fuse` object shares the same internal state, so all copies respond
-to the same `armed()` or `inert()` call. This is what makes the canonical
-pattern work: pass a copy of `f` to each mock at construction time, then
-call `f.armed(...)` once.
+Every copy of a `fuse` object shares the same state, so all copies respond
+to the same `armed()` or `inert()` call. Pass a copy of `f` to each mock at
+construction time, then call `f.armed(...)` once.
 
 For tests that need mocks, replace `add` with a function that takes a
 cpp:test::read_stream[read_stream], cpp:test::write_stream[write_stream], or other mock.

@@ -82,6 +82,7 @@ So the completion handler never runs inside the call to `async_read_some`, and i
 
 === A Callback Chain
 
+A _callback chain_ is a sequence of operations in which each completion handler starts the next one.
 `do_write` keeps its state in a `std::shared_ptr`, so every copy of the function object shares it.
 Each call writes one chunk of up to 128 bytes with `net::async_write`.
 That composed operation calls `async_write_some` on the adapter until the whole chunk is written.

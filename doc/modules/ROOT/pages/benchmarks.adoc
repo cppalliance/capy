@@ -8,7 +8,7 @@
 //
 
 = Benchmarks
-:page-mode: explanation
+:page-mode: reference
 
 Capy ships four benchmark suites in
 https://github.com/cppalliance/capy/tree/develop/bench[`bench/`]. They measure
@@ -64,8 +64,8 @@ Cells that install a counting frame allocator also count each call into it,
 even when the recycling resource serves the frame from its free list. The
 figure reflects allocator traffic rather than heap growth.
 
-All suites run on a single worker thread except the stdexec sender
-pipeline. It needs a second worker so that `exec::repeat_until` cannot
+All suites run on a single thread except the stdexec sender
+pipeline. It uses two worker threads so that `exec::repeat_until` cannot
 deadlock while it queues the next iteration.
 
 Run the suites on an otherwise-idle machine and pin them to a physical core.
@@ -161,8 +161,9 @@ faster.
 
 === Read Stream: stdexec
 
-Mean ± standard deviation over five runs of `boost_capy_bench_stdexec`.
-Column A uses each model's native I/O type; column B goes through a bridge.
+Mean ± standard deviation over the five repetitions of each cell in one run of `boost_capy_bench_stdexec`.
+The first ns/op and al/op pair uses each model's native I/O type.
+The second pair goes through a bridge.
 
 .`capy::task`
 [%autowidth,cols="2,2,1,2,1",options="header"]
@@ -215,7 +216,7 @@ synchronous stream avoids it.
 
 === Read Stream: Beman
 
-Mean ± standard deviation over five runs of `boost_capy_bench_beman`.
+Mean ± standard deviation over the five repetitions of each cell in one run of `boost_capy_bench_beman`.
 
 .`capy::task`
 [%autowidth,cols="2,2,1,2,1",options="header"]

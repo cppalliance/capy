@@ -24,27 +24,32 @@
 namespace boost {
 namespace capy {
 
-/** The owner of one segment of a coroutine chain.
+/** Unwind a coroutine chain's segment when one of its coroutines is abandoned.
 
-    A segment is a run of coroutines started together: the task
-    `run_async` launches and everything it awaits, a task `run` starts
-    on another executor, or one branch of `when_all` or `when_any`. Its
+    A segment is a run of coroutines started together. It is the task
+    `run_async` starts and everything it awaits, a task `run` starts on
+    another executor, or one branch of `when_all` or `when_any`. Its
     owner is the coroutine that started it, suspended above the
     segment's top frame until that frame completes. Every coroutine in
     the segment reaches the owner through its @ref await_context.
 
     When the holder of a suspended coroutine in the segment gives it up
     with @ref abandon, the owner posts its own continuation to its
-    executor. There it unwinds the segment from the top: it destroys
-    the frame it awaits, which destroys the frames below it in turn, and
-    finishes without delivering a result. An executor that destroys the
-    posted continuation instead, as a closed one does, unwinds the
-    segment the same way.
+    executor. There it unwinds the segment from the top. It destroys
+    the frame it awaits, which destroys the frames below it in turn.
+    The owner then finishes without delivering a result. An executor
+    that destroys the posted continuation instead, as a closed one does,
+    unwinds the segment the same way.
 
     @par Thread Safety
     @ref abandon may be called from any thread. Only one holder can
     abandon a segment, since it is suspended at one point; a repeated
     call before the unwind runs does nothing.
+
+    @par Example
+    @par !example example
+
+    @see @ref abandon, @ref abandonable
 */
 class chain_owner
 {
@@ -68,7 +73,7 @@ public:
         ex_ = ex;
     }
 
-    /// Return true once the segment has been abandoned.
+    /// Check whether the segment has been abandoned.
     bool abandoned() const noexcept
     {
         return abandoned_.load(std::memory_order_acquire);
@@ -94,34 +99,35 @@ public:
 
     Called by the holder of a suspended coroutine that will never resume
     it, such as an execution context, strand or primitive being torn
-    down. The coroutine's segment is unwound from its owner: on the
-    owner's executor, from the top frame down to this coroutine, without
-    any frame delivering a result. Ordinary cancellation does not use
+    down. The owner of the coroutine's segment unwinds it on the owner's
+    executor. The unwind runs from the top frame down to this coroutine,
+    and no frame delivers a result. Ordinary cancellation does not use
     this; it resumes the coroutine with an error instead.
 
     A continuation with no owner, such as an owner's own continuation,
     is destroyed directly.
 
-    @par Preconditions
-    `c` refers to a suspended coroutine that the caller holds and that
-    nothing else will resume or abandon. If `c` has no owner, nothing
-    awaits the coroutine: destroying its frame alone would leave any
-    awaiting frame holding a destroyed one.
+    After the call, the caller must not touch the coroutine, or anything
+    in its frame, again.
+
+    @pre `c` refers to a suspended coroutine that the caller holds and
+    that nothing else will resume or abandon. If `c` has no owner,
+    nothing awaits the coroutine: destroying its frame alone would leave
+    any awaiting frame holding a destroyed one.
 
     @par Postconditions
-    The caller must not touch the coroutine, or anything in its frame,
-    again. The frames may already be destroyed when this returns, if the
+    The frames may already be destroyed when this returns, if the
     owner's executor destroys posted work at once.
 
-    @note The unwind runs on the owner's executor, which may belong to
-    another execution context than the caller's, and may run after the
-    caller's context is destroyed. A chain that holds objects of the
-    caller's context must therefore have finished before that context
-    is torn down.
+    @note The unwind runs on the owner's executor. That executor may
+    belong to another execution context than the caller's, and the
+    unwind may run after the caller's context is destroyed. A chain that
+    holds objects of the caller's context must therefore have finished
+    before that context is torn down.
 
-    @note Each frame is destroyed from the destructor of the frame
-    awaiting it, so the unwind uses stack in proportion to how deeply
-    the chain's coroutines are nested.
+    @note Each frame is destroyed by the destructor of the frame that
+    awaits it. The unwind therefore uses stack in proportion to how
+    deeply the chain's coroutines are nested.
 
     @param c The continuation of the coroutine given up.
 */
@@ -140,18 +146,17 @@ abandon(continuation& c) noexcept
     segment beneath it, waits for that segment by awaiting this. It is
     resumed either when the awaitable completes or to unwind the
     segment after an @ref abandon. In the second case the awaitable
-    never completed, so there is no result to read: the result is
-    empty, or `false` for an awaitable with no result, and the owner
-    must destroy the awaitable without reading it.
+    never completed, so there is no result to read. The result is
+    empty, or `false` for an awaitable with no result. The owner must
+    then destroy the awaitable without reading it.
 
     The awaitable is referenced, not copied, so the caller keeps it
     alive until the `co_await` completes. Its `await_resume` must
     return a move-constructible object or `void`: the result is moved
     into a `std::optional`, which cannot hold a reference.
 
-    @par Preconditions
-    The awaiting coroutine's @ref await_context names, as its `owner`,
-    the @ref chain_owner bound to that coroutine.
+    @pre The awaiting coroutine's @ref await_context names, as its
+    `owner`, the @ref chain_owner bound to that coroutine.
 
     @par Exception Safety
     An exception from the awaitable's `await_ready`, `await_suspend` or
@@ -165,7 +170,7 @@ abandon(continuation& c) noexcept
     @par Example
     @par !example example
 
-    @see chain_owner, abandon
+    @see @ref chain_owner, @ref abandon
 */
 template<ContextAwaitable A>
 class abandonable
@@ -211,7 +216,7 @@ public:
         For an awaitable with no result this returns `bool` instead,
         `false` when the segment was unwound.
 
-        @return The result, empty when the segment was unwound.
+        @return An engaged optional or `true`; empty or `false` if unwound.
     */
     auto await_resume()
     {

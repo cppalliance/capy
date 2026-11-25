@@ -22,14 +22,14 @@ This is an argument from layout and from caller convenience, not from semantics.
 
 == Why concepts rather than one span type?
 
-`std::span<std::span<std::byte>>` is the reflexive answer for multiple buffers, and it works. The problem is composition. Joining a two-buffer header to a three-buffer body means building a new five-element array, so every composition allocates:
+`std::span<std::span<std::byte>>` is the reflexive answer for multiple buffers, and it works. The problem is composition. Joining a two-buffer header to a three-buffer body means building a new five-element array. Every composition copies the descriptors into a new array of a fixed shape:
 
 [source,cpp]
 ----
 include::example$snippets/5e_rationale.cpp[tag=span_combine,indent=0]
 ----
 
-A concept accepts the composite directly, with no allocation and no overload per shape.
+A concept accepts the composite directly, with no new array and no overload per shape.
 
 At type-erasure boundaries the tradeoff reverses. Virtual functions need concrete types, so Capy converts to concrete descriptors internally and keeps concepts at the user-facing edge.
 
@@ -37,5 +37,5 @@ At type-erasure boundaries the tradeoff reverses. Virtual functions need concret
 
 The concepts require bidirectional ranges, not merely forward ranges, for two reasons:
 
-1. Some algorithms traverse buffers backwards
+1. Some algorithms traverse buffers backwards. Decrementing a cpp:buffers_iterator[] steps back across buffer boundaries.
 2. Composed operations such as cpp:read[] and cpp:write[] resume partway through a sequence, through a view that must adjust the first buffer's bounds

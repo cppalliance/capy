@@ -80,4 +80,22 @@ capy::task<void> example()
 // end::example_2[]
 } // namespace ex_2
 
+namespace ex_3 {
+// tag::example_3[]
+capy::task<capy::results<int>> query_primary();
+capy::task<capy::results<int>> query_replica();
+
+capy::task<> lookup()
+{
+    auto r = co_await capy::when_any( query_primary(), query_replica() );
+    if(r.index() == 0)
+        co_return; // every query failed
+    // index 1 or 2 names the winner and holds its int payload
+}
+// end::example_3[]
+
+capy::task<capy::results<int>> query_primary() { co_return {std::error_code{}, 1}; }
+capy::task<capy::results<int>> query_replica() { co_return {std::error_code{}, 2}; }
+} // namespace ex_3
+
 } // namespace

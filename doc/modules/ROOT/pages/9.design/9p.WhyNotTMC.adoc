@@ -22,7 +22,7 @@ One was designed for network I/O. The other was designed for compute tasks. Choo
 * Mid-coroutine xref:glossary.adoc#executor[executor] switching for flexible work migration
 * No built-in I/O - you add that separately (via Asio integration)
 
-If you're building a network server, one of these is swimming upstream.
+If you're building a network server, one of these is built for the job and the other is not.
 
 NOTE: *On priorities:* Capy defines executors using a concept. Nothing stops you from implementing a priority-enforcing executor.
 
@@ -81,7 +81,7 @@ What happens when you need to cancel an operation?
 *Capy:* xref:glossary.adoc#stop-token[Stop tokens] propagate automatically through the call chain.
 
 * Cancel at the top, everything below receives the signal
-* Pending I/O operations cancel at the OS level (`CancelIoEx`, `IORING_OP_ASYNC_CANCEL`)
+* The I/O backend cancels pending operations at the OS level (Corosio issues `CancelIoEx` on Windows, or `IORING_OP_ASYNC_CANCEL` with its io_uring backend)
 * Clean shutdown, no leaked resources
 
 *TMC:* You manage cancellation yourself.
@@ -90,7 +90,7 @@ What happens when you need to cancel an operation?
 * This is intentional: TMC is designed to work with various external libraries
 * Pending work completes, or you wait for it
 
-The TMC author acknowledged that automatic cancellation propagation is an "excellent killer feature" for an integrated I/O stack like Capy.
+The TMC author has called automatic cancellation propagation a strong feature for an integrated I/O stack like Capy.
 
 == Keeping Things Orderly
 
@@ -100,13 +100,12 @@ Sometimes you need guarantees: "these operations must not overlap."
 
 * Wraps any executor
 * Coroutines dispatched through a strand never run concurrently
-* Even if one suspends (waits for I/O), ordering is preserved
-* When you resume, the world is as you left it
+* When a coroutine suspends, other coroutines on the strand may run. cpp:async_mutex[] holds exclusion across suspension
 
 *TMC's ex_braid:*
 
 * Also serializes execution
-* But: when a coroutine suspends, the lock is released
+* When a coroutine suspends, the lock is released
 * Another coroutine may enter and begin executing
 * When you resume, the state may have changed
 
@@ -142,6 +141,8 @@ HALO (Heap Allocation Lowering Optimization) lets compilers eliminate xref:gloss
 ----
 include::example$snippets/9p_why_not_tmc.cpp[tag=arena,indent=0]
 ----
+
+The arena must outlive the task. `std::pmr::monotonic_buffer_resource` is not thread-safe, so the connection's coroutines must not allocate from it concurrently.
 
 *TMC provides:*
 
@@ -265,11 +266,11 @@ Corosio provides native I/O objects built on Capy's protocol. TMC integrates wit
 
 *Corosio native call chain for `socket.read_some(buf)`:*
 
-. Returns `read_some_awaitable` (stack object)
-. `await_suspend(h, ex, token)` calls `impl_.read_some()` - virtual call to platform impl
+. Returns `read_some_awaitable`, which lives in the coroutine frame across the suspension
+. `await_suspend(h, env)` calls `impl_.read_some()`: a virtual call to the platform impl
 . Platform impl issues direct syscall (`recv`/`WSARecv`)
 . Registers with reactor
-. On completion: `ex.dispatch(h)` - inline resume when on io_context executor
+. On completion: `ex.dispatch(c)` with the coroutine's continuation, which resumes inline when on the io_context executor
 
 *TMC + Asio call chain for `socket.async_read_some(buf, tmc::aw_asio)`:*
 
@@ -403,7 +404,7 @@ TMC for compute scheduling, Capy/Corosio for I/O.
 | Mid-body switching (`resume_on`)
 
 | Serialization
-| cpp:strand[] (ordering preserved across suspend)
+| cpp:strand[] (no concurrent execution, released on suspend)
 | `ex_braid` (lock released on suspend)
 
 | Context propagation

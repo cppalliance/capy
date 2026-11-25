@@ -23,7 +23,7 @@
 namespace boost {
 namespace capy {
 
-/** Write at least a minimum number of bytes to a stream.
+/** Asynchronously write at least a minimum number of bytes to a stream.
 
     This is a straightforward extension of @ref write. While @ref write
     transfers exactly `buffer_size(buffers)` bytes, `write_at_least`
@@ -52,28 +52,44 @@ namespace capy {
     not a contingency.
 
     @par Await-returns
-    An object of type `results<std::size_t>` destructuring as `[ec, n]`.
+    An object of type `results<std::size_t>` destructuring as
+    `[ec, count]`.
 
-    Upon a contingency, the count represents the number of bytes written
+    Upon a contingency, `count` represents the number of bytes written
     so far.
 
     Contingencies:
 
-    @li The first contingency reported from awaiting @c stream.write_some
+    @li The first contingency reported from awaiting `stream.write_some`
         while fewer than `n` bytes have been written. A contingency that
         accompanies the write which reaches `n` is not reported: a
         satisfied request is a success.
 
     Notable conditions:
 
-    @li @c std::errc::invalid_argument — `n` exceeds `buffer_size(buffers)`,
-    @li @c cond::canceled — Operation was cancelled,
-    @li @c std::errc::broken_pipe — Peer closed connection.
+    @li `std::errc::invalid_argument`: `n` exceeds
+        `buffer_size(buffers)`.
+    @li `cond::canceled`: the operation was canceled.
+    @li `std::errc::broken_pipe`: the peer closed the connection.
 
     @par Await-postcondition
     On success the returned count is greater than or equal to `n` and
     less than or equal to `buffer_size(buffers)`, and `ec` is success.
     Otherwise `ec` is set.
+
+    @par Remarks
+    Cancellation follows the stop token of the caller's
+    @ref await_context.
+
+    @par Exception Safety
+    Calling `write_at_least` allocates the coroutine frame, which throws
+    if the frame allocator fails. Awaiting the task rethrows any
+    exception thrown by awaiting `stream.write_some`.
+
+    @par Example
+
+    @par !example example
+
 
     @param stream The stream to write to. If the lifetime of `stream` ends
     before the coroutine finishes, the behavior is undefined.
@@ -82,19 +98,12 @@ namespace capy {
     buffer sequence represented by `buffers` ends before the coroutine
     finishes, the behavior is undefined.
 
-    @param n The minimum number of bytes to write. Must not exceed
-    `buffer_size(buffers)`.
+    @param n The minimum number of bytes to write. If `n` exceeds
+    `buffer_size(buffers)`, the await fails with
+    `std::errc::invalid_argument`.
 
     @return A task yielding `results<std::size_t>` whose second element
     is the number of bytes written.
-
-    @par Remarks
-    Supports _ContextAwaitable cancellation_.
-
-    @par Example
-
-    @par !example example
-
 
     @see @ref write, @ref WriteStream, @ref ConstBufferSequence
 */

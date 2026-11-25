@@ -29,6 +29,13 @@ namespace capy {
     `std::apply`, `std::get`, `std::tuple_cat`, comparisons, and
     tuple assignment.
 
+    @note Whether the payload is meaningful when the error code is
+        set is defined by the operation that produced the result.
+        Many I/O operations report a meaningful partial result
+        alongside the error (for example, the number of bytes
+        transferred before the condition, as with EOF). Others
+        leave it unspecified.
+
     @par Example
     @par !example example_1
 
@@ -37,13 +44,6 @@ namespace capy {
     new bindings:
     @par !example example_2
 
-
-    @note Whether the payload is meaningful when the error code is
-        set is defined by the operation that produced the result.
-        Many I/O operations report a meaningful partial result
-        alongside the error (for example, the number of bytes
-        transferred before the condition, as with EOF). Others
-        leave it unspecified.
 
     @tparam Ts Ordered payload types following the leading
         `std::error_code`.

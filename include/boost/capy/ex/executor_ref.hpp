@@ -119,14 +119,12 @@ public:
     /** Construct a copy.
 
         Copies the internal pointers, preserving identity.
-        This enables the same-executor optimization when passing
-        executor_ref through coroutine chains.
 
         @param other The reference to copy.
     */
     executor_ref(executor_ref const& other) = default;
 
-    /** Copy assignment operator.
+    /** Rebind to the executor `other` refers to.
 
         @param other The reference to copy.
 
@@ -134,11 +132,15 @@ public:
     */
     executor_ref& operator=(executor_ref const& other) = default;
 
-    /** Constructs from any executor type.
+    /** Construct from any executor type.
 
         Captures a reference to the given executor and stores a pointer
         to the type-specific vtable. The executor must remain valid for
         the lifetime of this `executor_ref` instance.
+
+        @note The constructor accepts a temporary executor. Binding to a
+        temporary leaves a dangling reference once the full expression
+        ends.
 
         @param ex The executor to wrap. Must satisfy the `Executor`
                   concept. A pointer to this object is stored
@@ -159,7 +161,7 @@ public:
     {
     }
 
-    /** Returns true if this instance holds a valid executor.
+    /** Check whether this instance holds a valid executor.
 
         @return `true` if constructed with an executor, `false` if
                 default-constructed.
@@ -169,18 +171,18 @@ public:
         return ex_ != nullptr;
     }
 
-    /** Returns a reference to the associated execution context.
-
-        @return A reference to the execution context.
+    /** Return a reference to the associated execution context.
 
         @pre This instance was constructed with a valid executor.
+
+        @return A reference to the execution context.
     */
     execution_context& context() const noexcept
     {
         return vt_->context(ex_);
     }
 
-    /** Informs the executor that work is beginning.
+    /** Inform the executor that work is beginning.
 
         Must be paired with a subsequent call to `on_work_finished()`.
 
@@ -191,7 +193,7 @@ public:
         vt_->on_work_started(ex_);
     }
 
-    /** Informs the executor that work has completed.
+    /** Inform the executor that work has completed.
 
         @pre A preceding call to `on_work_started()` was made.
         @pre This instance was constructed with a valid executor.
@@ -201,49 +203,56 @@ public:
         vt_->on_work_finished(ex_);
     }
 
-    /** Dispatches a continuation through the wrapped executor.
+    /** Dispatch a continuation through the wrapped executor.
 
-        Returns a handle for symmetric transfer. If running in the
-        executor's thread, returns `c.h`. Otherwise, posts the
-        continuation for later execution and returns
+        Forwards to the wrapped executor's `dispatch`. That executor
+        returns `c.h` to resume inline, or posts `c` and returns
         `std::noop_coroutine()`.
+
+        @pre This instance was constructed with a valid executor.
+
+        @par Exception Safety
+        Propagates any exception from the wrapped executor.
 
         @param c The continuation to dispatch for resumption.
                  Must remain at a stable address until dequeued.
 
         @return A handle for symmetric transfer or `std::noop_coroutine()`.
-
-        @pre This instance was constructed with a valid executor.
     */
     std::coroutine_handle<> dispatch(continuation& c) const
     {
         return vt_->dispatch(ex_, c);
     }
 
-    /** Posts a continuation to the wrapped executor.
+    /** Post a continuation to the wrapped executor.
 
         Posts the continuation to the executor for later execution
         and returns. The caller should transfer to `std::noop_coroutine()`
         after calling this.
 
+        @pre This instance was constructed with a valid executor.
+
+        @par Exception Safety
+        Propagates any exception from the wrapped executor.
+
         @param c The continuation to post for resumption.
                  Must remain at a stable address until dequeued.
-
-        @pre This instance was constructed with a valid executor.
     */
     void post(continuation& c) const
     {
         vt_->post(ex_, c);
     }
 
-    /** Compares two executor references for equality.
+    /** Compare two executor references for equality.
 
         Two `executor_ref` instances are equal if they wrap
-        executors of the same type that compare equal.
+        executors of the same type that compare equal. Two empty
+        references are equal, and so are two references to the same
+        executor object.
 
         @param other The executor reference to compare against.
 
-        @return `true` if both wrap equal executors of the same type.
+        @return `true` if both are empty or wrap equal executors of the same type.
     */
     bool operator==(executor_ref const& other) const noexcept
     {

@@ -25,14 +25,14 @@
 namespace boost {
 namespace capy {
 
-/** Read data from a stream until the buffer sequence is full.
+/** Asynchronously read data from a stream until the buffer sequence is full.
 
     @par Await-effects
 
     Reads data from `stream` via awaiting `stream.read_some` repeatedly
     until:
 
-    @li either the entire buffer sequence  @c buffers is filled,
+    @li either the entire buffer sequence `buffers` is filled,
     @li or a contingency occurs on `stream.read_some`.
 
     If `buffer_size(buffers) == 0` then no awaiting `stream.read_some`
@@ -46,37 +46,44 @@ namespace capy {
 
     Contingencies:
 
-    @li The first contingency reported from awaiting @c stream.read_some
+    @li The first contingency reported from awaiting `stream.read_some`
         while `buffers` is not yet filled. A contingency that accompanies
         the read which fills `buffers` is not reported: a completed
         transfer is a success.
 
     Notable conditions:
 
-    @li @c cond::canceled — Operation was cancelled,
-    @li @c cond::eof — Stream reached end before @c buffers was filled.
+    @li `cond::canceled`: the operation was canceled.
+    @li `cond::eof`: the stream reached its end before `buffers` was
+        filled.
 
     @par Await-postcondition
     If `n == buffer_size(buffers)` the transfer completed and `ec` is
     success; otherwise `ec` is set.
 
-    @param stream The stream to read from. If the lifetime of `stream` ends
-    before the coroutine finishes, the behavior is undefined.
-
-    @param buffers The buffer sequence to fill. If the lifetime of the buffer
-    sequence represented by `buffers` ends before the coroutine finishes, the behavior is undefined.
-
-    @return A task yielding `results<std::size_t>` whose second element
-    is the number of bytes read.
-
     @par Remarks
-    Supports _ContextAwaitable cancellation_.
+    Cancellation follows the stop token of the caller's
+    @ref await_context.
 
+    @par Exception Safety
+    Calling `read` allocates the coroutine frame, which throws if the
+    frame allocator fails. Awaiting the task rethrows any exception
+    thrown by awaiting `stream.read_some`.
 
     @par Example
 
     @par !example example
 
+
+    @param stream The stream to read from. If the lifetime of `stream` ends
+    before the coroutine finishes, the behavior is undefined.
+
+    @param buffers The buffer sequence to fill. If the lifetime of the
+    buffer sequence represented by `buffers` ends before the coroutine
+    finishes, the behavior is undefined.
+
+    @return A task yielding `results<std::size_t>` whose second element
+    is the number of bytes read.
 
     @see @ref ReadStream, @ref MutableBufferSequence
 */

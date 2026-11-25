@@ -57,7 +57,9 @@ namespace test {
     @par Thread Safety
     Single-threaded only. Both ends of the pair must be
     accessed from the same thread. Concurrent access is
-    undefined behavior.
+    undefined behavior. The exception is a stop request on the
+    stop token of a suspended read. That request may come from
+    another thread, and the read resumes through its executor.
 
     @par Example
     @par !example example
@@ -165,13 +167,13 @@ public:
     */
     stream& operator=(stream const& other) = delete;
 
-    /** Move constructor.
+    /** Construct by moving from another stream end.
 
         @param other The stream end to move from.
     */
     stream(stream&& other) = default;
 
-    /** Move assignment.
+    /** Assign by moving from another stream end.
 
         @param other The stream end to move from.
 
@@ -215,16 +217,16 @@ public:
         Transfers up to `buffer_size(buffers)` bytes from
         data written by the peer. If no data is available,
         the calling coroutine suspends until the peer calls
-        @ref write_some. Before every read, the attached
+        @ref write_some. Before transferring data, the attached
         @ref fuse is consulted to possibly inject an error.
         If the fuse fires, the pair is automatically closed.
         If the stream is closed, returns `error::eof`.
         The returned `std::size_t` is the number of bytes
         transferred.
 
-        @param buffers The mutable buffer sequence to receive data.
-
-        @return An awaitable that await-returns `(error_code,std::size_t)`.
+        The fuse is not consulted for an empty buffer sequence, a
+        canceled read, a closed pair, or a read after the peer
+        called @ref close.
 
         @par Cancellation
         Cancellation applies only to a read that would otherwise suspend.
@@ -232,6 +234,19 @@ public:
         requested, before or during the wait, the read resumes with
         `error::canceled`. A read that can complete immediately from
         buffered data is unaffected by the stop token.
+
+        @par Exception Safety
+        Injected I/O conditions are reported via the `error_code`
+        component of the result. Throws `std::system_error` when the
+        attached @ref fuse is in exception mode and reaches its failure
+        point. The pair is closed before the exception propagates.
+
+        @throws std::system_error When the attached @ref fuse is in
+        exception mode and reaches its failure point.
+
+        @param buffers The mutable buffer sequence to receive data.
+
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @see @ref fuse, @ref close
     */
@@ -423,23 +438,35 @@ public:
 
         Transfers up to `buffer_size(buffers)` bytes to the
         peer's incoming buffer. If the peer is suspended in
-        @ref read_some, it is resumed. Before every write,
+        @ref read_some, it is resumed. Before transferring data,
         the attached @ref fuse is consulted to possibly inject
         an error. If the fuse fires, the pair is automatically
         closed. If the stream is closed, returns `error::eof`.
         The returned `std::size_t` is the number of bytes
         transferred.
 
-        @param buffers The const buffer sequence containing
-            data to write.
-
-        @return An awaitable that await-returns `(error_code,std::size_t)`.
+        The fuse is not consulted for an empty buffer sequence, a
+        canceled write, or a closed pair.
 
         @par Cancellation
         If the environment's stop token is requested, the write
         completes immediately with `error::canceled` and transfers no
         data. An empty buffer sequence is a no-op that completes
         successfully regardless of the stop token.
+
+        @par Exception Safety
+        Injected I/O conditions are reported via the `error_code`
+        component of the result. Throws `std::system_error` when the
+        attached @ref fuse is in exception mode and reaches its failure
+        point. The pair is closed before the exception propagates.
+
+        @throws std::system_error When the attached @ref fuse is in
+        exception mode and reaches its failure point.
+
+        @param buffers The const buffer sequence containing
+            data to write.
+
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @see @ref fuse, @ref close
     */
@@ -529,13 +556,23 @@ public:
 
         Reads exactly `expected.size()` bytes from the stream
         and compares against the expected string. The read goes
-        through the normal path including the fuse.
+        through the normal path including the fuse. The call
+        blocks the calling thread until the read completes.
+
+        The error code is set if a read error occurs, for example
+        a fuse injection. The bool is true if the data matches.
+
+        @pre At least `expected.size()` bytes are buffered, or the
+        pair is closed, or the peer called @ref close. Otherwise
+        the read waits for a write that cannot happen on the
+        blocked thread, and the call never returns.
+
+        @throws std::system_error When the attached @ref fuse is in
+        exception mode and reaches its failure point.
 
         @param expected The expected content.
 
-        @return A pair of `(error_code, bool)`. The error_code
-            is set if a read error occurs (e.g. fuse injection).
-            The bool is true if the data matches.
+        @return A pair of `(error_code, bool)`.
 
         @see @ref provide
     */
@@ -587,9 +624,11 @@ public:
     Data written to one stream becomes readable on the other.
     If a coroutine calls @ref stream::read_some when no data
     is available, it suspends until the peer writes. Before
-    every read or write, the @ref fuse is consulted to
-    possibly inject an error for testing fault scenarios.
+    a read or write transfers data, the @ref fuse is consulted
+    to possibly inject an error for testing fault scenarios.
     When the fuse fires, the pair is automatically closed.
+    Empty, canceled and closed-pair operations, and reads after
+    the peer called @ref stream::close, skip the fuse.
 
     @param f The fuse used to inject errors during operations.
 

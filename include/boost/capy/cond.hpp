@@ -17,12 +17,13 @@
 namespace boost {
 namespace capy {
 
-/** Portable error conditions for capy I/O operations.
+/** Group error codes from capy operations into portable conditions.
 
     These are the conditions callers should compare against when
-    handling errors from capy operations. The @ref error enum values
-    map to these conditions, as do platform-specific error codes
-    (e.g., `ECANCELED`, SSL EOF errors).
+    handling errors from capy operations. Capy @ref error values map
+    to these conditions. So does any code equivalent to
+    `std::errc::operation_canceled` (for example `ECANCELED`) or
+    `std::errc::timed_out`.
 
     @par Example
 
@@ -33,7 +34,7 @@ namespace capy {
 */
 enum class cond
 {
-    /** End-of-stream condition.
+    /** Match codes that report the end of a stream.
 
         An `error_code` compares equal to `eof` when the stream
         reached its natural end. Examples are a peer sending TCP
@@ -41,7 +42,7 @@ enum class cond
     */
     eof = 1,
 
-    /** Operation cancelled condition.
+    /** Match codes that report a canceled operation.
 
         An `error_code` compares equal to `canceled` when the
         operation's stop token was activated, the I/O object's
@@ -50,7 +51,7 @@ enum class cond
     */
     canceled = 2,
 
-    /** Stream truncated condition.
+    /** Match codes that report a truncated TLS stream.
 
         An `error_code` compares equal to `stream_truncated` when
         a TLS peer closed the connection without sending a proper
@@ -58,10 +59,11 @@ enum class cond
     */
     stream_truncated = 3,
 
-    /** Operation timed out condition.
+    /** Match codes that report a timed-out operation.
 
         An `error_code` compares equal to `timeout` when an
-        operation exceeded its allowed duration.
+        operation exceeded its allowed duration, or when it is
+        equivalent to `std::errc::timed_out`.
     */
     timeout = 4
 };

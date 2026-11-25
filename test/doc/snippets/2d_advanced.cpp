@@ -93,6 +93,9 @@ public:
             return *this;
         }
 
+        // std::weakly_incrementable requires postfix increment
+        void operator++(int) { ++*this; }
+
         T& operator*() const { return handle_.promise().value_; }
         bool operator==(iterator const& other) const
         {
@@ -178,14 +181,15 @@ struct chained_awaiter
     void await_resume() const noexcept {}
 };
 
-// A promise sketch large enough for the final_suspend fragment
-namespace symmetric_generator {
+// A task promise sketch large enough for the final_suspend fragment
+namespace symmetric_task {
 
 struct promise_type
 {
-    std::coroutine_handle<> consumer_handle_;
+    // Stays empty when nothing awaits the task, e.g. a top-level start
+    std::coroutine_handle<> continuation_;
 
-    // tag::generator_final_suspend[]
+    // tag::task_final_suspend[]
     auto final_suspend() noexcept
     {
         struct awaiter
@@ -196,18 +200,20 @@ struct promise_type
 
             std::coroutine_handle<> await_suspend(std::coroutine_handle<>) noexcept
             {
-                // Return to the consumer that called resume()
-                return p_->consumer_handle_;
+                // Resuming a null handle is undefined behavior
+                if (p_->continuation_)
+                    return p_->continuation_;
+                return std::noop_coroutine();
             }
 
             void await_resume() const noexcept {}
         };
         return awaiter{this};
     }
-    // end::generator_final_suspend[]
+    // end::task_final_suspend[]
 };
 
-} // namespace symmetric_generator
+} // namespace symmetric_task
 
 capy::task<void> compute_something()
 {

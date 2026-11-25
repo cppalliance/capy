@@ -40,7 +40,7 @@
     An atomic bool `claimed_` resolves the race -- whoever does
     claimed_.exchange(true) and reads false wins. The loser does nothing.
 
-    The stop callback calls ex_.post(h_). The stop_callback is
+    The stop callback calls ex_.post(cont_). The stop_callback is
     destroyed later in await_resume. cancel_fn touches no members
     after post returns (same pattern as delete-this).
 
@@ -49,31 +49,34 @@
     the next. await_resume removes the (still-linked) canceled waiter
     via waiters_.remove(this).
 
-    The stop_callback lives in a union to suppress automatic
-    construction/destruction. Placement new in await_suspend, explicit
-    destructor call in await_resume and ~lock_awaiter.
+    The stop_callback lives in the aligned byte buffer stop_cb_buf_ to
+    suppress automatic construction/destruction. Placement new in
+    await_suspend, explicit destructor call in await_resume and
+    ~lock_awaiter.
 
     Member ordering constraint
     --------------------------
-    The union containing stop_cb_ must be declared AFTER the members
-    the callback accesses (h_, ex_, claimed_, canceled_). If the
-    stop_cb_ destructor blocks waiting for a concurrent callback, those
-    members must still be alive (C++ destroys in reverse declaration
-    order).
+    stop_cb_buf_ must be declared AFTER the members the callback
+    accesses (cont_, ex_, claimed_, canceled_). If the stop_cb_
+    destructor blocks waiting for a concurrent callback, those members
+    must still be alive (C++ destroys in reverse declaration order).
 
-    active_ flag
-    ------------
-    Tracks both list membership and stop_cb_ lifetime (they are always
-    set and cleared together). Used by the destructor to clean up if the
-    coroutine is destroyed while suspended (e.g. execution_context
-    shutdown).
+    active_, in_list_ and granted_ flags
+    ------------------------------------
+    active_ tracks stop_cb_ lifetime. in_list_ tracks list membership;
+    whoever pops the node (unlock() or ~async_mutex) clears it, so it
+    can be false while active_ is still true. granted_ marks a waiter
+    handed the lock but not yet resumed. The destructor uses all three
+    to clean up if the coroutine is destroyed while suspended (e.g.
+    execution_context shutdown).
 
     Cancellation scope
     ------------------
-    Cancellation only takes effect while the coroutine is suspended in
-    the wait queue. If the mutex is unlocked, await_ready acquires it
-    immediately without checking the stop token. This is intentional:
-    the fast path has no token access and no overhead.
+    If the mutex is unlocked, await_ready acquires it immediately
+    without checking the stop token. This is intentional: the fast path
+    has no token access and no overhead. Otherwise await_suspend
+    cancels on a stop request already pending, without enqueuing, and
+    the stop callback cancels a later one.
 
     Threading assumptions
     ---------------------
@@ -104,10 +107,12 @@ namespace capy {
     token is triggered, the waiter completes with `error::canceled`
     instead of acquiring the lock.
 
-    Cancellation only applies while the coroutine is suspended in the
-    wait queue. If the mutex is unlocked when `lock()` is called, the
-    lock is acquired immediately even if the stop token is already
-    signaled.
+    If the mutex is unlocked, `lock()` acquires it without consulting
+    the stop token. Otherwise a pending stop request completes the wait
+    with `error::canceled`. When a stop request races with `unlock()`,
+    whichever reaches the waiter first decides the result. If the mutex
+    is destroyed before a granted waiter resumes, that waiter completes
+    with `error::canceled` instead.
 
     @par Zero Allocation
 
@@ -162,8 +167,8 @@ public:
         continuation cont_;
         executor_ref ex_;
 
-        // These members must be declared before stop_cb_
-        // (see comment on the union below).
+        // These members must be declared before stop_cb_buf_
+        // (see the comment on it below).
         std::atomic<bool> claimed_{false};
         bool canceled_ = false;
         bool active_ = false;
@@ -220,9 +225,8 @@ public:
             destroyed before it resumes, the lock is released to the next
             waiter.
 
-            @par Preconditions
-            Called on the executor thread. The stop callback may fire from
-            any thread, so destroying a still-suspended awaiter from
+            @pre Called on the executor thread. The stop callback may fire
+            from any thread, so destroying a still-suspended awaiter from
             another thread is undefined.
         */
         ~lock_awaiter()
@@ -243,7 +247,9 @@ public:
 
         /** Construct an awaiter for the given mutex.
 
-            @param m The mutex to acquire. It must outlive the awaiter.
+            @param m The mutex to acquire. It must outlive the awaiter,
+            unless the mutex's destructor runs while the awaiter is
+            suspended. The destructor then cancels the awaiter.
         */
         explicit lock_awaiter(async_mutex* m) noexcept
             : m_(m)
@@ -255,6 +261,9 @@ public:
             The moved-from awaiter is left inert: its destructor no longer
             destroys the stop callback and no longer unlinks from the
             mutex's wait queue.
+
+            @pre The source has not been suspended (its `await_suspend`
+            has not enqueued it).
 
             @param o The awaiter to move from.
         */
@@ -271,15 +280,13 @@ public:
         {
         }
 
-        /** Copy construction is disabled; a waiter is linked into the
-            mutex's wait queue by address.
+        /** Deleted: a waiter is linked into the mutex's queue by address.
 
             @param other The awaiter that would be copied.
         */
         lock_awaiter(lock_awaiter const& other) = delete;
 
-        /** Copy assignment is disabled; a waiter is linked into the
-            mutex's wait queue by address.
+        /** Deleted: a waiter is linked into the mutex's queue by address.
 
             @param other The awaiter that would be assigned from.
 
@@ -287,8 +294,7 @@ public:
         */
         lock_awaiter& operator=(lock_awaiter const& other) = delete;
 
-        /** Move assignment is disabled; a waiter is linked into the
-            mutex's wait queue by address.
+        /** Deleted: a waiter is linked into the mutex's queue by address.
 
             @param other The awaiter that would be moved from.
 
@@ -302,11 +308,9 @@ public:
             When the mutex is unlocked, it marks the mutex locked and
             reports that no suspension is needed. The stop token is not
             consulted, so an uncontended `lock()` succeeds even when stop
-            has already been requested.
+            has already been requested. On `false` the coroutine suspends.
 
-            @return `true` if the mutex was free and is now held by the
-            awaiting coroutine. `false` if the mutex is held elsewhere, in
-            which case the coroutine suspends.
+            @return `true` if the mutex was free and is now held; else `false`.
         */
         bool await_ready() const noexcept
         {
@@ -328,9 +332,9 @@ public:
 
             Otherwise it stores `h` and `env->executor`, links itself into
             the back of the mutex's wait queue, and registers a stop
-            callback on `env->stop_token`. Whichever of `unlock()` and that
-            callback claims the awaiter first posts `h` through the stored
-            executor; the other skips it.
+            callback on `env->stop_token`. Whichever of `unlock()`, that
+            callback, and the mutex's destructor claims the awaiter first
+            posts `h` through the stored executor. The others skip it.
 
             @param h The awaiting coroutine, resumed when the mutex is
             acquired or the wait is canceled.
@@ -339,10 +343,11 @@ public:
             resumption and its stop token is watched for the duration of
             the wait. It must outlive the wait.
 
-            @return `h` if a stop request was already pending, which
-            resumes the awaiting coroutine immediately without enqueuing
-            it. Otherwise `std::noop_coroutine()`, which leaves the
+            A returned `h` resumes the awaiting coroutine at once without
+            enqueuing it. A returned `std::noop_coroutine()` leaves the
             coroutine suspended and returns control to the resumer.
+
+            @return `h` if stop was already requested, else `noop_coroutine()`.
         */
         std::coroutine_handle<>
         await_suspend(
@@ -368,12 +373,11 @@ public:
         /** Complete the acquisition and report the outcome.
 
             Destroys the stop callback if one is registered, and unlinks a
-            canceled awaiter from the wait queue.
+            canceled awaiter from the wait queue. An `error::canceled`
+            result means the stop token won the race or the mutex was
+            destroyed. The mutex is then not held.
 
-            @return An empty `results<>` if the mutex is now held by the
-            awaiting coroutine. Otherwise one holding `error::canceled`,
-            which means the stop token won the race or the mutex was
-            destroyed, and the mutex is not held.
+            @return Empty if the lock is now held, else `error::canceled`.
         */
         [[nodiscard]] results<> await_resume() noexcept
         {
@@ -409,7 +413,7 @@ public:
         async_mutex* m_;
 
     public:
-        /// Unlock the mutex, if this guard holds one.
+        /// Destroy the guard, unlocking the mutex if it holds one.
         ~lock_guard()
         {
             if(m_)
@@ -469,13 +473,13 @@ public:
             return *this;
         }
 
-        /** Copy construction is disabled; a guard uniquely owns the lock.
+        /** Deleted: a guard uniquely owns the lock.
 
             @param other The guard that would be copied.
         */
         lock_guard(lock_guard const& other) = delete;
 
-        /** Copy assignment is disabled; a guard uniquely owns the lock.
+        /** Deleted: a guard uniquely owns the lock.
 
             @param other The guard that would be assigned from.
 
@@ -494,7 +498,9 @@ public:
     public:
         /** Construct an awaiter for the given mutex.
 
-            @param m The mutex to acquire. It must outlive the awaiter.
+            @param m The mutex to acquire. It must outlive the awaiter,
+            unless the mutex's destructor runs while the awaiter is
+            suspended. The destructor then cancels the awaiter.
         */
         explicit lock_guard_awaiter(async_mutex* m) noexcept
             : m_(m)
@@ -505,11 +511,10 @@ public:
         /** Acquire the mutex if it is free, reporting whether to suspend.
 
             Delegates to @ref lock_awaiter::await_ready, so as there this is
-            not a pure query: on the fast path it takes the lock.
+            not a pure query: on the fast path it takes the lock. On
+            `false` the coroutine suspends.
 
-            @return `true` if the mutex was free and is now held by the
-            awaiting coroutine. `false` if the mutex is held elsewhere, in
-            which case the coroutine suspends.
+            @return `true` if the mutex was free and is now held; else `false`.
         */
         bool await_ready() const noexcept
         {
@@ -529,10 +534,11 @@ public:
             resumption and its stop token is watched for the duration of
             the wait. It must outlive the wait.
 
-            @return `h` if a stop request was already pending, which
-            resumes the awaiting coroutine immediately without enqueuing
-            it. Otherwise `std::noop_coroutine()`, which leaves the
+            A returned `h` resumes the awaiting coroutine at once without
+            enqueuing it. A returned `std::noop_coroutine()` leaves the
             coroutine suspended and returns control to the resumer.
+
+            @return `h` if stop was already requested, else `noop_coroutine()`.
         */
         std::coroutine_handle<>
         await_suspend(
@@ -544,10 +550,12 @@ public:
 
         /** Complete the acquisition and report the outcome.
 
-            @return A `results<lock_guard>` destructuring as
-            `[ec, guard]`. On success `ec` is empty and `guard` holds the
-            mutex, releasing it when destroyed. If the wait was canceled,
-            `ec` is `error::canceled` and `guard` holds no mutex.
+            The result destructures as `[ec, guard]`. On success `ec` is
+            empty and `guard` holds the mutex, releasing it when destroyed.
+            If the wait was canceled, `ec` is `error::canceled` and `guard`
+            holds no mutex.
+
+            @return A `results<lock_guard>` holding the outcome and guard.
         */
         [[nodiscard]] results<lock_guard> await_resume() noexcept
         {
@@ -572,7 +580,8 @@ public:
         A waiter handed the lock but not yet resumed resumes with
         `error::canceled` instead, holding nothing.
 
-        @pre No coroutine holds the lock.
+        @pre No coroutine holds the lock, other than a waiter handed it
+        but not yet resumed.
     */
     ~async_mutex()
     {
@@ -595,15 +604,13 @@ public:
         }
     }
 
-    /** Copy construction is disabled; suspended waiters point into the
-        mutex's wait queue.
+    /** Deleted: suspended waiters point into the mutex's wait queue.
 
         @param other The mutex that would be copied.
     */
     async_mutex(async_mutex const& other) = delete;
 
-    /** Copy assignment is disabled; suspended waiters point into the
-        mutex's wait queue.
+    /** Deleted: suspended waiters point into the mutex's wait queue.
 
         @param other The mutex that would be assigned from.
 
@@ -611,15 +618,13 @@ public:
     */
     async_mutex& operator=(async_mutex const& other) = delete;
 
-    /** Move construction is disabled; suspended waiters point into the
-        mutex's wait queue.
+    /** Deleted: suspended waiters point into the mutex's wait queue.
 
         @param other The mutex that would be moved from.
     */
     async_mutex(async_mutex&& other) = delete;
 
-    /** Move assignment is disabled; suspended waiters point into the
-        mutex's wait queue.
+    /** Deleted: suspended waiters point into the mutex's wait queue.
 
         @param other The mutex that would be moved from.
 
@@ -627,7 +632,7 @@ public:
     */
     async_mutex& operator=(async_mutex&& other) = delete;
 
-    /** Returns an awaiter that acquires the mutex.
+    /** Return an awaiter that acquires the mutex.
 
         @return An awaitable that await-returns `(error_code)`.
     */
@@ -636,7 +641,7 @@ public:
         return lock_awaiter{this};
     }
 
-    /** Returns an awaiter that acquires the mutex with RAII.
+    /** Return an awaiter that acquires the mutex with RAII.
 
         @return An awaitable that await-returns `(error_code,lock_guard)`.
     */
@@ -645,12 +650,14 @@ public:
         return lock_guard_awaiter(this);
     }
 
-    /** Releases the mutex.
+    /** Release the mutex.
 
         If waiters are queued, the next eligible waiter is
         resumed with the lock held. Canceled waiters are
         skipped. If no eligible waiter remains, the mutex
         becomes unlocked.
+
+        @pre The calling coroutine holds the lock.
     */
     void unlock() noexcept
     {
@@ -697,7 +704,7 @@ private:
     }
 
 public:
-    /** Returns true if the mutex is currently locked.
+    /** Check whether the mutex is currently locked.
 
         @return `true` if the mutex is held; otherwise `false`.
     */

@@ -11,11 +11,11 @@
 :page-mode: explanation
 
 A function is said to _support ContextAwaitable cancellation_ when its return type 
-models concept cpp:ContextAwaitable[] and this return object `a` controls a coroutine which
+models the concept cpp:ContextAwaitable[] and this return object `a` controls a coroutine which
 can be prematurely stopped using the `std::stop_token` propagated through the 
 `ContextAwaitable` protocol. Additionally, if the result type of expression `co_await a`
 in the context of a Capy-coroutine is a specialization of cpp:results[] 
-then the cancelling of an operation is 
+then cancelling the operation is 
 considered a contingency represented by condition cpp:cond::canceled[cond::canceled].
 
 

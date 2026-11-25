@@ -44,9 +44,11 @@ A quitter gives a Capy coroutine the same behavior.
 
 == Choosing Between `task` and a Quitter
 
-Capy's only task type is cpp:task[task<T>], and Capy has no separate `io_task`.
+Capy's only task type is cpp:task[task<T>].
 Use cpp:task[] by default.
 
+The task type is a policy point.
+A program that wants explicit error handling uses cpp:task[].
 A quitter fits when a stop always means "drop the work and release its resources."
 Application shutdown is the usual case, especially across call chains with many suspension points.
 The header comment of `shutdown.cpp` shows the alternative: with cpp:task[], each wait needs `if(ec) co_return;` after it.
@@ -88,17 +90,9 @@ The header comment of `shutdown.cpp` shows the alternative: with cpp:task[], eac
 | Two stop checks; a `co_await` that suspends also resumes a gate frame
 |===
 
-xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation] describes how a cpp:task[] observes a stop.
-
-[NOTE]
-.Why a separate type
-====
-The task type is a policy point.
-A program that wants explicit error handling uses cpp:task[].
-A program that wants a stop to end the work without checks uses a quitter.
 The cpp:ContextAwaitable[] protocol does not require one task type, so both work with the same launchers and combinators.
 xref:9.design/9m.WhyNotAsio.adoc#_coroutine_execution_model[Coroutine Execution Model] lists user-defined task types among the features of the protocol.
-====
+xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation] describes how a cpp:task[] observes a stop.
 
 == Source Code
 

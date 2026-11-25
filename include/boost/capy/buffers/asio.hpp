@@ -155,7 +155,7 @@ public:
             return it_ != other.it_;
         }
 
-        //--- random access (conditional) ---
+        // Random access, when the source supports it
 
         const_iterator&
         operator+=(difference_type n) noexcept
@@ -270,6 +270,13 @@ private:
     depending on whether the source is a
     `MutableBufferSequence`.
 
+    The result holds its own copy of `bs`, moved from it when `bs` is
+    an rvalue. The memory `bs` refers to must outlive the result.
+    The sequence type must be copy constructible, or move constructible
+    when `bs` is an rvalue.
+
+    @throws Any exception thrown by copying or moving `bs`.
+
     @param bs The capy buffer sequence to adapt.
     @return An adapted buffer sequence usable with Asio.
 */
@@ -294,6 +301,16 @@ to_asio(BS&& bs)
     depending on whether the source is convertible to
     `asio::mutable_buffer`. Accepts single asio buffers
     and ranges of asio buffers.
+
+    The result holds its own copy of `bs`, moved from it when `bs` is
+    an rvalue. The memory `bs` refers to must outlive the result.
+    The sequence type must be copy constructible, or move constructible
+    when `bs` is an rvalue.
+
+    @pre `bs` is an asio buffer or a range of asio buffers. A range of
+    capy buffers is not rejected, but yields asio buffers instead.
+
+    @throws Any exception thrown by copying or moving `bs`.
 
     @param bs The Asio buffer sequence to adapt.
     @return An adapted buffer sequence usable with capy.

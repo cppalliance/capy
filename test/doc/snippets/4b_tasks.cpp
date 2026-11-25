@@ -8,7 +8,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Compiled fragments shown in pages/4.coroutines/4a.tasks.adoc. Pages
+// Compiled fragments shown in pages/4.coroutines/4b.tasks.adoc. Pages
 // include the tagged regions; scaffolding stays outside the tags.
 
 #include "../doc_warnings.hpp"
@@ -307,4 +307,4 @@ struct tasks_test
 
 } // namespace
 
-TEST_SUITE(tasks_test, "boost.capy.doc.4a_tasks");
+TEST_SUITE(tasks_test, "boost.capy.doc.4b_tasks");

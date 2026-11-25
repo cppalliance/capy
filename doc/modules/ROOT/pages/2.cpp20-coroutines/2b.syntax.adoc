@@ -1,22 +1,26 @@
 = {cpp}20 Syntax
 :page-mode: tutorial
 
+This page teaches you to read and write a coroutine: the three keywords, a first coroutine, and the awaiter protocol that drives `co_await`.
+
 == The Three Keywords
 
 A function becomes a coroutine when its body contains `co_await`, `co_yield`, or `co_return`, signaling to the compiler that it requires coroutine machinery.
 
 === co_await
 
-The `co_await` keyword suspends the coroutine and waits for some operation to complete. When you write `co_await expr`, the coroutine saves its state, pauses execution, and potentially allows other code to run. When the awaited operation completes, the coroutine resumes from exactly where it left off.
+The `co_await` keyword awaits an operation and may suspend the coroutine until that operation completes. When you write `co_await expr`, the coroutine saves its state, pauses execution, and potentially allows other code to run. When the awaited operation completes, the coroutine resumes from exactly where it left off.
 
 [source,cpp]
 ----
 include::example$snippets/2b_syntax.cpp[tag=co_await_example,indent=0]
 ----
 
+The return type cpp:task[capy::task] is Capy's lazy coroutine type, which produces a result when awaited.
+
 === co_yield
 
-The `co_yield` keyword produces a value and suspends the coroutine. This pattern creates *generators*—functions that produce sequences of values one at a time. After yielding a value, the coroutine pauses until someone asks for the next value.
+The `co_yield` keyword produces a value and hands it to the promise. `co_yield e` means `co_await promise.yield_value(e)`, so the coroutine suspends only if the awaiter that `yield_value` returns does. This pattern creates *generators*: functions that produce sequences of values one at a time. A typical generator suspends after each value and pauses until someone asks for the next one.
 
 [source,cpp]
 ----
@@ -53,21 +57,23 @@ The presence of `co_return` transforms what looks like a regular function into a
 [[awaitables_and_awaiters]]
 == Awaitables and Awaiters
 
-When you see expression `co_await aw`, the sub-expression `aw` is an *awaitable*. 
-An awaitable conveys state and the type, but on its own it doesn't do much. 
-When expression `co_await aw` is evaluated, as the first thing, awaitable `aw`
-is used to produce an *awaiter*. This is done by first trying to call member function
-`await_transform` of the coroutine's promise object, if present, and then calling member
-function `operator co_await` -- if present -- on the result. The result is the awaiter.
-It is next used to control the coroutine suspension and resumption via its interface
-in the form of three member functions: 
+When you see expression `co_await aw`, the sub-expression `aw` is an *awaitable*.
+The awaitable names the operation, but it does not decide how the coroutine suspends.
+When expression `co_await aw` is evaluated, the compiler first uses `aw` to produce an *awaiter*.
+If the promise type has a member `await_transform`, the compiler calls `promise.await_transform(aw)` and uses its result.
+Otherwise it uses `aw` itself.
+The `co_await` expressions that the compiler generates for initial suspend, final suspend, and `co_yield` skip this step.
+Next, overload resolution looks for an `operator co_await`, member or non-member, that accepts that result.
+If it finds one, its return value is the awaiter.
+Otherwise the result itself is the awaiter.
+The awaiter controls suspension and resumption through three member functions:
 
 * `await_ready()` — Returns `true` if the result is immediately available and no suspension is needed.
 * `await_suspend(handle)` — Called when the coroutine suspends; receives a handle to the coroutine for later resumption.
 * `await_resume()` — Called when the coroutine resumes; its return value becomes the value of the `co_await` expression.
 
-NOTE: In special cases an awaiter and an awaitable can be the same object. 
-      In other special cases, an awaitable can be as simple a type as an `int`.
+NOTE: Often the awaiter and the awaitable are the same object, as in the example below.
+      A promise's `await_transform` can even make a plain `int` awaitable.
 
 === Example: Understanding the Awaiter Protocol
 
@@ -103,8 +109,8 @@ Study this execution flow:
 The variable `i` inside `counter` maintains its value across all these suspension and resumption cycles.
 
 
-NOTE: While only a coroutine, by definition, can evaluate a `co_await` expression, 
-      the awaiter — that is, the thing being awaited on — need not be a coroutine, or invoke one.
+NOTE: Only a coroutine can evaluate a `co_await` expression.
+      The awaiter, however, is an ordinary object: it need not be a coroutine, or invoke one.
 
 
 === Standard Awaiters

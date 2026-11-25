@@ -23,8 +23,8 @@ namespace capy {
 // buffer_copy). The finding is grandfathered in doc/lint/baseline.json.
 // Silencing it buys nothing: on the synthesised overload page MrDocs renders
 // neither the record-level docstring below nor one attached to the variable,
-// so any docstring that clears the warning is invisible to readers -- a
-// second, dead copy of this prose. Verified twice against the built site.
+// so any docstring that clears the warning is invisible to readers. It
+// would be a second, dead copy of this prose. Verified twice against the built site.
 /** Return the first buffer in a sequence.
 
     @functionobject
@@ -35,8 +35,7 @@ constexpr struct
 
         @param bs The buffer sequence to inspect.
 
-        @return The first buffer in `bs`, or an empty buffer if `bs`
-        contains no buffers.
+        @return The first buffer in `bs`, or an empty buffer if none.
     */
     template<MutableBufferSequence MutableBufferSequence>
     mutable_buffer
@@ -53,8 +52,7 @@ constexpr struct
 
         @param bs The buffer sequence to inspect.
 
-        @return The first buffer in `bs`, or an empty buffer if `bs`
-        contains no buffers.
+        @return The first buffer in `bs`, or an empty buffer if none.
     */
     template<ConstBufferSequence ConstBufferSequence>
     const_buffer

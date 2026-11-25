@@ -17,14 +17,16 @@
 namespace boost {
 namespace capy {
 
-/** Error codes for capy I/O operations.
+/** Identify failures reported by capy algorithms and I/O operations.
 
-    These codes are produced by capy algorithms and I/O operations.
+    Capy algorithms and I/O operations produce these codes.
 
     @warning Callers must never compare received `error_code` values
     directly against this enum. Always compare against the portable
     @ref cond error conditions instead. These enum values are
-    implementation details subject to change.
+    implementation details subject to change. The exception is
+    `test_failure`, which has no @ref cond equivalent and is compared
+    directly.
 
     @see @ref cond
 */
@@ -33,7 +35,7 @@ enum class error
     /// End-of-stream reached. Compare with `cond::eof`.
     eof = 1,
 
-    /// Operation was cancelled. Compare with `cond::canceled`.
+    /// Operation was canceled. Compare with `cond::canceled`.
     canceled,
 
     /// Internal test assertion failed.

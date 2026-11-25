@@ -68,7 +68,7 @@ capy::task<> use_them()
     auto [ec, n] = co_await count_ready(true);
     if(ec)
         co_return;  // always check ec first
-    (void)n;        // n is only meaningful when ec is falsy
+    std::ignore = n;  // n is only meaningful when ec is falsy
 }
 // end::produce[]
 

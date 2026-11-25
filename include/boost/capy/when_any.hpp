@@ -686,7 +686,7 @@ public:
 
 } // namespace detail
 
-/** Race a range of `results`-returning awaitables (non-void payloads).
+/** Asynchronously race a range of `results`-returning awaitables (non-void payloads).
 
     Only a child returning !ec can win. Errors and exceptions do not
     claim winner status. If all children fail, an unspecified one of
@@ -718,7 +718,9 @@ public:
     @par Await-returns
     An object of type
     `std::variant<std::error_code, std::pair<std::size_t, PayloadT>>`,
-    where `PayloadT` is the payload of one child's `results`.
+    where `PayloadT` is the payload of one child's `results`. The
+    payload of `results<T>` is `T`. The payload of any other
+    `results<Ts...>` is `std::tuple<Ts...>`.
 
     @li Index 1 holds the winner's position in the input range paired
         with its payload.
@@ -740,40 +742,50 @@ public:
     or a failed child's exception is rethrown.
 
     @par Remarks
-    Supports _ContextAwaitable cancellation_. A canceled child await-returns a
-    non-zero `ec` and so cannot win; if no child has already succeeded,
-    the result settles at index 0.
+    Cancellation follows the stop token of the caller's
+    @ref await_context. A canceled child await-returns a non-zero `ec`
+    and so cannot win. It does not decide the overall result, which the
+    await-postcondition describes.
 
     @par Thread Safety
     The returned task must be awaited from a single execution context.
     Child awaitables execute concurrently but complete through the caller's
     executor.
 
-    @param awaitables Range of `results`-returning awaitables (must
-        not be empty).
-
-    @return A task yielding variant<error_code, pair<size_t, PayloadT>>
-        where index 0 is failure and index 1 carries the winner's
-        index and payload.
-
-    @throws std::invalid_argument if range is empty.
-
     @par Exception Safety
-    The winner's exception is rethrown if extracting or
-    move-constructing the winning payload throws. In that case a winner
-    was found, but its result could not be produced. If all children
-    fail and the reported failure is an exception, that child's
-    exception is rethrown (which child is unspecified).
+    If extracting or move-constructing the winning payload throws, that
+    exception is rethrown. In that case a winner was found, but its
+    result could not be produced. If all children fail and the reported
+    failure is an exception, that child's exception is rethrown (which
+    child is unspecified).
 
-    @note If a branch's coroutine is abandoned before it finishes, for
-        example by teardown of its execution context, `when_any`
-        requests stop on the remaining branches, and the awaiting
-        parent is abandoned rather than resumed once the last branch
-        has finished or been abandoned.
+    @throws std::invalid_argument From the await, if the range is empty.
+
+    @note If a branch's coroutine is abandoned before it finishes,
+        `when_any` requests stop on the remaining branches. Teardown
+        of the branch's execution context is one such case. Once the
+        last branch has finished or been abandoned, the awaiting
+        parent is abandoned rather than resumed.
 
     @par Example
     @par !example example_1
 
+
+    @param awaitables Range of `results`-returning awaitables (must
+        not be empty).
+        The task refers to the range until the await starts. If the
+        range is a temporary and the task is awaited after the
+        full-expression that created it, the behavior is undefined.
+        A forward range whose elements are lvalues is copied, or moved
+        when passed as an rvalue. The elements of any other range are
+        moved into a vector. Copying an owning container of move-only
+        elements, such as `std::vector<task<...>>`, is ill-formed, so
+        pass it as an rvalue. A view such as `std::span` is copied and
+        its elements are moved from, so their storage must remain valid
+        until the await completes.
+
+    @return A task yielding
+        `std::variant<std::error_code, std::pair<std::size_t, PayloadT>>`.
 
     @see @ref ContextAwaitableRange, @ref when_any
 */
@@ -823,7 +835,7 @@ template<ContextAwaitableRange R>
     co_return result_type{std::in_place_index<0>, state.last_error_};
 }
 
-/** Race a range of void `results`-returning awaitables.
+/** Asynchronously race a range of void `results`-returning awaitables.
 
     Only a child returning !ec can win. Returns the winner's index
     at variant index 1, or error_code at index 0 on all-fail.
@@ -869,36 +881,46 @@ template<ContextAwaitableRange R>
     or a failed child's exception is rethrown.
 
     @par Remarks
-    Supports _ContextAwaitable cancellation_. A canceled child await-returns a
-    non-zero `ec` and so cannot win; if no child has already succeeded,
-    the result settles at index 0.
+    Cancellation follows the stop token of the caller's
+    @ref await_context. A canceled child await-returns a non-zero `ec`
+    and so cannot win. It does not decide the overall result, which the
+    await-postcondition describes.
 
     @par Thread Safety
     The returned task must be awaited from a single execution context.
     Child awaitables execute concurrently but complete through the caller's
     executor.
 
-    @param awaitables Range of `results<>`-returning awaitables (must
-        not be empty).
-
-    @return A task yielding variant<error_code, size_t> where index 0
-        is failure and index 1 carries the winner's index.
-
-    @throws std::invalid_argument if range is empty.
-
     @par Exception Safety
     If all children fail and the reported failure is an exception,
     that child's exception is rethrown (which child is unspecified).
 
-    @note If a branch's coroutine is abandoned before it finishes, for
-        example by teardown of its execution context, `when_any`
-        requests stop on the remaining branches, and the awaiting
-        parent is abandoned rather than resumed once the last branch
-        has finished or been abandoned.
+    @throws std::invalid_argument From the await, if the range is empty.
+
+    @note If a branch's coroutine is abandoned before it finishes,
+        `when_any` requests stop on the remaining branches. Teardown
+        of the branch's execution context is one such case. Once the
+        last branch has finished or been abandoned, the awaiting
+        parent is abandoned rather than resumed.
 
     @par Example
     @par !example example_2
 
+
+    @param awaitables Range of `results<>`-returning awaitables (must
+        not be empty).
+        The task refers to the range until the await starts. If the
+        range is a temporary and the task is awaited after the
+        full-expression that created it, the behavior is undefined.
+        A forward range whose elements are lvalues is copied, or moved
+        when passed as an rvalue. The elements of any other range are
+        moved into a vector. Copying an owning container of move-only
+        elements, such as `std::vector<task<...>>`, is ill-formed, so
+        pass it as an rvalue. A view such as `std::span` is copied and
+        its elements are moved from, so their storage must remain valid
+        until the await completes.
+
+    @return A task yielding `std::variant<std::error_code, std::size_t>`.
 
     @see @ref ContextAwaitableRange, @ref when_any
 */
@@ -941,7 +963,7 @@ template<ContextAwaitableRange R>
     co_return result_type{std::in_place_index<0>, state.last_error_};
 }
 
-/** Race `results`-returning awaitables, selecting the first success.
+/** Asynchronously race `results`-returning awaitables, selecting the first success.
 
     Overload selected when all children return results<Ts...>.
     Only a child returning !ec can win. Errors and exceptions do
@@ -968,7 +990,9 @@ template<ContextAwaitableRange R>
 
     @par Await-returns
     An object of type `std::variant<std::error_code, P1, ..., Pn>`, where
-    `Pi` is the payload of the i-th child's `results`.
+    `Pi` is the payload of the i-th child's `results`. The payload of
+    `results<T>` is `T`. The payload of any other `results<Ts...>` is
+    `std::tuple<Ts...>`.
 
     @li Index i+1 identifies the i-th argument as the winner and holds
         its payload.
@@ -990,43 +1014,45 @@ template<ContextAwaitableRange R>
     result holds index 0, or a failed child's exception is rethrown.
 
     @par Remarks
-    Supports _ContextAwaitable cancellation_. A canceled child await-returns a
-    non-zero `ec` and so cannot win; if no child has already succeeded,
-    the result settles at index 0.
+    Cancellation follows the stop token of the caller's
+    @ref await_context. A canceled child await-returns a non-zero `ec`
+    and so cannot win. It does not decide the overall result, which the
+    await-postcondition describes.
 
     @par Thread Safety
     The returned task must be awaited from a single execution context.
     Child awaitables execute concurrently but complete through the caller's
     executor.
 
-    @param as The awaitables to race. Each must satisfy @ref
-        ContextAwaitable and is consumed (moved-from) when `when_any`
-        is awaited.
-
-    @return A task yielding variant<error_code, R1, ..., Rn> where
-        index 0 is the failure/no-winner case and index i+1
-        identifies the winning child. On all-fail, index 0 holds
-        an error_code from one of the failed children (unspecified
-        which; no priority between errors and exceptions).
-
     @par Exception Safety
-    The winner's exception is rethrown if extracting or constructing
-    the winning payload throws. In that case a winner was found, but
-    its result could not be produced. If all children fail and the
-    reported failure is an exception, that child's exception is
-    rethrown (which child is unspecified).
+    If extracting or constructing the winning payload throws, that
+    exception is rethrown. In that case a winner was found, but its
+    result could not be produced. If all children fail and the reported
+    failure is an exception, that child's exception is rethrown (which
+    child is unspecified).
 
-    @note A failing child does not cancel its siblings; `when_any`
-        waits for a success or for every child to finish. To make a
-        benign error (e.g. @c cond::canceled) count as a win, wrap
-        the child to translate the error into success. See the
-        Concurrent Composition tutorial.
+    @note A failing child does not cancel its siblings. `when_any`
+        keeps waiting until a child succeeds; the await completes
+        after every child has finished. To make a benign error (e.g.
+        `cond::canceled`) count as a win, wrap the child to translate
+        the error into success.
 
-    @note If a branch's coroutine is abandoned before it finishes, for
-        example by teardown of its execution context, `when_any`
-        requests stop on the remaining branches, and the awaiting
-        parent is abandoned rather than resumed once the last branch
-        has finished or been abandoned.
+    @note If a branch's coroutine is abandoned before it finishes,
+        `when_any` requests stop on the remaining branches. Teardown
+        of the branch's execution context is one such case. Once the
+        last branch has finished or been abandoned, the awaiting
+        parent is abandoned rather than resumed.
+
+    @par Example
+    @par !example example_3
+
+    @param as The awaitables to race. Each must satisfy @ref
+        ContextAwaitable. The arguments are consumed when `when_any`
+        is called, not when the returned task is awaited.
+
+    @return A task yielding `std::variant<std::error_code, P1, ..., Pn>`.
+
+    @see @ref ContextAwaitable, @ref when_all
 */
 template<ContextAwaitable... As>
     requires (sizeof...(As) > 0)

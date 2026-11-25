@@ -11,7 +11,7 @@
 :page-mode: explanation
 
 Real I/O is a poor foundation for unit tests. Network operations are slow,
-non-deterministic, and do not fail on demand -- so error-handling paths go
+non-deterministic, and do not fail on demand. Error-handling paths go
 untested until production breaks them. Capy replaces the transport with
 in-memory mocks. Because each mock satisfies the same concept as its
 production counterpart, test code reads the same as production code. The
@@ -19,12 +19,14 @@ only difference is the type of the stream you pass in.
 
 == What This Section Covers
 
-* xref:7.testing/7a.drivers.adoc[Driving Tests] -- cpp:test::run_blocking[run_blocking] drives a
-  coroutine to completion on the calling thread without a real xref:glossary.adoc#executor[executor].
+* xref:7.testing/7a.drivers.adoc[Driving Tests]: cpp:test::run_blocking[run_blocking] drives a
+  coroutine to completion on the calling thread. Its own blocking xref:glossary.adoc#executor[executor]
+  replaces a thread pool or I/O context.
   cpp:test::fuse[fuse] runs the test body repeatedly, injecting an error at each
   `maybe_fail()` site in turn until every failure path is covered.
   cpp:set_current_thread_name[] labels worker threads so that failures in
-  multi-threaded tests are easier to attribute.
+  multi-threaded tests are easier to attribute. It lives beside the executors in
+  `<boost/capy/ex/thread_name.hpp>`, not in the testing toolkit.
 
 * xref:7.testing/7b.mock-streams.adoc[Mock Streams] -- cpp:test::read_stream[read_stream],
   cpp:test::write_stream[write_stream], and cpp:test::stream[stream] (a connected pair) implement the partial-I/O

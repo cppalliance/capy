@@ -8,7 +8,7 @@
 //
 
 = Conventions
-:page-mode: explanation
+:page-mode: reference
 
 While each tool in this library comes with its own header file, there is also an aggregate header:
 
@@ -17,8 +17,9 @@ While each tool in this library comes with its own header file, there is also an
 include::example$snippets/conventions.cpp[tag=include_umbrella]
 ----
 
-While we do not recommend using it in production code, 
-it is very convenient for learning the library and for small experiments. 
+The aggregate header includes most of the library, so each translation unit that uses it compiles all of those headers.
+Production code should include only the headers it needs.
+The aggregate header is convenient for learning the library and for small experiments.
 
 All declarations reside in namespace `boost::capy`. For brevity, unless otherwise specified,
 the source code examples in this documentation assume the following:
@@ -29,10 +30,9 @@ include::example$snippets/conventions.cpp[tag=convention]
 ----
 
 The examples deliberately leave some operation results and xref:glossary.adoc#structured-bindings[structured bindings] unused,
-so that the surrounding prose can explain them. Do not build them with `-Wall` or
-`-Werror`.
+so that the surrounding prose can explain them.
+If you copy them, expect unused-variable and unused-parameter warnings under `-Wall -Wextra`.
+Do not build copied examples with `-Werror`.
 
-The library is targeting two kinds of audience:
-
- * Regular users, who build their applications by composing building blocks offered by this library.
- * I/O Specialists, who extend this framework by providing their own xref:glossary.adoc#io-backend[I/O backends].
+The library serves three audiences: application developers, framework authors, and I/O library authors.
+xref:index.adoc#protocol-anatomy[Protocol Anatomy] describes what each audience needs.

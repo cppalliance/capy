@@ -12,10 +12,10 @@
 
 The most efficient way to provide storage for bytes is a contiguous region: an array. 
 While it is not always possible to efficiently compose a full message in a single contiguous region,
-it is certainly a good default. Capy offers two types for this purpose:
+it is a good default. Capy offers two types for this purpose:
 
- * cpp:const_buffer[] -- a handle to a contiguous sequence of bytes. I/O operations will never modify these bytes.
- * cpp:mutable_buffer[] -- a handle to a contiguous region for storing bytes; I/O operations will fill it.
+ * cpp:const_buffer[]: a handle to a contiguous sequence of bytes. I/O operations do not modify these bytes.
+ * cpp:mutable_buffer[]: a handle to a contiguous region for storing bytes. I/O operations fill it.
 
 Neither type owns the bytes. Each refers to storage that your program owns
 and must keep alive.
@@ -36,8 +36,8 @@ include::example$snippets/5a_contiguous_buffers.cpp[tag=construct,indent=0]
 <1> You need to pass the pointer to the beginning of the region and its size.
 <2> Copies the pointer and the size.
 
-As operations take the buffers by value, or store them by value as data members,
-only the handle is copied, while the location of the bytes does not change.
+Operations take the buffers by value, or store them by value as data members.
+Only the handle is copied. The location of the bytes does not change.
 
 // Figures are sized in rem so they track the reader's font size. The UI
 // bundle offers no hook for page CSS, so the rule ships with the page.
@@ -82,9 +82,8 @@ The contract for read and write operations in Capy is:
 ----
 include::example$snippets/5a_contiguous_buffers.cpp[tag=good_management,indent=0]
 ----
-<1> OK: The read will be performed at an unpredictable time, but because afterwards
-    the coroutine needs to be resumed, its frame (containing the array) is guaranteed
-    to outlive the read operation. 
+<1> OK: The read happens at an unpredictable time. The coroutine must be resumed
+    afterwards, so its frame (containing the array) outlives the read operation.
 
 [source,cpp]
 ----
@@ -97,7 +96,7 @@ include::example$snippets/5a_contiguous_buffers.cpp[tag=bad_management,indent=0]
 == Mutable versus Const Buffers
 
 cpp:mutable_buffer[] represents the storage for bytes, intended to be written. The value
-of the bytes is irrelevant, because they will be overwritten. In fact, they may have _indeterminate value_.
+of the bytes is irrelevant, because they are overwritten. They may even have _indeterminate value_.
 
 cpp:const_buffer[] represents bytes to be read. It is not only storage, it is also values.
 
@@ -108,16 +107,16 @@ include::example$snippets/5a_contiguous_buffers.cpp[tag=wrong_buffer,indent=0]
 <1> Compiler error: passing cpp:const_buffer[] but the read operation needs to mutate its contents.
 
 
-A cpp:mutable_buffer[] is convertible to cpp:const_buffer[]. However, you should be very careful
-about this, as this conversion allows using pure storage, possibly with indeterminate byte values,
-in functions that need to read the byte values: 
+A cpp:mutable_buffer[] is convertible to cpp:const_buffer[]. Use this conversion with care.
+It allows passing pure storage, possibly with indeterminate byte values,
+to functions that read the byte values:
 
 [source,cpp]
 ----
 include::example$snippets/5a_contiguous_buffers.cpp[tag=buffer_conversion,indent=0]
 ----
 <1> The storage starts with indeterminate byte values (intended to be overwritten).
-<2> Bug: will read indeterminate byte values, which is undefined behavior.
+<2> Bug: sends whatever the storage happens to contain.
 
 
 == Buffer Processing Interface
@@ -136,9 +135,9 @@ include::example$snippets/5a_contiguous_buffers.cpp[tag=buffer_interface,indent=
 
 == make_buffer
 
-There is a convenience factory function cpp:make_buffer[] that can create either
-a cpp:const_buffer[] or cpp:mutable_buffer[] from your type, as long as it is recognized
-as a contiguous storage of trivially-copyable types.
+The convenience factory function cpp:make_buffer[] creates either
+a cpp:const_buffer[] or cpp:mutable_buffer[] from your type. Your type must be
+recognized as contiguous storage of trivially-copyable types.
 
 cpp:make_buffer[] neither allocates nor copies. The result refers to the
 storage of its argument, so that object must outlive every operation using
@@ -187,7 +186,7 @@ include::example$snippets/5a_contiguous_buffers.cpp[tag=buf_from_span,indent=0]
 include::example$snippets/5a_contiguous_buffers.cpp[tag=buf_from_nested,indent=0]
 ----
 
-The `const`-ness of `.data()` on the source type determines if the factory produces
+The `const`-ness of the source's elements determines if the factory produces
 cpp:const_buffer[] or cpp:mutable_buffer[].
 
 == Representing Any Memory Region
@@ -201,7 +200,7 @@ include::example$snippets/5a_contiguous_buffers.cpp[tag=mmap_buffer,indent=0]
 ----
 <1> A memory-mapped file
 <2> A scope guard will unmap the memory at the end of the scope.
-    Note that cpp:write[] can throw, and the coroutine can be destroyed
+    cpp:write[] can throw, and the coroutine can be destroyed
     while suspended on `co_await`.
 <3> Represent it as cpp:const_buffer[].
 <4> Sends the mapped pages directly, with no intermediate read into user-provided storage.

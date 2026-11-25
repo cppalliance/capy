@@ -1,7 +1,7 @@
 = Type-Erased Echo
 :page-mode: how-to
 
-Echo server demonstrating the compilation firewall pattern.
+An echo session demonstrating the compilation firewall pattern.
 
 == What This Example Shows
 
@@ -43,6 +43,9 @@ add_executable(echo_demo main.cpp)
 target_link_libraries(echo_demo PRIVATE echo_lib)
 ----
 
+This layout splits the session into its own library, as a project of your own would.
+The repository builds all three files into the single target `capy_example_type_erased_echo`.
+
 == Walkthrough
 
 === The Interface
@@ -54,7 +57,7 @@ include::example$type-erased-echo/echo.hpp[tag=session_decl]
 
 Clients of this header:
 
-* Can call `echo_session` with any stream
+* Can call `echo_session` with any stream, once it is wrapped in an cpp:any_stream[]
 * Do not depend on implementation details
 * Do not recompile when implementation changes
 

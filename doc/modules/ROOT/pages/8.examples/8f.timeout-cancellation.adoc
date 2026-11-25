@@ -23,8 +23,8 @@ include::example$timeout-cancellation/timeout_cancellation.cpp[tag=full]
 
 [source,cmake,role=external]
 ----
-add_executable(timeout_cancellation timeout_cancellation.cpp)
-target_link_libraries(timeout_cancellation PRIVATE Boost::capy)
+add_executable(capy_example_timeout_cancellation timeout_cancellation.cpp)
+target_link_libraries(capy_example_timeout_cancellation PRIVATE Boost::capy)
 ----
 
 == Walkthrough
@@ -32,8 +32,8 @@ target_link_libraries(timeout_cancellation PRIVATE Boost::capy)
 === Where Timing Lives
 
 Capy is the coroutine layer: no reactor, no clock, no hidden threads.
-Every thread Capy touches is one you handed it, a cpp:thread_pool[] worker,
-or the thread that calls cpp:run[]. Timing belongs to the I/O layer, where a reactor and
+Every thread Capy touches is one you handed it or a cpp:thread_pool[] worker.
+Timing belongs to the I/O layer, where a reactor and
 platform clock already exist for other reasons. Corosio provides
 `delay()` and `timeout()` built on its event loop.
 
@@ -63,8 +63,9 @@ callback from another library.
 
 === Racing a Fetch Against a Deadline
 
-`demo_timeout` builds two cpp:task[task]`<results<>>` children, each just a waker wait, and
-races them with cpp:when_any[]:
+`demo_timeout` builds two children, each just a waker wait.
+`await_fetch` returns a cpp:task[task]`<results<std::string>>`, and `deadline` returns a cpp:task[task]`<results<>>`.
+cpp:when_any[] races them:
 
 [source,cpp]
 ----
@@ -75,11 +76,11 @@ include::example$timeout-cancellation/timeout_cancellation.cpp[tag=race,indent=0
 `fetch_ch.fetch_ready`. `deadline` completes when a second user thread,
 playing the clock, sleeps for the allotted duration and wakes
 `deadline_waker`. Whichever wakes first wins.
-cpp:when_any[] requests stop on the loser, which is exactly how `await_fetch`
+cpp:when_any[] requests stop on the loser, which is how `await_fetch`
 learns to set `cancelled` and let the fetch worker thread bail out early.
 
 cpp:async_waker::wait[wait]`()` must only be awaited on a single-threaded
-xref:glossary.adoc#executor[executor], so both children run on cpp:thread_pool[]`(1)`. The slow, blocking
+xref:glossary.adoc#executor[executor] or a strand, so both children run on cpp:thread_pool[]`(1)`. The slow, blocking
 work itself still happens off that thread, on the two `std::thread`
 objects the demo owns directly.
 
@@ -90,7 +91,7 @@ objects the demo owns directly.
 include::example$timeout-cancellation/timeout_cancellation.cpp[tag=get_stop_token,indent=0]
 ----
 
-Inside a task, cpp:this_coro::stop_token[this_coro::stop_token] retrieves the stop token propagated from the caller. You can also access it through the full environment via `co_await this_coro::environment`.
+Inside a task, cpp:this_coro::stop_token[this_coro::stop_token] retrieves the stop token propagated from the caller. You can also access it through the full environment via `co_await capy::this_coro::environment`.
 
 === Checking for Cancellation
 
@@ -99,7 +100,11 @@ Inside a task, cpp:this_coro::stop_token[this_coro::stop_token] retrieves the st
 include::example$timeout-cancellation/timeout_cancellation.cpp[tag=check_stop,indent=0]
 ----
 
-Check `stop_requested()` at appropriate points—typically before expensive operations or at loop iterations.
+Check `stop_requested()` at appropriate points, typically before expensive operations or at loop iterations.
+
+This fragment reports the stop by throwing `std::system_error` with `std::errc::operation_canceled`.
+Capy's own operations report it as cpp:error::canceled[error::canceled] instead.
+See xref:4.coroutines/4f.cancellation.adoc#_the_canceled_convention[The canceled Convention].
 
 === Triggering Cancellation
 
@@ -118,6 +123,7 @@ include::example$timeout-cancellation/timeout_cancellation.cpp[tag=partial_resul
 ----
 
 Cancellation doesn't have to throw. You can return partial results or a sentinel value.
+This fragment comes from `process_items`, which `main` does not call, so its line does not appear in the output.
 
 == Output
 
@@ -139,7 +145,7 @@ Cancelled (returned nullopt)
 
 == Exercises
 
-1. Change the deadline to 60ms and observe the fetch winning the race instead
+1. Change the deadline thread's sleep from 30ms to 150ms and observe the fetch winning the race instead. The fetch wakes its waiter after about 125ms.
 2. Add cancellation support to the echo session from the previous example
 3. Create a task that cancels itself after processing N items
 

@@ -104,7 +104,8 @@ public:
 
         @param sv The expected data.
 
-        @return An error if existing data does not match.
+        @return `error::test_failure` if existing data does not match;
+        otherwise an empty error code.
     */
     std::error_code
     expect(std::string_view sv)
@@ -126,21 +127,26 @@ public:
     /** Asynchronously write data to the stream.
 
         Transfers up to `buffer_size( buffers )` bytes from the provided
-        const buffer sequence to the internal buffer. Before every write,
-        the attached @ref fuse is consulted to possibly inject an error
-        for testing fault scenarios. The returned `std::size_t` is the
-        number of bytes transferred.
+        const buffer sequence to the internal buffer. Before transferring
+        data, the attached @ref fuse is consulted to possibly inject an
+        error for testing fault scenarios. An empty buffer sequence or a
+        canceled write completes without consulting the fuse. The
+        returned `std::size_t` is the number of bytes transferred.
 
         @par Effects
         On success, appends the written bytes to the internal buffer.
-        If an error is injected by the fuse, the internal buffer remains
-        unchanged.
+        If an expectation was set with @ref expect, the matching prefix
+        is then removed from both the buffer and the expectation. On a
+        mismatch the write returns `error::test_failure`, transfers no
+        bytes, and leaves the internal buffer unchanged. If an error is
+        injected by the fuse, the internal buffer remains unchanged.
 
         @par Exception Safety
         Injected I/O conditions are reported via the `error_code`
-        component of the result. Throws `std::system_error` only when
-        the attached @ref fuse is in exception mode and reaches its
-        failure point; no-throw otherwise.
+        component of the result. Throws `std::system_error` when the
+        attached @ref fuse is in exception mode and reaches its failure
+        point. Throws `std::bad_alloc` if growing the internal buffer
+        fails.
 
         @par Cancellation
         If the environment's stop token is requested, the write
@@ -148,12 +154,14 @@ public:
         data. An empty buffer sequence is a no-op that completes
         successfully regardless of the stop token.
 
+        @throws std::system_error When the attached @ref fuse is in
+        exception mode and reaches its failure point.
+
+        @throws std::bad_alloc If growing the internal buffer fails.
+
         @param buffers The const buffer sequence containing data to write.
 
         @return An awaitable that await-returns `(error_code,std::size_t)`.
-
-        @throws std::system_error When the attached @ref fuse is in
-        exception mode and reaches its failure point.
 
         @see @ref fuse
     */

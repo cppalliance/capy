@@ -56,46 +56,48 @@ struct child_operation
 // tag::semantics_quote[]
 // From capy/concept/write_stream.hpp
 
-// Semantic Requirements:
+// @par Semantic Requirements
 //
-// Attempts to write up to buffer_size( buffers ) bytes from
+// Attempts to write up to `buffer_size( buffers )` bytes from
 // the buffer sequence to the stream.
 //
-// If buffer_size( buffers ) > 0:
+// If `buffer_size( buffers ) > 0`:
 //
-//   If !ec, then n >= 1 && n <= buffer_size( buffers ).
-//     n bytes were written from the buffer sequence.
-//   If ec, then n >= 0 && n < buffer_size( buffers ).
-//     n is the number of bytes written before the I/O
-//     condition arose.
+// @li If `!ec`, then `n >= 1 && n <= buffer_size( buffers )`.
+//     `n` bytes were written from the buffer sequence.
+// @li If `ec`, then `n >= 0 && n < buffer_size( buffers )`.
+//     `n` is the number of bytes written before the I/O
+//     contingency arose.
 //
-// Equivalently, n == buffer_size( buffers ) implies !ec: a
-// completion that writes the entire buffer sequence is a success,
-// even when the underlying operation also signals a condition. That
-// condition is reported on a subsequent write. This lets generic
-// composition algorithms such as when_all and when_any distinguish
+// Equivalently, `n == buffer_size( buffers )` implies `!ec`. A
+// completion that writes the entire buffer sequence is a success, even
+// when the underlying operation also signals a contingency. That
+// contingency is reported on a subsequent write. This lets generic
+// composition algorithms such as `when_all` and `when_any` distinguish
 // a completed transfer from a failure.
 //
-// If buffers_empty( buffers ) is true, n is 0. The empty
-// buffer is not itself a cause for error, but ec may reflect
+// If `buffers_empty( buffers )` is `true`, `n` is 0. The empty
+// buffer is not itself a cause for error, but `ec` may reflect
 // the state of the stream.
 //
 // Buffers in the sequence are consumed in order.
 //
-// Buffer Lifetime:
+// ...
 //
-// The caller must ensure that the memory referenced by buffers
-// remains valid until the co_await expression returns.
+// @par Buffer Lifetime
+//
+// The caller must ensure that the memory referenced by `buffers`
+// remains valid until the `co_await` expression returns.
 // end::semantics_quote[]
 
 // tag::lifetime_warning[]
-// Warning: Pass buffer sequences by value. A by-value parameter
-// is copied into the coroutine frame (or the awaitable's state),
-// so the returned awaitable is self-contained and may be stored,
-// moved across threads, or wrapped into a sender without lifetime
-// concerns. A by-const-reference parameter binds to caller storage
-// and is only safe when the awaitable is consumed immediately by
-// co_await in the same scope; storing such an awaitable produces
+// @warning **Pass buffer sequences by value.** A by-value parameter
+// is copied into the coroutine frame, or into the awaitable's state.
+// The returned awaitable is therefore self-contained. A caller may
+// store it, move it across threads, or wrap it into a sender without
+// lifetime concerns. A by-const-reference parameter binds to caller
+// storage. It is safe only when `co_await` consumes the awaitable
+// immediately, in the same scope. Storing such an awaitable produces
 // a dangling reference.
 // end::lifetime_warning[]
 

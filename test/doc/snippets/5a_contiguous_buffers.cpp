@@ -70,6 +70,14 @@ send_mapped_file(capy::test::stream& socket, int fd, std::size_t file_size)
 #endif // __has_include(<sys/mman.h>)
 
 
+// The page claims that passing a const_buffer to read_some fails to compile.
+// wrongBuffer is never instantiated, so check the claim here.
+template<class Stream, class Buffer>
+concept can_read_into = requires(Stream& s, Buffer b) { s.read_some(b); };
+
+static_assert(!can_read_into<capy::any_read_stream, capy::const_buffer>);
+static_assert(can_read_into<capy::any_read_stream, capy::mutable_buffer>);
+
 struct contiguous_buffers_test
 {
     void

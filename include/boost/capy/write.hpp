@@ -24,7 +24,7 @@
 namespace boost {
 namespace capy {
 
-/** Write an entire buffer sequence to a stream.
+/** Asynchronously write an entire buffer sequence to a stream.
 
     @par Await-effects
 
@@ -32,7 +32,7 @@ namespace capy {
     `stream.write_some` with consecutive portions of data from `buffers`
     until:
 
-    @li either the full content of @c buffers is processed,
+    @li either the full content of `buffers` is processed,
     @li or a contingency in `stream.write_some` occurs.
 
     If `buffer_size(buffers) == 0` then no awaiting `stream.write_some`
@@ -46,19 +46,17 @@ namespace capy {
     Upon a contingency, `n` represents the number of bytes written
     so far.
 
-    Otherwise `n` represents the number of bytes written.
-
     Contingencies:
 
-    @li The first contingency reported from awaiting @c stream.write_some
+    @li The first contingency reported from awaiting `stream.write_some`
     while not all bytes have been written. A contingency that accompanies
     the write which transfers the last bytes is not reported: a completed
     transfer is a success.
 
     Notable conditions:
 
-    @li @c cond::canceled — Operation was cancelled,
-    @li @c std::errc::broken_pipe — Peer closed connection.
+    @li `cond::canceled`: the operation was canceled.
+    @li `std::errc::broken_pipe`: the peer closed the connection.
 
 
     @par Await-postcondition
@@ -66,25 +64,30 @@ namespace capy {
     If `n == buffer_size(buffers)` the transfer completed and `ec` is
     success; otherwise `ec` is set.
 
-
-    @param stream The stream to write to. If the lifetime of `stream` ends
-    before the coroutine finishes, the behavior is undefined.
-
-    @param buffers The buffer sequence to write. If the lifetime of the buffer
-    sequence represented by `buffers` ends
-    before the coroutine finishes, the behavior is undefined.
-
-    @return A task yielding `results<std::size_t>` whose second element
-    is the number of bytes written.
-
     @par Remarks
 
-    Supports _ContextAwaitable cancellation_.
+    Cancellation follows the stop token of the caller's
+    @ref await_context.
+
+    @par Exception Safety
+    Calling `write` allocates the coroutine frame, which throws if the
+    frame allocator fails. Awaiting the task rethrows any exception
+    thrown by awaiting `stream.write_some`.
 
     @par Example
 
     @par !example example
 
+
+    @param stream The stream to write to. If the lifetime of `stream` ends
+    before the coroutine finishes, the behavior is undefined.
+
+    @param buffers The buffer sequence to write. If the lifetime of the
+    buffer sequence represented by `buffers` ends before the coroutine
+    finishes, the behavior is undefined.
+
+    @return A task yielding `results<std::size_t>` whose second element
+    is the number of bytes written.
 
     @see @ref WriteStream, @ref ConstBufferSequence, @ref ContextAwaitable, @ref results, @ref cond
 */

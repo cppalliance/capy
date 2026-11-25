@@ -26,17 +26,17 @@ include::example$snippets/6b_wrappers.cpp[tag=reading_function,indent=0]
 <2> Taking any read stream via a type-erased wrapper.
 
 The type-erased wrapper comes at a slight run-time cost resulting from
-indirect calls and a possible allocator use. In return, you get:
+indirect calls and an allocation at construction. In return, you get:
 
  1. Not having to ship the implementation of your functions in header files.
  2. Much improved compile times.
  3. Being able to select the read stream implementation at runtime.
 
-Note that this runtime cost is dwarfed by the cost of I/O itself. 
+The I/O itself usually costs far more.
 
-The allocation strategy used by the wrapper is very efficient. There is only one
-when the wrapper is created. The same allocation is reused when an xref:glossary.adoc#awaitable[awaitable] 
-(also type-erased) is created by the call to `read_some`.
+The wrapper allocates only when it is created. It allocates storage for the
+xref:glossary.adoc#awaitable[awaitable] (also type-erased), plus storage for the stream when the wrapper owns it.
+Each call to `read_some` reuses the awaitable storage, so steady-state reads never allocate.
 
 You decide whether the wrapper will exclusively own the stream, or if it will
 only be a reference, by selecting the appropriate constructor 
@@ -45,11 +45,10 @@ only be a reference, by selecting the appropriate constructor
 ----
 include::example$snippets/6b_wrappers.cpp[tag=ownership,indent=0]
 ----
-<1> Pointer constructor -- You have to make sure the stream outlives the wrapper.
-<2> Rvalue reference constructor -- The wrapper will manage the stream's lifetime.
+<1> Pointer constructor: you have to make sure the stream outlives the wrapper.
+<2> By-value constructor: the wrapper takes the stream by value and manages its lifetime.
 
-There are analogous wrappers for cpp:WriteStream[] and cpp:Stream[] concepts.
-This is shown in the table.
+There are analogous wrappers for the cpp:WriteStream[] and cpp:Stream[] concepts:
 
 [cols="1,1"]
 |===
@@ -64,3 +63,7 @@ This is shown in the table.
 | cpp:Stream[]
 | cpp:any_stream[]
 |===
+
+The wrappers are not thread-safe.
+cpp:any_stream[] allows one read and one write in flight at the same time, but never two of the same kind.
+Each class reference states the exact rules.

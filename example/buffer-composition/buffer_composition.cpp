@@ -94,7 +94,7 @@ void demonstrate_buffer_array()
     
     // In real code with streams:
     // co_await write(stream, http_response);
-    // This performs scatter/gather I/O - single syscall for all buffers
+    // Scatter/gather I/O: each write_some can pass several buffers to the OS at once
 }
 
 void demonstrate_mutable_buffers()

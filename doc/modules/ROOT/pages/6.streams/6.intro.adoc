@@ -11,10 +11,10 @@
 :page-mode: explanation
 
 Capy comes with an API for byte transport in the form of _streams_.
-Any concrete transport mechanism is expected to use this API in order to
-interoperate with Capy-based programs. While such concrete mechanisms 
--- like IOCP or io_uring -- are part of a separate library (Corosio), 
-Capy defines the API. 
+Any concrete transport mechanism is expected to use this API to
+interoperate with Capy-based programs. Concrete mechanisms, such as IOCP
+or io_uring, are part of a separate library (Corosio).
+Capy defines the API.
 
 The high-level idea is that data is read and written in chunks, and
 you keep awaiting individual chunk transport in a loop. 
@@ -22,5 +22,6 @@ you keep awaiting individual chunk transport in a loop.
 The streams API consists of
 
  * xref:6.streams/6a.concepts.adoc[stream concepts],
- * algorithms implementing loops on top of stream concepts,
+ * algorithms implementing loops on top of stream concepts: cpp:read[], cpp:write[],
+   cpp:read_at_least[], and cpp:write_at_least[],
  * xref:6.streams/6b.wrappers.adoc[type-erased wrappers] for streams.

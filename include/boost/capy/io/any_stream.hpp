@@ -42,9 +42,8 @@ namespace capy {
     @par Implicit Conversion
     This class implicitly converts to `any_read_stream&` or
     `any_write_stream&`, allowing it to be passed to functions
-    that accept only one capability. However, do not move through
-    a base reference as this would leave the other base in an
-    invalid state.
+    that accept only one capability. Moving from one base reference
+    empties that base only; the wrapper is then unusable.
 
     @par Thread Safety
     Not thread-safe. Concurrent operations of the same type
@@ -66,7 +65,7 @@ class any_stream
     void (*destroy_)(void*) noexcept = nullptr;
 
 public:
-    /** Destructor.
+    /** Destroy the wrapper.
 
         Ends any operation in flight, then destroys the owned stream
         (if any). Base class destructors release their cached awaitable
@@ -91,7 +90,7 @@ public:
     */
     any_stream() = default;
 
-    /** Non-copyable.
+    /** Copy construction is disabled.
 
         The awaitable caches are per-instance and cannot be shared.
 
@@ -160,6 +159,13 @@ public:
         Allocates storage and moves the stream into this wrapper.
         The wrapper owns the stream and destroys it.
 
+        @par Exception Safety
+        Strong guarantee if `S` is nothrow move constructible; otherwise
+        the storage may leak.
+
+        @throws std::bad_alloc If allocation fails.
+        @throws Any exception thrown by moving `s`.
+
         @param s The stream to take ownership of. Must satisfy both
             ReadStream and WriteStream concepts.
     */
@@ -198,6 +204,8 @@ public:
 
         Wraps the given stream by pointer. The stream must remain
         valid for the lifetime of this wrapper.
+
+        @throws std::bad_alloc If allocating the awaitable storage fails.
 
         @param s Pointer to the stream to wrap. Must satisfy both
             ReadStream and WriteStream concepts.

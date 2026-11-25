@@ -1,5 +1,5 @@
 = Coroutine Foundations
-:page-mode: tutorial
+:page-mode: explanation
 
 == Functions and the Call Stack
 
@@ -21,12 +21,12 @@ A *coroutine* is a function that can suspend its execution and resume later from
 When a coroutine suspends:
 
 * Its local variables are preserved
-* The instruction pointer (where you are in the code) is saved
+* The coroutine records which suspension point it stopped at
 * Control returns to the caller or some other code
 
 When a coroutine resumes:
 
-* Local variables are restored to their previous values
+* Local variables still hold the values they had at suspension, because they never left the frame
 * Execution continues from the suspension point
 
 This capability is implemented through a *coroutine frame*—a block of memory, typically heap-allocated, that stores the coroutine's state. Unlike stack frames, coroutine frames persist across suspension points. xref:2.cpp20-coroutines/2d.advanced.adoc[Advanced Topics] covers when the compiler can place one elsewhere instead.
@@ -34,11 +34,11 @@ This capability is implemented through a *coroutine frame*—a block of memory, 
 .Conceptual illustration - not real syntax
 [source,cpp,role=pseudocode]
 ----
-task<int> fetch_and_process()
+capy::task<int> fetch_and_process()
 {
     auto data = co_await fetch_from_network();  // suspends here
     // When resumed, 'data' contains the fetched result
-    return process(data);
+    co_return process(data);
 }
 ----
 
@@ -79,7 +79,7 @@ Coroutines restore linear code structure while maintaining asynchronous behavior
 include::example$snippets/2a_foundations.cpp[tag=coroutine_request,indent=0]
 ----
 
-This code reads like the original blocking version. Local variables like `request`, `parsed`, and `data` exist naturally in their scope. Yet the function suspends at each `co_await` point, allowing other work to proceed while waiting.
+Here cpp:task[capy::task] is Capy's coroutine return type: a lazy coroutine that produces a result when awaited. This code reads like the original blocking version. Local variables like `request`, `parsed`, and `data` exist naturally in their scope. Yet the function suspends at each `co_await` point, allowing other work to proceed while waiting.
 
 === Beyond Asynchrony
 

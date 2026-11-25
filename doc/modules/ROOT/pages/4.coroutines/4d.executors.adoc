@@ -15,7 +15,7 @@ This rule is what keeps shared state safe by default. Consider a connection hand
 include::example$snippets/4d_executors.cpp[tag=handle_client]
 ----
 
-Start this on a strand, and every resumption—after `conn.read()` and after `conn.write()`—happens on that strand. The update to `conn.stats.requests` is therefore free of data races without any mutex.
+Start this on a strand, and every resumption happens on that strand, both after `conn.read()` and after `conn.write()`. The update to `conn.stats.requests` is therefore free of data races without any mutex.
 
 Without the invariant, the coroutine could resume after `co_await conn.read()` on an `io_uring` completion thread, a pool thread, or wherever the I/O subsystem completed the operation. Correct code would then need either a mutex around every access to shared state or an explicit _resume-on-this-strand_ step after every `co_await`. A mutex defeats the purpose of the strand, and a single forgotten resume step reintroduces the data race.
 
@@ -23,9 +23,9 @@ Because the invariant holds, the safe behavior is automatic and the unsafe behav
 
 === How the Invariant Is Maintained
 
-Affinity propagates forward. Starting a task with cpp:run_async[]`(ex)` binds it to `ex`. A child `co_await`-ed from that task inherits the same executor automatically, and so on down the chain. When a child completes, control returns to its caller _through the caller's executor_. When both share the same executor—the common case—that return is a direct xref:glossary.adoc#symmetric-transfer[symmetric transfer] with no queuing. Only a deliberate executor change requires a dispatch.
+Affinity propagates forward. Starting a task with cpp:run_async[]`(ex)` binds it to `ex`. A child `co_await`-ed from that task inherits the same executor automatically, and so on down the chain. When a child completes, control returns to its caller _through the caller's executor_. When both share the same executor, as is common, that return is a direct xref:glossary.adoc#symmetric-transfer[symmetric transfer] with no queuing. Only a deliberate executor change requires a post.
 
-That deliberate change is what `run` provides. It runs a subtree on a different executor and restores the caller's executor when the subtree completes (see xref:4.coroutines/4c.launching.adoc[Starting Coroutines]). This is also why I/O objects with executor-bound invariants—a socket tied to one `io_context`, a Windows IOCP handle, executor-specific timer state—remain safe. A coroutine holding them never resumes on the wrong executor mid-body.
+That deliberate change is what `run` provides. It runs a subtree on a different executor and restores the caller's executor when the subtree completes (see xref:4.coroutines/4c.launching.adoc[Starting Coroutines]). This is also why I/O objects with executor-bound invariants remain safe. Examples include a socket tied to one I/O execution context (such as Corosio's `io_context`), a Windows IOCP handle, and executor-specific timer state. A coroutine holding them never resumes on the wrong executor mid-body.
 
 == The Executor Concept
 
@@ -39,7 +39,7 @@ rationale behind them.
 Both methods schedule a coroutine for execution, but with different semantics:
 
 `dispatch(c)`::
-May execute inline if the current thread is already associated with the executor. Returns a xref:glossary.adoc#coroutine-handle[coroutine handle]—either `c.h` for inline resumption via symmetric transfer, or `std::noop_coroutine()` if the work was queued.
+Returns a xref:glossary.adoc#coroutine-handle[coroutine handle] and never resumes the coroutine itself. When resuming inline is safe, it returns `c.h`, and the caller resumes it by symmetric transfer. One such case is a thread that already runs the executor's work. Otherwise it queues the work and returns `std::noop_coroutine()`.
 
 `post(c)`::
 Always queues the xref:glossary.adoc#continuation[continuation] for later execution. Never executes inline. Returns void. Use when you need guaranteed asynchrony.
@@ -50,14 +50,14 @@ Returns a reference to the xref:glossary.adoc#execution-context[execution contex
 
 == executor_ref: Type-Erased Executor
 
-cpp:executor_ref[] wraps any executor in a xref:glossary.adoc#type-erased[type-erased] container, allowing code to work with executors without knowing their concrete type:
+cpp:executor_ref[] refers to any executor through a xref:glossary.adoc#type-erased[type-erased] reference, allowing code to work with executors without knowing their concrete type:
 
 [source,cpp]
 ----
 include::example$programs/4d_executors_executor_ref.cpp[tag=full]
 ----
 
-cpp:executor_ref[] stores a reference to the underlying executor—the original executor must outlive the `executor_ref`.
+cpp:executor_ref[] stores a reference to the underlying executor, so the original executor must outlive the `executor_ref`.
 
 == thread_pool: Multi-Threaded Execution
 
@@ -95,7 +95,7 @@ include::example$snippets/4d_executors.cpp[tag=my_context]
 
 == strand: Serialization Without Mutexes
 
-A cpp:strand[] ensures that handlers are executed in order, with no two handlers executing concurrently. This eliminates the need for mutexes when all access to shared data goes through the strand.
+A cpp:strand[] serializes the coroutine resumptions that go through it, so no two of them run concurrently. Work submitted with `post` runs in submission order. This eliminates the need for mutexes when all access to shared data goes through the strand.
 
 [source,cpp]
 ----
@@ -106,7 +106,7 @@ include::example$snippets/4d_executors.cpp[tag=shared_resource]
 
 The strand maintains a queue of pending work. When work is dispatched:
 
-1. If the calling thread is already executing within the strand, the new work runs immediately, inline
+1. If the calling thread is already executing within the strand, `dispatch` returns the coroutine handle so the caller resumes it by symmetric transfer
 2. Otherwise, the new work is queued, even if the strand is idle
 3. When the current work completes, the next queued item runs
 
@@ -114,9 +114,9 @@ This provides logical single-threading without blocking physical threads.
 
 === When to Use Strands
 
-* *Thread-affine resources* — When code must not be called from multiple threads simultaneously
-* *Ordered operations* — When operations must complete in a specific order
-* *Avoiding mutexes* — When mutex overhead is unacceptable
+* *Thread-affine resources*: When code must not be called from multiple threads simultaneously
+* *Ordered submission*: When posted work must run in the order it was posted
+* *Avoiding mutexes*: When mutex overhead is unacceptable
 
 == Single-Threaded vs Multi-Threaded Patterns
 

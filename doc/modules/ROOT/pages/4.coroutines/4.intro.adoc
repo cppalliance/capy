@@ -11,7 +11,7 @@
 = Coroutines in Capy
 :page-mode: explanation
 
-Capy's coroutine model is built around a single principle: asynchronous code should look like synchronous code. The code reads top to bottom, with local variables and normal control flow. Capy handles suspension, resumption, thread scheduling, and xref:glossary.adoc#cancellation[cancellation] behind the scenes. The result is code that is both easier to read and harder to get wrong.
+Capy's coroutine model is built around a single principle: asynchronous code should look like synchronous code. The code reads top to bottom, with local variables and normal control flow. Capy handles suspension, resumption, and thread scheduling behind the scenes, and it propagates xref:glossary.adoc#cancellation[cancellation] requests. The result is code that is both easier to read and harder to get wrong.
 
 == What This Section Covers
 
@@ -25,9 +25,9 @@ Capy's coroutine model is built around a single principle: asynchronous code sho
   cpp:run_async[], and binding child tasks with cpp:run[].
 * xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] -- xref:glossary.adoc#executor[Executors],
   xref:glossary.adoc#execution-context[execution contexts], thread pools, and xref:glossary.adoc#strand[strands].
-* xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol] -- How the executor and
-  xref:glossary.adoc#stop-token[stop token] propagate through a chain of awaited coroutines.
-* xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation] -- Cooperative
+* xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol]: How the execution environment, including the executor and
+  xref:glossary.adoc#stop-token[stop token], propagates through a chain of awaited coroutines.
+* xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation]: Cooperative
   cancellation with `std::stop_token`, and how Capy tasks observe it.
 * xref:4.coroutines/4l.synchronization.adoc[Synchronization Primitives] -- Choosing between a strand,
   cpp:async_mutex[], cpp:async_event[], and cpp:async_waker[], and the rules they share.

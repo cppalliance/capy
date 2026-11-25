@@ -81,15 +81,17 @@ capy::task<> test_write_some(capy::WriteStream auto& stream, capy::ConstBufferSe
 } 
 // end::write_some_demo[]
 
-capy::task<> intro(capy::ReadStream auto& stream, capy::ConstBufferSequence auto buf)
+capy::task<> echo(capy::Stream auto& stream)
 {
+char buf[1024];
 // tag::write_loop[]
 for (;;)  // <1>
 {
   auto [ec, n] = co_await stream.read_some(capy::make_buffer(buf));         // <2>
   auto [wec, _] = co_await capy::write(stream, capy::const_buffer(buf, n)); // <3>
 
-  // ...
+  if (wec || ec)
+    co_return;
 }
 // end::write_loop[]
 }
@@ -203,10 +205,21 @@ struct concepts_test
     }
 
     void
+    testEchoLoop()
+    {
+        auto [a, b] = capy::test::make_stream_pair();
+        b.provide("ping");
+        b.close();
+        capy::test::run_blocking()(echo(a));
+        BOOST_TEST(b.data() == "ping");
+    }
+
+    void
     run()
     {
         testCustomReadStream();
         testGenericOverTestStream();
+        testEchoLoop();
     }
 };
 

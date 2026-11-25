@@ -8,7 +8,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Full program shown in pages/4.coroutines/4b.launching.adoc.
+// Full program shown in pages/4.coroutines/4c.launching.adoc.
 
 // tag::full[]
 #include <boost/capy.hpp>

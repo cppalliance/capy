@@ -7,20 +7,15 @@ The cpp:Executor[] concept exists to answer one question: when a coroutine is re
 
 == Definition
 
-[source,cpp]
-----
-include::example$include/boost/capy/concept/executor.hpp[tag=executor_concept]
-----
+The formal definition lives in the reference at cpp:Executor[]. An cpp:Executor[] provides exactly two scheduling operations:
 
-An cpp:Executor[] provides exactly two scheduling operations:
-
-=== `dispatch(c)` -- Execute If Safe
+=== `dispatch(c)`: Execute If Safe
 
 If the executor determines it is safe (e.g., the current thread is already associated with the executor's context), returns `c.h` for xref:glossary.adoc#symmetric-transfer[symmetric transfer]. Otherwise, posts the xref:glossary.adoc#continuation[continuation] for later execution and returns `std::noop_coroutine()`. The caller uses the returned handle for symmetric transfer from `await_suspend`, or calls `.resume()` at the event loop pump level.
 
 === `post(c)` -- Always Queue
 
-Queues the continuation for later execution without ever executing it inline. Never blocks. The continuation is linked into the executor's internal queue via its cpp:continuation::reserved[reserved] slot -- no per-post heap allocation.
+Queues the continuation for later execution without ever executing it inline. It returns without waiting for the continuation to run. The continuation is linked into the executor's internal queue via its cpp:continuation::reserved[reserved] slot, so no per-post heap allocation occurs.
 
 === `context()` -- Access the Execution Context
 
@@ -69,13 +64,13 @@ A conforming implementation:
 include::example$snippets/9k_executor.cpp[tag=dispatch_impl,indent=0]
 ----
 
-This design enables the common fast path -- same-executor dispatch at `final_suspend` -- to avoid queuing entirely.
+This design lets the common fast path, a same-executor dispatch, avoid queuing entirely.
 
 === I/O Awaitables and Symmetric Transfer
 
 I/O awaitables return `std::noop_coroutine()` from `await_suspend` rather than a handle for symmetric transfer. The I/O operation is initiated during `await_suspend`, but completion comes from the reactor or proactor asynchronously. The xref:glossary.adoc#awaitable[awaitable] cannot know which coroutine to transfer to at suspension time.
 
-Symmetric transfer from cpp:Executor::dispatch[dispatch] is used at a different level: when a child coroutine completes and its `final_suspend` dispatches the parent's continuation through the executor. If the parent is on the same executor, cpp:Executor::dispatch[dispatch] returns the parent's handle for direct symmetric transfer.
+Symmetric transfer from cpp:Executor::dispatch[dispatch] is used at a different level. When the last child of cpp:when_all[] or cpp:when_any[] finishes, its `final_suspend` dispatches the parent through the caller's executor. If the parent is on the same executor, cpp:Executor::dispatch[dispatch] returns the parent's handle for direct symmetric transfer. cpp:run_async[] also starts its task through cpp:Executor::dispatch[dispatch]. A plain cpp:task[] involves no executor at `final_suspend`: it transfers directly to its parent. cpp:run[] on another executor returns to the caller's executor through cpp:Executor::post[post].
 
 [[why-not-defer]]
 == Why Two Operations, Not Three
@@ -120,7 +115,7 @@ coroutine to coroutine control transfer, one needs to build a
 queue and a scheduler.
 ____
 
-When `task<T>::await_suspend` returns the parent's coroutine handle, the compiler performs a tail-call-like transfer directly to the parent. No queue, no executor submission, no `defer`. The optimization that `defer` provides through a runtime hint, symmetric transfer provides through a compile-time guarantee.
+When a completing task's `final_suspend` awaiter returns the parent's coroutine handle, the compiler performs a tail-call-like transfer directly to the parent. No queue, no executor submission, no `defer`. The optimization that `defer` provides through a runtime hint, symmetric transfer provides through a compile-time guarantee.
 
 Corosio confirms this in practice: its entire I/O layer -- sockets, acceptors, timers, resolvers, signals -- across all five backends (epoll, kqueue, io_uring, IOCP, select) uses only cpp:Executor::dispatch[dispatch] and cpp:Executor::post[post]. No code path requires `defer`.
 
@@ -221,7 +216,7 @@ Two pointers fit in two registers. cpp:executor_ref[] can be passed by value as 
 
 `std::function` and small-buffer-optimized type erasure wrappers have overhead that executor usage cannot tolerate:
 
-- **Heap allocation.** `std::function` may allocate when the callable exceeds the SBO threshold. Executor dispatch happens on every I/O completion -- allocation on the hot path is unacceptable.
+- **Heap allocation.** `std::function` may allocate when the callable exceeds the SBO threshold. Executor dispatch happens on every I/O completion, and allocation on the hot path is unacceptable.
 
 - **Reference counting.** `std::shared_ptr`-based wrappers add atomic reference count operations on every copy. Executors are copied frequently as they propagate through coroutine chains.
 
@@ -237,7 +232,7 @@ cpp:executor_ref[] separates the vtable from the object. The vtable is a `static
 
 === Reference Semantics
 
-cpp:executor_ref[] stores a pointer to the executor, not a copy. The executor must outlive the cpp:executor_ref[]. This matches how executors propagate through coroutine chains: the executor is owned by the execution context (which outlives all coroutines running on it), and cpp:executor_ref[] is a lightweight handle passed through `await_suspend` and stored in I/O operation structures.
+cpp:executor_ref[] stores a pointer to the executor, not a copy. The executor must outlive the cpp:executor_ref[]. This matches how executors propagate through coroutine chains. The executor lives in the frame that started the xref:glossary.adoc#segment[segment] (the cpp:run_async[] trampoline or the cpp:run[] awaitable), which outlives the segment. cpp:executor_ref[] is a lightweight handle passed through `await_suspend` and stored in I/O operation structures.
 
 == The I/O Completion Pattern
 
@@ -252,20 +247,20 @@ When a coroutine `co_await`s an I/O awaitable, the awaitable's `await_suspend` r
 include::example$snippets/9k_executor.cpp[tag=capture_at_initiation,indent=0]
 ----
 
-=== Dispatch at Completion
+=== Resume at Completion
 
-When the I/O completes (from the reactor thread for epoll, the completion port for IOCP, or the select loop), the awaitable uses the stored executor to resume the coroutine via the embedded continuation:
+When the I/O completes (from the reactor thread for epoll, the completion port for IOCP, or the select loop), the awaitable resumes the embedded continuation through the stored executor. Posting it, as below, is the simplest valid choice:
 
 [source,cpp]
 ----
 include::example$snippets/9k_executor.cpp[tag=dispatch_at_completion,indent=0]
 ----
 
-No heap allocation occurs -- the continuation is embedded in the awaitable, which is alive for the duration of the suspension. A worker thread dequeues the continuation and calls `cont_.h.resume()`.
+No heap allocation occurs, because the continuation is embedded in the awaitable, which is alive for the duration of the suspension. A worker thread dequeues the continuation and resumes its handle. cpp:thread_pool[] does this through cpp:safe_resume[].
 
 === Platform Independence
 
-This pattern is identical across all five Corosio backends: epoll and io_uring (Linux), kqueue (BSD/macOS), IOCP (Windows), and select (portable fallback). The executor concept and cpp:executor_ref[] provide the abstraction that makes this possible. The backend-specific code deals with I/O readiness or completion notification. The executor-specific code deals with coroutine scheduling.
+Corosio dispatches instead, so the continuation resumes inline when the completion arrives on the context's own thread. This pattern is identical across all five Corosio backends: epoll and io_uring (Linux), kqueue (BSD/macOS), IOCP (Windows), and select (portable fallback). The executor concept and cpp:executor_ref[] provide the abstraction that makes this possible. The backend-specific code deals with I/O readiness or completion notification. The executor-specific code deals with coroutine scheduling.
 
 NOTE: For the TLS save/restore protocol required around `.resume()` calls (cpp:safe_resume[]), including which two call sites are deliberately exempt, see xref:4.coroutines/4h.allocators.adoc#_tls_preservation[TLS Preservation].
 
@@ -286,6 +281,6 @@ include::example$snippets/9k_executor.cpp[tag=minimal_executor]
 
 == Summary
 
-The cpp:Executor[] concept provides cpp:Executor::dispatch[dispatch] and cpp:Executor::post[post] for coroutine scheduling, work tracking for event loop lifetime, and cpp:Executor::context[context()] for service access. The design descends from Asio's executor model but is adapted for coroutines: `defer` is replaced by symmetric transfer, function objects are replaced by cpp:continuation[]`&` for zero-allocation intrusive queuing, and cpp:Executor::dispatch[dispatch] returns `std::coroutine_handle<>` for symmetric transfer at `final_suspend`.
+The cpp:Executor[] concept provides cpp:Executor::dispatch[dispatch] and cpp:Executor::post[post] for coroutine scheduling, work tracking for event loop lifetime, and cpp:Executor::context[context()] for service access. The design descends from Asio's executor model but is adapted for coroutines: `defer` is replaced by symmetric transfer, function objects are replaced by cpp:continuation[]`&` for zero-allocation intrusive queuing, and cpp:Executor::dispatch[dispatch] returns `std::coroutine_handle<>` for symmetric transfer.
 
-cpp:executor_ref[] type-erases any executor into two pointers, enabling platform-independent I/O completion dispatch with zero allocation and predictable cache behavior. The capture-at-initiation / dispatch-at-completion pattern is the fundamental use case the concept serves.
+cpp:executor_ref[] type-erases any executor into two pointers, enabling platform-independent I/O completion dispatch with zero allocation and predictable cache behavior. The capture-at-initiation / resume-at-completion pattern is the fundamental use case the concept serves.

@@ -131,12 +131,16 @@ using awaitable_return_t = decltype(
     aggregates with matching member types and tuple-like types
     with matching element types.
 
-    @tparam T The type to decompose.
-    @tparam Types The expected element types after decomposition.
+    Only types with one to four elements are recognized. Element types
+    are compared after decay, as `std::make_tuple` produces them. A type
+    that does not decompose satisfies `decomposes_to<T>` with an empty
+    `Types`.
 
     @par Example
     @par !example example
 
+    @tparam T The type to decompose.
+    @tparam Types The expected element types after decomposition.
 */
 template <typename T, typename... Types>
 concept decomposes_to = requires(T&& t) {
@@ -149,9 +153,6 @@ concept decomposes_to = requires(T&& t) {
     (has `await_resume`) and its return type decomposes to the
     specified typelist.
 
-    @tparam A The awaitable type.
-    @tparam Types The expected element types after decomposition.
-
     @par Requirements
     @li `A` must be an awaitable (directly or via `operator co_await`)
     @li The return type of `await_resume()` must decompose to `Types...`
@@ -159,6 +160,8 @@ concept decomposes_to = requires(T&& t) {
     @par Example
     @par !example example
 
+    @tparam A The awaitable type.
+    @tparam Types The expected element types after decomposition.
 */
 template<typename A, typename... Types>
 concept awaitable_decomposes_to = requires {

@@ -610,9 +610,10 @@ public:
 
 } // namespace detail
 
-/** Execute a range of `results`-returning awaitables concurrently.
+/** Asynchronously execute a range of `results`-returning awaitables concurrently.
 
-    Starts all awaitables simultaneously and waits for all to complete.
+    Posts every awaitable to the caller's executor, in input order, and
+    waits for all to complete. The executor decides the order they start.
     On success, extracted payloads are collected in a vector preserving
     input order. The first error_code makes a stop request that every
     sibling observes, and is propagated in the outer results.
@@ -648,7 +649,8 @@ public:
     @par Await-returns
     An object of type `results<std::vector<PayloadT>>` destructuring as
     `[ec, values]`, where `PayloadT` is the payload of one child's
-    `results`.
+    `results`. The payload of `results<T>` is `T`. The payload of any
+    other `results<Ts...>` is `std::tuple<Ts...>`.
 
     `ec` is the first non-zero `ec` await-returned by a child, in
     completion order rather than input order. The `ec` of every other
@@ -668,35 +670,44 @@ public:
     payload per input awaitable; otherwise `values` is empty.
 
     @par Remarks
-    Supports _ContextAwaitable cancellation_.
+    Cancellation follows the stop token of the caller's
+    @ref await_context.
 
     @par Thread Safety
     The returned task must be awaited from a single execution context.
     Child awaitables execute concurrently but complete through the caller's
     executor.
 
-    @param awaitables Range of `results`-returning awaitables to execute
-        concurrently (must not be empty).
-
-    @return A task yielding `results<vector<PayloadT>>` where PayloadT
-        is the payload extracted from each child's results.
-
-    @throws std::invalid_argument if range is empty (thrown before
-        coroutine suspends).
-
     @par Exception Safety
     If a child throws, the first child exception is rethrown after
     all children complete (exception beats error_code).
 
-    @note If a branch's coroutine is abandoned before it finishes, for
-        example by teardown of its execution context, `when_all`
-        requests stop on the remaining branches, and the awaiting
-        parent is abandoned rather than resumed once the last branch
-        has finished or been abandoned.
+    @throws std::invalid_argument From the await, if the range is empty.
+
+    @note If a branch's coroutine is abandoned before it finishes,
+        `when_all` requests stop on the remaining branches. Teardown
+        of the branch's execution context is one such case. Once the
+        last branch has finished or been abandoned, the awaiting
+        parent is abandoned rather than resumed.
 
     @par Example
     @par !example example_1
 
+
+    @param awaitables Range of `results`-returning awaitables to execute
+        concurrently (must not be empty).
+        The task refers to the range until the await starts. If the
+        range is a temporary and the task is awaited after the
+        full-expression that created it, the behavior is undefined.
+        A forward range whose elements are lvalues is copied, or moved
+        when passed as an rvalue. The elements of any other range are
+        moved into a vector. Copying an owning container of move-only
+        elements, such as `std::vector<task<...>>`, is ill-formed, so
+        pass it as an rvalue. A view such as `std::span` is copied and
+        its elements are moved from, so their storage must remain valid
+        until the await completes.
+
+    @return A task yielding `results<std::vector<PayloadT>>`.
 
     @see @ref ContextAwaitableRange, @ref when_all
 */
@@ -742,9 +753,10 @@ template<ContextAwaitableRange R>
     co_return results<std::vector<PayloadT>>{std::error_code(), std::move(values)};
 }
 
-/** Execute a range of void `results`-returning awaitables concurrently.
+/** Asynchronously execute a range of void `results`-returning awaitables concurrently.
 
-    Starts all awaitables simultaneously and waits for all to complete.
+    Posts every awaitable to the caller's executor, in input order, and
+    waits for all to complete. The executor decides the order they start.
     Since all awaitables return results<>, no payload values are
     collected. The first error_code makes a stop request that every
     sibling observes, and is propagated. Exceptions always beat error
@@ -788,34 +800,44 @@ template<ContextAwaitableRange R>
     await-returned success.
 
     @par Remarks
-    Supports _ContextAwaitable cancellation_.
+    Cancellation follows the stop token of the caller's
+    @ref await_context.
 
     @par Thread Safety
     The returned task must be awaited from a single execution context.
     Child awaitables execute concurrently but complete through the caller's
     executor.
 
-    @param awaitables Range of `results<>`-returning awaitables to
-        execute concurrently (must not be empty).
-
-    @return A task yielding `results<>` whose ec is the first child
-        error, or default-constructed on success.
-
-    @throws std::invalid_argument if range is empty.
-
     @par Exception Safety
     If a child throws, the first child exception is rethrown after
     all children complete (exception beats error_code).
 
-    @note If a branch's coroutine is abandoned before it finishes, for
-        example by teardown of its execution context, `when_all`
-        requests stop on the remaining branches, and the awaiting
-        parent is abandoned rather than resumed once the last branch
-        has finished or been abandoned.
+    @throws std::invalid_argument From the await, if the range is empty.
+
+    @note If a branch's coroutine is abandoned before it finishes,
+        `when_all` requests stop on the remaining branches. Teardown
+        of the branch's execution context is one such case. Once the
+        last branch has finished or been abandoned, the awaiting
+        parent is abandoned rather than resumed.
 
     @par Example
     @par !example example_2
 
+
+    @param awaitables Range of `results<>`-returning awaitables to
+        execute concurrently (must not be empty).
+        The task refers to the range until the await starts. If the
+        range is a temporary and the task is awaited after the
+        full-expression that created it, the behavior is undefined.
+        A forward range whose elements are lvalues is copied, or moved
+        when passed as an rvalue. The elements of any other range are
+        moved into a vector. Copying an owning container of move-only
+        elements, such as `std::vector<task<...>>`, is ill-formed, so
+        pass it as an rvalue. A view such as `std::span` is copied and
+        its elements are moved from, so their storage must remain valid
+        until the await completes.
+
+    @return A task yielding `results<>` whose `ec` is the first child error, if any.
 
     @see @ref ContextAwaitableRange, @ref when_all
 */
@@ -850,7 +872,7 @@ template<ContextAwaitableRange R>
     co_return results<>{};
 }
 
-/** Execute `results`-returning awaitables concurrently, inspecting error codes.
+/** Asynchronously execute `results`-returning awaitables concurrently, inspecting error codes.
 
     Overload selected when all children return results<Ts...>.
     The error_code is lifted out of each child into a single outer
@@ -878,7 +900,8 @@ template<ContextAwaitableRange R>
     @par Await-returns
     An object of type `results<P1, ..., Pn>` destructuring as
     `[ec, v1, ..., vn]`, where `Pi` is the payload of the i-th child's
-    `results`.
+    `results`. The payload of `results<T>` is `T`. The payload of any
+    other `results<Ts...>` is `std::tuple<Ts...>`.
 
     `ec` is the first non-zero `ec` await-returned by a child, in
     completion order rather than argument order. The `ec` of every other
@@ -899,7 +922,8 @@ template<ContextAwaitableRange R>
     and `ec` is success only if every child await-returned success.
 
     @par Remarks
-    Supports _ContextAwaitable cancellation_.
+    Cancellation follows the stop token of the caller's
+    @ref await_context.
 
     @par Thread Safety
     The returned task must be awaited from a single execution context.
@@ -910,17 +934,21 @@ template<ContextAwaitableRange R>
     If a child throws, the first child exception is rethrown after
     all children complete (exception beats error_code).
 
-    @note If a branch's coroutine is abandoned before it finishes, for
-        example by teardown of its execution context, `when_all`
-        requests stop on the remaining branches, and the awaiting
-        parent is abandoned rather than resumed once the last branch
-        has finished or been abandoned.
+    @note If a branch's coroutine is abandoned before it finishes,
+        `when_all` requests stop on the remaining branches. Teardown
+        of the branch's execution context is one such case. Once the
+        last branch has finished or been abandoned, the awaiting
+        parent is abandoned rather than resumed.
+
+    @par Example
+    @par !example example_3
 
     @param awaitables One or more awaitables each returning
         results<Ts...>.
 
-    @return A task yielding `results<R1, R2, ..., Rn>` where each Ri
-        follows the payload flattening rules.
+    @return A task yielding `results<P1, ..., Pn>`.
+
+    @see @ref ContextAwaitable, @ref when_any
 */
 template<ContextAwaitable... As>
     requires (sizeof...(As) > 0)

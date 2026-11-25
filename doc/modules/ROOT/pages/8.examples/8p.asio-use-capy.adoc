@@ -11,7 +11,7 @@ Using Boost.Asio async operations directly inside a Capy coroutine through a `us
 
 [NOTE]
 ====
-This example is built when a `Boost::asio` target is available. The full source is in `example/asio/` (`use_capy_example.cpp` and the reusable token in `api/use_capy.hpp`).
+This example is built when a `Boost::asio` target is available. The full source is in `example/asio/` (`use_capy_example.cpp` and the reusable token in `api/use_capy.hpp`), and its CMake target is `capy_example_use_capy`.
 The same directory holds two more programs.
 xref:8.examples/8t.asio-callbacks.adoc[Using a Capy Stream from Asio] describes `asio_callbacks.cpp`, and xref:9.design/9n.WhyNotCobalt.adoc#_the_dimovian_ideal[The Dimovian Ideal] describes `any_stream.cpp`.
 ====
@@ -37,6 +37,8 @@ include::example$asio/use_capy_example.cpp[tag=writer]
 The reader is symmetric, using `async_read_some`. `run_example` drives both concurrently over a connected socket pair with cpp:when_all[], then reports completion.
 
 == Output
+
+The two coroutines run over a local TCP connection, so read sizes and line order can vary from run to run.
 
 [role=output]
 ----

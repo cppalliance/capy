@@ -15,16 +15,29 @@
 
 #include "../doc_warnings.hpp"
 
+// GCC gives false positive -Wmaybe-uninitialized on structured bindings
+// via the tuple protocol inside coroutine frames.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
+
 #include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/concept/read_stream.hpp>
+#include <boost/capy/cond.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
 #include <boost/capy/test/buffer_to_string.hpp>
 #include <boost/capy/test/bufgrind.hpp>
 #include <boost/capy/test/fuse.hpp>
-#include <boost/capy/test/read_stream.hpp>
+#include <boost/capy/test/stream.hpp>
+#include <boost/capy/when_all.hpp>
+#include <boost/capy/write.hpp>
 
 #include <array>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <utility>
 
 #include "test_suite.hpp"
 
@@ -142,27 +155,47 @@ void test_reconstruct()
 #include <boost/capy/test/bufgrind.hpp>
 #include <boost/capy/test/buffer_to_string.hpp>
 #include <boost/capy/test/fuse.hpp>
-#include <boost/capy/test/read_stream.hpp>
+#include <boost/capy/test/stream.hpp>
 #include <boost/capy/buffers/make_buffer.hpp>
+#include <boost/capy/concept/read_stream.hpp>
+#include <boost/capy/cond.hpp>
+#include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
+#include <boost/capy/when_all.hpp>
+#include <boost/capy/write.hpp>
 
 #include <array>
 #include <string>
+#include <system_error>
+#include <utility>
 
 namespace capy = boost::capy;
 
 // Hypothetical parser: reads all bytes from a ReadStream
-capy::task<std::string> read_all(capy::test::read_stream& rs)
+template<capy::ReadStream Stream>
+capy::task<capy::results<std::string>> read_all(Stream& stream)
 {
     std::string out;
     std::array<char, 64> buf;
     for(;;)
     {
-        auto [ec, n] = co_await rs.read_some(capy::make_buffer(buf));
-        if(ec)
-            co_return out;
+        auto [ec, n] = co_await stream.read_some(capy::make_buffer(buf));
         out.append(buf.data(), n);
+        if(ec == capy::cond::eof)
+            co_return capy::results<std::string>{std::error_code(), std::move(out)};
+        if(ec)
+            co_return capy::results<std::string>{ec, std::move(out)};
     }
+}
+
+// Sends one piece to the peer, closing the stream after the last piece
+capy::task<capy::results<>> send_piece(
+    capy::test::stream& s, std::string piece, bool last)
+{
+    auto [ec, _] = co_await capy::write(s, capy::make_buffer(piece));
+    if(last)
+        s.close();
+    co_return capy::results<>{ec};
 }
 
 void test_parser_all_splits()
@@ -176,13 +209,20 @@ void test_parser_all_splits()
         while(bg)
         {
             auto [b1, b2] = co_await bg.next();
+            // A named pair, because GCC 15 can skip destroying a
+            // structured binding's object in a coroutine loop
+            auto pair = capy::test::make_stream_pair(f);
+            auto& [a, b] = pair;
 
-            // Feed the split as two discrete reads
-            capy::test::read_stream rs(f);
-            rs.provide(capy::test::buffer_to_string(b1));
-            rs.provide(capy::test::buffer_to_string(b2));
+            // when_all posts its children in argument order and
+            // run_blocking runs them in turn: b1 arrives, the parser
+            // reads it, and only then does b2 arrive.
+            auto [ec, sent1, got, sent2] = co_await capy::when_all(
+                send_piece(a, capy::test::buffer_to_string(b1), false),
+                read_all(b),
+                send_piece(a, capy::test::buffer_to_string(b2), true));
 
-            std::string got = co_await read_all(rs);
+            BOOST_TEST(!ec);
             BOOST_TEST_EQ(got, input);
         }
     });

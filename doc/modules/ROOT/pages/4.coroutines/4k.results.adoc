@@ -19,7 +19,7 @@ The value is a cpp:results[results<Ts...>], declared in:
 include::example$snippets/4k_results.cpp[tag=include_results]
 ----
 
-`results<Ts...>` is an alias for `std::tuple<std::error_code, Ts...>`.
+A cpp:results[] is a `std::tuple` whose first element is a `std::error_code`.
 The error code always comes first. Zero or more payload values follow it.
 Stream operations return `results<std::size_t>`: an error code, then a byte count.
 
@@ -76,8 +76,10 @@ With payloads present you must supply the whole tuple, as `count_ready` shows.
 
 == Where results Appears
 
-* xref:6.streams/6.intro.adoc[Streams] -- `read_some`, `write_some`, cpp:read[] and cpp:write[] return `results<std::size_t>`.
-* xref:4.coroutines/4g.composition.adoc[Concurrent Composition] -- cpp:when_all[] flattens its children's payloads into one `results`.
-  cpp:when_any[] returns a `std::variant` whose first alternative is the error code and whose others are the children's payloads.
-* xref:8.examples/8l.async-mutex.adoc[Async Mutex] -- cpp:async_mutex[]'s `scoped_lock()` returns an error code and a lock guard.
-* xref:A.specification-methods/Ac.contingencies.adoc[Contingencies] -- What a contingency is, and how `ec` signals one.
+* xref:6.streams/6.intro.adoc[Streams]: `read_some`, `write_some`, cpp:read[] and cpp:write[] return `results<std::size_t>`.
+* xref:4.coroutines/4g.composition.adoc[Concurrent Composition]: cpp:when_all[] flattens its children's payloads into one `results`.
+  cpp:when_any[] returns a `std::variant` whose first alternative is the error code.
+  For the variadic overload, the other alternatives are the children's payloads.
+  For the range overload, the other alternative holds the winner's index, plus its payload when the children have one.
+* xref:8.examples/8l.async-mutex.adoc[Async Mutex]: cpp:async_mutex[]'s `scoped_lock()` returns an error code and a lock guard.
+* xref:A.specification-methods/Ac.contingencies.adoc[Contingencies]: What a contingency is, and how `ec` signals one.

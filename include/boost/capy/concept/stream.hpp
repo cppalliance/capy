@@ -35,6 +35,7 @@ namespace capy {
     @par Example
     @par !example example
 
+    @tparam T The stream type.
 
     @see @ref ReadStream, @ref WriteStream
 */

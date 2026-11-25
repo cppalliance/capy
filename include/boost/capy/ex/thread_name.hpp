@@ -19,9 +19,9 @@ namespace capy {
 
     Debuggers (GDB, LLDB, Visual Studio), core dumps, and system tools
     such as `htop` show the name in place of a numeric thread ID. An
-    execution context that owns worker threads can name them so a
-    stack trace identifies which context a thread belongs to;
-    @ref thread_pool names its workers this way.
+    execution context can name its worker threads, so a stack trace
+    shows which context owns a thread. @ref thread_pool names its
+    workers this way.
 
     The name is truncated to the platform limit: 15 characters on
     Linux and FreeBSD, 63 on macOS, and `PTHREAD_MAX_NAMELEN_NP - 1`

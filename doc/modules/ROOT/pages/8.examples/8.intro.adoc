@@ -11,7 +11,7 @@
 = Example Programs
 :page-mode: explanation
 
-These examples demonstrate how the pieces you have learned--tasks, buffers, streams, xref:glossary.adoc#cancellation[cancellation], composition--fit together in practice.
+These examples demonstrate how the pieces you have learned (tasks, buffers, streams, xref:glossary.adoc#cancellation[cancellation], and composition) fit together in practice.
 
 Each example builds from its own directory under `example/`.
 Some directories hold several programs that share a header.
@@ -37,7 +37,7 @@ For example, the quitter task type on xref:8.examples/8r.early-quitter.adoc[Writ
   sequences without allocation for xref:glossary.adoc#scatter-gather-io[scatter/gather I/O].
 * xref:8.examples/8d.mock-stream-testing.adoc[Mock Stream Testing] -- Unit testing protocol
   code with xref:glossary.adoc#mock-stream[mock streams] and error injection.
-* xref:8.examples/8e.type-erased-echo.adoc[Type-Erased Echo] -- An echo server
+* xref:8.examples/8e.type-erased-echo.adoc[Type-Erased Echo]: An echo session
   demonstrating the compilation firewall pattern.
 * xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation] -- Racing a slow
   operation against a deadline, and cancelling it with a xref:glossary.adoc#stop-token[stop token].
@@ -59,8 +59,8 @@ For example, the quitter task type on xref:8.examples/8r.early-quitter.adoc[Writ
   stream with Asio completion tokens, through an adapter built on `async_initiate`.
 * xref:8.examples/8q.gui-integration.adoc[GUI Integration] -- Running a Capy coroutine on
   a GUI event loop, resuming on the GUI thread to update widgets.
-* xref:8.examples/8r.early-quitter.adoc[Writing Your Own Task Type (Early Quitter)] -- A second
-  task type, whose coroutines a stop ends at their current `co_await` with no checks.
+* xref:8.examples/8r.early-quitter.adoc[Writing Your Own Task Type (Early Quitter)]: A second
+  task type: a stop ends its coroutines at the current `co_await`, without checks.
 
 [#other-programs-in-the-repository]
 == Other Programs in the Repository
@@ -110,12 +110,14 @@ Its test is `capy_example_cuda_batched_write`.
 | Capy tasks and senders on the `stream_scheduler` of NVIDIA `nvexec`
 | The CUDA flag, plus `BOOST_CAPY_BUILD_NVEXEC_EXAMPLES=ON`.
 That flag needs `BOOST_CAPY_BUILD_STDEXEC_EXAMPLES=ON` and C++23.
+`cmake -LH` does not list the stdexec flag, because the build declares no `option()` for it.
+Pass it with `-D`.
 
 | https://github.com/cppalliance/capy/tree/develop/example/echo-server-corosio[`echo-server-corosio/`]
 | An echo server on Corosio
 | The default build, when a `Boost::corosio` target exists, or its own `Jamfile`
 
-| `when-any-cancellation/`
+| https://github.com/cppalliance/capy/tree/develop/example/when-any-cancellation[`when-any-cancellation/`]
 | A race of three data sources with cpp:when_any[].
 *Out of date:* its comments say that the first child to complete wins, and its losing children report success.
 For the current rules, see xref:4.coroutines/4f.cancellation.adoc#_the_canceled_convention[The canceled Convention] and xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation].

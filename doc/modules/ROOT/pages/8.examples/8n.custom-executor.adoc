@@ -6,7 +6,7 @@ Implementing the xref:glossary.adoc#executor[Executor] concept with a single-thr
 == What This Example Shows
 
 * Satisfying the cpp:Executor[] concept
-* Implementing cpp:execution_context[], cpp:Executor::dispatch[dispatch], and cpp:Executor::post[post]
+* Deriving from cpp:execution_context[], and implementing cpp:Executor::dispatch[dispatch] and cpp:Executor::post[post]
 * Running Capy coroutines on a custom scheduling system
 
 == Source Code
@@ -20,8 +20,8 @@ include::example$custom-executor/custom_executor.cpp[tag=full]
 
 [source,cmake,role=external]
 ----
-add_executable(custom_executor custom_executor.cpp)
-target_link_libraries(custom_executor PRIVATE Boost::capy)
+add_executable(capy_example_custom_executor custom_executor.cpp)
+target_link_libraries(capy_example_custom_executor PRIVATE Boost::capy)
 ----
 
 == Walkthrough
@@ -33,7 +33,16 @@ target_link_libraries(custom_executor PRIVATE Boost::capy)
 include::example$custom-executor/custom_executor.cpp[tag=inherit]
 ----
 
-The destructor must call `shutdown()`, give up any work still queued with cpp:abandon[], then call `destroy()`. The drain also takes work posted while it runs. That includes the work of a service an unwound chain creates, which is shut down as it is created. Services give up their work in `shutdown()`, so destroying them posts nothing. The destructor drains once more for stray work a destructor posts anyway. No service may be created after `destroy()`. The queue holds copies of each cpp:continuation[], so the owner that cpp:abandon[] needs travels with the handle.
+The destructor tears the loop down in five steps:
+
+. Reset `owner_`, so `dispatch` no longer resumes anything inline.
+. Call `shutdown()`, so each service gives up its work.
+. Drain the queue, giving up each queued cpp:continuation[] with cpp:abandon[]. The drain also takes work posted while it runs.
+. Call `destroy()`. No service may be created after this call.
+. Drain once more, for any work a service destructor posts anyway.
+
+The queue holds copies of each continuation, and each copy carries the owner that cpp:abandon[] needs.
+xref:4.coroutines/4j.lifetimes.adoc#_shutdown_ordering[Shutdown Ordering] describes what abandoning a chain does.
 
 === The Executor Concept
 
@@ -68,7 +77,7 @@ include::example$custom-executor/custom_executor.cpp[tag=dispatch,indent=0]
 include::example$custom-executor/custom_executor.cpp[tag=drive,indent=0]
 ----
 
-cpp:run_async[] enqueues the initial coroutine. `loop.run()` drains the queue, resuming coroutines one by one until all work completes.
+cpp:run_async[] dispatches the initial coroutine. The loop is not running yet, so `dispatch` enqueues it. `loop.run()` drains the queue, resuming coroutines one by one until all work completes.
 
 `run()` uses `capy::safe_resume(h)` instead of `h.resume()`. This saves and restores the thread-local xref:glossary.adoc#frame-allocator[frame allocator] around each resumption, preventing coroutines from spoiling each other's allocator. All custom executor event loops must use cpp:safe_resume[] -- see xref:4.coroutines/4h.allocators.adoc#_tls_preservation[TLS Preservation] for details.
 
@@ -92,3 +101,7 @@ Event loop finished.
 1. Add a `stop()` method that causes `run()` to exit early, even with work remaining
 2. Make the run loop thread-safe so work can be posted from other threads
 3. Integrate the run loop with a platform event system (e.g., `epoll` or `kqueue`). For the GUI-framework case, xref:8.examples/8q.gui-integration.adoc[GUI Integration] works the example through, including where a coroutine resumes after awaiting work that finished on another thread
+
+== Next Steps
+
+* xref:8.examples/8o.sender-bridge.adoc[Bridging a P2300 Sender]: Awaiting a `std::execution` sender from a Capy coroutine

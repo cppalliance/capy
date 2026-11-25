@@ -22,32 +22,34 @@
 namespace boost {
 namespace capy {
 
-/** Mixin that adds frame-allocator-aware allocation to a promise type.
+/** Allocate a promise's coroutine frames from the current frame allocator.
 
     Inherit from this class in any coroutine promise type to opt into
-    TLS-based frame allocation with the recycling memory resource
-    fast path. The mixin provides `operator new` and `operator delete`
-    that:
+    TLS-based frame allocation. The mixin provides `operator new` and
+    `operator delete` that:
 
-    1. Read the thread-local frame allocator set by `run_async` or `run`.
-    2. Bypass virtual dispatch when the allocator is the default
-       recycling memory resource.
-    3. Store the allocator pointer at the end of each frame for
-       correct deallocation even when TLS changes between allocation
-       and deallocation.
+    1. Allocate from the current frame allocator (see
+       @ref get_current_frame_allocator), or from the default memory
+       resource if none is set.
+    2. Deallocate through the same resource that allocated the frame,
+       even if the current frame allocator changed in between.
 
     This is the same allocation strategy used by @ref
     context_awaitable_promise_base. Use this mixin directly when your
     promise type does not need the full environment and continuation
     support that `context_awaitable_promise_base` provides.
 
+    @pre The resource that allocated a frame outlives that frame. Setting
+    a different current frame allocator does not extend this lifetime.
+
+    @par Thread Safety
+    Allocation and deallocation are as thread-safe as the memory
+    resource they use. The @ref recycling_memory_resource is safe to
+    use from any thread.
+
     @par Example
     @par !example example
 
-
-    @par Thread Safety
-    The allocation fast path uses thread-local storage and requires
-    no synchronization. The global pool fallback is mutex-protected.
 
     @see @ref context_awaitable_promise_base, @ref recycling_memory_resource
 */
@@ -55,24 +57,23 @@ struct frame_alloc_mixin
 {
     /** Allocate a coroutine frame.
 
-        Uses the thread-local frame allocator set by run_async.
-        Falls back to default memory resource if not set.
-        Stores the allocator pointer at the end of each frame for
-        correct deallocation even when TLS changes. Uses memcpy
-        to avoid alignment requirements on the trailing pointer.
-        Bypasses virtual dispatch for the recycling allocator.
-
-        @param size The size, in bytes, of the coroutine frame.
-
-        @return A pointer to storage for the frame.
+        Allocates from the current frame allocator, or from the
+        default memory resource if none is set. Deallocation later
+        uses the same resource, even if the current frame allocator
+        changed.
 
         @par Exception Safety
         Propagates any exception thrown by the underlying memory
         resource's `allocate`, for example `std::bad_alloc` from
         `::operator new`.
+
+        @param size The size, in bytes, of the coroutine frame.
+
+        @return A pointer to storage for the frame.
     */
     static void* operator new(std::size_t size)
     {
+        // Calling the recycling resource directly skips virtual dispatch
         static auto* const rmr = get_recycling_memory_resource();
 
         auto* mr = get_current_frame_allocator();
@@ -86,21 +87,21 @@ struct frame_alloc_mixin
                 ->allocate_fast(total, detail::frame_alignment);
         else
             raw = mr->allocate(total, detail::frame_alignment);
+        // The trailing slot lets delete find the resource; memcpy avoids
+        // an alignment requirement on it
         std::memcpy(static_cast<char*>(raw) + size, &mr, sizeof(mr));
         return raw;
     }
 
     /** Deallocate a coroutine frame.
 
-        Reads the allocator pointer stored at the end of the frame
-        to ensure correct deallocation regardless of current TLS.
-        Bypasses virtual dispatch for the recycling allocator.
+        Returns the storage to the resource that allocated it,
+        regardless of the current frame allocator.
 
         @param ptr The frame storage returned by `operator new`.
 
         @param size The size, in bytes, that was passed to `operator new`.
-        The allocator pointer is read from `ptr + size`, which is where
-        `operator new` wrote it, so this value must match.
+        This value must match.
     */
     static void operator delete(void* ptr, std::size_t size) noexcept
     {

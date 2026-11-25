@@ -48,15 +48,15 @@ concept AwaitSuspendResult =
             std::remove_reference_t<decltype(h.promise())>>>;
     };
 
-/** Describes types that can be `co_await`-ed in Capy-coroutines and 
-    that can be passed the information about the execution environment.
+/** Requires an awaitable whose `await_suspend` takes the execution environment.
 
-    See the tutorial section _The ContextAwaitable Protocol_ for the description
-    of the execution environment propagation mechanism in Capy.
+    A type satisfies `ContextAwaitable` when the following hold:
 
-
-
-    @tparam A The awaitable type.
+    @li `A` is move-constructible.
+    @li `a.await_ready()` returns exactly `bool`.
+    @li `a.await_suspend(h, env)` returns a type satisfying
+        @ref AwaitSuspendResult.
+    @li `a.await_resume()` is well-formed.
 
     @par `await_ready`
 
@@ -64,86 +64,94 @@ concept AwaitSuspendResult =
     if the expression can be computed synchronously, without engaging
     the further awaiting machinery.
 
-    _Returns_: 
+    _Returns_: exactly `bool`.
 
-    @li @c true when the operation can be computed synchronously via immediately calling
-    @c await_resume ,
-    @li @c false when @c await_suspend needs to be called. 
+    @li `true` when the operation can be computed synchronously via
+        immediately calling `await_resume`,
+    @li `false` when `await_suspend` needs to be called.
 
     @par `await_suspend`
 
-    In the context of processing a `co_await` expression, instructs the coroutine machinery,
-    which coroutine needs to be launched or resumed.
+    In the context of processing a `co_await` expression, instructs the
+    coroutine machinery which coroutine needs to be started or resumed.
 
-    _preconditions_: `a.await_ready() == false`.
+    _Preconditions_: `a.await_ready() == false`.
 
     _Parameters_:
 
-    @li @c h — the handle to the just suspended coroutine,
-    @li @c env — the execution environment of the just suspended coroutine. 
+    @li `h`: the handle to the just suspended coroutine,
+    @li `env`: the execution environment of the just suspended coroutine.
 
-    _Effects_: If this operations instructs a coroutine to be resumed, it shall make sure that the coroutine's 
-    promise type is passed the @c env parameter, in a manner specific to `A`.
+    _Effects_: If this operation resumes a coroutine, it passes `env` to
+    that coroutine's promise. How it does so is specific to `A`.
 
-    _Returns_: The signature has one of the these return types: `void`, `bool` and `std::coroutine_handle<P>` for any type `P`.
+    _Returns_: The signature has one of these return types: `void`,
+    `bool` and `std::coroutine_handle<P>` for any type `P`.
 
-    If the return type is `void`, instructs the coroutine machinery that the control shall be 
-    returned to the resumer of the coroutine that invoked the `co_await` expression. 
-    Takes the ownership for scheduling the
-    resumption of the coroutine represented by `h` via either  `env->executor.post` or `env->executor.dispatch`.
+    With a `void` return type, control returns to the resumer of the
+    awaiting coroutine. The awaitable takes ownership of scheduling the
+    resumption of `h`, via either `env->executor.post` or
+    `env->executor.dispatch`.
 
     If the return type is `bool`:
 
-    @li value @c true indicates the behavior equivalent to that of the @c void return type;
+    @li value `true` indicates the behavior equivalent to that of the
+        `void` return type;
 
-    @li value @c false instructs the coroutine machinery to resume the coroutine represented by @c h and to immediately invoke @c await_resume .
+    @li value `false` instructs the coroutine machinery to resume the
+        coroutine represented by `h` and to immediately invoke
+        `await_resume`.
 
-    If the return type is `std::coroutine_handle<P>`, instructs the compiler to resume 
-    the coroutine represented by the returned handle, in a tail call manner (not consuming the stack). 
+    If the return type is `std::coroutine_handle<P>`, the compiler
+    resumes the coroutine represented by the returned handle. It does so
+    in a tail call manner, without consuming the stack.
 
-    _Note_: 
-    
-    @li Returning @c h is equivalent to returning @c false in the @c bool return type signature.
-    @li Returning @c std::noop_coroutine() is equivalent to using the @c void return type, returning @c true in the @c bool return type signature.
+    _Note_:
 
+    @li Returning `h` is equivalent to returning `false` in the `bool`
+        return type signature.
+    @li Returning `std::noop_coroutine()` is equivalent to using the
+        `void` return type, or to returning `true` in the `bool` return
+        type signature.
 
     _Teardown_: An awaitable that holds the coroutine for later, rather than
     resuming it before returning, keeps it as a @ref continuation whose `owner`
-    is `env->owner`. If the awaitable or whatever holds the coroutine for it is
-    torn down first, it passes that continuation to @ref abandon, which unwinds
-    the chain from its owner. A continuation without an owner is destroyed
-    alone, leaving the frames above it holding a destroyed frame.
+    is `env->owner`. The awaitable, or whatever holds the coroutine for it,
+    may be torn down first. It then passes that continuation to @ref abandon.
+    That call unwinds the chain from its owner. A continuation without an
+    owner is destroyed alone, leaving the frames above it holding a
+    destroyed frame.
 
-    _Lifetime_: The object of type @ref await_context pointed to by `env` remains valid 
-    for the duration of the async operation represented by `A`. This is guarantee is maintained
-    by @ref run, @ref run_async and the other functions that "start a task".
-    
+    _Lifetime_: The object of type @ref await_context pointed to by `env`
+    remains valid for the duration of the async operation represented by
+    `A`. This guarantee is maintained by @ref run, @ref run_async, and the
+    other functions that start a task.
 
     @par `await_resume`
 
-    In the context of processing a `co_await` expression, when the suspended coroutine is being resumed or
-    upon immediate resumption, returns a value — if any — that shall be returned from the `co_await` expression.
+    Returns the result of the `co_await` expression, if any. It runs when
+    the coroutine resumes, or at once when `await_ready` returns `true`.
 
-    If it throws an exception, the exception is propagated out of the `co_await` expression into the awaiting coroutine's
-    scope.
+    If it throws an exception, the exception is propagated out of the
+    `co_await` expression into the awaiting coroutine's scope.
 
-    _Returns_: value intended to be returned from the `co_await` expression. The return type determines the type of
-    the enclosing `co_await` expression and can be `void`.
-    
-    
-
+    _Returns_: value intended to be returned from the `co_await`
+    expression. The return type determines the type of the enclosing
+    `co_await` expression and can be `void`.
 
     @par Example
 
-    The example demonstrates a "leaf" awaitable: one that is associated directly with 
-    a system's I/O operation but no coroutine.
+    The example demonstrates a "leaf" awaitable: one that is associated
+    directly with a system's I/O operation but no coroutine.
 
     @par !example example
 
     @par Models
 
-    General-purpose class templates that model `ContextAwaitable`: @ref task, @ref immediate.
+    General-purpose class templates that model `ContextAwaitable`:
+    @ref task, @ref immediate.
 
+    @tparam A The awaitable type.
 
     @see @ref AwaitSuspendResult, @ref ContextRunnable, @ref await_context, @ref executor_ref
 */
@@ -159,9 +167,11 @@ concept ContextAwaitable = std::move_constructible<A> &&
         a.await_resume();
     };
 
-/** Names what `co_await a` yields for awaitable type A.
+/** Names the result type of `A::await_resume()`.
 
-    Given an awaitable A, yields the type returned by A::await_resume().
+    Given an awaitable `A`, yields the type returned by
+    `A::await_resume()`, ignoring any `operator co_await` or
+    `await_transform`.
 
     @tparam A The awaitable type.
 */

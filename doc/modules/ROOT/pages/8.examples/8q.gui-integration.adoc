@@ -21,8 +21,8 @@ include::example$gui-integration/gui_integration.cpp[tag=full]
 
 [source,cmake,role=external]
 ----
-add_executable(gui_integration gui_integration.cpp)
-target_link_libraries(gui_integration PRIVATE Boost::capy)
+add_executable(capy_example_gui_integration gui_integration.cpp)
+target_link_libraries(capy_example_gui_integration PRIVATE Boost::capy)
 ----
 
 == Walkthrough
@@ -164,7 +164,7 @@ The stand-in exists to prove the contract, not to model a toolkit. Five pieces c
 * `label` becomes a real widget. Its thread check is the part the toolkit does not do for you.
 * `dialog` becomes the toolkit's own dialog, and its callback the toolkit's completion notification. The `gui_app&` it holds only for the thread check goes away.
 
-`executor_type`, `show_dialog`, `count_rows`, and `refresh` are unchanged. Those four are the pattern worth copying.
+`executor_type` and `show_dialog` are unchanged. `count_rows` loses its `gui_app&` parameter, and `refresh` calls it without one, so it no longer needs `gui_app&` either. Those four are the pattern worth copying.
 
 == Output
 

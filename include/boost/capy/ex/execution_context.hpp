@@ -88,8 +88,6 @@ protected:
         base class records the wrong type and causes
         `target<Derived>()` to return `nullptr`.
 
-        @tparam Derived The most-derived context type.
-
         @param self `this`, typed as the most-derived context type.
             Only its type is recorded; the pointer is not stored.
     */
@@ -97,8 +95,6 @@ protected:
     explicit execution_context( Derived* self ) noexcept;
 
 public:
-    //------------------------------------------------
-
     /** Gives a derived service a `shutdown()` hook, run when its owning `execution_context` is destroyed.
 
         Services provide extensible functionality to an execution context.
@@ -111,11 +107,11 @@ public:
         being destroyed. The `shutdown()` function gives up all of the
         service's work, releases resources and cancels outstanding
         operations. It does not block, except to wait for work the
-        service already started, such as its own threads or operations
-        it submitted to the system, so that nothing that work posts
-        arrives later. The
-        destructor must not post: by the time it runs, the context has
-        already drained its queue.
+        service already started. Such work includes its own threads or
+        operations it submitted to the system. Waiting ensures that
+        nothing that work posts arrives later. The destructor must not
+        post: by the time it runs, the context has already drained its
+        queue.
 
         @par Deriving from service
         @li Implement `shutdown()` to perform cleanup.
@@ -132,14 +128,14 @@ public:
         service
     {
     public:
-        /// Destructor.
+        /// Destroy the service.
         virtual ~service() = default;
 
     protected:
         /// Construct a service. Only derived classes may do so.
         service() = default;
 
-        /** Called when the owning execution context shuts down.
+        /** Give up the service's work when the owning execution context shuts down.
 
             Implementations give up all of the service's work here,
             release resources and cancel any outstanding asynchronous
@@ -147,7 +143,8 @@ public:
             must not throw exceptions, and must not block except to
             wait for work the service already started, such as threads
             it owns. Services are shut down in
-            reverse order of creation.
+            reverse order of creation. A service created after the
+            context shut down has this called as soon as it is created.
 
             @par Exception Safety
             No-throw guarantee.
@@ -167,8 +164,6 @@ public:
         BOOST_CAPY_MSVC_WARNING_POP
     };
 
-    //------------------------------------------------
-
     /** Copy construction is disabled; a context owns its services.
 
         @param other The context that would be copied.
@@ -183,7 +178,7 @@ public:
     */
     execution_context& operator=(execution_context const& other) = delete;
 
-    /** Destructor.
+    /** Destroy the context, shutting down and deleting every service.
 
         Calls `shutdown()` then `destroy()` to clean up all services.
 
@@ -203,7 +198,7 @@ public:
     */
     execution_context();
 
-    /** Return true if a service of type T exists.
+    /** Check whether a service of type T exists.
 
         @par Thread Safety
         Thread-safe.
@@ -349,8 +344,6 @@ public:
         return static_cast<T&>(make_service_impl(f));
     }
 
-    //------------------------------------------------
-
     /** Return the memory resource used for coroutine frame allocation.
 
         The returned pointer is valid for the lifetime of this context.
@@ -399,10 +392,13 @@ public:
         Not thread-safe. Must not be called while any thread may
         be referencing this execution context or its executor.
 
-        @tparam Allocator The allocator type satisfying the
-            standard Allocator requirements.
+        @par Exception Safety
+        Strong guarantee.
 
-        @param a The allocator to use.
+        @throws std::bad_alloc If memory allocation fails.
+
+        @param a The allocator to use. Its type must satisfy the
+            standard Allocator requirements.
 
         @see @ref get_frame_allocator
     */
@@ -430,6 +426,11 @@ public:
         Performs a type check and downcasts `this` when the
         types match, or returns `nullptr` otherwise. Analogous
         to `std::any_cast< ExecutionContext >( &a )`.
+
+        Returns `nullptr` unless the context was constructed through
+        the protected `Derived*` constructor with `Derived` equal to
+        `ExecutionContext`. A context built with the default
+        constructor always yields `nullptr`.
 
         @tparam ExecutionContext The derived context type to
             retrieve.
@@ -459,7 +460,7 @@ protected:
 
         Calls `shutdown()` on each service in reverse order of creation.
         After this call, services remain allocated but are in a stopped
-        state. Derived classes should call this in their destructor
+        state. Derived classes must call this in their destructor
         before any members are destroyed. This function is idempotent;
         subsequent calls have no effect.
 
@@ -487,9 +488,8 @@ protected:
         that work is destroyed while every service exists. This
         function is idempotent; subsequent calls have no effect.
 
-        @par Preconditions
-        @li `shutdown()` was called.
-        @li No service's destructor creates a service of a type
+        @pre `shutdown()` was called.
+        @pre No service's destructor creates a service of a type
             already destroyed here; two such destructors that re-create
             each other never let this return.
 

@@ -8,7 +8,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Compiled fragments shown in pages/4.coroutines/4c.executors.adoc.
+// Compiled fragments shown in pages/4.coroutines/4d.executors.adoc.
 
 #include "../doc_warnings.hpp"
 
@@ -22,8 +22,6 @@
 // end::shared_resource[]
 #include <boost/capy/ex/thread_pool.hpp>
 #include <boost/capy/task.hpp>
-
-#include <vector>
 
 #include "test_suite.hpp"
 
@@ -153,7 +151,6 @@ struct executors_test
         auto ex = pool.get_executor();
 
         // Start independent tasks directly on the pool
-        std::vector<capy::task<int>> tasks;
         for (int i = 0; i < 100; ++i)
             capy::run_async(ex)(independent_task(i));
         // end::independent_tasks[]
@@ -172,4 +169,4 @@ struct executors_test
 
 } // namespace
 
-TEST_SUITE(executors_test, "boost.capy.doc.4c_executors");
+TEST_SUITE(executors_test, "boost.capy.doc.4d_executors");

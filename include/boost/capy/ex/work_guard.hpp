@@ -20,12 +20,13 @@
 namespace boost {
 namespace capy {
 
-/** RAII guard that keeps an executor's context from completing.
+/** Hold work on an executor so its execution context does not finish.
 
-    This class holds "work" on an executor, preventing the associated
-    execution context's `run()` function from returning due to lack of
-    work. It calls `on_work_started()` on construction and
-    `on_work_finished()` on destruction, ensuring proper work tracking.
+    This class holds "work" on an executor. That keeps the execution
+    context from finishing for lack of work: for example, `run()` on an
+    event loop, or @ref thread_pool::join, keeps waiting. It calls
+    `on_work_started()` on construction and `on_work_finished()` on
+    destruction, ensuring proper work tracking.
 
     The guard is useful when you need to keep an execution context
     running while waiting for external events or when work is
@@ -36,7 +37,7 @@ namespace capy {
     @li Construction calls `ex.on_work_started()`.
     @li Destruction calls `ex.on_work_finished()` if `owns_work()`.
     @li Copy construction creates a new work reference (calls
-        `on_work_started()` again).
+        `on_work_started()` again) if `other` owns work.
     @li Move construction transfers ownership without additional calls.
 
     @par Thread Safety
@@ -47,11 +48,6 @@ namespace capy {
     @par Example
     @par !example work_guard
 
-
-    @note The executor is returned by reference, allowing callers to
-    manage the executor's lifetime directly. This is essential in
-    coroutine-first designs where the executor often outlives individual
-    coroutine frames.
 
     @tparam Ex A type satisfying the Executor concept.
 
@@ -91,8 +87,8 @@ public:
 
     /** Construct a copy.
 
-        Creates a new work guard holding work on the same executor.
-        Calls `on_work_started()` on the executor.
+        Creates a new work guard on the same executor. If `other`
+        owns work, calls `on_work_started()` on the executor.
 
         @par Exception Safety
         No-throw guarantee.
@@ -132,7 +128,7 @@ public:
         other.owns_ = false;
     }
 
-    /** Destructor.
+    /** Destroy the guard, releasing its work if it owns any.
 
         If `owns_work()` is `true`, calls `on_work_finished()` on
         the executor.
@@ -160,8 +156,8 @@ public:
 
     /** Return the underlying executor by reference.
 
-        The reference remains valid for the lifetime of this guard,
-        enabling callers to manage executor lifetime explicitly.
+        The guard holds its own copy of the executor, so the reference
+        remains valid only for the lifetime of this guard.
 
         @par Exception Safety
         No-throw guarantee.
@@ -174,7 +170,7 @@ public:
         return ex_;
     }
 
-    /** Return whether the guard owns work.
+    /** Check whether the guard owns work.
 
         @par Exception Safety
         No-throw guarantee.

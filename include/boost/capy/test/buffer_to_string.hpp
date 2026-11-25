@@ -26,6 +26,11 @@ namespace test {
     converts that buffer sequence to a string. With multiple
     arguments, it concatenates them in order.
 
+    @par Exception Safety
+    Strong guarantee.
+
+    @throws std::bad_alloc If memory allocation fails.
+
     @par Example
     @par !example example
 

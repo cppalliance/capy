@@ -23,12 +23,17 @@ In {cpp}20, lambda coroutine captures are stored in the lambda closure object, *
 3. A coroutine frame is allocated (typically on the heap; HALO may elide this)
 4. The coroutine suspends at `initial_suspend`
 5. `operator()()` returns the task
-6. **The lambda closure is destroyed** — it was a temporary
+6. **The lambda closure is destroyed**, because it was a temporary
 7. Later, the coroutine resumes
 8. The coroutine accesses `sock` through the destroyed closure
 9. **Undefined behavior**
 
 The coroutine frame does not contain a copy of the captured `sock`. It contains a reference to the lambda's capture storage, which no longer exists.
+
+[NOTE]
+====
+{cpp} copies a coroutine's parameters into the coroutine frame, but the closure object is not one of them. The coroutine is the closure's `operator()`, and its body reaches each capture through the closure's `this`. The frame stores only that pointer, so the captures die with the closure.
+====
 
 == The Safe Pattern: IIFE With Parameters
 
@@ -39,7 +44,7 @@ The solution is to pass values as **function parameters** instead of **lambda ca
 include::example$snippets/4i_lambda_captures.cpp[tag=iife_parameter]
 ----
 
-The parameter `s` is copied to the coroutine frame before the first suspension, so it remains valid for the coroutine's lifetime.
+The parameter `s` is copied to the coroutine frame before the first suspension, so the pointer remains valid for the coroutine's lifetime. The socket it points to must still outlive the coroutine.
 
 == Complete Example
 
@@ -72,8 +77,8 @@ This pattern is rare. Most async code immediately invokes the lambda and discard
 
 1. **Default to IIFE with parameters** for lambda coroutines
 2. **Never capture by reference** (`[&]`) in a lambda coroutine unless the lambda outlives the coroutine
-3. **Capturing by value** (`[=]`, `[x]`) is equally broken — the copy lives in the lambda, not the coroutine frame
-4. **Capturing `this`** is particularly dangerous and common
+3. **Capturing by value** (`[=]`, `[x]`) is equally broken: the copy lives in the lambda, not the coroutine frame
+4. **Capturing `this`** is particularly dangerous and common: the body reads like a member function, but every member access goes through the closure
 5. **When in doubt, use parameters**
 
 == Alternative: Named Coroutine Functions
@@ -85,7 +90,7 @@ If the IIFE syntax feels awkward, use a named function instead:
 include::example$snippets/4i_lambda_captures.cpp[tag=named_member_coroutine]
 ----
 
-Member function coroutines work correctly because `this` is an implicit parameter, not a capture. The compiler copies it to the coroutine frame.
+Member function coroutines work correctly because `this` is an implicit parameter, not a capture. The compiler copies the pointer to the coroutine frame, so the object itself must outlive the coroutine.
 
 == Quick Reference
 
@@ -93,32 +98,23 @@ Member function coroutines work correctly because `this` is an implicit paramete
 |===
 | Pattern | Safety | Notes
 
-| `[](auto x) ->` cpp:task[task]`<> { use(x); }(val)`
+| `[](auto x) -> capy::task<> { use(x); }(val)`
 | SAFE
 | Parameter `x` in coroutine frame
 
 | Member function coroutine
-| SAFE
-| `this` is an implicit parameter
+| SAFE*
+| `this` is an implicit parameter. The object must outlive the coroutine
 
-| `[](auto& x) ->` cpp:task[task]`<> { use(x); }(val)`
+| `[](auto& x) -> capy::task<> { use(x); }(val)`
 | SAFE*
 | Reference parameter; `val` must outlive coroutine
 
-| `[x]() ->` cpp:task[task]`<> { use(x); }()`
+| `[x]() -> capy::task<> { use(x); }()`
 | UNSAFE
 | Capture `x` destroyed with lambda
 
-| `[&x]() ->` cpp:task[task]`<> { use(x); }()`
+| `[&x]() -> capy::task<> { use(x); }()`
 | UNSAFE
-| Accessed through dangling `this` pointer to destroyed closure
+| Accessed through the destroyed closure
 |===
-
-== Why Does {cpp} Work This Way?
-
-The {cpp} standard specifies that coroutine parameters are copied to the coroutine state, but lambda captures are not. This is because:
-
-* Lambda captures are part of the lambda's closure type
-* The coroutine is the lambda's `operator()`
-* The coroutine frame only stores what is needed for the function body
-* The closure is external to the function body

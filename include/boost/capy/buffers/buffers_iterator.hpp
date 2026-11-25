@@ -33,26 +33,31 @@ concept common_buffer_sequence =
 
 } // detail
 
-/** A random access iterator over the bytes in a buffer sequence.
+/** Iterate over the bytes of a buffer sequence as one continuous run.
 
     A buffer sequence stores its bytes in several separate regions.
-    This iterator presents them as one run of bytes, so standard
-    algorithms such as `std::search` can scan across the boundaries
-    between buffers without first copying the data into contiguous
-    storage. Empty buffers in the sequence are skipped.
+    This iterator presents them as one run of bytes. Standard
+    algorithms such as `std::search` can then scan across the
+    boundaries between buffers without first copying the data into
+    contiguous storage. Empty buffers in the sequence are skipped.
+
+    The iterator provides the random access operations and tag. It does
+    not meet the constant time requirement of a random access iterator.
 
     The iterator dereferences to `ByteType&` for a
     @ref MutableBufferSequence and to `ByteType const&` otherwise.
 
-    Moving by `n` bytes walks the underlying buffers, so `operator+=`,
-    `operator-=`, `operator+`, `operator-` with an integer, and
-    `operator[]` are linear in the number of buffers crossed. Comparison
-    and the difference of two iterators are constant time.
+    Moving by `n` bytes walks the underlying buffers. The operators that
+    move by an integer are linear in the number of buffers crossed.
+    These are `operator+=`, `operator-=`, `operator+`, `operator-` with
+    an integer, and `operator[]`. Comparison and the difference of two
+    iterators are constant time.
 
-    @par Preconditions
-    The buffer sequence and the memory it refers to outlive every
-    iterator obtained from it. Iterators from different sequences are
-    not comparable.
+    @pre The buffer sequence and the memory it refers to outlive every
+    iterator obtained from it.
+    @pre The sequence's buffers are not changed, and its iterators are
+    not invalidated, while an iterator obtained from it is in use.
+    @pre Iterators compared or subtracted come from the same sequence.
 
     @par Example
     @code
@@ -221,8 +226,7 @@ public:
 
     /** Return a reference to the current byte.
 
-        @par Preconditions
-        The iterator is not the end iterator.
+        @pre The iterator is not the end iterator.
     */
     reference
     operator*() const noexcept
@@ -233,8 +237,7 @@ public:
 
     /** Return a pointer to the current byte.
 
-        @par Preconditions
-        The iterator is not the end iterator.
+        @pre The iterator is not the end iterator.
     */
     pointer
     operator->() const noexcept
@@ -248,6 +251,8 @@ public:
         Linear in the number of buffers crossed.
 
         @param n The offset from this iterator, in bytes.
+
+        @return A reference to the byte at `*this + n`.
     */
     reference
     operator[](difference_type n) const noexcept
@@ -389,7 +394,7 @@ public:
 
     @param bs The buffer sequence. It must outlive the iterator.
 
-    @return `buffers_iterator<BufferSequence>::begin(bs)`.
+    @return An iterator to the first byte of `bs`.
 
     @see @ref buffers_iterator, @ref buffers_end
 */
@@ -409,7 +414,7 @@ buffers_begin(BufferSequence const&& bs) = delete;
 
     @param bs The buffer sequence. It must outlive the iterator.
 
-    @return `buffers_iterator<BufferSequence>::end(bs)`.
+    @return The end iterator for `bs`.
 
     @see @ref buffers_iterator, @ref buffers_begin
 */
