@@ -191,8 +191,8 @@ See xref:4.coroutines/4h.allocators.adoc[Frame Allocators].
 
 Each xref:glossary.adoc#segment[segment] of a coroutine chain has a cpp:chain_owner[].
 A holder that can never resume a suspended coroutine gives it up with cpp:abandon[].
+Execution contexts call cpp:abandon[] on queued coroutines when they shut down, and so do strands when their execution context shuts down.
 An owner waits for its segment by awaiting cpp:abandonable[], which tells it whether the segment completed or was unwound.
-Execution contexts do this when they shut down, and so do strands when their execution context shuts down.
 Abandonment also travels up a chain: when a coroutine started by cpp:when_all[], cpp:when_any[] or cpp:run[] is abandoned, its caller is abandoned too.
 A destroyed cpp:async_mutex[] or other primitive instead resumes its waiters with a canceled error.
 See xref:4.coroutines/4j.lifetimes.adoc[Lifetime and Ownership].
@@ -215,6 +215,7 @@ A buffer refers to a contiguous region of memory.
 A buffer sequence is one buffer or a range of them.
 cpp:make_buffer[] makes a buffer from a region of memory, a string view, or a contiguous range.
 The other functions measure a buffer sequence, copy it, return its first buffer, or iterate over its buffers or bytes.
+An archetype is a type for testing concept constraints in `requires`-clauses.
 Each archetype satisfies its sequence concept but has no default constructor.
 See xref:5.buffers/5.intro.adoc[Buffer Sequences].
 

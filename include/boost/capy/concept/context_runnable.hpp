@@ -22,14 +22,13 @@
 namespace boost {
 namespace capy {
 
-/** Requires a `ContextAwaitable` that exposes `handle` and `release`, and whose promise takes a continuation and an environment from outside a coroutine.
+/** Requires a `ContextAwaitable` that run functions can start from outside a coroutine.
 
     Extends @ref ContextAwaitable with the operations that @ref run and
-    @ref run_async need. Those operations start a task, transfer ownership
-    of the coroutine frame, and retrieve results or exceptions after
-    completion.
-
-    @tparam T The task type.
+    @ref run_async need. The type exposes `handle` and `release`, and its
+    promise takes a continuation and an environment. Those operations start
+    a task, transfer ownership of the coroutine frame, and retrieve results
+    or exceptions after completion.
 
     @par Syntactic Requirements
 
@@ -70,8 +69,8 @@ namespace capy {
 
     @li Sets the coroutine handle to resume when this task reaches
         `final_suspend`.
-    @li The functions that start a task use it to wire the task back
-        to the trampoline.
+    @li The functions that start a task use it to regain control when
+        the task completes.
 
     The `set_environment` operation establishes the execution environment:
 
@@ -88,14 +87,16 @@ namespace capy {
         it; a destroyed frame never destroys its continuation. A chain
         given up with @ref abandon is unwound from its owner downward,
         each object destroying the frame it owns.
-    @li Destroying the object, or assigning over it, while the frame is
-        lent to an awaiting chain calls `std::terminate`, unless the
-        chain's owner (`environment()->owner`) has been abandoned.
+    @li Destroying or assigning over the object while an awaiting chain
+        holds the frame calls `std::terminate`. The exception is a chain
+        whose owner, from the environment passed to `set_environment`,
+        has been abandoned.
 
     @par Conforming Signatures
 
     @par !example example
 
+    @tparam T The task type.
 
     @see @ref ContextAwaitable, @ref run, @ref run_async
 */

@@ -16,12 +16,17 @@
 namespace boost {
 namespace capy {
 
-/** Return the process-wide system thread pool.
+/** Return a process-wide thread pool, creating it on first use.
 
-    This singleton is the default execution context used when no
-    explicit context is supplied (for example, by timers and
-    services). It provides an executor via `get_executor()` and
-    runs scheduled work on its worker threads.
+    Use it when code needs an execution context but has none of its
+    own, and the program does not want to own a pool. Nothing in the
+    library uses it implicitly.
+
+    The pool has one worker thread per hardware thread and is destroyed
+    at program exit. Work must not be posted to it during or after its
+    destruction. Like any @ref thread_pool, it allocates coroutine
+    frames with `std::allocator<void>` unless
+    @ref execution_context::set_frame_allocator changes that.
 
     @par Thread Safety
     Safe to call from any thread.

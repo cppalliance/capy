@@ -30,9 +30,9 @@ The second layer is xref:glossary.adoc#type-erased[type-erased] wrappers. cpp:an
 include::example$snippets/9a_capy_layering.cpp[tag=any_stream_echo,indent=0]
 ----
 
-The cost is up to five vtable calls per I/O operation, not one per xref:glossary.adoc#continuation[continuation] -- four when the read or write completes synchronously, since `await_suspend` is skipped whenever `await_ready` returns `true`. For operations dominated by syscalls and network latency, this cost is invisible. For tight loops over in-memory buffers, it matters.
+The cost is up to five vtable calls per I/O operation, or four when the read or write completes synchronously, since `await_suspend` is skipped whenever `await_ready` returns `true`. For operations dominated by syscalls and network latency, this cost is invisible. For tight loops over in-memory buffers, it matters.
 
-The third layer is coroutine type erasure via cpp:task[task<>]. This is the most powerful form of type erasure in the language. Inside a coroutine, when you write `co_await`, everything in the xref:glossary.adoc#awaitable[awaitable] becomes type-erased from the perspective of the caller. The caller sees a `task<>`. A pure virtual function returning `task<>` hides the stream type, the buffer strategy, the algorithm, the error handling - everything:
+The third layer is coroutine type erasure via cpp:task[task<>]. This is the most powerful form of type erasure in the language. Inside a coroutine, when you write `co_await`, everything in the xref:glossary.adoc#awaitable[awaitable] becomes type-erased from the perspective of the caller. The caller sees a `task<>`. A pure virtual function returning `task<>` hides the stream type, the buffer strategy, the algorithm, and the error handling:
 
 [source,cpp]
 ----
@@ -57,13 +57,13 @@ The user chooses where the boundary falls. Not the library.
 
 == Symmetric Transfer and the Pump
 
-xref:glossary.adoc#symmetric-transfer[Symmetric transfer] is the mechanism that allows Corosio to match or beat ASIO callback throughput. When one coroutine completes and its continuation is ready to run, symmetric transfer reuses the same xref:glossary.adoc#coroutine-frame[coroutine frame] without allocation and bypasses the global work queue entirely. ASIO callbacks always go through the queue.
+xref:glossary.adoc#symmetric-transfer[Symmetric transfer] is the mechanism that allows Corosio to match or beat ASIO callback throughput. When one coroutine completes and its continuation is ready to run, symmetric transfer resumes the continuation's existing xref:glossary.adoc#coroutine-frame[coroutine frame] directly, as a tail call from `await_suspend`. It bypasses the global work queue entirely. ASIO callbacks always go through the queue.
 
 The pump mechanism extends this by allowing multiple inline completions before returning to the queue. For throughput-sensitive workloads like HTTP servers, this is significant.
 
 The trade-off is P99 latency. While the pump is running inline completions, queued work waits. For latency-sensitive workloads, you want to return to the queue more frequently. The pump is configurable. You can disable it entirely for HFT-style workloads that care about tail latency, or let it ramp up for servers that care about throughput.
 
-The frame recycler is a per-thread cache of coroutine frames. Chain workloads that allocate and free frames in sequence benefit from this cache. Fan-out workloads that start many concurrent tasks can exhaust it. The `write_now` pattern addresses this for repeated invocations of the same operation: declare a stack object with a one-element frame cache, and repeated calls reuse that cache without touching the recycler at all. cpp:when_all[] could carry its own private frame cache sized to its arity, giving each child a frame from the parent's stash via a TLS hook. Every use case that you make better can make another use case worse. You have to pay attention to that which is not seen.
+The frame recycler is a per-thread cache of coroutine frames. Chain workloads that allocate and free frames in sequence benefit from this cache. Fan-out workloads that start many concurrent tasks can exhaust it. The `write_now` pattern addresses this for repeated invocations of the same operation: declare a stack object with a one-element frame cache, and repeated calls reuse that cache without touching the recycler at all. A future cpp:when_all[] could carry its own private frame cache sized to its arity, giving each child a frame from the parent's stash via a TLS hook. Every use case that you make better can make another use case worse. You have to pay attention to that which is not seen.
 
 
 == The Type System as Architecture

@@ -20,8 +20,8 @@ include::example$parallel-fetch/parallel_fetch.cpp[tag=full]
 
 [source,cmake,role=external]
 ----
-add_executable(parallel_fetch parallel_fetch.cpp)
-target_link_libraries(parallel_fetch PRIVATE Boost::capy)
+add_executable(capy_example_parallel_fetch parallel_fetch.cpp)
+target_link_libraries(capy_example_parallel_fetch PRIVATE Boost::capy)
 ----
 
 == Walkthrough
@@ -54,6 +54,9 @@ include::example$parallel-fetch/parallel_fetch.cpp[tag=when_all_errors,indent=0]
 I/O errors are reported via `ec` in the cpp:results[results]. Thrown exceptions are captured separately. Upon error, xref:glossary.adoc#cancellation[cancellation] is requested and the first exception is rethrown after all tasks complete.
 
 == Output
+
+`main` starts three tasks on a multi-threaded pool, and each cpp:when_all[] runs its children in parallel.
+The line order varies from run to run.
 
 [role=output]
 ----
@@ -91,3 +94,7 @@ Caught error: B failed!
 1. Add timing to see the parallel speedup vs sequential execution
 2. Implement a "fan-out/fan-in" pattern that processes a list of items in parallel
 3. Add cancellation support so remaining tasks can exit early on error
+
+== Next Steps
+
+* xref:8.examples/8k.strand-serialization.adoc[Strand Serialization]: Protecting shared state with a strand instead of a mutex

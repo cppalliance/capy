@@ -87,9 +87,10 @@ include::example$snippets/7b_mock_streams.cpp[tag=write_stream_chunked,indent=0]
 === Expected Data Verification
 
 Call `expect()` before or after writes to assert that the written data
-matches a prefix. Matched bytes are consumed from both sides. If written
-data does not match the expected prefix, the next `write_some` call
-returns cpp:error::test_failure[error::test_failure].
+matches a prefix. Matched bytes are consumed from both sides. `expect()`
+returns cpp:error::test_failure[error::test_failure] if data already written
+does not match, and later writes keep failing. A `write_some` whose bytes do not
+match the expectation returns `error::test_failure` and writes nothing.
 
 [source,cpp]
 ----
@@ -118,8 +119,8 @@ include::example$snippets/7b_mock_streams.cpp[tag=stream_pair_basic]
 Data written to `a` goes into `b`'s incoming buffer, and vice versa.
 `write_some` completes immediately and posts any suspended peer reader
 before returning. If `b.read_some()` is called when `a` has not yet
-written anything, the coroutine suspends; it resumes the moment `a`
-calls `write_some`.
+written anything, the coroutine suspends. It is resumed after `a`
+calls `write_some`, once the executor runs the posted reader.
 
 The `provide()` member is a shortcut that injects bytes directly into
 the peer's incoming buffer, bypassing the fuse. Use it during test
@@ -142,8 +143,7 @@ cpp:cond::eof[cond::eof]. All subsequent operations on both ends return
 === Thread Safety
 
 Single-threaded only. Both ends of the pair must be accessed from the
-same thread. Concurrent access from multiple threads or multiple
-concurrent coroutines is undefined behavior.
+same thread. Concurrent access from multiple threads is undefined behavior.
 
 See cpp:test::stream[] and cpp:test::make_stream_pair[] for the
 complete member list: pair construction, `read_some`, `write_some`,

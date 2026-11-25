@@ -69,7 +69,7 @@ capy::task<> sequential()
 // tag::concurrent[]
 capy::task<> concurrent()
 {
-    // Run A, B, C simultaneously
+    // Run A, B, C concurrently
     co_await capy::when_all(task_a(), task_b(), task_c());
 }
 // end::concurrent[]
@@ -351,7 +351,7 @@ struct item
 // tag::fan_out[]
 capy::task<capy::results<int>> process_item(item i);
 
-capy::task<int> process_all(std::vector<item> const& items)
+capy::task<int> process_all(std::vector<item> items)
 {
     std::vector<capy::task<capy::results<int>>> tasks;
     for (auto const& item : items)

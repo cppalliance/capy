@@ -48,7 +48,8 @@ xref:8.examples/8l.async-mutex.adoc#_strand_vs_async_mutex[Strand vs Async Mutex
 == Holding a Lock Across a `co_await`
 
 A task that finds the cpp:async_mutex[] held suspends instead of blocking its thread.
-The waiting tasks form a queue, and `unlock()` hands the mutex to the first waiter that a stop has not already claimed, then posts it.
+The waiting tasks form a queue.
+cpp:async_mutex::unlock[unlock]`()` hands the mutex to the first waiter that a stop has not already claimed, then posts it.
 
 [source,cpp]
 ----
@@ -60,7 +61,7 @@ include::example$async-mutex/async_mutex.cpp[tag=mutex,indent=0]
 include::example$async-mutex/async_mutex.cpp[tag=scoped_lock,indent=0]
 ----
 
-`scoped_lock()` completes with an error code and a guard.
+cpp:async_mutex::scoped_lock[scoped_lock]`()` completes with an error code and a guard.
 The error code is set when the lock is canceled, for example by a stop request that arrives while the task waits in the queue.
 The guard releases the mutex when it leaves its scope.
 
@@ -75,14 +76,14 @@ It must also be unlocked on the thread that locked it, but a task on a thread po
 == Resuming Many Tasks at Once
 
 An cpp:async_event[] starts unset.
-Every task that awaits `wait()` on an unset event suspends.
+Every task that awaits cpp:async_event::wait[wait]`()` on an unset event suspends.
 
 [source,cpp]
 ----
 include::example$producer-consumer/producer_consumer.cpp[tag=event,indent=0]
 ----
 
-The producer calls `set()`, which posts every waiting task to its executor:
+The producer calls cpp:async_event::set[set]`()`, which posts every waiting task to its executor:
 
 [source,cpp]
 ----
@@ -96,7 +97,7 @@ The consumer waits for that call:
 include::example$producer-consumer/producer_consumer.cpp[tag=consumer,indent=0]
 ----
 
-The event stays set until `clear()` is called.
+The event stays set until cpp:async_event::clear[clear]`()` is called.
 A `wait()` on a set event completes at once, so the order of `set()` and `wait()` does not matter.
 
 == Resuming a Task from Another Thread
@@ -146,6 +147,7 @@ xref:4.coroutines/4e.context-awaitable.adoc#stop-callbacks-must-post-not-resume[
 
 A waiter observes the stop token of the task that awaits it.
 When a stop request arrives while the task is suspended, the task resumes with cpp:error::canceled[error::canceled].
+If a wakeup or lock handoff reaches the waiter before the stop does, the wait succeeds instead.
 Compare the result with cpp:cond::canceled[cond::canceled], as xref:4.coroutines/4f.cancellation.adoc#_the_canceled_convention[The canceled Convention] describes.
 
 Two rules decide what an operation does when a stop is already requested:
@@ -161,19 +163,13 @@ A wakeup that loses the race against a stop request is kept for the next `wait()
 == Destruction
 
 The usual order is to request a stop, wait for the work to end, and then destroy the primitive.
-In this snippet, the pool has one thread, so it meets the rule in <<threading-model,The Threading Model>>:
-
-[source,cpp]
-----
-include::example$snippets/4j_lifetimes.cpp[tag=shutdown_order,indent=0]
-----
-<1> The waiting task observes the stop token and finishes through its own code.
-<2> `join` waits for the outstanding work, then for the worker threads.
-<3> From here on, nothing waits on `never_set`, so the event and the pool can be destroyed safely.
+xref:4.coroutines/4j.lifetimes.adoc#_shutdown_ordering[Shutdown Ordering] shows this pattern with a task that waits on an cpp:async_event[].
+Its pool has one thread, so it meets the rule in <<threading-model,The Threading Model>>.
+Once `join` returns, nothing waits on the event, so the event and the pool can be destroyed safely.
 
 Destroying a primitive that still has waiters cancels them.
 Each waiter is posted to its executor to resume with cpp:error::canceled[error::canceled].
-An executor that can no longer run the waiter abandons it instead, possibly before the destructor returns.
+An executor that can no longer run the waiter xref:glossary.adoc#abandon[abandons] it instead, possibly before the destructor returns.
 A task that the mutex was handed to, but that has not resumed yet, resumes canceled.
 It holds nothing.
 
@@ -183,7 +179,6 @@ Two preconditions apply:
 * No call to `wake()` is in progress on the cpp:async_waker[], or made afterward.
 
 The reference page of each destructor gives the exact wording.
-xref:4.coroutines/4j.lifetimes.adoc#_shutdown_ordering[Shutdown Ordering] explains the order in the general case.
 
 == Allocation and Lifetime
 

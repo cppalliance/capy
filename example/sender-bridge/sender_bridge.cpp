@@ -50,7 +50,7 @@ int main()
 
     // Beman execution context (run_loop on a dedicated thread)
     ex::run_loop loop;
-    std::jthread loop_thread([&loop] {
+    std::thread loop_thread([&loop] {
         loop.run();
     });
     auto sched = loop.get_scheduler();
@@ -78,6 +78,7 @@ int main()
 
     done.wait();
     loop.finish();
+    loop_thread.join();
 
     std::cout << "result: " << answer << "\n";
 }

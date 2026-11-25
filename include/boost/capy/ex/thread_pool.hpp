@@ -33,14 +33,19 @@ namespace capy {
     Shared objects: Safe for @ref get_executor, @ref join, and
     @ref stop. Unsafe for construction and destruction.
 
-    @par Example
-    @par !example example
-
-
     @note `join()` waits only for work that holds outstanding-work
     counting, which `run_async` (and `make_work_guard`) provide. A bare
     `executor_type::post()` does not register outstanding work, so
     `join()` does not wait for it.
+
+    @note A pool allocates coroutine frames with `std::allocator<void>`,
+    not the recycling resource that is the @ref execution_context
+    default. Call @ref execution_context::set_frame_allocator to change
+    it.
+
+    @par Example
+    @par !example example
+
 */
 class BOOST_CAPY_DECL
     thread_pool
@@ -94,6 +99,10 @@ public:
         yet. Threads start lazily on the executor's first `post()`.
         If `num_threads` is zero, the number of threads is set to
         the hardware concurrency, or one if that cannot be determined.
+
+        Sets the pool's frame allocator to `std::allocator<void>`,
+        replacing the @ref execution_context default. Call
+        @ref execution_context::set_frame_allocator to change it.
 
         @param num_threads The number of worker threads, or zero
             for automatic selection.
@@ -188,6 +197,9 @@ public:
     @par Thread Safety
     Distinct objects: Safe.
     Shared objects: Safe.
+
+    @par Example
+    @par !example example
 */
 class thread_pool::executor_type
 {

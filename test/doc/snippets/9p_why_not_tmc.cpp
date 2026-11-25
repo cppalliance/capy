@@ -63,19 +63,21 @@ struct context_awaitable_form
 
 // Mirrors the shape of task.hpp's transform_awaitable(); never
 // instantiated with a non-ContextAwaitable, so the else branch only
-// has to parse.
+// has to parse. The using-declaration lets the tagged region keep
+// the header's unqualified spelling.
 template<class Awaitable>
 void protocol_strictness_shape()
 {
+    using capy::ContextAwaitable;
     using A = std::decay_t<Awaitable>;
-    if constexpr (capy::ContextAwaitable<A>)
+    if constexpr (ContextAwaitable<A>)
     {
     }
     // tag::strict_static_assert[]
     // From task.hpp transform_awaitable()
     else
     {
-        static_assert(sizeof(A) == 0, "requires ContextAwaitable");
+        static_assert(ContextAwaitable<A>, "requires ContextAwaitable");
     }
     // end::strict_static_assert[]
 }

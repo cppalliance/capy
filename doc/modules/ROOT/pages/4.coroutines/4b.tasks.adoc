@@ -1,6 +1,8 @@
 = The task Type
 :page-mode: explanation
 
+cpp:task[task<T>] is Capy's primary coroutine return type. Use it for any function that awaits asynchronous operations. A task represents an asynchronous operation that eventually produces a value of type `T` (or nothing, for `task<void>`).
+
 cpp:task[task<T>] is declared in:
 
 [source,cpp]
@@ -8,10 +10,7 @@ cpp:task[task<T>] is declared in:
 include::example$snippets/4b_tasks.cpp[tag=include_task]
 ----
 
-
 == Overview
-
-cpp:task[task<T>] is Capy's primary coroutine return type. It represents an asynchronous operation that eventually produces a value of type `T` (or nothing, for `task<void>`).
 
 Key characteristics:
 
@@ -51,7 +50,7 @@ xref:4.coroutines/4k.results.adoc[The results Type] explains how to consume and 
 
 == Running a Task
 
-A cpp:task[task] is lazy, so declaring one does not run it. To run a task to completion from ordinary (non-coroutine) code, pass it to cpp:run_async[] with an executor and a xref:glossary.adoc#completion-handler[completion handler]. The task runs on the executor, and its result is delivered to the handler:
+A cpp:task[task] is lazy, so declaring one does not run it. To run a task to completion from ordinary (non-coroutine) code, pass it to cpp:run_async[] with an executor and a xref:glossary.adoc#completion-handler[completion handler]. The task runs on the executor, and the completion handler receives its result:
 
 [source,cpp]
 ----
@@ -59,6 +58,7 @@ include::example$snippets/4b_tasks.cpp[tag=run]
 ----
 
 Here `add(2, 3)` runs on a cpp:thread_pool[] executor, and the completion handler receives the result, `5`. The call to `pool.join()` waits for the pooled work to finish before the result is read.
+xref:4.coroutines/4c.launching.adoc[Starting Coroutines] covers cpp:run_async[] in depth, and xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] covers thread pools.
 
 == Awaiting Other Tasks
 
@@ -107,7 +107,7 @@ include::example$snippets/4b_tasks.cpp[tag=chain]
 
 Without symmetric transfer, each `co_await` would add a stack frame, potentially causing stack overflow with deep nesting. With symmetric transfer, `c` returning to `b` returning to `a` uses constant stack space regardless of depth.
 
-This is implemented through the `await_suspend` returning a xref:glossary.adoc#coroutine-handle[coroutine handle] rather than `void`:
+The task's final-suspend awaiter implements this: its `await_suspend` returns a xref:glossary.adoc#coroutine-handle[coroutine handle] rather than `void`:
 
 [source,cpp]
 ----
@@ -124,6 +124,7 @@ include::example$snippets/4b_tasks.cpp[tag=move_only]
 ----
 
 After moving, the source task becomes empty and must not be awaited.
+A task must not be awaited twice either. The second await would resume a coroutine that has already finished.
 
 == Exception Propagation
 

@@ -8,7 +8,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Compiled fragments shown in pages/4.coroutines/4g.allocators.adoc.
+// Compiled fragments shown in pages/4.coroutines/4h.allocators.adoc.
 
 #include "../doc_warnings.hpp"
 

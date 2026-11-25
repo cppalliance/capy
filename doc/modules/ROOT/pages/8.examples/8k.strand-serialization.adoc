@@ -6,7 +6,7 @@ Protecting shared state with a strand instead of a mutex.
 == What This Example Shows
 
 * Using a cpp:strand[] to serialize coroutine access to shared state
-* Lock-free shared state management
+* Shared state with no locks in user code
 * Combining cpp:when_all[] with strand-based serialization
 
 == Source Code
@@ -20,8 +20,8 @@ include::example$strand-serialization/strand_serialization.cpp[tag=full]
 
 [source,cmake,role=external]
 ----
-add_executable(strand_serialization strand_serialization.cpp)
-target_link_libraries(strand_serialization PRIVATE Boost::capy)
+add_executable(capy_example_strand_serialization strand_serialization.cpp)
+target_link_libraries(capy_example_strand_serialization PRIVATE Boost::capy)
 ----
 
 == Walkthrough
@@ -33,9 +33,9 @@ target_link_libraries(strand_serialization PRIVATE Boost::capy)
 include::example$strand-serialization/strand_serialization.cpp[tag=strand,indent=0]
 ----
 
-A cpp:strand[] wraps an xref:glossary.adoc#executor[executor] and guarantees that handlers dispatched through it never run concurrently.
+A cpp:strand[] wraps an xref:glossary.adoc#executor[executor] and guarantees that coroutines resumed through it never run concurrently.
 
-=== Lock-Free Shared Access
+=== Shared Access Without Locks
 
 [source,cpp]
 ----
@@ -73,7 +73,7 @@ Final counter: 10000 (expected 10000)
 
 == Exercises
 
-1. Remove the strand and run directly on the pool executor -- observe the data race
+1. Remove the strand and run directly on the pool executor, then observe the data race
 2. Replace the plain `int` counter with `std::atomic<int>` and compare the two approaches
 3. Add a second shared variable and verify both are protected by the strand
 

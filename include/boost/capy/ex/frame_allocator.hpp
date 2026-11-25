@@ -22,7 +22,7 @@
     It returns exactly what was stored, including nullptr. No
     dynamic initializer on the thread-local; a dynamic TLS
     initializer moves you into a costlier implementation bucket
-    on some platforms - avoid it.
+    on some platforms, so avoid it.
 
     Null handling is the caller's responsibility (e.g. in
     promise_type::operator new). The accessor must not substitute
@@ -75,22 +75,25 @@ current_frame_allocator_ref() noexcept
 
 /** Return the current frame allocator for this thread.
 
-    These accessors exist to implement the allocator
+    This accessor exists to implement the allocator
     propagation portion of the @ref ContextAwaitable protocol.
     Launcher functions (`run_async`, `run`) set the
-    thread-local value before invoking a child coroutine.
-    The child's `promise_type::operator new` reads it to
-    allocate the coroutine frame from the correct resource.
+    thread-local value before invoking a child coroutine, and
+    the @ref ContextAwaitable machinery reinstalls it each time
+    a coroutine resumes. The child's `promise_type::operator new`
+    reads it to allocate the coroutine frame from the correct
+    resource.
 
     The value is only valid during a narrow execution
     window. Between a coroutine's resumption
     and the next suspension point, the protocol guarantees
     that TLS contains the allocator associated with the
     currently running chain. Outside that window the value
-    is indeterminate. Only code that implements an
-    @ref ContextAwaitable should call these functions.
+    is indeterminate. Only promise allocation functions,
+    promise constructors, launchers, and @ref ContextAwaitable
+    machinery should call this function.
 
-    A return value of `nullptr` means "not specified" -
+    A return value of `nullptr` means "not specified":
     no allocator is established for this chain.
     The awaitable is free to use whatever allocation
     strategy makes best sense (e.g.
@@ -116,7 +119,7 @@ get_current_frame_allocator() noexcept
 
 /** Set the current frame allocator for this thread.
 
-    Installs @p mr as the frame allocator read by the
+    Installs `mr` as the frame allocator read by the
     next coroutine's `promise_type::operator new` on
     this thread. Only launcher functions and
     @ref ContextAwaitable machinery should call this; see
@@ -158,6 +161,9 @@ set_current_frame_allocator(
     calls `.resume()` on a coroutine handle should use
     this function instead of calling `.resume()` directly.
     See the @ref Executor concept documentation for details.
+
+    @note An exception escaping the resumed coroutine calls
+    `std::terminate`.
 
     @param h The coroutine handle to resume.
 

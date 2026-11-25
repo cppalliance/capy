@@ -25,21 +25,28 @@ class chain_owner;
 
 /** Carries the executor, stop token, and frame allocator through a coroutine chain.
 
-    This struct bundles the execution context passed through
-    coroutine chains via the ContextAwaitable protocol. It contains
-    the executor for resumption, a stop token for cancellation,
-    and an optional frame allocator for coroutine frame allocation.
+    This struct bundles the environment passed through coroutine
+    chains by the @ref ContextAwaitable protocol. It contains the
+    executor for resumption, a stop token for cancellation, and an
+    optional frame allocator for coroutine frame allocation.
 
     @par Lifetime
 
-    Launcher functions (@ref run_async, @ref run) own the `await_context` and
-    guarantee it outlives all tasks and awaitables in the started
-    chain. Awaitables receive `await_context const*` in `await_suspend`
-    and should store it directly, never copy the pointed-to object.
+    The code that starts a chain owns the `await_context`. Examples are
+    @ref run_async, @ref run, a `when_all` or `when_any` branch, or a
+    user promise. The owner guarantees it outlives all tasks and
+    awaitables in the started chain. Awaitables receive
+    `await_context const*` in `await_suspend` and should store it
+    directly, never copy the pointed-to object. The referenced executor
+    and allocator must remain valid for the lifetime of any coroutine
+    using this environment.
 
     @par Thread Safety
-    The referenced executor and allocator must remain valid
-    for the lifetime of any coroutine using this environment.
+    The coroutines of a chain read the environment without
+    synchronization, so it must not change after the chain starts.
+
+    @par Example
+    @par !example example
 
     @see @ref ContextAwaitable, @ref ContextRunnable
 */
@@ -65,8 +72,8 @@ struct await_context
         @ref continuation it keeps, so a holder can @ref abandon the
         segment. Null when nothing owns the segment.
 
-        A launcher that starts a task under an environment it builds
-        itself, rather than through `run_async`, `run` or a join, must
+        Some code starts a task under an environment it builds itself,
+        rather than through `run_async`, `run` or a join. Such code must
         either own the segment, binding a @ref chain_owner, or ensure
         nothing awaits the coroutines that could be abandoned. With no
         owner, @ref abandon destroys only the frame it is given, and any

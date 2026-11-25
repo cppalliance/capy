@@ -53,7 +53,7 @@
 
 namespace boost::capy::detail {
 
-/** Minimal coroutine that dispatches through the caller's executor.
+/** Minimal coroutine that posts through the caller's executor.
 
     Sits between the inner task and the parent when executors
     diverge. The inner task's `final_suspend` resumes this
@@ -62,11 +62,11 @@ namespace boost::capy::detail {
     restore the correct execution context.
 
     It also owns the inner task's segment. Abandoning that segment
-    resumes the trampoline on the inner executor, or has a closed
-    executor destroy it: either way it destroys the inner task, which
-    unwinds the segment, then abandons the caller's segment, which
-    unwinds the parent on its own executor. The caller's execution
-    context must outlive that.
+    resumes the trampoline on the inner executor, or a closed executor
+    destroys it. Either way the trampoline destroys the inner task,
+    which unwinds the segment. It then abandons the caller's segment,
+    which unwinds the parent on its own executor. The caller's
+    execution context must outlive that.
 */
 struct boundary_trampoline
 {
@@ -197,9 +197,9 @@ inline boundary_trampoline make_boundary_trampoline()
     co_await expression's lifetime extension keeps both alive for the
     duration of the operation.
 
-    A dispatch trampoline handles the executor switch on completion:
-    the inner task's `final_suspend` resumes the trampoline, which
-    dispatches back through the caller's executor.
+    A trampoline handles the executor switch on completion: the inner
+    task's `final_suspend` resumes the trampoline, which posts back
+    through the caller's executor.
 
     The `await_context` is owned by this awaitable and is guaranteed to
     outlive the inner task and all awaitables in its chain. Awaitables
@@ -784,19 +784,23 @@ public:
 
 namespace boost::capy {
 
-/** Bind a task to execute on a specific executor.
+/** Create a wrapper that starts a task on `ex` when awaited.
 
     Returns a wrapper that accepts a task and produces an awaitable.
-    When co_awaited, the task runs on the specified executor.
+    Awaiting it posts the task to `ex`. When the task completes, the
+    caller resumes on its own executor through `post`, never inline.
+    If posting the task to `ex` throws, the exception leaves the
+    awaitable's `await_suspend`. Inside a @ref task, that calls
+    `std::terminate`. If posting the caller's resumption throws,
+    `std::terminate` is called.
 
-    If the inner task is abandoned before it completes, for example
-    because its execution context is torn down, the caller's chain is
-    abandoned too: it is unwound by its owner, on the owner's executor,
-    without the caller resuming. The awaitable holds work on the
-    caller's executor until the caller resumes or is unwound.
+    If the inner task is abandoned before it completes, the caller's
+    chain is abandoned too. Teardown of the inner execution context is
+    one cause. The chain's owner then unwinds the caller on the owner's
+    executor, and the caller does not resume. The awaitable holds work
+    on the caller's executor until the caller resumes or is unwound.
 
-    @par Preconditions
-    The caller's execution context outlives the inner task and the
+    @pre The caller's execution context outlives the inner task and the
     unwind of the caller's chain. This is not detected.
 
     @par Example
@@ -817,7 +821,7 @@ run(Ex ex)
     return detail::run_wrapper_ex<Ex, true, void>{std::move(ex)};
 }
 
-/** Bind a task to an executor with a stop token.
+/** Create a wrapper that starts a task on `ex` with a stop token.
 
     @ref run(Ex) describes teardown and preconditions.
 
@@ -836,9 +840,16 @@ run(Ex ex, std::stop_token st)
         std::move(ex), std::move(st)};
 }
 
-/** Bind a task to an executor with a memory resource.
+/** Create a wrapper that starts a task on `ex` with a memory resource.
 
-    @ref run(Ex) describes teardown and preconditions.
+    A task created in the awaited expression, as in
+    `co_await run(ex, mr)(task())`, is allocated from `mr`. Tasks it
+    creates use `mr` too, unless they select another allocator. A task
+    created before the call keeps its existing frame.
+
+    @ref run(Ex) describes teardown and further preconditions.
+
+    @pre `mr` is not null and outlives the inner task.
 
     @param ex The executor on which the task should run.
     @param mr The memory resource for frame allocation.
@@ -855,11 +866,12 @@ run(Ex ex, std::pmr::memory_resource* mr)
         std::move(ex), mr};
 }
 
-/** Bind a task to an executor with a standard allocator.
+/** Create a wrapper that starts a task on `ex` with an allocator.
 
     Await the awaitable in the expression that creates it, as in
-    `co_await run(ex, alloc)(task())`: the task's frame is allocated from
-    memory the wrapper holds until the end of that expression.
+    `co_await run(ex, alloc)(task())`. The task's frame is allocated from
+    a resource the wrapper holds, which lives only until the end of that
+    expression.
 
     @ref run(Ex) describes teardown and preconditions.
 
@@ -878,9 +890,16 @@ run(Ex ex, Alloc alloc)
         std::move(ex), std::move(alloc)};
 }
 
-/** Bind a task to an executor with stop token and memory resource.
+/** Create a wrapper that starts a task on `ex` with `st` and `mr`.
 
-    @ref run(Ex) describes teardown and preconditions.
+    A task created in the awaited expression, as in
+    `co_await run(ex, st, mr)(task())`, is allocated from `mr`. Tasks it
+    creates use `mr` too, unless they select another allocator. A task
+    created before the call keeps its existing frame.
+
+    @ref run(Ex) describes teardown and further preconditions.
+
+    @pre `mr` is not null and outlives the inner task.
 
     @param ex The executor on which the task should run.
     @param st The stop token for cooperative cancellation.
@@ -898,11 +917,12 @@ run(Ex ex, std::stop_token st, std::pmr::memory_resource* mr)
         std::move(ex), std::move(st), mr};
 }
 
-/** Bind a task to an executor with stop token and standard allocator.
+/** Create a wrapper that starts a task on `ex` with `st` and `alloc`.
 
     Await the awaitable in the expression that creates it, as in
-    `co_await run(ex, alloc)(task())`: the task's frame is allocated from
-    memory the wrapper holds until the end of that expression.
+    `co_await run(ex, st, alloc)(task())`. The task's frame is allocated from
+    a resource the wrapper holds, which lives only until the end of that
+    expression.
 
     @ref run(Ex) describes teardown and preconditions.
 
@@ -922,7 +942,7 @@ run(Ex ex, std::stop_token st, Alloc alloc)
         std::move(ex), std::move(st), std::move(alloc)};
 }
 
-/** Run a task with a custom stop token.
+/** Create a wrapper that starts a task with a custom stop token.
 
     The task inherits the caller's executor. Only the stop token
     is overridden.
@@ -941,10 +961,15 @@ run(std::stop_token st)
     return detail::run_wrapper<false, void>{std::move(st)};
 }
 
-/** Run a task with a custom memory resource.
+/** Create a wrapper that starts a task with a custom memory resource.
 
-    The task inherits the caller's executor. The memory resource
-    is used for nested frame allocations.
+    The task inherits the caller's executor. A task created in the
+    awaited expression, as in `co_await run(mr)(task())`, is allocated
+    from `mr`. Tasks it creates use `mr` too, unless they select
+    another allocator. A task created before the call keeps its existing
+    frame.
+
+    @pre `mr` is not null and outlives the inner task.
 
     @param mr The memory resource for frame allocation.
 
@@ -964,14 +989,15 @@ run(std::pmr::memory_resource* mr)
 // alloc` below clears it and produces no replacement finding, because MrDocs
 // has no model of this overload at all -- so it would silently drop real
 // documentation. Keep the `@param`.
-/** Run a task with a custom standard allocator.
+/** Create a wrapper that starts a task with a custom allocator.
 
     Await the awaitable in the expression that creates it, as in
-    `co_await run(alloc)(task())`: the task's frame is allocated from
-    memory the wrapper holds until the end of that expression.
+    `co_await run(alloc)(task())`. The task's frame is allocated from
+    a resource the wrapper holds, which lives only until the end of that
+    expression.
 
-    The task inherits the caller's executor. The allocator is used
-    for nested frame allocations.
+    The task inherits the caller's executor. Tasks it creates also
+    allocate from `alloc`, unless they select another allocator.
 
     @param alloc The allocator for frame allocation.
 
@@ -984,9 +1010,15 @@ run(Alloc alloc)
     return detail::run_wrapper<true, Alloc>{std::move(alloc)};
 }
 
-/** Run a task with stop token and memory resource.
+/** Create a wrapper that starts a task with a stop token and resource.
 
-    The task inherits the caller's executor.
+    The task inherits the caller's executor. A task created in the
+    awaited expression, as in `co_await run(st, mr)(task())`, is allocated
+    from `mr`. Tasks it creates use `mr` too, unless they select
+    another allocator. A task created before the call keeps its existing
+    frame.
+
+    @pre `mr` is not null and outlives the inner task.
 
     @param st The stop token for cooperative cancellation.
     @param mr The memory resource for frame allocation.
@@ -1000,11 +1032,12 @@ run(std::stop_token st, std::pmr::memory_resource* mr)
         std::move(st), mr};
 }
 
-/** Run a task with stop token and standard allocator.
+/** Create a wrapper that starts a task with a stop token and allocator.
 
     Await the awaitable in the expression that creates it, as in
-    `co_await run(alloc)(task())`: the task's frame is allocated from
-    memory the wrapper holds until the end of that expression.
+    `co_await run(st, alloc)(task())`. The task's frame is allocated from
+    a resource the wrapper holds, which lives only until the end of that
+    expression.
 
     The task inherits the caller's executor.
 

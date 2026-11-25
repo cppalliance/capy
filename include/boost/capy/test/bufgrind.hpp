@@ -42,6 +42,11 @@ namespace test {
     sequence splits into two borrowed views. Either way each half can be
     passed directly to `read_some`, `write_some`, `buffer_size`, etc.
 
+    The grinder holds a reference to the buffer sequence. The sequence
+    must outlive the grinder. For a sequence that is not a single
+    buffer, each half borrows the sequence, so the halves must not
+    outlive it either.
+
     @par Thread Safety
     Not thread-safe.
 
@@ -101,7 +106,9 @@ public:
 
     /** Construct a buffer grinder.
 
-        @param bs The buffer sequence to iterate over.
+        @param bs The buffer sequence to iterate over. The grinder
+        keeps a reference to it, so passing a temporary leaves the
+        grinder dangling.
 
         @param step The number of bytes to advance on each call to
         @ref next. A value of 0 is treated as 1. The final split
@@ -134,7 +141,7 @@ public:
         /// The grinder that produced this awaitable.
         bufgrind* self_;
 
-        /** Report whether the awaitable is ready.
+        /** Check whether the awaitable is ready.
 
             @return `true` always; the split is available without suspending.
         */
@@ -172,8 +179,7 @@ public:
         Returns an awaitable that yields the current (b1, b2) pair
         and advances to the next split point.
 
-        @par Preconditions
-        `static_cast<bool>( *this )` is `true`.
+        @pre `static_cast<bool>( *this )` is `true`.
 
         @return An awaitable that await-returns `split_type`.
     */

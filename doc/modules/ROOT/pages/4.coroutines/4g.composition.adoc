@@ -1,9 +1,9 @@
 = Concurrent Composition
 :page-mode: how-to
 
-Headers: `<boost/capy/when_all.hpp>` and `<boost/capy/when_any.hpp>`. cpp:async_waker[] on this page is `<boost/capy/ex/async_waker.hpp>`.
+Headers: `<boost/capy/when_all.hpp>` and `<boost/capy/when_any.hpp>`. The cpp:async_waker[] used near the end comes from `<boost/capy/ex/async_waker.hpp>`.
 
-Both combinators take cpp:task[task]`<results<...>>` children. cpp:when_all[] returns a single cpp:results[], and cpp:when_any[] returns a `std::variant` of the error code and the children's payloads. If that type is new, read xref:4.coroutines/4k.results.adoc[The results Type] first -- everything below is expressed in them.
+Both combinators take children that are xref:glossary.adoc#io-awaitable[I/O awaitables] whose result is a cpp:results[], for example cpp:task[task]`<results<...>>`. cpp:when_all[] returns a single cpp:results[], and cpp:when_any[] returns a `std::variant` of the error code and the children's payloads. If the `results` type is new, read xref:4.coroutines/4k.results.adoc[The results Type] first. Every result on this page is expressed in it.
 
 == Overview
 
@@ -14,16 +14,18 @@ Sequential execution—one task after another—is the default when using `co_aw
 include::example$snippets/4g_composition.cpp[tag=sequential,indent=0]
 ----
 
-For independent operations, concurrent execution is more efficient:
+Independent operations can run concurrently instead:
 
 [source,cpp]
 ----
 include::example$snippets/4g_composition.cpp[tag=concurrent,indent=0]
 ----
 
+Both combinators start every child on the caller's xref:glossary.adoc#executor[executor], and the children complete through it. Children run in parallel only on a multi-threaded executor that is not a xref:glossary.adoc#strand[strand]. Otherwise they interleave at their suspension points.
+
 == when_all: Wait for All Tasks
 
-cpp:when_all[] starts multiple cpp:task[task]`<results<...>>` children concurrently and waits for all of them to complete. It returns cpp:task[task]`<results<R1, R2, ..., Rn>>`, a single `ec` plus the flattened payloads:
+cpp:when_all[] starts multiple `results`-returning children concurrently and waits for all of them to complete. It returns cpp:task[task]`<results<R1, R2, ..., Rn>>`, a single `ec` plus the flattened payloads:
 
 [source,cpp]
 ----
@@ -32,7 +34,9 @@ include::example$snippets/4g_composition.cpp[tag=when_all_basic,indent=0]
 
 === Result Type
 
-cpp:when_all[] returns cpp:results[results]`<R1, ..., Rn>` where each `Ri` is the child's payload flattened: `results<T>` contributes `T`, `results<>` contributes `tuple<>`. Check `ec` first; values are only meaningful when `!ec`.
+cpp:when_all[] returns cpp:results[results]`<R1, ..., Rn>` where each `Ri` is the child's payload flattened: `results<T>` contributes `T`, `results<>` contributes `tuple<>`, and `results<A, B>` contributes `tuple<A, B>`. See cpp:when_all[] for the full contract.
+
+Check `ec` first. Each value is still the payload its child produced, even when that child or a sibling reported an error. The range overload differs: once any child fails, it returns an empty vector.
 
 === Payload-free children
 
@@ -43,7 +47,7 @@ cpp:task[task]`<results<>>` children contribute `tuple<>` to the result:
 include::example$snippets/4g_composition.cpp[tag=when_all_void_mix,indent=0]
 ----
 
-When all children are cpp:task[task]`<results<>>`, just check the error code:
+When all children are cpp:task[task]`<results<>>`, the result holds only the error code:
 
 [source,cpp]
 ----
@@ -54,7 +58,7 @@ include::example$snippets/4g_composition.cpp[tag=when_all_all_void,indent=0]
 
 I/O errors are reported through the error code that leads the cpp:results[results]. When any child returns a non-zero error code:
 
-1. Stop is requested for sibling tasks
+1. Stop is requested for sibling tasks. A child exception, or a stop request on the caller's stop token, requests stop the same way.
 2. All tasks complete (or respond to stop)
 3. The first `ec` (in completion order, not input order) is propagated in the outer cpp:results[results]
 
@@ -81,7 +85,7 @@ include::example$snippets/4g_composition.cpp[tag=stop_propagation,indent=0]
 
 == when_any: First-to-Succeed Wins
 
-cpp:when_any[] starts multiple cpp:task[task]`<results<...>>` children concurrently and returns when the first one *succeeds* (`!ec`):
+cpp:when_any[] starts multiple `results`-returning children concurrently. It selects the first child that *succeeds* (`!ec`), requests stop on the others, and completes when all have finished:
 
 [source,cpp]
 ----
@@ -90,11 +94,11 @@ include::example$snippets/4g_composition.cpp[tag=when_any_basic,indent=0]
 
 The result is a `variant` with `error_code` at index 0 (failure/no winner) and one alternative per input task at indices 1..N. When a winner is found, stop is requested for all siblings. All tasks complete before cpp:when_any[] returns.
 
-When every task fails, cpp:when_any[] reports a failure, but *which* one is unspecified. The result either carries an `error_code` at index 0 or rethrows one of the children's exceptions. Unlike cpp:when_all[], there is no priority between error codes and exceptions. In particular, there is no guarantee that it is the first or last to complete.
+When every task fails, cpp:when_any[] reports a failure, but *which* one is unspecified. The result either carries an `error_code` at index 0 or rethrows one of the children's exceptions. Unlike cpp:when_all[], there is no priority between error codes and exceptions. In particular, there is no guarantee that the reported failure is the first or last to complete.
 
-=== Errors Do Not Win (wait_for_one_success)
+=== Errors Do Not Win
 
-A child that returns a non-zero `ec` (or throws) does *not* win, and it does *not* cancel its siblings. cpp:when_any[] keeps waiting until some child succeeds or until every child has finished. Only when *all* children fail does the result settle at index 0, holding an `error_code`.
+A child that returns a non-zero `ec` (or throws) does *not* win, and it does *not* cancel its siblings. cpp:when_any[] keeps waiting until some child succeeds or until every child has finished. Only when *all* children fail does the result settle at index 0, holding an `error_code`, or rethrow a child's exception.
 
 If you need "complete on the first child to *finish*, success or error," that behavior is opt-in — wrap the child as shown below.
 
@@ -120,7 +124,7 @@ include::example$snippets/4g_composition.cpp[tag=wrap_lift_error,indent=0]
 
 === Parallel Fetch
 
-Fetch multiple resources simultaneously:
+Fetch multiple resources concurrently:
 
 [source,cpp]
 ----
@@ -129,23 +133,23 @@ include::example$snippets/4g_composition.cpp[tag=parallel_fetch,indent=0]
 
 === Fan-Out/Fan-In
 
-Process items in parallel, then combine results using the range overload:
+Process items concurrently, then combine results using the range overload:
 
 [source,cpp]
 ----
 include::example$snippets/4g_composition.cpp[tag=fan_out,indent=0]
 ----
 
+On a range of `results<T>` children, cpp:when_all[] yields `results<std::vector<T>>`, or `results<>` when the children carry no payload. cpp:when_any[] on a range yields a `std::variant` whose second alternative pairs the winner's index with its payload, or holds only the index for payload-free children. Both throw `std::invalid_argument` on an empty range.
+
 [NOTE]
 ====
 `process_item` takes its item by value. The tasks it returns are collected in a
 vector and awaited later. A reference parameter would be read long after the
-loop that bound it.
-
-In the snippet above nothing dangles: `items` outlives the cpp:when_all[]. The
-hazard is what a caller could do -- passing a temporary would leave the stored
-task holding a reference to it. Awaiting a task immediately is the case where a
-reference parameter is safe.
+loop that bound it. A caller passing a temporary would leave the stored task
+holding a dangling reference. `process_all` takes its vector by value for the
+same reason: its caller may store the task before awaiting it. Awaiting a task
+immediately is the case where a reference parameter is safe.
 ====
 
 === Racing a Deadline
@@ -161,27 +165,8 @@ include::example$timeout-cancellation/timeout_cancellation.cpp[tag=race_deadline
 include::example$timeout-cancellation/timeout_cancellation.cpp[tag=race_lambda,indent=0]
 ----
 
-`deadline_waker.wake()` can come from any thread, a `std::thread` that sleeps for the deadline, hardware, or a completion callback from another library. See xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation] for the full example, including the `fetch_channel` type and both `std::thread` objects that play fetch worker and clock.
+The `[&]` capture is safe here only because the example blocks until the race finishes, so the lambda object outlives its coroutine. xref:4.coroutines/4i.lambda-captures.adoc[Lambda Coroutine Captures] explains the hazard.
+
+`deadline_waker.wake()` can come from any thread: for example a `std::thread` that sleeps for the deadline, a hardware event, or a completion callback from another library. See xref:8.examples/8f.timeout-cancellation.adoc[Timeout with Cancellation] for the full example, including the `fetch_channel` type and both `std::thread` objects that play fetch worker and clock.
 
 For timed I/O against a socket, prefer Corosio's own timed operations: they schedule the deadline on the platform event loop instead of a dedicated thread.
-
-== Implementation Notes
-
-=== Task Storage
-
-cpp:when_all[] stores all tasks in its xref:glossary.adoc#coroutine-frame[coroutine frame]. Tasks are moved from the arguments, so the original task objects become empty after the call.
-
-=== Completion Tracking
-
-A shared atomic counter tracks how many tasks remain. Each task completion decrements the counter. When it reaches zero, the parent coroutine is resumed.
-
-=== Runner Coroutines
-
-Each child task is wrapped in a "runner" coroutine that:
-
-1. Receives context (xref:glossary.adoc#executor[executor], stop token) from cpp:when_all[]
-2. Awaits the child task
-3. Stores the result in shared state
-4. Signals completion
-
-This design ensures proper context propagation to all children.

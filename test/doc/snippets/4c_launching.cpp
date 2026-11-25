@@ -8,7 +8,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Compiled fragments shown in pages/4.coroutines/4b.launching.adoc. Pages
+// Compiled fragments shown in pages/4.coroutines/4c.launching.adoc. Pages
 // include the tagged regions; scaffolding stays outside the tags.
 
 #include "../doc_warnings.hpp"
@@ -137,6 +137,10 @@ struct launching_test
                 catch (std::exception const& e) {
                     std::cout << "Error: " << e.what() << "\n";
                 }
+                // A non-std exception escaping here would call std::terminate
+                catch (...) {
+                    std::cout << "Unknown error\n";
+                }
             }
         )(compute());
         // end::handlers[]
@@ -234,4 +238,4 @@ struct launching_test
 
 } // namespace
 
-TEST_SUITE(launching_test, "boost.capy.doc.4b_launching");
+TEST_SUITE(launching_test, "boost.capy.doc.4c_launching");

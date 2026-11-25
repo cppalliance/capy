@@ -59,7 +59,7 @@ Components at different levels belong in different packages. This is a structura
 
 Lakos quantified the cost of getting levels wrong with Cumulative Component Dependency (CCD): the sum over all components in a subsystem of the number of components needed to test each component incrementally (see Figure 4-22, p. 191 of Lakos'96).
 
-CCD ranges from N for a perfectly horizontal (flat) design to N-squared for a vertical or cyclically dependent one. The metric is additive for independent subsystems. If two independent libraries each have CCD of 5, combining them without adding cross-dependencies gives CCD 10:
+CCD ranges from N for a perfectly horizontal (flat) design, through N(N+1)/2 for a linear vertical chain, to N-squared for a cyclically dependent one. The metric is additive for independent subsystems. If two independent libraries each have CCD of 5, combining them without adding cross-dependencies gives CCD 10:
 
 [role=figure]
 ----
@@ -115,7 +115,7 @@ If you can express your algorithm using Capy instead of Corosio, you depend on f
 
 Boost.Http is a sans-I/O HTTP/1.1 protocol library. It is written entirely against Capy. It has zero dependency on Corosio.
 
-It is a real library, shipping today. It works with any I/O backend that satisfies Capy's stream concepts. You could plug in Corosio's TCP sockets, or Asio's sockets, or a xref:glossary.adoc#mock-stream[mock stream] for testing. The protocol logic does not care.
+It is a working library, though not yet an official Boost library. It works with any I/O backend that satisfies Capy's stream concepts. You could plug in Corosio's TCP sockets, Asio's sockets through an adapter (see `example/asio`), or a xref:glossary.adoc#mock-stream[mock stream] for testing. The protocol logic does not care.
 
 If Capy were merged into Corosio, Boost.Http would be forced to depend on platform networking it never touches. Every user who wants to parse HTTP headers would need to link against IOCP on Windows, epoll on Linux, and kqueue on macOS. The HTTP parser does not use sockets. It should not pay for sockets.
 

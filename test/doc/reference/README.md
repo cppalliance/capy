@@ -78,7 +78,7 @@ putting them in a file named with its anchor.
   reference, because a MrDocs without the extension installed ignores the
   script and renders the reference with no examples at all while still
   reporting success.
-- Five `@code` blocks remain in headers: MrDocs does not publish those symbols,
+- Six `@code` blocks remain in headers: MrDocs does not publish those symbols,
   so there is nothing to inject them into.
 
 ## Requirements

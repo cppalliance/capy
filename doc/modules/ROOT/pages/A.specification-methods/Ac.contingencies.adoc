@@ -12,15 +12,17 @@
 :page-mode: explanation
 
 A _contingency_ is any situation occurring during an operation
-on a stream, caused by the stream's state, that prevents this operation
-from reading or writing the requested number of bytes.
+on a stream that prevents this operation from reading or writing
+the requested number of bytes. The stream's state or an external
+request, such as cancellation, can cause it.
 
 These situations do not violate the postconditions of the corresponding operations, 
 as their postconditions never say that the operation indeed processes the requested
 number of bytes.
 
-Each stream operation that may encounter a contingency await-returns
-a type which is a specialization of cpp:capy::results[capy::results]. These objects can be _destructured_
+Each of this library's stream operations that may encounter a contingency
+await-returns a type which is a specialization of cpp:capy::results[capy::results].
+A user-defined stream's `read_some` and `write_some` need only return a cpp:ContextAwaitable[] whose result destructures to `[ec, n]`. The `results` objects can be _destructured_
 using a xref:glossary.adoc#structured-bindings[structured binding]. The first binding of such destructuring is of type
 `std::error_code`. This binding, call it `ec`, is used to signal if and which
 contingency occurred:
@@ -29,9 +31,9 @@ contingency occurred:
  * Otherwise a contingency occurred. To determine which contingency occurred,
    compare `ec` to xref:glossary.adoc#error-condition[error conditions], in particular to cpp:capy::cond[capy::cond].
 
-NOTE: Reaching the end of stream is also a contingency
-      (which can be interpreted as preventing an infinite read
-      from proceeding).
+NOTE: Reaching the end of stream is also a contingency.
+      The stream has no more bytes to deliver, so the read
+      cannot transfer the requested number of bytes.
 
 NOTE: The stream operations can still throw exceptions to indicate conditions,
       unrelated to stream state, that prevent these operations from satisfying
@@ -40,7 +42,7 @@ NOTE: The stream operations can still throw exceptions to indicate conditions,
 
 NOTE: Operations on streams often await-return cpp:capy::results[capy::results<std::size_t>]
       destructuring to `[ec, n]`, where `n` represents the number of processed bytes.
-      Upon a reported contingency, a non-zero `n` indicates the state of the partial
-      or sometimes even a full read. When an inner operation reports a contingency,
+      Upon a reported contingency, a non-zero `n` reports the bytes transferred
+      before the contingency. When an inner operation reports a contingency,
       the outer operation usually processes its partial results before reporting
       the contingency itself.

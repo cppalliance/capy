@@ -72,8 +72,6 @@ include::example$snippets/5d_buffer_algo.cpp[tag=buffer_copy_cross,indent=0]
 
 The algorithm fills target buffers in order, reading from source buffers as needed. It handles a source buffer spanning several targets, and the reverse.
 
-Capy creates and manages buffer handles on your behalf, such as the descriptors a type-erased stream passes to the OS. Each is valid only for the window its API documents.
-
 
 == Custom Buffer Types
 

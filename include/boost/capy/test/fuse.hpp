@@ -70,6 +70,12 @@ namespace test {
     multiple concurrent coroutines causes non-deterministic
     test behavior.
 
+    @note A fuse supports a single @ref armed or @ref inert run.
+    Copies share the same state. A second run on the same state
+    may skip error-code injection. After any @ref fail call, every
+    later run on that state reports failure. Construct a new fuse
+    for each run.
+
     @par Basic Inline Usage
 
     @par !example example_1
@@ -173,7 +179,12 @@ public:
         /// Source location of the failing point, set only on failure.
         std::source_location loc = {};
 
-        /// Exception captured by @ref fail, or null if none.
+        /** Exception associated with the failure, or null if none.
+
+            Holds the exception passed to @ref fail. Under @ref inert
+            it also holds an exception that escaped the test function.
+            Under @ref armed an escaping exception is not stored.
+        */
         std::exception_ptr ep = nullptr;
 
         /// True if the test completed without a failure.
@@ -244,14 +255,11 @@ public:
         @param loc The source location of the call site,
         captured automatically.
 
-        @return The stored error code if at the failure point,
-        otherwise an empty error code. In exception mode,
-        throws instead of returning an error. When called
-        outside @ref armed, or when running under @ref inert,
-        always returns an empty error code.
-
         @throws std::system_error When in exception mode
         and at the failure point (not thrown outside @ref armed).
+
+        @return The stored error code at the failure point, otherwise
+        an empty error code.
     */
     std::error_code
     maybe_fail(
@@ -273,11 +281,14 @@ public:
         return {};
     }
 
-    /** Signal a test failure and stop execution.
+    /** Record a test failure.
 
         Call this from the test function to indicate a failure
-        condition. Both @ref armed and @ref inert return
-        a failed @ref result immediately.
+        condition. The call only records the failure: the test
+        function keeps running, so return from it right after the
+        call. Once the test function returns, @ref armed or
+        @ref inert reports a failed @ref result and runs no
+        further rounds.
 
         @par Example
 
@@ -296,12 +307,14 @@ public:
         p_->stopped = true;
     }
 
-    /** Signal a test failure with an exception and stop execution.
+    /** Record a test failure with an associated exception.
 
         Call this from the test function to indicate a failure
-        condition with an associated exception. Both @ref armed
-        and @ref inert return a failed @ref result with
-        the captured exception pointer.
+        condition with an associated exception. The call only
+        records the failure: the test function keeps running, so
+        return from it right after the call. Once the test function
+        returns, @ref armed or @ref inert reports a failed
+        @ref result holding `ep`.
 
         @par Example
 
@@ -418,6 +431,16 @@ public:
         encountering a failure. First runs the complete loop
         using error codes, then runs using exceptions.
 
+        In the error-code phase, any exception escaping `fn` ends the
+        run with a failed @ref result. In the exception phase, a
+        `std::system_error` carrying the fuse's error code counts as an
+        injected failure, and the next round starts. Any other
+        exception ends the run with a failed @ref result. An exception
+        escaping `fn` is not stored in `result::ep`.
+
+        On failure, `result::loc` holds the location of the last
+        triggered @ref maybe_fail or of the @ref fail call.
+
         @par Example
 
         @par !example example_2
@@ -428,8 +451,6 @@ public:
         at each potential failure point.
 
         @return A @ref result indicating success or failure.
-        On failure, `result::loc` contains the source location
-        of the last @ref maybe_fail or @ref fail call.
     */
     template<class F>
     result
@@ -519,6 +540,16 @@ public:
         (such as `task<void>`), executing them synchronously via
         @ref run_blocking.
 
+        In the error-code phase, any exception escaping `fn` ends the
+        run with a failed @ref result. In the exception phase, a
+        `std::system_error` carrying the fuse's error code counts as an
+        injected failure, and the next round starts. Any other
+        exception ends the run with a failed @ref result. An exception
+        escaping `fn` is not stored in `result::ep`.
+
+        On failure, `result::loc` holds the location of the last
+        triggered @ref maybe_fail or of the @ref fail call.
+
         @par Example
 
         @par !example example_3
@@ -529,8 +560,6 @@ public:
         at each potential failure point.
 
         @return A @ref result indicating success or failure.
-        On failure, `result::loc` contains the source location
-        of the last @ref maybe_fail or @ref fail call.
     */
     template<class F>
         requires ContextRunnable<std::invoke_result_t<F, fuse&>>
@@ -631,8 +660,12 @@ public:
 
         Invokes the provided function exactly once. Calls to
         @ref maybe_fail always return an empty error code and
-        never throw. Only explicit calls to @ref fail can
-        signal a test failure.
+        never throw. A call to @ref fail or an exception escaping
+        `fn` signals a test failure. The escaping exception is
+        stored in `result::ep`.
+
+        On failure after a @ref fail call, `result::loc` holds the
+        location of that call.
 
         This is useful for running tests where you want to
         manually control failures, or for quick single-run
@@ -648,8 +681,6 @@ public:
         always succeed.
 
         @return A @ref result indicating success or failure.
-        On failure, `result::loc` contains the source location
-        of the @ref fail call.
     */
     template<class F>
     result
@@ -681,8 +712,12 @@ public:
 
         Invokes the provided coroutine function exactly once using
         @ref run_blocking. Calls to @ref maybe_fail always return
-        an empty error code and never throw. Only explicit calls
-        to @ref fail can signal a test failure.
+        an empty error code and never throw. A call to @ref fail or
+        an exception escaping the coroutine signals a test failure.
+        The escaping exception is stored in `result::ep`.
+
+        On failure after a @ref fail call, `result::loc` holds the
+        location of that call.
 
         @par Example
 
@@ -694,8 +729,6 @@ public:
         always succeed.
 
         @return A @ref result indicating success or failure.
-        On failure, `result::loc` contains the source location
-        of the @ref fail call.
     */
     template<class F>
         requires ContextRunnable<std::invoke_result_t<F, fuse&>>

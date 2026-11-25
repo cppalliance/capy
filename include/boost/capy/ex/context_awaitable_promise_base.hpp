@@ -27,12 +27,13 @@
 namespace boost {
 namespace capy {
 
-/** CRTP mixin that adds I/O awaitable support to a promise type.
+/** Give a promise frame allocation and environment propagation to I/O awaitables.
 
     Inherit from this class to enable these capabilities in your coroutine:
 
-    1. **Frame allocation** — The mixin provides `operator new/delete` that
-       use the thread-local frame allocator set by `run_async`.
+    1. **Frame allocation**: the mixin provides `operator new/delete` that
+       use the current frame allocator (see
+       @ref get_current_frame_allocator).
 
     2. **Environment storage** — The mixin stores a pointer to the `await_context`
        containing the executor, stop token, and allocator for this coroutine.
@@ -45,8 +46,6 @@ namespace capy {
     4. **Environment propagation** — Each @ref ContextAwaitable the
        coroutine awaits receives that environment.
 
-    @tparam Derived The derived promise type (CRTP pattern).
-
     @par Basic Usage
 
     For coroutines that need to access their execution environment:
@@ -57,8 +56,8 @@ namespace capy {
     @par Custom Awaitable Transformation
 
     If your promise needs to transform awaitables (e.g., for affinity or
-    logging), override `transform_awaitable` instead of `await_transform`,
-    and hand @ref ContextAwaitable types on to the base's
+    logging), override `transform_awaitable` instead of `await_transform`.
+    Hand @ref ContextAwaitable types on to the base's
     `transform_awaitable` so they still receive the environment:
 
     @par !example example_2
@@ -80,9 +79,9 @@ namespace capy {
 
 
     @par Ownership
-    A coroutine's frame is owned by the object that awaits it, such as
-    the parent's `task`, so a chain is destroyed from its top down, each
-    frame freeing the one it awaits. The suspended coroutine at the
+    The object that awaits a coroutine, such as the parent's `task`,
+    owns its frame. A chain is therefore destroyed from its top down,
+    each frame freeing the one it awaits. The suspended coroutine at the
     bottom is held by whoever will resume it: an operation, queue or
     primitive. A holder that will never resume it calls @ref abandon,
     which unwinds the chain's segment from its owner (see
@@ -97,11 +96,16 @@ namespace capy {
     thread of execution, so no synchronization is required.
 
     @note A chain waiting on a primitive stored in its own frames owns
-    itself through that primitive; it is freed only by a stop request or
-    by the primitive being signalled. A mutex must outlive every
-    coroutine holding or handed its lock. A cross-thread `wake()` racing
-    the teardown of an armed waker's frame on its executor thread is a
-    precondition violation.
+    itself through that primitive. Only a stop request or a signal on
+    the primitive frees it.
+
+    @note A mutex must outlive every coroutine holding or handed its
+    lock.
+
+    @note A cross-thread `wake()` racing the teardown of an armed
+    waker's frame on its executor thread is a precondition violation.
+
+    @tparam Derived The derived promise type (CRTP pattern).
 
     @see @ref this_coro::environment, @ref this_coro::executor,
          @ref this_coro::stop_token, @ref this_coro::frame_allocator
@@ -116,15 +120,11 @@ class context_awaitable_promise_base
     mutable std::coroutine_handle<> cont_{std::noop_coroutine()};
 
 public:
-    //----------------------------------------------------------
-    // Continuation support
-    //----------------------------------------------------------
-
     /** Store the continuation to resume on completion.
 
         Call this from your coroutine type's `await_suspend` overload
-        to set up the completion path. The `final_suspend` awaiter
-        returns this handle via unconditional symmetric transfer.
+        to set up the completion path. Your `final_suspend` awaiter
+        should return `continuation()` by symmetric transfer.
 
         @param cont The continuation to resume on completion.
     */
@@ -135,8 +135,8 @@ public:
 
     /** Return and consume the stored continuation handle.
 
-        Resets the stored handle to `noop_coroutine()` so the
-        destructor does not double-destroy it.
+        Resets the stored handle to `std::noop_coroutine()`, so a second
+        call returns a no-op handle.
 
         @return The continuation for symmetric transfer.
     */
@@ -145,19 +145,15 @@ public:
         return std::exchange(cont_, std::noop_coroutine());
     }
 
-    //----------------------------------------------------------
-    // Environment support
-    //----------------------------------------------------------
-
     /** Store a pointer to the execution environment.
 
-        Call this before the coroutine's body runs to make the
-        environment available via `co_await this_coro::environment` and
-        to each awaited @ref ContextAwaitable: from your coroutine
-        type's `await_suspend` overload when it receives the
-        environment from the awaiting coroutine, or from the promise's
-        constructor when the promise holds its own. The pointed-to
-        `await_context` must outlive this coroutine.
+        Call this before the coroutine's body runs. The environment then
+        reaches `co_await this_coro::environment` and each awaited
+        @ref ContextAwaitable. Call it from your coroutine type's
+        `await_suspend` overload when it receives the environment from
+        the awaiting coroutine. Call it from the promise's constructor
+        when the promise holds its own. The pointed-to `await_context`
+        must outlive this coroutine.
 
         @param env The environment to store.
     */
@@ -167,6 +163,9 @@ public:
     }
 
     /** Return the stored execution environment.
+
+        @pre @ref set_environment has been called with a non-null
+        pointer.
 
         @return The environment.
     */
@@ -179,23 +178,23 @@ public:
     /** Transform an awaitable before co_await.
 
         The default wraps a @ref ContextAwaitable so that it receives
-        this coroutine's environment when the coroutine suspends on it,
-        and the frame allocator is reinstalled when it resumes. The
-        awaitable is moved or copied into the wrapper, so an lvalue is
-        awaited as a copy, and a move-only one must be passed as an
-        rvalue. The wrapper also works around compilers that miscompile
+        this coroutine's environment when the coroutine suspends on it.
+        The wrapper also reinstalls the frame allocator when the
+        coroutine resumes. The awaitable is moved or copied into the
+        wrapper, so an lvalue is awaited as a copy. A move-only
+        awaitable must be passed as an rvalue. The wrapper also works
+        around compilers that miscompile
         symmetric transfer, so a promise relying on the default need
         not. Any other awaitable passes through unchanged. Override
         this in your derived promise type to customize how awaitables
         are transformed; an override that still awaits
         @ref ContextAwaitable types passes them to this function.
 
-        @par Preconditions
-        @ref set_environment has been called, if `A` satisfies
+        @pre @ref set_environment has been called, if `A` satisfies
         @ref ContextAwaitable. A promise that receives its environment
         when awaited calls it from its `await_suspend`, before the body
-        runs; one that holds its own environment calls it from its
-        constructor.
+        runs. A promise that holds its own environment calls it from
+        its constructor.
 
         @note An exception from a wrapped awaitable's `await_ready` or
         `await_suspend` calls `std::terminate`.
@@ -222,6 +221,9 @@ public:
         @ref this_coro::stop_token_tag, @ref this_coro::frame_allocator_tag)
         specially, returning an awaiter that yields the stored value.
         All other awaitables are delegated to @ref transform_awaitable.
+
+        @pre @ref set_environment has been called with a non-null
+        pointer, if `T` is one of the tag types.
 
         @param t The awaited expression.
 

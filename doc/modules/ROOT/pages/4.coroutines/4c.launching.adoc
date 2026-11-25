@@ -1,16 +1,21 @@
 = Starting Coroutines
 :page-mode: how-to
 
-== The Execution Model
+Capy tasks are xref:glossary.adoc#lazy[lazy]: they do not execute until something drives them. Two mechanisms exist:
 
-Capy tasks are xref:glossary.adoc#lazy[lazy]—they do not execute until something drives them. Two mechanisms exist:
+* *Awaiting*: One coroutine awaits another (`co_await task`)
+* *Starting*: Non-coroutine code initiates execution (cpp:run_async[])
 
-* *Awaiting* — One coroutine awaits another (`co_await task`)
-* *Starting* — Non-coroutine code initiates execution (cpp:run_async[])
-
-When a task is awaited, the awaiting coroutine provides context: an xref:glossary.adoc#executor[executor] for dispatching completion and a xref:glossary.adoc#stop-token[stop token] for xref:glossary.adoc#cancellation[cancellation]. Non-coroutine code must start the first task in a chain explicitly.
-
+Non-coroutine code must start the first task in a chain explicitly.
 xref:index.adoc#how-a-task-runs[How a Task Runs] shows both mechanisms as a sequence diagram.
+xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] introduces the executors and thread pools this page uses.
+
+[NOTE]
+====
+When a task is awaited, the awaiting coroutine provides its execution environment.
+The environment holds an xref:glossary.adoc#executor[executor] for dispatching completion and a xref:glossary.adoc#stop-token[stop token] for xref:glossary.adoc#cancellation[cancellation].
+It also holds the frame allocator and the owner that teardown uses to unwind the chain.
+====
 
 == run_async: Entry from Non-Coroutine Code
 
@@ -23,24 +28,28 @@ include::example$programs/4c_launching_run_async.cpp[tag=full]
 
 === Two-Call Syntax
 
-Notice the unusual syntax: cpp:run_async[]`(executor)(task)`. This is intentional and relates to {cpp}17 evaluation order.
+Call cpp:run_async[] with the executor first, then call the result with the task: cpp:run_async[]`(executor)(task)`.
 
+[NOTE]
+====
+The two calls rely on {cpp}17 evaluation order.
 {cpp}17 guarantees that in the expression `f(a)(b)`:
 
 1. `f(a)` is evaluated first, producing a callable
 2. `b` is evaluated second
 3. The callable is invoked with `b`
 
-This ordering matters because the task's xref:glossary.adoc#coroutine-frame[coroutine frame] is allocated during step 2, and cpp:run_async[] sets up thread-local allocator state in step 1. The task inherits that allocator.
+The task's xref:glossary.adoc#coroutine-frame[coroutine frame] is allocated during step 2, and cpp:run_async[] sets up thread-local allocator state in step 1. The task inherits that allocator.
+====
 
 [WARNING]
 ====
 Construct the task as the direct argument of the two-call expression. Three
-patterns split the two calls apart, and only the first is caught by the
-compiler.
+patterns split the two calls apart, and the compiler catches only part of the
+first one.
 
 *Stored wrapper.* Storing the result of cpp:run_async[]`(executor)` and calling
-it later does not compile, because the wrapper's call operator is
+it later as an lvalue does not compile, because the wrapper's call operator is
 rvalue-qualified:
 
 .Does not compile
@@ -49,6 +58,11 @@ rvalue-qualified:
 auto wrapper = capy::run_async(pool.get_executor());  // Don't do this
 wrapper(compute());  // Error: operator() requires an rvalue
 ----
+
+Calling `std::move(wrapper)(compute())` compiles. It allocates from the right
+resource only if nothing changes the thread-local frame allocator in between.
+Creating or destroying another wrapper changes it, as does any `co_await` or
+task start. The compiler cannot catch that misuse.
 
 *Preconstructed task.* Storing the *task* in a local and passing it in
 afterwards compiles and runs. Its frame is allocated by the time the wrapper
@@ -59,7 +73,7 @@ returned by an earlier statement, behaves the same way.
 pattern internally has the same effect. Its caller constructs the task as an
 argument to the helper, which is before the helper's body runs.
 
-The two silent patterns produce no diagnostic at all: the task runs, on a
+The preconstructed-task and wrapper-function patterns produce no diagnostic at all: the task runs, on a
 coroutine frame that came from the wrong allocator.
 cpp:run_async_wrapper[] documents each pattern, and
 xref:4.coroutines/4h.allocators.adoc#two-call-rationale[Frame Allocators] carries the
@@ -68,20 +82,23 @@ xref:4.coroutines/4h.allocators.adoc#two-call-rationale[Frame Allocators] carrie
 Always use the two-call pattern in a single expression.
 ====
 
-=== Handler Overloads
+=== Completion Handler Overloads
 
-cpp:run_async[] accepts optional handlers for results and exceptions:
+cpp:run_async[] accepts optional xref:glossary.adoc#completion-handler[completion handlers] for results and exceptions:
 
 [source,cpp]
 ----
 include::example$snippets/4c_launching.cpp[tag=handlers,indent=0]
 ----
 
-When no result handler is provided, the result is discarded. An exception
-that goes unhandled (no error handler was supplied, or a handler let one
-escape) calls `std::terminate`. To react to an error, pass an error handler;
-it receives the `std::exception_ptr` and should handle it in place rather
-than rethrowing. To catch an error, `co_await` the work inside a coroutine
+When no completion handler for the result is provided, the result is
+discarded. An exception that goes unhandled calls `std::terminate`. That
+happens when no completion handler for exceptions was supplied, or when a
+completion handler let one escape. To react to an error, pass a completion
+handler for exceptions. It receives the `std::exception_ptr` and should
+handle it in place rather than rethrowing. If the task is abandoned before it
+completes, as a context's teardown does, no completion handler is called.
+To catch an error, `co_await` the work inside a coroutine
 and use `try`/`catch` rather than starting it fire-and-forget.
 
 == run: Executor Hopping Within Coroutines
@@ -134,9 +151,9 @@ To override with a different token, pass it explicitly:
 include::example$snippets/4c_launching.cpp[tag=override_token,indent=0]
 ----
 
-== Handler Threading
+== Completion Handler Threading
 
-Handlers passed to cpp:run_async[] are invoked on whatever thread the executor schedules:
+Completion handlers passed to cpp:run_async[] are invoked on whatever thread the executor schedules:
 
 [source,cpp]
 ----

@@ -124,8 +124,8 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         @ref context_awaitable_promise_base. It is part of the coroutine
         machinery and is not intended to be used directly by callers.
 
-        Result storage and `return_value`/`return_void` are provided by
-        `detail::task_return_base<T>`.
+        It stores the task's result and provides `return_value`, or
+        `return_void` for `task<void>`.
 
         @see @ref context_awaitable_promise_base, @ref ContextRunnable
     */
@@ -288,9 +288,8 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
     /** Destroy the task and its coroutine frame if owned.
 
-        @par Preconditions
-        The frame is not lent: no parent is suspended awaiting it,
-        unless its chain is being unwound after an @ref abandon.
+        @pre The frame is not lent: no parent is suspended awaiting
+        it, unless its chain is being unwound after an @ref abandon.
         Destroying a lent frame otherwise calls `std::terminate`; end
         a running chain by requesting stop, or by destroying its
         execution context.
@@ -300,7 +299,7 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         destroy_frame();
     }
 
-    /** Report whether the awaited task is already complete.
+    /** Check whether the awaited task is already complete.
 
         Always returns `false`; a task is lazy and has not started when
         it is awaited, so the awaiting coroutine always suspends.
@@ -316,14 +315,14 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
         If the coroutine body exited via an unhandled exception, that
         exception is rethrown here. Otherwise the result is returned by
-        move (for `task<T>`) or nothing is returned (for `task<void>`).
-
-        @return The result value for non-void `T`; otherwise `void`.
+        move.
 
         @throws The exception captured by the coroutine body, if any.
 
         @note Discarding a `results` silently drops the error
-        code, so that overload is marked `[[nodiscard]]`.
+        code, so this overload is marked `[[nodiscard]]`.
+
+        @return The `results` value produced by the coroutine body.
     */
     [[nodiscard]] auto await_resume()
         requires detail::is_results_v<T>
@@ -334,6 +333,16 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         return std::move(*h_.promise().result_);
     }
 
+    /** Return the task's result, rethrowing any captured exception.
+
+        If the coroutine body exited via an unhandled exception, that
+        exception is rethrown here. Otherwise the result is returned by
+        move for non-void `T`, and nothing is returned for `task<void>`.
+
+        @throws The exception captured by the coroutine body, if any.
+
+        @return The result value for non-void `T`; otherwise `void`.
+    */
     auto await_resume()
         requires (! detail::is_results_v<T>)
     {
@@ -372,20 +381,13 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
     /** Return the coroutine handle.
 
         @note Do not call `destroy()` on the returned handle while the
-        task is being awaited: the awaiting frame still holds it and
-        destroys it again, which has undefined behavior. A holder that
-        gives the coroutine up passes its continuation to @ref abandon
-        instead. (Destroying or
-        move-assigning over the task object itself while its frame is
-        lent is a different operation, and calls `std::terminate`.)
+        task is being awaited. The awaiting frame still holds the
+        handle and destroys it again, which has undefined behavior.
+        The operation, queue or primitive holding a suspended coroutine
+        gives it up by passing its continuation to @ref abandon.
         The task's lifetime is normally managed by `run_async`, `run`,
         or the awaiting parent. For cooperative cancellation, use
         `std::stop_token`.
-
-        @note The operation, queue or primitive holding a suspended
-        coroutine gives it up with @ref abandon, through the
-        continuation it keeps, never by destroying a handle.
-        `handle()` belongs to the owning task object.
 
         @return The coroutine handle.
     */
@@ -400,15 +402,15 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         coroutine frame. The caller becomes responsible for the frame's
         lifetime.
 
-        @note The caller may call `destroy()` on the released handle
-        only when the task has not started or has fully completed.
-        Destroying the released handle of a task that is being
-        awaited is not supported and has undefined behavior.
-
         @par Postconditions
         `handle()` returns a null handle. Callers needing the
         original handle must save it, via @ref handle, before
         calling this.
+
+        @note The caller may call `destroy()` on the released handle
+        only when the task has not started or has fully completed.
+        Destroying the released handle of a task that is being
+        awaited is not supported and has undefined behavior.
     */
     void release() noexcept
     {
@@ -431,6 +433,9 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
 
     /** Construct by moving, transferring ownership of the frame.
 
+        @pre `other` is not being awaited. Moving from a task whose
+        frame is lent has undefined behavior.
+
         @par Postconditions
         `other` is empty and must not be awaited.
 
@@ -446,9 +451,13 @@ struct [[nodiscard]] BOOST_CAPY_CORO_AWAIT_ELIDABLE
         If this task already owns a coroutine frame, that frame is
         destroyed first. Self-assignment is a no-op.
 
-        @par Preconditions
-        The frame being replaced is not lent: no parent is suspended
-        awaiting it. Replacing a lent frame calls `std::terminate`.
+        @pre The frame being replaced is not lent: no parent is
+        suspended awaiting it, unless its chain is being unwound after
+        an @ref abandon. Replacing a lent frame otherwise calls
+        `std::terminate`.
+
+        @pre `other` is not being awaited. Moving from a task whose
+        frame is lent has undefined behavior.
 
         @par Postconditions
         `other` is empty and must not be awaited.

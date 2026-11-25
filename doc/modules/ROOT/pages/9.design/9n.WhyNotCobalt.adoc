@@ -3,9 +3,9 @@
 
 Both libraries use {cpp}20 coroutines for asynchronous programming.
 
-Cobalt is a coroutine layer built on Boost.Asio. It adds coroutine syntax — `promise`, `task`, `generator` — on top of Asio's existing I/O infrastructure. Asio is not coroutines-only. It supports callbacks, futures, and coroutines equally. Cobalt can add coroutine types on top, but it cannot change what lies beneath.
+Cobalt is a coroutine layer built on Boost.Asio. It adds coroutine types (`promise`, `task`, `generator`) on top of Asio's existing I/O infrastructure. Asio is not coroutines-only. It supports callbacks, futures, and coroutines equally. Cobalt can add coroutine types on top, but it cannot change what lies beneath.
 
-Capy is a coroutine-native I/O foundation. The design started from the ideal use case and worked backward to the implementation. The flat concept set, the xref:glossary.adoc#type-erased[type-erased] wrappers, the allocator model — these fell out naturally from use-case-first design, without compromise.
+Capy is a coroutine-native I/O foundation. The design started from the ideal use case and worked backward to the implementation. The flat concept set, the xref:glossary.adoc#type-erased[type-erased] wrappers, and the allocator model fell out naturally from use-case-first design, without compromise.
 
 == The Dimovian Ideal
 
@@ -41,13 +41,13 @@ include::example$asio/any_stream.cpp[tag=writer_reader]
 
 === What Cobalt Does Instead
 
-Cobalt's `cobalt::io` namespace provides wrappers around Asio I/O objects. These wrappers expose concrete Asio types through their interfaces. A `cobalt::io::steady_timer` is an `asio::basic_waitable_timer`. A `cobalt::io::socket` is an `asio::basic_stream_socket`.
+Cobalt's `cobalt::io` namespace, added in Boost 1.89, provides wrappers around Asio I/O objects. The wrappers hold Asio objects as members: `cobalt::io::steady_timer` holds an `asio::basic_waitable_timer`, and `cobalt::io::stream_socket` holds an `asio::basic_stream_socket`. Their headers include Asio and expose Asio types such as `asio::const_buffer` and `native_handle_type`.
 
-Consumers of Cobalt I/O objects must include Asio headers. The backend remains part of the public interface.
+Consumers of Cobalt I/O objects must include Asio headers. The I/O backend remains part of the public interface.
 
 === Relink Without Recompile
 
-A library written against Capy's type-erased streams can be relinked against entirely different stream implementations. TCP today. QUIC tomorrow. A test mock in CI. The polymorphism is the same as what templated Asio code achieves — except the library does not need a recompile. The binary is the interface. Drop in a new `.so` or `.dll` that implements the stream contract, relink, and behavior changes.
+A library written against Capy's type-erased streams can be relinked against entirely different stream implementations. TCP today. QUIC tomorrow. A test mock in CI. The polymorphism is the same as what templated Asio code achieves, except that the library does not need a recompile. The binary is the interface. Drop in a new `.so` or `.dll` that implements the stream contract, relink, and behavior changes.
 
 Templates can achieve this by type-erasing every customization point. The cost makes it impractical.
 
@@ -55,7 +55,7 @@ Templates can achieve this by type-erasing every customization point. The cost m
 |===
 | Aspect | Capy | Cobalt
 
-| Backend includes in header
+| I/O backend includes in header
 | None (forward declaration only)
 | Required
 
@@ -63,17 +63,17 @@ Templates can achieve this by type-erasing every customization point. The cost m
 | Pimpl + type-erased returns
 | Concrete Asio types exposed
 
-| Algorithm code depends on backend
+| Algorithm code depends on the I/O backend
 | No
-| Yes
+| On Asio headers, not on the concrete stream
 
 | Relink without recompile
 | Yes
-| No
+| Yes (through the `io::stream` virtual base)
 
 | ABI stability across implementations
 | Yes
-| No
+| Yes (through the `io::stream` virtual base)
 |===
 
 == Stream Concepts
@@ -120,21 +120,23 @@ The wrappers compose. cpp:any_stream[] satisfies both cpp:any_read_stream[] and 
 
 This is how the Dimovian Ideal is mechanically achieved.
 
+Cobalt has no wrapper types. A Cobalt stream inherits one of the abstract bases instead, and the Cobalt column lists the matching base.
+
 [cols="1,1,1"]
 |===
 | Type-Erased Wrapper | Capy | Cobalt
 
 | cpp:any_read_stream[]
 | Yes
-|
+| `io::read_stream` base class
 
 | cpp:any_write_stream[]
 | Yes
-|
+| `io::write_stream` base class
 
 | cpp:any_stream[]
 | Yes
-|
+| `io::stream` base class
 |===
 
 == Mock Streams and Testability
@@ -143,8 +145,8 @@ When algorithms operate on type-erased interfaces, testing becomes deterministic
 
 Capy's mock types:
 
-* cpp:test::read_stream[test::read_stream], cpp:test::write_stream[test::write_stream] — partial I/O mocks
-* cpp:test::stream[test::stream] — connected pair for bidirectional testing
+* cpp:test::read_stream[test::read_stream], cpp:test::write_stream[test::write_stream]: partial I/O mocks
+* cpp:test::stream[test::stream]: one end of a connected pair, for bidirectional testing
 
 cpp:test::fuse[test::fuse] injects errors systematically at every I/O operation point. cpp:test::run_blocking[test::run_blocking] executes coroutines synchronously for deterministic unit tests. `max_read_size` and `max_write_size` simulate chunked delivery. `expect()` validates written data.
 
@@ -216,7 +218,7 @@ Capy supports multi-threaded execution. cpp:thread_pool[] distributes work acros
 
 == Context Propagation
 
-Cobalt stores executor context in thread-local variables. Coroutines access it via `this_coro::executor`. This design is scoped to single-threaded, single-executor configurations.
+Each Cobalt coroutine stores a copy of its executor. The copy defaults to a thread-local executor, and `asio::executor_arg` overrides it. A `task` takes it from the awaiting coroutine instead. Coroutines access it via `this_coro::executor`. The thread-local default suits single-threaded, single-executor configurations, and only a `task` may resume on a thread other than the one that created it.
 
 Capy introduces the https://wg21.link/P4003[ContextAwaitable protocol] and uses it for context propagation. When you `co_await`, the caller passes its xref:glossary.adoc#environment[execution environment] to the child structurally:
 
@@ -233,15 +235,19 @@ No thread-local state. No ambient context. The executor and xref:glossary.adoc#s
 
 | Mechanism
 | `await_suspend(h, env)`
-| Thread-local variables
+| Per-coroutine copy, thread-local default
 
 | Works with xref:glossary.adoc#strand[strands]
 | Yes
-| No
+| Only with an explicit executor (`asio::executor_arg`)
 
 | Works with multiple executors
 | Yes
-| No
+| Only with an explicit executor (`asio::executor_arg`)
+
+| Resumption on another thread
+| Yes
+| `task` only
 
 | Stop token delivery
 | Structural (cpp:await_context[])
@@ -250,7 +256,7 @@ No thread-local state. No ambient context. The executor and xref:glossary.adoc#s
 
 == Cancellation
 
-Both libraries propagate xref:glossary.adoc#cancellation[cancellation] automatically through coroutine chains. Both support OS-level cancellation of pending I/O operations (`CancelIoEx` on Windows, `IORING_OP_ASYNC_CANCEL` on Linux).
+Both libraries propagate xref:glossary.adoc#cancellation[cancellation] automatically through coroutine chains. Both rely on an I/O layer to cancel pending I/O operations at the OS level: Corosio for Capy, Asio for Cobalt. Each layer uses `CancelIoEx` on Windows and `IORING_OP_ASYNC_CANCEL` when an io_uring backend is in use on Linux.
 
 Capy uses `std::stop_token`, propagated via the ContextAwaitable protocol's cpp:await_context[] parameter. The token flows forward structurally alongside the executor.
 
@@ -279,9 +285,9 @@ Cobalt uses Asio's `cancellation_signal` and `cancellation_slot`. Propagation is
 
 == Buffer Sequences
 
-Capy adopts Asio's xref:glossary.adoc#buffer-sequence[buffer sequence] model — cpp:ConstBufferSequence[], cpp:MutableBufferSequence[] — because it works. The optional `<boost/capy/buffers/asio.hpp>` header adapts between the two with `to_asio()`/`from_asio()` wrapper sequences — not an implicit conversion, but not a copy of the underlying memory either. Capy extends the model with additional types and algorithms, while still achieving the Dimovian Ideal.
+Capy adopts Asio's xref:glossary.adoc#buffer-sequence[buffer sequence] model (cpp:ConstBufferSequence[], cpp:MutableBufferSequence[]) because it works. The optional `<boost/capy/buffers/asio.hpp>` header adapts between the two with `to_asio()`/`from_asio()` wrapper sequences. These are not an implicit conversion, and they do not copy the underlying memory either. Capy extends the model with additional types and algorithms, while still achieving the Dimovian Ideal.
 
-Cobalt does not provide buffer sequence types. Users who need these features use Asio's types directly.
+Cobalt provides concrete `const_buffer_sequence` and `mutable_buffer_sequence` types over Asio buffers: one buffer, a registered buffer, or a span of buffers. For buffer algorithms, users call Asio's directly.
 
 [cols="1,1,1"]
 |===
@@ -289,11 +295,11 @@ Cobalt does not provide buffer sequence types. Users who need these features use
 
 | cpp:ConstBufferSequence[]
 | Yes
-| Via Asio
+| Concrete `const_buffer_sequence`
 
 | cpp:MutableBufferSequence[]
 | Yes
-| Via Asio
+| Concrete `mutable_buffer_sequence`
 
 | cpp:buffers_front[]
 | Yes
@@ -343,10 +349,6 @@ cpp:recycling_memory_resource[] provides zero-overhead recycling after warmup. M
 | Custom allocator support
 | cpp:run_async[]`(ex, alloc)`
 | Global setup only
-
-| Deterministic freeing
-| Yes
-| Non-deterministic on MSVC
 |===
 
 == Execution/Platform Separation
@@ -410,36 +412,36 @@ The Capy implementation:
 ----
 namespace {
 
-template<class WS> task<> serialize(json::value const& v, WS& ws);
+template<class WS> capy::task<> serialize(json::value const& v, WS& ws);
 
-template<class WS> task<> write(std::nullptr_t, WS& ws) {
+template<class WS> capy::task<> write(std::nullptr_t, WS& ws) {
     co_await ws.write("null", 4);
 }
-template<class WS> task<> write(bool v, WS& ws) {
+template<class WS> capy::task<> write(bool v, WS& ws) {
     if(v) co_await ws.write("true", 4);
     else  co_await ws.write("false", 5);
 }
-template<class WS> task<> write(std::int64_t v, WS& ws) {
+template<class WS> capy::task<> write(std::int64_t v, WS& ws) {
     char buf[32];
     auto r = std::to_chars(buf, buf + sizeof(buf), v);
     co_await ws.write(buf, r.ptr - buf);
 }
-template<class WS> task<> write(std::uint64_t v, WS& ws) {
+template<class WS> capy::task<> write(std::uint64_t v, WS& ws) {
     char buf[32];
     auto r = std::to_chars(buf, buf + sizeof(buf), v);
     co_await ws.write(buf, r.ptr - buf);
 }
-template<class WS> task<> write(double v, WS& ws) {
+template<class WS> capy::task<> write(double v, WS& ws) {
     char buf[32];
     auto r = std::to_chars(buf, buf + sizeof(buf), v);
     co_await ws.write(buf, r.ptr - buf);
 }
-template<class WS> task<> write(std::string_view v, WS& ws) {
+template<class WS> capy::task<> write(std::string_view v, WS& ws) {
     co_await ws.write("\"", 1);
     co_await ws.write(v.data(), v.size());
     co_await ws.write("\"", 1);
 }
-template<class WS> task<> write(json::array const& v, WS& ws) {
+template<class WS> capy::task<> write(json::array const& v, WS& ws) {
     co_await ws.write("[", 1);
     bool first = true;
     for(auto const& x : v) {
@@ -449,7 +451,7 @@ template<class WS> task<> write(json::array const& v, WS& ws) {
     }
     co_await ws.write("]", 1);
 }
-template<class WS> task<> write(json::object const& v, WS& ws) {
+template<class WS> capy::task<> write(json::object const& v, WS& ws) {
     co_await ws.write("{", 1);
     bool first = true;
     for(auto const& x : v) {
@@ -461,13 +463,13 @@ template<class WS> task<> write(json::object const& v, WS& ws) {
     }
     co_await ws.write("}", 1);
 }
-template<class WS> task<> serialize(json::value const& v, WS& ws) {
+template<class WS> capy::task<> serialize(json::value const& v, WS& ws) {
     return visit([&](auto const& v) { return write(v, ws); }, v);
 }
 
 struct write_sink {
     std::string r;
-    task<> write(void const* p, std::size_t n) {
+    capy::task<> write(void const* p, std::size_t n) {
         r.append(static_cast<char const*>(p), n);
         co_return;
     }
@@ -504,7 +506,7 @@ Every `co_await ws.write(...)` call creates a xref:glossary.adoc#coroutine-frame
 
 | Type-erased streams
 | 3 wrappers
-| None
+| Abstract base classes (`io::stream`). Types must inherit
 
 | xref:glossary.adoc#mock-stream[Mock streams]
 | 3 mock types + `fuse`
@@ -516,15 +518,15 @@ Every `co_await ws.write(...)` call creates a xref:glossary.adoc#coroutine-frame
 
 | Context propagation
 | Structural (`await_suspend` parameters)
-| Thread-local
+| Per-coroutine copy, thread-local default
 
 | Cancellation
-| `std::stop_token`, automatic, OS-level
-| `cancellation_signal`, automatic, OS-level
+| `std::stop_token`, automatic, OS-level (via Corosio)
+| `cancellation_signal`, automatic, OS-level (via Asio)
 
 | Buffer sequences
 | Extended (cpp:buffers_front[])
-| None (use Asio directly)
+| Concrete sequence types over Asio buffers
 
 | Allocator control
 | Per-task, forward-flow
@@ -536,5 +538,5 @@ Every `co_await ws.write(...)` call creates a xref:glossary.adoc#coroutine-frame
 
 | Relink without recompile
 | Yes
-| No
+| Yes (through `io::stream`)
 |===

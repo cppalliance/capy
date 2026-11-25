@@ -21,8 +21,8 @@ include::example$producer-consumer/producer_consumer.cpp[tag=full]
 
 [source,cmake,role=external]
 ----
-add_executable(producer_consumer producer_consumer.cpp)
-target_link_libraries(producer_consumer PRIVATE Boost::capy)
+add_executable(capy_example_producer_consumer producer_consumer.cpp)
+target_link_libraries(capy_example_producer_consumer PRIVATE Boost::capy)
 ----
 
 == Walkthrough
@@ -59,7 +59,9 @@ include::example$producer-consumer/producer_consumer.cpp[tag=producer,indent=0]
 include::example$producer-consumer/producer_consumer.cpp[tag=consumer,indent=0]
 ----
 
-The `co_await data_ready.wait()` suspends until `set()` is called.
+In this program the producer runs first and sets the event before the consumer starts.
+The consumer's `co_await data_ready.wait()` finds the event set and does not suspend.
+If the event were clear, the wait would suspend until `set()` is called.
 
 === Running Both
 
@@ -91,7 +93,8 @@ Consumer: waiting for data...
 Consumer: received value 42
 ----
 
-(Output order may vary due to concurrent execution)
+The output order is the same on every run.
+The strand runs the two children in argument order, and the producer never suspends, so it finishes before the consumer starts.
 
 == Exercises
 

@@ -34,7 +34,7 @@ namespace capy {
 class const_buffer;
 class mutable_buffer;
 
-/** A reference to a contiguous region of writable memory.
+/** Refer to a contiguous region of writable memory without owning it.
 
     Represents a pointer and size pair for a modifiable byte range.
     Does not own, allocate, or copy the memory: copying a buffer copies
@@ -74,8 +74,7 @@ public:
 
         Takes `void*` so a pointer to any object type binds without a
         cast, since the buffer represents a raw, untyped writable
-        region. Stored internally as `unsigned char*` for byte-wise
-        pointer arithmetic (see `operator+=`).
+        region.
 
         @param data A pointer to the first byte of the region.
 
@@ -126,7 +125,7 @@ public:
     }
 };
 
-/** A reference to a contiguous region of read-only memory.
+/** Refer to a contiguous region of read-only memory without owning it.
 
     Represents a pointer and size pair for a non-modifiable byte range.
     Does not own, allocate, or copy the memory: copying a buffer copies
@@ -165,8 +164,7 @@ public:
 
         Takes `void const*` so a pointer to any object type binds
         without a cast, since the buffer represents a raw, untyped
-        read-only region. Stored internally as `unsigned char const*`
-        for byte-wise pointer arithmetic (see `operator+=`).
+        read-only region.
 
         @param data A pointer to the first byte of the region.
 
@@ -421,15 +419,14 @@ constexpr struct
     /** Return the total byte count across all buffers in a sequence.
 
         Sums the `size()` of each buffer in the sequence. This differs
-        from `buffers_count` which counts the number of buffer elements.
-
-        @param bs The buffer sequence.
-
-        @return The sum of the sizes of all buffers in `bs`.
+        from @ref buffers_count which counts the number of buffer elements.
 
         @par Example
         @par !example example
 
+        @param bs The buffer sequence.
+
+        @return The sum of the sizes of all buffers in `bs`.
     */
     template<ConstBufferSequence CB>
     constexpr std::size_t operator()(
@@ -461,8 +458,7 @@ constexpr struct
 
         @param bs The buffer sequence.
 
-        @return `true` if all buffers have size zero or the sequence
-            is empty.
+        @return `true` if every buffer is empty or the sequence has none.
     */
     template<ConstBufferSequence CB>
     constexpr bool operator()(
@@ -513,6 +509,9 @@ length_impl(It first, It last, long)
     Counts the number of individual buffer objects, not bytes.
     For a single buffer, returns 1. For a range, returns the
     distance from `buffer_sequence_begin` to `buffer_sequence_end`.
+
+    @par Exception Safety
+    Throws only what the sequence's iterator operations throw.
 
     @param bs The buffer sequence.
 

@@ -3,7 +3,7 @@
 
 == Where Capy Advances Beyond Asio
 
-Boost.Asio is currently the world leader in portable asynchronous I/O. The standard is silent here. The global ecosystem offers nothing comparable.
+Boost.Asio is the established library for portable asynchronous I/O in {cpp}. The standard is silent here.
 
 *Capy advances beyond Boost.Asio in several specific domains*, and the sections below take them one at a time.
 
@@ -44,7 +44,7 @@ Every {cpp} developer who has worked with Asio knows the pain. You write a funct
 
 Asio does offer type-erasure—but at the wrong level. `any_executor` erases the executor. `any_completion_handler` erases the callback. These help, but they don't address the fundamental problem: the stream type itself propagates everywhere.
 
-Why hasn't anyone xref:glossary.adoc#type-erased[type-erased] the stream? Because with callbacks and futures, it's expensive. The xref:glossary.adoc#completion-handler[completion handler] type is part of the stream's operation signature. Erasing it means virtual calls on the hot path—for every continuation, not just every I/O operation.
+Why has Asio never xref:glossary.adoc#type-erased[type-erased] the stream? Because with callbacks and futures, it's expensive. The xref:glossary.adoc#completion-handler[completion handler] type is part of the stream's operation signature. Erasing it means virtual calls on the hot path, for every continuation, not just every I/O operation.
 
 Coroutines change this equation. A coroutine's continuation is always the same thing: a handle to resume. The caller doesn't need to know what type resumes it. This is structural type-erasure—built into the language. Type-erasing a stream costs five indirect calls per I/O operation, not one per continuation: construct the xref:glossary.adoc#awaitable[awaitable], `await_ready`, `await_suspend`, `await_resume`, destroy it. A synchronously completed read costs four, because `await_suspend` is skipped when `await_ready` returns `true`. No per-callback overhead. No template instantiation cascades.
 
@@ -139,7 +139,7 @@ When you write a coroutine, three questions arise immediately. Where does it run
 
 *How is its frame allocated?* xref:glossary.adoc#coroutine-frame[Coroutine frames] live on the heap by default. For high-throughput servers handling thousands of concurrent operations, allocation overhead matters. You want to reuse frames. You want custom allocators. But here's the catch: the frame is allocated before the coroutine body runs. The allocator must be known before the frame exists. Either every coroutine in the chain takes it as a parameter, or it arrives some other way.
 
-Asio has answers to these questions, but they're constrained. Asio must support callbacks and futures alongside coroutines. It cannot build an execution model optimized for coroutines alone. And it bundles everything together—execution model, networking, timers, platform abstractions—in one monolithic library.
+Asio has answers to these questions, but they're constrained. Asio must support callbacks and futures alongside coroutines. It cannot build an execution model optimized for coroutines alone. And it bundles everything in one monolithic library: execution model, networking, timers, platform abstractions.
 
 The {cpp}26 working draft has `std::execution` (P2300), the sender/receiver model. It's powerful and general. It's also complex, academic, and not designed for coroutines first. Its context flows backward, from receiver to xref:glossary.adoc#sender[sender], so it arrives after a coroutine frame is already allocated. P3552R3 adds a `task` type to it, but it's built on sender/receiver and inherits its limitations. xref:9.design/9q.WhyNotStdExecution.adoc[Why Not std::execution?] compares the two models in full.
 
@@ -147,7 +147,7 @@ Capy builds an execution model purpose-built for coroutines and I/O.
 
 The *ContextAwaitable protocol* solves context propagation. When you `co_await`, the caller passes its executor and xref:glossary.adoc#stop-token[stop token] to the child through an extended `await_suspend` signature. No explicit parameters. No promise coupling. Context flows forward, naturally.
 
-*Stop tokens propagate automatically.* Cancel at the top of your coroutine tree, and every nested operation receives the signal. Capy integrates with OS-level cancellation—`CancelIoEx` on Windows, `IORING_OP_ASYNC_CANCEL` on Linux. Pending I/O operations cancel immediately.
+*Stop tokens propagate automatically.* Cancel at the top of your coroutine tree, and every nested operation receives the signal. The I/O backend turns that signal into OS-level cancellation. Corosio, for example, issues `CancelIoEx` on Windows and `IORING_OP_ASYNC_CANCEL` with its io_uring backend on Linux, so pending I/O operations do not have to run to completion.
 
 *Frame allocation uses forward flow.* The two-call syntax of cpp:run_async[]`(executor)(my_task())` sets a thread-local allocator before the task is evaluated. The task's `operator new` reads it. No backward flow. Ergonomic control over where every frame is allocated.
 
@@ -155,15 +155,15 @@ And Capy *separates execution from platform*. The execution model—executors, c
 
 Most importantly, Capy defines a *taxonomy of awaitables*. cpp:ContextAwaitable[] is the base protocol for any type that participates in context propagation. cpp:ContextRunnable[] refines it with the interface that cpp:run_async[] and cpp:run[] need to start a task. This hierarchy means you can write your own task types that integrate with Capy's execution model. Asio's `awaitable<T>` is a concrete type, not a concept. You use it or you don't. Capy gives you building blocks.
 
-Neither Asio nor `std::execution` offers this combination of forward-flow allocator control, automatic stop-token propagation, and execution/platform separation.
+Neither Asio nor `std::execution` offers forward-flow allocator control. Capy combines it with forward stop-token propagation and execution/platform separation.
 
 === What Capy Offers
 
-* cpp:ContextAwaitable[], cpp:ContextRunnable[] — taxonomy of awaitable concepts
-* cpp:task[task<T>] — concrete task type implementing the protocol (user-defined tasks also supported)
-* cpp:run[], cpp:run_async[] — launcher functions with forward-flow allocator control
+* cpp:ContextAwaitable[], cpp:ContextRunnable[]: taxonomy of awaitable concepts
+* cpp:task[task<T>]: concrete task type implementing the protocol (user-defined tasks also supported)
+* cpp:run[], cpp:run_async[]: functions that start a task, with forward-flow allocator control
 * cpp:strand[], cpp:thread_pool[], cpp:async_mutex[], cpp:async_event[], cpp:async_waker[]: concurrency primitives
-* `frame_allocator`, cpp:recycling_memory_resource[] — coroutine-optimized allocation
+* xref:glossary.adoc#frame-allocator[Frame allocator] propagation, cpp:recycling_memory_resource[]: coroutine-optimized allocation
 
 === Comparison
 
@@ -201,7 +201,7 @@ cpp:strand[], cpp:thread_pool[] and cpp:execution_context[] carry the same names
 | `any_executor`
 ^| -
 
-| `frame_allocator`
+| xref:glossary.adoc#frame-allocator[Frame allocator] propagation
 ^| -
 ^| -
 
@@ -222,8 +222,8 @@ cpp:strand[], cpp:thread_pool[] and cpp:execution_context[] carry the same names
 ^| -
 
 | `stop_token` propagation
-^| -
-| `stop_token`***
+| Cancellation slots (not `stop_token`)
+| Automatic, via the receiver environment***
 
 | User-defined task types
 ^| -
@@ -242,7 +242,7 @@ cpp:strand[], cpp:thread_pool[] and cpp:execution_context[] carry the same names
 
 **P3552R3 is sender/receiver based, has allocator timing issue; see xref:9.design/9q.WhyNotStdExecution.adoc#frame-allocation[Why Not std::execution?]
 
-***std has the token but no automatic propagation
+***Backward: the token reaches an operation through the receiver environment, after `connect`. See xref:9.design/9q.WhyNotStdExecution.adoc[Why Not std::execution?] for the difference in direction.
 
 == You Do Not Have to Choose
 
@@ -258,7 +258,7 @@ Asynchronous code is hard to test. The failures that matter are timing-dependent
 
 cpp:test::run_blocking[] drives a coroutine to completion on the calling thread. Each call builds a private single-threaded loop, so a test needs no executor and no thread pool of its own.
 
-cpp:test::stream[] is a connected in-memory pair implementing the same partial-I/O concepts a socket does. Protocol code written against cpp:any_stream[]`&` runs against it unchanged, so the code under test is the code you ship.
+cpp:test::stream[] is one end of an in-memory pair created by `make_stream_pair`, implementing the same partial-I/O concepts a socket does. Protocol code written against cpp:any_stream[]`&` runs against it unchanged, so the code under test is the code you ship.
 
 cpp:test::fuse[] repeats the test body in two full sweeps, error-code mode and then exception mode, injecting a failure at each site that can fail. Error paths get taken rather than assumed. cpp:test::bufgrind[] iterates every split point of a buffer sequence, so every chunk-boundary condition is exercised.
 
@@ -315,4 +315,4 @@ Meanwhile, the {cpp} standards committee has produced `std::execution`—a sende
 
 Boost has always been where the practical meets the principled. Where real-world feedback shapes design. Where code ships before papers standardize. Capy continues this tradition.
 
-This library advances beyond Asio in the domains where they overlap. Not by abandoning what works, but by building on it. Not by chasing theoretical purity, but by solving the problems that have frustrated {cpp} developers for years. Those problems are template explosion, compile-time costs, error message novels, ergonomic concurrency, and more.
+This library advances beyond Asio in the domains where they overlap. Not by abandoning what works, but by building on it. Not by chasing theoretical purity, but by solving the problems that have frustrated {cpp} developers for years. Those problems are template explosion, compile-time costs, unreadable error messages, ergonomic concurrency, and more.

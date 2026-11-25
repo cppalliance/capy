@@ -34,10 +34,10 @@ void test_with_mock()
 
 // With real sockets (using Corosio), you would write:
 //
-// task<> handle_client(corosio::tcp::socket socket)
+// capy::task<> handle_client(corosio::tcp_socket socket)
 // {
 //     // Value construction moves socket into wrapper (transfers ownership)
-//     any_stream stream{std::move(socket)};
+//     capy::any_stream stream{std::move(socket)};
 //     co_await myapp::echo_session(stream);
 // }
 

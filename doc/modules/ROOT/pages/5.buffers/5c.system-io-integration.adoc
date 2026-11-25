@@ -32,41 +32,45 @@ typedef struct _WSABUF {
 } WSABUF;
 ----
 
-Windows uses `WSABUF` with `WSARecv()` and `WSASend()`. The field order is reversed and the length is 32-bit, so Capy copies descriptors into a `WSABUF` array rather than casting.
+Windows uses `WSABUF` with `WSARecv()` and `WSASend()`. The field order is reversed and the length is 32-bit, so an I/O backend copies descriptors into a `WSABUF` array rather than casting.
 
 == Translation Process
 
-When you call an I/O function with a xref:glossary.adoc#buffer-sequence[buffer sequence]:
+Capy makes no I/O system calls itself.
+An I/O backend, such as Corosio, implements cpp:ReadStream[] and cpp:WriteStream[] on top of the operating system.
+When you pass a xref:glossary.adoc#buffer-sequence[buffer sequence] to its `write_some`, the I/O backend translates the descriptors into the platform structures above and makes the OS call.
 
-[source,cpp]
-----
-include::example$snippets/5c_system_io_integration.cpp[tag=write_some_signature]
-----
+The type-erased streams add one step in front of the I/O backend.
+cpp:any_write_stream[] copies at most the first 16 non-empty buffers into a fixed array inside its awaitable.
+It passes that array to the wrapped stream's `write_some` in one call, with no allocation.
+cpp:any_read_stream[] does the same for `read_some`.
+Buffers past the sixteenth are not part of that call.
+The limit of 16 is implementation-defined.
 
-Capy counts the buffers, fills an array of platform structures with the descriptors, calls the OS function, and returns the result.
+A `write_some` call may transfer fewer bytes than offered.
+The composed algorithms cpp:write[] and cpp:read[] loop over `write_some` and `read_some`.
+Each iteration passes the part of the sequence not yet transferred, so a long sequence goes out over several calls:
 
-Conversion always happens on the stack; the implementation never allocates. A fixed on-frame window of 16 descriptors is filled from the sequence and passed to the OS call. If the sequence holds more buffers than fit, the window is refilled and the call repeated:
-
-.Pseudocode - internal implementation
+.Pseudocode - how `write` drives `write_some`
 [source,cpp,role=pseudocode]
 ----
-template<capy::ConstBufferSequence Buffers>
-auto platform_write(Buffers const& buffers)
+template<capy::WriteStream Stream, capy::ConstBufferSequence Buffers>
+capy::task<capy::results<std::size_t>>
+write(Stream& stream, Buffers buffers)
 {
-    iovec iovecs[16];  // fixed on-frame window, never heap-allocated
-
-    auto it = capy::buffer_sequence_begin(buffers);
-    auto last = capy::buffer_sequence_end(buffers);
-    while (it != last)
+    std::size_t const total = capy::buffer_size(buffers);
+    std::size_t written = 0;
+    while (written < total)
     {
-        std::size_t count = fill_iovecs(iovecs, it, last, 16);  // up to 16
-        auto result = writev(fd, iovecs, count);
-        // ... advance the window past the buffers just written
+        // remaining(buffers, written) stands for the bytes not yet sent
+        auto [ec, n] = co_await stream.write_some(remaining(buffers, written));
+        written += n;
+        if (ec && written < total)
+            co_return {ec, written};
     }
+    co_return {std::error_code(), written};
 }
 ----
-
-The window size is implementation-defined.
 
 == Why Vectored I/O
 
@@ -87,7 +91,7 @@ include::example$snippets/5c_system_io_integration.cpp[tag=two_syscalls,indent=0
 include::example$snippets/5c_system_io_integration.cpp[tag=gather_syscall,indent=0]
 ----
 
-The data is never copied into a contiguous staging buffer; the OS reads directly from each region. The write is also atomic at the file offset level, so other processes see all of the data or none of it.
+The data is never copied into a contiguous staging buffer. The OS reads directly from each region.
 
 == Registered Buffers
 
@@ -98,7 +102,7 @@ Some platforms allow buffers to be pre-registered with the kernel, removing per-
 include::example$snippets/5c_system_io_integration.cpp[tag=io_uring_fixed,indent=0]
 ----
 
-Windows IOCP offers a comparable optimization with pre-registered memory regions.
+Windows offers a comparable optimization through Registered I/O (RIO).
 
 Corosio does not currently expose either. Every operation goes through the per-call translation described above.
 
@@ -111,7 +115,7 @@ Fewer buffers means less translation overhead:
 include::example$snippets/5c_system_io_integration.cpp[tag=minimize_buffer_count,indent=0]
 ----
 
-For repeated I/O with the same structure, consider caching the platform array:
+No Capy API accepts platform structures. If your own code calls `writev` directly with the same structure each time, consider caching the platform array:
 
 [source,cpp]
 ----

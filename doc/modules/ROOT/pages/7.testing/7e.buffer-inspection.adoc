@@ -13,7 +13,7 @@
 == bufgrind
 
 `bufgrind` is a test utility that iterates through every way to split a buffer
-sequence into two contiguous pieces. For an N-byte input it produces N+1 split
+sequence into two adjacent pieces. For an N-byte input it produces N+1 split
 positions: `(0, N)`, `(1, N-1)`, ..., `(N, 0)`. The two pieces at each
 position concatenate back to the original sequence. Any code that processes
 a buffer in chunks is exercised at every possible chunk boundary with a single
@@ -65,7 +65,7 @@ two positions: 0 and size.
 produces follow the mutability of the input. Each half is itself a
 buffer sequence (cpp:test::bufgrind::slice_type[slice_type]). Passing a cpp:mutable_buffer[] yields halves
 that model cpp:MutableBufferSequence[]; passing a cpp:const_buffer[] yields
-halves that model `ConstBufferSequence`.
+halves that model cpp:ConstBufferSequence[].
 
 [source,cpp]
 ----
@@ -103,7 +103,10 @@ See cpp:test::buffer_to_string[] for the exact signature.
 == Putting It Together
 
 The following snippet tests a hypothetical parser that reads from a
-cpp:test::read_stream[read_stream], applying both utilities together:
+cpp:test::stream[stream], applying both utilities together.
+For each split, one writer sends the first piece and a second writer sends the rest.
+cpp:when_all[] posts its children in argument order, and `run_blocking` runs them in that order on one thread.
+The parser therefore receives the two pieces in separate reads:
 
 [source,cpp]
 ----

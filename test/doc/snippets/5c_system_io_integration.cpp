@@ -61,15 +61,6 @@ namespace {
 
 using namespace std::string_view_literals;
 
-// ---------------------------------------------------------------------
-// System I/O integration
-// ---------------------------------------------------------------------
-
-// tag::write_some_signature[]
-template<capy::ConstBufferSequence Buffers>
-capy::task<capy::results<std::size_t>> write_some(Buffers buffers);
-// end::write_some_signature[]
-
 #if defined(BOOST_CAPY_DOC_HAS_POSIX_IO)
 
 // The page fragments deliberately ignore syscall results; the point

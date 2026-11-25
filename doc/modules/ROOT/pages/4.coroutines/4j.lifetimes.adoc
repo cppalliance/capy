@@ -16,10 +16,10 @@ objects it was given have gone. Most coroutine bugs are lifetime bugs: a
 reference that outlived what it referred to, or a frame that outlived what it
 held.
 
-This page gathers the rules for composing Capy coroutines: what a coroutine
-frame keeps alive, which arguments are safe to pass by reference, who owns a
-suspended coroutine, and what happens to it when the thing it waits on is torn
-down.
+This page gathers the rules for composing Capy coroutines. It covers what a
+coroutine frame keeps alive and which arguments are safe to pass by reference.
+It also covers who owns a suspended coroutine, and what happens to it when the
+thing it waits on is torn down.
 
 == What a Frame Keeps Alive
 
@@ -34,7 +34,7 @@ parameter is a reference the frame holds to a string someone else owns, and
 nothing keeps that string alive.
 
 A cpp:task[] is xref:glossary.adoc#lazy[lazy]: the coroutine does not start until it is awaited or
-launched. The `task` object owns the frame. Awaiting a task lends the frame to
+passed to cpp:run_async[]. The `task` object owns the frame. Awaiting a task lends the frame to
 the awaiting coroutine, which resumes when it finishes; destroying an unstarted
 or finished task destroys its frame.
 
@@ -67,9 +67,9 @@ stored. The string is then moved into the frame:
 include::example$snippets/4j_lifetimes.cpp[tag=value_param]
 ----
 
-Tasks are stored more often than it looks. Every launch stores one:
+Tasks are stored more often than it looks. Starting one stores it:
 cpp:run_async[] starts the task through its xref:glossary.adoc#executor[executor], which can run it after
-the full expression that launched it has ended:
+the full expression that started it has ended:
 
 [source,cpp]
 ----
@@ -90,9 +90,9 @@ The rules:
 
 * Take parameters by value unless every caller awaits the task at once.
 * A reference parameter is fine for a task that is always awaited in the
-  expression that creates it, such as a helper a coroutine calls and
-  immediately awaits.
-* Anything passed to a launched or stored task must be owned by its frame or
+  expression that creates it. An example is a helper that a coroutine calls
+  and awaits at once.
+* Anything passed to a started or stored task must be owned by its frame or
   outlive it.
 
 == Lambda Captures
@@ -122,21 +122,26 @@ they describe is not.
 == Inside an Awaitable
 
 An awaitable is given an cpp:await_context[] pointer in `await_suspend`. The
-environment belongs to the launcher that started the chain and lives until the
-awaitable's coroutine resumes or is unwound, so the awaitable can keep the
-pointer. The cpp:continuation[] it hands to an executor must keep a stable
-address until the executor runs it, so it belongs in the awaitable, not on the
-stack.
+environment belongs to the owner of the awaitable's segment, described in
+<<_who_owns_a_suspended_coroutine,Who Owns a Suspended Coroutine>>. It lives
+until the awaitable's coroutine resumes or is unwound, so the awaitable can keep
+the pointer. The cpp:continuation[] it hands to an executor must keep a stable
+address until the executor runs it. It therefore belongs in the awaitable, not
+on the stack.
 
-xref:4.coroutines/4e.context-awaitable.adoc#_implementing_custom_contextawaitables[Implementing Custom ContextAwaitables]
+xref:4.coroutines/4e.context-awaitable.adoc#_implementing_custom_contextawaitables[Implementing a Custom I/O Awaitable]
 lists these rules, and the rules for stop callbacks.
 
 == Who Owns a Suspended Coroutine
 
 A chain of coroutines awaiting one another is split into _segments_. A segment
-is the run of coroutines started together: the task cpp:run_async[] launches
-and everything it awaits, a task cpp:run[] starts on another executor, or one
-branch of cpp:when_all[] or cpp:when_any[]. The coroutine that started the
+is the run of coroutines started together. It is one of these:
+
+* the task cpp:run_async[] starts, and everything it awaits
+* a task cpp:run[] starts on another executor
+* one branch of cpp:when_all[] or cpp:when_any[]
+
+The coroutine that started the
 segment is its _owner_. It is suspended above the segment until the
 segment's top task finishes.
 
@@ -166,15 +171,15 @@ Abandoning is what teardown does to work that was not stopped first. See
 xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation].
 
 Never call `destroy()` on the handle of a coroutine that another coroutine is
-awaiting. The awaiting frame still holds it and destroys it again. A task whose
-frame is destroyed while it is awaited, outside the unwind of an abandoned
-chain, calls `std::terminate`.
+awaiting. The awaiting frame still holds it and destroys it again, which is
+undefined behavior. Destroying or move-assigning over a `task` object while a
+parent awaits it is a different operation. Outside the unwind of an abandoned
+chain, it calls `std::terminate`.
 
 == Shutdown Ordering
 
 Destroying an xref:glossary.adoc#execution-context[execution context], such as a cpp:thread_pool[], abandons the
-coroutines still queued or suspended in it, including those queued on its
-strands. Each chain is unwound
+coroutines still queued on it or its strands, and those its services hold. Each chain is unwound
 on the executor of the coroutine that started it. When that executor belongs to
 the context being destroyed, the unwind runs during the destruction. When it
 belongs to another context, the unwind runs there later.
@@ -194,7 +199,7 @@ That gives the ordering rules:
   on another context, its unwind would run after the first context is gone.
 * The executors, memory resources and allocators given to cpp:run_async[] and
   cpp:run[] must outlive the chains they start, including their unwind.
-* No thread may post to a context during or after its destruction.
+* No thread outside a context may post to it during or after its destruction.
 
 The pattern is to request a stop, wait for the work to end, then destroy:
 
@@ -204,7 +209,8 @@ include::example$snippets/4j_lifetimes.cpp[tag=shutdown_order,indent=0]
 ----
 <1> The work observes the token and finishes through its own code.
 <2> `join` waits for the outstanding work, then for the worker threads.
-<3> The pool is destroyed with nothing left to abandon.
+<3> Nothing waits on `never_set` any more. The pool is destroyed with nothing
+    left to abandon, and the event after it.
 
 == Summary
 
@@ -215,7 +221,7 @@ include::example$snippets/4j_lifetimes.cpp[tag=shutdown_order,indent=0]
 | Task parameter
 | By value, unless every caller awaits the task in the same expression.
 
-| Launched or stored task
+| Started or stored task
 | Everything it reads is owned by its frame or outlives it.
 
 | Lambda coroutine

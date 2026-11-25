@@ -8,7 +8,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Compiled fragments shown in pages/4.coroutines/4d.context-awaitable.adoc.
+// Compiled fragments shown in pages/4.coroutines/4e.context-awaitable.adoc.
 
 #include "../doc_warnings.hpp"
 
@@ -135,6 +135,9 @@ struct my_awaitable
         // Wrap the caller's handle in a continuation we own, so it stays
         // at a stable address until the executor resumes it.
         cont_.h = h;
+        // Lets whoever holds the continuation at teardown abandon the
+        // whole chain, not just this frame.
+        cont_.owner = env->owner;
 
         // Start async operation...
         start_operation();
@@ -180,6 +183,7 @@ struct add_awaitable
     {
         env_ = env;
         cont_.h = h;
+        cont_.owner = env->owner;      // the executor holds it once posted
         result_ = a_ + b_;             // the operation produced a value
         env_->executor.post(cont_);    // resume the caller on its executor
         return std::noop_coroutine();
@@ -222,7 +226,7 @@ void await_transform_sketch()
     {
         // tag::reject_plain[]
         // In task.hpp, when the awaited type is not a ContextAwaitable:
-        static_assert(sizeof(A) == 0, "requires ContextAwaitable");
+        static_assert(capy::ContextAwaitable<A>, "requires ContextAwaitable");
         // end::reject_plain[]
     }
 }
@@ -253,6 +257,7 @@ struct foreign_bridge
     {
         env_ = env;
         cont_.h = h;   // stable address; the executor links continuations intrusively
+        cont_.owner = env->owner;  // so a holder can abandon the whole chain
 
         // Start the foreign operation. Its completion callback may run on
         // ANY thread, so it must not resume h directly. Instead it posts
@@ -314,4 +319,4 @@ struct context_awaitable_test
 
 } // namespace
 
-TEST_SUITE(context_awaitable_test, "boost.capy.doc.4d_context_awaitable");
+TEST_SUITE(context_awaitable_test, "boost.capy.doc.4e_context_awaitable");

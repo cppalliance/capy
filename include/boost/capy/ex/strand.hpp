@@ -36,23 +36,14 @@ namespace capy {
     @par Invariant
     Coroutines resumed through a strand shall not run concurrently.
 
-    @par Implementation
-    Each strand allocates a private serialization state. Strands
-    constructed from the same execution context share a small pool
-    of mutexes (193 entries) selected by hash. Mutex sharing causes
-    only brief contention on the push/pop critical section, never
-    cross-strand state sharing. Construction cost: one
-    `std::make_shared` per strand.
-
     @par Executor Concept
     This class satisfies the `Executor` concept, providing:
-    - `context()` - Returns the underlying execution context
-    - `on_work_started()` / `on_work_finished()` - Work tracking
-    - `dispatch(continuation&)` - May run immediately if already executing in this strand
-    - `post(continuation&)` - Always queues for later execution
+    - `context()` returns the underlying execution context.
+    - `on_work_started()` and `on_work_finished()` track work.
+    - `dispatch(continuation&)` may resume inline when already in this strand.
+    - `post(continuation&)` always queues for later execution.
 
-    @par Preconditions
-    A strand holds only a non-owning reference to its inner executor's
+    @pre A strand holds only a non-owning reference to its inner executor's
     execution context (for example a `thread_pool`). That context must
     outlive every post() and dispatch() call; posting or dispatching
     concurrently with, or after, the context's destruction is undefined
@@ -89,14 +80,15 @@ class strand
     friend struct strand_test;
 
 public:
-    /** Names the executor type this `strand<Ex>` wraps.
-    */
+    /// Names the executor type this `strand<Ex>` wraps.
     using inner_executor_type = Ex;
 
     /** Construct a strand for the specified executor.
 
         Allocates a fresh strand implementation from the service
         associated with the executor's context.
+
+        @throws std::bad_alloc If allocation fails.
 
         @param ex The inner executor to wrap. Coroutines are
             ultimately dispatched through this executor.
@@ -203,7 +195,7 @@ public:
         ex_.on_work_finished();
     }
 
-    /** Determine whether the strand is running in the current thread.
+    /** Check whether the strand is running in the current thread.
 
         @return true if the current thread is executing a coroutine
             within this strand's dispatch loop.
@@ -235,18 +227,23 @@ public:
         immediately. When the strand becomes available, queued
         work executes in FIFO order on the underlying executor.
 
+        @pre The strand's execution context must outlive this call.
+        Posting concurrently with, or after, that context's destruction
+        is undefined behavior.
+
         @par Ordering
         Guarantees strict FIFO ordering relative to other post() calls.
         Use this instead of dispatch() when ordering matters.
 
+        @par Exception Safety
+        If this throws, `c` is not queued and the caller still holds it.
+
+        @throws std::bad_alloc If allocation fails.
+        @throws Any exception thrown by the inner executor's `post`.
+
         @param c The continuation to post. The caller retains
             ownership; the continuation must remain valid until
             it is dequeued and resumed.
-
-        @par Preconditions
-        The strand's execution context must outlive this call. Posting
-        concurrently with, or after, that context's destruction is
-        undefined behavior.
     */
     void
     post(continuation& c) const
@@ -261,20 +258,25 @@ public:
         Otherwise, the continuation is queued and
         `std::noop_coroutine()` is returned.
 
+        @pre The strand's execution context must outlive this call.
+        Dispatching concurrently with, or after, that context's
+        destruction is undefined behavior.
+
         @par Ordering
         Callers requiring strict FIFO ordering should use post()
         instead, which always queues the continuation.
+
+        @par Exception Safety
+        If this throws, `c` is not queued and the caller still holds it.
+
+        @throws std::bad_alloc If allocation fails.
+        @throws Any exception thrown by the inner executor's `post`.
 
         @param c The continuation to dispatch. The caller retains
             ownership; the continuation must remain valid until
             it is dequeued and resumed.
 
         @return A handle for symmetric transfer or `std::noop_coroutine()`.
-
-        @par Preconditions
-        The strand's execution context must outlive this call.
-        Dispatching concurrently with, or after, that context's
-        destruction is undefined behavior.
     */
     std::coroutine_handle<>
     dispatch(continuation& c) const

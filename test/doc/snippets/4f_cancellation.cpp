@@ -8,7 +8,7 @@
 // Official repository: https://github.com/cppalliance/capy
 //
 
-// Compiled fragments shown in pages/4.coroutines/4e.cancellation.adoc.
+// Compiled fragments shown in pages/4.coroutines/4f.cancellation.adoc.
 
 #include "../doc_warnings.hpp"
 
@@ -25,6 +25,7 @@
 #include <boost/capy/ex/async_waker.hpp>
 #include <boost/capy/ex/await_context.hpp>
 #include <boost/capy/ex/executor_ref.hpp>
+#include <boost/capy/ex/run.hpp>
 #include <boost/capy/ex/run_async.hpp>
 #include <boost/capy/ex/this_coro.hpp>
 #include <boost/capy/ex/thread_pool.hpp>
@@ -160,18 +161,18 @@ capy::task<> with_resource()
 }
 // end::raii_cleanup[]
 
-capy::task<std::string> do_fetch() { co_return "payload"; }
+capy::task<capy::results<std::string>> do_fetch()
+{
+    co_return capy::results<std::string>{std::error_code(), "payload"};
+}
 
 // tag::canceled_convention[]
-capy::task<std::string> fetch_with_cancel()
+capy::task<capy::results<std::string>> fetch_with_cancel()
 {
     auto token = co_await capy::this_coro::stop_token;
 
     if (token.stop_requested())
-    {
-        throw std::system_error(
-            capy::make_error_code(capy::error::canceled));
-    }
+        co_return capy::results<std::string>{capy::error::canceled, {}};
 
     co_return co_await do_fetch();
 }
@@ -459,26 +460,41 @@ capy::task<> send_goodbye(connection&) { co_return; }
 // tag::graceful_shutdown[]
 class server
 {
+    capy::thread_pool::executor_type executor_;
     std::stop_source shutdown_source_;
 
-public:
-    void shutdown()
+    static capy::task<> handle_connection(connection conn)
     {
-        shutdown_source_.request_stop();
-        // All pending operations receive stop request
-    }
-
-    capy::task<> handle_connection(connection conn)
-    {
-        auto token = shutdown_source_.get_token();
+        // From run_async's await_context, so process_request and
+        // everything it awaits observe the same token
+        auto token = co_await capy::this_coro::stop_token;
 
         while (!token.stop_requested())
         {
             co_await process_request(conn);
         }
 
-        // Graceful cleanup
-        co_await send_goodbye(conn);
+        // An empty token, so the shutdown request does not cancel
+        // the goodbye itself
+        co_await capy::run(std::stop_token{})(send_goodbye(conn));
+    }
+
+public:
+    explicit server(capy::thread_pool::executor_type ex)
+        : executor_(ex)
+    {
+    }
+
+    void accept(connection conn)
+    {
+        capy::run_async(executor_, shutdown_source_.get_token())(
+            handle_connection(conn));
+    }
+
+    void shutdown()
+    {
+        // Reaches every operation awaited under the token
+        shutdown_source_.request_stop();
     }
 };
 // end::graceful_shutdown[]
@@ -583,17 +599,9 @@ struct cancellation_test
         source.request_stop();
         bool canceled = false;
         capy::run_async(pool.get_executor(), source.get_token(),
-            [](std::string const&) {},
-            [&canceled](std::exception_ptr ep)
+            [&canceled](capy::results<std::string> const& r)
             {
-                try
-                {
-                    std::rethrow_exception(ep);
-                }
-                catch (std::system_error const& e)
-                {
-                    canceled = e.code() == capy::cond::canceled;
-                }
+                canceled = std::get<0>(r) == capy::cond::canceled;
             })(fetch_with_cancel());
         pool.join();
         BOOST_TEST(canceled);
@@ -667,9 +675,10 @@ struct cancellation_test
     testGracefulShutdown()
     {
         capy::thread_pool pool(1);
-        server s;
+        server s(pool.get_executor());
+        s.accept({});
         s.shutdown();
-        capy::run_async(pool.get_executor())(s.handle_connection({}));
+        s.accept({});
         pool.join();
     }
 
@@ -693,4 +702,4 @@ struct cancellation_test
 
 } // namespace
 
-TEST_SUITE(cancellation_test, "boost.capy.doc.4e_cancellation");
+TEST_SUITE(cancellation_test, "boost.capy.doc.4f_cancellation");

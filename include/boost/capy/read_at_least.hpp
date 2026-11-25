@@ -24,7 +24,7 @@
 namespace boost {
 namespace capy {
 
-/** Read at least a minimum number of bytes from a stream.
+/** Asynchronously read at least a minimum number of bytes from a stream.
 
     This is a straightforward extension of @ref read. While @ref read
     transfers exactly `buffer_size(buffers)` bytes, `read_at_least`
@@ -54,28 +54,45 @@ namespace capy {
     not a contingency.
 
     @par Await-returns
-    An object of type `results<std::size_t>` destructuring as `[ec, n]`.
+    An object of type `results<std::size_t>` destructuring as
+    `[ec, count]`.
 
-    Upon a contingency, the count represents the number of bytes read so
+    Upon a contingency, `count` represents the number of bytes read so
     far, inclusive of the last partial read.
 
     Contingencies:
 
-    @li The first contingency reported from awaiting @c stream.read_some
+    @li The first contingency reported from awaiting `stream.read_some`
         while fewer than `n` bytes have been read. A contingency that
         accompanies the read which reaches `n` is not reported: a
         satisfied request is a success.
 
     Notable conditions:
 
-    @li @c std::errc::invalid_argument — `n` exceeds `buffer_size(buffers)`,
-    @li @c cond::canceled — Operation was cancelled,
-    @li @c cond::eof — Stream reached end before `n` bytes were read.
+    @li `std::errc::invalid_argument`: `n` exceeds
+        `buffer_size(buffers)`.
+    @li `cond::canceled`: the operation was canceled.
+    @li `cond::eof`: the stream reached its end before `n` bytes were
+        read.
 
     @par Await-postcondition
     On success the returned count is greater than or equal to `n` and
     less than or equal to `buffer_size(buffers)`, and `ec` is success.
     Otherwise `ec` is set.
+
+    @par Remarks
+    Cancellation follows the stop token of the caller's
+    @ref await_context.
+
+    @par Exception Safety
+    Calling `read_at_least` allocates the coroutine frame, which throws
+    if the frame allocator fails. Awaiting the task rethrows any
+    exception thrown by awaiting `stream.read_some`.
+
+    @par Example
+
+    @par !example example
+
 
     @param stream The stream to read from. If the lifetime of `stream` ends
     before the coroutine finishes, the behavior is undefined.
@@ -84,19 +101,12 @@ namespace capy {
     buffer sequence represented by `buffers` ends before the coroutine
     finishes, the behavior is undefined.
 
-    @param n The minimum number of bytes to read. Must not exceed
-    `buffer_size(buffers)`.
+    @param n The minimum number of bytes to read. If `n` exceeds
+    `buffer_size(buffers)`, the await fails with
+    `std::errc::invalid_argument`.
 
     @return A task yielding `results<std::size_t>` whose second element
     is the number of bytes read.
-
-    @par Remarks
-    Supports _ContextAwaitable cancellation_.
-
-    @par Example
-
-    @par !example example
-
 
     @see @ref read, @ref ReadStream, @ref MutableBufferSequence
 */

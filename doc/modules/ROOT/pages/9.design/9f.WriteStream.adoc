@@ -7,12 +7,7 @@ cpp:WriteStream[] is the fundamental partial-write primitive among Capy's stream
 
 == Definition
 
-[source,cpp]
-----
-include::example$include/boost/capy/concept/write_stream.hpp[tag=write_stream_concept]
-----
-
-The `requires` clause checks `write_some` against a single representative buffer, cpp:const_buffer_archetype[], because a {cpp} concept cannot quantify over "every xref:glossary.adoc#buffer-sequence[buffer sequence]." The contract is stronger than what the compiler verifies: a cpp:WriteStream[] must accept *any* cpp:ConstBufferSequence[]—a single buffer or a range of them—and the archetype stands in for that universally-quantified requirement.
+The formal definition lives in the reference at cpp:WriteStream[]. Its `requires` clause checks `write_some` against a single representative buffer, cpp:const_buffer_archetype[], because a {cpp} concept cannot quantify over "every xref:glossary.adoc#buffer-sequence[buffer sequence]." The contract is stronger than what the compiler verifies: a cpp:WriteStream[] must accept *any* cpp:ConstBufferSequence[] (a single buffer or a range of them), and the archetype stands in for that universally-quantified requirement.
 
 A cpp:WriteStream[] provides a single operation:
 
@@ -60,10 +55,10 @@ Consider relaying 100KB from a cpp:ReadStream[] to a TCP socket. The kernel's se
 [role=figure]
 ----
           buffer contents          syscall        kernel accepts
-Step 1:   [======== 64KB ========] write_some --> 40KB, read 40KB from source
-Step 2:   [======== 64KB ========] write_some --> 40KB, read 20KB (source done)
-Step 3:   [===== 44KB =====]       write_some --> 44KB
-          done. 100KB in 3 syscalls, every call near-full.
+Step 1:   [======== 64KB ========] write_some --> 40KB, read 36KB (source done)
+Step 2:   [======= 60KB =======]   write_some --> 40KB
+Step 3:   [== 20KB ==]             write_some --> 20KB
+          done. 100KB in 3 syscalls, only the final call undersized.
 ----
 
 ==== Approach B: `write_now` Without Top-Up (4 syscalls)
@@ -133,7 +128,7 @@ The read-side counterpart is cpp:ReadStream[], which requires `read_some`. The s
 | cpp:read[] free function (composed)
 |===
 
-The asymmetry is that the read side does not have a `read_now` with eager completion, because reads depend on data arriving from the network -- the synchronous fast path is less reliably useful than for writes into a buffered stream.
+The asymmetry is that the read side does not have a `read_now` with eager completion, because reads depend on data arriving from the network, so the synchronous fast path is less reliably useful than for writes into a buffered stream.
 
 == Summary
 

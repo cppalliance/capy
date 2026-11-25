@@ -119,7 +119,7 @@ private:
     calling thread. Coroutines dispatched through the
     associated @ref blocking_executor have their `post()`
     calls enqueued and processed by @ref run, which blocks
-    until @ref signal_done is called.
+    until @ref signal_done or @ref signal_abandoned is called.
 
     This context is created internally by @ref run_blocking.
     Users do not interact with it directly.
@@ -151,7 +151,7 @@ public:
     */
     blocking_context();
 
-    /** Destroy the blocking context. */
+    /// Destroy the blocking context.
     ~blocking_context();
 
     /** Return an executor bound to this context.
@@ -190,7 +190,8 @@ public:
     /** Run the event loop until done.
 
         Blocks the calling thread, processing posted
-        coroutine handles until @ref signal_done is called.
+        coroutine handles until @ref signal_done or
+        @ref signal_abandoned is called.
         After draining remaining work, rethrows any stored
         exception.
 
@@ -212,18 +213,18 @@ public:
     enqueue(continuation const& c);
 };
 
-/** Wrapper that signals completion after invoking the handler.
+/** Forward a task's outcome to its handlers, then signal the blocking context.
 
-    Forwards invocations to the contained handler_pair, then
+    Forwards invocations to the contained handlers, then
     signals the `blocking_context` so that its event loop
-    unblocks. Exceptions thrown by the handler are captured
+    unblocks. Exceptions thrown by the handlers are captured
     and stored for later rethrow.
-
-    @tparam H1 The success handler type.
-    @tparam H2 The error handler type.
 
     @par Thread Safety
     Safe to invoke from any thread.
+
+    @tparam H1 The success handler type.
+    @tparam H2 The error handler type.
 
     @see @ref run_blocking, @ref blocking_context
 */
@@ -346,8 +347,7 @@ struct blocking_handler_wrapper
     `std::move` surfaces the single-use hazard that a bare `w(task)`
     on an lvalue would otherwise hide.
 
-    @tparam H1 The success handler type.
-    @tparam H2 The error handler type.
+    @pre `H1` and `H2` are nothrow move constructible.
 
     @par Thread Safety
     The wrapper itself should only be used from one thread.
@@ -355,9 +355,14 @@ struct blocking_handler_wrapper
 
     @par Example
     @code
+    task<int> compute();
+
     int result = 0;
-    run_blocking([&](int v) { result = v; })(my_task());
+    run_blocking([&](int v) { result = v; })(compute());
     @endcode
+
+    @tparam H1 The success handler type.
+    @tparam H2 The error handler type.
 
     @see @ref run_blocking, @ref run_async
 */
@@ -422,7 +427,8 @@ public:
         @throws std::system_error with `error::canceled` if the task
             is abandoned before it completes.
 
-        @tparam Task The ContextRunnable type.
+        @throws Any exception the task exits with that no error
+            handler consumes, or any exception a handler throws.
 
         @param t The task to execute.
     */
@@ -453,15 +459,17 @@ public:
     }
 };
 
-/** Block until task completes and discard result.
+/** Create a wrapper that runs a task to completion and discards its result.
 
-    Executes a lazy task on a single-threaded event loop
-    and blocks the calling thread until the task completes
-    or throws.
+    Invoking the returned wrapper with a task executes it on a
+    single-threaded event loop. The call blocks the calling thread
+    until the task completes or throws.
 
     @par Exception Safety
     Basic guarantee. If the task throws, the exception is
     rethrown to the caller.
+    If the task is abandoned before it completes, the call throws
+    `std::system_error` with `error::canceled`.
 
     @par Example
     @par !example example_2
@@ -482,18 +490,22 @@ run_blocking()
             detail::default_handler{});
 }
 
-/** Block until task completes and invoke handler with result.
+/** Create a wrapper that runs a task to completion and passes its result to a handler.
 
-    Executes a lazy task on a single-threaded event loop
-    and blocks until completion. The handler `h1` is called
-    with the result on success. If `h1` is also invocable
-    with `std::exception_ptr`, it handles exceptions too.
-    Otherwise, exceptions are rethrown.
+    Invoking the returned wrapper with a task executes it on a
+    single-threaded event loop and blocks until completion. The
+    handler `h1` is called with the result on success. If `h1` is
+    also invocable with `std::exception_ptr`, it handles exceptions
+    too. Otherwise, exceptions are rethrown.
+
+    @pre `H1` is nothrow move constructible.
 
     @par Exception Safety
     Basic guarantee. Exceptions from the task are passed
     to `h1` if it accepts `std::exception_ptr`, otherwise
     rethrown.
+    If the task is abandoned before it completes, the call throws
+    `std::system_error` with `error::canceled`.
 
     @par Example
     @par !example example_3
@@ -518,15 +530,19 @@ run_blocking(H1 h1)
             detail::default_handler{});
 }
 
-/** Block until task completes with separate handlers.
+/** Create a wrapper that runs a task to completion with separate handlers.
 
-    Executes a lazy task on a single-threaded event loop
-    and blocks until completion. The handler `h1` is called
-    on success, `h2` on failure.
+    Invoking the returned wrapper with a task executes it on a
+    single-threaded event loop and blocks until completion. The
+    handler `h1` is called on success, `h2` on failure.
+
+    @pre `H1` and `H2` are nothrow move constructible.
 
     @par Exception Safety
     Basic guarantee. Exceptions from the task are passed
     to `h2`.
+    If the task is abandoned before it completes, the call throws
+    `std::system_error` with `error::canceled`.
 
     @par Example
     @par !example example_1
@@ -551,14 +567,17 @@ run_blocking(H1 h1, H2 h2)
             std::move(h2));
 }
 
-/** Block until task completes with stop token support.
+/** Create a wrapper that runs a task to completion under a stop token.
 
-    Executes a lazy task on a single-threaded event loop
-    with the given stop token and blocks until completion.
+    Invoking the returned wrapper with a task executes it on a
+    single-threaded event loop with the given stop token. The call
+    blocks until completion.
 
     @par Exception Safety
     Basic guarantee. If the task throws, the exception is
     rethrown to the caller.
+    If the task is abandoned before it completes, the call throws
+    `std::system_error` with `error::canceled`.
 
     @param st The stop token for cooperative cancellation.
 
@@ -577,7 +596,23 @@ run_blocking(std::stop_token st)
             detail::default_handler{});
 }
 
-/** Block until task completes with stop token and handler.
+/** Create a wrapper that runs a task to completion under a stop token, passing its result to a handler.
+
+    Invoking the returned wrapper with a task executes it on a
+    single-threaded event loop with the given stop token, and
+    blocks until completion. The handler `h1` is called with the
+    result on success. If `h1` is also invocable with
+    `std::exception_ptr`, it handles exceptions too. Otherwise,
+    exceptions are rethrown.
+
+    @pre `H1` is nothrow move constructible.
+
+    @par Exception Safety
+    Basic guarantee. Exceptions from the task are passed
+    to `h1` if it accepts `std::exception_ptr`, otherwise
+    rethrown.
+    If the task is abandoned before it completes, the call throws
+    `std::system_error` with `error::canceled`.
 
     @param st The stop token for cooperative cancellation.
     @param h1 Handler invoked with the result on success.
@@ -598,7 +633,20 @@ run_blocking(std::stop_token st, H1 h1)
             detail::default_handler{});
 }
 
-/** Block until task completes with stop token and handlers.
+/** Create a wrapper that runs a task to completion under a stop token with separate handlers.
+
+    Invoking the returned wrapper with a task executes it on a
+    single-threaded event loop with the given stop token, and
+    blocks until completion. The handler `h1` is called on
+    success, `h2` on failure.
+
+    @pre `H1` and `H2` are nothrow move constructible.
+
+    @par Exception Safety
+    Basic guarantee. Exceptions from the task are passed
+    to `h2`.
+    If the task is abandoned before it completes, the call throws
+    `std::system_error` with `error::canceled`.
 
     @param st The stop token for cooperative cancellation.
     @param h1 Handler invoked with the result on success.

@@ -27,8 +27,6 @@ namespace capy {
     as the factory for executors, which are lightweight handles used
     to submit work. Multiple executors may reference the same context.
 
-    @tparam X The execution context type.
-
     @par Syntactic Requirements
 
     @li `X` must be publicly derived from `execution_context`.
@@ -41,11 +39,11 @@ namespace capy {
 
     @li Work submitted via any executor from this context runs on
         resources owned by the context.
-    @li The context remains valid while any executor referencing it
-        exists and may be used.
-    @li Destroying the context discards work submitted via associated
-        executors that has not started running, destroying the
-        coroutines it would have resumed.
+    @li Executors referencing the context may be used only while the
+        context exists.
+    @li Destroying the context abandons work submitted via associated
+        executors that has not started running, as @ref abandon
+        describes.
 
     @par Conforming Signatures
 
@@ -59,6 +57,7 @@ namespace capy {
 
     @par !example example_2
 
+    @tparam X The execution context type.
 
     @see @ref Executor, @ref execution_context
 */

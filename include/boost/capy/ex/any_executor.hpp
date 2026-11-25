@@ -37,11 +37,13 @@ struct is_strand_type<strand<E>> : std::true_type {};
 
 /** Forwards `dispatch`/`post`/`context` calls through a shared, type-erased executor pointer.
 
-    This class provides type erasure for any executor type, enabling
-    runtime polymorphism with automatic memory management via shared
-    ownership. It stores a shared pointer to a polymorphic wrapper,
-    allowing executors of different types to be stored uniformly
-    while satisfying the full `Executor` concept.
+    This class provides type erasure for any copyable executor type
+    other than a @ref strand, enabling runtime polymorphism with
+    automatic memory management via shared ownership. It stores a
+    shared pointer to a polymorphic wrapper, allowing executors of
+    different types to be stored uniformly while satisfying the full
+    @ref Executor concept. Constructing an `any_executor` from a
+    `strand<E>` does not compile.
 
     @par Value Semantics
 
@@ -68,7 +70,7 @@ struct is_strand_type<strand<E>> : std::true_type {};
 
     @par Executor Concept
 
-    This class satisfies the `Executor` concept, making it usable
+    This class satisfies the @ref Executor concept, making it usable
     anywhere a concrete executor is expected.
 
     @par Example
@@ -168,36 +170,41 @@ public:
         Creates a new `any_executor` sharing ownership of the
         underlying executor with `other`.
 
-        @param other The executor to copy.
-
         @par Postconditions
         @li `*this == other`
+
+        @param other The executor to copy.
     */
     any_executor(any_executor const& other) = default;
 
-    /** Copy assignment operator.
+    /** Share ownership of `other`'s executor.
 
-        Shares ownership of the underlying executor with `other`.
+        @par Postconditions
+        @li `*this == other`
 
         @param other The executor to copy.
 
         @return A reference to `*this`.
-
-        @par Postconditions
-        @li `*this == other`
     */
     any_executor& operator=(any_executor const& other) = default;
 
-    /** Constructs from any executor type.
+    /** Construct from any copyable executor other than a @ref strand.
 
         Allocates storage for a copy of the given executor and
         stores it internally. The executor must satisfy the
-        `Executor` concept.
-
-        @param ex The executor to wrap. A copy is stored internally.
+        @ref Executor concept. Passing a `strand<E>` does not compile.
 
         @par Postconditions
-        @li `*this` is valid
+        @li `static_cast<bool>(*this)` is `true`
+
+        @par Exception Safety
+        Strong guarantee.
+
+        @throws std::bad_alloc If memory allocation fails.
+
+        @throws Any exception thrown when copying or moving `ex`.
+
+        @param ex The executor to wrap. A copy is stored internally.
     */
     template<class Ex>
         requires (
@@ -209,7 +216,7 @@ public:
     {
     }
 
-    /** Returns true if this instance holds a valid executor.
+    /** Check whether this instance holds a valid executor.
 
         @return `true` if constructed with an executor, `false` if
                 default-constructed.
@@ -219,18 +226,18 @@ public:
         return p_ != nullptr;
     }
 
-    /** Returns a reference to the associated execution context.
-
-        @return A reference to the execution context.
+    /** Return a reference to the associated execution context.
 
         @pre This instance holds a valid executor.
+
+        @return A reference to the execution context.
     */
     execution_context& context() const noexcept
     {
         return p_->context();
     }
 
-    /** Informs the executor that work is beginning.
+    /** Inform the executor that work is beginning.
 
         Must be paired with a subsequent call to `on_work_finished()`.
 
@@ -241,7 +248,7 @@ public:
         p_->on_work_started();
     }
 
-    /** Informs the executor that work has completed.
+    /** Inform the executor that work has completed.
 
         @pre A preceding call to `on_work_started()` was made.
         @pre This instance holds a valid executor.
@@ -251,42 +258,47 @@ public:
         p_->on_work_finished();
     }
 
-    /** Dispatches a continuation through the wrapped executor.
+    /** Dispatch a continuation through the wrapped executor.
 
-        Returns a handle for symmetric transfer. If running in the
-        executor's thread, returns `c.h`. Otherwise, posts the
-        continuation for later execution and returns
+        Forwards to the wrapped executor's `dispatch`. That executor
+        returns `c.h` to resume inline, or posts `c` and returns
         `std::noop_coroutine()`.
+
+        @pre This instance holds a valid executor.
+
+        @par Exception Safety
+        Propagates any exception from the wrapped executor.
 
         @param c The continuation to dispatch for resumption.
                  Must remain at a stable address until dequeued.
 
         @return A handle for symmetric transfer or `std::noop_coroutine()`.
-
-        @pre This instance holds a valid executor.
     */
     std::coroutine_handle<> dispatch(continuation& c) const
     {
         return p_->dispatch(c);
     }
 
-    /** Posts a continuation to the wrapped executor.
+    /** Post a continuation to the wrapped executor.
 
         Posts the continuation to the executor for later execution
         and returns. The caller should transfer to `std::noop_coroutine()`
         after calling this.
 
+        @pre This instance holds a valid executor.
+
+        @par Exception Safety
+        Propagates any exception from the wrapped executor.
+
         @param c The continuation to post for resumption.
                  Must remain at a stable address until dequeued.
-
-        @pre This instance holds a valid executor.
     */
     void post(continuation& c) const
     {
         p_->post(c);
     }
 
-    /** Compares two executor wrappers for equality.
+    /** Compare two executor wrappers for equality.
 
         Two `any_executor` instances are equal if they both hold
         executors of the same type that compare equal, or if both

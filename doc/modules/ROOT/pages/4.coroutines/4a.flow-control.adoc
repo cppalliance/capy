@@ -10,36 +10,40 @@
 = Flow control
 :page-mode: explanation
 
-Capy's design is driven by the needs of network I/O processing, 
-where a piece of the program, in order to continue, needs to wait for an I/O operation to finish,
-but when this happens is unpredictable. The challenge here is:
+Capy's design is driven by the needs of network I/O processing.
+A piece of the program often has to wait for an I/O operation to finish before it can continue.
+Nobody can predict when that happens. Capy's design pursues three goals:
 
- 1. To utilize this waiting time as efficiently as possible, processing other tasks.
+ 1. To use this waiting time as efficiently as possible, processing other tasks.
  2. To avoid any concurrency or lifetime management bugs.
  3. To have the user code be simple and intuitive.
 
-To achieve this, Capy utilizes the _proactor_ pattern hidden behind the coroutine `co_await` mechanism. 
-In this pattern, when the user needs an I/O operation to be performed to see its results, they:
+To achieve this, Capy uses the _proactor_ pattern hidden behind the coroutine `co_await` mechanism.
+In the proactor pattern, the program starts an operation and receives a notification when the operation completes.
+When the user needs the result of an I/O operation, they:
 
- 1. Schedule in the I/O runtime an operation to be performed.
+ 1. Start the I/O operation.
  2. Register a piece of code to be invoked when the I/O operation finishes.
  3. Return control, so that other tasks can make progress.
 
 This is exactly what happens when you write:
 
-[source,cpp]
+[source,cpp,role=pseudocode]
 ----
-process(co_await stream.read_some(buffer));
-        /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/  <1>
-/*~~~*/                                    <2>
+auto [ec, n] = co_await stream.read_some(buffer);
+               /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/  <1>
+if (!ec)
+    process(buffer, n);
+    /*~~~~~~~~~~~~~~~~*/                          <2>
 ----
-<1> The `co_await`-expression schedules an I/O operation to be called in the 
-    xref:4.coroutines/4d.executors.adoc[_execution context_], 
-    and registers
-    the resumption of the coroutine after the I/O operation finishes. Once the scheduling and registering is done, 
-    the coroutine is suspended, and the program thread switches to performing other tasks.
-<2> When the xref:4.coroutines/4d.executors.adoc[_execution context_] finishes performing the scheduled I/O operation, it resumes the coroutine,
-    and the next instruction following the `co_await`-expression.
+<1> The `co_await`-expression starts the I/O operation,
+    and registers the resumption of the coroutine through its
+    xref:4.coroutines/4d.executors.adoc[_executor_].
+    Once the operation starts and the resumption is registered,
+    the coroutine suspends, and the program thread switches to performing other tasks.
+<2> When the I/O operation finishes, the executor resumes the coroutine.
+    Execution continues with the statement that follows the `co_await`-expression,
+    which checks the error code before it uses the result.
 
 While all this registering happens hidden in the coroutine mechanism, the coroutine body
 reads as sequential business logic.

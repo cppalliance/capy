@@ -145,7 +145,7 @@ results<size_t> await_resume() {
 
 == Cache Line Analysis
 
-Immediate completion path -- inner `await_ready` returns true:
+Immediate completion path, where the inner `await_ready` returns true:
 
 [role=figure]
 ----
@@ -194,6 +194,6 @@ The flat layout keeps all per-awaitable function pointers adjacent to `construct
 
 == Why the Flat Layout Cannot Scale
 
-With multiple operations against a shared inner object, each `construct` call produces a different concrete awaitable type. The per-awaitable function pointers (`await_ready`, `await_suspend`, `await_resume`, `destroy`) must match the type that was constructed. Embedding the four function pointers directly in the vtable, as the flat layout does, would require one full set per operation -- workable for one operation, unwieldy for four.
+With multiple operations against a shared inner object, each `construct` call produces a different concrete awaitable type. The per-awaitable function pointers (`await_ready`, `await_suspend`, `await_resume`, `destroy`) must match the type that was constructed. Embedding the four function pointers directly in the vtable, as the flat layout does, would require one full set per operation. That is workable for one operation and unwieldy for four.
 
-This scaling problem is specific to wrappers with several operations on one inner object. cpp:any_stream[] never hits it: its two operations belong to two separate inner-object-free bases, each already a flat single-operation wrapper.
+This scaling problem is specific to wrappers with several operations on one inner object. cpp:any_stream[] never hits it: its two operations belong to two separate bases. Each base is a flat single-operation wrapper with its own vtable, and both view the same stream.

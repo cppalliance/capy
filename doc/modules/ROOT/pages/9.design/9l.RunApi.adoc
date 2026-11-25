@@ -3,7 +3,7 @@
 
 == Overview
 
-Capy has two launcher functions: cpp:run_async[] (fire-and-forget from non-coroutine code) and cpp:run[] (xref:glossary.adoc#awaitable[awaitable] within a coroutine). Both use a deliberate **two-phase invocation** pattern -- `f(context)(task)` -- that exists for a mechanical reason rooted in xref:glossary.adoc#coroutine-frame[coroutine frame] allocation timing.
+Capy has two launcher functions: cpp:run_async[] (fire-and-forget from non-coroutine code) and cpp:run[] (xref:glossary.adoc#awaitable[awaitable] within a coroutine). Both use a deliberate **two-phase invocation** pattern, `f(ex)(task)`, that exists for a mechanical reason rooted in xref:glossary.adoc#coroutine-frame[coroutine frame] allocation timing.
 
 == Usage
 
@@ -55,7 +55,7 @@ include::example$snippets/9l_run_api.cpp[tag=run_async_strand]
 | `co_await` cpp:run[]`(alloc)(t)`
 
 | `capy::on(ex).block(t)`
-| cpp:test::run_blocking[]`(ex)(t)`
+| cpp:test::run_blocking[]`()(t)`, which runs the task on its own event loop
 |===
 
 .Rejected design
@@ -67,9 +67,9 @@ co_await capy::on(worker_ex).call(compute());
 co_await capy::with(my_alloc).call(subtask());
 
 // Chosen: two-phase invocation
-run_async(ex)(my_task());
-co_await run(worker_ex)(compute());
-co_await run(my_alloc)(subtask());
+capy::run_async(ex)(my_task());
+co_await capy::run(worker_ex)(compute());
+co_await capy::run(my_alloc)(subtask());
 ----
 
 See <<why-not-builder>> below for the full analysis.
@@ -80,7 +80,7 @@ See <<why-not-builder>> below for the full analysis.
 [source,cpp,role=pseudocode]
 ----
 // Rejected: single-call
-run_async(ex, my_task());
+capy::run_async(ex, my_task());
 ----
 
 This fails the allocator timing constraint entirely. The task argument `my_task()` is evaluated _before_ cpp:run_async[] can set the thread-local allocator. The coroutine frame is allocated with the wrong (or no) allocator. This is not a style preference -- it is a correctness bug.
@@ -91,11 +91,11 @@ This fails the allocator timing constraint entirely. The task argument `my_task(
 [source,cpp,role=pseudocode]
 ----
 // Rejected: named method instead of operator()
-run_async(ex).spawn(my_task());
-co_await run(ex).call(compute());
+capy::run_async(ex).spawn(my_task());
+co_await capy::run(ex).call(compute());
 ----
 
-This preserves the two-phase timing guarantee and avoids the namespace collision problems of `on`/`with`. The objection is minor: `.spawn()` and `.call()` add vocabulary without adding clarity. The wrapper already has exactly one purpose -- accepting a task. A named method implies the wrapper has a richer interface than it does. `operator()` is the conventional {cpp} way to express "this object does exactly one thing." That said, this alternative has legs and could be revisited if the `()()` syntax proves too confusing in practice.
+This preserves the two-phase timing guarantee and avoids the namespace collision problems of `on`/`with`. The objection is minor: `.spawn()` and `.call()` add vocabulary without adding clarity. The wrapper already has exactly one purpose: accepting a task. A named method implies the wrapper has a richer interface than it does. `operator()` is the conventional {cpp} way to express "this object does exactly one thing." That said, this alternative remains viable and could be revisited if the `()()` syntax proves too confusing in practice.
 
 == The Names
 
@@ -109,7 +109,7 @@ The cpp:run[] prefix was chosen for several reasons:
 
 - **Discoverability.** The `run_*` family groups together in documentation, autocompletion, and alphabetical listings. Users searching for "how do I start a task" find cpp:run_async[] and cpp:run[] as a coherent pair.
 
-- **Consistency.** The naming follows the established pattern from `io_context::run()`, `std::jthread`, and other {cpp} APIs where `run` means "begin executing work."
+- **Consistency.** The naming follows the established pattern from `io_context::run()` and other {cpp} APIs where `run` means "begin executing work."
 
 - **No false promises.** A builder-pattern syntax like `on(ex).spawn(t)` implies composability -- `on(ex).with(alloc).call(t)` -- that the API does not deliver. The `f(x)(t)` pattern is honest about being exactly two steps, no more.
 
@@ -152,7 +152,7 @@ void handle(auto with) {      // parameter name
 co_await capy::with(x).call(subtask());
 
 // "run" provides a verb -- the argument type disambiguates
-co_await run(x)(subtask());
+co_await capy::run(x)(subtask());
 ----
 
 - **Builder illusion.** Dot-chaining suggests composability that does not exist. Users naturally try:
@@ -196,10 +196,10 @@ ____
 
 === The Solution: {cpp}17 Postfix Evaluation Order
 
-[quote]
+[quote, '[expr.call]']
 ____
 The postfix-expression is sequenced before each expression in
-the expression-list and any default argument. -- [expr.call]
+the expression-list and any default argument.
 ____
 
 In the expression cpp:run_async[]`(ex)(my_task())`:
@@ -239,10 +239,10 @@ The wrapper is `+[[nodiscard]]+` and its cpp:run_async_wrapper::operator()[opera
 [source,cpp,role=pseudocode]
 ----
 // Correct: wrapper is a temporary, used immediately
-run_async(ex)(my_task());
+capy::run_async(ex)(my_task());
 
 // Compile error: cannot call operator() on an lvalue
-auto w = run_async(ex);
+auto w = capy::run_async(ex);
 w(my_task());  // Error: requires rvalue
 ----
 
@@ -271,8 +271,8 @@ The allocator is ready before the frame is created. No query machinery can retro
 
 [cols="1,2"]
 |===
-| cpp:run_async[]`(ctx)(task)` | Fire-and-forget from non-coroutine code
-| `co_await` cpp:run[]`(ctx)(task)` | Awaitable within a coroutine
+| cpp:run_async[]`(ex)(task)` | Fire-and-forget from non-coroutine code
+| `co_await` cpp:run[]`(ex)(task)` | Awaitable within a coroutine
 |===
 
-The cpp:run[] name is greppable, unambiguous, and won't collide with local variables in a namespace-heavy Boost codebase. The `f(ctx)(task)` syntax exists because coroutine frame allocation requires the allocator to be set _before_ the task expression is evaluated, and {cpp}17 postfix sequencing guarantees exactly that ordering. The syntax is intentionally explicit about its two steps -- it tells the reader that something important happens between them.
+The cpp:run[] name is greppable, unambiguous, and won't collide with local variables in a namespace-heavy Boost codebase. The `f(ex)(task)` syntax exists because coroutine frame allocation requires the allocator to be set _before_ the task expression is evaluated, and {cpp}17 postfix sequencing guarantees exactly that ordering. The syntax is intentionally explicit about its two steps: it tells the reader that something important happens between them.

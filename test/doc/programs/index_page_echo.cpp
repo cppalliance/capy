@@ -43,7 +43,8 @@ int main()
     //
     //   corosio::io_context ioc;
     //   corosio::tcp_socket stream = /* from an acceptor or connect */;
-    //   capy::run_async(ioc.get_executor())(echo(stream));
+    //   capy::any_stream s(&stream);
+    //   capy::run_async(ioc.get_executor())(echo(s));
     //   ioc.run();
 }
 // end::full[]

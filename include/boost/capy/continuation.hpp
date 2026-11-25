@@ -19,11 +19,10 @@ namespace capy {
 
 class chain_owner;
 
-/** Pairs a coroutine handle with a scratch slot so executors can queue it without heap allocation.
+/** Pair a coroutine handle with a scratch slot for allocation-free queuing.
 
-    Wraps a `std::coroutine_handle<>` with a single
-    pointer-sized scratch slot so executors can queue
-    continuations without per-post heap allocation.
+    An executor links the continuation into its queue through the
+    scratch slot, so posting a coroutine needs no heap allocation.
 
     @par Fields
 
@@ -42,6 +41,10 @@ class chain_owner;
         link the continuation into its internal queue; the value
         carries **no meaning** afterward. Once submitted, the
         caller must not read or modify the continuation at all.
+
+    @li `owner`: the @ref chain_owner of the chain segment the
+        coroutine belongs to, or null. @ref abandon reads it to
+        unwind the segment.
 
     @par Ownership and Lifetime
 
@@ -64,10 +67,10 @@ class chain_owner;
     @par Copy and Move
 
     Trivially copyable and movable (aggregate of a handle and
-    a pointer). However, copying or moving a queued
+    two pointers). However, copying or moving a queued
     continuation produces a second object whose `reserved` slot
-    is stale — the executor still links the original. Copy and
-    move are safe only when the continuation is not enqueued.
+    is stale, because the executor still links the original. Copy
+    and move are safe only when the continuation is not enqueued.
 
     @par Thread Safety
 
@@ -77,6 +80,9 @@ class chain_owner;
     the executor's worker thread later reads `h` and calls
     `h.resume()`. The executor's internal locking provides
     the necessary synchronization between these two accesses.
+
+    @par Example
+    @par !example example
 
     @see @ref Executor, @ref executor_ref
 */

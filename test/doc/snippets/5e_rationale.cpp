@@ -41,7 +41,7 @@ struct rationale_test
         HeaderBuffers headers{ /* ... */ };
         BodyBuffers body{ /* ... */ };
 
-        // To combine, you MUST allocate a new array:
+        // To combine, you MUST copy into a new array:
         std::array<std::span<std::byte const>, 5> combined;
         std::copy(headers.begin(), headers.end(), combined.begin());
         std::copy(body.begin(), body.end(), combined.begin() + 2);

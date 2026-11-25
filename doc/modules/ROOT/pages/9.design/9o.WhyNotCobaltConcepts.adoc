@@ -37,20 +37,20 @@ to be able to be ``co_await``ed inside a Capy-coroutine:
  * `await_resume` -- tells what value shall be returned when the coroutine is resumed.
 
 
-cpp:ContextRunnable[] refines cpp:ContextAwaitable[] with operations needed to start a task from non-coroutine contexts: cpp:ContextRunnable::handle[handle()], cpp:ContextRunnable::release[release()], cpp:ContextRunnable::exception[exception()], cpp:ContextRunnable::result[result()], and the promise-level cpp:ContextRunnable::set_continuation[set_continuation()] and cpp:ContextRunnable::set_environment[set_environment()].
+cpp:ContextRunnable[] refines cpp:ContextAwaitable[] with operations needed to start a task from non-coroutine contexts. The task provides `handle()` and `release()`. Its promise provides `exception()`, `set_continuation()` and `set_environment()`, plus `result()` when the task's result type is not `void`.
 
 [source,cpp]
 ----
 include::example$include/boost/capy/concept/context_runnable.hpp[tag=context_runnable_concept]
 ----
 
-Context injection (cpp:ContextRunnable::set_environment[set_environment], cpp:ContextRunnable::set_continuation[set_continuation]) consists of `noexcept` requirements that cpp:ContextRunnable[] places on `T::promise_type`; launcher functions invoke them through the typed handle returned by cpp:ContextRunnable::handle[handle()] before resuming the frame.
+Context injection (`set_environment`, `set_continuation`) consists of `noexcept` requirements that cpp:ContextRunnable[] places on `T::promise_type`. The functions that start a task invoke them through the typed handle returned by `handle()` before resuming the frame.
 
 Each concept has documented syntactic requirements, semantic requirements, conforming signatures, and examples. A user who wants to create a custom task type can read the concept definition and know exactly what to provide. The compiler enforces the syntactic requirements at constraint-check time.
 
 === Cobalt's Approach
 
-Cobalt uses an associator pattern inherited from Asio. The full documentation for this pattern, from `cobalt/doc/design/associators.adoc`, reads:
+Cobalt uses an associator pattern inherited from Asio. Its design documentation for this pattern, `cobalt/doc/design/associators.adoc`, reads as follows. The code sample's typos are corrected here, and the closing sentence follows the sample:
 
 ____
 `cobalt` uses the `associator` concept of asio, but simplifies it. That is, it has three associators that are member functions of an awaiting promise.
@@ -61,9 +61,9 @@ ____
 
 `cobalt` uses concepts to check if those are present in its `await_suspend` functions.
 
-That way custom coroutines can support xref:glossary.adoc#cancellation[cancellation], xref:glossary.adoc#executor[executors] and allocators.
+That way custom coroutines can support cancellation, executors and allocators.
 
-In a custom xref:glossary.adoc#awaitable[awaitable] you can obtain them like this:
+In a custom awaitable you can obtain them like this:
 ____
 
 [source,cpp,role=external]
@@ -85,6 +85,10 @@ struct my_awaitable
     void await_resume();
 };
 ----
+
+____
+Cancellation gets connected in a `co_await` expression (if supported by the coroutine & awaitable), including synchronization mechanism like `race`.
+____
 
 Each awaitable probes for the associators independently using `if constexpr`. This design treats executor, allocator, and cancellation support as independent, opt-in capabilities rather than a single bundled requirement.
 
@@ -124,7 +128,7 @@ Capy's cpp:ContextAwaitable[] protocol passes the execution environment as an ex
 include::example$snippets/9o_why_not_cobalt_concepts.cpp[tag=await_suspend_env,indent=0]
 ----
 
-The executor and xref:glossary.adoc#stop-token[stop token] flow forward structurally through the call chain via cpp:await_context[]. If a task's machinery does not provide them, the code does not compile. There is no fallback.
+The executor and xref:glossary.adoc#stop-token[stop token] flow forward structurally through the call chain via cpp:await_context[]. The environment parameter is mandatory: an awaitable without it does not satisfy the concept. Its stop token may be a never-stop token, and the compiler does not check that its executor is set.
 
 Cobalt's approach probes the calling promise. The relevant code from `cobalt/detail/task.hpp`:
 
@@ -154,7 +158,7 @@ Two things happen when a promise does not provide an associator:
 
 Both behaviors are intentional. Cobalt treats associators as optional capabilities: tasks can participate in the system without implementing every associator. The trade-off is that omitting an associator produces no compile-time diagnostic, so the behavior difference must be understood by the author of the custom task.
 
-In Capy, the equivalent of "no cancellation" is passing `std::stop_token{}` (a never-stop token) explicitly. Both designs support uncancellable operations; they differ in whether that choice is expressed through presence of a parameter or absence of a member function.
+In Capy, the equivalent of "no cancellation" is an environment whose stop token is `std::stop_token{}` (a never-stop token). Both designs support uncancellable operations; they differ in whether that choice is expressed through presence of a parameter or absence of a member function.
 
 [cols="1,1,1"]
 |===
@@ -165,15 +169,15 @@ In Capy, the equivalent of "no cancellation" is passing `std::stop_token{}` (a n
 | Promise probing via `if constexpr`
 
 | Missing executor
-| Compile error
+| Not checked at compile time (empty cpp:executor_ref[])
 | Falls back to `this_thread::get_executor()`
 
 | Missing cancellation
-| Compile error (pass `std::stop_token{}` to opt out)
+| Never-stop token (default `std::stop_token`)
 | Skipped by design (child uses no cancellation)
 
 | Diagnostic on omission
-| Yes (constraint failure)
+| For the environment parameter (constraint failure)
 | No (optional by design)
 |===
 
@@ -190,12 +194,14 @@ struct write_stream
 };
 ----
 
-`const_buffer_sequence` is a fixed type that accepts either a single `asio::const_buffer` or a `std::span<const asio::const_buffer>`:
+`const_buffer_sequence` is a fixed type that accepts a single Asio buffer, a registered buffer, or a `std::span<const asio::const_buffer>`:
 
 [source,cpp,role=external]
 ----
 struct const_buffer_sequence
 {
+    const_buffer_sequence(asio::const_registered_buffer buffer = {});
+    const_buffer_sequence(asio::mutable_registered_buffer buffer);
     const_buffer_sequence(asio::const_buffer head);
     const_buffer_sequence(asio::mutable_buffer head);
 
@@ -237,7 +243,7 @@ Type erasure does not narrow the interface.
 
 | Accepted buffer types
 | Any cpp:ConstBufferSequence[]
-| `const_buffer`, `span<const const_buffer>`
+| `const_buffer`, `mutable_buffer`, registered buffers, `span<const const_buffer>`
 
 | Type-erased wrapper accepts full concept
 | Yes
@@ -288,7 +294,7 @@ include::example$snippets/9o_why_not_cobalt_concepts.cpp[tag=lifetime_warning]
 | Specification | Capy | Cobalt
 
 | Empty buffer behavior
-| Documented (immediate completion, no error)
+| Documented (`n == 0`, and `ec` may reflect stream state)
 |
 
 | Error reporting semantics
@@ -434,12 +440,7 @@ The concept and the type-erased wrapper are separate layers. Cobalt's abstract b
 
 Cobalt's `write_stream` is an abstract base class. The abstraction and the runtime wrapper are the same type. Writing against the abstraction means using virtual dispatch. The return type (`write_op`), the buffer parameter type (`const_buffer_sequence`), the allocation strategy (4096-byte SBO), and the context propagation mechanism (promise probing) are all fixed by the base class definition.
 
-Capy separates the abstraction from the wrapper. cpp:WriteStream[] is a {cpp}20 concept:
-
-[source,cpp]
-----
-include::example$include/boost/capy/concept/write_stream.hpp[tag=write_stream_concept]
-----
+Capy separates the abstraction from the wrapper. cpp:WriteStream[] is a {cpp}20 concept, shown in full under <<_buffer_sequences,Buffer Sequences>>.
 
 cpp:any_write_stream[] is a type-erased wrapper that satisfies this concept. It is one possible reification, not the only one. Users can:
 
@@ -463,11 +464,11 @@ This separation is the architectural root of the differences examined in this do
 
 | Generic algorithms (no type erasure)
 | Yes (constrain on concept)
-| No (must use virtual dispatch)
+| Templates over concrete `final` streams avoid virtual dispatch. Code on `write_stream&` dispatches virtually
 
 | Custom wrappers
 | Yes (concept is independent)
-| No (locked to `write_op` return type)
+| By deriving from `write_stream`, locked to the `write_op` return type
 |===
 
 == Summary

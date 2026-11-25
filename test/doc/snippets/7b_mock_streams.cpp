@@ -49,11 +49,13 @@ namespace capy = boost::capy;
 void test_read_stream()
 {
     capy::test::fuse f;
-    capy::test::read_stream rs(f);
-    rs.provide("Hello, ");
-    rs.provide("World!");
 
     auto r = f.armed([&](capy::test::fuse&) -> capy::task<void> {
+        // A fresh mock per run: each run reads from the start
+        capy::test::read_stream rs(f);
+        rs.provide("Hello, ");
+        rs.provide("World!");
+
         char buf[32];
         auto [ec, n] = co_await rs.read_some(
             capy::mutable_buffer(buf, sizeof(buf)));
@@ -179,16 +181,17 @@ struct mock_streams_test
         // tag::read_stream_chunked[]
         // At most 4 bytes per read_some call
         capy::test::fuse f;
-        capy::test::read_stream rs(f, 4);
-        rs.provide("Hello, World!");
 
         auto r = f.armed([&](capy::test::fuse&) -> capy::task<void> {
+            capy::test::read_stream rs(f, 4);
+            rs.provide("Hello, World!");
+
             char buf[32];
             auto [ec, n] = co_await rs.read_some(
                 capy::mutable_buffer(buf, sizeof(buf)));
             if(ec)
                 co_return;
-            BOOST_TEST(n == 4);  // "Hell"
+            BOOST_TEST(std::string_view(buf, n) == "Hell");
         });
         BOOST_TEST(r.success);
         // end::read_stream_chunked[]

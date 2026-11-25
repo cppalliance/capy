@@ -112,7 +112,7 @@ public:
     auto begin() const { return chunk_iterator(chunks_.begin()); }
     auto end() const { return chunk_iterator(chunks_.end()); }
 };
-// Satisfies ConstBufferSequenceâ€”works with all algorithms
+// Satisfies ConstBufferSequence, so it works with all algorithms
 // end::custom_sequence[]
 
 static_assert(capy::ConstBufferSequence<chunked_buffer_sequence>);
@@ -147,8 +147,8 @@ struct buffer_algo_test
     void copy_test(capy::MutableBufferSequence auto target, 
                    capy::ConstBufferSequence   auto source)
     {
-        size_t smaller_count = std::min(capy::buffer_size(target),
-                                        capy::buffer_size(source));
+        std::size_t smaller_count = (std::min)(capy::buffer_size(target),
+                                               capy::buffer_size(source));
 
         std::size_t copied = capy::buffer_copy(target, source);
         assert(copied == smaller_count);

@@ -30,7 +30,7 @@
 
     wake() must be callable from foreign threads (that is the whole
     point: the user's thread provides the timing). A waiter-side
-    claimed_ flag is not enough there -- the
+    claimed_ flag is not enough there, because the
     waker has to dereference the waiter, and nothing would pin the
     waiter's frame between reading the pointer and claiming it.
 
@@ -65,12 +65,12 @@
 namespace boost {
 namespace capy {
 
-/** A single-slot waker that hands one wakeup to a waiting coroutine.
+/** Hand a wakeup from any thread to one waiting coroutine, latching it if none waits.
 
-    This is the escape hatch for timing and other external events:
-    the user provides the thread and the clock, capy provides the
-    suspension point. One coroutine suspends in `wait()`; any
-    thread wakes it with `wake()`.
+    Use this to resume a coroutine from an external event, such as a
+    timer thread. The user provides the thread and the clock, and capy
+    provides the suspension point. One coroutine suspends in `wait()`;
+    any thread wakes it with `wake()`.
 
     A wakeup with no waiter present is latched as a single pending
     token, and the next `wait()` consumes it immediately. This
@@ -239,6 +239,9 @@ public:
             destroys the stop callback and no longer deregisters from the
             waker.
 
+            @pre The source has not been suspended (its `await_suspend`
+            has not armed the waker).
+
             @param o The awaiter to move from.
         */
         wait_awaiter(wait_awaiter&& o) noexcept
@@ -282,11 +285,9 @@ public:
             This is not a pure query: the check is a compare-exchange that
             takes the token. Calling it twice is not idempotent: the second
             call reports `false`, because the first already consumed the
-            wakeup.
+            wakeup. On `true` the awaiting coroutine does not suspend.
 
-            @return `true` if a pending wakeup token was latched and has now
-            been consumed, in which case the awaiting coroutine does not
-            suspend; otherwise `false`.
+            @return `true` if a latched wakeup token was consumed; else `false`.
         */
         bool await_ready() noexcept
         {
@@ -313,14 +314,12 @@ public:
                 and the wait succeeds.
 
             @li Otherwise a stop callback is registered on
-                `env->stop_token` and the slot moves to the armed state,
-                publishing this awaiter to the waker. A stop requested
-                while the callback registered completes the wait canceled
-                instead. Whichever of `wake()` and that callback wins the
-                armed-to-empty transition posts `h` through
-                `env->executor`; a winning `wake()` first deregisters the
-                callback. The loser does nothing, and a losing `wake()`
-                re-latches its token for the next `wait()`.
+                `env->stop_token`. A stop requested during registration
+                cancels the wait at once. Otherwise the awaiter suspends.
+                Exactly one of `wake()`, a stop request and the waker's
+                destructor then completes the wait, posting `h` through
+                `env->executor`. A `wake()` that loses to a stop request
+                latches its token for the next `wait()`.
 
             @param h The awaiting coroutine, resumed when the waker fires
             or the wait is canceled.
@@ -329,10 +328,11 @@ public:
             resumption and its stop token is watched for the duration of
             the wait. It must outlive the wait.
 
-            @return `h` in the first two cases, which resumes the awaiting
-            coroutine immediately; otherwise `std::noop_coroutine()`, which
-            leaves the coroutine suspended and returns control to the
-            resumer.
+            A returned `h` resumes the awaiting coroutine at once. A
+            returned `std::noop_coroutine()` leaves the coroutine suspended
+            and returns control to the resumer.
+
+            @return `h` if the wait ended without suspending, else `noop_coroutine()`.
         */
         std::coroutine_handle<>
         await_suspend(
@@ -397,12 +397,11 @@ public:
 
             Destroys the stop callback if one is registered and clears the
             armed bookkeeping, so the destructor does not deregister a slot
-            the resumption already consumed.
+            the resumption already consumed. A wakeup is either a `wake()`
+            or a token consumed inline. An `error::canceled` result means
+            the stop token won the race or the waker was destroyed.
 
-            @return An empty `results<>` if the wait was woken, whether by
-            `wake()` or by a token consumed inline. Otherwise one holding
-            `error::canceled`, which means the stop token won the race or
-            the waker was destroyed.
+            @return Empty if woken, else `error::canceled`.
         */
         [[nodiscard]] results<> await_resume() noexcept
         {
@@ -430,6 +429,9 @@ public:
         refers to the waker.
 
         @pre No `wake()` call is in progress or made afterward.
+
+        @note If posting the waiter's resumption throws, `std::terminate`
+        is called.
     */
     ~async_waker()
     {
@@ -486,13 +488,13 @@ public:
         it. Otherwise suspends until `wake()` or the stop token
         fires.
 
-        @par Preconditions
-        No other coroutine is currently waiting on this object; a
+        The awaitable's result is empty on wakeup, or
+        `error::canceled` if the stop token wins.
+
+        @pre No other coroutine is currently waiting on this object; a
         coroutine woken or canceled but not yet resumed still is.
 
-        @return An awaitable that await-returns `results<>`;
-            empty on wakeup, `error::canceled` if the stop
-            token wins.
+        @return An awaitable that await-returns `(error_code)`.
     */
     wait_awaiter wait() noexcept
     {
@@ -507,6 +509,9 @@ public:
         `wait()` collapse into a single token. It may wait briefly
         for a waiter that is still suspending, or for a stop callback
         of the waiter that is running on another thread.
+
+        @note If posting the waiter's resumption throws, `std::terminate`
+        is called.
     */
     void wake() noexcept
     {

@@ -104,9 +104,11 @@ public:
 
         Transfers up to `buffer_size( buffers )` bytes from the internal
         buffer to the provided mutable buffer sequence. If no data remains,
-        returns `error::eof`. Before every read, the attached @ref fuse is
-        consulted to possibly inject an error for testing fault scenarios.
-        The returned `std::size_t` is the number of bytes transferred.
+        returns `error::eof`. Before transferring data, the attached
+        @ref fuse is consulted to possibly inject an error for testing
+        fault scenarios. An empty buffer sequence or a canceled read
+        completes without consulting the fuse. The returned
+        `std::size_t` is the number of bytes transferred.
 
         @par Effects
         On success, advances the internal read position by the number of
@@ -126,12 +128,12 @@ public:
         An empty buffer sequence is a no-op that completes successfully
         regardless of the stop token.
 
+        @throws std::system_error When the attached @ref fuse is in
+        exception mode and reaches its failure point.
+
         @param buffers The mutable buffer sequence to receive data.
 
         @return An awaitable that await-returns `(error_code,std::size_t)`.
-
-        @throws std::system_error When the attached @ref fuse is in
-        exception mode and reaches its failure point.
 
         @see @ref fuse
     */

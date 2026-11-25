@@ -371,42 +371,30 @@ make_trampoline(Ex, Handlers, Alloc)
 
 /** Installs the frame allocator, then starts the task on the executor when called once.
 
-    This wrapper holds the run_async_trampoline coroutine, executor, stop token,
-    and handlers. The run_async_trampoline is allocated when the wrapper is constructed
-    (before the task due to C++17 postfix evaluation order).
+    This wrapper holds the start state: the executor, stop token, and
+    completion handlers. The start state is allocated when the wrapper
+    is constructed, before the task argument is evaluated (C++17
+    postfix evaluation order).
 
     The rvalue ref-qualifier on `operator()` ensures the wrapper can only
     be used as a temporary, preventing misuse that would violate LIFO ordering.
 
-    @tparam Ex The executor type satisfying the `Executor` concept.
-    @tparam Handlers The handler type (default_handler or handler_pair).
-    @tparam Alloc The allocator type (value type or memory_resource*).
-
     @par Thread Safety
-    The wrapper itself should only be used from one thread. The handlers
-    may be invoked from any thread where the executor schedules work.
+    The wrapper itself should only be used from one thread. The
+    completion handlers may be invoked from any thread where the
+    executor schedules work.
 
     @warning **Always construct the task as the direct argument of the
     two-call expression `run_async(ex)(task)`.** The wrapper's constructor
     installs the frame allocator in thread-local storage. The task's
-    `operator new` reads that thread-local state. Splitting the two calls
-    apart in any of the following ways allocates the task's coroutine
-    frame under the wrong allocator. Each does so silently, with no
-    compile error.
-    @li *Stored wrapper.* Storing the wrapper itself
-        (`auto w = run_async(ex);`) compiles fine. C++17 guaranteed copy
-        elision constructs `w` directly from the prvalue. The deleted
-        copy/move constructors are never considered. What the rvalue
-        ref-qualifier on `operator()` rejects is calling through that
-        stored lvalue: `w(my_task())` does not compile, and
-        `std::move(w)(my_task())` is required instead. The silent
-        variant is storing the *task*
-        (`auto t = my_task(); run_async(ex)(std::move(t));`): `t`'s frame
-        is allocated before `run_async(ex)` ever runs.
-    @li *Preconstructed task.* Passing an already-constructed task object
-        has the same effect as the stored-wrapper case. So does passing a
-        moved-from local, or a task returned from an earlier statement.
-        The frame exists before the allocator is installed.
+    `operator new` reads that thread-local state. Each of the following
+    splits allocates the task's coroutine frame under the wrong
+    allocator, silently, with no compile error.
+    @li *Preconstructed task.* Passing a task constructed earlier, as
+        in `auto t = my_task(); run_async(ex)(std::move(t));`. A
+        moved-from local, or a task returned from an earlier statement,
+        is the same case. The frame exists before the allocator is
+        installed.
     @li *Wrapper function.* Forwarding the task through a helper that
         itself performs the two-call pattern constructs the task as an
         argument to the helper. It is therefore constructed before the
@@ -414,13 +402,25 @@ make_trampoline(Ex, Handlers, Alloc)
         `submit(ex, my_task())`, where `submit` calls
         `run_async(ex)(std::forward<Task>(t))` internally.
 
+    Storing the wrapper itself (`auto w = run_async(ex);`) compiles,
+    because guaranteed copy elision constructs `w` in place. Calling it
+    as an lvalue, `w(my_task())`, does not compile.
+    `std::move(w)(my_task())` compiles. It allocates from the right
+    resource only if nothing changes the thread-local frame allocator
+    in between. Creating or destroying another wrapper changes it, as
+    does any `co_await` or task start.
+
     See the Frame Allocators guide
-    (`doc/modules/ROOT/pages/4.coroutines/4g.allocators.adoc`) for the full
+    (`doc/modules/ROOT/pages/4.coroutines/4h.allocators.adoc`) for the full
     C++17-evaluation-order rationale behind this constraint.
 
     @par Example
     @par !example example
 
+
+    @tparam Ex The executor type satisfying the `Executor` concept.
+    @tparam Handlers The handler type (default_handler or handler_pair).
+    @tparam Alloc The allocator type (value type or memory_resource*).
 
     @see @ref run_async
 */
@@ -434,20 +434,20 @@ class [[nodiscard]] run_async_wrapper
 public:
     /** Construct the wrapper and install the frame allocator.
 
-        Builds the trampoline and saves the current thread-local frame
-        allocator. Then installs the trampoline's resource as the new
+        Builds the start state and saves the current thread-local frame
+        allocator. Then installs the start state's resource as the new
         thread-local allocator. The task frame, evaluated as the argument
         to @ref operator(), is therefore allocated from that resource.
+
+        @note When `Alloc` is not `std::pmr::memory_resource*` it must be
+        nothrow move constructible (enforced by a `static_assert`), which
+        is what allows this constructor to be `noexcept`. If allocating
+        the start state throws, `std::terminate` is called.
 
         @param ex The executor on which the task runs.
         @param st The stop token for cooperative cancellation.
         @param h The completion handlers.
         @param a The allocator for frame allocation.
-
-        @note When `Alloc` is not `std::pmr::memory_resource*` it must be
-        nothrow move constructible (enforced by a `static_assert`), which
-        is what allows this constructor to be `noexcept`. If allocating
-        the launch state throws, `std::terminate` is called.
     */
     run_async_wrapper(
         Ex ex,
@@ -472,10 +472,10 @@ public:
     /** Restore the previously installed frame allocator.
 
         Resets the thread-local frame allocator to the value saved at
-        construction. A stale pointer to the trampoline's resource
+        construction. A stale pointer to the start state's resource
         therefore does not outlive the execution context that owns it.
         If no task was started, for example because evaluating the task
-        argument threw, the unused launch state is destroyed, releasing
+        argument threw, the unused start state is destroyed, releasing
         the executor's work.
     */
     ~run_async_wrapper()
@@ -521,8 +521,8 @@ public:
         The rvalue ref-qualifier ensures the wrapper is consumed, enforcing
         correct LIFO destruction order.
 
-        The `await_context` constructed for the task is owned by the trampoline
-        coroutine and is guaranteed to outlive the task and all awaitables
+        The `await_context` constructed for the task is owned by the start
+        state and is guaranteed to outlive the task and all awaitables
         in its chain. Awaitables may store `await_context const*` without concern
         for dangling references.
 
@@ -530,10 +530,8 @@ public:
             task is then destroyed without running, and the executor's
             work is released.
 
-        @tparam Task The ContextRunnable type.
-
-        @param t The task to execute. Ownership is transferred to the
-                 run_async_trampoline which destroys it after completion.
+        @param t The task to execute. Ownership passes to the wrapper's
+                 start state, which destroys the task after it completes.
     */
     template<ContextRunnable Task>
     void operator()(Task t) &&
@@ -569,7 +567,7 @@ public:
     }
 };
 
-// Executor only (uses default recycling allocator)
+// Executor only (uses the execution context's frame allocator)
 
 /** Bind an executor to produce a launcher. Invoke the launcher with a task to start it.
 
@@ -577,11 +575,13 @@ public:
     The returned wrapper must be immediately invoked with the task;
     storing the wrapper and calling it later violates LIFO ordering.
 
-    Uses the default recycling frame allocator for coroutine frames.
-    With no handlers, the result is discarded. An unhandled exception
-    thrown by the task calls `std::terminate`. To catch it instead, pass
-    an error handler that receives it as an `exception_ptr`, or `co_await`
-    the work inside a coroutine.
+    Allocates coroutine frames from the execution context's frame
+    allocator (see @ref execution_context::get_frame_allocator).
+
+    With no completion handlers, the result is discarded. An unhandled
+    exception thrown by the task calls `std::terminate`. To catch it
+    instead, pass an error handler that receives it as an
+    `exception_ptr`, or `co_await` the work inside a coroutine.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
@@ -615,25 +615,37 @@ run_async(Ex ex)
 
 /** Bind an executor and a result handler to produce a launcher. Invoke the launcher with a task to start it.
 
-    The handler `h1` is called with the task's result on success. If `h1`
-    is also invocable with `std::exception_ptr`, it handles exceptions too.
-    Otherwise, an unhandled exception calls `std::terminate`.
-    If the task is abandoned before it completes, as a context's teardown
-    does, no handler is called; the handlers are destroyed with it.
+    Allocates coroutine frames from the execution context's frame
+    allocator (see @ref execution_context::get_frame_allocator).
+
+    The completion handler `h1` is called with the task's result on
+    success. If `h1` is also invocable with `std::exception_ptr`, it
+    handles exceptions too. Otherwise, an unhandled exception calls
+    `std::terminate`.
+
+    If the task is abandoned before it completes, as a context's
+    teardown does, no completion handler is called. The handlers are
+    destroyed with it.
+
+    `H1` must be nothrow move constructible; this is checked at
+    compile time. A completion handler that throws calls
+    `std::terminate`.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
     @par Thread Safety
-    The wrapper itself should only be used from one thread. The handlers
-    may be invoked from any thread where the executor schedules work.
+    The wrapper itself should only be used from one thread. The
+    completion handlers may be invoked from any thread where the
+    executor schedules work.
 
     @par Example
     @par !example example_2
 
 
     @param ex The executor to execute the task on.
-    @param h1 The handler to invoke with the result (and optionally exception).
+    @param h1 The completion handler for the result and, optionally,
+        the exception.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
@@ -656,25 +668,36 @@ run_async(Ex ex, H1 h1)
 
 /** Bind an executor and separate result and error handlers to produce a launcher. Invoke the launcher with a task to start it.
 
-    The handler `h1` is called with the task's result on success.
-    The handler `h2` is called with the exception_ptr on failure.
-    If the task is abandoned before it completes, as a context's teardown
-    does, no handler is called; the handlers are destroyed with it.
+    Allocates coroutine frames from the execution context's frame
+    allocator (see @ref execution_context::get_frame_allocator).
+
+    The completion handler `h1` is called with the task's result on
+    success, and `h2` is called with the `std::exception_ptr` on
+    failure.
+
+    If the task is abandoned before it completes, as a context's
+    teardown does, no completion handler is called. The handlers are
+    destroyed with it.
+
+    `H1` and `H2` must be nothrow move constructible; this is checked at
+    compile time. A completion handler that throws calls
+    `std::terminate`.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
     @par Thread Safety
-    The wrapper itself should only be used from one thread. The handlers
-    may be invoked from any thread where the executor schedules work.
+    The wrapper itself should only be used from one thread. The
+    completion handlers may be invoked from any thread where the
+    executor schedules work.
 
     @par Example
     @par !example example_3
 
 
     @param ex The executor to execute the task on.
-    @param h1 The handler to invoke with the result on success.
-    @param h2 The handler to invoke with the exception on failure.
+    @param h1 The completion handler to invoke with the result on success.
+    @param h2 The completion handler to invoke with the exception on failure.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
@@ -699,8 +722,13 @@ run_async(Ex ex, H1 h1, H2 h2)
 
 /** Bind an executor and a stop token to produce a launcher. Invoke the launcher with a task to start it.
 
-    The stop token is propagated to the task, enabling cooperative
-    cancellation. With no handlers, the result is discarded and an
+    The stop token is propagated to the task for cooperative
+    cancellation.
+
+    Allocates coroutine frames from the execution context's frame
+    allocator (see @ref execution_context::get_frame_allocator).
+
+    With no completion handlers, the result is discarded and an
     unhandled exception calls `std::terminate`.
 
     Construct the task as the direct argument of the two-call expression
@@ -736,20 +764,37 @@ run_async(Ex ex, std::stop_token st)
 
 /** Bind an executor, a stop token, and a result handler to produce a launcher. Invoke the launcher with a task to start it.
 
-    The stop token is propagated to the task for cooperative cancellation.
-    The handler `h1` is called with the result on success, and optionally
-    with exception_ptr if it accepts that type.
+    The stop token is propagated to the task for cooperative
+    cancellation.
+
+    Allocates coroutine frames from the execution context's frame
+    allocator (see @ref execution_context::get_frame_allocator).
+
+    The completion handler `h1` is called with the task's result on
+    success. If `h1` is also invocable with `std::exception_ptr`, it
+    handles exceptions too. Otherwise, an unhandled exception calls
+    `std::terminate`.
+
+    If the task is abandoned before it completes, as a context's
+    teardown does, no completion handler is called. The handlers are
+    destroyed with it.
+
+    `H1` must be nothrow move constructible; this is checked at
+    compile time. A completion handler that throws calls
+    `std::terminate`.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
     @par Thread Safety
-    The wrapper itself should only be used from one thread. The handlers
-    may be invoked from any thread where the executor schedules work.
+    The wrapper itself should only be used from one thread. The
+    completion handlers may be invoked from any thread where the
+    executor schedules work.
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
-    @param h1 The handler to invoke with the result (and optionally exception).
+    @param h1 The completion handler for the result and, optionally,
+        the exception.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
@@ -772,20 +817,36 @@ run_async(Ex ex, std::stop_token st, H1 h1)
 
 /** Bind an executor, a stop token, and separate result and error handlers to produce a launcher. Invoke the launcher with a task to start it.
 
-    The stop token is propagated to the task for cooperative cancellation.
-    The handler `h1` is called on success, `h2` on failure.
+    The stop token is propagated to the task for cooperative
+    cancellation.
+
+    Allocates coroutine frames from the execution context's frame
+    allocator (see @ref execution_context::get_frame_allocator).
+
+    The completion handler `h1` is called with the task's result on
+    success, and `h2` is called with the `std::exception_ptr` on
+    failure.
+
+    If the task is abandoned before it completes, as a context's
+    teardown does, no completion handler is called. The handlers are
+    destroyed with it.
+
+    `H1` and `H2` must be nothrow move constructible; this is checked at
+    compile time. A completion handler that throws calls
+    `std::terminate`.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
     @par Thread Safety
-    The wrapper itself should only be used from one thread. The handlers
-    may be invoked from any thread where the executor schedules work.
+    The wrapper itself should only be used from one thread. The
+    completion handlers may be invoked from any thread where the
+    executor schedules work.
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
-    @param h1 The handler to invoke with the result on success.
-    @param h2 The handler to invoke with the exception on failure.
+    @param h1 The completion handler to invoke with the result on success.
+    @param h2 The completion handler to invoke with the exception on failure.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
@@ -810,15 +871,19 @@ run_async(Ex ex, std::stop_token st, H1 h1, H2 h2)
 
 /** Bind an executor and a memory resource to produce a launcher. Invoke the launcher with a task to start it.
 
-    The memory resource is used for coroutine frame allocation.
+    Coroutine frames are allocated from `mr`.
+
+    With no completion handlers, the result is discarded and an
+    unhandled exception calls `std::terminate`.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
+    @pre `mr` is not null and outlives every task started through the
+    returned wrapper.
+
     @par Thread Safety
     The wrapper itself should only be used from one thread.
-
-    @pre `mr` outlives every task started through the returned wrapper.
 
     @param ex The executor to execute the task on.
     @param mr The memory resource for frame allocation.
@@ -842,18 +907,36 @@ run_async(Ex ex, std::pmr::memory_resource* mr)
 
 /** Bind an executor, a memory resource, and a result handler to produce a launcher. Invoke the launcher with a task to start it.
 
+    Coroutine frames are allocated from `mr`.
+
+    The completion handler `h1` is called with the task's result on
+    success. If `h1` is also invocable with `std::exception_ptr`, it
+    handles exceptions too. Otherwise, an unhandled exception calls
+    `std::terminate`.
+
+    If the task is abandoned before it completes, as a context's
+    teardown does, no completion handler is called. The handlers are
+    destroyed with it.
+
+    `H1` must be nothrow move constructible; this is checked at
+    compile time. A completion handler that throws calls
+    `std::terminate`.
+
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
-    @par Thread Safety
-    The wrapper itself should only be used from one thread. The handlers
-    may be invoked from any thread where the executor schedules work.
+    @pre `mr` is not null and outlives every task started through the
+    returned wrapper.
 
-    @pre `mr` outlives every task started through the returned wrapper.
+    @par Thread Safety
+    The wrapper itself should only be used from one thread. The
+    completion handlers may be invoked from any thread where the
+    executor schedules work.
 
     @param ex The executor to execute the task on.
     @param mr The memory resource for frame allocation.
-    @param h1 The handler to invoke with the result (and optionally exception).
+    @param h1 The completion handler for the result and, optionally,
+        the exception.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
@@ -874,19 +957,35 @@ run_async(Ex ex, std::pmr::memory_resource* mr, H1 h1)
 
 /** Bind an executor, a memory resource, and separate result and error handlers to produce a launcher. Invoke the launcher with a task to start it.
 
+    Coroutine frames are allocated from `mr`.
+
+    The completion handler `h1` is called with the task's result on
+    success, and `h2` is called with the `std::exception_ptr` on
+    failure.
+
+    If the task is abandoned before it completes, as a context's
+    teardown does, no completion handler is called. The handlers are
+    destroyed with it.
+
+    `H1` and `H2` must be nothrow move constructible; this is checked at
+    compile time. A completion handler that throws calls
+    `std::terminate`.
+
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
-    @par Thread Safety
-    The wrapper itself should only be used from one thread. The handlers
-    may be invoked from any thread where the executor schedules work.
+    @pre `mr` is not null and outlives every task started through the
+    returned wrapper.
 
-    @pre `mr` outlives every task started through the returned wrapper.
+    @par Thread Safety
+    The wrapper itself should only be used from one thread. The
+    completion handlers may be invoked from any thread where the
+    executor schedules work.
 
     @param ex The executor to execute the task on.
     @param mr The memory resource for frame allocation.
-    @param h1 The handler to invoke with the result on success.
-    @param h2 The handler to invoke with the exception on failure.
+    @param h1 The completion handler to invoke with the result on success.
+    @param h2 The completion handler to invoke with the exception on failure.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
@@ -909,13 +1008,22 @@ run_async(Ex ex, std::pmr::memory_resource* mr, H1 h1, H2 h2)
 
 /** Bind an executor, a stop token, and a memory resource to produce a launcher. Invoke the launcher with a task to start it.
 
+    The stop token is propagated to the task for cooperative
+    cancellation.
+
+    Coroutine frames are allocated from `mr`.
+
+    With no completion handlers, the result is discarded and an
+    unhandled exception calls `std::terminate`.
+
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
+    @pre `mr` is not null and outlives every task started through the
+    returned wrapper.
+
     @par Thread Safety
     The wrapper itself should only be used from one thread.
-
-    @pre `mr` outlives every task started through the returned wrapper.
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
@@ -940,19 +1048,40 @@ run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr)
 
 /** Bind an executor, a stop token, a memory resource, and a result handler to produce a launcher. Invoke the launcher with a task to start it.
 
+    The stop token is propagated to the task for cooperative
+    cancellation.
+
+    Coroutine frames are allocated from `mr`.
+
+    The completion handler `h1` is called with the task's result on
+    success. If `h1` is also invocable with `std::exception_ptr`, it
+    handles exceptions too. Otherwise, an unhandled exception calls
+    `std::terminate`.
+
+    If the task is abandoned before it completes, as a context's
+    teardown does, no completion handler is called. The handlers are
+    destroyed with it.
+
+    `H1` must be nothrow move constructible; this is checked at
+    compile time. A completion handler that throws calls
+    `std::terminate`.
+
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
-    @par Thread Safety
-    The wrapper itself should only be used from one thread. The handlers
-    may be invoked from any thread where the executor schedules work.
+    @pre `mr` is not null and outlives every task started through the
+    returned wrapper.
 
-    @pre `mr` outlives every task started through the returned wrapper.
+    @par Thread Safety
+    The wrapper itself should only be used from one thread. The
+    completion handlers may be invoked from any thread where the
+    executor schedules work.
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
     @param mr The memory resource for frame allocation.
-    @param h1 The handler to invoke with the result (and optionally exception).
+    @param h1 The completion handler for the result and, optionally,
+        the exception.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
@@ -973,20 +1102,39 @@ run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr, H1 h1)
 
 /** Bind an executor, a stop token, a memory resource, and separate result and error handlers to produce a launcher. Invoke the launcher with a task to start it.
 
+    The stop token is propagated to the task for cooperative
+    cancellation.
+
+    Coroutine frames are allocated from `mr`.
+
+    The completion handler `h1` is called with the task's result on
+    success, and `h2` is called with the `std::exception_ptr` on
+    failure.
+
+    If the task is abandoned before it completes, as a context's
+    teardown does, no completion handler is called. The handlers are
+    destroyed with it.
+
+    `H1` and `H2` must be nothrow move constructible; this is checked at
+    compile time. A completion handler that throws calls
+    `std::terminate`.
+
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
-    @par Thread Safety
-    The wrapper itself should only be used from one thread. The handlers
-    may be invoked from any thread where the executor schedules work.
+    @pre `mr` is not null and outlives every task started through the
+    returned wrapper.
 
-    @pre `mr` outlives every task started through the returned wrapper.
+    @par Thread Safety
+    The wrapper itself should only be used from one thread. The
+    completion handlers may be invoked from any thread where the
+    executor schedules work.
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
     @param mr The memory resource for frame allocation.
-    @param h1 The handler to invoke with the result on success.
-    @param h2 The handler to invoke with the exception on failure.
+    @param h1 The completion handler to invoke with the result on success.
+    @param h2 The completion handler to invoke with the exception on failure.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
@@ -1009,8 +1157,11 @@ run_async(Ex ex, std::stop_token st, std::pmr::memory_resource* mr, H1 h1, H2 h2
 
 /** Bind an executor and an allocator to produce a launcher. Invoke the launcher with a task to start it.
 
-    The allocator is wrapped in a frame_memory_resource and stored in the
-    run_async_trampoline, ensuring it outlives all coroutine frames.
+    Coroutine frames are allocated from a copy of `alloc`, which is
+    kept alive until every frame allocated from it is freed.
+
+    With no completion handlers, the result is discarded and an
+    unhandled exception calls `std::terminate`.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
@@ -1040,16 +1191,34 @@ run_async(Ex ex, Alloc alloc)
 
 /** Bind an executor, an allocator, and a result handler to produce a launcher. Invoke the launcher with a task to start it.
 
+    Coroutine frames are allocated from a copy of `alloc`, which is
+    kept alive until every frame allocated from it is freed.
+
+    The completion handler `h1` is called with the task's result on
+    success. If `h1` is also invocable with `std::exception_ptr`, it
+    handles exceptions too. Otherwise, an unhandled exception calls
+    `std::terminate`.
+
+    If the task is abandoned before it completes, as a context's
+    teardown does, no completion handler is called. The handlers are
+    destroyed with it.
+
+    `H1` must be nothrow move constructible; this is checked at
+    compile time. A completion handler that throws calls
+    `std::terminate`.
+
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
     @par Thread Safety
-    The wrapper itself should only be used from one thread. The handlers
-    may be invoked from any thread where the executor schedules work.
+    The wrapper itself should only be used from one thread. The
+    completion handlers may be invoked from any thread where the
+    executor schedules work.
 
     @param ex The executor to execute the task on.
     @param alloc The allocator for frame allocation (copied and stored).
-    @param h1 The handler to invoke with the result (and optionally exception).
+    @param h1 The completion handler for the result and, optionally,
+        the exception.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
@@ -1070,17 +1239,33 @@ run_async(Ex ex, Alloc alloc, H1 h1)
 
 /** Bind an executor, an allocator, and separate result and error handlers to produce a launcher. Invoke the launcher with a task to start it.
 
+    Coroutine frames are allocated from a copy of `alloc`, which is
+    kept alive until every frame allocated from it is freed.
+
+    The completion handler `h1` is called with the task's result on
+    success, and `h2` is called with the `std::exception_ptr` on
+    failure.
+
+    If the task is abandoned before it completes, as a context's
+    teardown does, no completion handler is called. The handlers are
+    destroyed with it.
+
+    `H1` and `H2` must be nothrow move constructible; this is checked at
+    compile time. A completion handler that throws calls
+    `std::terminate`.
+
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
     @par Thread Safety
-    The wrapper itself should only be used from one thread. The handlers
-    may be invoked from any thread where the executor schedules work.
+    The wrapper itself should only be used from one thread. The
+    completion handlers may be invoked from any thread where the
+    executor schedules work.
 
     @param ex The executor to execute the task on.
     @param alloc The allocator for frame allocation (copied and stored).
-    @param h1 The handler to invoke with the result on success.
-    @param h2 The handler to invoke with the exception on failure.
+    @param h1 The completion handler to invoke with the result on success.
+    @param h2 The completion handler to invoke with the exception on failure.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
@@ -1102,6 +1287,15 @@ run_async(Ex ex, Alloc alloc, H1 h1, H2 h2)
 // Ex + stop_token + standard Allocator
 
 /** Bind an executor, a stop token, and an allocator to produce a launcher. Invoke the launcher with a task to start it.
+
+    The stop token is propagated to the task for cooperative
+    cancellation.
+
+    Coroutine frames are allocated from a copy of `alloc`, which is
+    kept alive until every frame allocated from it is freed.
+
+    With no completion handlers, the result is discarded and an
+    unhandled exception calls `std::terminate`.
 
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
@@ -1132,17 +1326,38 @@ run_async(Ex ex, std::stop_token st, Alloc alloc)
 
 /** Bind an executor, a stop token, an allocator, and a result handler to produce a launcher. Invoke the launcher with a task to start it.
 
+    The stop token is propagated to the task for cooperative
+    cancellation.
+
+    Coroutine frames are allocated from a copy of `alloc`, which is
+    kept alive until every frame allocated from it is freed.
+
+    The completion handler `h1` is called with the task's result on
+    success. If `h1` is also invocable with `std::exception_ptr`, it
+    handles exceptions too. Otherwise, an unhandled exception calls
+    `std::terminate`.
+
+    If the task is abandoned before it completes, as a context's
+    teardown does, no completion handler is called. The handlers are
+    destroyed with it.
+
+    `H1` must be nothrow move constructible; this is checked at
+    compile time. A completion handler that throws calls
+    `std::terminate`.
+
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
     @par Thread Safety
-    The wrapper itself should only be used from one thread. The handlers
-    may be invoked from any thread where the executor schedules work.
+    The wrapper itself should only be used from one thread. The
+    completion handlers may be invoked from any thread where the
+    executor schedules work.
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
     @param alloc The allocator for frame allocation (copied and stored).
-    @param h1 The handler to invoke with the result (and optionally exception).
+    @param h1 The completion handler for the result and, optionally,
+        the exception.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 
@@ -1163,18 +1378,37 @@ run_async(Ex ex, std::stop_token st, Alloc alloc, H1 h1)
 
 /** Bind an executor, a stop token, an allocator, and separate result and error handlers to produce a launcher. Invoke the launcher with a task to start it.
 
+    The stop token is propagated to the task for cooperative
+    cancellation.
+
+    Coroutine frames are allocated from a copy of `alloc`, which is
+    kept alive until every frame allocated from it is freed.
+
+    The completion handler `h1` is called with the task's result on
+    success, and `h2` is called with the `std::exception_ptr` on
+    failure.
+
+    If the task is abandoned before it completes, as a context's
+    teardown does, no completion handler is called. The handlers are
+    destroyed with it.
+
+    `H1` and `H2` must be nothrow move constructible; this is checked at
+    compile time. A completion handler that throws calls
+    `std::terminate`.
+
     Construct the task as the direct argument of the two-call expression
     `run_async(ex)(task)`.
 
     @par Thread Safety
-    The wrapper itself should only be used from one thread. The handlers
-    may be invoked from any thread where the executor schedules work.
+    The wrapper itself should only be used from one thread. The
+    completion handlers may be invoked from any thread where the
+    executor schedules work.
 
     @param ex The executor to execute the task on.
     @param st The stop token for cooperative cancellation.
     @param alloc The allocator for frame allocation (copied and stored).
-    @param h1 The handler to invoke with the result on success.
-    @param h2 The handler to invoke with the exception on failure.
+    @param h1 The completion handler to invoke with the result on success.
+    @param h2 The completion handler to invoke with the exception on failure.
 
     @return A wrapper that accepts a `task<T>` for immediate execution.
 

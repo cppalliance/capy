@@ -53,20 +53,21 @@ namespace capy {
     the first call, subsequent calls reuse the cached frame memory,
     avoiding repeated allocation for the internal coroutine.
 
-    @tparam Stream The stream type, must satisfy @ref WriteStream.
-
-    @par Thread Safety
-    Distinct objects: Safe.
-    Shared objects: Unsafe.
-
-    @par Preconditions
-    Only one operation may be outstanding at a time. A new call to
+    @pre Only one operation may be outstanding at a time. A new call to
     `operator()` must not be made until the previous operation has
     completed (i.e., the returned awaitable is fully consumed).
 
     Destroying the returned operation object while it is being awaited
     calls `std::terminate`, except while its chain is unwound after an
     @ref abandon.
+
+    @par Thread Safety
+    Distinct objects: Safe.
+    Shared objects: Unsafe.
+
+    @note With `BOOST_CAPY_WRITE_NOW_WORKAROUND` (the default on GCC)
+    the caller always suspends. When every `write_some` is ready, the
+    operation still completes inline without an executor hop.
 
     @par Example
 
@@ -75,14 +76,16 @@ namespace capy {
     task<> send_messages( Stream& stream )
     {
         write_now wn( stream );
-        auto [ec1, n1] = co_await wn( make_buffer( "hello" ) );
+        auto [ec1, n1] = co_await wn( make_buffer( std::string_view( "hello" ) ) );
         if( ec1 )
-            detail::throw_system_error( ec1 );
-        auto [ec2, n2] = co_await wn( make_buffer( "world" ) );
+            throw std::system_error( ec1 );
+        auto [ec2, n2] = co_await wn( make_buffer( std::string_view( "world" ) ) );
         if( ec2 )
-            detail::throw_system_error( ec2 );
+            throw std::system_error( ec2 );
     }
     @endcode
+
+    @tparam Stream The stream type, must satisfy @ref WriteStream.
 
     @see @ref write, @ref write_some, @ref WriteStream, @ref ConstBufferSequence
 */
@@ -294,7 +297,7 @@ class write_now
     };
 
 public:
-    /** Destructor. Frees the cached coroutine frame. */
+    /// Destroy the object, freeing the cached coroutine frame.
     ~write_now()
     {
         if(cached_frame_)
@@ -311,7 +314,10 @@ public:
     {
     }
 
+    /// Copy construction is disabled. The frame cache is per-instance.
     write_now(write_now const&) = delete;
+
+    /// Copy assignment is disabled. The frame cache is per-instance.
     write_now& operator=(write_now const&) = delete;
 
     /** Eagerly write the entire buffer sequence.
@@ -326,16 +332,22 @@ public:
         and continues asynchronously. The internal coroutine frame
         is cached and reused across calls.
 
-        @param buffers The buffer sequence to write. Passed by
-            value to ensure the sequence lives in the coroutine
-            frame across suspension points.
+        On success, `n` equals `buffer_size(buffers)`. On error, `n`
+        counts the bytes written before the error. Compare error
+        codes to conditions:
+        @li `cond::canceled`: the operation was cancelled.
+        @li `std::errc::broken_pipe`: the peer closed the connection.
 
-        @return An awaitable that await-returns `(error_code,std::size_t)`.
-            On success, `n` equals `buffer_size(buffers)`. On
-            error, `n` is the number of bytes written before the
-            error. Compare error codes to conditions:
-            @li `cond::canceled` - Operation was cancelled
-            @li `std::errc::broken_pipe` - Peer closed connection
+        @pre This object outlives the returned awaitable, including
+        its destruction. The awaitable uses this object's cached frame.
+
+        @throws std::bad_alloc If allocating the coroutine frame fails.
+        @throws Any exception thrown by the stream's `write_some`.
+
+        @note With `BOOST_CAPY_WRITE_NOW_WORKAROUND` (the default on GCC)
+        the caller always suspends. See the class documentation. When the
+        workaround is off and a `write_some` fails without suspending,
+        `n` excludes any bytes that failing call reported.
 
         @par Example
 
@@ -343,8 +355,16 @@ public:
         write_now wn( stream );
         auto [ec, n] = co_await wn( make_buffer( body ) );
         if( ec )
-            detail::throw_system_error( ec );
+            throw std::system_error( ec );
         @endcode
+
+        @param buffers The buffer sequence to write. Passed by
+            value to ensure the sequence lives in the coroutine
+            frame across suspension points. The memory it refers to
+            is not copied and must remain valid until the operation
+            completes.
+
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
 
         @see @ref write, @ref write_some, @ref WriteStream
     */

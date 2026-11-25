@@ -29,8 +29,6 @@ namespace capy {
     member function template that accepts any @ref ConstBufferSequence
     and await-returns `(error_code, std::size_t)`.
 
-    @tparam T The stream type.
-
     @par Syntactic Requirements
 
     @li `T` must provide a `write_some` member function template
@@ -69,7 +67,7 @@ namespace capy {
 
     A subsequent `write_some` call is permitted. A conforming stream
     may report the same contingency, report a different one, or
-    resume delivering data.
+    resume accepting data.
 
     @par Error Reporting
 
@@ -78,8 +76,6 @@ namespace capy {
     Examples are EOF, connection reset, and broken pipe. Failures
     in the library wrapper itself (such as memory allocation
     failure) are reported via exceptions.
-
-    @throws std::bad_alloc If coroutine frame allocation fails.
 
     @par Buffer Lifetime
 
@@ -100,16 +96,19 @@ namespace capy {
     immediately, in the same scope. Storing such an awaitable produces
     a dangling reference.
 
+    @throws std::bad_alloc If coroutine frame allocation fails.
+
     @note Callers who want to avoid copying an expensive buffer
     sequence (for example, a `std::vector<const_buffer>` with many
     entries) can pass `std::views::all(seq)` at the call site. The
     resulting `ref_view` satisfies the buffer-sequence concepts and
-    copies in O(1). See `doc/buffers-passing-rationale.md`.
+    copies in O(1).
 
     @par Example
 
     @par !example example_2
 
+    @tparam T The stream type.
 
     @see @ref ContextAwaitable, @ref ConstBufferSequence, @ref awaitable_decomposes_to
 */

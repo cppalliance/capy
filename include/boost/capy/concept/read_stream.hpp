@@ -73,8 +73,6 @@ namespace capy {
     in the library wrapper itself (such as memory allocation
     failure) are reported via exceptions.
 
-    @throws std::bad_alloc If coroutine frame allocation fails.
-
     @par Buffer Lifetime
     The caller must ensure that the memory referenced by `buffers`
     remains valid until the `co_await` expression returns.
@@ -92,15 +90,18 @@ namespace capy {
     immediately, in the same scope. Storing such an awaitable produces
     a dangling reference.
 
+    @throws std::bad_alloc If coroutine frame allocation fails.
+
     @note Callers who want to avoid copying an expensive buffer
     sequence (for example, a `std::vector<mutable_buffer>` with many
     entries) can pass `std::views::all(seq)` at the call site. The
     resulting `ref_view` satisfies the buffer-sequence concepts and
-    copies in O(1). See `doc/buffers-passing-rationale.md`.
+    copies in O(1).
 
     @par Example
     @par !example example_2
 
+    @tparam T The stream type.
 
     @see @ref ContextAwaitable, @ref MutableBufferSequence, @ref awaitable_decomposes_to
 */

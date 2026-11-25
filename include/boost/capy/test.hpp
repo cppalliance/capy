@@ -15,8 +15,8 @@
 
     Including this header provides access to the complete
     @ref boost::capy::test toolkit: mock streams, the fuse fail-point
-    machinery, blocking task runners, buffer inspection helpers, and
-    thread naming. It is a convenience for test code, and the main
+    machinery, blocking task runners, and buffer inspection helpers.
+    It is a convenience for test code, and the main
     <boost/capy.hpp> umbrella does not pull it in. Normal consumers are
     therefore never forced to depend on the testing utilities.
 */

@@ -189,8 +189,8 @@ struct lifetimes_test
     testShutdownOrder()
     {
         stopped_through_own_code = false;
-        capy::async_event never_set;
         // tag::shutdown_order[]
+        capy::async_event never_set;
         capy::thread_pool pool(1);
         std::stop_source stop;
         capy::run_async(pool.get_executor(), stop.get_token())(

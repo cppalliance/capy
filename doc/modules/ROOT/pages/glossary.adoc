@@ -22,7 +22,7 @@ cpp:abandon[] and xref:4.coroutines/4j.lifetimes.adoc[Lifetime and Ownership].
 
 [[affinity]]Affinity::
 The binding of a coroutine to a specific executor. A coroutine with affinity
-to executor `ex` has all its resumptions dispatched through `ex`. A task
+to executor `ex` is resumed through `ex`. A task
 inherits its caller's executor unless it is started with a cpp:run[] overload
 that takes an executor.
 See xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts].
@@ -63,7 +63,13 @@ describes. See xref:5.buffers/5.intro.adoc[Buffer Sequences].
 [[cancellation]]Cancellation::
 Asking an in-progress asynchronous operation to stop early through a stop
 token. Operations complete with an error code that compares equal to
-`cond::canceled`. See xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation].
+cpp:cond::canceled[cond::canceled]. See xref:4.coroutines/4f.cancellation.adoc[Stop Tokens and Cancellation].
+
+[[chain]]Chain::
+The coroutines linked by `co_await`, from the started task down to the one
+suspended at the bottom. A chain can hold several
+xref:glossary.adoc#segment[segments], for example when a task awaits a child
+through cpp:run[] on another executor.
 
 [[completion-handler]]Completion Handler::
 The callable passed to cpp:run_async[] that receives the task's result or
@@ -75,8 +81,8 @@ cpp:read[] repeatedly calls `read_some()` until the buffer is full.
 
 [[contextawaitable]]ContextAwaitable::
 The concept for awaitables whose `await_suspend` takes the execution
-environment as a second argument. Every awaitable a Capy coroutine awaits
-must satisfy it. See cpp:ContextAwaitable[] and
+environment as a second argument. Every awaitable a cpp:task[] awaits must
+satisfy it. See cpp:ContextAwaitable[] and
 xref:4.coroutines/4e.context-awaitable.adoc[The ContextAwaitable Protocol].
 
 [[continuation]]Continuation::
@@ -112,7 +118,7 @@ Represented by cpp:await_context[].
 
 [[eof]]EOF (End of File/Stream)::
 A condition indicating no more data is available. Signaled by
-`cond::eof`.
+cpp:cond::eof[cond::eof].
 
 [[error-code]]Error Code::
 A lightweight error indicator. See `std::error_code`.
@@ -256,7 +262,7 @@ receiver to run it. See xref:8.examples/8o.sender-bridge.adoc[Bridging a P2300 S
 
 [[service]]Service::
 A polymorphic component owned by an execution context. Provides shared
-functionality. See `execution_context::use_service()`.
+functionality. See cpp:execution_context::use_service[use_service()].
 
 [[start]]Start::
 To begin executing a task. See cpp:run_async[] and cpp:run[].
@@ -287,8 +293,8 @@ handle, so that the stack does not grow. A finished task returns to its
 parent this way.
 
 [[system-context]]System Context::
-The process-wide thread pool used when no explicit execution context is
-supplied. See cpp:get_system_context[].
+A process-wide thread pool, available through cpp:get_system_context[], for
+code that has no execution context of its own.
 
 == T
 
@@ -304,8 +310,8 @@ cpp:thread_pool[].
 The ability to use an object safely from multiple threads.
 
 [[type-erased]]Type-Erased::
-Describes a type that hides its concrete type behind a fixed interface,
-enabling runtime polymorphism without templates. See cpp:any_stream[],
+Describes a type that hides its concrete type behind a fixed interface, so
+code that uses it need not be a template. See cpp:any_stream[],
 cpp:any_read_stream[], cpp:any_write_stream[], and
 xref:6.streams/6b.wrappers.adoc[Type-Erased Wrappers].
 
@@ -319,14 +325,16 @@ coroutines.
 See cpp:async_waker[] and xref:4.coroutines/4l.synchronization.adoc[Synchronization Primitives].
 
 [[when-all]]`when_all`::
-Awaiting several tasks concurrently and completing when all of them have
-finished. The first failure requests stop on the other tasks. See cpp:when_all[] and
+Awaiting several awaitables whose result is a cpp:results[] concurrently, and
+completing when all of them have finished. The first failure requests stop on
+the other awaitables. See cpp:when_all[] and
 xref:4.coroutines/4g.composition.adoc[Concurrent Composition].
 
 [[when-any]]`when_any`::
-Awaiting several tasks concurrently and completing with the first one that
-succeeds. Stop is requested for the others, and all of them finish before it
-returns. A failing task does not stop the others. If every task fails, it
+Awaiting several awaitables whose result is a cpp:results[] concurrently, and
+completing with the first one that succeeds. Stop is requested for the others,
+and all of them finish before it returns. A failing awaitable does not stop the
+others. If every awaitable fails, it
 completes with one of the failures. See cpp:when_any[] and
 xref:4.coroutines/4g.composition.adoc[Concurrent Composition].
 

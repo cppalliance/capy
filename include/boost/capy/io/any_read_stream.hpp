@@ -47,10 +47,9 @@ namespace capy {
       pointed-to stream must outlive this wrapper.
 
     @par Awaitable Preallocation
-    The constructor preallocates storage for the type-erased awaitable.
-    This reserves all virtual address space at server startup
-    so memory usage can be measured up front, rather than
-    allocating piecemeal as traffic arrives.
+    The constructor allocates the storage for the type-erased awaitable
+    once, so operations do not allocate it piecemeal as traffic
+    arrives.
 
     @par Immediate Completion
     When the underlying stream's awaitable reports ready immediately
@@ -92,7 +91,7 @@ class any_read_stream
     }
 
 public:
-    /** Destructor.
+    /** Destroy the wrapper.
 
         Ends any operation in flight, then destroys the owned stream
         (if any) and releases the cached awaitable storage.
@@ -107,7 +106,7 @@ public:
     */
     any_read_stream() = default;
 
-    /** Non-copyable.
+    /** Copy construction is disabled.
 
         The awaitable cache is per-instance and cannot be shared.
 
@@ -159,6 +158,12 @@ public:
         Allocates storage and moves the stream into this wrapper.
         The wrapper owns the stream and destroys it.
 
+        @par Exception Safety
+        Strong guarantee. If an allocation throws, nothing is leaked.
+
+        @throws std::bad_alloc If allocation fails.
+        @throws Any exception thrown by moving `s`.
+
         @param s The stream to take ownership of.
     */
     template<ReadStream S>
@@ -169,6 +174,8 @@ public:
 
         Wraps the given stream by pointer. The stream must remain
         valid for the lifetime of this wrapper.
+
+        @throws std::bad_alloc If allocating the awaitable storage fails.
 
         @param s Pointer to the stream to wrap.
     */
@@ -197,34 +204,33 @@ public:
         return has_value();
     }
 
-    /** Initiate an asynchronous read operation.
+    /** Asynchronously read some data into the buffer sequence.
 
         Reads data into the provided buffer sequence. The operation
         completes when at least one byte is read, or an error
         occurs.
 
-        @param buffers The buffer sequence to read into. Passed by
-            value to ensure the sequence lives in the coroutine frame
-            across suspension points.
-
-        @return An awaitable that await-returns `(error_code,std::size_t)`.
+        @pre The wrapper must contain a valid stream (`has_value() == true`).
 
         @par Immediate Completion
         The operation completes immediately without suspending
         the calling coroutine when the underlying stream's
         awaitable reports immediate readiness via `await_ready`.
 
-        @note This is a partial operation and may not process the
-        entire buffer sequence. Use the composed @ref read algorithm
-        for guaranteed complete transfer.
-
-        @par Preconditions
-        The wrapper must contain a valid stream (`has_value() == true`).
-
         @par After an Error
         A subsequent call is permitted. The wrapper forwards directly
         to the underlying stream, imposing no stricter rule than
         @ref ReadStream.
+
+        @note This is a partial operation and may not process the
+        entire buffer sequence. Use the composed @ref read algorithm
+        for guaranteed complete transfer.
+
+        @param buffers The buffer sequence to read into. Passed by
+            value to ensure the sequence lives in the coroutine frame
+            across suspension points.
+
+        @return An awaitable that await-returns `(error_code,std::size_t)`.
     */
     template<MutableBufferSequence MB>
     auto
@@ -243,9 +249,8 @@ protected:
 
     /** Rebind to a new stream after move.
 
-        Updates the internal pointer to reference a new stream object.
-        Used by owning wrappers after move assignment when the owned
-        object has moved to a new location.
+        Updates the internal pointer to reference a new stream object,
+        for use when the stream object has moved to a new location.
 
         @param new_stream The new stream to bind to. Must be the same
             type as the original stream.

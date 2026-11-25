@@ -1,15 +1,17 @@
 = Coroutine Machinery
 :page-mode: tutorial
 
+To write your own coroutine return type, such as a generator, you provide a promise type and drive the coroutine through a handle. This page explains both, then combines them into a working generator.
+
 == The Promise Type
 
 Every coroutine has an associated *promise type*. This type acts as a controller for the coroutine, defining how it behaves at key points in its lifecycle. The promise type is not something you pass to the coroutine.
 
-The compiler expects to find a type named `promise_type` nested inside your coroutine's return type. If your coroutine returns `Generator<int>`, the compiler looks for `Generator<int>::promise_type`.
+The compiler expects to find a type named `promise_type` nested inside your coroutine's return type. If your coroutine returns `Generator<int>`, the compiler looks for `Generator<int>::promise_type`. Formally, the compiler uses `std::coroutine_traits<R, Args...>::promise_type`, where `R` is the return type and `Args` are the parameter types. For a non-static member function, the type of the implicit object parameter comes first in `Args`. The primary template forwards to `R::promise_type`, and a specialization can choose a different promise type.
 
 === Required Methods
 
-The promise type must provide these methods:
+The promise type provides these methods:
 
 `get_return_object()`::
 Called to create the object returned to the caller of the coroutine.
@@ -18,10 +20,10 @@ Called to create the object returned to the caller of the coroutine.
 Called immediately after `get_return_object()`. Returns an xref:glossary.adoc#awaiter[awaiter] that determines whether the coroutine should suspend before running any of its body. Return `std::suspend_never{}` to start executing immediately, or `std::suspend_always{}` to suspend before the first statement.
 
 `final_suspend()`::
-Called when the coroutine completes (either normally or via exception). Returns an awaiter that determines whether to suspend one last time or destroy the coroutine state immediately. This method must be `noexcept`.
+Called when the coroutine completes (either normally or via exception). Returns an awaiter that determines whether to suspend one last time or destroy the coroutine state immediately. The expression `co_await promise.final_suspend()` must not be potentially-throwing, so declare `final_suspend()` and the members of the awaiter it returns `noexcept`.
 
 `return_void()` or `return_value(v)`::
-Called when the coroutine executes `co_return` or falls off the end of its body. Use `return_void()` if the coroutine does not return a value; use `return_value(v)` if it does. You must provide exactly one of these, matching how your coroutine returns.
+`co_return v;` with a non-void operand calls `return_value(v)`. `co_return;` and falling off the end of the body call `return_void()`. Provide the one your coroutine uses. A promise type that declares both is ill-formed.
 
 `unhandled_exception()`::
 Called if an exception escapes the coroutine body. Typically you either rethrow the exception, store it for later, or terminate the program.
@@ -30,7 +32,7 @@ Called if an exception escapes the coroutine body. Typically you either rethrow 
 
 The compiler transforms your coroutine body into something resembling this pseudocode:
 
-NOTE: The `co_await` keywords below are intentional. This mirrors the {cpp} standard's own description ({cpp}20 [dcl.fct.def.coroutine]/5), which uses `co_await` to express the logical suspension points. The compiler expands each `co_await` into the full awaiter protocol (`await_ready`, `await_suspend`, `await_resume`) as described in xref:2.cpp20-coroutines/2b.syntax.adoc#awaitables_and_awaiters[Awaitables and Awaiters].
+NOTE: The `co_await` keywords below are intentional. This follows the {cpp} standard's own description ({cpp}20 [dcl.fct.def.coroutine]/5), which uses `co_await` to express the logical suspension points. The standard specifies the `get_return_object()` call separately and sequences it before `initial_suspend()`. The compiler expands each `co_await` into the full awaiter protocol (`await_ready`, `await_suspend`, `await_resume`) as described in xref:2.cpp20-coroutines/2b.syntax.adoc#awaitables_and_awaiters[Awaitables and Awaiters].
 
 .What the compiler generates
 [source,cpp,role=pseudocode]
@@ -39,21 +41,25 @@ NOTE: The `co_await` keywords below are intentional. This mirrors the {cpp} stan
     promise_type promise;
     auto return_object = promise.get_return_object();
 
-    co_await promise.initial_suspend();  // <1>
-
     try {
+        co_await promise.initial_suspend();  // <1>
         // your coroutine body goes here
     }
     catch (...) {
+        if (!initial_await_resume_called)  // <2>
+            throw;
         promise.unhandled_exception();
     }
 
-    co_await promise.final_suspend();  // <2>
+final_suspend:  // <3>
+    co_await promise.final_suspend();  // <4>
 }
 // coroutine frame is destroyed when control flows off the end
 ----
 <1> Suspension point before the body runs. If `initial_suspend()` returns `suspend_always`, the coroutine starts suspended.
-<2> Suspension point after the body completes. If `final_suspend()` returns `suspend_always`, the frame persists for the caller to inspect or destroy.
+<2> This flag becomes `true` just before the initial awaiter's `await_resume()` runs. An exception thrown earlier propagates to the caller instead of reaching `unhandled_exception()`.
+<3> Every `co_return` statement jumps to this label after calling `return_void()` or `return_value()`.
+<4> Suspension point after the body completes. If `final_suspend()` returns `suspend_always`, the frame persists for the caller to inspect or destroy.
 
 Important observations:
 
@@ -92,14 +98,14 @@ A coroutine may fall off the end of its body without executing `co_return`. If i
 
 == Coroutine Handle
 
-A `std::coroutine_handle<>` is a lightweight object that refers to a suspended coroutine. It is similar to a pointer: it does not own the memory it references, and copying it does not copy the coroutine.
+A `std::coroutine_handle<>` is a lightweight object that refers to a coroutine. It is similar to a pointer: it does not own the memory it references, and copying it does not copy the coroutine.
 
 === Basic Operations
 
-* `handle()` or `handle.resume()` — Resume the coroutine
-* `handle.done()` — Returns `true` if the coroutine has completed
-* `handle.destroy()` — Destroy the coroutine frame (frees memory)
-* `handle.promise()` — Returns a reference to the promise object (typed handles only)
+* `handle()` or `handle.resume()`: Resume the suspended coroutine
+* `handle.done()`: Returns `true` if the suspended coroutine is at its final suspend point
+* `handle.destroy()`: Destroy the coroutine frame (frees memory)
+* `handle.promise()`: Returns a reference to the promise object (typed handles only)
 
 === Typed vs Untyped Handles
 
@@ -160,7 +166,7 @@ include::example$programs/2c_machinery_generator.cpp[tag=full]
 The coroutine suspends before running any user code. This means the first call to `next()` starts the coroutine running.
 
 `final_suspend()` returns `suspend_always`::
-The coroutine frame persists after completion. This is necessary because the iterator needs to check `handle.done()` after the last value.
+The coroutine frame persists after completion. This is necessary because `next()` checks `handle.done()` after the last value.
 
 Generator owns the handle::
 The destructor calls `handle.destroy()` to free the coroutine frame. Copying is disabled to avoid double-free; moving transfers ownership.
@@ -170,7 +176,7 @@ Stores the yielded value in `current_value` and returns `suspend_always` to paus
 
 === Fibonacci Generator
 
-Here is a more interesting generator that produces the Fibonacci sequence:
+Here is a more interesting generator that produces the Fibonacci sequence. It reuses the `Generator` type from the previous example, so the listing shows only the new coroutine and `main`:
 
 [source,cpp]
 ----

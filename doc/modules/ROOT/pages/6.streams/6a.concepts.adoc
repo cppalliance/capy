@@ -33,14 +33,14 @@ as soon as the stream has something to report to you:
 
 The two returned pieces of data inform you about two things:
 
- * `n` -- tells you how many bytes were read into the buffer.
- * `ec` -- tells you about the status, `bool(ec) == false` being the nominal status.
+ * `n`: how many bytes were read into the buffer.
+ * `ec`: the status, `bool(ec) == false` being the nominal status.
 
 When no contingency is reported (`!ec`), then `n > 0`. That is, `read_some` does not resume 
 a coroutine unless it really has something to communicate. When `n` is the size of the buffer
-(full buffer fill), then `bool(ec)` is `false` (no contingency). If a contingency occurred after a 
-full buffer read, it will be reported in the subsequent call to `read_some`.footnote:1[The 
-only exception to these rules is if you provide a buffer of zero size.]
+(full buffer fill), then `bool(ec)` is `false` (no contingency). A contingency that occurs after a
+full buffer read is reported by the next call to `read_some`.
+A zero-size buffer is the only exception to these rules.
 
 While many values of `ec` can be returned, Capy allows you to distinguish 
 the following conditions, defined in enumeration cpp:cond[], relevant to stream processing.
@@ -60,7 +60,7 @@ the following conditions, defined in enumeration cpp:cond[], relevant to stream 
 ----
 include::example$snippets/6a_concepts.cpp[tag=conditions]
 ----
-<1> Check if the value of `ec` matches to condition `cond::eof`.
+<1> Check if the value of `ec` matches the condition `cond::eof`.
 
 Due to the chunked nature of the reads from stream, a typical interaction with 
 a read stream involves an iteration:
@@ -70,7 +70,7 @@ a read stream involves an iteration:
 include::example$snippets/6a_concepts.cpp[tag=read_some_pattern]
 ----
 
-Such iteration is hidden between generic algorithms cpp:read[] and cpp:read_at_least[].
+Such iteration is hidden inside the generic algorithms cpp:read[] and cpp:read_at_least[].
 The contract of a read stream is represented by concept cpp:ReadStream[].
 
 
@@ -98,13 +98,15 @@ Any value where `bool(ec) == true` indicates a contingency (such as broken conne
 
 When no contingency is reported (`!ec`), then `n > 0`. That is, `write_some` does not resume 
 a coroutine, unless it has something to communicate. When `n` is the size of the buffer
-(full buffer fill), then `bool(ec)` is `false` (no contingency). If a contingency ocurred after a 
-full buffer write, it will be reported in the subsequent call to `write_some`.footnote:1[]
+(whole buffer written), then `bool(ec)` is `false` (no contingency). A contingency that occurs after a
+full buffer write is reported by the next call to `write_some`.
+A zero-size buffer is again the only exception.
 
-Note that for a common case where `n < buffer_size(buffer)` you need to rearrange the buffer, 
-so that the first `n` bytes is removed, before requesting another chunked write. Unlike with the read case,
-writing a long content, which does not fit into a single xref:glossary.adoc#buffer-sequence[buffer sequence], requires a nested loop.
-This is why in the xref:index.adoc[Introduction] section the "echo" example reads:
+In the common case where `n < buffer_size(buffer)`, you need to remove the first `n` bytes from the
+xref:glossary.adoc#buffer-sequence[buffer sequence] before requesting another chunked write.
+Because `write_some` may accept fewer bytes than offered, sending a whole buffer takes an inner loop.
+cpp:write[] provides it.
+This is why the "echo" example in the xref:index.adoc[Introduction] section has this loop, shown here with simplified error handling:
 
 [source,cpp]
 ----
@@ -123,5 +125,5 @@ The contract of a write stream is represented by concept cpp:WriteStream[].
 
 A type that models both cpp:ReadStream[] and cpp:WriteStream[] is a cpp:Stream[].
 A TCP socket is the common case: one object carries traffic in both directions.
-Also, an example above clearly uses such a "duplex" cpp:Stream[].
+The echo example above uses such a "duplex" cpp:Stream[].
 

@@ -20,15 +20,23 @@
 
 === Compiler Support
 
-* GCC 12+
+CI tests these compilers. Older versions are untested.
+
+* GCC 13+
 * Clang 17+
-* Apple-Clang (macOS 14+)
-* MSVC 14.34+
-* MinGW
+* Apple-Clang (macOS 15+)
+* MSVC 14.44+
+* MinGW Clang (MSYS2)
+* clang-cl
+* Clang on FreeBSD 14.3 and 15.0
 
 === Dependencies
 
 None. Capy is self-contained and does not require Boost.
+The optional Asio interop header, `boost/capy/buffers/asio.hpp`, needs Boost.Asio.
+
+On macOS and FreeBSD, Clang needs `-fexperimental-library` for `std::stop_token`.
+The CMake build adds this flag, but a hand-written compile line must add it too.
 
 == Minimal Example
 
@@ -41,11 +49,15 @@ include::example$programs/quick_start_hello.cpp[tag=full]
 
 == Build and Run
 
-Capy is not installed as a system package, so build it first:
+Capy is not installed as a system package, so build it first.
+As the top-level project, the build also includes tests, examples, and benchmarks by default.
+These options turn them off for a faster first build:
 
 [source,bash,role=external]
 ----
-cmake -B build && cmake --build build
+cmake -B build -DBOOST_CAPY_BUILD_TESTS=OFF \
+    -DBOOST_CAPY_BUILD_EXAMPLES=OFF -DBOOST_CAPY_BUILD_BENCH=OFF
+cmake --build build
 ----
 
 Replace both paths below with where you built Capy:
@@ -56,7 +68,7 @@ g++ -std=c++20 -I/path/to/capy/include -o hello_coro hello_coro.cpp \
     /path/to/capy/build/libboost_capy.a -pthread
 ----
 
-NOTE: If your prorgam is build with CMake, link it against `Boost::capy`.
+NOTE: If your program is built with CMake, add Capy with `add_subdirectory` or `FetchContent`, then link against `Boost::capy`.
 
 Then run the compiled program:
 
@@ -76,7 +88,7 @@ The answer is 42
 
 1. `answer()` creates a suspended coroutine that returns 42
 2. `greet()` creates a suspended coroutine that awaits `answer()`
-3. cpp:run_async[]`(executor)(greet())` starts `greet()` on the pool's xref:glossary.adoc#executor[executor]
+3. cpp:run_async[]`(pool.get_executor())(greet())` starts `greet()` on the pool's xref:glossary.adoc#executor[executor]
 4. `greet()` runs until it hits `co_await answer()`
 5. `answer()` runs and returns 42
 6. `greet()` resumes with the result and prints it
@@ -87,7 +99,8 @@ automatically through the `co_await`.
 
 == Handling Results
 
-To receive a task's result outside a coroutine, provide a xref:glossary.adoc#completion-handler[completion handler]:
+To receive a task's result outside a coroutine, provide a xref:glossary.adoc#completion-handler[completion handler].
+In this snippet and the next, `executor` is `pool.get_executor()`, as in the minimal example:
 
 [source,cpp]
 ----
@@ -118,8 +131,8 @@ See xref:4.coroutines/4k.results.adoc[The results Type].
 
 == Next Steps
 
-* xref:2.cpp20-coroutines/2.intro.adoc[Introduction To {cpp}20 Coroutines] — If you need to refresh the C++ coroutines basics
-* xref:4.coroutines/4b.tasks.adoc[Tasks] — Learn how xref:glossary.adoc#lazy[lazy] tasks work
-* xref:4.coroutines/4k.results.adoc[The results Type] — How operations report errors without throwing
-* xref:4.coroutines/4c.launching.adoc[Starting Tasks] — Understand cpp:run_async[] in detail
-* xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts] — Control where coroutines execute
+* xref:2.cpp20-coroutines/2.intro.adoc[Introduction To {cpp}20 Coroutines]: if you need to refresh the C++ coroutines basics
+* xref:4.coroutines/4b.tasks.adoc[The task Type]: learn how xref:glossary.adoc#lazy[lazy] tasks work
+* xref:4.coroutines/4k.results.adoc[The results Type]: how operations report errors without throwing
+* xref:4.coroutines/4c.launching.adoc[Starting Coroutines]: understand cpp:run_async[] in detail
+* xref:4.coroutines/4d.executors.adoc[Executors and Execution Contexts]: control where coroutines execute

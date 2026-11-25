@@ -67,4 +67,23 @@ capy::task<void> run_n_jobs( MakeJob make_job, int n )
 // end::example_2[]
 } // namespace ex_2
 
+namespace ex_3 {
+// tag::example_3[]
+capy::task<capy::results<int>> fetch_count();
+capy::task<capy::results<std::string>> fetch_name();
+
+capy::task<> report()
+{
+    auto [ec, count, name] = co_await capy::when_all(
+        fetch_count(), fetch_name() );
+    if(ec)
+        co_return;
+    // count is an int, name is a std::string
+}
+// end::example_3[]
+
+capy::task<capy::results<int>> fetch_count() { co_return {std::error_code{}, 3}; }
+capy::task<capy::results<std::string>> fetch_name() { co_return {std::error_code{}, "capy"}; }
+} // namespace ex_3
+
 } // namespace

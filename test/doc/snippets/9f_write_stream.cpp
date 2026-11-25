@@ -15,7 +15,6 @@
 #include <boost/capy/buffers.hpp>
 #include <boost/capy/concept/read_stream.hpp>
 #include <boost/capy/concept/write_stream.hpp>
-#include <boost/capy/cond.hpp>
 #include <boost/capy/io/write_now.hpp>
 #include <boost/capy/results.hpp>
 #include <boost/capy/task.hpp>
@@ -81,7 +80,7 @@ capy::task<> relay_with_write_now(Source& src, Stream& dest)
         // Read a chunk from the source
         auto [rec, nr] = co_await src.read_some(
             capy::mutable_buffer(buf, sizeof(buf)));
-        if(rec == capy::cond::eof && nr == 0)
+        if(rec && nr == 0)
             co_return;
 
         // write_now drains the chunk to completion.
@@ -95,7 +94,9 @@ capy::task<> relay_with_write_now(Source& src, Stream& dest)
         if(wec)
             co_return;
 
-        if(rec == capy::cond::eof)
+        // Any read error, EOF included, ends the relay once
+        // the bytes delivered alongside it are written
+        if(rec)
             co_return;
     }
 }

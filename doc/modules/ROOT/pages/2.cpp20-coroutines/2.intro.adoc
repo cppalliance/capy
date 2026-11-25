@@ -10,9 +10,9 @@
 = Introduction To {cpp}20 Coroutines
 :page-mode: explanation
 
-Every {cpp} function you have ever written follows the same contract: it runs from start to finish, then returns. The stack frame lives and dies in lockstep with that single invocation. But it forces a hard tradeoff when programs need to wait--for a network response, a disk read, a timer, or another thread. The function either blocks (wasting a thread) or you restructure your code into callbacks, state machines, or futures that scatter your logic across multiple places.
+Every {cpp} function you have ever written follows the same contract: it runs from start to finish, then returns. The stack frame lives and dies in lockstep with that single invocation. But this contract forces a hard tradeoff when programs need to wait for a network response, a disk read, a timer, or another thread. The function either blocks (wasting a thread) or you restructure your code into callbacks, state machines, or futures that scatter your logic across multiple places.
 
-A coroutine can _suspend_ its execution--saving its local state somewhere outside the stack--and _resume_ later, picking up exactly where it left off. The control flow reads top-to-bottom, like the synchronous code you already know, but the runtime behavior is asynchronous.
+A coroutine can _suspend_ its execution and _resume_ later, picking up exactly where it left off. While suspended, it keeps its local state somewhere outside the stack. The control flow reads top-to-bottom, like the synchronous code you already know, but the runtime behavior is asynchronous.
 
 == What This Section Covers
 
@@ -22,5 +22,5 @@ A coroutine can _suspend_ its execution--saving its local state somewhere outsid
   `co_yield`, and `co_return` keywords, and how the compiler builds xref:glossary.adoc#awaitable[awaitables].
 * xref:2.cpp20-coroutines/2c.machinery.adoc[Coroutine Machinery] -- Promise types
   and xref:glossary.adoc#coroutine-handle[coroutine handles], the machinery behind suspension and resumption.
-* xref:2.cpp20-coroutines/2d.advanced.adoc[Advanced Topics] -- xref:glossary.adoc#symmetric-transfer[Symmetric transfer],
-  custom allocation, HALO, and exception handling across suspension points.
+* xref:2.cpp20-coroutines/2d.advanced.adoc[Advanced Topics]: xref:glossary.adoc#symmetric-transfer[Symmetric transfer],
+  custom allocation, Heap Allocation eLision Optimization (HALO), and exception handling across suspension points.

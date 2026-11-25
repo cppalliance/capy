@@ -237,8 +237,9 @@ struct drivers_test
             auto ec = f.maybe_fail();  // always returns {}
             assert(!ec);
 
+            // f.fail() marks failure explicitly; an escaping exception also fails the run
             if(some_condition_failed)
-                f.fail();  // the only way to signal failure in inert mode
+                f.fail();
         });
         BOOST_TEST(r.success);
         // end::inert_fail[]

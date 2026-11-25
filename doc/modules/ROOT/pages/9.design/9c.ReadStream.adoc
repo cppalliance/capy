@@ -7,12 +7,7 @@ cpp:ReadStream[] is the fundamental partial-read primitive among Capy's stream c
 
 == Definition
 
-[source,cpp]
-----
-include::example$include/boost/capy/concept/read_stream.hpp[tag=read_stream_concept,indent=0]
-----
-
-The `requires` clause checks `read_some` against a single representative buffer, cpp:mutable_buffer_archetype[], because a {cpp} concept cannot quantify over "every xref:glossary.adoc#buffer-sequence[buffer sequence]." The contract is stronger than what the compiler verifies: a cpp:ReadStream[] must accept *any* cpp:MutableBufferSequence[]—a single buffer or a range of them—and the archetype stands in for that universally-quantified requirement.
+The formal definition lives in the reference at cpp:ReadStream[]. Its `requires` clause checks `read_some` against a single representative buffer, cpp:mutable_buffer_archetype[], because a {cpp} concept cannot quantify over "every xref:glossary.adoc#buffer-sequence[buffer sequence]." The contract is stronger than what the compiler verifies: a cpp:ReadStream[] must accept *any* cpp:MutableBufferSequence[] (a single buffer or a range of them), and the archetype stands in for that universally-quantified requirement.
 
 A cpp:ReadStream[] provides a single operation:
 
@@ -57,7 +52,7 @@ include::example$snippets/9c_read_stream.cpp[tag=echo,indent=0]
 | cpp:WriteStream::write_some[WriteStream::write_some]
 
 | cpp:read[] free function (composed)
-| `write_now` (composed, eager)
+| cpp:write[] free function (composed)
 |===
 
 == Design Foundations: Why a Full Buffer Is Always Success
@@ -72,7 +67,7 @@ The `(error_code, size_t)` return type carries both a byte count and a condition
 
 A condition such as end-of-stream is a property of the stream, not of the bytes that were just delivered. If a read happens to fill the buffer exactly as the stream reaches its end, the bytes are still good and the read still succeeded. Reporting EOF on that same completion would force every caller to reconcile "I got all my bytes" with "but there was also an error," which is precisely the ambiguity the contract removes. Instead the condition surfaces on the next read, when `n` is necessarily less than the buffer size, and the caller observes it cleanly.
 
-This is what lets generic composition algorithms such as cpp:when_all[] and cpp:when_any[] distinguish a completed transfer from a failure by inspecting `n` alone.
+This lets generic composition algorithms such as cpp:when_all[] and cpp:when_any[] distinguish a completed transfer from a failure by testing `ec` alone. A full transfer never carries an error.
 
 === The Implementation Burden Is Internal
 
@@ -103,7 +98,7 @@ Every composed read algorithm that accumulates progress follows the same pattern
 include::example$snippets/9c_read_stream.cpp[tag=canonical_loop,indent=0]
 ----
 
-The advance-then-check ordering is the only correct pattern. It is required for any operation that can report partial progress alongside an error -- cpp:read[] returning `(eof, 47)` being the canonical example. If the check precedes the advance, the 47 bytes are silently dropped. On a clean completion the same code advances by the full amount.
+The advance-then-check ordering is the only correct pattern. It is required for any operation that can report partial progress alongside an error, and cpp:read[] returning `(eof, 47)` is the canonical example. If the check precedes the advance, the 47 bytes are silently dropped. On a clean completion the same code advances by the full amount.
 
 === Implementer Freedom
 

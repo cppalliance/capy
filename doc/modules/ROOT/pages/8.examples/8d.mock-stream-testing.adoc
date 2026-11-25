@@ -5,7 +5,7 @@ Unit testing protocol code with xref:glossary.adoc#mock-stream[mock streams] and
 
 == What This Example Shows
 
-* Using cpp:test::read_stream[test::read_stream] and cpp:test::write_stream[test::write_stream]
+* Using connected cpp:test::stream[test::stream] pairs from `make_stream_pair`
 * Error injection with cpp:test::fuse[fuse]
 * Synchronous testing with cpp:test::run_blocking[run_blocking]
 
@@ -20,8 +20,8 @@ include::example$mock-stream-testing/mock_stream_testing.cpp[tag=full]
 
 [source,cmake,role=external]
 ----
-add_executable(mock_stream_testing mock_stream_testing.cpp)
-target_link_libraries(mock_stream_testing PRIVATE Boost::capy)
+add_executable(capy_example_mock_stream_testing mock_stream_testing.cpp)
+target_link_libraries(capy_example_mock_stream_testing PRIVATE Boost::capy)
 ----
 
 == Walkthrough
@@ -36,9 +36,9 @@ include::example$snippets/8d_mock_stream_testing.cpp[tag=mock_streams,indent=0]
 cpp:test::stream[test::stream] is a bidirectional mock that satisfies both cpp:ReadStream[] and cpp:WriteStream[]:
 
 * Streams are obtained in connected pairs from `make_stream_pair(f)`; the shared `fuse` enables error injection
-* `provide(data)` — Supplies data for the peer's reads
-* `data()` — Returns data written to this end
-* `set_max_read_size(n)` — Limits bytes returned per read, simulating chunked delivery
+* `provide(data)`: Supplies data for the peer's reads
+* `data()`: Returns data the peer wrote that this end has not yet read
+* `set_max_read_size(n)`: Limits bytes returned per read, simulating chunked delivery
 
 === Type-Erased Streams
 
@@ -56,7 +56,7 @@ Use pointer construction (`&a`) so the cpp:any_stream[] wrapper references the s
 include::example$mock-stream-testing/mock_stream_testing.cpp[tag=run_blocking,indent=0]
 ----
 
-`run_blocking` executes a coroutine synchronously, blocking until complete. Pass a handler to capture the result.
+`run_blocking` executes a coroutine synchronously, blocking until complete. Pass a completion handler to capture the result.
 
 === Error Injection
 
@@ -65,11 +65,13 @@ include::example$mock-stream-testing/mock_stream_testing.cpp[tag=run_blocking,in
 include::example$snippets/8d_mock_stream_testing.cpp[tag=fuse_armed,indent=0]
 ----
 
-`fuse::armed` runs the test function repeatedly, injecting errors at each operation point:
+`fuse::armed` runs the test function repeatedly.
+Each run moves the injected failure to a later operation, until a run completes with no failure.
+It does this in two phases: first the failures arrive as error codes, then as exceptions.
 
-1. First run: error at operation 1
-2. Second run: error at operation 2
-3. ...and so on until all operations succeed
+In this program, an error-code run returns `false` and increments `error`.
+The clean run that ends each phase increments `success`, so `success` is 2.
+An exception leaves the test body before either counter changes, so the exception runs do not appear in `Runs`.
 
 == Output
 
@@ -90,7 +92,7 @@ All tests passed!
 
 1. Add a test for EOF handling (what if input doesn't end with newline?)
 2. Test with different max_read_size values
-3. Add a test for write errors using cpp:test::write_stream[test::write_stream]
+3. Add a test that checks the output after an injected write error, using the shared `fuse`
 
 == Next Steps
 

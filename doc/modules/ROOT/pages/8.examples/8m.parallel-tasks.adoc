@@ -16,12 +16,16 @@ Distributing CPU-bound work across a thread pool and collecting results.
 include::example$programs/8m_parallel_tasks_variadic.cpp[tag=full]
 ----
 
+This page shows a variant that uses the variadic cpp:when_all[] overload, so each partial sum gets its own name.
+The program in `example/parallel-tasks/` uses the range overload over a `std::vector` of tasks instead.
+Both print the same output.
+
 == Build
 
 [source,cmake,role=external]
 ----
-add_executable(parallel_tasks parallel_tasks.cpp)
-target_link_libraries(parallel_tasks PRIVATE Boost::capy)
+add_executable(capy_example_parallel_tasks parallel_tasks.cpp)
+target_link_libraries(capy_example_parallel_tasks PRIVATE Boost::capy)
 ----
 
 == Walkthrough
@@ -51,7 +55,9 @@ cpp:when_all[] starts all four tasks concurrently on the thread pool. The result
 include::example$programs/8m_parallel_tasks_variadic.cpp[tag=thread_id,indent=0]
 ----
 
-On a multi-core system you see different thread IDs, confirming true parallel execution. The `ostringstream` ensures each line is printed atomically.
+On a multi-core system you typically see different thread IDs, which shows the tasks running in parallel.
+One worker can also take several tasks, so some IDs may repeat.
+Building each line in an `ostringstream` and writing it with one `<<` reduces interleaving between threads.
 
 === Verifying Results
 
@@ -73,7 +79,7 @@ Total: 49995000 (expected 49995000)
 
 == Exercises
 
-1. Increase `num_tasks` beyond the pool thread count and observe how tasks are scheduled
+1. In `example/parallel-tasks/parallel_tasks.cpp`, construct the pool with 2 threads and set `num_tasks` to 8, then observe how the pool shares the tasks between its threads
 2. Add a timing comparison between parallel execution and a single-threaded loop
 3. Generalize the partitioning to handle ranges that don't divide evenly
 

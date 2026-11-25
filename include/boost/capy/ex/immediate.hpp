@@ -22,17 +22,14 @@
 namespace boost {
 namespace capy {
 
-/** An awaitable that completes immediately with a value.
+/** Complete a `co_await` at once with a stored value.
 
     This awaitable wraps a synchronous result so it can be used in
-    contexts that require an awaitable type. It never suspends - 
-    `await_ready()` always returns `true`, so the coroutine machinery
-    is optimized away by the compiler.
+    contexts that require an awaitable type. `await_ready()` always
+    returns `true`, so the awaiting coroutine never suspends.
 
     Use this to adapt synchronous operations to satisfy async concepts
     like @ref ContextAwaitable without the overhead of a full coroutine frame.
-
-    @tparam T The result type to wrap.
 
     @par Example
     @par !example example_1
@@ -42,6 +39,8 @@ namespace capy {
     @par !example example_2
 
 
+    @tparam T The result type to wrap.
+
     @see @ref ready, @ref results
 */
 template<class T>
@@ -50,10 +49,12 @@ struct immediate
     /** The wrapped value. */
     T value_;
 
-    /** Always returns true - this awaitable never suspends.
+    /** Check readiness; always `true`.
 
-        @return Always `true`, so the awaiting coroutine does not suspend
-        and `await_suspend` is never called.
+        The awaiting coroutine does not suspend, and `await_suspend` is
+        never called.
+
+        @return Always `true`.
     */
     constexpr bool
     await_ready() const noexcept
@@ -61,16 +62,18 @@ struct immediate
         return true;
     }
 
-    /** ContextAwaitable protocol overload.
+    /** Satisfy @ref ContextAwaitable; never called, since `await_ready` is `true`.
 
         This overload allows `immediate` to satisfy the @ref ContextAwaitable
         concept. Since the result is already available, the environment
-        is unused.
+        is unused. If it were called, the returned `std::noop_coroutine()`
+        would leave the awaiting coroutine suspended with nothing to
+        resume it.
 
         @param h The coroutine handle (unused).
         @param env The execution environment (unused).
 
-        @return `std::noop_coroutine()` to indicate no suspension.
+        @return `std::noop_coroutine()`.
     */
     std::coroutine_handle<>
     await_suspend(
@@ -82,9 +85,11 @@ struct immediate
         return std::noop_coroutine();
     }
 
-    /** Returns the wrapped value.
+    /** Return the wrapped value.
 
-        @return The stored value, moved if non-const.
+        @note A move constructor of `T` that throws calls `std::terminate`.
+
+        @return The stored value, moved out.
     */
     [[nodiscard]] constexpr T
     await_resume() noexcept
@@ -92,7 +97,7 @@ struct immediate
         return std::move(value_);
     }
 
-    /** Returns the wrapped value (const overload).
+    /** Return the wrapped value (const overload).
 
         @return A reference to the stored value. Nothing is moved, so the
         reference is valid only while the `immediate` is alive.
@@ -106,7 +111,7 @@ struct immediate
 
 /** Create an immediate awaitable for a successful `results`.
 
-    This helper creates an @ref immediate wrapping an @ref results
+    This helper creates an @ref immediate wrapping a @ref results
     with no error and the provided values.
 
     @par Example
@@ -126,6 +131,9 @@ ready() noexcept
 
 /** Create an immediate awaitable for a successful `results` with one value.
 
+    @par Exception Safety
+    Propagates any exception from copying or moving the arguments.
+
     @param t1 The result value.
 
     @return An immediate awaitable containing `results<T1>{std::error_code(), t1}`.
@@ -138,6 +146,9 @@ ready(T1 t1)
 }
 
 /** Create an immediate awaitable for a successful `results` with two values.
+
+    @par Exception Safety
+    Propagates any exception from copying or moving the arguments.
 
     @param t1 The first result value.
     @param t2 The second result value.
@@ -152,6 +163,9 @@ ready(T1 t1, T2 t2)
 }
 
 /** Create an immediate awaitable for a successful `results` with three values.
+
+    @par Exception Safety
+    Propagates any exception from copying or moving the arguments.
 
     @param t1 The first result value.
     @param t2 The second result value.
@@ -168,7 +182,7 @@ ready(T1 t1, T2 t2, T3 t3)
 
 /** Create an immediate awaitable for a failed `results`.
 
-    This helper creates an @ref immediate wrapping an @ref results
+    This helper creates an @ref immediate wrapping a @ref results
     with an error code.
 
     @par Example
@@ -190,6 +204,9 @@ ready(std::error_code ec) noexcept
 
 /** Create an immediate awaitable for a `results` with error and one value.
 
+    @par Exception Safety
+    Propagates any exception from copying or moving the arguments.
+
     @param ec The error code.
     @param t1 The result value.
 
@@ -203,6 +220,9 @@ ready(std::error_code ec, T1 t1)
 }
 
 /** Create an immediate awaitable for a `results` with error and two values.
+
+    @par Exception Safety
+    Propagates any exception from copying or moving the arguments.
 
     @param ec The error code.
     @param t1 The first result value.
@@ -218,6 +238,9 @@ ready(std::error_code ec, T1 t1, T2 t2)
 }
 
 /** Create an immediate awaitable for a `results` with error and three values.
+
+    @par Exception Safety
+    Propagates any exception from copying or moving the arguments.
 
     @param ec The error code.
     @param t1 The first result value.

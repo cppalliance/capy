@@ -16,7 +16,7 @@ in separate contiguous regions of storage. For instance, you may separately get 
 and the message checksum. Trying to get them into a single contiguous region would require the user to do
 unnecessary copying.
 
-In order to address this use case, all read and write operations in Capy allow you to provide ranges 
+To address this use case, all read and write operations in Capy allow you to provide ranges 
 of contiguous buffers:
 
 [source,cpp]
@@ -27,9 +27,9 @@ include::example$snippets/5b_composite_buffers.cpp[tag=range_of_units,indent=0]
 
 == Buffer Sequences
 
-In order to address both the simple case of a single contiguous buffer, 
-and the complex cases when the data is produced in a number of contiguous buffers, Capy introduces a concept
-of a _buffer sequence_:
+Capy introduces the concept of a _buffer sequence_.
+It covers both a single contiguous buffer
+and data produced in a number of contiguous buffers:
 
  * A contiguous buffer is a buffer sequence.
  * Any bidirectional range over contiguous buffers is a buffer sequence.
@@ -55,24 +55,20 @@ This generalizes the notion of a _handle_:
 [.scaled]
 image::composite_buffer.svg[]
 
-In the composite case, the entire range mechanism becomes a handle; but since the elements are 
-cpp:const_buffer[] or cpp:mutable_buffer[], 
-the contiguous regions of memory they point to are not part of the handle. 
-This still allows the algorithms to copy the handle
-while retaining the storage at its original location. 
+In the composite case, the range itself is the handle.
+Its elements are cpp:const_buffer[] or cpp:mutable_buffer[], so copying the range copies the buffer descriptors, never the bytes.
+Algorithms can copy the handle while the storage stays at its original location.
 
 Treating a single contiguous buffer as a one-element sequence is intentional, to make the library API smaller. 
 Internally, it is treated as a single-element range.
 
-While a structure looks two-dimensional, the bytes across all contiguous buffers 
-are interpreted and transmitted as a single sequence: first the bytes from the first contiguous buffer,
-then the bytes from the second contiguous buffer, and so on.  
+The structure looks two-dimensional, but the bytes across all contiguous buffers
+are interpreted and transmitted as a single sequence. The bytes from the first
+contiguous buffer come first, then the bytes from the second, and so on.
 
-The mechanism for handling ranges of buffers assumes that the number of elements will be around four.
-In fact, some implementations will perform suboptimally when you use ranges of more than 16 contiguous buffers.
-
-Serializing more buffers in one transmission would not be efficient, and you might as well merge the contents
-into a single buffer.
+A sequence may hold any number of buffers, but a single operation does not always take all of them.
+The type-erased streams, such as cpp:any_write_stream[], pass at most the first 16 non-empty buffers to each `write_some` or `read_some` call.
+A longer sequence therefore takes extra calls, which cpp:write[] and cpp:read[] make for you.
 
 
 === The Concepts
@@ -136,9 +132,9 @@ Algorithms call them inside `noexcept` functions, so a conversion that throws te
 
 === Navigating Buffer Sequences
 
-Header `<boost/capy/buffers.hpp>` also provides a couple of function objects for navigating buffer sequences.
+Header `<boost/capy/buffers.hpp>` also provides a few functions and function objects for navigating buffer sequences.
 
-In order to iterate over contiguous buffers themselves (as opposed to bytes),
+To iterate over contiguous buffers themselves (as opposed to bytes),
 use cpp:buffer_sequence_begin[] and cpp:buffer_sequence_end[]:
 
 [source,cpp]
@@ -165,9 +161,9 @@ include::example$snippets/5b_composite_buffers.cpp[tag=length_equivalent,indent=
 === Iterating Over Bytes
 
 To treat a buffer sequence as one run of bytes, use cpp:buffers_begin[] and
-cpp:buffers_end[]. They return a cpp:buffers_iterator[], a random access
-iterator that crosses buffer boundaries and skips empty buffers, so standard
-algorithms can scan the data without copying it into contiguous storage:
+cpp:buffers_end[]. They return a cpp:buffers_iterator[], an iterator that
+crosses buffer boundaries and skips empty buffers. Standard algorithms can
+then scan the data without copying it into contiguous storage:
 
 [source,cpp]
 ----
@@ -176,5 +172,6 @@ include::example$snippets/5b_composite_buffers.cpp[tag=buffers_iterator_include]
 include::example$snippets/5b_composite_buffers.cpp[tag=iterate_bytes,indent=0]
 ----
 
-Moving the iterator by `n` bytes walks the buffers it crosses, so jumps are
-linear in the number of buffers. The sequence must outlive the iterators.
+The iterator provides the random access operations, but they are not constant
+time. Moving the iterator by `n` bytes walks the buffers it crosses, so jumps
+are linear in the number of buffers. The sequence must outlive the iterators.
