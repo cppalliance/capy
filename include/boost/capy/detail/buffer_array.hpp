@@ -103,9 +103,9 @@ public:
         @param bs The buffer sequence to copy from.
     */
     template<class BS>
-        requires (IsConst ? ConstBufferSequence<BS> : MutableBufferSequence<BS>)
-            && (!std::same_as<std::remove_cvref_t<BS>, buffer_array>)
+        requires (!std::same_as<std::remove_cvref_t<BS>, buffer_array>)
             && (!std::same_as<std::remove_cvref_t<BS>, value_type>)
+            && (IsConst ? ConstBufferSequence<BS> : MutableBufferSequence<BS>)
     buffer_array(BS const& bs) noexcept
         : dummy_(0)
     {

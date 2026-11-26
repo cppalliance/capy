@@ -11,6 +11,19 @@
 = Rationale
 :page-mode: explanation
 
+== Why not cpp:span[std::span]?
+
+The C++ Standard Library already provides a type for representing a handle 
+to a contiguous memory region: cpp:std::span[]. Why create a new type cpp:const_buffer[]?
+The answer is in undesired implicit conversions that cpp:std::span[] offers.
+
+One of the important guarantees that concepts cpp:ConstBuffer[] and cpp:ConstBufferSequence[] offer
+is that copying their models does not change the location of the contiguous memory region(s). 
+cpp:std::span[] is very liberal about allowing implicit conversions. If we used it, 
+it would make cpp:std::vector[] satisfy cpp:ConstBuffer[] without
+meeting its semantic requirements (shallow copy), and thus causing the programs that rely on these
+semantic requirements to behave incorrectly.
+
 == Why `void*` rather than `std::byte`?
 
 Two concrete forces decide it:
