@@ -50,10 +50,10 @@ static_assert(  ConstBufferSequence<std::array<mutable_buffer const, 3>>);
 static_assert(! MutableBufferSequence<std::array<const_buffer const, 3>>);
 static_assert(  MutableBufferSequence<std::array<mutable_buffer const, 3>>);
 
-static_assert(  ConstBufferSequence<const_buffer[3]>);
-static_assert(  ConstBufferSequence<mutable_buffer[3]>);
+static_assert(! ConstBufferSequence<const_buffer[3]>);
+static_assert(! ConstBufferSequence<mutable_buffer[3]>);
 static_assert(! MutableBufferSequence<const_buffer[3]>);
-static_assert(  MutableBufferSequence<mutable_buffer[3]>);
+static_assert(! MutableBufferSequence<mutable_buffer[3]>);
 
 // User types with conversion operators
 
@@ -111,6 +111,18 @@ struct user_buffer
 
     operator mutable_buffer() const noexcept { return { p, n }; }
     operator const_buffer() const noexcept { return { p, n }; }
+
+    
+    // The following is to have API without default constructors or copy/move assignments.
+    // this is to make sure that constrained templates use only the API advertised
+    // by the concepts.
+
+    struct init_t {};  
+    user_buffer(init_t, char* p_, std::size_t n_) : p{p_}, n{n_} {}
+    user_buffer(user_buffer&&) = default;
+    user_buffer(user_buffer const&) = default;
+    user_buffer& operator=(user_buffer&&) = delete;
+    user_buffer& operator=(user_buffer const&) = delete;
 };
 
 } // namespace
@@ -456,8 +468,6 @@ struct buffer_test
         testBuffer<std::span<mutable_buffer,3>>();
         testBuffer<std::array<const_buffer,3>>();
         testBuffer<std::array<mutable_buffer,3>>();
-        testBuffer<const_buffer[3]>();
-        testBuffer<mutable_buffer[3]>();
     }
 
     //--------------------------------------------
@@ -611,11 +621,11 @@ struct buffer_test
     void testUserBuffer()
     {
         char data[8] = {};
-        user_buffer const ub{ data, 4 };
+        user_buffer const ub{ user_buffer::init_t{}, data, 4 };
         BOOST_TEST_EQ(buffer_size(ub), 4);
 
         std::array<user_buffer, 2> const arr{{
-            { data, 4 }, { data + 4, 4 } }};
+            { user_buffer::init_t{}, data, 4 }, { user_buffer::init_t{}, data + 4, 4 } }};
         BOOST_TEST_EQ(buffer_size(arr), 8);
 
         char const src[] = "abcdefgh";

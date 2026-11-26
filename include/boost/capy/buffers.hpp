@@ -2,6 +2,7 @@
 // Copyright (c) 2025 Vinnie Falco (vinnie.falco@gmail.com)
 // Copyright (c) 2026 Michael Vandeberg
 // Copyright (c) 2026 Steve Gerbino
+// Copyright (c) 2026 Andrzej Krzemieński
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -228,18 +229,23 @@ public:
     }
 };
 
-/** Requires a type to convert to `const_buffer`.
+/** Type recognized by the library as a _buffer_ (a handle to contiguous memory region)
+    with const access to data. 
 
-    This is the element requirement of @ref ConstBufferSequence.
+    @par Semantic Requirements 
 
-    For a `T const` lvalue `x`, both `const_buffer b = x;` and
-    `const_buffer(x)` must be valid, since algorithms convert elements
-    through a const reference and may use either form. A conversion
-    operator must therefore be `const`.
+    After the conversion to @ref const_buffer `b`, `b.data()` and `b.size()` 
+    designate a valid contiguous memory region. The region shall remain valid
+    for the duration of an operation represented by the concept-constrained
+    function template call.
 
-    @note Algorithms that read buffer sequences are `noexcept`, so a
-    conversion that throws terminates the program. Conversion operators
-    should be `noexcept`.
+    @note Function templates in this library constrained by this concept,
+    such as @ref buffer_size, are often `noexcept`, so if this conversion
+    throws, this results in calling `std::terminate()`.  
+
+    @note `std::convertible_to` implies that @ref const_buffer
+    can also be explicitly constructed from `T const&` with the same effect as the
+    implicit conversion.
 
     @see @ref const_buffer, @ref MutableBuffer
 */
@@ -247,17 +253,23 @@ template<typename T>
 concept ConstBuffer =
     std::convertible_to<T const&, const_buffer>;
 
-/** Requires a type to convert to both `mutable_buffer` and `const_buffer`.
+/** Type recognized by the library as a _buffer_ (a handle to contiguous memory region)
+    with mutable access to data. 
 
-    This is the element requirement of @ref MutableBufferSequence.
+    @par Semantic Requirements 
 
-    A type that converts only to `mutable_buffer` does not qualify.
-    Reaching `const_buffer` from it takes two user-defined conversions,
-    and an implicit conversion sequence allows one. Such a type must
-    also provide a conversion to `const_buffer`.
+    After the conversion to @ref mutable_buffer or @ref const_buffer `b`, `b.data()` and `b.size()` 
+    designate a valid contiguous memory region. The region shall remain valid
+    for the duration of an operation represented by the concept-constrained
+    function template call.
 
-    As with @ref ConstBuffer, the conversion is from a `T const` lvalue,
-    and conversion operators should be `noexcept`.
+    @note Function templates in this library constrained by this concept,
+    such as @ref buffer_size, are often `noexcept`, so if this conversion
+    throws, this results in calling `std::terminate()`.  
+
+    @note `std::convertible_to` implies that @ref mutable_buffer
+    can also be explicitly constructed from `T const&` with the same effect as the
+    implicit conversion.
 
     @see @ref mutable_buffer, @ref ConstBuffer
 */
@@ -265,42 +277,65 @@ template<typename T>
 concept MutableBuffer =
     ConstBuffer<T> && std::convertible_to<T const&, mutable_buffer>;
 
-/** Requires a type to be a @ref ConstBuffer, or a range of them.
+/** Type recognized by the library as a _sequence_ of buffers with const access to data:
+    either a type modelling @ref ConstBuffer or a range thereof.
 
-    A type satisfies `ConstBufferSequence` if it represents one or more
-    contiguous memory regions that can be read. This includes single
-    buffers and ranges of buffers.
+    @par Semantic Requirements
+    
+    A copy-constructed buffer sequence shall refer to the same contiguous memory regions as the original.
+    This can be expressed as:
+    
+    @code
+    bool copy_postcondition(ConstBufferSequence auto const& x)
+    {
+      ConstBufferSequence auto y = x;
+      return std::equal(
+        buffer_sequence_begin(x), buffer_sequence_end(x),
+        buffer_sequence_begin(y), buffer_sequence_end(y),
+        [](const const_buffer& bx, const const_buffer& by)
+        {
+          return bx.data() == by.data()
+              && bx.size() == by.size();
+        }
+      );
+   }
+    @endcode
 
-    @par Syntactic Requirements
-    @li @ref ConstBuffer, OR
-    @li A bidirectional range whose value type is a @ref ConstBuffer
+    If a type models both @ref ConstBuffer and a range thereof,
+    then it is treated as @ref ConstBuffer.
 
+    @note Function templates in this library constrained by this concept,
+    such as @ref buffer_size, are often `noexcept`, so if the operations used
+    to iterate over the buffer range -- such as `.begin()` or the iterator API --
+    throw, this results in calling `std::terminate()`.
+    
     @see @ref const_buffer, @ref MutableBufferSequence
 */
 // tag::const_buffer_sequence_concept[]
 template<typename T>
 concept ConstBufferSequence =
+    std::copy_constructible<T> && (
     ConstBuffer<T> || (
         std::ranges::bidirectional_range<T> &&
-        ConstBuffer<std::ranges::range_value_t<T>>);
+        ConstBuffer<std::ranges::range_value_t<T>>));
 // end::const_buffer_sequence_concept[]
 
-/** Requires a type to be a @ref MutableBuffer, or a range of them.
+/** Type recognized by the library as a _sequence_ of buffers with mutable access to data:
+    either a type modelling @ref MutableBuffer or a range thereof.
 
-    A type satisfies `MutableBufferSequence` if it represents one or more
-    contiguous memory regions that can be written. This includes single
-    buffers and ranges of buffers.
+    @par Semantic Requirements
+    
+    If a type models both @ref MutableBuffer and a range thereof,
+    then it is treated as @ref MutableBuffer.
 
-    Every `MutableBufferSequence` is also a @ref ConstBufferSequence.
+    @note A type satisfying @ref ConstBuffer is never considered to be a range of
+    mutable buffers.
 
-    A @ref ConstBuffer is a single buffer, even if it is also a range,
-    so only its own conversion to `mutable_buffer` is considered.
-
-    @par Syntactic Requirements
-    @li @ref MutableBuffer, OR
-    @li A bidirectional range, not a @ref ConstBuffer, whose value type
-        is a @ref MutableBuffer
-
+    @note Function templates in this library constrained by this concept,
+    such as @ref buffer_size, are often `noexcept`, so if the operations used
+    to iterate over the buffer range — such as `.begin()` or the iterator API —
+    throw, this results in calling `std::terminate()`.
+    
     @see @ref mutable_buffer, @ref ConstBufferSequence
 */
 // tag::mutable_buffer_sequence_concept[]
